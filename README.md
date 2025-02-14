@@ -6,7 +6,7 @@ This software is available for personal, internal, and non-commercial use. Redis
 
 **APP UNDER CONSTRUCTION - PLEASE USE IT CAUTIOUSLY**
 
-Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet), tailored for newbies
+Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) Release 6.5.1, tailored for onbaording newbies to advanced self-custody
 
 Built with React Native, Electrum, and powered by Coinos.io API
 
@@ -91,7 +91,7 @@ Cold Vault (watch-only):
 * Send to Hot Vault
 
 ---
-Medium-term development roadmap (last update 12th Feb '25)
+Medium-term Development Milestones (last update 12th Feb '25)
 **Checking account**
 - ⭕ Send Liquid
 - ⭕ Recieve ecash 
