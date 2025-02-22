@@ -4,8 +4,6 @@ Https://Cypherbox.io
 ## License
 This software is available for personal, internal, and non-commercial use. Redistribution, selling, or offering the software as a service is prohibited without prior written consent. See the [LICENSE](./LICENSE) file for details.
 
-**APP UNDER CONSTRUCTION - PLEASE USE IT CAUTIOUSLY**
-
 Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) Release 6.5.1, tailored for onbaording newbies to advanced self-custody
 
 Built with React Native, Electrum, and powered by Coinos.io API
@@ -92,10 +90,9 @@ Cold Vault (watch-only):
 
 ---
 Medium-term Development Milestones (last update 12th Feb '25)
+
 **Checking account**
 - ⭕ Send Liquid
-- ⭕ Recieve ecash 
-- ⭕ Mint and redeem ecash
 - ⭕ Bolt 12
 - ⭕ NWC and new integration API integrations
 
@@ -114,7 +111,12 @@ Technical debt:
 - ⏱️ Checking Account settings 
 
 # RESPONSIBLE DISCLOSURE
-Found critical bugs/vulnerabilities? Please email them info@cypherbox.io Thanks!
+Found critical bugs/vulnerabilities?
+- Please email them info@cypherbox.io
+- Please do not publicly disclose vulnerabilities until they have been resolved.
+- Valid, responsible disclosures may qualify for a bounty reward based on the severity of the issue.
+Thank you for helping us keep our project secure!
+
 
 
 
