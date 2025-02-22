@@ -112,7 +112,7 @@ Technical debt:
 
 # RESPONSIBLE DISCLOSURE
 Found critical bugs/vulnerabilities?
-- Please email them info@cypherbox.io
+- Please email info@cypherbox.io
 - Please do not publicly disclose vulnerabilities until they have been resolved.
 - Valid, responsible disclosures may qualify for a bounty reward based on the severity of the issue.
 Thank you for helping us keep our project secure!
