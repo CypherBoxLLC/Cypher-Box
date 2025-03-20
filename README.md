@@ -89,14 +89,16 @@ Cold Vault (watch-only):
 
 ---
 Medium-term Development Milestones (last update 12th Feb '25)
+**Global**
+- ⭕ Plausiable Deniability
 
 **Checking account**
 - ⭕ Send Liquid
-- ⭕ Bolt 12
+- ✅ Bolt 12
 - ⭕ NWC and new integration API integrations
 
 **Hot vault**
-- ⭕ Batching
+- ✅ Batching
 - ⭕ Send change to Checking Account
 
 **Cold vault**
