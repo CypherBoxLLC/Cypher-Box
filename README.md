@@ -42,7 +42,7 @@ To run on iOS:
 * `npx pod-install`
 * `npm start`
 
-In another terminal window within the BlueWallet folder:
+In another terminal window within the Cypher-Box folder:
 
 `npx react-native run-ios`
 
