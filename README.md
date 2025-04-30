@@ -66,7 +66,9 @@ Community: [telegram group](https://t.me/BitcoinUserSupport)
 
 Lightning Account:
 * Create/login to Coinos.io 
-* Send and receive lightning, Liquid, and onchain payments
+* Send and receive lightning (LNURL)
+* Receive Liquid
+* Send and receive onchain 
 * Create lightning address
 * Payment history, Withdrawal Threshold reminder
 * Withdraw to Vault
@@ -90,16 +92,16 @@ Cold Vault (watch-only):
 ---
 Medium-term Development Milestones (last update 12th Feb '25)
 **Global**
-- ⭕ Plausiable Deniability
+- ✅ Plausiable Deniability
 
-**Checking account**
+**Lightning account**
 - ⭕ Send Liquid
-- ✅ Bolt 12
+- ⭕ Bolt 12
 - ⭕ NWC and new integration API integrations
 
 **Hot vault**
 - ✅ Batching
-- ⭕ Send change to Checking Account
+- ⭕ Send change to Lightning Account
 
 **Cold vault**
 - ⭕ Batching
@@ -109,7 +111,7 @@ Technical debt:
 - ⏱️ Notifications
 - ⏱️ UI inconsistencies
 - ⏱️ Recieve popup
-- ⏱️ Checking Account settings 
+- ⏱️ Lightning Account settings 
 
 # RESPONSIBLE DISCLOSURE
 Found critical bugs/vulnerabilities?
