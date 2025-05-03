@@ -3,7 +3,7 @@ Https://Cypherbox.io
 
 [LICENSE](./LICENSE)
 
-Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) Release 6.5.1, tailored for onbaording newbies to advanced self-custody
+Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) Release 6.5.1, tailored for onboarding newbies to advanced self-custody
 
 Built with React Native, Electrum, and powered by Coinos.io API
 
@@ -97,14 +97,13 @@ Medium-term Development Milestones (last update 12th Feb '25)
 **Lightning account**
 - ⭕ Send Liquid
 - ⭕ Bolt 12
-- ⭕ NWC and new integration API integrations
 
 **Hot vault**
 - ✅ Batching
 - ⭕ Send change to Lightning Account
 
 **Cold vault**
-- ⭕ Batching
+- ✅ Batching
 - ⭕ Send change to Hot Vault
 ---
 Technical debt:
