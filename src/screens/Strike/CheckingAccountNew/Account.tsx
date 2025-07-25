@@ -6,7 +6,7 @@ import styles from "./styles";
 
 import { btc } from "@Cypher/helpers/coinosHelper";
 
-export default function Account({ matchedRate }: { matchedRate: string; }) {
+export default function Account({ matchedRate, wallet, }: { matchedRate: string; wallet:string; }) {
   const currency = btc(1);
 
   return (
@@ -16,6 +16,7 @@ export default function Account({ matchedRate }: { matchedRate: string; }) {
         convertedRate={0}
         reserveAmount={0}
         withdrawThreshold={0}
+        wallet={wallet}
       />
       <StrikeView currency={currency} matchedRate={Number(matchedRate)} isShowButtons />
     </ScrollView>

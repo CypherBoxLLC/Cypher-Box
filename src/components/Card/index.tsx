@@ -1,4 +1,4 @@
-import { CoinOSSmall } from "@Cypher/assets/images";
+import { CoinOs, CoinOSSmall, Strike2 } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
 import { formatNumber } from "@Cypher/helpers/coinosHelper";
@@ -14,6 +14,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 interface Props {
     onPress?: (value: boolean) => void;
     title?: string;
+    wallet?:string;
     balance: any;
     convertedRate: any;
     matchedRate: any;
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export default function Card({ onPress,
+    wallet,
     title = 'Lightning Account',
     balance,
     convertedRate,
@@ -96,11 +98,21 @@ export default function Card({ onPress,
                         <Text h2 bold style={styles.check}>
                             {title}
                         </Text>
+                        {wallet==='STRIKE' ?
                         <Image
-                            source={CoinOSSmall}
-                            style={styles.blink}
-                            resizeMode="contain"
-                        />
+                        source={Strike2}
+                        style={styles.blink}
+                        resizeMode="contain"
+                    />
+                    :
+                    <Image
+                        source={CoinOSSmall}
+                        style={styles.blink}
+                        resizeMode="contain"
+                    />
+                        }
+                        
+                        
                     </View>
                     <View style={styles.view}>
                         <Text h2 bold style={styles.sats}>

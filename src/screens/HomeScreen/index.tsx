@@ -52,7 +52,7 @@ import Header from "./Header";
 import BalanceView from "./BalanceView";
 import BottomBar from "./BottomBar";
 import CreateLightningAccount from "./CreateLightningAccount";
-import WalletsView from "./WalltetsView";
+import WalletsView from "./WalletsView";
 import SendListNew from "./SendListNew";
 import WithdrawList from "./WithdrawList";
 
@@ -547,7 +547,7 @@ export default function HomeScreen({ route }: Props) {
           (
             <>
               <Header onBarScanned={onBarScanned} />
-              <BalanceView
+              <BalanceView 
                 // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                 balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
                 convertedRate={`$${((Number(strikeUser?.[0]?.available || 0) * matchedRate) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}`}
@@ -559,22 +559,29 @@ export default function HomeScreen({ route }: Props) {
 
           {(allBTCWallets.length > 0 && allBTCWallets.length < 2) && !isLoading &&
             <View style={styles.checkingaccContainer}>
-              <Text bold h2 style={{ height: 32 }}>Checking Accounts</Text>
+
+            
+
+              
               <TouchableOpacity
                 onPress={() => dispatchNavigate('CheckingAccountIntro')}
-                style={{ flex: 1, alignItems: 'flex-end' }}>
-                <BlackBGView
+                style={{ flex: 1, alignItems: 'flex-end', flexDirection: 'row', alignSelf:'center', justifyContent:'flex-end' }}>
+                {/* <BlackBGView
                   linearFirstStyle={styles.linearFirstStyle}
                   linearSecondStyle={styles.linearSecondStyle}
                   linearFirstColors={[colors.pink.gradient2, colors.pink.gradient1]}
                   linearSecondColors={[colors.primary, colors.primary]}
-                >
-                  <Image source={PlusNew} style={styles.plusImage} resizeMode="contain" />
-                  <Text h4 semibold style={{ marginStart: 15 }}>Add Account</Text>
-                </BlackBGView>
+                > */}
+                  {/* <Image source={PlusNew} style={styles.plusImage} resizeMode="contain" /> */}
+                  <Text h4 bold style={{color: colors.pink.dark, fontSize: 20}}>+</Text>
+                  <Text h4 semibold style={{ marginStart: 5, color: colors.pink.dark }}>Add Account</Text>
+                {/* </BlackBGView> */}
               </TouchableOpacity>
             </View>
           }
+          {(allBTCWallets.length > 1 && !isLoading) &&
+            <Text bold h2 style={{ height: 32, marginTop: 10 }}>Lightning Accounts</Text>
+            } 
 
           <View>
             {!isAuth && !isLoading && !isStrikeAuth ?

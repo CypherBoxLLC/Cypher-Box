@@ -287,6 +287,9 @@ export default function SendListNew({ refRBSheet, receiveType, wallet, coldStora
         >
           <Animated.View style={[{}, view1Style]}>
             <View style={styles.cardListContainer}>
+            <Text h2 bold style={styles.receiveToLabel}>
+              SEND FROM
+            </Text>
               {data?.map((item) => (
                 <GradientView
                   onPress={() => onPress(item)}
@@ -341,9 +344,9 @@ export default function SendListNew({ refRBSheet, receiveType, wallet, coldStora
                 </GradientView>
               ))}
             </View>
-            <Text h2 bold style={styles.receiveToLabel}>
+            {/* <Text h2 bold style={styles.receiveToLabel}>
               SEND FROM
-            </Text>
+            </Text> */}
           </Animated.View>
           <Animated.View
             style={[{ flex: 1, position: "absolute" }, view2Style]}

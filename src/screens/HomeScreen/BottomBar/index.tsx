@@ -82,7 +82,7 @@ export default function BottomBar({
     };
 
     const handleCreateColdVault = () => {
-        dispatchNavigate('ConnectColdStorage');
+        dispatchNavigate('ColdVaultIntro');
     }
 
     const topupClickHandler = async () => {

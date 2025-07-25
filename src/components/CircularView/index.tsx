@@ -51,7 +51,7 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
 
 
     const clickHandler = (value: boolean) => {
-        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: value });
+        dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value});
     }
 
     return <View style={{

@@ -232,8 +232,8 @@ export default StyleSheet.create<Style>({
     middle: {
         flexDirection: 'row',
         alignItems: 'center',
-        alignSelf:'center',
-        justifyContent:'center',
+        alignSelf:'flex-start',
+        justifyContent:'stretch',
         flex: 1
     },
     text: {
@@ -255,7 +255,7 @@ export default StyleSheet.create<Style>({
         width: 50,
         height: 50,
         left: -5,
-        top: 10
+        top: 10,
     },
     arrow2: {
         width: 30,

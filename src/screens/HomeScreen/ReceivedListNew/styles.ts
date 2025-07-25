@@ -42,7 +42,7 @@ interface Style {
 
 export default StyleSheet.create<Style>({
   logoImage: {
-    width: 125,
+    width: 100,
     height: 40,
     alignSelf: "center",
   },
@@ -95,18 +95,18 @@ export default StyleSheet.create<Style>({
   },
   vaultIconImage: {
     width: 25,
-    height: 23,
+    height: 39,
     marginEnd: 5,
     marginStart: 5,
   },
   coldVaultIconImage: {
     width: 39,
     height: 29,
-    marginEnd: 5,
+    marginEnd: 0,
   },
   receiveToLabel: {
     alignSelf: "center",
-    marginTop: 23,
+    //marginTop: 0,
   },
   gradientLine: {
     width: "100%",
@@ -158,13 +158,16 @@ export default StyleSheet.create<Style>({
   addressText: {
     // fontSize: 30,
     // lineHeight: 36,
-    marginRight: 40,
+    marginRight: 10,
   },
   addressRow: {
     flexDirection: "row",
     marginHorizontal: 40,
-    paddingRight: 20,
+    paddingLeft: 20,
+    //paddingRight: 5,
     alignItems: "center",
+    alignContent: 'center',
+    justifyContent: 'center',
     // backgroundColor: 'green',
     marginTop: 20,
   },
@@ -179,7 +182,7 @@ export default StyleSheet.create<Style>({
     marginLeft: 20,
   },
   invoiceCardHeight: {
-    height: 86,
+    height: 105,
     zIndex: 1,
   },
   invoiceCardBackground: {

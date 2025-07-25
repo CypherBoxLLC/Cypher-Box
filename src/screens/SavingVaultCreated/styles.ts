@@ -22,7 +22,7 @@ export default StyleSheet.create<Style>({
     },
     descption: {
         fontFamily: 'Archivo-Regular',
-        marginTop: 60,
+        marginTop: 30,
         marginHorizontal: 30,
         lineHeight: 24,
     },
@@ -37,7 +37,7 @@ export default StyleSheet.create<Style>({
         borderWidth: 0,
         width: '85%',
         alignSelf: 'center',
-        bottom: 40,
+        bottom: 55,
     },
     btnText: {
         fontFamily: 'Archivo-Bold',
