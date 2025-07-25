@@ -36,7 +36,7 @@ export default function SavingVaultCreated() {
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
                         {vaultTab ?
                             <>
-                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 30 }]}>Remember to keep your seed phrase safe, it's your responsibility!
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 15 }]}>Remember to keep your seed phrase safe, it's your responsibility!
                                     This is a Watch-only vault, meaning you can only inspect its balance and grab addresses from it for deposits, but in order to send out funds you need to ‘sign’ or authorize  transactions using your hardware device.
                                     {'\n\n'}
                                     ⚠️ DO NOT use any of its addresses without verifying their authenticity from your  hardware device!
@@ -47,7 +47,7 @@ export default function SavingVaultCreated() {
                         :
                             <Text h4 style={styles.descption}>Remember to keep your seed phrase safe, it's your responsibility!
                                 {'\n\n'}
-                                Each slot represents  a materialized coin (UTXO). Advanced security features will be unlocked once you fill these slots with enough coins. You can always store beyond 5 coins and you adjust the number of slots  in the Savings Vault menu. Tap ‘Secure Funds’ to do your first settlement transaction!
+                                Each slot represents  a materialized Bitcoin capsule (UTXO). You can tap inside the vault to browse its addresses, capsules, transaction history seedphrase, and so on. {'\n\n'}It's recommended that you deposit small to medium sized capsules, and once network fees are low, you can either move them to your Cold Vault, or 'consolidate' them together to save on future network fees.
                             </Text>
                         }
                     </ScrollView>

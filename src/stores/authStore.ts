@@ -11,7 +11,9 @@ export type AuthStateType = {
     reserveAmount: number;
     coldStorageWalletID: string | undefined;
     vaultTab: boolean;
+    FirstTimeLightning: boolean;
     userCreds: {email: string, password: string, isRememberMe: boolean} | undefined;
+    setFirstTimeLightning: (state: boolean) => void;
     setUserCreds: (state: {email: string, password: string, isRememberMe: boolean} | undefined) => void;
     setVaultTab: (state: boolean) => void;
     setReserveAmount: (state: number) => void;
@@ -61,6 +63,8 @@ const createAuthStore = (
     coldStorageWalletID: undefined,
     matchedRateStrike: 0,
     setMatchedRateStrike: (state: number) => set({ matchedRateStrike: state }),
+    FirstTimeLightning: true,
+    setFirstTimeLightning: (state: boolean) =>set ({FirstTimeLightning: state}),
     setAllBTCWallets: (state: string[]) => set({ allBTCWallets: state }),
     setAuth: (state: boolean | undefined) => set({ isAuth: state }),
     setVaultTab: (state: boolean) => set({ vaultTab: state }),

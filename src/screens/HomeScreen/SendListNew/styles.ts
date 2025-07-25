@@ -106,7 +106,7 @@ export default StyleSheet.create<Style>({
   },
   receiveToLabel: {
     alignSelf: "center",
-    marginTop: 23,
+    //marginTop: 23,
   },
   gradientLine: {
     width: "100%",

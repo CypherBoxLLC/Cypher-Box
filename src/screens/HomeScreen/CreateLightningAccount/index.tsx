@@ -20,7 +20,7 @@ export default function CreateLightningAccount({ onPress }: Props) {
                     resizeMode="contain"
                     source={require("../../../../img/arrow-right.png")}
                 />
-                <View style={{ alignItems: 'center', justifyContent: 'center', alignSelf: 'center' }}>
+                <View style={{ alignItems: 'center', justifyContent: 'center', alignSelf: 'center', paddingHorizontal: 20 }}>
                     <Text h2 style={styles.shadow} center>
                         Create Lightning Account
                     </Text>

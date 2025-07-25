@@ -14,6 +14,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 interface Props {
     onPress?: (value: boolean) => void;
     title?: string;
+    wallet?:string;
     balance: any;
     convertedRate: any;
     matchedRate: any;
@@ -27,6 +28,7 @@ interface Props {
 }
 
 export default function Card({ onPress,
+    wallet,
     title = 'Lightning Account',
     balance,
     convertedRate,
