@@ -1,0 +1,32 @@
+{
+  "pins" : [
+    {
+      "identity" : "bugsnag-cocoa",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/bugsnag/bugsnag-cocoa",
+      "state" : {
+        "revision" : "49f60b8dc2e94e7ede1114e2c39ba6ac0b576f42",
+        "version" : "6.28.0"
+      }
+    },
+    {
+      "identity" : "efqrcode",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/EFPrefix/EFQRCode.git",
+      "state" : {
+        "revision" : "3a6c5012f1a0df404a92e55bb01b4b685ff5a2d1",
+        "version" : "6.2.2"
+      }
+    },
+    {
+      "identity" : "swift_qrcodejs",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/EFPrefix/swift_qrcodejs.git",
+      "state" : {
+        "revision" : "d1605333f7edac39b4518538ef4f2638fdd2e4d6",
+        "version" : "2.3.1"
+      }
+    }
+  ],
+  "version" : 2
+}
