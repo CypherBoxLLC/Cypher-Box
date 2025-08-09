@@ -134,7 +134,7 @@ export default function StrikeWallet({
                             </View>
                             <View style={styles.view}>
                                 <Text h2 bold style={styles.sats}>
-                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ $${(Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2)}`}
+                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ $${(Number(strikeUser?.[0]?.available || 0) * (matchedRate || 0)).toFixed(2)}`}
                                     {/* {strikeUser && strikeUser[0]?.available || 0} sats ~ {"$" + convertedRate.toFixed(2)} */}
                                 </Text>
                                 <Text bold style={styles.totalsats}>

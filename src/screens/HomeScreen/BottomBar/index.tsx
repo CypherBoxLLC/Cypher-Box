@@ -117,7 +117,7 @@ export default function BottomBar({
                 });
             }
 
-            dispatchNavigate('HotStorageVault', { wallet: vaultTab ? coldStorageWallet : wallet, matchedRate, to: isAuth ? response?.hash : null, toStrike: isStrikeAuth ? responseStrike.onchain?.address : null });
+            dispatchNavigate('HotStorageVault', { wallet: vaultTab && coldStorageWallet ? coldStorageWallet : wallet && wallet, matchedRate, to: isAuth ? response?.hash : null, toStrike: isStrikeAuth ? responseStrike.onchain?.address : null });
         } catch (error) {
             console.error('Error generating bitcoin address topupClickHandler:', error);
         } finally {
@@ -343,10 +343,10 @@ export default function BottomBar({
                 itemWidth={screenWidth}
                 onSnapToItem={(index) => {
                     setIndex(index)
-                    setVaultTab(index === 1);
+                    setVaultTab(index === 1 && coldStorageWallet ? true : wallet && false);
                 }}
             />
-            <TabBar coldStorageClickHandler={coldStorageClickHandler} hotStorageClickHandler={hotStorageClickHandler} />
+            <TabBar isVault={index == 1 ? true : false} coldStorageClickHandler={coldStorageClickHandler} hotStorageClickHandler={hotStorageClickHandler} />
         </>
     )
 }
