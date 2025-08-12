@@ -216,6 +216,7 @@
     "scryptsy": "2.1.0",
     "slip39": "https://github.com/BlueWallet/slip39-js#d316ee6",
     "stream-browserify": "3.0.0",
+    "text-encoding": "^0.7.0",
     "url": "0.11.3",
     "uuid": "^11.1.0",
     "wif": "2.0.6",

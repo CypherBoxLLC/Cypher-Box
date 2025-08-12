@@ -56,13 +56,13 @@ export default function BottomBar({
 
     const [index, setIndex] = useState(vaultTab ? 1 : 0);
 
-    useEffect(() => {
-        if(vaultTab) {
-            carouselRef.current?.snapToItem(1, true);
-        } else {
-            carouselRef.current?.snapToItem(0, true);
-        }
-    }, [vaultTab]);
+    // useEffect(() => {
+    //     if(vaultTab && (wallet || coldStorageWallet)) {
+    //         carouselRef.current?.snapToItem(1, true);
+    //     } else if(!vaultTab && (wallet || coldStorageWallet)) {
+    //         carouselRef.current?.snapToItem(0, true);
+    //     }
+    // }, [vaultTab]);
 
     const coldStorageClickHandler = () => {
         setVaultTab(true);
@@ -328,6 +328,7 @@ export default function BottomBar({
         )
     };
 
+    console.log('index: ', index, vaultTab)
     return (
         <>
             {((hasSavingVault && wallet) || coldStorageWallet ) && (isAuth || isStrikeAuth) &&
@@ -342,6 +343,7 @@ export default function BottomBar({
                 sliderWidth={screenWidth}
                 itemWidth={screenWidth}
                 onSnapToItem={(index) => {
+                    console.log('onSnappppp')
                     setIndex(index)
                     setVaultTab(index === 1 && coldStorageWallet ? true : wallet && false);
                 }}

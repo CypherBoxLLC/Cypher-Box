@@ -31,6 +31,7 @@ import Clipboard from "@react-native-clipboard/clipboard";
 import styles from "./styles";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import 'text-encoding';
 import QRCode from 'react-native-qrcode-svg';
 
 const SCREEN_WIDTH = Dimensions.get("window").width;

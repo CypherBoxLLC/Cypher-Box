@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Image, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import Clipboard from '@react-native-clipboard/clipboard';
+import 'text-encoding';
 import QRCode from 'react-native-qrcode-svg';
 import Share from 'react-native-share';
 
