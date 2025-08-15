@@ -1,0 +1,875 @@
+diff --git a/node_modules/@react-native/gradle-plugin/.gradle/8.5/executionHistory/executionHistory.bin b/node_modules/@react-native/gradle-plugin/.gradle/8.5/executionHistory/executionHistory.bin
+new file mode 100644
+index 0000000..32c1076
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/.gradle/8.5/executionHistory/executionHistory.bin differ
+diff --git a/node_modules/@react-native/gradle-plugin/.gradle/8.5/executionHistory/executionHistory.lock b/node_modules/@react-native/gradle-plugin/.gradle/8.5/executionHistory/executionHistory.lock
+new file mode 100644
+index 0000000..4598f66
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/.gradle/8.5/executionHistory/executionHistory.lock differ
+diff --git a/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock b/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock
+new file mode 100644
+index 0000000..9dc5bb2
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock differ
+diff --git a/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/cache.properties b/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/cache.properties
+new file mode 100644
+index 0000000..cea927d
+--- /dev/null
++++ b/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/cache.properties
+@@ -0,0 +1,2 @@
++#Wed Aug 13 21:29:30 PKT 2025
++gradle.version=8.5
+diff --git a/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/outputFiles.bin b/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/outputFiles.bin
+new file mode 100644
+index 0000000..90fbe67
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/.gradle/buildOutputCleanup/outputFiles.bin differ
+diff --git a/node_modules/@react-native/gradle-plugin/.gradle/file-system.probe b/node_modules/@react-native/gradle-plugin/.gradle/file-system.probe
+new file mode 100644
+index 0000000..eaec7b3
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/.gradle/file-system.probe differ
+diff --git a/node_modules/@react-native/gradle-plugin/build.gradle.kts b/node_modules/@react-native/gradle-plugin/build.gradle.kts
+index aba3649..ce119c3 100644
+--- a/node_modules/@react-native/gradle-plugin/build.gradle.kts
++++ b/node_modules/@react-native/gradle-plugin/build.gradle.kts
+@@ -11,7 +11,7 @@ import org.gradle.configurationcache.extensions.serviceOf
+ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+ 
+ plugins {
+-  kotlin("jvm") version "1.7.22"
++  kotlin("jvm") version "1.9.22"
+   id("java-gradle-plugin")
+ }
+ 
+@@ -50,13 +50,13 @@ dependencies {
+ }
+ 
+ java {
+-  sourceCompatibility = JavaVersion.VERSION_11
+-  targetCompatibility = JavaVersion.VERSION_11
++  sourceCompatibility = JavaVersion.VERSION_17
++  targetCompatibility = JavaVersion.VERSION_17
+ }
+ 
+ tasks.withType<KotlinCompile> {
+   kotlinOptions {
+-    jvmTarget = JavaVersion.VERSION_11.majorVersion
++    jvmTarget = JavaVersion.VERSION_17.majorVersion
+     apiVersion = "1.5"
+     languageVersion = "1.5"
+   }
+diff --git a/node_modules/@react-native/gradle-plugin/build.gradle.kts.orig b/node_modules/@react-native/gradle-plugin/build.gradle.kts.orig
+new file mode 100644
+index 0000000..aba3649
+--- /dev/null
++++ b/node_modules/@react-native/gradle-plugin/build.gradle.kts.orig
+@@ -0,0 +1,72 @@
++/*
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ *
++ * This source code is licensed under the MIT license found in the
++ * LICENSE file in the root directory of this source tree.
++ */
++
++import org.gradle.api.internal.classpath.ModuleRegistry
++import org.gradle.api.tasks.testing.logging.TestExceptionFormat
++import org.gradle.configurationcache.extensions.serviceOf
++import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
++
++plugins {
++  kotlin("jvm") version "1.7.22"
++  id("java-gradle-plugin")
++}
++
++repositories {
++  google()
++  mavenCentral()
++}
++
++gradlePlugin {
++  plugins {
++    create("react") {
++      id = "com.facebook.react"
++      implementationClass = "com.facebook.react.ReactPlugin"
++    }
++  }
++}
++
++group = "com.facebook.react"
++
++dependencies {
++  implementation(gradleApi())
++  implementation("com.android.tools.build:gradle:7.4.2")
++  implementation("com.google.code.gson:gson:2.8.9")
++  implementation("com.google.guava:guava:31.0.1-jre")
++  implementation("com.squareup:javapoet:1.13.0")
++
++  testImplementation("junit:junit:4.13.2")
++
++  testRuntimeOnly(
++      files(
++          serviceOf<ModuleRegistry>()
++              .getModule("gradle-tooling-api-builders")
++              .classpath
++              .asFiles
++              .first()))
++}
++
++java {
++  sourceCompatibility = JavaVersion.VERSION_11
++  targetCompatibility = JavaVersion.VERSION_11
++}
++
++tasks.withType<KotlinCompile> {
++  kotlinOptions {
++    jvmTarget = JavaVersion.VERSION_11.majorVersion
++    apiVersion = "1.5"
++    languageVersion = "1.5"
++  }
++}
++
++tasks.withType<Test>().configureEach {
++  testLogging {
++    exceptionFormat = TestExceptionFormat.FULL
++    showExceptions = true
++    showCauses = true
++    showStackTraces = true
++  }
++}
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/META-INF/react-native-gradle-plugin.kotlin_module b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/META-INF/react-native-gradle-plugin.kotlin_module
+new file mode 100644
+index 0000000..f7b5e93
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/META-INF/react-native-gradle-plugin.kotlin_module differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactExtension.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactExtension.class
+new file mode 100644
+index 0000000..2a2c004
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactExtension.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1$1.class
+new file mode 100644
+index 0000000..2838fb9
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1$2$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1$2$1.class
+new file mode 100644
+index 0000000..9e399b8
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1$2$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1.class
+new file mode 100644
+index 0000000..c878043
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$2.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$2.class
+new file mode 100644
+index 0000000..8f29baf
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$apply$2.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$1.class
+new file mode 100644
+index 0000000..a5e52c6
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$buildCodegenTask$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$buildCodegenTask$1$1.class
+new file mode 100644
+index 0000000..34d579e
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$buildCodegenTask$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$buildCodegenTask$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$buildCodegenTask$1.class
+new file mode 100644
+index 0000000..86d4750
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$buildCodegenTask$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenArtifactsTask$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenArtifactsTask$1$1.class
+new file mode 100644
+index 0000000..9f53164
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenArtifactsTask$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenArtifactsTask$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenArtifactsTask$1.class
+new file mode 100644
+index 0000000..8ac86bc
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenArtifactsTask$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenSchemaTask$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenSchemaTask$1$1.class
+new file mode 100644
+index 0000000..9bd2ec1
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenSchemaTask$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenSchemaTask$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenSchemaTask$1.class
+new file mode 100644
+index 0000000..e9b9e55
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin$configureCodegen$generateCodegenSchemaTask$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin.class
+new file mode 100644
+index 0000000..649fb85
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/ReactPlugin.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$1.class
+new file mode 100644
+index 0000000..6b77e1d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$2.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$2.class
+new file mode 100644
+index 0000000..e8245d7
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$2.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$bundleTask$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$bundleTask$1.class
+new file mode 100644
+index 0000000..b0d79e9
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt$configureReactTasks$bundleTask$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt.class
+new file mode 100644
+index 0000000..e32e7c2
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/TaskConfigurationKt.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/internal/PrivateReactExtension.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/internal/PrivateReactExtension.class
+new file mode 100644
+index 0000000..45dca0e
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/internal/PrivateReactExtension.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelCodegenConfig.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelCodegenConfig.class
+new file mode 100644
+index 0000000..657d59c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelCodegenConfig.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelCodegenConfigAndroid.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelCodegenConfigAndroid.class
+new file mode 100644
+index 0000000..55bc2a9
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelCodegenConfigAndroid.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelPackageJson.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelPackageJson.class
+new file mode 100644
+index 0000000..cbebf94
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/model/ModelPackageJson.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$1.class
+new file mode 100644
+index 0000000..1fdc5fd
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$Companion.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$Companion.class
+new file mode 100644
+index 0000000..a2bcc96
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$Companion.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$input$2.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$input$2.class
+new file mode 100644
+index 0000000..ad2537e
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$input$2.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$output$2.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$output$2.class
+new file mode 100644
+index 0000000..8b0a7fc
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask$output$2.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask.class
+new file mode 100644
+index 0000000..b59d5a9
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BuildCodegenCLITask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask$runCommand$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask$runCommand$1.class
+new file mode 100644
+index 0000000..29ebf74
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask$runCommand$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask$sources$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask$sources$1.class
+new file mode 100644
+index 0000000..b4126bf
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask$sources$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask.class
+new file mode 100644
+index 0000000..d444e84
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/BundleHermesCTask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenArtifactsTask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenArtifactsTask.class
+new file mode 100644
+index 0000000..c1003f8
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenArtifactsTask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenSchemaTask$jsInputFiles$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenSchemaTask$jsInputFiles$1.class
+new file mode 100644
+index 0000000..8607642
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenSchemaTask$jsInputFiles$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenSchemaTask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenSchemaTask.class
+new file mode 100644
+index 0000000..aebb82b
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/GenerateCodegenSchemaTask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareBoostTask$taskAction$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareBoostTask$taskAction$1.class
+new file mode 100644
+index 0000000..d015b02
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareBoostTask$taskAction$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareBoostTask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareBoostTask.class
+new file mode 100644
+index 0000000..df63424
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareBoostTask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$1$1.class
+new file mode 100644
+index 0000000..e088f34
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$1.class
+new file mode 100644
+index 0000000..5defb5f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$2$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$2$1.class
+new file mode 100644
+index 0000000..263a25d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$2$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$2.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$2.class
+new file mode 100644
+index 0000000..e754316
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask$taskAction$2.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask.class
+new file mode 100644
+index 0000000..27beb81
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareGlogTask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$1$1.class
+new file mode 100644
+index 0000000..a066a5f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$1.class
+new file mode 100644
+index 0000000..1a847d8
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$headerFiles$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$headerFiles$1.class
+new file mode 100644
+index 0000000..b09fff8
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$headerFiles$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$jscAAR$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$jscAAR$1.class
+new file mode 100644
+index 0000000..7048631
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$jscAAR$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$soFiles$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$soFiles$1.class
+new file mode 100644
+index 0000000..3f7dce0
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask$taskAction$soFiles$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask.class
+new file mode 100644
+index 0000000..6789e5c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareJSCTask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask$taskAction$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask$taskAction$1$1.class
+new file mode 100644
+index 0000000..52198d9
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask$taskAction$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask$taskAction$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask$taskAction$1.class
+new file mode 100644
+index 0000000..75a5ff4
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask$taskAction$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask.class
+new file mode 100644
+index 0000000..f0f2294
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PrepareLibeventTask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PreparePrefabHeadersTask$taskAction$1$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PreparePrefabHeadersTask$taskAction$1$1$1.class
+new file mode 100644
+index 0000000..4d19939
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PreparePrefabHeadersTask$taskAction$1$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PreparePrefabHeadersTask.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PreparePrefabHeadersTask.class
+new file mode 100644
+index 0000000..bad5d5d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/PreparePrefabHeadersTask.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/utils/PrefabPreprocessingEntry.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/utils/PrefabPreprocessingEntry.class
+new file mode 100644
+index 0000000..54bc51a
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/tasks/internal/utils/PrefabPreprocessingEntry.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils$configureBuildConfigFields$action$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils$configureBuildConfigFields$action$1$1.class
+new file mode 100644
+index 0000000..a4dae3d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils$configureBuildConfigFields$action$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils$configureDevPorts$action$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils$configureDevPorts$action$1$1.class
+new file mode 100644
+index 0000000..854e989
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils$configureDevPorts$action$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils.class
+new file mode 100644
+index 0000000..d13284b
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtilsKt.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtilsKt.class
+new file mode 100644
+index 0000000..ffeff37
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/AgpConfiguratorUtilsKt.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/BackwardCompatUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/BackwardCompatUtils.class
+new file mode 100644
+index 0000000..82d9d00
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/BackwardCompatUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1$1$1.class
+new file mode 100644
+index 0000000..6bc63b5
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1$1.class
+new file mode 100644
+index 0000000..f9888f2
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1.class
+new file mode 100644
+index 0000000..116485d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureDependencies$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1$1$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1$1$1$1.class
+new file mode 100644
+index 0000000..6bf5ac3
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1$1$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1$1$1.class
+new file mode 100644
+index 0000000..d650b9c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1.class
+new file mode 100644
+index 0000000..838278f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$configureRepositories$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$mavenRepoFromURI$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$mavenRepoFromURI$1.class
+new file mode 100644
+index 0000000..59c1bcb
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$mavenRepoFromURI$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$mavenRepoFromUrl$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$mavenRepoFromUrl$1.class
+new file mode 100644
+index 0000000..1124210
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils$mavenRepoFromUrl$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils.class
+new file mode 100644
+index 0000000..6cb1c40
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtilsKt.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtilsKt.class
+new file mode 100644
+index 0000000..b916786
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/DependencyUtilsKt.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/FileUtilsKt.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/FileUtilsKt.class
+new file mode 100644
+index 0000000..4a8ad60
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/FileUtilsKt.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils$configureJavaToolChains$1$action$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils$configureJavaToolChains$1$action$1$1.class
+new file mode 100644
+index 0000000..c26c48d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils$configureJavaToolChains$1$action$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils$configureJavaToolChains$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils$configureJavaToolChains$1.class
+new file mode 100644
+index 0000000..0eba186
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils$configureJavaToolChains$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils.class
+new file mode 100644
+index 0000000..3f3711b
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JdkConfiguratorUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JsonUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JsonUtils.class
+new file mode 100644
+index 0000000..c7df5ad
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/JsonUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/KotlinStdlibCompatUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/KotlinStdlibCompatUtils.class
+new file mode 100644
+index 0000000..3a7e48e
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/KotlinStdlibCompatUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils$configureReactNativeNdk$1$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils$configureReactNativeNdk$1$1.class
+new file mode 100644
+index 0000000..1e4f68d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils$configureReactNativeNdk$1$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils$configureReactNativeNdk$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils$configureReactNativeNdk$1.class
+new file mode 100644
+index 0000000..774350b
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils$configureReactNativeNdk$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils.class
+new file mode 100644
+index 0000000..907fa5f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/NdkConfiguratorUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/Os.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/Os.class
+new file mode 100644
+index 0000000..c57e43e
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/Os.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PathUtils$projectPathToLibraryName$1.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PathUtils$projectPathToLibraryName$1.class
+new file mode 100644
+index 0000000..1f2dd3d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PathUtils$projectPathToLibraryName$1.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PathUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PathUtils.class
+new file mode 100644
+index 0000000..567d738
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PathUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/ProjectUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/ProjectUtils.class
+new file mode 100644
+index 0000000..956a9d3
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/ProjectUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PropertyUtils.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PropertyUtils.class
+new file mode 100644
+index 0000000..127c05c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/PropertyUtils.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/TaskUtilsKt.class b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/TaskUtilsKt.class
+new file mode 100644
+index 0000000..1a41b0b
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/classes/kotlin/main/com/facebook/react/utils/TaskUtilsKt.class differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab
+new file mode 100644
+index 0000000..6b6c202
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.keystream
+new file mode 100644
+index 0000000..018f476
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.keystream.len
+new file mode 100644
+index 0000000..07cd30f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.len
+new file mode 100644
+index 0000000..575d132
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.values.at
+new file mode 100644
+index 0000000..c8d6246
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab_i
+new file mode 100644
+index 0000000..ec6c7df
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/inputs/source-to-output.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab
+new file mode 100644
+index 0000000..ba4812c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.keystream
+new file mode 100644
+index 0000000..5d69c3f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.keystream.len
+new file mode 100644
+index 0000000..231f195
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.len
+new file mode 100644
+index 0000000..213dab4
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.values.at
+new file mode 100644
+index 0000000..c5e1956
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab_i
+new file mode 100644
+index 0000000..9d3d42c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-attributes.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab
+new file mode 100644
+index 0000000..c31e05e
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.keystream
+new file mode 100644
+index 0000000..5d69c3f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.keystream.len
+new file mode 100644
+index 0000000..231f195
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.len
+new file mode 100644
+index 0000000..213dab4
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.values.at
+new file mode 100644
+index 0000000..6737b47
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab_i
+new file mode 100644
+index 0000000..9d3d42c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/class-fq-name-to-source.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab
+new file mode 100644
+index 0000000..ceb4afe
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.keystream
+new file mode 100644
+index 0000000..8d99546
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.keystream.len
+new file mode 100644
+index 0000000..ec8f944
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.len
+new file mode 100644
+index 0000000..93a595b
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.values.at
+new file mode 100644
+index 0000000..bff57df
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab_i
+new file mode 100644
+index 0000000..41d544c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/constants.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab
+new file mode 100644
+index 0000000..4372e27
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.keystream
+new file mode 100644
+index 0000000..2d439c9
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.keystream.len
+new file mode 100644
+index 0000000..52b37ec
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.len
+new file mode 100644
+index 0000000..882f24f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.values.at
+new file mode 100644
+index 0000000..c533368
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab_i
+new file mode 100644
+index 0000000..0dfdd4f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/internal-name-to-source.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab
+new file mode 100644
+index 0000000..f0f138e
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.keystream
+new file mode 100644
+index 0000000..d74575d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.keystream.len
+new file mode 100644
+index 0000000..f030786
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.len
+new file mode 100644
+index 0000000..9e27f73
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.values.at
+new file mode 100644
+index 0000000..d06c58f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab_i
+new file mode 100644
+index 0000000..c6f6054
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/package-parts.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab
+new file mode 100644
+index 0000000..4815c41
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.keystream
+new file mode 100644
+index 0000000..87de339
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.keystream.len
+new file mode 100644
+index 0000000..328736c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.len
+new file mode 100644
+index 0000000..1b7c1f8
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.values.at
+new file mode 100644
+index 0000000..fd317b9
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab_i
+new file mode 100644
+index 0000000..5c5833d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/proto.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab
+new file mode 100644
+index 0000000..2bfcc59
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.keystream
+new file mode 100644
+index 0000000..b6c41d4
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.keystream.len
+new file mode 100644
+index 0000000..07cd30f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.len
+new file mode 100644
+index 0000000..575d132
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.values.at
+new file mode 100644
+index 0000000..f9d4cb1
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab_i
+new file mode 100644
+index 0000000..2ade4f6
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/source-to-classes.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab
+new file mode 100644
+index 0000000..11ba5a1
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.keystream
+new file mode 100644
+index 0000000..26bd179
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.keystream.len
+new file mode 100644
+index 0000000..2409504
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.len
+new file mode 100644
+index 0000000..93a595b
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.values.at
+new file mode 100644
+index 0000000..1f7347d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab_i
+new file mode 100644
+index 0000000..b26bd41
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/subtypes.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab
+new file mode 100644
+index 0000000..1e4a6fa
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.keystream
+new file mode 100644
+index 0000000..b0dc452
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.keystream.len
+new file mode 100644
+index 0000000..bff9925
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.len
+new file mode 100644
+index 0000000..a541356
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.values.at
+new file mode 100644
+index 0000000..8566c96
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab_i
+new file mode 100644
+index 0000000..45aecce
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/jvm/kotlin/supertypes.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/counters.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/counters.tab
+new file mode 100644
+index 0000000..4eb9e7b
+--- /dev/null
++++ b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/counters.tab
+@@ -0,0 +1,2 @@
++30
++0
+\ No newline at end of file
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab
+new file mode 100644
+index 0000000..ab61ec1
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.keystream
+new file mode 100644
+index 0000000..b6c41d4
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.keystream.len
+new file mode 100644
+index 0000000..07cd30f
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.len
+new file mode 100644
+index 0000000..575d132
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.values.at
+new file mode 100644
+index 0000000..ac19456
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab_i
+new file mode 100644
+index 0000000..2ade4f6
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/file-to-id.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab
+new file mode 100644
+index 0000000..d008908
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.keystream
+new file mode 100644
+index 0000000..a40e358
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.keystream.len
+new file mode 100644
+index 0000000..19f7832
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.len
+new file mode 100644
+index 0000000..575d132
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.values.at
+new file mode 100644
+index 0000000..b28bea7
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab_i
+new file mode 100644
+index 0000000..474fdca
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/id-to-file.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab
+new file mode 100644
+index 0000000..c4f9810
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.keystream b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.keystream
+new file mode 100644
+index 0000000..379180c
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.keystream differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.keystream.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.keystream.len
+new file mode 100644
+index 0000000..b7e6281
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.keystream.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.len
+new file mode 100644
+index 0000000..1c9bcc9
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.values.at b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.values.at
+new file mode 100644
+index 0000000..b5d183b
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab.values.at differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab_i b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab_i
+new file mode 100644
+index 0000000..bb87a85
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab_i differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab_i.len b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab_i.len
+new file mode 100644
+index 0000000..131e265
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/caches-jvm/lookups/lookups.tab_i.len differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/last-build.bin b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/last-build.bin
+new file mode 100644
+index 0000000..3909129
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/cacheable/last-build.bin differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/classpath-snapshot/shrunk-classpath-snapshot.bin b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/classpath-snapshot/shrunk-classpath-snapshot.bin
+new file mode 100644
+index 0000000..8859bff
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/classpath-snapshot/shrunk-classpath-snapshot.bin differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/local-state/build-history.bin b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/local-state/build-history.bin
+new file mode 100644
+index 0000000..038a60d
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/kotlin/compileKotlin/local-state/build-history.bin differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/libs/react-native-gradle-plugin.jar b/node_modules/@react-native/gradle-plugin/build/libs/react-native-gradle-plugin.jar
+new file mode 100644
+index 0000000..ead7417
+Binary files /dev/null and b/node_modules/@react-native/gradle-plugin/build/libs/react-native-gradle-plugin.jar differ
+diff --git a/node_modules/@react-native/gradle-plugin/build/pluginDescriptors/com.facebook.react.properties b/node_modules/@react-native/gradle-plugin/build/pluginDescriptors/com.facebook.react.properties
+new file mode 100644
+index 0000000..f3b415e
+--- /dev/null
++++ b/node_modules/@react-native/gradle-plugin/build/pluginDescriptors/com.facebook.react.properties
+@@ -0,0 +1 @@
++implementation-class=com.facebook.react.ReactPlugin
+diff --git a/node_modules/@react-native/gradle-plugin/build/resources/main/META-INF/gradle-plugins/com.facebook.react.properties b/node_modules/@react-native/gradle-plugin/build/resources/main/META-INF/gradle-plugins/com.facebook.react.properties
+new file mode 100644
+index 0000000..f3b415e
+--- /dev/null
++++ b/node_modules/@react-native/gradle-plugin/build/resources/main/META-INF/gradle-plugins/com.facebook.react.properties
+@@ -0,0 +1 @@
++implementation-class=com.facebook.react.ReactPlugin
+diff --git a/node_modules/@react-native/gradle-plugin/build/tmp/jar/MANIFEST.MF b/node_modules/@react-native/gradle-plugin/build/tmp/jar/MANIFEST.MF
+new file mode 100644
+index 0000000..58630c0
+--- /dev/null
++++ b/node_modules/@react-native/gradle-plugin/build/tmp/jar/MANIFEST.MF
+@@ -0,0 +1,2 @@
++Manifest-Version: 1.0
++

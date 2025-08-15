@@ -16,7 +16,7 @@ buildscript {
         ndkVersion = "23.1.7779620"
         // kotlin_version = '1.9.22'
         kotlin_version = '1.9.22'
-        kotlinVersion = '1.9.20'
+        kotlinVersion = '1.9.22'
     }
     repositories {
         google()
