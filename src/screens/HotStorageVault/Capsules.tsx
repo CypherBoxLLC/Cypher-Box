@@ -96,6 +96,7 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
                         },
                         targetCurrency: "USD"
                     });
+                    console.warn('responseStrike: ', responseStrike)
                     setBitcoinStrikeHash(responseStrike.onchain?.address)
                 } catch (error) {
                     console.error('Error generating bitcoin address Capsules createInvoiceStrike:', error);

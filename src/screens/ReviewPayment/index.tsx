@@ -214,10 +214,18 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 }
                 url = 'lightning/lnurl'
             }
+            console.log('payloadpayload: ', payload)
             const response = await getPaymentQoute(url, payload);
+            console.warn('response handlePaymentQuote: ', response?.data?.validationErrors)
             if(response?.amount){
                 console.log('setPaymentQuoteData paymentQuoteData?.paymentQuoteId: ', response?.paymentQuoteId)
                 setPaymentQuoteData(response)
+            } else if (response?.data?.message){
+                SimpleToast.show(response?.data?.message, SimpleToast.SHORT);
+                setTimeout(() => {
+                    navigation.goBack();
+                }, 2000)
+                return
             }
             console.log('response: ', response)
         } catch (error) {
@@ -586,8 +594,9 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             },
                             ...(to.includes('blink') ? {} : { description: note })
                         }
-                        console.log('payload: ', payload)
+                        console.log('payload: ', payload, paymentQuoteData)
                         const response = await getPaymentQouteByLightening(payload, paymentQuoteData?.paymentQuoteId);
+                        console.warn('response: ', response?.data?.validationErrors)
                         if(response?.amount){
                             console.log('responserresponse: ', response)
                             dispatchNavigate('Transaction', { matchedRate, type, value, converted, receiveType, isSats, to, item: response });

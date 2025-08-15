@@ -714,29 +714,29 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     const addressHandler = () => {
       console.log('to: ', to)
-        dispatchNavigate('WalletAddresses', {
-          walletID: wallet.getID(),
-          isTouchable: true,
-          wallet, 
-          vaultTab, 
-          utxo, 
-          ids, 
-          maxUSD, 
-          usd, 
-          total, 
-          matchedRate, 
-          capsulesData, 
-          to, 
-          toStrike,
-          vaultSend, 
-          title, 
-          type, 
-          isBatch,
-          capsuleTotal
-        });
+      dispatchNavigate('WalletAddresses', {
+        walletID: wallet.getID(),
+        isTouchable: true,
+        wallet, 
+        vaultTab, 
+        utxo, 
+        ids, 
+        maxUSD, 
+        usd, 
+        total, 
+        matchedRate, 
+        capsulesData, 
+        to, 
+        toStrike,
+        vaultSend, 
+        title, 
+        type, 
+        isBatch,
+        capsuleTotal
+      });
     }
 
-    console.log('to: ', to, toStrike, selectedItem)
+    console.log('to: ', to, toStrike, selectedItem, vaultSend)
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
@@ -929,7 +929,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                   </TouchableOpacity>
                                 </View>
                                 :
-                                  <Text style={{...styles.fees, color: vaultSend ? colors.blueText : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? toStrike : to)}</Text>
+                                  <Text style={{...styles.fees, color: vaultSend ? colors.blueText : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
                               }
                           </View>
                         </View>
