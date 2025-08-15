@@ -370,7 +370,7 @@ PODS:
     - MMKV (>= 1.3.3)
     - RCT-Folly (= 2021.07.22.00)
     - React-Core
-  - react-native-pager-view (6.9.1):
+  - react-native-pager-view (6.4.1):
     - RCT-Folly (= 2021.07.22.00)
     - React-Core
   - react-native-qrcode-local-image (1.0.12):
@@ -904,7 +904,7 @@ SPEC CHECKSUMS:
   react-native-image-picker: 5e076db26cd81660cfb6db5bcf517cfa12054d45
   react-native-ios-context-menu: e529171ba760a1af7f2ef0729f5a7f4d226171c5
   react-native-mmkv: 38d484ccd8f5760fe0e46d206ed07add5ddda1fc
-  react-native-pager-view: 6fa80d2e131fdc78d428816ee81ae3f9e71fb898
+  react-native-pager-view: d1e43158dd108b1b7377d7972157317e06dcc579
   react-native-qrcode-local-image: 2919c666d5c5f73ddae7ab88a8ed6f8e9eadcd75
   react-native-randombytes: 421f1c7d48c0af8dbcd471b0324393ebf8fe7846
   react-native-safe-area-context: 0ee144a6170530ccc37a0fd9388e28d06f516a89
