@@ -43,7 +43,7 @@ export default function ColdVaultIntro() {
               {'\n\n'}
               Your Hot and Cold Vaults can work in conjunction. You can use your Hot Vault as a heating funnel that melts your small capsules and transfer them to your Cold Vault as a single large consolidated cold capsule thereby reducing future fee costs (UTXO consolidation).
             </Text>
-            <Image source={Cold1} style={{ marginTop: 25, width: 165, height: 150}} />
+            <Image source={Cold1} resizeMode="center" style={{ flex: 1, flexDirection: 'row', height: 90, alignContent: 'center' , justifyContent: 'center', alignItems: 'center', alignSelf: 'center'}} />
           </View>
           <Button text="Explore Cold Storage" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
         </View>

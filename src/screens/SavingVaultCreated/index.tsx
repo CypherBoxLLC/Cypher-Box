@@ -36,7 +36,7 @@ export default function SavingVaultCreated() {
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
                         {vaultTab ?
                             <>
-                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 15 }]}>Remember to keep your seed phrase safe, it's your responsibility!
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 30 }]}>Remember to keep your seed phrase safe, it's your responsibility!
                                     This is a Watch-only vault, meaning you can only inspect its balance and grab addresses from it for deposits, but in order to send out funds you need to ‘sign’ or authorize  transactions using your hardware device.
                                     {'\n\n'}
                                     ⚠️ DO NOT use any of its addresses without verifying their authenticity from your  hardware device!

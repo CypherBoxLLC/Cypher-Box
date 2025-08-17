@@ -2,9 +2,11 @@ import React from "react";
 import { Image, ImageBackground, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
-import { ProgressBar5, ProgressBarColdStorage, Tag, Transaction, TransactionBlue, Yes } from "@Cypher/assets/images";
+import { ProgressBar5, ProgressBarColdStorage, Tag, Transaction, TransactionBlue, Yes} from "@Cypher/assets/images";
 import { colors } from "@Cypher/style-guide";
 import { btc } from "@Cypher/helpers/coinosHelper";
+import Capsule from "../Capsule";
+import MaskedView from "@react-native-masked-view/masked-view";
 
 interface Props {
     wallet: any;
@@ -33,9 +35,23 @@ const ListView = ({ wallet, item, onPress, handleChoose, ids, vaultTab }: Props)
             }
             <TouchableOpacity activeOpacity={0.7} style={styles.container} onPress={() => onPress(`${item.txid}:${item.vout}`)}>
                 <View style={styles.coin}>
-                    <View style={styles.tab}>
-                        <Image source={vaultTab ? ProgressBarColdStorage : ProgressBar5} style={styles.progressbar} />
-                    </View>
+                    <Capsule wallet={wallet} item={item}></Capsule>
+                    {/* <View style={styles.tab}>
+                    <MaskedView
+                            style={{ flex: 1, flexDirection: 'row', height: '100%', alignContent: 'stretch', alignItems:'stretch', justifyContent: 'stretch' }}
+                            maskElement={
+                                <Image source={require('@Cypher/assets/images/mask1.png')} resizeMode='contain' style={{backgroundColor: 'transparent', width: '100%', height:'100%'}}></Image>
+                            
+                            }>
+                                
+                            
+                        <Image source={vaultTab ? 
+                             ProgressBarColdStorage 
+                            : 
+                             ProgressBar5
+                            } resizeMode='contain' style={styles.progressbar} />
+                        </MaskedView>
+                    </View> */}
                     <Text bold>Address: {shortenAddress(item?.address)}</Text>
                 </View>
                 <View style={styles.size}>

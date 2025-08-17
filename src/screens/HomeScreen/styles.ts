@@ -233,7 +233,7 @@ export default StyleSheet.create<Style>({
         flexDirection: 'row',
         alignItems: 'center',
         alignSelf:'flex-start',
-        justifyContent:'stretch',
+        justifyContent:'flex-start',
         flex: 1
     },
     text: {

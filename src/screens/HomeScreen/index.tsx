@@ -554,6 +554,9 @@ export default function HomeScreen({ route }: Props) {
   //   hot: HotStorageTab,
   //   cold: ColdStorageTab,
   // });
+  const onBalanceViewClick = () =>{
+    dispatchNavigate('CheckingAccountIntro')
+  }
 
   return (
     <ScreenLayout
@@ -575,11 +578,12 @@ export default function HomeScreen({ route }: Props) {
           (
             <>
               <Header onBarScanned={onBarScanned} />
-              <BalanceView 
+              <BalanceView navigate={onBalanceViewClick}
                 // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                 balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
                 convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}`}
               />
+              
             </>
           )}
 
