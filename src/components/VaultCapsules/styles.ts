@@ -34,24 +34,22 @@ export default StyleSheet.create<Style>({
         marginTop: 5,
     },
     tab: {
-        width: '43%',
+        flex: 1,
         height: 12,
-        borderRadius: 4.5,
+        borderRadius: 4,
         borderWidth: 1,
         borderColor: colors.white,
         justifyContent: 'center',
-        alignContent: 'center',
-        alignItems: 'center',
         marginEnd: 10,
-        marginBottom: 10,
-        marginTop: 5,
     },
     progressbar: {
-        height: 6,
-        //width: undefined,
+        //height: 6,
+        width: '99%',
         marginHorizontal: 0,
         justifyContent: 'center',
         alignSelf: 'center',
+        alignContent: 'center',
+        alignItems: 'center'
         
     },
     coin: {

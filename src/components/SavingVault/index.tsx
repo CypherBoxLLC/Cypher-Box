@@ -17,6 +17,9 @@ import ProgressBar from "../ProgressBar";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import CustomProgressBar from "../CustomProgressBar";
+import Capsule from "@Cypher/screens/HotStorageVault/Capsule";
+import VaultCapsules from "../VaultCapsules/VaultCapsule";
 
 interface Props extends TouchableOpacityProps {
     isVault?: boolean;
@@ -40,9 +43,9 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
     const vaultTabCheck = isVault === false || isVault === true ? isVault : vaultTab;
     const wallet = vaultTabCheck ? wallets.find(w => w.getID() === coldStorageWalletID) : wallets.find(w => w.getID() === walletID);
     const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];
+    const balance = wallet?.getBalance()
     // const inDollar = '6500';
     const emptyUTXO = !utxo ? 5 : utxo.length <= 5 ? 5 - utxo.length : utxo.length > 5 && 0;
-
     return (
         <TouchableOpacity style={[styles.container, container]} onPress={onPress}>
             <View style={[styles.innerContainer, innerContainer]}>
@@ -86,8 +89,13 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                     }
 
                     <View style={styles.tabs}>
-                        {Array(utxo.length > 5 ? 5 : utxo.length).fill(0).map((item, i) => (
-                            <ProgressBar key={item} image={vaultTabCheck ? ProgressBarColdStorage : ProgressBar5} />
+                        {Array(utxo.length > 5 ? 5: utxo.length).fill(0).map((item, i) => (
+                            //<CustomProgressBar value={balance}></CustomProgressBar>
+                            //<Capsule item={item}></Capsule>
+                            //const test = 400_000
+                            
+                            <VaultCapsules item = {utxo[i].amount}></VaultCapsules>
+                            //<ProgressBar key={item} image={vaultTabCheck ? ProgressBarColdStorage : ProgressBar5} />
                         ))}
                         {Array(emptyUTXO).fill(0).map((item, i) => (
                             <View key={item} style={styles.tab} />
