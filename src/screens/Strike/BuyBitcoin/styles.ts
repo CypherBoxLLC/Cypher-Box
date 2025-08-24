@@ -172,7 +172,6 @@ export default StyleSheet.create<Style>({
         alignSelf:'center',
         justifyContent:'center',
         alignItems:'center',
-        marginTop: 40,
     },
     image:{
         width: 149,

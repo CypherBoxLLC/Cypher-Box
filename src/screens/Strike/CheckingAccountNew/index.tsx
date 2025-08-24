@@ -11,7 +11,7 @@ import styles from "./styles";
 import Threshold from "./Threshold";
 
 export default function CheckingAccountNew({ navigation, route }: any) {
-    const { wallet, matchedRate, receiveType} = useRoute().params as { wallet: string, matchedRate: string, to: null | string,receiveType: boolean};
+    const { wallet, matchedRate, receiveType, balance, converted, currency, reserveAmount, withdrawThreshold } = useRoute().params as { wallet: any, matchedRate: string, to: null | string,receiveType: boolean, balance: any, converted: any, currency: any, reserveAmount: any, withdrawThreshold: any };
     const [selectedTab, setSelectedTab] = useState(0);
     const { vaultTab } = useAuthStore();
 
@@ -22,17 +22,17 @@ export default function CheckingAccountNew({ navigation, route }: any) {
     const renderView = useCallback(() => {
         switch (selectedTab) {
             case 0:
-                return <Account matchedRate={matchedRate} wallet={wallet}/>;
+                return <Account matchedRate={matchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
             case 1:
                 return <Threshold matchedRate={matchedRate} receiveType={receiveType} />;
             case 2:
                 return <History matchedRate={matchedRate} receiveType={receiveType} />;
-            case 3:
-                return <Settings />;
+            // case 3:
+            //     return <Settings />;
             default:
-                return <Account matchedRate={matchedRate} wallet={wallet}/>;
+                return <Account matchedRate={matchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
         }
-    }, [selectedTab, vaultTab, wallet, matchedRate]);
+    }, [selectedTab, vaultTab, wallet, matchedRate, receiveType]);
 
     return (
         <ScreenLayout showToolbar disableScroll title={'Checking Account'}>

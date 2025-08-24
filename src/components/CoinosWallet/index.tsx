@@ -48,7 +48,8 @@ export default function CoinosWallet({
     const hasFilledTheBar = calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount)) === 100
 
     const checkingAccountClickHandler = (walletType: boolean) => {
-        dispatchNavigate('CheckingAccount', { matchedRate, receiveType: walletType });
+        // dispatchNavigate('CheckingAccount', { matchedRate, receiveType: walletType });
+        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: true, balance, converted: convertedRate, currency, reserveAmount, withdrawThreshold });
     }
 
     const loginClickHandler = () => {

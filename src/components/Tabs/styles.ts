@@ -19,7 +19,9 @@ export default StyleSheet.create<Style>({
     main: {
         flexDirection: 'row',
         alignSelf: 'center',
-        justifyContent: 'center',
+        justifyContent: 'space-between',
+        // borderWidth: 1,
+        width: '95%',
     },
     container: {
         alignItems: 'center',

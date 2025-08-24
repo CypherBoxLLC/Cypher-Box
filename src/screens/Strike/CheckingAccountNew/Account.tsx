@@ -6,19 +6,22 @@ import styles from "./styles";
 
 import { btc } from "@Cypher/helpers/coinosHelper";
 
-export default function Account({ matchedRate, wallet, }: { matchedRate: string; wallet:string; }) {
+export default function Account({ matchedRate, receiveType, balance, converted, reserveAmount, withdrawThreshold }: { matchedRate: string; receiveType: boolean, balance: any, converted: any, reserveAmount: any, withdrawThreshold: any }) {
   const currency = btc(1);
 
+  console.log('balance: ', balance, 'converted: ', converted);
   return (
     <ScrollView contentContainerStyle={styles.container2}>
       <Card
-        balance={0}
-        convertedRate={0}
-        reserveAmount={0}
-        withdrawThreshold={0}
-        wallet={wallet}
+        balance={Number(balance)}
+        convertedRate={Number(converted)}
+        reserveAmount={Number(reserveAmount)}
+        withdrawThreshold={Number(withdrawThreshold)}
+        receiveType={receiveType}
       />
-      <StrikeView currency={currency} matchedRate={Number(matchedRate)} isShowButtons />
+      {!receiveType &&
+        <StrikeView currency={currency} matchedRate={Number(matchedRate)} isShowButtons />
+      }
     </ScrollView>
   );
 }

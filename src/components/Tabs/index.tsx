@@ -20,7 +20,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
         { id: 0, name: 'Account', icon: Bank },
         { id: 1, name: 'Threshold', icon: Threshold },
         { id: 2, name: 'History', icon: Time },
-        { id: 3, name: 'Settings', icon: Settings },
+        // { id: 3, name: 'Settings', icon: Settings },
     ], []);
 
 

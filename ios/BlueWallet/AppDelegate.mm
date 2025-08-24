@@ -90,7 +90,7 @@
 - (BOOL)application:(UIApplication *)application continueUserActivity:(nonnull NSUserActivity *)userActivity
  restorationHandler:(nonnull void (^)(NSArray<id<UIUserActivityRestoring>> * _Nullable))restorationHandler
 {
-  NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.io.cypherbox.btc"];
+  NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.io.cypherbox.llc"];
   [defaults setValue:@{@"activityType": userActivity.activityType, @"userInfo": userActivity.userInfo} forKey:@"onUserActivityOpen"];
   if (userActivity.activityType == NSUserActivityTypeBrowsingWeb) {
     return [RCTLinkingManager application:application
@@ -115,7 +115,7 @@
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application {
-  NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.io.cypherbox.btc"];
+  NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.io.cypherbox.llc"];
   [defaults removeObjectForKey:@"onUserActivityOpen"];
 }
 

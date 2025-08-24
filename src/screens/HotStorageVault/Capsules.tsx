@@ -72,18 +72,20 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
     // console.log("🚀 ~ Coins ~ offset:", offset);
 
     useEffect(() => {
-        (async () => {
-            try {
-                const response = await createInvoice({
-                type: 'bitcoin',
-                });
-                setBitcoinHash(response.hash)
-                console.log('response: ', response)
-            } catch (error) {
-                console.error('Error generating bitcoin address Capsules:', error);
-            }
-        })();
-    }, []);
+        if(isAuth){
+            (async () => {
+                try {
+                    const response = await createInvoice({
+                        type: 'bitcoin',
+                    });
+                    setBitcoinHash(response.hash)
+                    console.log('response: ', response)
+                } catch (error) {
+                    console.error('Error generating bitcoin address Capsules createInvoice:', error);
+                }
+            })();
+        }
+    }, [isAuth]);
 
     useEffect(() => {
         if(isStrikeAuth){
@@ -94,10 +96,9 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
                         },
                         targetCurrency: "USD"
                     });
-
                     setBitcoinStrikeHash(responseStrike.onchain?.address)
                 } catch (error) {
-                    console.error('Error generating bitcoin address Capsules:', error);
+                    console.error('Error generating bitcoin address Capsules createInvoiceStrike:', error);
                 }
             })();
         }

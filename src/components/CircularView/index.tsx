@@ -21,7 +21,7 @@ interface Props {
     convertedRate: any;
 }
 export default function CircularView({ matchedRate, wallet, refRBSheet, refSendRBSheet, setReceiveType, currency, balance, convertedRate }: Props) {
-    const { strikeUser } = useAuthStore();
+    const { strikeUser, reserveAmount, withdrawThreshold, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
 // {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ $${(Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2)}`}
     
@@ -51,7 +51,8 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
 
 
     const clickHandler = (value: boolean) => {
-        dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value});
+        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: value, balance: value == true ? balance : Math.round(Number(strikeUser?.[0]?.available || 0) * SATS), converted: value == true ? convertedRate : (Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2), currency, reserveAmount: value == true ? reserveAmount : Number(reserveStrikeAmount), withdrawThreshold: value == true ? withdrawThreshold : Number(withdrawStrikeThreshold) });
+        // dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: value });
     }
 
     return <View style={{

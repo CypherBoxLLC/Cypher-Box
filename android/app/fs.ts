@@ -78,7 +78,7 @@ const writeFileAndExport = async function (filename: string, contents: string) {
 const openSignedTransaction = async function (): Promise<string | boolean> {
     try {
         const res = await DocumentPicker.pickSingle({
-            type: Platform.OS === 'ios' ? ['io.cypherbox.btc.psbt', 'io.cypherbox.btc.psbt.txn'] : [DocumentPicker.types.allFiles],
+            type: Platform.OS === 'ios' ? ['io.cypherbox.llc.psbt', 'io.cypherbox.llc.psbt.txn'] : [DocumentPicker.types.allFiles],
         });
 
         return await _readPsbtFileIntoBase64(res.uri);
@@ -141,9 +141,9 @@ const showFilePickerAndReadFile = async function (): Promise<{ data: string | fa
             type:
                 Platform.OS === 'ios'
                     ? [
-                        'io.cypherbox.btc.psbt',
-                        'io.cypherbox.btc.psbt.txn',
-                        'io.cypherbox.btc.backup',
+                        'io.cypherbox.llc.psbt',
+                        'io.cypherbox.llc.psbt.txn',
+                        'io.cypherbox.llc.backup',
                         DocumentPicker.types.plainText,
                         'public.json',
                         DocumentPicker.types.images,

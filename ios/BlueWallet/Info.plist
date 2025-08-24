@@ -4,7 +4,7 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>io.cypherbox.btc.fetchTxsForWallet</string>
+		<string>io.cypherbox.llc.fetchTxsForWallet</string>
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
@@ -102,6 +102,10 @@
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
+			<key>CFBundleURLHost</key>
+			<string>oauth/callback</string>
+			<key>CFBundleURLName</key>
+			<string>cypherbox</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>bitcoin</string>
@@ -110,12 +114,8 @@
 				<string>lapp</string>
 				<string>blue</string>
 				<string>http</string>
-	            <string>https</string>
+				<string>https</string>
 			</array>
-			<key>CFBundleURLName</key>
-			<string>cypherbox</string>
-			<key>CFBundleURLHost</key>
-			<string>oauth/callback</string>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
@@ -176,8 +176,8 @@
 	<string>In order to import an image for scanning, we need your permission to access your photo library.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
-		<string>io.cypherbox.btc.receiveonchain</string>
-		<string>io.cypherbox.btc.xpub</string>
+		<string>io.cypherbox.llc.receiveonchain</string>
+		<string>io.cypherbox.llc.xpub</string>
 	</array>
 	<key>UIAppFonts</key>
 	<array>

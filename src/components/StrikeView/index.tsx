@@ -39,13 +39,15 @@ function StrikeView({ showLogo = false, isShowButtons = false,
 
     const buyClickHandler = () => {
       const amt = Number(dollarStrikeText * matchedRate * btc(1))
-      console.log('amt: ', amt)
+      console.log('amt: ', amt, strikeUser?.[1]?.available)
       if(amt == 0){
         SimpleToast.show('Amount cannot be 0', SimpleToast.SHORT);
         return
       }
       if(Number(strikeUser?.[1]?.available) < amt){
-        SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
+        dispatchNavigate('BuyBitcoin', { currency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "BUY" });    
+        
+        // SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
         return
       }
       dispatchNavigate('SendScreen', { currency, matchedRate, fiatAmount: amt, fiatType: "BUY" });
@@ -58,7 +60,8 @@ function StrikeView({ showLogo = false, isShowButtons = false,
         return
       }
       if(Number(strikeUser?.[1]?.available) < amt){
-        SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
+        dispatchNavigate('BuyBitcoin', { currency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "SELL" });    
+        // SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
         return
       }
       dispatchNavigate('SendScreen', { currency, matchedRate, fiatAmount: amt, fiatType: "SELL" });    

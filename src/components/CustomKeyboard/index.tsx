@@ -6,7 +6,7 @@ import LinearGradient from "react-native-linear-gradient";
 import GradientButton from "../GradientButton";
 import { Cancel, Currency, CurrencyWhite, Sats } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
-import { btc } from "@Cypher/helpers/coinosHelper";
+import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 
 interface Props {
@@ -27,23 +27,27 @@ interface Props {
 export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, colors_ = [colors.pink.extralight, colors.pink.default], isGradient = true }: Props) {
     const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
     const [isSats, setIsSats] = useState(true);
-    const [sats, setSats] = useState(prevSats ? String(prevSats) : '');
+    const [sats, setSats] = useState(prevSats || '');
     const currency = btc(1);
 
     useEffect(() => {
         if (sats.length) {
             let amount = 0;
-            if (isSats) {
-                amount = ((matchedRate || 0) * currency * Number(sats)).toFixed(2)
+            console.log('sats: ', sats);
+            console.log('matchedRate: ', matchedRate);
+            if (!isSats) {
+                amount = ((Number(sats || 0) / Number(matchedRate || 0)) * SATS).toFixed(2)
+                console.log('amount 0: ', amount);
                 setSATS(sats);
                 setUSD(String(amount));
             } else {
-                amount = ((Number(sats) / 100000000) * (matchedRate || 0)).toFixed(2);
-                const multiplier = isSats ? 0.000594 : 1683.79;
-                const total = multiplier * Number(sats);
-                const total_ = total.toFixed(4);
-                setSATS(String(amount));
-                setUSD(sats);
+                amount = ((Number(sats) / SATS * (Number(matchedRate) || 0))).toFixed(2);
+                console.log('amount 1: ', amount);
+                // const multiplier = isSats ? 0.000594 : 1683.79;
+                // const total = multiplier * Number(sats);
+                // const total_ = total.toFixed(4);
+                setSATS(String(sats));
+                setUSD(String(amount));
             }
         } else {
             setUSD('');
@@ -92,7 +96,7 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
                     isError={isError}
                     onPress={onPress} />
                 :
-                <TouchableOpacity onPress={onPress} style={{ width: '90%', }}>
+                <TouchableOpacity onPress={onPress} disabled={disabled} style={{ width: '90%', opacity: disabled ? 0.5 : 1 }}>
                     <LinearGradient style={{
                         height: 47,
                         borderRadius: 12,

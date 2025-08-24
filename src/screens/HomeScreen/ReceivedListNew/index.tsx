@@ -47,8 +47,8 @@ interface Props {
 }
 
 export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency }: Props) {
-  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID } = useAuthStore();
-  const [selectedItem, setSelectedItem] = useState<number | null>(null);
+  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
+  const [selectedItem, setSelectedItem] = useState<number | null>(allBTCWallets.length == 1 && (!coldStorageWalletID && !walletID) && allBTCWallets[0] == "STRIKE" ? 1 : allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "COINOS" ? 2 : null);
   console.log("🚀 ~ ReceivedListNew ~ selectedItem:", selectedItem);
   const [data, setData] = useState([
     ...(isStrikeAuth ? [{
@@ -107,7 +107,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     }] : []),
   ]);
   const [tab, setTab] = useState(0);
-  const [showSecondView, setShowSecondView] = useState(false);
+  const [showSecondView, setShowSecondView] = useState(allBTCWallets.length == 1 ? true : false);
   const [hashLiquid, setHashLiquid] = useState('');
   const [hashBitcoin, setHashBitcoin] = useState('');
   const qrCode = useRef();
@@ -123,6 +123,12 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       handleCreateInvoice('liquid');
     }
   }, [tab, selectedItem])
+
+  useEffect(() => {
+    if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
+      animateToSecondView();
+    }
+  }, [allBTCWallets.length, coldStorageWalletID, walletID])
 
   const handleCreateInvoice = async (type: string) => {
     setIsLoading(true);
@@ -262,6 +268,11 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   };
 
   const tabs = getTabs();
+
+  const showBackButton = allBTCWallets.length > 1 ||
+  (allBTCWallets.length == 1 && coldStorageWalletID) || 
+  (allBTCWallets.length == 1 && walletID) || 
+  (coldStorageWalletID && walletID);
 
   return (
     <>
@@ -475,13 +486,15 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
               </View>
             )}
             <View style={styles.bottomActionRow}>
-              <TouchableOpacity onPress={backClickHandler}>
-                <Image
-                  source={Back}
-                  style={styles.backButtonImage}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
+              {showBackButton &&
+                <TouchableOpacity onPress={backClickHandler}>
+                  <Image
+                    source={Back}
+                    style={styles.backButtonImage}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+              }
               <Image
                 source={selectedItem === 1 ? StrikeFull : CoinOS}
                 style={styles.strikeLogoImage}

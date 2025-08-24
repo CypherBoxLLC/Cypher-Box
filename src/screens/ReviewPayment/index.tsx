@@ -90,13 +90,12 @@ export default function ReviewPayment({ navigation, route }: Props) {
     }, [receiveType]);
 
     useEffect(() => {
-        if(to.startsWith('bc') && !receiveType){
+        if(to.startsWith('bc') && receiveType == false){
             handleStrikeOnChainFee();
         }
     }, [to, receiveType, isWithdrawal])
 
     useEffect(() => {
-        console.log('receiveType: ', receiveType)
         if(to && !receiveType && !isWithdrawal){
             handlePaymentQuote();
         }
@@ -144,7 +143,11 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 feePolicy: "INCLUSIVE"
             }
         }
-        const response = await createFiatExchangeQuote(payload);
+        const response = await createFiatExchangeQuote(payload, false);
+        if(response?.data?.status === 401){
+            dispatchNavigate('HomeScreen')
+            return;
+        }
         if(response?.source){
             setPaymentQuoteData(response)
         } else if (response?.data?.message){
@@ -267,7 +270,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 return tier;
             });
 
-            // console.log('strikeFees: ', labeledTiers)
+            // console.log('labeledTiers: ', labeledTiers)
             setStrikeFees(labeledTiers);
         } catch (error) {
             console.log('error: ', error);
@@ -752,7 +755,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
         return temp;
     }
 
-    console.log('strikeFees: ', strikeFees, receiveType)
+    console.log('strikeFees: ', value, to, type, recommendedFee)
     return (
         <ScreenLayout showToolbar isBackButton title="Review Payment">
             <View style={styles.topView}>
@@ -859,7 +862,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         </>
                     }
 
-                    {to && value && (type === 'bitcoin' || type === 'liquid') && recommendedFee ?
+                    {to && value && (type === 'bitcoin' || type === 'liquid') && (recommendedFee || strikeFees) ?
                         <>
                             {receiveType ?
                                 <View style={styles.feesView}>

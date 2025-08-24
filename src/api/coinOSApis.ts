@@ -351,7 +351,7 @@ export const getTransactionHistory = async (offset: number, limit: number) => {
     }));
     return await response.json();
   } catch (error) {
-    console.error('Error fetching invoice by hash:', error);
+    console.error('Error fetching getTransactionHistory:', error);
     throw error;
   }
 };
@@ -366,7 +366,7 @@ export const getTransactionDetail = async (id: number) => {
     }));
     return await response.json();
   } catch (error) {
-    console.error('Error fetching invoice by hash:', error);
+    console.error('Error fetching getTransactionDetail:', error);
     throw error;
   }
 };

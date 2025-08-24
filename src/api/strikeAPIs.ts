@@ -101,10 +101,10 @@ export const getPaymentQouteByLightening = async (data: any, paymentQouteID: str
     }
 };
 
-export const createFiatExchangeQuote = async (data: any) => {
+export const createFiatExchangeQuote = async (data: any, maxBuyFallback: boolean) => {
     const idempotencyKey = uuidv4();
     try {
-        const responsePayment = await fetch(`${BASE_URL}/currency-exchange-quotes`, await withAuthToken({
+        const responsePayment = await fetch(`${BASE_URL}/currency-exchange-quotes?maxBuyFallback=${maxBuyFallback}`, await withAuthToken({
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

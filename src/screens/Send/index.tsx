@@ -353,7 +353,7 @@ export default function SendScreen({ navigation, route }: any) {
         }
     }
 
-    console.log('senderrr: ', info?.total)
+    console.log('senderrr: ', sender, isLoading || ((!startsWithLn(sender)) ? (sats?.length == 0 || sender?.length == 0) : (sender?.length == 0)))
     return (
         <>
             {isScannerActive ? (
@@ -378,9 +378,9 @@ export default function SendScreen({ navigation, route }: any) {
                         <View style={styles.container}>
                             <GradientInputNew 
                                 isSats={isSats} 
-                                sats={sats} 
+                                sats={sats.length == 0 ? '0' : sats} 
                                 setSats={setSats} 
-                                usd={usd}
+                                usd={usd.length == 0 ? '0' : usd}
                                 _colors={[colors.pink.extralight, colors.pink.default]}
                                 showTitle={false}
                             />
@@ -458,7 +458,7 @@ export default function SendScreen({ navigation, route }: any) {
                             title="Next"
                             prevSats={info?.value ? String(info?.value) : info?.fiatAmount ? String(info?.fiatAmount / info?.matchedRate  * 100000000) : false}
                             onPress={handleSendNext}
-                            disabled={isLoading || ((!startsWithLn(sender)) ? (sats?.length == 0 && sender?.length == 0) : sender?.length == 0)}
+                            disabled={isLoading || ((!startsWithLn(sender)) ? (sats?.length == 0 || sender?.length == 0) : (sender?.length == 0))}
                             setSATS={setSats}
                             setUSD={setUSD}
                             setIsSATS={setIsSats}
