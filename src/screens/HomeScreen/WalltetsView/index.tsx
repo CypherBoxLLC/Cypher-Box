@@ -1,4 +1,5 @@
 import { CircularView, CoinosWallet, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
+import { btc } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useEffect, useState } from "react";
@@ -32,7 +33,7 @@ export default function WalletsView({
     setReceiveType,
     strikeBalance,
 }: Props) {
-    const { allBTCWallets, setWalletTab } = useAuthStore();
+    const { allBTCWallets, setWalletTab, matchedRateStrike, strikeUser } = useAuthStore();
 
     const [indexStrike, setIndexStrike] = useState(0);
     const [wTabs, setWTabs] = useState([]);
@@ -46,23 +47,23 @@ export default function WalletsView({
                     tabs.push(walletTabsMap[wallet]);
                     if(allBTCWallets.length > 1) {
                         tabs.length = 0;
-                        tabs.push({ key: "divider", component: () => <CircularView balance={balance} convertedRate={convertedRate} currency={currency} wallet={wallet} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} /> });                                    
-                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currency} matchedRate={matchedRate} /> });
+                        tabs.push({ key: "divider", component: () => <CircularView balance={balance} convertedRate={convertedRate} currency={currency} strikeCurrency={strikeUser?.[1]?.currency || 'USD'} matchedRateStrike={Number(matchedRateStrike || 0)} wallet={wallet} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} /> });                                    
+                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={strikeUser?.[1]?.currency || 'USD'} matchedRate={(matchedRateStrike || 0)} /> });
                     } else if (walletTabsMap[wallet].key === 'strike') {
-                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currency} matchedRate={matchedRate} /> });
+                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={strikeUser?.[1]?.currency || 'USD'} matchedRate={(matchedRateStrike || 0)} /> });
                     }
                 }
             });
 
             setWTabs(tabs)
         }
-    }, [allBTCWallets, isLoading]);
+    }, [allBTCWallets, isLoading, matchedRateStrike]);
 
     type WalletName = keyof typeof walletTabsMap;
 
     const walletTabsMap = {
         COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet}/> },
-        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currency} convertedRate={convertedRate} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} wallet={wallet} /> },
+        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={strikeUser?.[1]?.currency || 'USD'} convertedRate={(matchedRateStrike || 0) * btc(1) * (strikeBalance || 0)} isLoading={isLoading} matchedRate={(matchedRateStrike || 0)} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} wallet={wallet} /> },
     };
 
 

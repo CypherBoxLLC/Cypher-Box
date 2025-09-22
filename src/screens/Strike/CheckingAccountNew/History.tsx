@@ -17,7 +17,7 @@ import { getInvoices } from "@Cypher/api/strikeAPIs";
 import screenHeight from "@Cypher/style-guide/screenHeight";
 import { CoinOS } from "@Cypher/assets/images";
 
-export default function History({ matchedRate, receiveType }: any) {
+export default function History({ matchedRate, receiveType, currency }: any) {
   const [isLoading, setIsLoading] = useState(false);
   const [payments, setPayments] = useState<any>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -138,7 +138,7 @@ export default function History({ matchedRate, receiveType }: any) {
               ) : undefined
             }
             keyExtractor={(item, index) => index.toString()}
-            renderItem={({ item }) => <Items matchedRate={matchedRate} item={item} receiveType={receiveType} onPressHandler={onPressHandler} />}
+            renderItem={({ item }) => <Items matchedRate={matchedRate} currency={currency} item={item} receiveType={receiveType} onPressHandler={onPressHandler} />}
             renderSectionHeader={({ section: { title } }) => <Header title={title} />}
           // invertStickyHeaders
           />

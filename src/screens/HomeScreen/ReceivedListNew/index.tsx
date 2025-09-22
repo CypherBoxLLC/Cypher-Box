@@ -47,8 +47,9 @@ interface Props {
   setReceivedListSecondTab: (val: boolean) => void;
 }
 
+
 export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency }: Props) {
-  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
+  const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
   const [selectedItem, setSelectedItem] = useState<number | null>(allBTCWallets.length == 1 && (!coldStorageWalletID && !walletID) && allBTCWallets[0] == "STRIKE" ? 1 : allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "COINOS" ? 2 : null);
   console.log("🚀 ~ ReceivedListNew ~ selectedItem:", selectedItem);
   const [data, setData] = useState([
@@ -139,7 +140,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       }) : await createInvoiceStrike({
         onchain: {
         },
-        targetCurrency: "USD"
+        targetCurrency: strikeUser?.[1]?.currency || "USD"
       });
       const hash = selectedItem == 2 ? response.hash : response.onchain?.address
       if (type == 'bitcoin') {
@@ -217,6 +218,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     },
   };
 
+  console.log('matchedRate: ', matchedRate, currency)
   const onPressNew = (item: any) => {
     refRBSheet?.current?.close();
     setReceivedListSecondTab(false);

@@ -45,7 +45,7 @@ export const shortenAddress = (address: string) => {
 
 
 export default function ColdStorage({ route, navigation }: Props) {
-    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
+    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
     const [feePrecalc, setFeePrecalc] = useState({ current: null, slowFee: null, mediumFee: null, fastestFee: null });
     const [usd, setUSD] = useState(inUSD);
     const [sats, setSats] = useState('100K sats  ~$' + usd);
@@ -546,7 +546,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     }
 
     const editAmountClickHandler = () => {
-        navigation.push('EditAmount', {isEdit: true, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData, to, toStrike, vaultSend, setSatsEdit: setSats_, title, capsuleTotal, isBatch });
+        navigation.push('EditAmount', {isEdit: true, currency, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData, to, toStrike, vaultSend, setSatsEdit: setSats_, title, capsuleTotal, isBatch });
     }
 
     const editFeesClickHandler = () => {
@@ -732,6 +732,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         title, 
         type, 
         isBatch,
+        currency,
         capsuleTotal
       });
     }

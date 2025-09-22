@@ -46,7 +46,7 @@ interface Props {
 }
 
 export default function SendListNew({ refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency }: Props) {
-  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID } = useAuthStore();
+  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   console.log("🚀 ~ SendListNew ~ selectedItem:", selectedItem);
   const [data, setData] = useState([
@@ -139,7 +139,7 @@ export default function SendListNew({ refRBSheet, receiveType, wallet, coldStora
       }) : await createInvoiceStrike({
         onchain: {
         },
-        targetCurrency: "USD"
+        targetCurrency: strikeUser?.[1]?.currency || "USD"
       });
       const hash = selectedItem == 2 ? response.hash : response.onchain?.address
       if (type == 'bitcoin') {

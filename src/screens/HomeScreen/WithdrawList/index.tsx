@@ -45,9 +45,11 @@ interface Props {
   recommendedFee: any;
   coldStorageWallet: any;
   receiveType: boolean;
+  currencyStrike: any
+  matchedRateStrike: any
 }
 
-export default function WithdrawList({ refRBSheet, balance, recommendedFee, coldStorageAddress, vaultAddress, receiveType, wallet, coldStorageWallet, matchedRate, currency }: Props) {
+export default function WithdrawList({ refRBSheet, balance, recommendedFee, coldStorageAddress, vaultAddress, receiveType, wallet, coldStorageWallet, matchedRate, currency, currencyStrike, matchedRateStrike }: Props) {
   const { user, strikeMe, vaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, withdrawThreshold, withdrawStrikeThreshold, strikeUser } = useAuthStore();
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [selectedWallet, setSelectedWallet] = useState<number | null>(null);
@@ -63,8 +65,8 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
       navigation: {
         screen: "SendScreen",
         params: {
-          matchedRate,
-          currency,
+          matchedRate: matchedRateStrike,
+          currency: currencyStrike,
           receiveType: false
         },
       },
@@ -146,7 +148,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
       }) : await createInvoiceStrike({
         onchain: {
         },
-        targetCurrency: "USD"
+        targetCurrency: strikeUser?.[1]?.currency || "USD"
       });
       const hash = selectedItem == 2 ? response.hash : response.onchain?.address
       if (type == 'bitcoin') {
@@ -288,13 +290,13 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
       console.log('amount: ', amount)
       dispatchNavigate('ReviewPayment', {
           value: amount,
-          converted: ((Number(matchedRate) || 0) * btc(1) * Number(amount)).toFixed(2),
+          converted: ((Number(selectedItem === 2 ? matchedRate : matchedRateStrike) || 0) * btc(1) * Number(amount)).toFixed(2),
           isSats: true,
           to: selectedWallet === 4 ? coldStorageAddress : vaultAddress,
           fees: 0,
           total: btc(Number(amount)),
-          matchedRate: matchedRate,
-          currency: currency,
+          matchedRate: selectedItem === 2 ? matchedRate : matchedRateStrike,
+          currency: selectedItem === 2 ? currency : currencyStrike,
           type: 'bitcoin',
           feeForBamskki: 0,
           recommendedFee,

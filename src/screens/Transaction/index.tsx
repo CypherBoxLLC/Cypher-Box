@@ -18,9 +18,10 @@ import Animated, {
 } from "react-native-reanimated";
 import { dispatchReset, resetAndNavigate } from "@Cypher/helpers/navigation";
 import { startsWithLn } from "../Send";
+import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 export default function Transaction({navigation, route}: any) {
-    const {matchedRate, type, value, converted, isSats, to, item} = route?.params;
+    const {matchedRate, currency = 'USD', type, value, converted, isSats, to, item} = route?.params;
     const amountSat = isSats ? value : converted;
     const amountUSD = !isSats ? value : converted
     const [response, setResponse] = useState(false);
@@ -97,7 +98,7 @@ export default function Transaction({navigation, route}: any) {
                         <Animated.View style={animatedStyle}>
                             <Text h1 semibold center>{type == "BUY" ? "Payment Received" : "Payment Sent"}</Text>
                             <Text semibold center style={styles.sats}>{amountSat} sats</Text>
-                            <Text subHeader bold center>${amountUSD}</Text>
+                            <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                             { to?.length > 0 && <View style={styles.extra} /> }
                             { to.length > 0 && <Text subHeader bold center>{type !== 'username' ? shortenAddress(to) : to}</Text> }
                         </Animated.View>

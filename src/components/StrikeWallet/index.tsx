@@ -1,7 +1,7 @@
 import { Text } from "@Cypher/component-library";
 import { GradientButtonWithShadow, GradientCardWithShadow } from "@Cypher/components";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
-import { formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
+import { formatNumber, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import React from "react";
@@ -134,7 +134,7 @@ export default function StrikeWallet({
                             </View>
                             <View style={styles.view}>
                                 <Text h2 bold style={styles.sats}>
-                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ $${(Number(strikeUser?.[0]?.available || 0) * (matchedRate || 0)).toFixed(2)}`}
+                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ ${getStrikeCurrency(strikeUser?.[1]?.currency || 'USD')}${(Number(strikeUser?.[0]?.available || 0) * (matchedRate || 0)).toFixed(2)}`}
                                     {/* {strikeUser && strikeUser[0]?.available || 0} sats ~ {"$" + convertedRate.toFixed(2)} */}
                                 </Text>
                                 <Text bold style={styles.totalsats}>

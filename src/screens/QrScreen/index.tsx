@@ -14,6 +14,7 @@ import ImageText from "@Cypher/components/ImageText";
 import { GradientCard, ImageTextVertical } from "@Cypher/components";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import useAuthStore from "@Cypher/stores/authStore";
 
 interface Props {
     route: any;
@@ -23,6 +24,7 @@ export default function QrScreen({ route }: Props) {
     const { type, receiveType } = route.params;
 
     const [hash, setHash] = useState('');
+    const { strikeUser } = useAuthStore();
     const qrCode = useRef();
     const base64QrCodeRef = useRef('');
 
@@ -40,7 +42,7 @@ export default function QrScreen({ route }: Props) {
             }) : await createInvoiceStrike({
                 onchain: {
                 },
-                targetCurrency: "USD"
+                targetCurrency: strikeUser?.[1]?.currency || "USD"
             });
             const hash = receiveType ? response.hash : response.onchain?.address
             setHash(hash);

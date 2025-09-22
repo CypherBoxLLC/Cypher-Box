@@ -29,7 +29,9 @@ interface Props {
     coldStorageBalanceWithoutSuffix: any;
     vaultAddress: any;
     recommendedFee: any;
-    refWithdrawRBSheet: any
+    refWithdrawRBSheet: any;
+    currencyStrike: any;
+    matchedRateStrike: any;
 }
 
 export default function BottomBar({
@@ -48,6 +50,8 @@ export default function BottomBar({
     coldStorageBalanceWithoutSuffix,
     vaultAddress,
     recommendedFee,
+    currencyStrike,
+    matchedRateStrike
 }: Props) {
     console.log("🚀 ~ hasSavingVault:", hasSavingVault)
     const { isAuth, isStrikeAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, vaultTab, setVaultTab } = useAuthStore();
@@ -113,7 +117,7 @@ export default function BottomBar({
                 responseStrike = await createInvoiceStrike({
                     onchain: {
                     },
-                    targetCurrency: "USD"
+                    targetCurrency: strikeUser?.[1]?.currency || "USD"
                 });
             }
 
@@ -181,13 +185,13 @@ export default function BottomBar({
               console.log('amount: ', amount)
               dispatchNavigate('ReviewPayment', {
                   value: amount,
-                  converted: ((Number(matchedRate) || 0) * btc(1) * Number(amount)).toFixed(2),
+                  converted: ((Number(matchedRateStrike) || 0) * btc(1) * Number(amount)).toFixed(2),
                   isSats: true,
                   to: coldStorageWallet ? coldStorageAddress : vaultAddress,
                   fees: 0,
                   total: btc(Number(amount)),
-                  matchedRate: matchedRate,
-                  currency: currency,
+                  matchedRate: matchedRateStrike,
+                  currency: currencyStrike,
                   type: 'bitcoin',
                   feeForBamskki: 0,
                   recommendedFee,
