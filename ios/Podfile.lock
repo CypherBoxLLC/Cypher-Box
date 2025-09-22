@@ -1,9 +1,9 @@
 PODS:
-  - AppAuth (1.7.6):
-    - AppAuth/Core (= 1.7.6)
-    - AppAuth/ExternalUserAgent (= 1.7.6)
-  - AppAuth/Core (1.7.6)
-  - AppAuth/ExternalUserAgent (1.7.6):
+  - AppAuth (2.0.0):
+    - AppAuth/Core (= 2.0.0)
+    - AppAuth/ExternalUserAgent (= 2.0.0)
+  - AppAuth/Core (2.0.0)
+  - AppAuth/ExternalUserAgent (2.0.0):
     - AppAuth/Core
   - BEMCheckBox (1.4.1)
   - boost (1.76.0)
@@ -31,9 +31,9 @@ PODS:
   - lottie-react-native (6.6.0):
     - lottie-ios (~> 4.4.0)
     - React-Core
-  - MMKV (1.3.5):
-    - MMKVCore (~> 1.3.5)
-  - MMKVCore (1.3.5)
+  - MMKV (2.2.2):
+    - MMKVCore (~> 2.2.2)
+  - MMKVCore (2.2.2)
   - PasscodeAuth (1.0.0):
     - React
   - RCT-Folly (2021.07.22.00):
@@ -336,12 +336,12 @@ PODS:
   - React-jsinspector (0.72.10)
   - React-logger (0.72.10):
     - glog
-  - react-native-app-auth (8.0.1):
+  - react-native-app-auth (8.0.3):
     - AppAuth (>= 1.7.6)
     - React-Core
   - react-native-blue-crypto (1.0.0):
     - React
-  - react-native-blur (4.4.0):
+  - react-native-blur (4.4.1):
     - RCT-Folly (= 2021.07.22.00)
     - React-Core
   - react-native-bw-file-access (1.0.0):
@@ -370,7 +370,7 @@ PODS:
     - MMKV (>= 1.3.3)
     - RCT-Folly (= 2021.07.22.00)
     - React-Core
-  - react-native-pager-view (6.3.0):
+  - react-native-pager-view (6.4.1):
     - RCT-Folly (= 2021.07.22.00)
     - React-Core
   - react-native-qrcode-local-image (1.0.12):
@@ -381,7 +381,7 @@ PODS:
     - React-Core
   - react-native-secure-key-store (2.0.10):
     - React-Core
-  - react-native-simple-toast (3.3.1):
+  - react-native-simple-toast (3.3.2):
     - React-Core
     - Toast (~> 4)
   - react-native-tcp-socket (5.6.2):
@@ -508,16 +508,17 @@ PODS:
     - React-Core
   - RealmJS (12.6.0):
     - React
-  - RNBootSplash (5.4.1):
+  - RNBootSplash (5.5.3):
     - React-Core
   - RNCAsyncStorage (1.21.0):
     - React-Core
-  - RNCCheckbox (0.5.17):
+  - RNCCheckbox (0.5.20):
     - BEMCheckBox (~> 1.4)
     - React-Core
-  - RNCClipboard (1.13.2):
+  - RNCClipboard (1.16.3):
     - React-Core
-  - RNCMaskedView (0.3.1):
+  - RNCMaskedView (0.3.2):
+    - RCT-Folly (= 2021.07.22.00)
     - React-Core
   - RNCPushNotificationIOS (1.11.0):
     - React-Core
@@ -553,7 +554,7 @@ PODS:
   - RNScreens (3.29.0):
     - RCT-Folly (= 2021.07.22.00)
     - React-Core
-  - RNShare (10.0.2):
+  - RNShare (10.2.1):
     - React-Core
   - RNSVG (13.14.0):
     - React-Core
@@ -563,7 +564,7 @@ PODS:
   - RNWatch (1.1.0):
     - React
   - SocketRocket (0.6.1)
-  - Toast (4.1.0)
+  - Toast (4.1.1)
   - Yoga (1.14.0)
 
 DEPENDENCIES:
@@ -859,7 +860,7 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  AppAuth: d4f13a8fe0baf391b2108511793e4b479691fb73
+  AppAuth: 1c1a8afa7e12f2ec3a294d9882dfa5ab7d3cb063
   BEMCheckBox: 5ba6e37ade3d3657b36caecc35c8b75c6c2b1a4e
   boost: 7dcd2de282d72e344012f7d6564d024930a6a440
   BugsnagReactNative: d9fa0824cea1beb5ab1f12828d79a2bd1b383e60
@@ -874,8 +875,8 @@ SPEC CHECKSUMS:
   libevent: 4049cae6c81cdb3654a443be001fb9bdceff7913
   lottie-ios: fcb5e73e17ba4c983140b7d21095c834b3087418
   lottie-react-native: 00ac19344296ae018260aabd14d6b36dd816b0e2
-  MMKV: 506311d0494023c2f7e0b62cc1f31b7370fa3cfb
-  MMKVCore: 9e2e5fd529b64a9fe15f1a7afb3d73b2e27b4db9
+  MMKV: b4802ebd5a7c68fc0c4a5ccb4926fbdfb62d68e0
+  MMKVCore: a255341a3746955f50da2ad9121b18cb2b346e61
   PasscodeAuth: 3e88093ff46c31a952d8b36c488240de980517be
   RCT-Folly: 424b8c9a7a0b9ab2886ffe9c3b041ef628fd4fb1
   RCTRequired: b4d3068afa6f52ec5260a8417053b1f1b421483d
@@ -892,9 +893,9 @@ SPEC CHECKSUMS:
   React-jsiexecutor: 45ef2ec6dcde31b90469175ec76ddac77b91dfc3
   React-jsinspector: de0198127395fec3058140a20c045167f761bb16
   React-logger: dc3a2b174d79c2da635059212747d8d929b54e06
-  react-native-app-auth: 79605228ffe689f63ad5b046319f5e154e3e96c2
+  react-native-app-auth: 149f01d2c824758453c9e7815217ded451974683
   react-native-blue-crypto: 23f1558ad3d38d7a2edb7e2f6ed1bc520ed93e56
-  react-native-blur: 69ecfe61d81b32ee7baae10f5d17aeb4e2594b10
+  react-native-blur: 4c25fdccf6dc16b0935baa58d9d0fccb0683742b
   react-native-bw-file-access: b232fd1d902521ca046f3fc5990ab1465e1878d7
   react-native-camera: 3eae183c1d111103963f3dd913b65d01aef8110f
   react-native-document-picker: 52eab29bbc53f45399b475b7a3f4e503260f1134
@@ -903,12 +904,12 @@ SPEC CHECKSUMS:
   react-native-image-picker: 5e076db26cd81660cfb6db5bcf517cfa12054d45
   react-native-ios-context-menu: e529171ba760a1af7f2ef0729f5a7f4d226171c5
   react-native-mmkv: 38d484ccd8f5760fe0e46d206ed07add5ddda1fc
-  react-native-pager-view: 40d9ec4a63ed74f8aa2f1e1bba7c1e0b4080d8a6
+  react-native-pager-view: d1e43158dd108b1b7377d7972157317e06dcc579
   react-native-qrcode-local-image: 2919c666d5c5f73ddae7ab88a8ed6f8e9eadcd75
   react-native-randombytes: 421f1c7d48c0af8dbcd471b0324393ebf8fe7846
   react-native-safe-area-context: 0ee144a6170530ccc37a0fd9388e28d06f516a89
   react-native-secure-key-store: 910e6df6bc33cb790aba6ee24bc7818df1fe5898
-  react-native-simple-toast: 1f1cc551d419bc0ab05dcb0136554006c274789d
+  react-native-simple-toast: 645b68c26e43786fc05e3d7401de2b057f139054
   react-native-tcp-socket: c1b7297619616b4c9caae6889bcb0aba78086989
   react-native-webview: 107961c73db53d66549c867a3b64eaa20d34c41f
   react-native-widget-center: 12dfba20a4fa995850b52cf0afecf734397f4b9c
@@ -932,11 +933,11 @@ SPEC CHECKSUMS:
   ReactNativeART: 78edc68dd4a1e675338cd0cd113319cf3a65f2ab
   ReactNativeCameraKit: 9d46a5d7dd544ca64aa9c03c150d2348faf437eb
   RealmJS: a62dc7a1f94b888fe9e8712cd650167ad97dc636
-  RNBootSplash: eff8239c4f795ce42a0604873aef3733aac0dedd
+  RNBootSplash: e025d4ee98d942ee6c8b495a6fe66339a6b5f6dd
   RNCAsyncStorage: 618d03a5f52fbccb3d7010076bc54712844c18ef
-  RNCCheckbox: a3ca9978cb0846b981d28da4e9914bd437403d77
-  RNCClipboard: 60fed4b71560d7bfe40e9d35dea9762b024da86d
-  RNCMaskedView: 090213d32d8b3bb83a4dcb7d12c18f0152591906
+  RNCCheckbox: 471ebdc33884c084f362615c1ef3507496cc07f1
+  RNCClipboard: dfeb43751adff21e588657b5b6c888c72f3aa68e
+  RNCMaskedView: a86b134da64b7eca096afca885c0fc74dfb4537f
   RNCPushNotificationIOS: 64218f3c776c03d7408284a819b2abfda1834bc8
   RNDefaultPreference: 08bdb06cfa9188d5da97d4642dac745218d7fb31
   RNDeviceInfo: db5c64a060e66e5db3102d041ebe3ef307a85120
@@ -952,12 +953,12 @@ SPEC CHECKSUMS:
   RNReactNativeHapticFeedback: ec56a5f81c3941206fd85625fa669ffc7b4545f9
   RNReanimated: ce6bef77caeee09d7f022532cee0c8d9bad09c9a
   RNScreens: 3c5b9f4a9dcde752466854b6109b79c0e205dad3
-  RNShare: 859ff710211285676b0bcedd156c12437ea1d564
+  RNShare: 0fad69ae2d71de9d1f7b9a43acf876886a6cb99c
   RNSVG: d00c8f91c3cbf6d476451313a18f04d220d4f396
   RNVectorIcons: 64e6a523ac30a3241efa9baf1ffbcc5e76ff747a
   RNWatch: fd30ca40a5b5ef58dcbc195638e68219bc455236
   SocketRocket: f32cd54efbe0f095c4d7594881e52619cfe80b17
-  Toast: ec33c32b8688982cecc6348adeae667c1b9938da
+  Toast: 1f5ea13423a1e6674c4abdac5be53587ae481c4e
   Yoga: d0003f849d2b5224c072cef6568b540d8bb15cd3
 
 PODFILE CHECKSUM: 4e4220ee317da521805c6c290f825cce2dd17221

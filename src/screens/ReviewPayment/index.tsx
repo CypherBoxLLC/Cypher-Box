@@ -14,7 +14,7 @@ import TextView from "./TextView";
 import TextViewV2 from "../Invoice/TextView"
 import useAuthStore from "@Cypher/stores/authStore";
 import { bitcoinSendFee, getCurrencyRates, getMe, sendBitcoinPayment, sendCoinsViaUsername, sendLightningPayment } from "@Cypher/api/coinOSApis";
-import { btc, formatNumber, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
+import { btc, formatNumber, getStrikeCurrency, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
 import { FeeSelection } from "./FeeSelection/FeeSelection";
 import { startsWithLn } from "../Send";
 import { calculateBalancePercentage, calculatePercentage } from "../HomeScreen";
@@ -50,11 +50,10 @@ function usdToSats(usdAmount: number, exchangeRate: number): string {
 }
 
 export default function ReviewPayment({ navigation, route }: Props) {
-    const { value, converted, isSats, to, type, recommendedFee, isWithdrawal = false, wallet = null, description, receiveType, vaultTab, total } = route?.params;
+    const { value, converted, isSats, isMaxUSDSelected = false, to, type, recommendedFee, currency, isWithdrawal = false, wallet = null, description, receiveType, vaultTab, total } = route?.params;
     const { withdrawThreshold, reserveAmount, strikeUser } = useAuthStore();
     const [note, setNote] = useState(description || '');
     const [balance, setBalance] = useState(0);
-    const [currency, setCurrency] = useState('$');
     const [convertedRate, setConvertedRate] = useState(0);
     const [matchedRate, setMatchedRate] = useState(0);
     const [isStartLoading, setIsStartLoading] = useState(false)
@@ -133,17 +132,19 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     const handleFiatPayment = async () => {
         const amount =  isSats ? converted : value;
-        console.log('amount: ', amount)
+        const sats = isSats ? value : converted;
+        console.log('amount: ', amount, converted, currency)
         let payload = {
-            sell: type == "BUY" ? "BTC" : "USD",
-            buy: type == "BUY" ? "USD" : "BTC",
+            sell: type == "BUY" ? "BTC" : (currency || "USD"),
+            buy: type == "BUY" ? (currency || "USD") : "BTC",
             amount: {
-                amount: Number(amount),
-                currency: "USD",
-                feePolicy: "INCLUSIVE"
+                amount: type === 'BUY' ? sats / SATS : amount,
+                currency: type === 'BUY' ? "BTC" : currency || "USD",
+                feePolicy: type == "SELL" ? "INCLUSIVE" : "EXCLUSIVE"
             }
         }
         const response = await createFiatExchangeQuote(payload, false);
+        console.log('response createFiatExchangeQuote: ', response, response?.data?.validationErrors, payload)
         if(response?.data?.status === 401){
             dispatchNavigate('HomeScreen')
             return;
@@ -157,22 +158,25 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     const handleStrikeBTCFee = async (onChainTierId: string) => {
         const amount =  receiveType ? isSats ? value : converted : isSats ? converted : value;
-        console.log('amount: ', amount)
+        console.log('amount: ', amount, currency, strikeFees)
+        const BTCAmount = Number(amount) / Number(matchedRate || 1)
+        const currentOnChainTier = strikeFees.find((item: any) => item.id === onChainTierId)
         try {
             let payload = {
                 btcAddress: to,
-                sourceCurrency: "USD",
+                sourceCurrency: 'BTC',
                 amount: {
-                    amount: Number(amount),
-                    currency: "USD",
+                    amount: isEditAmount && !isMaxUSDSelected ? BTCAmount : BTCAmount - Number(currentOnChainTier?.estimatedFee?.amount),
+                    currency: 'BTC',
                     feePolicy: "INCLUSIVE"
                 },
                 description: note,
                 onchainTierId: onChainTierId
             }
+            console.log('payload handleStrikeBTCFee: ', payload)
             let url = 'onchain'
             const response = await getPaymentQoute(url, payload);
-            console.log('response handleStrikeBTCFee: ', response)
+            console.log('response handleStrikeBTCFee: ', response, response?.data?.validationErrors)
             if(response?.amount){
                 setPaymentQuoteData(response)
             } else if (response?.data?.message){
@@ -193,10 +197,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
             if (startsWithLn(to)) {
                 payload = {
                     lnInvoice: to,
-                    sourceCurrency: "USD",
+                    sourceCurrency: 'BTC',
                     amount: {
                         amount: Number(amount),
-                        currency: "USD",
+                        currency: currency || "USD",
                         feePolicy: "INCLUSIVE"
                     },
                     description: note
@@ -205,21 +209,31 @@ export default function ReviewPayment({ navigation, route }: Props) {
             } else if (to.includes("@")) { //username
                 payload = {
                     lnAddressOrUrl: to,
-                    sourceCurrency: "USD",
+                    sourceCurrency: 'BTC',
                     amount: {
                         amount: String(amount),
-                        currency: "USD"
+                        currency: currency || "USD"
                     },
                     // description: note
                 }
                 url = 'lightning/lnurl'
+            } else {
+                return;
             }
+            console.log('payloadpayload: ', payload)
             const response = await getPaymentQoute(url, payload);
+            console.warn('response handlePaymentQuote: ', response?.data?.validationErrors)
             if(response?.amount){
                 console.log('setPaymentQuoteData paymentQuoteData?.paymentQuoteId: ', response?.paymentQuoteId)
                 setPaymentQuoteData(response)
+            } else if (response?.data?.message){
+                SimpleToast.show(response?.data?.message, SimpleToast.SHORT);
+                setTimeout(() => {
+                    navigation.goBack();
+                }, 2000)
+                return
             }
-            console.log('response: ', response)
+            console.log('response getPaymentQoute: ', response)
         } catch (error) {
             console.error('Error handlePaymentQuote:', error);
             SimpleToast.show('Failed to Send. Please try again.', SimpleToast.SHORT);
@@ -233,10 +247,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
         try {
             const payload = {
                 btcAddress: to,
-                sourceCurrency: "USD",
+                sourceCurrency: 'BTC',
                 amount: {
                     amount: Number(amount),
-                    currency: "USD",
+                    currency: currency || "USD",
                     feePolicy: "INCLUSIVE"
                 },
                 description: note,
@@ -281,7 +295,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
         setIsStartLoading(true);
         try {
             const response = await getMe();
-            console.log('response: ', response);
+            console.log('response getMe: ', response);
             const responsetest = await getCurrencyRates();
             const currency = btc(1);
             const matched = matchKeyAndValue(responsetest, 'USD')
@@ -408,9 +422,11 @@ export default function ReviewPayment({ navigation, route }: Props) {
         const amount =  receiveType ? isSats ? value : converted : isSats ? converted : value;
         if(type == "SELL" || type == "BUY"){
             try {
+                console.log('paymentQuoteData: ', paymentQuoteData)
                 const response = await executeFiatExchangeQuote(paymentQuoteData?.id);
+                console.log('response executeFiatExchangeQuote: ', response)
                 if(response?.status === 202){
-                    dispatchNavigate('Transaction', { matchedRate, type, value, converted, receiveType, isSats, to, item: paymentQuoteData });
+                    dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: paymentQuoteData });
                 } else {
                     SimpleToast.show(response?.data?.message ? response?.data?.message + " Please Try again" : 'Failed to execute payment. Please try again.', SimpleToast.SHORT)
                     handleFiatPayment()
@@ -428,10 +444,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
             if(receiveType){
                 try {
                     const response = await sendLightningPayment(to, note, amount);
-                    console.log('response: ', response)
+                    console.log('response sendLightningPayment: ', response)
                     if (response?.startsWith('{')) {
                         const jsonLNResponse = JSON.parse(response);
-                        dispatchNavigate('Transaction', { matchedRate, type, value, converted, isSats, to, item: jsonLNResponse });
+                        dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, isSats, to, item: jsonLNResponse });
                     } else {
                         SimpleToast.show(response, SimpleToast.SHORT)
                     }
@@ -446,10 +462,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 try {
                     const payload = {
                         lnInvoice: to,
-                        sourceCurrency: "USD",
+                        sourceCurrency: 'BTC',
                         amount: {
                             amount: Number(amount),
-                            currency: "USD",
+                            currency: currency || "USD",
                             feePolicy: "INCLUSIVE"
                         },
                         description: note
@@ -457,7 +473,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     const response = await getPaymentQouteByLighteningURL(payload, paymentQuoteData?.paymentQuoteId);
                     if(response?.amount){
                         console.log('responserresponse: ', response)
-                        dispatchNavigate('Transaction', { matchedRate, type, value, converted, receiveType, isSats, to, item: response });
+                        dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: response });
                     } else {
                         SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT)
                     }
@@ -508,7 +524,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         //send 0.1% fee to bamskii
                         // const response = await sendCoinsViaUsername("bamskki@coinos.io", feeForBamskki, '');
                         // console.log('response username: ', response, typeof response)
-                        dispatchNavigate('TransactionBroadCast', { matchedRate, type, value, converted, isSats, to, item: jsonSend });
+                        dispatchNavigate('TransactionBroadCast', { matchedRate, currency, type, value, converted, isSats, to, item: jsonSend });
 
                     } else {
                         SimpleToast.show(sendResponse, SimpleToast.SHORT);
@@ -529,10 +545,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 try {
                     const payload = {
                         btcAddress: to,
-                        sourceCurrency: "USD",
+                        sourceCurrency: 'BTC',
                         amount: {
                             amount: Number(amount),
-                            currency: "USD",
+                            currency: currency || "USD",
                             feePolicy: "INCLUSIVE"
                         },
                         description: note,
@@ -542,7 +558,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     const response = await getPaymentQouteByOnChain(payload, paymentQuoteData?.paymentQuoteId);
                     if(response?.amount){
                         console.log('responserresponse: ', response)
-                        dispatchNavigate('TransactionBroadCast', { matchedRate, type, value, converted, receiveType, isSats, to, item: response });
+                        dispatchNavigate('TransactionBroadCast', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: response });
                     } else if(response?.data?.message) {
                         SimpleToast.show(response?.data?.message, SimpleToast.SHORT)
                     } else {
@@ -567,11 +583,11 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     const response = await sendCoinsViaUsername(to, Number(amount), note);
                     console.log('response username: ', response, typeof response, amount, to, note)
                     if (typeof response == 'object' && response?.hash) {
-                        dispatchNavigate('Transaction', { matchedRate, type, value, converted, isSats, to, item: response });
+                        dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, isSats, to, item: response });
                     } else if (response?.startsWith('{')) {
                         const jsonResponse = JSON.parse(response);
                         console.log('jsonResponse: ', jsonResponse)
-                        dispatchNavigate('Transaction', { matchedRate, type, value, converted, isSats, to, item: jsonResponse });
+                        dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, isSats, to, item: jsonResponse });
                     } else {
                         SimpleToast.show(response, SimpleToast.SHORT);
                     }
@@ -579,18 +595,19 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     try {
                         const payload = {
                             lnAddressOrUrl: to,
-                            sourceCurrency: "USD",
+                            sourceCurrency: 'BTC',
                             amount: {
                                 amount: String(amount),
-                                currency: "USD"
+                                currency: currency || "USD"
                             },
                             ...(to.includes('blink') ? {} : { description: note })
                         }
-                        console.log('payload: ', payload)
+                        console.log('payload: ', payload, paymentQuoteData)
                         const response = await getPaymentQouteByLightening(payload, paymentQuoteData?.paymentQuoteId);
+                        console.warn('response getPaymentQouteByLightening: ', response?.data?.validationErrors)
                         if(response?.amount){
                             console.log('responserresponse: ', response)
-                            dispatchNavigate('Transaction', { matchedRate, type, value, converted, receiveType, isSats, to, item: response });
+                            dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: response });
                         } else {
                             SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT)
                         }
@@ -639,7 +656,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     //send 0.1% fee to bamskii
                     // const response = await sendCoinsViaUsername("bamskki@coinos.io", feeForBamskki, '');
                     // console.log('response username: ', response)
-                    dispatchNavigate('TransactionBroadCast', { matchedRate, type, value, converted, isSats, to, item: jsonSend, receiveType });
+                    dispatchNavigate('TransactionBroadCast', { matchedRate, currency, type, value, converted, isSats, to, item: jsonSend, receiveType });
                 } else {
                     SimpleToast.show(sendResponse, SimpleToast.SHORT);
                     return;
@@ -746,7 +763,8 @@ export default function ReviewPayment({ navigation, route }: Props) {
             type,
             recommendedFee,
             isWithdrawal,
-            wallet
+            wallet,
+            currency,
         });
     }
 
@@ -757,7 +775,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     console.log('strikeFees: ', value, to, type, recommendedFee)
     return (
-        <ScreenLayout showToolbar isBackButton title="Review Payment">
+        <ScreenLayout showToolbar isBackButton title={isWithdrawal ? "Review Withdrawal" : "Review Payment"}>
             <View style={styles.topView}>
                 {/* {isStartLoading ?
                     <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />
@@ -799,7 +817,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         <Text style={{ color: colors.yellow2, marginLeft: 15, marginBottom: 25 }}>You haven't reached your withdrawal threshold yet.</Text>
                     }
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginRight: 15 }}>
-                        <TextViewV2 keytext={type == 'SELL' ? "You will send: " : type == 'BUY' ? "You will receive: " : "Recipient will get: "} text={isSats ? `${value} sats ~ $${converted}` : `$${value} ~ ${converted} sats`} textStyle={styles.price} />
+                        <TextViewV2 keytext={type == 'SELL' ? "You will send: " : type == 'BUY' ? "You will receive: " : "Recipient will get: "} text={isSats ? `${value} sats ~ ${getStrikeCurrency(currency || 'USD')}${converted}` : `${getStrikeCurrency(currency || 'USD')}${value} ~ ${converted} sats`} textStyle={styles.price} />
                         {isWithdrawal &&
                             <TouchableOpacity activeOpacity={0.7} onPress={editAmountClickHandler} style={{
                                 borderWidth: 3,
@@ -909,7 +927,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             }
                             {/* <TextViewV2 keytext="Coinos Fee + Service Fee:  " text={` ~   ${(networkFee || 0) + (bamskiiFee || 0)} sats`} /> */}
                             {receiveType && <TextViewV2 keytext="Coinos Fee:  " text={` ~   ${(networkFee || 0)} sats`} /> }
-                            <TextViewV2 keytext="Total Fee:  " text={isWithdrawal && receiveType ? ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~${handleWithdrawalFee((networkFee || 0) + (estimatedFee || 0)).toFixed(0)}%)` : isWithdrawal && receiveType ? ` ~   ${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000).toFixed(2)} sats` : ` ~   ${receiveType ? (networkFee || 0) + (estimatedFee || 0) : paymentQuoteData ? usdToSats(paymentQuoteData?.totalFee?.amount || 0, (matchedRate || 0)) : 0} sats ${receiveType ? `(~0.2%)` : ``}`} />
+                            <TextViewV2 keytext="Total Fee:  " text={isWithdrawal && receiveType ? ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~${handleWithdrawalFee((networkFee || 0) + (estimatedFee || 0)).toFixed(0)}%)` : isWithdrawal && receiveType ? ` ~   ${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000).toFixed(2)} sats` : ` ~   ${receiveType ? (networkFee || 0) + (estimatedFee || 0) : paymentQuoteData ? (paymentQuoteData?.totalFee?.amount * SATS).toFixed(2) : 0} sats ${receiveType ? `(~0.2%)` : ``}`} />
                         </>
                         :
                         <TextView keytext="Fees:  " text={` ~   ${receiveType ? estimatedFee : paymentQuoteData && to?.length > 0 ? usdToSats(paymentQuoteData?.totalFee?.amount || 0, (matchedRate || 0)) : paymentQuoteData && to.length == 0 ? usdToSats(paymentQuoteData?.fee?.amount || 0, (matchedRate || 0)) : 0} sats`} />
@@ -963,7 +981,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
             <View style={styles.container}>
                 <Text bold style={styles.alert}>Causion: Bitcoin payments are irriversable</Text>
                 {type === 'bitcoin' || type == "SELL" || type == "BUY" ?
-                    <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
+                    <SwipeButton title={isWithdrawal ? 'Slide to Withdraw' : 'Slide to Send'} ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
                     :
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
                         title={'Send'}

@@ -14,7 +14,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 
 
 const HotStorageVault = ({ _, route }: any) => {
-    const { wallet, matchedRate, to = null, toStrike = null } = useRoute().params as { wallet: any, matchedRate: string, to: null | string, toStrike: null | string };
+    const { wallet, matchedRate, currency, to = null, toStrike = null } = useRoute().params as { wallet: any, matchedRate: string, currency: string, to: null | string, toStrike: null | string };
     const [selectedTab, setSelectedTab] = useState(0);
     const [utxo, setUtxo] = useState(null);
     const { vaultTab } = useAuthStore();
@@ -35,11 +35,11 @@ const HotStorageVault = ({ _, route }: any) => {
             case 0:
                 return <Vault wallet={wallet} matchedRate={matchedRate} setSelectedTab={setSelectedTab} />;
             case 1:
-                return <Capsules wallet={wallet} matchedRate={matchedRate} to={to} toStrike={toStrike} vaultTab={vaultTab} />;
+                return <Capsules wallet={wallet} currency={currency} matchedRate={matchedRate} to={to} toStrike={toStrike} vaultTab={vaultTab} />;
             case 2:
                 return <History wallet={wallet} matchedRate={matchedRate} vaultTab={vaultTab} />;
             case 3:
-                return <Settings wallet={wallet} vaultTab={vaultTab} to={to} toStrike={toStrike} />;
+                return <Settings wallet={wallet} currency={currency} matchedRate={matchedRate} vaultTab={vaultTab} to={to} toStrike={toStrike} />;
             default:
                 return <Vault wallet={wallet} matchedRate={matchedRate} setSelectedTab={setSelectedTab} />;
         }

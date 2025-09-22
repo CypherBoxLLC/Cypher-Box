@@ -45,7 +45,7 @@ export const shortenAddress = (address: string) => {
 
 
 export default function ColdStorage({ route, navigation }: Props) {
-    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
+    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
     const [feePrecalc, setFeePrecalc] = useState({ current: null, slowFee: null, mediumFee: null, fastestFee: null });
     const [usd, setUSD] = useState(inUSD);
     const [sats, setSats] = useState('100K sats  ~$' + usd);
@@ -546,7 +546,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     }
 
     const editAmountClickHandler = () => {
-        navigation.push('EditAmount', {isEdit: true, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData, to, toStrike, vaultSend, setSatsEdit: setSats_, title, capsuleTotal, isBatch });
+        navigation.push('EditAmount', {isEdit: true, currency, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData, to, toStrike, vaultSend, setSatsEdit: setSats_, title, capsuleTotal, isBatch });
     }
 
     const editFeesClickHandler = () => {
@@ -714,29 +714,30 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     const addressHandler = () => {
       console.log('to: ', to)
-        dispatchNavigate('WalletAddresses', {
-          walletID: wallet.getID(),
-          isTouchable: true,
-          wallet, 
-          vaultTab, 
-          utxo, 
-          ids, 
-          maxUSD, 
-          usd, 
-          total, 
-          matchedRate, 
-          capsulesData, 
-          to, 
-          toStrike,
-          vaultSend, 
-          title, 
-          type, 
-          isBatch,
-          capsuleTotal
-        });
+      dispatchNavigate('WalletAddresses', {
+        walletID: wallet.getID(),
+        isTouchable: true,
+        wallet, 
+        vaultTab, 
+        utxo, 
+        ids, 
+        maxUSD, 
+        usd, 
+        total, 
+        matchedRate, 
+        capsulesData, 
+        to, 
+        toStrike,
+        vaultSend, 
+        title, 
+        type, 
+        isBatch,
+        currency,
+        capsuleTotal
+      });
     }
 
-    console.log('to: ', to, toStrike, selectedItem)
+    console.log('to: ', to, toStrike, selectedItem, vaultSend)
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
@@ -929,7 +930,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                   </TouchableOpacity>
                                 </View>
                                 :
-                                  <Text style={{...styles.fees, color: vaultSend ? colors.blueText : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? toStrike : to)}</Text>
+                                  <Text style={{...styles.fees, color: vaultSend ? colors.blueText : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
                               }
                           </View>
                         </View>

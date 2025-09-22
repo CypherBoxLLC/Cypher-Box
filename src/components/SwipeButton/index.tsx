@@ -28,7 +28,7 @@ const H_WAVE_RANGE = SWIPEABLE_DIMENSIONS + 2 * BUTTON_PADDING;
 const H_SWIPE_RANGE = BUTTON_WIDTH - 2 * BUTTON_PADDING - SWIPEABLE_DIMENSIONS;
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
-const SwipeButton = forwardRef(({ onToggle, isLoading }: {onToggle: Function, isLoading: boolean}, ref) => {
+const SwipeButton = forwardRef(({ onToggle, isLoading, title = "Slide to Send" }: {title: string, onToggle: Function, isLoading: boolean}, ref) => {
     // Animated value for X translation
     const X = useSharedValue(0);
     // Toggled State
@@ -153,7 +153,7 @@ const SwipeButton = forwardRef(({ onToggle, isLoading }: {onToggle: Function, is
                 </View>
             :
                 <Animated.Text style={[styles.swipeText, AnimatedStyles.swipeText]}>
-                    Slide to Send
+                    {title}
                 </Animated.Text>
             }
             {/* </Animated.View> */}

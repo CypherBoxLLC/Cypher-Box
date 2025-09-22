@@ -29,7 +29,9 @@ interface Props {
     coldStorageBalanceWithoutSuffix: any;
     vaultAddress: any;
     recommendedFee: any;
-    refWithdrawRBSheet: any
+    refWithdrawRBSheet: any;
+    currencyStrike: any;
+    matchedRateStrike: any;
 }
 
 export default function BottomBar({
@@ -48,6 +50,8 @@ export default function BottomBar({
     coldStorageBalanceWithoutSuffix,
     vaultAddress,
     recommendedFee,
+    currencyStrike,
+    matchedRateStrike
 }: Props) {
     console.log("🚀 ~ hasSavingVault:", hasSavingVault)
     const { isAuth, isStrikeAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, vaultTab, setVaultTab } = useAuthStore();
@@ -56,13 +60,13 @@ export default function BottomBar({
 
     const [index, setIndex] = useState(vaultTab ? 1 : 0);
 
-    useEffect(() => {
-        if(vaultTab) {
-            carouselRef.current?.snapToItem(1, true);
-        } else {
-            carouselRef.current?.snapToItem(0, true);
-        }
-    }, [vaultTab]);
+    // useEffect(() => {
+    //     if(vaultTab && (wallet || coldStorageWallet)) {
+    //         carouselRef.current?.snapToItem(1, true);
+    //     } else if(!vaultTab && (wallet || coldStorageWallet)) {
+    //         carouselRef.current?.snapToItem(0, true);
+    //     }
+    // }, [vaultTab]);
 
     const coldStorageClickHandler = () => {
         setVaultTab(true);
@@ -113,7 +117,7 @@ export default function BottomBar({
                 responseStrike = await createInvoiceStrike({
                     onchain: {
                     },
-                    targetCurrency: "USD"
+                    targetCurrency: strikeUser?.[1]?.currency || "USD"
                 });
             }
 
@@ -181,13 +185,13 @@ export default function BottomBar({
               console.log('amount: ', amount)
               dispatchNavigate('ReviewPayment', {
                   value: amount,
-                  converted: ((Number(matchedRate) || 0) * btc(1) * Number(amount)).toFixed(2),
+                  converted: ((Number(matchedRateStrike) || 0) * btc(1) * Number(amount)).toFixed(2),
                   isSats: true,
                   to: coldStorageWallet ? coldStorageAddress : vaultAddress,
                   fees: 0,
                   total: btc(Number(amount)),
-                  matchedRate: matchedRate,
-                  currency: currency,
+                  matchedRate: matchedRateStrike,
+                  currency: currencyStrike,
                   type: 'bitcoin',
                   feeForBamskki: 0,
                   recommendedFee,
@@ -328,6 +332,7 @@ export default function BottomBar({
         )
     };
 
+    console.log('index: ', index, vaultTab)
     return (
         <>
             {((hasSavingVault && wallet) || coldStorageWallet ) && (isAuth || isStrikeAuth) &&
@@ -342,6 +347,7 @@ export default function BottomBar({
                 sliderWidth={screenWidth}
                 itemWidth={screenWidth}
                 onSnapToItem={(index) => {
+                    console.log('onSnappppp')
                     setIndex(index)
                     setVaultTab(index === 1 && coldStorageWallet ? true : wallet && false);
                 }}

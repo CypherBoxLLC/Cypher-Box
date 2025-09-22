@@ -8,6 +8,7 @@ import { CustomKeyboard, GradientInput } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 export default function CreateInvoice({navigation, route}: any) {
     const {matchedRate, currency, receiveType} = route.params
@@ -42,17 +43,17 @@ export default function CreateInvoice({navigation, route}: any) {
                 bolt11: {
                     amount: {
                         amount: isSats ? Number(usd) : Number(sats),
-                        currency: "USD"
+                        currency: currency || "USD"
                     },
                     expiryInSeconds: 60
                 },
-                targetCurrency: "USD"
+                targetCurrency: currency || "USD"
               });
             const hash = receiveType ? response.hash : response.bolt11?.invoice
             console.log('hash: ', hash)
-            dispatchNavigate('CopyInvoice', {
-                value: isSats ? `Receive ${sats} sats` : `Receive ${sats} USD`,
-                converted: isSats ? `$ ${usd}` : `${usd} sats`,
+            navigation.replace('CopyInvoice', {
+                value: isSats ? `Receive ${sats} sats` : `Receive ${sats} ${currency || 'USD'}`,
+                converted: isSats ? `${getStrikeCurrency(currency || 'USD')} ${usd}` : `${usd} sats`,
                 hash: hash,
                 receiveType
             });
@@ -71,7 +72,7 @@ export default function CreateInvoice({navigation, route}: any) {
     return (
         <ScreenLayout disableScroll showToolbar isBackButton title="Receive with Invoice">
             <View style={styles.main}>
-            <GradientInput isSats={isSats} sats={sats} setSats={setSats} usd={usd} />
+            <GradientInput isSats={isSats} walletInfo={route.params} sats={sats} setSats={setSats} usd={usd} />
             </View>
             <CustomKeyboard
                 title="Create invoice"

@@ -22,7 +22,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 // import { Bitcoin, Transaction, TransactionN } from "@Cypher/assets/svg";
 
-export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }: any) {
+export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, toStrike }: any) {
     const { colors: themeColors } = useTheme();
     const [ids, setIds] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -38,7 +38,7 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
     const [frozen, setFrozen] = useState(
         utxo.filter(out => wallet.getUTXOMetadata(out.txid, out.vout).frozen).map(({ txid, vout }) => `${txid}:${vout}`),
     );
-    const { walletID, coldStorageWalletID, isAuth, isStrikeAuth } = useAuthStore();
+    const { walletID, coldStorageWalletID, isAuth, isStrikeAuth, strikeUser } = useAuthStore();
     const { wallets, saveToDisk, sleep, isElectrumDisabled } = useContext(BlueStorageContext);
 
     const debouncedSaveFronen = useRef(
@@ -94,8 +94,9 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
                     const responseStrike = await createInvoiceStrike({
                         onchain: {
                         },
-                        targetCurrency: "USD"
+                        targetCurrency: strikeUser?.[1].currency || "USD"
                     });
+                    console.warn('responseStrike: ', responseStrike)
                     setBitcoinStrikeHash(responseStrike.onchain?.address)
                 } catch (error) {
                     console.error('Error generating bitcoin address Capsules createInvoiceStrike:', error);
@@ -156,7 +157,7 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
             SimpleToast.show("Before creating a transaction, you must first add a Cold Vault wallet", SimpleToast.SHORT)
         }
         else if (ids.length > 0) {
-            dispatchNavigate('ColdStorage', {wallet, utxo, ids, maxUSD: total, isMaxEdit: true, inUSD: inUSD, total: total, matchedRate, capsulesData, to: sendToAddress, vaultTab, vaultSend: true, title: !vaultTab ? "Transfer To Cold Vault" : undefined, capsuleTotal});
+            dispatchNavigate('ColdStorage', {wallet, currency, utxo, ids, maxUSD: total, isMaxEdit: true, inUSD: inUSD, total: total, matchedRate, capsulesData, to: sendToAddress, vaultTab, vaultSend: true, title: !vaultTab ? "Transfer To Cold Vault" : undefined, capsuleTotal});
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }
@@ -176,7 +177,7 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
         });
         console.log('capsuleTotal: ', capsuleTotal)
         if (ids.length > 0) {
-            dispatchNavigate('ColdStorage', {wallet, capsuleTotal, utxo, ids, isMaxEdit: true, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: selfAddress, vaultTab, vaultSend: true, title: vaultTab ? "Batch Capsules" : undefined, isBatch: true});
+            dispatchNavigate('ColdStorage', {wallet, currency, capsuleTotal, utxo, ids, isMaxEdit: true, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: selfAddress, vaultTab, vaultSend: true, title: vaultTab ? "Batch Capsules" : undefined, isBatch: true});
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }
@@ -201,7 +202,8 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
             capsuleTotal += Number(result)
         });
         if (ids.length > 0) {
-            dispatchNavigate('ColdStorage', {wallet, capsuleTotal, utxo, ids, vaultTab, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP"});
+            dispatchNavigate('EditAmount', { isEdit: false, currency, capsuleTotal, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP" });
+            // dispatchNavigate('ColdStorage', {wallet, currency, capsuleTotal, utxo, ids, vaultTab, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP"});
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }
@@ -238,7 +240,7 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab, toStrike }
     const handleSendBars = () => {
         if (ids.length > 0) {
             const usd = inUSD.toFixed(2);
-            dispatchNavigate('EditAmount', { isEdit: false, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, to, toStrike });
+            dispatchNavigate('EditAmount', { isEdit: false, currency, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, to, toStrike });
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }

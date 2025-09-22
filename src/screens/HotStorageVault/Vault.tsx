@@ -4,6 +4,7 @@ import { Image, InteractionManager, RefreshControl, ScrollView, TouchableOpacity
 import { useFocusEffect } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import Share from 'react-native-share';
+import 'text-encoding';
 import QRCode from "react-native-qrcode-svg";
 import Clipboard from "@react-native-clipboard/clipboard";
 

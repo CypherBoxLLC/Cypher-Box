@@ -4,23 +4,24 @@ import { Shadow } from "react-native-neomorph-shadows"
 import styles from "./styles"
 import { Text } from "@Cypher/component-library";
 import { Bitcoin, LiquidBitCoin, Socked } from "@Cypher/assets/images";
-import { btc } from "@Cypher/helpers/coinosHelper";
+import { btc, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 
 interface Props {
     matchedRate: number
+    currency: any;
     item: any;
     receiveType: boolean;
     onPressHandler(item: any): void;
 }
 
-export default function Items({ matchedRate, receiveType, item, onPressHandler }: Props) {
+export default function Items({ matchedRate, currency, receiveType, item, onPressHandler }: Props) {
 
     const BTCToSats = receiveType ? 0 : (Number(item.amount?.amount) * 100000000).toFixed(2);
     const satsAmount = receiveType ? item.amount.toString().replace('-', '') : BTCToSats.toString().replace('-', ''); // Adjusted for negative sign
     const amountSign = receiveType ? item.amount < 0 ? "-" : "+" : Number(BTCToSats) < 0 ? "-" : "+";
-    const currency = btc(1);
-    const dollarAmount = satsAmount * matchedRate * currency;
+    const currencyBTC = btc(1);
+    const dollarAmount = satsAmount * matchedRate * currencyBTC;
 
     const textColor = {
       color: item.amount < 0 ? colors.red : colors.green,
@@ -63,7 +64,7 @@ export default function Items({ matchedRate, receiveType, item, onPressHandler }
                     }
                     <Text h3 style={{ color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }}>{amountSign+satsAmount} sats</Text>
                 </View>
-                <Text style={StyleSheet.flatten([styles.text, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }])}>{'$'+dollarAmount.toFixed(2)}</Text>
+                <Text style={StyleSheet.flatten([styles.text, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }])}>{getStrikeCurrency(currency)}{amountSign+dollarAmount.toFixed(2)}</Text>
                 <Shadow
                     inner
                     useArt

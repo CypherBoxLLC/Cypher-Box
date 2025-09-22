@@ -4,19 +4,22 @@ import GradientCard from "../GradientCard";
 import styles from "./styles";
 import { colors } from "@Cypher/style-guide";
 import { Input, Text } from "@Cypher/component-library";
+import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
     sats: string;
     setSats(val: string): void;
     usd: string;
     isSats: boolean;
+    walletInfo: any
 }
 
 export default function GradientInput({
     sats,
     setSats,
     usd,
-    isSats
+    isSats,
+    walletInfo
 }: Props) {
     return (
         <View>
@@ -30,10 +33,10 @@ export default function GradientInput({
                         textInputStyle={styles.input}
                     />
                 </GradientCard>
-                <Text style={isSats ? styles.btc : styles.dollar}>{`${isSats ? 'sats' : '$'}`}</Text>
+                <Text style={isSats ? styles.btc : styles.dollar}>{`${isSats ? 'sats' : getStrikeCurrency(walletInfo?.currency || 'USD')}`}</Text>
             </View>
             {isSats ?
-                <Text style={styles.inDollar}>${usd}</Text>
+                <Text style={styles.inDollar}>{getStrikeCurrency(walletInfo?.currency || 'USD')}{usd}</Text>
                 :
                 <Text style={styles.inDollar}>{usd} sats</Text>
             }

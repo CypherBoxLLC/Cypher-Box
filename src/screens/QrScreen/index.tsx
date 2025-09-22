@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Image, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import Clipboard from '@react-native-clipboard/clipboard';
+import 'text-encoding';
 import QRCode from 'react-native-qrcode-svg';
 import Share from 'react-native-share';
 
@@ -13,6 +14,7 @@ import ImageText from "@Cypher/components/ImageText";
 import { GradientCard, ImageTextVertical } from "@Cypher/components";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import useAuthStore from "@Cypher/stores/authStore";
 
 interface Props {
     route: any;
@@ -22,6 +24,7 @@ export default function QrScreen({ route }: Props) {
     const { type, receiveType } = route.params;
 
     const [hash, setHash] = useState('');
+    const { strikeUser } = useAuthStore();
     const qrCode = useRef();
     const base64QrCodeRef = useRef('');
 
@@ -39,7 +42,7 @@ export default function QrScreen({ route }: Props) {
             }) : await createInvoiceStrike({
                 onchain: {
                 },
-                targetCurrency: "USD"
+                targetCurrency: strikeUser?.[1]?.currency || "USD"
             });
             const hash = receiveType ? response.hash : response.onchain?.address
             setHash(hash);
