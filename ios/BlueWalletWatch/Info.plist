@@ -26,7 +26,7 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>io.cypherbox.llc</string>
+	<string>io.cypherbox.btc</string>
 	<key>WKWatchKitApp</key>
 	<true/>
 </dict>

@@ -8,7 +8,7 @@ import WidgetCommunication from './WidgetCommunication';
 const PREFERRED_CURRENCY_STORAGE_KEY = 'preferredCurrency';
 const EXCHANGE_RATES_STORAGE_KEY = 'exchangeRates';
 const LAST_UPDATED = 'LAST_UPDATED';
-const GROUP_IO_BLUEWALLET = 'group.io.cypherbox.llc';
+const GROUP_IO_BLUEWALLET = 'group.io.cypherbox.btc';
 const BTC_PREFIX = 'BTC_';
 
 export interface CurrencyRate {

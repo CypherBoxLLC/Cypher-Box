@@ -73,9 +73,9 @@ android {
 
     compileSdkVersion rootProject.ext.compileSdkVersion
 
-    namespace "io.cypherbox.llc"
+    namespace "io.cypherbox.btc"
     defaultConfig {
-        applicationId "io.cypherbox.llc"
+        applicationId "io.cypherbox.btc"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 3
