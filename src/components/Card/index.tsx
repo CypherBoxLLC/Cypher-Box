@@ -100,11 +100,21 @@ export default function Card({ onPress,
                         <Text h2 bold style={styles.check}>
                             {title}
                         </Text>
-                        <Image
-                            source={receiveType ? CoinOSSmall : Strike2}
-                            style={styles.blink}
-                            resizeMode="contain"
-                        />
+                        {/* {wallet==='STRIKE' ? */}
+                            <Image
+                                source={receiveType ? CoinOSSmall : Strike2}
+                                style={styles.blink}
+                                resizeMode="contain"
+                            />
+                        {/* :
+                            <Image
+                                source={CoinOSSmall}
+                                style={styles.blink}
+                                resizeMode="contain"
+                            />
+                        } */}
+                        
+                        
                     </View>
                     <View style={styles.view}>
                         <Text h2 bold style={styles.sats}>
