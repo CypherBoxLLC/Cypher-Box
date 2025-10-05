@@ -35,6 +35,8 @@ export type AuthStateType = {
     strikeToken: string | null;
     reserveStrikeAmount: number;
     withdrawStrikeThreshold: any | null;
+    matchedRateStrike: number;
+    setMatchedRateStrike: (state: number) => void;
     setStrikeMe: (state: any) => void;
     setStrikeUser: (state: any) => void;
     setAllBTCWallets: (state: string[]) => void;
@@ -59,8 +61,8 @@ const createAuthStore = (
     vaultTab: false,
     userCreds: undefined,
     coldStorageWalletID: undefined,
-    FirstTimeLightning: true,
-    setFirstTimeLightning: (state: boolean) =>set ({FirstTimeLightning: state}),
+    matchedRateStrike: 0,
+    setMatchedRateStrike: (state: number) => set({ matchedRateStrike: state }),
     setAllBTCWallets: (state: string[]) => set({ allBTCWallets: state }),
     setAuth: (state: boolean | undefined) => set({ isAuth: state }),
     setVaultTab: (state: boolean) => set({ vaultTab: state }),
@@ -102,6 +104,7 @@ const createAuthStore = (
             strikeUser: null,
             walletTab: false,
             strikeToken: null,
+            matchedRateStrike: 0,
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'STRIKE'),
             isStrikeAuth: undefined,
             reserveStrikeAmount: 100000,

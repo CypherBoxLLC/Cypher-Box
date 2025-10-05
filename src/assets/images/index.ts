@@ -15,6 +15,7 @@ export { default as CoinOS } from './coinos.png';
 export { default as CoinOSSmall } from './coinossmall.png';
 export { default as Sats } from './sats.png';
 export { default as Currency } from './currency.png';
+export { default as CurrencyEUR } from './currencyEUR.png';
 export { default as Cancel } from './cancel.png';
 export { default as Share2 } from './share2.png';
 export { default as Time } from './time.png';

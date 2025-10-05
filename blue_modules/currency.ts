@@ -8,7 +8,7 @@ import WidgetCommunication from './WidgetCommunication';
 const PREFERRED_CURRENCY_STORAGE_KEY = 'preferredCurrency';
 const EXCHANGE_RATES_STORAGE_KEY = 'exchangeRates';
 const LAST_UPDATED = 'LAST_UPDATED';
-const GROUP_IO_BLUEWALLET = 'group.io.cypherbox.llc';
+const GROUP_IO_BLUEWALLET = 'group.io.cypherbox.btc';
 const BTC_PREFIX = 'BTC_';
 
 export interface CurrencyRate {
@@ -172,6 +172,22 @@ async function mostRecentFetchedRate(): Promise<CurrencyRate> {
   };
 }
 
+async function fetchedRate(fiatUnit: FiatUnitType): Promise<CurrencyRate> {
+  // const currencyInformation = JSON.parse((await AsyncStorage.getItem(EXCHANGE_RATES_STORAGE_KEY)) || '{}');
+  const exchangeRate = await getFiatRate(fiatUnit.endPointKey);
+
+  const formatter = new Intl.NumberFormat(fiatUnit.locale, {
+    style: 'currency',
+    currency: fiatUnit.endPointKey,
+  });
+
+  // const rate = currencyInformation[BTC_PREFIX + fiatUnit.endPointKey];
+  return {
+    LastUpdated: new Date(),
+    Rate: exchangeRate ? formatter.format(exchangeRate) : '...',
+  };
+}
+
 function satoshiToBTC(satoshi: number): string {
   return new BigNumber(satoshi).dividedBy(100000000).toString(10);
 }
@@ -190,6 +206,32 @@ function fiatToBTC(fiatFloat: number): string {
 
   const btcAmount = new BigNumber(fiatFloat).dividedBy(exchangeRate);
   return btcAmount.toFixed(8);
+}
+
+async function convertFiatToUSD(amount: number, fiatCurrency: string): number {
+  console.log('amount: ', amount, ', fiatCurrency: ', fiatCurrency);
+  // const currencyInformation = JSON.parse((await AsyncStorage.getItem(EXCHANGE_RATES_STORAGE_KEY)) || '{}');
+  // const rates = await AsyncStorage.getItem(EXCHANGE_RATES_STORAGE_KEY);
+  // const currencyInformation = rates ? JSON.parse(rates) : { LAST_UPDATED_ERROR: false };
+  const exchangeRate = await getFiatRate(fiatCurrency);
+  // const exchangeRateKey = BTC_PREFIX + fiatCurrency;
+  // const exchangeRate = currencyInformation[exchangeRateKey];
+  // console.log('exchangeRate: ', currencyInformation, exchangeRate, exchangeRateKey);
+  if (typeof exchangeRate !== 'number') {
+    throw new Error('Exchange rate not available');
+  }
+
+  const usdExchangeRateKey = BTC_PREFIX + FiatUnit.USD.endPointKey;
+  const usdExchangeRate = exchangeRates[usdExchangeRateKey];
+
+  if (typeof usdExchangeRate !== 'number') {
+    throw new Error('USD exchange rate not available');
+  }
+  console.log('getFiatRate rate: ', amount, exchangeRate, usdExchangeRate);
+  //convert any currency to USD
+  const usdAmount = new BigNumber(amount).dividedBy(exchangeRate).multipliedBy(usdExchangeRate);
+  console.log('usdAmount: ', Number(usdAmount));
+  return usdAmount.toNumber();
 }
 
 function getCurrencySymbol(): string {
@@ -213,6 +255,7 @@ export {
   initCurrencyDaemon,
   satoshiToLocalCurrency,
   fiatToBTC,
+  convertFiatToUSD,
   satoshiToBTC,
   BTCToLocalCurrency,
   setPreferredCurrency,
@@ -226,5 +269,6 @@ export {
   EXCHANGE_RATES_STORAGE_KEY,
   LAST_UPDATED,
   mostRecentFetchedRate,
+  fetchedRate,
   isRateOutdated,
 };

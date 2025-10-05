@@ -16,9 +16,10 @@ import Animated, {
     useAnimatedStyle,
 } from "react-native-reanimated";
 import { resetAndNavigate } from "@Cypher/helpers/navigation";
+import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 export default function TransactionBroadCast({navigation, route}: any) {
-    const {matchedRate, type, value, converted, isSats, item, receiveType } = route?.params;
+    const {matchedRate, type, value, converted, isSats, item, receiveType, currency = 'USD' } = route?.params;
     const amountSat = isSats ? value : converted;
     const amountUSD = isSats ? converted : value
     const [response, setResponse] = useState(false);
@@ -51,12 +52,13 @@ export default function TransactionBroadCast({navigation, route}: any) {
     }, [progress]);
 
     const onPressClickHandler = () => {
-        if(receiveType){
+        if(receiveType == true || receiveType == false){
             dispatchNavigate('HomeScreen');            
         } else {
             resetAndNavigate('HomeScreen', 'Invoice', {
                 item: item,
-                matchedRate
+                matchedRate,
+                currency,
             })
         }
         // dispatchNavigate('CheckingAccount', {matchedRate});
@@ -85,7 +87,7 @@ export default function TransactionBroadCast({navigation, route}: any) {
                             <Animated.View style={animatedStyle}>
                                 <Text semibold center style={styles.sats}>{amountSat} sats</Text>
                                 <View style={styles.extra} />
-                                <Text subHeader bold center>${amountUSD}</Text>
+                                <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                                 <View style={styles.extra} />
                                 <Text h2 bold center>{to}</Text>
                                 <GradientText style={styles.gradientText}>Estimated time: ~2hr</GradientText>

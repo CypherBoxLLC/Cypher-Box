@@ -69,6 +69,7 @@ export default function CoinosWallet({
                     <Card
                         balance={balance}
                         convertedRate={convertedRate}
+                        receiveType={true}
                         reserveAmount={reserveAmount}
                         withdrawThreshold={withdrawThreshold}
                         onPress={checkingAccountClickHandler}

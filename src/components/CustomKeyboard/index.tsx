@@ -4,7 +4,7 @@ import styles from "./styles";
 import GradientTab from "../GradientTab";
 import LinearGradient from "react-native-linear-gradient";
 import GradientButton from "../GradientButton";
-import { Cancel, Currency, CurrencyWhite, Sats } from "@Cypher/assets/images";
+import { Cancel, Currency, CurrencyWhite, CurrencyEUR, Sats } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
@@ -24,11 +24,11 @@ interface Props {
     isGradient?: boolean;
 }
 
-export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, colors_ = [colors.pink.extralight, colors.pink.default], isGradient = true }: Props) {
+export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], isGradient = true }: Props) {
     const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState(prevSats || '');
-    const currency = btc(1);
+    const currencyBTC = btc(1);
 
     useEffect(() => {
         if (sats.length) {
@@ -74,7 +74,8 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
 
     return (
         <View style={styles.container}>
-            <GradientTab tabColor_={colors_} firstTabImg={Sats} secondTabImg={isSats ? Currency : CurrencyWhite} tab1="Sats" tab2="USD" isSats={isSats} setIsSats={setIsSats} />
+            {/*Need to change the secondTabImg according to Strike */}
+            <GradientTab tabColor_={colors_} firstTabImg={Sats} secondTabImg={currency === 'EUR' ? CurrencyEUR : isSats ? Currency : CurrencyWhite} tab1="Sats" tab2={currency || "USD"} isSats={isSats} setIsSats={setIsSats} />
             <LinearGradient
                 start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
                 colors={colors_}

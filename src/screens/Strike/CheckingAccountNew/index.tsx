@@ -22,17 +22,17 @@ export default function CheckingAccountNew({ navigation, route }: any) {
     const renderView = useCallback(() => {
         switch (selectedTab) {
             case 0:
-                return <Account matchedRate={matchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
+                return <Account currency={currency} matchedRate={matchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
             case 1:
-                return <Threshold matchedRate={matchedRate} receiveType={receiveType} />;
+                return <Threshold currency={currency} matchedRate={matchedRate} receiveType={receiveType} />;
             case 2:
-                return <History matchedRate={matchedRate} receiveType={receiveType} />;
+                return <History currency={currency} matchedRate={matchedRate} receiveType={receiveType} />;
             // case 3:
             //     return <Settings />;
             default:
-                return <Account matchedRate={matchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
+                return <Account currency={currency} matchedRate={matchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
         }
-    }, [selectedTab, vaultTab, wallet, matchedRate, receiveType]);
+    }, [selectedTab, vaultTab, wallet, matchedRate, receiveType, currency]);
 
     return (
         <ScreenLayout showToolbar disableScroll title={'Checking Account'}>

@@ -124,7 +124,7 @@ export default function SendScreen({ navigation, route }: any) {
                     type: 'lightening',
                     description: response?.description,
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
+                    currency: info?.currency,
                     recommendedFee: recommendedFee || 0
                 });    
             }
@@ -149,7 +149,7 @@ export default function SendScreen({ navigation, route }: any) {
                 fees: 0,
                 type: info?.fiatType,
                 matchedRate: info?.matchedRate,
-                currency: info?.curreny,
+                currency: info?.currency,
                 recommendedFee,
                 receiveType: info?.receiveType
             });
@@ -169,7 +169,7 @@ export default function SendScreen({ navigation, route }: any) {
                     fees: 0,
                     type: 'lightening',
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
+                    currency: info?.currency,
                     recommendedFee,
                     receiveType: info?.receiveType
                 });
@@ -210,7 +210,7 @@ export default function SendScreen({ navigation, route }: any) {
                     fees: 0,
                     total: info?.total,
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
+                    currency: info?.currency,
                     type: 'bitcoin',
                     feeForBamskki,
                     recommendedFee,
@@ -238,7 +238,7 @@ export default function SendScreen({ navigation, route }: any) {
                     fees: 0,
                     type: 'username',
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
+                    currency: info?.currency,
                     recommendedFee,
                     receiveType: info?.receiveType
                 });
@@ -273,7 +273,7 @@ export default function SendScreen({ navigation, route }: any) {
                     to: info?.isWithdrawal ? info?.to : sender,
                     fees: 0,
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
+                    currency: info?.currency,
                     type: 'liquid',
                     feeForBamskki,
                     recommendedFee,
@@ -337,9 +337,10 @@ export default function SendScreen({ navigation, route }: any) {
                 isSats: true,
                 to: info?.isWithdrawal ? info?.to : sender,
                 fees: 0,
+                isMaxUSDSelected: true,
                 total: info?.total,
                 matchedRate: info?.matchedRate,
-                currency: info?.curreny,
+                currency: info?.currency,
                 type: 'bitcoin',
                 feeForBamskki,
                 recommendedFee,
@@ -354,6 +355,7 @@ export default function SendScreen({ navigation, route }: any) {
     }
 
     console.log('senderrr: ', sender, isLoading || ((!startsWithLn(sender)) ? (sats?.length == 0 || sender?.length == 0) : (sender?.length == 0)))
+    console.log('info: ', info)
     return (
         <>
             {isScannerActive ? (
@@ -383,6 +385,7 @@ export default function SendScreen({ navigation, route }: any) {
                                 usd={usd.length == 0 ? '0' : usd}
                                 _colors={[colors.pink.extralight, colors.pink.default]}
                                 showTitle={false}
+                                currency={info?.currency}
                             />
 
                             {info?.isWithdrawal && 

@@ -1,7 +1,7 @@
 import { Text } from "@Cypher/component-library";
 import { GradientCard, GradientText } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { btc, formatNumber } from "@Cypher/helpers/coinosHelper";
+import { btc, formatNumber, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import React, { useState } from "react";
@@ -111,10 +111,12 @@ const reserveData = [
 
 export default function Threshold({
   matchedRate,
-  receiveType
+  receiveType,
+  currency,
 }: {
   matchedRate: any;
   receiveType: boolean;
+  currency: any
 }) {
   const { withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount, setWithdrawThreshold, setWithdrawStrikeThreshold, setReserveStrikeAmount, setReserveAmount } = useAuthStore();
 
@@ -124,7 +126,7 @@ export default function Threshold({
   const [isModalVisible, setModalVisible] = useState(false);
   const [isModalRAVisible, setModalRAVisible] = useState(false);
   const [value, setValue] = useState(receiveType ? Number(withdrawThreshold) : Number(withdrawStrikeThreshold));
-  const currency = btc(1);
+  const currencyBTC = btc(1);
 
   const selectClickHandler = (val: number) => {
     receiveType ? setWithdrawThreshold(val) : setWithdrawStrikeThreshold(val);
@@ -145,7 +147,8 @@ export default function Threshold({
       titleBtn: index == 0 ? 'Set Threshold' : 'Set Reserve Amount',
       onSelect: onSelect,
       index,
-      matchedRate
+      matchedRate,
+      currency
     });
   }
 
@@ -284,7 +287,7 @@ export default function Threshold({
                     <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                       onPress={() => selectClickHandler(item?.sats)}>
                       <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                      <Text style={{ fontSize: 18, marginStart: 30 }}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
+                      <Text style={{ fontSize: 18, marginStart: 30 }}>~{getStrikeCurrency(currency || 'USD')}{(item?.sats * matchedRate * currencyBTC).toFixed(2)}</Text>
                     </TouchableOpacity>
                   )
                 })}
@@ -292,7 +295,7 @@ export default function Threshold({
             </GradientCard>
           </View>
         </Modal>
-        <Text center style={styles.usd}>${(value * matchedRate * currency).toFixed(2)}</Text>
+        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(value * matchedRate * currencyBTC).toFixed(2)}</Text>
         <TouchableOpacity onPress={() => customizeClickHandler(0)}>
           <GradientText style={styles.gradientText}>Customize</GradientText>
         </TouchableOpacity>
@@ -326,7 +329,7 @@ export default function Threshold({
           </GradientCard>
           <Text style={styles.text}>Sats</Text>
         </View>
-        <Text center style={styles.usd}>${(reserveAmt * matchedRate * currency).toFixed(2)}</Text>
+        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(reserveAmt * matchedRate * currencyBTC).toFixed(2)}</Text>
         <TouchableOpacity onPress={() => customizeClickHandler(1)}>
           <GradientText style={styles.gradientText}>Customize</GradientText>
         </TouchableOpacity>
@@ -340,7 +343,7 @@ export default function Threshold({
                     <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                       onPress={() => selectRAClickHandler(item?.sats)}>
                       <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                      <Text style={{ fontSize: 18, marginStart: 30 }}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
+                      <Text style={{ fontSize: 18, marginStart: 30 }}>~{getStrikeCurrency(currency || 'USD')}{(item?.sats * matchedRate * currencyBTC).toFixed(2)}</Text>
                     </TouchableOpacity>
                   )
                 })}

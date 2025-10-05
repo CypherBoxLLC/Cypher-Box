@@ -8,7 +8,7 @@ import { CoinOSSmall, Refresh, Strike2 } from "@Cypher/assets/images";
 import CircleTimer from "../CircleTimer";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
-import { SATS } from "@Cypher/helpers/coinosHelper";
+import { getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
     wallet: any;
@@ -19,8 +19,10 @@ interface Props {
     currency: any;
     balance: any;
     convertedRate: any;
+    strikeCurrency: any;
+    matchedRateStrike: any;
 }
-export default function CircularView({ matchedRate, wallet, refRBSheet, refSendRBSheet, setReceiveType, currency, balance, convertedRate }: Props) {
+export default function CircularView({ matchedRate, strikeCurrency, matchedRateStrike, wallet, refRBSheet, refSendRBSheet, setReceiveType, currency, balance, convertedRate }: Props) {
     const { strikeUser, reserveAmount, withdrawThreshold, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
 // {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ $${(Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2)}`}
@@ -28,7 +30,7 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
     const checkingAccount = {
         first: {
             value: `${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats`,
-            convertedValue: `~  $${(Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2)}`,
+            convertedValue: `~  ${getStrikeCurrency(strikeCurrency || 'USD')}${(Number(strikeUser?.[0]?.available || 0) * Number(matchedRateStrike || 0)).toFixed(2)}`,
             // convertedValue: '~  $750',
             image: Strike2,
         },
@@ -51,7 +53,7 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
 
 
     const clickHandler = (value: boolean) => {
-        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: value, balance: value == true ? balance : Math.round(Number(strikeUser?.[0]?.available || 0) * SATS), converted: value == true ? convertedRate : (Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2), currency, reserveAmount: value == true ? reserveAmount : Number(reserveStrikeAmount), withdrawThreshold: value == true ? withdrawThreshold : Number(withdrawStrikeThreshold) });
+        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate: value == true ? matchedRate : matchedRateStrike, receiveType: value, balance: value == true ? balance : Math.round(Number(strikeUser?.[0]?.available || 0) * SATS), converted: value == true ? convertedRate : (Number(strikeUser?.[0]?.available || 0) * matchedRateStrike).toFixed(2), currency: value == true ? currency : strikeCurrency, reserveAmount: value == true ? reserveAmount : Number(reserveStrikeAmount), withdrawThreshold: value == true ? withdrawThreshold : Number(withdrawStrikeThreshold) });
         // dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: value });
     }
 

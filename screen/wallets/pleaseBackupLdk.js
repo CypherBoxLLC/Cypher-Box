@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { View, useWindowDimensions, StyleSheet, BackHandler, ScrollView } from 'react-native';
+import 'text-encoding';
 import QRCode from 'react-native-qrcode-svg';
 import { BlueCopyTextToClipboard, BlueSpacing20, BlueTextCentered } from '../../BlueComponents';
 import navigationStyle from '../../components/navigationStyle';

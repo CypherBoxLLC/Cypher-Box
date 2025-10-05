@@ -44,7 +44,7 @@ import { startsWithLn } from "../Send";
 import screenHeight from "@Cypher/style-guide/screenHeight";
 import Carousel from "react-native-snap-carousel";
 import screenWidth from "@Cypher/style-guide/screenWidth";
-import { mostRecentFetchedRate } from "../../../blue_modules/currency";
+import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../blue_modules/currency";
 import { authorize } from "react-native-app-auth";
 import { getBalances } from "@Cypher/api/strikeAPIs";
 import ReceivedListNew from "./ReceivedListNew";
@@ -55,6 +55,8 @@ import CreateLightningAccount from "./CreateLightningAccount";
 import WalletsView from "./WalletsView";
 import SendListNew from "./SendListNew";
 import WithdrawList from "./WithdrawList";
+import { FiatUnit, FiatUnitType } from "models/fiatUnit";
+import untypedFiatUnit from '../../../models/fiatUnits.json';
 
 interface Props {
   route: any;
@@ -117,7 +119,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab } = useAuthStore();
+  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike } = useAuthStore();
   const A = require('../../../blue_modules/analytics');
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -129,7 +131,6 @@ export default function HomeScreen({ route }: Props) {
   console.log("🚀 ~ convertedRate:", convertedRate)
   const [convertedStrikeRate, setConvertedStrikeRate] = useState(0);
   const [matchedRate, setMatchedRate] = useState(0);
-  const [matchedStrikeRate, setMatchedStrikeRate] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [payment, setPayments] = useState([])
   const [wt, setWt] = useState<number>();
@@ -150,6 +151,7 @@ export default function HomeScreen({ route }: Props) {
   const [isWalletLoaded, setIsWalletLoaded] = useState(true);
   const [isColdWalletLoaded, setIsColdWalletLoaded] = useState(true);
   const [receiveType, setReceiveType] = useState(false);
+  const [strikeConvertedBalance, setStrikeConvertedBalance] = useState(0);
   const refRBSheet = useRef<any>(null);
   const refSendRBSheet = useRef<any>(null);
   const refWithdrawRBSheet = useRef<any>(null);
@@ -250,7 +252,7 @@ export default function HomeScreen({ route }: Props) {
         handleUser();
         loadPayments();
       } else {
-        const rates = await exchangeRate();
+        const rates = await exchangeRecentRate();
         if (rates && rates?.Rate) {
           const numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
           setMatchedRate(numericAmount);
@@ -308,8 +310,29 @@ export default function HomeScreen({ route }: Props) {
               SimpleToast.show("Authorization expired. Please login again to strike account", SimpleToast.SHORT)
               clearStrikeAuth();
             } else if (balances) {
+              console.log('balances: ', balances)
               setStrikeUser(balances);
               setStrikeBalance((balances?.[0]?.available * SATS) || 0);
+              const matchedCurrency = untypedFiatUnit?.[balances?.[1]?.currency];
+              console.log('matchedCurrency: ', matchedCurrency, balances)
+              const rates = await exchangeRate(matchedCurrency);
+              console.log('rates: ', rates)
+              let numericAmount = 0
+              if (rates && rates?.Rate) {
+                numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
+                setMatchedRateStrike(numericAmount);
+              }
+              const strikeAmount = async () => {
+                const rate = await convertFiatToUSD(Number((balances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1)), balances?.[1]?.currency || 'USD') || 0
+                console.log('raterate strikeAmount: ', rate, rates)
+                return rate
+              }
+
+              
+              strikeAmount().then((result) => {
+                setStrikeConvertedBalance(result);
+              })
+
             }
           }, 1000);
         }
@@ -507,8 +530,13 @@ export default function HomeScreen({ route }: Props) {
     }
   };
 
-  const exchangeRate = async () => {
+  const exchangeRecentRate = async () => {
     const rates = await mostRecentFetchedRate();
+    return rates
+  }
+
+  const exchangeRate = async (fiatUnit: FiatUnitType) => {
+    const rates = await fetchedRate(fiatUnit);
     return rates
   }
 
@@ -553,7 +581,7 @@ export default function HomeScreen({ route }: Props) {
               <BalanceView navigate={onBalanceViewClick}
                 // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                 balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
-                convertedRate={`$${((Number(strikeUser?.[0]?.available || 0) * (Number(matchedRate) || 0)) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}`}
+                convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}`}
               />
               
             </>
@@ -621,6 +649,8 @@ export default function HomeScreen({ route }: Props) {
                 coldStorageBalanceWithoutSuffix={coldStorageBalanceWithoutSuffix}
                 coldStorageWallet={coldStorageWallet}
                 currency={currency}
+                currencyStrike={strikeUser?.[1]?.currency || 'USD'}
+                matchedRateStrike={Number(matchedRateStrike || 0)}
                 hasColdStorage={hasColdStorage}
                 hasSavingVault={hasSavingVault}
                 matchedRate={matchedRate}
@@ -656,7 +686,15 @@ export default function HomeScreen({ route }: Props) {
         }}
       >
         {/* <ReceivedList refRBSheet={refRBSheet} receiveType={receiveType} matchedRate={matchedRate} currency={currency} /> */}
-        <ReceivedListNew setReceivedListSecondTab={setReceivedListSecondTab} refRBSheet={refRBSheet} receiveType={receiveType} matchedRate={matchedRate} currency={currency} wallet={wallet} coldStorageWallet={coldStorageWallet} />
+        <ReceivedListNew 
+          setReceivedListSecondTab={setReceivedListSecondTab} 
+          refRBSheet={refRBSheet} 
+          receiveType={receiveType} 
+          matchedRate={matchedRateStrike} 
+          currency={strikeUser?.[1]?.currency || 'USD'} 
+          wallet={wallet} 
+          coldStorageWallet={coldStorageWallet} 
+        />
       </RBSheet>
 
       <RBSheet
@@ -681,7 +719,7 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <SendListNew refRBSheet={refSendRBSheet} receiveType={receiveType} matchedRate={matchedRate} currency={currency} wallet={wallet} coldStorageWallet={coldStorageWallet} />
+        <SendListNew refRBSheet={refSendRBSheet} receiveType={receiveType} matchedRate={matchedRateStrike} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
       </RBSheet>
 
       <RBSheet
@@ -713,6 +751,8 @@ export default function HomeScreen({ route }: Props) {
           matchedRate={matchedRate} 
           currency={currency} 
           wallet={wallet} 
+          currencyStrike={strikeUser?.[1]?.currency || 'USD'}
+          matchedRateStrike={Number(matchedRateStrike || 0)}
           recommendedFee={recommendedFee}
           coldStorageAddress={coldStorageAddress}
           vaultAddress={vaultAddress}

@@ -83,6 +83,7 @@ const WalletAddresses = () => {
     capsulesData, 
     vaultSend, 
     title, 
+    currency,
     isBatch,
     capsuleTotal,
 } = useRoute().params;
@@ -176,6 +177,7 @@ const WalletAddresses = () => {
         title, 
         type, 
         isBatch,
+        currency,
         capsuleTotal
       });
     } else {
