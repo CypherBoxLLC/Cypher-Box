@@ -11,7 +11,9 @@ export type AuthStateType = {
     reserveAmount: number;
     coldStorageWalletID: string | undefined;
     vaultTab: boolean;
+    FirstTimeLightning: boolean;
     userCreds: {email: string, password: string, isRememberMe: boolean} | undefined;
+    setFirstTimeLightning: (state: boolean) => void;
     setUserCreds: (state: {email: string, password: string, isRememberMe: boolean} | undefined) => void;
     setVaultTab: (state: boolean) => void;
     setReserveAmount: (state: number) => void;

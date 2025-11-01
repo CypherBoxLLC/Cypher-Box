@@ -11,9 +11,10 @@ import { GradientView } from "@Cypher/components";
 interface Props {
     balance: any
     convertedRate: any
+    navigate: any
 }
 
-export default function BalanceView({ balance, convertedRate }: Props) {
+export default function BalanceView({ balance, convertedRate, navigate}: Props) {
     return (
         <View style={[styles.innerContainer]} >
             <Shadow
@@ -27,6 +28,14 @@ export default function BalanceView({ balance, convertedRate }: Props) {
                 <Text bold style={styles.priceusd} >
                     {convertedRate}
                 </Text>
+
+                <TouchableOpacity
+                onPress={navigate}
+                style={{flex:1, flexDirection: 'row', height: 50, width: 100, alignContent: 'flex-end', alignItems: 'flex-end', justifyContent: 'flex-end'}}>
+                <Text h4 bold style={{color: colors.pink.light, fontSize: 20}}>+</Text>
+                <Text h4 semibold style={{ marginStart: 5, color: colors.pink.light }}>Add Account</Text>
+                </TouchableOpacity>
+
                 
                 <Shadow
                     inner

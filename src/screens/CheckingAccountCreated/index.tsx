@@ -10,10 +10,11 @@ import LightningVaultCreate from "@Cypher/components/LightningVaultCreate/Lightn
 
 export default function CheckingAccountCreated() {
     const [isValidate, setIsValidate] = useState(false);
-    const { vaultTab, strikeToken, strikeMe } = useAuthStore();
+    const { vaultTab, strikeToken, strikeMe, FirstTimeLightning, setFirstTimeLightning} = useAuthStore();
 
     const nextClickHandler = () => {
         console.log('next click');
+        setFirstTimeLightning(false)
         if(vaultTab){
             dispatchReset('HomeScreen');
         } else {
