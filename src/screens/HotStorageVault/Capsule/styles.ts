@@ -34,8 +34,8 @@ export default StyleSheet.create<Style>({
         marginTop: 5,
     },
     tab: {
-        width: '43%',
-        height: 12,
+        width: '46%',
+        height: 14,
         borderRadius: 4.5,
         borderWidth: 1,
         borderColor: colors.white,
@@ -43,15 +43,17 @@ export default StyleSheet.create<Style>({
         alignContent: 'center',
         alignItems: 'center',
         marginEnd: 10,
+        marginStart: 10,
         marginBottom: 10,
         marginTop: 5,
+        paddingHorizontal: 2
     },
     progressbar: {
-        height: 6,
-        //width: undefined,
+        //height: 6,
+        width: '99%',
         marginHorizontal: 0,
         justifyContent: 'center',
-        alignSelf: 'center',
+        alignSelf: 'center'
         
     },
     coin: {

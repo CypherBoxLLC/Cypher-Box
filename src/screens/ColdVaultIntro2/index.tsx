@@ -50,7 +50,7 @@ export default function ColdVaultIntro2() {
               {/* {'\n\n'}
               Your Hot and Cold Vaults can work in conjunction. You can use your Hot Vault as a heating funnel that melts your small capsules and transfer them to your Cold Vault as one large cold capsule thereby reducing future fee costs (UTXO consolidation). */}
             </Text>
-            <Image source={Cold2} style={{ marginTop: 25, width: 330, height: 190, resizeMode: "contain"}} />
+            <Image source={Cold2} style={{ marginTop: 25, width: 320, height: 190, resizeMode: "contain"}} />
           </View>
           <Button text="Connect Device" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
         </View>

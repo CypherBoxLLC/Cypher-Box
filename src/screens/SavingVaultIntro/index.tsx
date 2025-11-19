@@ -62,7 +62,7 @@ export default function SavingVaultIntro() {
                         To create a Hot Vault, you first need to generate your keys: your phone will  create the private key, encrypt it, and store it in its memory. It will also create a backup copy (12 words), just in case you lose access to your phone.
                         
                         {'\n\n'}
-                        Caution: while it offers a much more secure storage environment than the Lightning Account, the keys to your Hot Vault are generated and stored on an internet-connect device. As your wealth and technical skills increase, you should think about investing in an offline hardware signing device for enhanced security.
+                        Caution: while it offers a much more secure storage environment than the Lightning Account, the keys to your Hot Vault are generated and stored on an internet-connect device. As your balance and technical skills increase, you should think about investing in an offline hardware signing device for enhanced security.
                     </Text>
 
                     <Image

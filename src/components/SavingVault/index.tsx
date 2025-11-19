@@ -17,6 +17,7 @@ import ProgressBar from "../ProgressBar";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import VaultCapsules from "../VaultCapsules";
 
 interface Props extends TouchableOpacityProps {
     isVault?: boolean;
@@ -87,7 +88,8 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
 
                     <View style={styles.tabs}>
                         {Array(utxo.length > 5 ? 5 : utxo.length).fill(0).map((item, i) => (
-                            <ProgressBar key={item} image={vaultTabCheck ? ProgressBarColdStorage : ProgressBar5} />
+                            <VaultCapsules item = {utxo[i].amount}></VaultCapsules>
+                            // <ProgressBar key={item} image={vaultTabCheck ? ProgressBarColdStorage : ProgressBar5} />
                         ))}
                         {Array(emptyUTXO).fill(0).map((item, i) => (
                             <View key={item} style={styles.tab} />

@@ -26,7 +26,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
     const [wallets, setWallets] = useState([]);
     const [password, setPassword] = useState();
     const [loading, setLoading] = useState(false);
-    const { setColdStorageWalletID } = useAuthStore();
+    const { setColdStorageWalletID, setVaultTab } = useAuthStore();
     const { addAndSaveWallet } = useContext(BlueStorageContext);
     const task = useRef<any>();
     const importing = useRef(false);
@@ -95,6 +95,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
             try {
                 subtitle = wallet.getDerivationPath?.();
                 dispatchNavigate('SavingVaultCreated');
+                setVaultTab(true)
             } catch (e) { }
             setWallets(w => [...w, { wallet, subtitle, id }]);
         };

@@ -86,7 +86,7 @@ export default function BottomBar({
     };
 
     const handleCreateColdVault = () => {
-        dispatchNavigate('ConnectColdStorage');
+        dispatchNavigate('ColdVaultIntro');
     }
 
     const topupClickHandler = async () => {
@@ -324,20 +324,22 @@ export default function BottomBar({
         </View>
     );
 
-    const renderItem = ({ item }: any) => {
+    const renderItem = ({ item, index }: any) => {
         return (
+            <>
             <View style={{ width: screenWidth * 0.905 }}>
+                {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
+                    <TopUpWithdrawView isVault={index == 1 ? true : false} />
+                }
                 {item.component()}
             </View>
+            </>
         )
     };
 
     console.log('index: ', index, vaultTab)
     return (
         <>
-            {((hasSavingVault && wallet) || coldStorageWallet ) && (isAuth || isStrikeAuth) &&
-                <TopUpWithdrawView isVault={index == 1 ? true : false} />
-            }
             <Carousel
                 data={tabs}
                 ref={carouselRef}
