@@ -142,9 +142,11 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                 >
                     <Text h3 center>Vault Addresses</Text>
                 </GradientView>
-                {/* <Text style={{paddingRight: 20, paddingLeft:20, paddingTop: 20}}>
-            ⚠️ DO NOT use these addresses to receive funds without verifying their authenticity from your hardware device! 
-            </Text> */}
+                {vaultTab &&
+                    <Text style={{paddingRight: 20, paddingLeft:30, paddingTop: 20, fontSize: 15}}>
+                        ⚠️ DO NOT use these addresses to receive funds without verifying their authenticity from your hardware device! 
+                    </Text>
+                }
                 {/* <GradientView
                     onPress={addressClickHandler}
                     topShadowStyle={styles.outerShadowStyle}

@@ -248,7 +248,8 @@ export default function SendScreen({ navigation, route }: any) {
             } finally {
                 setIsLoading(false);
             }
-        } else { //liquid address
+        } else if (info?.receiveType) { //liquid address
+            console.log('Sending to liquid address: ', info?.receiveType)
             if (sats == '') {
                 SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
                 setIsLoading(false);
@@ -285,6 +286,10 @@ export default function SendScreen({ navigation, route }: any) {
             } finally {
                 setIsLoading(false);
             }
+        } else {
+            SimpleToast.show('Please enter a valid address, invoice, or username', SimpleToast.SHORT);
+            setIsLoading(false);
+            return;
         }
     };
 

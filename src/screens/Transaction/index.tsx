@@ -166,7 +166,7 @@ export default function Transaction({navigation, route}: any) {
                     </Animated.View>
                 } */}
                 <View style={styles.extra} />
-                {response && to.length > 0 ?
+                {to.length > 0 ?
                     <Text semibold center style={styles.text}>Lightning Network</Text>
                 :
                     <Text semibold center style={styles.text}>Fiat Network</Text>

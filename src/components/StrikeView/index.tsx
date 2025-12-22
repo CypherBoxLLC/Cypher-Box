@@ -11,6 +11,7 @@ import { dispatchNavigate, formatStrikeNumber } from '@Cypher/helpers'
 import { btc, getStrikeCurrency, SATS } from '@Cypher/helpers/coinosHelper'
 import useAuthStore from '@Cypher/stores/authStore'
 import SimpleToast from "react-native-simple-toast";
+import { useNavigation } from '@react-navigation/native'
 
 interface Props {
     showLogo?: boolean;
@@ -25,8 +26,9 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     matchedRate,
     currency
 }: Props) {
-    const { strikeUser } = useAuthStore();
-    const [dollarStrikeText, setDollarStrikeText] = useState(1000000)
+    const { strikeUser, clearStrikeAuth } = useAuthStore();
+    const [dollarStrikeText, setDollarStrikeText] = useState(1000000);
+    const navigation = useNavigation();
 
     const addClickHandler = () => {
       setDollarStrikeText(dollarStrikeText + 100000)
@@ -76,7 +78,13 @@ function StrikeView({ showLogo = false, isShowButtons = false,
         dispatchNavigate('SendScreen', { currency, matchedRate, fiatAmount: amt, fiatType: "SELL" });    
     }
 
-    console.log('currencycurrencycurrency: ', currency)
+    const handleStrikeLogout = async () => {
+        clearStrikeAuth();
+        setTimeout(() => {
+            navigation.goBack();
+        }, 500);
+    };
+
     return (
         <View style={styles.container}>
             <View style={styles.rowContainer}>
@@ -159,6 +167,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                         topShadowStyle={styles.topShadow4}
                         bottomShadowStyle={styles.bottomShadow4}
                         linearGradientStyleMain={styles.linearGradientStyleMain4}
+                        onPress={handleStrikeLogout}
                     >
                         <Text h3 bold center>Logout</Text>
                     </GradientView>

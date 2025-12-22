@@ -75,10 +75,16 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
         importing.current = true;
         addAndSaveWallet(wallet);
     };
+        //   const bip39 = useMemo(() => {
+        //     const hd = new HDSegwitBech32Wallet();
+        //     hd.setSecret(importText);
+        //     return hd.validateMnemonic();
+        //   }, [importText]);
 
     const handleImport = async (textToImport: string) => {
         console.log('textToImport: ', textToImport)
-        const isValid = textToImport.startsWith('xpub') || textToImport.startsWith('ypub') || textToImport.startsWith('zpub');
+        const cleanedText = textToImport.replace(/\[.*\]/, '');
+        const isValid = cleanedText.startsWith('xpub') || cleanedText.startsWith('ypub') || cleanedText.startsWith('zpub');
         console.log('isValid: ', isValid)
         if (!isValid) {
             Alert.alert('Invalid Mnemonic', 'Please check your address and try again.');

@@ -606,7 +606,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         const response = await getPaymentQouteByLightening(payload, paymentQuoteData?.paymentQuoteId);
                         console.warn('response getPaymentQouteByLightening: ', response?.data?.validationErrors)
                         if(response?.amount){
-                            console.log('responserresponse: ', response)
+                            console.log('responserresponse: ', response, to)
                             dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: response });
                         } else {
                             SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT)
