@@ -150,7 +150,7 @@ export default function LoginCoinOSScreen() {
                     </GradientCard>
                     {/* <Button title="Login with Strike" onPress={handleLogin} /> */}
                     {/* {accessToken && <Text>Access Token: {accessToken}</Text>} */}
-                    <View 
+                    {/* <View 
                         style={{ 
                             marginTop: 15,
                             flexDirection: 'row',
@@ -174,7 +174,7 @@ export default function LoginCoinOSScreen() {
                         <Text bold style={styles.rememberMe}>
                             Remember Me
                         </Text>
-                    </View>
+                    </View> */}
                     <TouchableOpacity style={{ marginTop: 18, alignSelf: 'flex-end' }} onPress={forgotClickHandler}>
                         <Text bold style={styles.forgot}>
                             Forgot Password?

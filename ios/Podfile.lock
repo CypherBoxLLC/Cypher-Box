@@ -359,7 +359,7 @@ PODS:
     - React-Core
   - react-native-fingerprint-scanner (6.0.0):
     - React
-  - react-native-idle-timer (2.2.2):
+  - react-native-idle-timer (2.1.6):
     - React-Core
   - react-native-image-picker (7.1.0):
     - RCT-Folly (= 2021.07.22.00)
@@ -900,7 +900,7 @@ SPEC CHECKSUMS:
   react-native-camera: 079d80421f0572d6b4e836908114d614d0adb553
   react-native-document-picker: c586098a24ae21bd44b1bd601e403c2b32854f38
   react-native-fingerprint-scanner: 91bf6825709dd7bd3abc4588a4772eb097a2b2d8
-  react-native-idle-timer: 56bb9792c3c74800389e16afa8f6a9baba66239d
+  react-native-idle-timer: eb7608b5bb8384047b48740f587af9681dc4deaa
   react-native-image-picker: 7a3502135a13fc56d406f5213b7346de6bc5f38b
   react-native-ios-context-menu: 986da6dcba70094bcc2a8049f68410fe7d25aff1
   react-native-mmkv: 459c8a83d91bacf3f1eb56d6b2aecef265b8f28e

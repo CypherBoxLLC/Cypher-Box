@@ -14,6 +14,7 @@ import {
   HeaderWithLine,
 } from "@Cypher/components";
 import LinearGradient from "react-native-linear-gradient";
+import SimpleToast from "react-native-simple-toast";
 
 const config = {
     id: 'strike',
@@ -21,7 +22,8 @@ const config = {
     type: 'oauth',
     issuer: "https://auth.strike.me", // Strike Identity Server URL
     clientId: "cypherbox",
-    clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
+    // clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
+    clientSecret: "",
     redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
     scopes: ["offline_access", 'partner.currency-exchange-quote.create', 'partner.currency-exchange-quote.execute', 'partner.currency-exchange-quote.read', 'partner.receive-request.read', 'partner.deposit.manage', 'partner.payout-originator.read', 'partner.payment-quote.onchain.create', 'partner.payment-quote.lightning.create', 'partner.payment-quote.execute', 'partner.receive-request.create', "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
     //clientAuthMethod: "post",
@@ -32,6 +34,8 @@ const config = {
     //         response_type: 'code',
     //     }
     // },
+    usePKCE: true, 
+    skipCodeExchange: true,
     idToken: false,
     checks: ['pkce', 'state'],
     // serviceConfiguration: {
@@ -51,6 +55,7 @@ export default function CheckingAccountLogin() {
     setStrikeToken,
     setAllBTCWallets,
   } = useAuthStore();
+  const [strikeLoading, setStrikeLoading] = React.useState(false);
 
   const createCheckingAccountClickHandler = () => {
     Linking.openURL("https://coinos.io/register");
@@ -68,10 +73,11 @@ export default function CheckingAccountLogin() {
     try {
       const result = await authorize(config);
       console.log("Access Token:", result);
-      setStrikeToken(result.accessToken);
+      const reStrikeTokenExchange = await strikeTokenExchange(result.authorizationCode, result.codeVerifier || '');
+      setStrikeToken(reStrikeTokenExchange.access_token);
       setStrikeAuth(true);
       const temp = [...allBTCWallets];
-      const tokenParts = result.accessToken.split(".");
+      const tokenParts = reStrikeTokenExchange.access_token.split(".");
       const header = Buffer.from(tokenParts[0], "base64").toString("utf8");
       const payload = Buffer.from(tokenParts[1], "base64").toString("utf8");
       const signature = tokenParts[2];
@@ -90,6 +96,67 @@ export default function CheckingAccountLogin() {
       console.error("OAuth error", error);
     }
   };
+
+  const strikeTokenExchange = async (code: string, verifier: string) => {
+    try {
+      setStrikeLoading(true);
+      const details = {
+        code: code,
+        verifier: verifier,
+      };      
+      console.log('details to send:', details);
+      const response = await fetch('https://cypherbox-backend.onrender.com/oauth/start', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(details),
+      });
+
+      const responseJSON = await response.json();
+      if (responseJSON.success) {
+        console.log("Response Body:", responseJSON);
+        return responseJSON.data;
+      } else {
+        SimpleToast.show('Strike authentication failed.', SimpleToast.SHORT);
+        return null;
+      }
+    } catch (error) {
+      console.error("Fetch Error:", error);
+    } finally {
+      setStrikeLoading(false);
+    }
+  };
+
+  // const strikeTokenExchange = async (code: string, verifier: string) => {
+  //   try {
+  //     // 1. Prepare only the necessary OAuth params for the body
+  //     const details = {
+  //       grant_type: 'authorization_code',
+  //       client_id: 'cypherbox', // CHECK IF THIS IS A UUID IN DASHBOARD
+  //       client_secret: 'RmZXluxUsQhQB3nVnJ4Uxj7xrEq697syVEYyv/ztWqk=',
+  //       code: code,
+  //       code_verifier: verifier,
+  //       redirect_uri: 'cypherbox://oauth/callback',
+  //     };      
+  //     const formBody = new URLSearchParams(details).toString();
+  //     const response = await fetch('https://auth.strike.me/connect/token', {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/x-www-form-urlencoded',
+  //         'Accept': 'application/json',
+  //       },
+  //       body: formBody,
+  //     });
+  //     const text = await response.text();
+  //     console.log("--- STRIKE ATTEMPT ---");
+  //     console.log("Status Code:", response.status);
+  //     console.log("Response Body:", text);
+  //   } catch (error) {
+  //     console.error("Fetch Error:", error);
+  //   }
+  // };
 
   return (
     <ScreenLayout showToolbar>

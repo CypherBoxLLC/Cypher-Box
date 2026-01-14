@@ -2294,8 +2294,8 @@
 
 "@spsina/bip47@github:BlueWallet/bip47#0a2f02c90350802f2ec93afa4e6c8843be2d687c":
   version "1.0.1"
-  resolved "https://codeload.github.com/BlueWallet/bip47/tar.gz/0a2f02c90350802f2ec93afa4e6c8843be2d687c"
-  integrity sha512-sDygmHgT5OoMGDnI5aDmbsSAsOVlB5Wbd8wQp0YNLf2+HErctkYNfMeuFtMvZD6TWrmUkUecvyMTr5WcjI3VdQ==
+  resolved "git+ssh://git@github.com/BlueWallet/bip47.git#0a2f02c90350802f2ec93afa4e6c8843be2d687c"
+  integrity sha512-lsgEpiEMDgpiYOA2kizOwiSS3vjTeLe2VnkOTIGnJ7Eu7Mkgl9dLES7oSLAjY64aQXr0VolqCRciRDc2nAC++w==
   dependencies:
     bip32 "^3.0.1"
     bip39 "^3.0.4"
@@ -2441,6 +2441,11 @@
   integrity sha512-pPeim+3t4/RgbWxpG6ftxXjf41JFoXe545aYSPXzfyqBUxGsVmYSdteNDtmiKtZfYbQKuYBXlzTey08nKgwtoA==
   dependencies:
     "@types/react" "*"
+
+"@types/react-native-base64@^0.2.2":
+  version "0.2.2"
+  resolved "https://registry.npmjs.org/@types/react-native-base64/-/react-native-base64-0.2.2.tgz"
+  integrity sha512-obr+/L9Jaxdr+xCVS/IQcYgreg5xtnui4Wqw/G1acBUtW2CnqVJj6lK6F/5F3+5d2oZEo5xDDLqy8GVn2HbEmw==
 
 "@types/react-native-vector-icons@^6.4.6":
   version "6.4.18"
@@ -3343,8 +3348,7 @@ bip32@^3.0.1, bip32@3.0.1:
 
 "bip38@github:BlueWallet/bip38":
   version "3.1.1"
-  resolved "https://codeload.github.com/BlueWallet/bip38/tar.gz/7ec4b1932b98eaaff16c5a26765a26466958e6b4"
-  integrity sha512-nflf5Yz3tNtRbAhxNoEqEsw9hxK5NYg/5zggd0cDNc0VoVKGit/BsKXRt75mmKqE6e7JfKE2WkPdU9tKt9Gpkg==
+  resolved "git+ssh://git@github.com/BlueWallet/bip38.git#7ec4b1932b98eaaff16c5a26765a26466958e6b4"
   dependencies:
     bigi "^1.2.0"
     browserify-aes "^1.0.1"
@@ -4691,9 +4695,9 @@ electron-to-chromium@^1.5.199:
   integrity sha512-3gl0S7zQd88kCAZRO/DnxtBKuhMO4h0EaQIN3YgZfV6+pW+5+bf2AdQeHNESCoaQqo/gjGVYEf2YM4O5HJQqpQ==
 
 "electrum-client@https://github.com/BlueWallet/rn-electrum-client#76c0ea35e1a50c47f3a7f818d529ebd100161496":
-  version "3.1.1"
-  resolved "git+ssh://git@github.com/BlueWallet/rn-electrum-client.git"
-  integrity sha512-0f7/5KoJ5EVAtnFyNIcQeL0e4AElzrzyiE7OpK8S+xQ4uBs7525CQKj0LyhkOwOxh3TEn1dJSRDCabd1+TvF7g==
+  version "2.0.0"
+  resolved "git+ssh://git@github.com/BlueWallet/rn-electrum-client.git#76c0ea35e1a50c47f3a7f818d529ebd100161496"
+  integrity sha512-w9LHCQYUlCddBRGrDmgo1EUNp+zmzcyQSKLFOeO1XPITiAAFQDBZLwORVbBPywhMXf4PUk1dOphhHzJBJYG0vA==
 
 electrum-mnemonic@2.0.0:
   version "2.0.0"
@@ -7189,8 +7193,8 @@ lines-and-columns@^1.1.6:
 
 "localized-strings@github:BlueWallet/localized-strings#178351a7297336618d9ee87277f8e3af9ab7285d":
   version "0.2.4"
-  resolved "https://codeload.github.com/BlueWallet/localized-strings/tar.gz/178351a7297336618d9ee87277f8e3af9ab7285d"
-  integrity sha512-M3/87AQkdQB8/apJx7QEi6ZPecflH/EWDXe3QhMdaFdCKlZbm7MV1ntGUDoMcSR4Otsh1fIkBbrTM8mZjiqrGg==
+  resolved "git+ssh://git@github.com/BlueWallet/localized-strings.git#178351a7297336618d9ee87277f8e3af9ab7285d"
+  integrity sha512-E6ncf+f2l/1Rv2C5DMxkfSbK0wjYxyD6g3dcUqM5TB/tGv0QZlJ96MFTjhmIshMa2bM6P06hjj6V8QjC/Zqhlg==
 
 locate-path@^3.0.0:
   version "3.0.0"
@@ -8946,8 +8950,7 @@ react-is@^18.2.0:
 
 "react-localization@github:BlueWallet/react-localization#ae7969a":
   version "1.0.19"
-  resolved "https://codeload.github.com/BlueWallet/react-localization/tar.gz/ae7969a8998128aebf1169f931fb22587dc5f874"
-  integrity sha512-kztfW6BrG9fd9lhz7XP65xls2/fXhbORRiJXmJClCVYB9Qgg5spUxNELV8GwZu4MOgrL6+OxNSOYfNsC9zGlcQ==
+  resolved "git+ssh://git@github.com/BlueWallet/react-localization.git#ae7969a8998128aebf1169f931fb22587dc5f874"
   dependencies:
     localized-strings "github:BlueWallet/localized-strings#178351a7297336618d9ee87277f8e3af9ab7285d"
 
@@ -8966,6 +8969,11 @@ react-native-app-auth@^8.0.1:
     invariant "2.2.4"
     react-native-base64 "0.0.2"
 
+react-native-base64@^0.2.2:
+  version "0.2.2"
+  resolved "https://registry.npmjs.org/react-native-base64/-/react-native-base64-0.2.2.tgz"
+  integrity sha512-9iDzlDQrJqRlgoi7GnO4dqK/7/6lpA3DFrArhp85tDB7ZI6wLr7luHihb/pX6jhm4zlHqOz2OYSGJ6PSgyUO1g==
+
 react-native-base64@0.0.2:
   version "0.0.2"
   resolved "https://registry.npmjs.org/react-native-base64/-/react-native-base64-0.0.2.tgz"
@@ -8973,8 +8981,7 @@ react-native-base64@0.0.2:
 
 "react-native-blue-crypto@github:BlueWallet/react-native-blue-crypto#3cb5442":
   version "1.0.0"
-  resolved "https://codeload.github.com/BlueWallet/react-native-blue-crypto/tar.gz/3cb5442425bd835e185284fbc62e84b7155bc441"
-  integrity sha512-nSYAqCdioPOMiu/YV4/3AmVZf7YRrkfSIggyld0zpVniuVrfPQbSG4wbtc+eIy8KF/cdnLbxXIz5Cxw8ab73ig==
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-blue-crypto.git#3cb5442425bd835e185284fbc62e84b7155bc441"
 
 react-native-bootsplash@^5.4.1:
   version "5.5.3"
@@ -9040,8 +9047,7 @@ react-native-document-picker@9.3.1:
 
 "react-native-draggable-flatlist@github:BlueWallet/react-native-draggable-flatlist#ebfddc4":
   version "4.0.1"
-  resolved "https://codeload.github.com/BlueWallet/react-native-draggable-flatlist/tar.gz/ebfddc4877e8f65d5391a748db61b9cd030430ba"
-  integrity sha512-hnAvcvIiVLaVrRRUOfPupHndbWGXDh92hiosnXEfb9QLR+CfEfYPQseDLoSVxCl5aUIpydpPthqULisuYidAJQ==
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-draggable-flatlist.git#ebfddc4877e8f65d5391a748db61b9cd030430ba"
   dependencies:
     "@babel/preset-typescript" "^7.17.12"
 
@@ -9061,7 +9067,7 @@ react-native-elements@3.4.3:
 
 "react-native-fingerprint-scanner@https://github.com/BlueWallet/react-native-fingerprint-scanner#ce644673681716335d786727bab998f7e632ab5e":
   version "6.0.0"
-  resolved "git+ssh://git@github.com/BlueWallet/react-native-fingerprint-scanner.git"
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-fingerprint-scanner.git#ce644673681716335d786727bab998f7e632ab5e"
   integrity sha512-bS/wNTeah8vACOOuYWRdAi0yKdAqcYqz611PoAtPFs/EaYD/Y8vw+/1jas5DUvTKnAoveCcO1ICVgCsT7XTdKA==
 
 react-native-fs@2.20.0:
@@ -9085,7 +9091,7 @@ react-native-gesture-handler@2.14.1:
 
 "react-native-handoff@https://github.com/BlueWallet/react-native-handoff#31d005f93d31099d0e564590a3bbd052b8a02b39":
   version "0.0.3"
-  resolved "git+ssh://git@github.com/BlueWallet/react-native-handoff.git"
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-handoff.git#31d005f93d31099d0e564590a3bbd052b8a02b39"
   integrity sha512-kyJxMjkMvlebreExkmxRuId6w+pQJlblXKd0tpDyWGQzcL9RmFyEsRTn3ZUoRzu/XKNGhs/uKUgZWzgc/qBkpQ==
 
 react-native-haptic-feedback@2.2.0:
@@ -9094,9 +9100,9 @@ react-native-haptic-feedback@2.2.0:
   integrity sha512-3tqJOjCguWhIrX0nkURn4yw6kXdsSDjjrvZCRjKXYGlL28hdQmoW2okAHduDTD9FWj9lA+lHgwFWgGs4aFNN7A==
 
 "react-native-idle-timer@https://github.com/BlueWallet/react-native-idle-timer#8587876d68ab5920e79619726aeca9e672beaf2b":
-  version "2.2.2"
-  resolved "git+ssh://git@github.com/BlueWallet/react-native-idle-timer.git"
-  integrity sha512-KoqRoG7ptUTjq0XPHltGnS6l/PpzqZ7zwbe+zegImr00Lf4DqY/5bihcXnaZXibCZr4gsCk5AxgCKYlVR1UOJQ==
+  version "2.1.6"
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-idle-timer.git#8587876d68ab5920e79619726aeca9e672beaf2b"
+  integrity sha512-d24QXgHUkwu+BTp676Pb7ng7u01iiw3YBBY+DYvurkMAHRoB9c+wj32oB4sLq07W+LbETyMEuDlLUxTOasqd3Q==
 
 react-native-image-picker@7.1.0:
   version "7.1.0"
@@ -9105,8 +9111,8 @@ react-native-image-picker@7.1.0:
 
 "react-native-ios-context-menu@github:BlueWallet/react-native-ios-context-menu#e5c1217cd220bfab6e6d9a7c65838545082e3f8e":
   version "1.15.3"
-  resolved "https://codeload.github.com/BlueWallet/react-native-ios-context-menu/tar.gz/e5c1217cd220bfab6e6d9a7c65838545082e3f8e"
-  integrity sha512-4iUSrQJJ9L6mbdM3wNFBgV9XJ/ZUMOJVAMnuEVoRYJ8qs9EQ/rKNFkqDzy5ah5T3y4sbvjF7W6HuWnWt2XSSrw==
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-ios-context-menu.git#e5c1217cd220bfab6e6d9a7c65838545082e3f8e"
+  integrity sha512-BcH1ZsIxTp3G2K5pv9TioPWw4+DADPL1sZuuaK2qN7cROUfpNYnTu8RC8R8HDsDDrXsf4mZhd3rupTFD0HtSFg==
   dependencies:
     "@dominicstop/ts-event-emitter" "^1.1.0"
 
@@ -9161,7 +9167,7 @@ react-native-neomorph-shadows@^1.1.2:
 
 "react-native-obscure@https://github.com/BlueWallet/react-native-obscure.git#f4b83b4a261e39b1f5ed4a45ac5bcabc8a59eadb":
   version "0.0.3"
-  resolved "git+ssh://git@github.com/BlueWallet/react-native-obscure.git"
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-obscure.git#f4b83b4a261e39b1f5ed4a45ac5bcabc8a59eadb"
   integrity sha512-bmzbnlXII8hW7steqwouzQW9cJ+mdA8HJ8pWkb0KD60jC5dYgJ0e66wgUiSTDNFPrvlEKriE4eEanoJFj7Q9pg==
 
 react-native-pager-view@6.4.1:
@@ -9171,7 +9177,7 @@ react-native-pager-view@6.4.1:
 
 "react-native-passcode-auth@https://github.com/BlueWallet/react-native-passcode-auth#a2ff977ba92b36f8d0a5567f59c05cc608e8bd12":
   version "1.0.0"
-  resolved "git+ssh://git@github.com/BlueWallet/react-native-passcode-auth.git"
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-passcode-auth.git#a2ff977ba92b36f8d0a5567f59c05cc608e8bd12"
   integrity sha512-8FL4NDMZZVrbHr1f4555dV+GY3PLpmSbJ1wIbdW1r6zSaFe59g9ns4sdLliisjO+RvyDJP7UDPDaeu+2iJ26Bg==
 
 react-native-permissions@^2.0.2:
@@ -9186,7 +9192,7 @@ react-native-permissions@^4.1.5:
 
 "react-native-privacy-snapshot@https://github.com/BlueWallet/react-native-privacy-snapshot#529e4627d93f67752a27e82a040ff7b64dca0783":
   version "1.0.0"
-  resolved "git+ssh://git@github.com/BlueWallet/react-native-privacy-snapshot.git"
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-privacy-snapshot.git#529e4627d93f67752a27e82a040ff7b64dca0783"
   integrity sha512-bO73UmkI0KpAzk3766z77qBdArwOaBCr58q5H0qDfn0jf5HonYoEkJRDRwHr7SpDxrSu2Nuoz2AokxLyb3/KXw==
 
 react-native-progress@^5.0.1:
@@ -9198,7 +9204,7 @@ react-native-progress@^5.0.1:
 
 "react-native-prompt-android@https://github.com/BlueWallet/react-native-prompt-android#ed168d66fed556bc2ed07cf498770f058b78a376":
   version "1.0.0"
-  resolved "git+ssh://git@github.com/BlueWallet/react-native-prompt-android.git"
+  resolved "git+ssh://git@github.com/BlueWallet/react-native-prompt-android.git#ed168d66fed556bc2ed07cf498770f058b78a376"
   integrity sha512-DcHZ4mMVF0HlMui8qq81kJcY+SNx2dXa9YuKDBoENCJxrPbjc++/XsSHpqQOOLV2wR+zItDDtvNkJRqI8g5JRQ==
 
 react-native-push-notification@8.1.1:
@@ -9747,8 +9753,7 @@ ripemd160@=2.0.1:
 
 "rn-ldk@github:BlueWallet/rn-ldk#v0.8.4":
   version "0.8.4"
-  resolved "https://codeload.github.com/BlueWallet/rn-ldk/tar.gz/ab0ce31e4ec8c208fe16954ecbcaba5df60f56c6"
-  integrity sha512-omYB8A0EZPr07Sfd7WAYhlcRBNCC7NgPXa503Sjp819vStWHJLgxrRoe7OYW4aGTlOlPYwpdzQHrFFvSq4BiEQ==
+  resolved "git+ssh://git@github.com/BlueWallet/rn-ldk.git#ab0ce31e4ec8c208fe16954ecbcaba5df60f56c6"
 
 rn-nodeify@10.3.0:
   version "10.3.0"
