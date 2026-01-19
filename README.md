@@ -18,7 +18,7 @@ To view the version of Node and npm in your environment, run the following in yo
 `node --version && npm --version`
 In your console:
 
-* `https://github.com/Bamskki/Cypher-Box.git`
+* `https://github.com/CypherBoxLLC/Cypher-Box.git`
 * `cd Cypher-Box` 
 * `npm install`
 
