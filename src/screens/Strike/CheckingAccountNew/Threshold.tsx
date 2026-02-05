@@ -18,6 +18,9 @@ import styles from "./styles";
 
 const data = [
   {
+    sats: 1000000,
+  },
+  {
     sats: 2000000,
   },
   {
@@ -262,7 +265,7 @@ export default function Threshold({
             style={styles.linearGradientStroke} linearStyle={styles.linearGradient}>
             <View style={styles.background}>
               <TouchableOpacity onPress={() => setModalVisible(true)}>
-                <Text bold style={{ fontSize: 18 }}>{formatNumber(value)}</Text>
+                <Text bold style={{ fontSize: 18 ,alignSelf: 'center'}}>{formatNumber(value)}</Text>
               </TouchableOpacity>
               <View style={styles.straightLine} />
               <View>
@@ -306,15 +309,17 @@ export default function Threshold({
         </View>
         <View style={styles.priceView}>
           <GradientCard disabled
-            colors_={isErrorReserve ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
-            style={StyleSheet.flatten([styles.linearGradientStroke, { height: 60, width: '60%' }])} linearStyle={StyleSheet.flatten([styles.linearGradient, { height: 60 }])}>
-            <View style={[styles.background, {
-              // alignItems: 'center',
-              justifyContent: 'flex-end',
-              paddingEnd: 30,
-            }]}>
+            colors_={isError ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
+            style={styles.linearGradientStroke} linearStyle={styles.linearGradient}>
+            <View style={[styles.background, 
+            // {
+            //   // alignItems: 'center',
+            //   justifyContent: 'flex-end',
+            //   paddingEnd: 30,
+            // }
+            ]}>
               <TouchableOpacity onPress={() => setModalRAVisible(true)}>
-                <Text bold style={{ fontSize: 18 }}>{formatNumber(reserveAmt)}</Text>
+                <Text bold style={{ fontSize: 18, alignSelf: 'center'}}>{formatNumber(reserveAmt)}</Text>
               </TouchableOpacity>
               <View style={styles.straightLine} />
               <View>

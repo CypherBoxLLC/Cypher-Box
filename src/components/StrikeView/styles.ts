@@ -229,8 +229,9 @@ export default StyleSheet.create<Style>({
         elevation: 8,
         alignSelf: 'center',
         height: 38,
-        width: widths * 0.26,
-        marginStart: 11
+        width: widths * 0.40,
+        marginStart: 11,
+        marginTop: 50
     },
     sellBuyGradient4: {
         shadowColor: '#27272C',
@@ -246,7 +247,7 @@ export default StyleSheet.create<Style>({
         shadowColor: '#E85C5A',
         borderRadius: 24,
         height: 38,
-        width: widths * 0.26,
+        width: widths * 0.40,
         justifyContent: 'center',
         alignItems: 'center'
     },
@@ -257,14 +258,14 @@ export default StyleSheet.create<Style>({
         shadowColor: '#030303',
         borderRadius: 24,
         height: 38,
-        width: widths * 0.26,
+        width: widths * 0.40,
         justifyContent: 'center',
         position: 'absolute',
     },
     linearGradientStyleMain4: {
         borderRadius: 24,
         height: 38,
-        width: widths * 0.26,
+        width: widths * 0.40,
         justifyContent: 'center',
         alignItems: 'center'
     },
