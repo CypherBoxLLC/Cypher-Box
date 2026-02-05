@@ -1,5 +1,6 @@
 import { colors } from "@Cypher/style-guide";
 import { ImageStyle, StyleSheet, TextStyle, ViewStyle } from "react-native";
+import { rgbaArrayToRGBAColor, rgbaColor } from "react-native-reanimated/lib/typescript/reanimated2/Colors";
 
 interface Style {
   container: ViewStyle;
@@ -54,6 +55,7 @@ export default StyleSheet.create<Style>({
   text: {
     fontSize: 18,
     marginVertical: 10,
+    marginLeft: 10,
   },
   usernameContainer: {
     flexDirection: "row",
@@ -105,6 +107,7 @@ export default StyleSheet.create<Style>({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    alignContent: "center",
   },
   background2: {
     backgroundColor: colors.gray.dark,
@@ -135,9 +138,9 @@ export default StyleSheet.create<Style>({
   },
   straightLine: {
     width: 2,
-    backgroundColor: colors.white,
+    //backgroundColor: ,
     height: 26,
-    marginHorizontal: 20,
+    marginHorizontal: 15,
   },
   row: {
     backgroundColor: colors.black.default,

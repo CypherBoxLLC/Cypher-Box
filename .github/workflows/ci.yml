@@ -144,7 +144,7 @@ jobs:
           arch: x86_64
           script: npm run e2e:release-test
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: e2e-test-videos

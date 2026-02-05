@@ -167,7 +167,7 @@ export default class ElectrumSettings extends Component {
           await AsyncStorage.setItem(BlueElectrum.ELECTRUM_TCP_PORT, '');
           await AsyncStorage.setItem(BlueElectrum.ELECTRUM_SSL_PORT, '');
           try {
-            await DefaultPreference.setName('group.io.cypherbox.llc');
+            await DefaultPreference.setName('group.io.cypherbox.btc');
             await DefaultPreference.clear(BlueElectrum.ELECTRUM_HOST);
             await DefaultPreference.clear(BlueElectrum.ELECTRUM_SSL_PORT);
             await DefaultPreference.clear(BlueElectrum.ELECTRUM_TCP_PORT);
@@ -196,7 +196,7 @@ export default class ElectrumSettings extends Component {
           }
 
           try {
-            await DefaultPreference.setName('group.io.cypherbox.llc');
+            await DefaultPreference.setName('group.io.cypherbox.btc');
             await DefaultPreference.set(BlueElectrum.ELECTRUM_HOST, host);
             await DefaultPreference.set(BlueElectrum.ELECTRUM_TCP_PORT, port);
             await DefaultPreference.set(BlueElectrum.ELECTRUM_SSL_PORT, sslPort);

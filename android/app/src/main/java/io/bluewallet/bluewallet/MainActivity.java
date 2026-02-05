@@ -1,4 +1,4 @@
-package io.cypherbox.llc;
+package io.cypherbox.btc;
 
 import android.content.pm.ActivityInfo;
 import android.os.Bundle;

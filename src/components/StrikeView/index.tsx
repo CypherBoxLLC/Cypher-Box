@@ -144,7 +144,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
             </View>
             {isShowButtons &&
                 <View style={styles.bottomButtonsContainer}>
-                    <GradientView
+                    {/* <GradientView
                         style={styles.sellBuyButton3}
                         linearGradientStyle={styles.sellBuyGradient3}
                         topShadowStyle={styles.topShadow3}
@@ -152,8 +152,16 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                         linearGradientStyleMain={styles.linearGradientStyleMain3}
                     >
                         <Text h3 bold center>Deposit-Withdraw fiat</Text>
-                    </GradientView>
-                    <GradientView
+                    </GradientView> */}
+                   
+                </View>
+            }
+            <BlackBGView linearFirstStyle={styles.bitcoinPriceContainer}>
+                <Text bold style={styles.bitcoinPriceText}>{matchedRate.toLocaleString('en-US', { style: 'currency', currency: currency || 'USD' }) + ' /BTC' || `${getStrikeCurrency(currency || 'USD')}0.00` + ' /BTC'}</Text>
+            </BlackBGView>
+            {/* <View style={{alignContent: 'center', alignItems: 'center', marginTop: 10, justifyContent: 'center', alignSelf: 'center'}}> */}
+            
+             <GradientView
                         style={styles.sellBuyButton4}
                         linearGradientStyle={styles.sellBuyGradient4}
                         topShadowStyle={styles.topShadow4}
@@ -162,11 +170,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                     >
                         <Text h3 bold center>Logout</Text>
                     </GradientView>
-                </View>
-            }
-            <BlackBGView linearFirstStyle={styles.bitcoinPriceContainer}>
-                <Text bold style={styles.bitcoinPriceText}>{matchedRate.toLocaleString('en-US', { style: 'currency', currency: currency || 'USD' }) + ' /BTC' || `${getStrikeCurrency(currency || 'USD')}0.00` + ' /BTC'}</Text>
-            </BlackBGView>
+            {/* </View> */}
             {showLogo &&
                 <Image source={Strike} style={styles.strikeLogo} resizeMode='contain' />
             }

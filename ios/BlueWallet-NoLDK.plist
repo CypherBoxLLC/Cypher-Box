@@ -4,7 +4,7 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>io.cypherbox.llc.fetchTxsForWallet</string>
+		<string>io.cypherbox.btc.fetchTxsForWallet</string>
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
@@ -171,8 +171,8 @@
 	<string>In order to import an image for scanning, we need your permission to access your photo library.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
-		<string>io.cypherbox.llc.receiveonchain</string>
-		<string>io.cypherbox.llc.xpub</string>
+		<string>io.cypherbox.btc.receiveonchain</string>
+		<string>io.cypherbox.btc.xpub</string>
 	</array>
 	<key>UIAppFonts</key>
 	<array>
