@@ -52,22 +52,47 @@ export const registerUser = async (username: string, password: string) => {
   }
 };
 
-export const loginUser = async (username: string, password: string) => {
+export const loginUser = async (username: string, password: string, recaptchaToken: string) => {
   try {
     const payload = {
         username,
-        password
-    }
-    console.log('payload: ', payload)
+        password,
+        recaptcha: recaptchaToken || '' // Send empty string if no token
+    };
+    
+    console.log('Logging in with username:', username);
+    
     const response = await fetch(`${BASE_URL}/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'User-Agent': 'CoinOS-Mobile-App',
       },
       body: JSON.stringify(payload),
     });
-    console.log('response: ', response)
+    
+    console.log('Response status:', response.status);
+    
+    if (response.status === 401) {
+      const errorText = await response.text();
+      if (errorText === 'failed captcha' || errorText.includes('captcha')) {
+        throw new Error('Captcha verification failed. Please try again.');
+      }
+      if (errorText === '2fa required' || errorText.includes('2fa')) {
+        throw new Error('2fa required');
+      }
+      throw new Error('Invalid username or password');
+    }
+    
+    if (response.status === 429) {
+      throw new Error('Too many login attempts. Please wait and try again later.');
+    }
+    
+    if (!response.ok) {
+      throw new Error(`Login failed with status ${response.status}`);
+    }
+    
     return await response.json();
   } catch (error) {
     console.error('Error logging in user:', error);
