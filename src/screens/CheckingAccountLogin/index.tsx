@@ -8,6 +8,7 @@ import { colors } from "@Cypher/style-guide";
 import { authorize } from "react-native-app-auth";
 import { jwtDecode } from "jwt-decode";
 import { Buffer } from "buffer";
+import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
   LoginOption,
   RegisterPrompt,
@@ -50,10 +51,12 @@ export default function CheckingAccountLogin() {
     isAuth,
     isStrikeAuth,
     allBTCWallets,
+    FirstTimeLightning,
     setStrikeMe,
     setStrikeAuth,
     setStrikeToken,
     setAllBTCWallets,
+    setFirstTimeLightning
   } = useAuthStore();
   const [strikeLoading, setStrikeLoading] = React.useState(false);
 
@@ -86,7 +89,14 @@ export default function CheckingAccountLogin() {
       console.log("signature: ", signature);
       setStrikeMe(decoded);
       setAllBTCWallets([...temp, "STRIKE"]);
-      dispatchNavigate("CheckingAccountCreated");
+      if(FirstTimeLightning){
+        dispatchNavigate("CheckingAccountCreated");
+      }else{
+        dispatchReset("HomeScreen", {
+          isComplete: true
+        });
+      }
+      
 
       // if (balances && balances?.balances) {
       //   const numericAmount = Number(balances.balances[0].amount.replace(/[^0-9\.]/g, ''));

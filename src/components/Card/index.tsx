@@ -1,7 +1,7 @@
-import { CoinOSSmall, Strike2 } from "@Cypher/assets/images";
+import { CoinOs, CoinOSSmall, Strike2 } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
-import { formatNumber, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
+import { formatNumber } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
@@ -14,6 +14,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 interface Props {
     onPress?: (value: boolean) => void;
     title?: string;
+    wallet?:string;
     balance: any;
     convertedRate: any;
     matchedRate: any;
@@ -21,12 +22,12 @@ interface Props {
     withdrawThreshold: any;
     reserveAmount: any;
     isShowButtons?: boolean;
-    receiveType?: boolean;
     receiveClickHandler?(value: boolean): void;
     sendClickHandler?(value: boolean): void;
 }
 
 export default function Card({ onPress,
+    wallet,
     title = 'Lightning Account',
     balance,
     convertedRate,
@@ -34,7 +35,6 @@ export default function Card({ onPress,
     reserveAmount,
     matchedRate,
     currency,
-    receiveType,
     isShowButtons = false,
     receiveClickHandler,
     sendClickHandler,
@@ -46,7 +46,7 @@ export default function Card({ onPress,
     }
 
     const getBalance = () => {
-        return `${balance} sats ~ ${getStrikeCurrency(currency || 'USD')}${convertedRate.toFixed(2)}`
+        return `${balance} sats ~ $${convertedRate.toFixed(2)}`
     }
 
     const getSats = () => {
@@ -63,15 +63,15 @@ export default function Card({ onPress,
     console.log('allBTCWallets: ', allBTCWallets)
 
     const onReceiveClickHandler = () => {
-        // if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
-        //     dispatchNavigate('CreateInvoice', {
-        //         matchedRate,
-        //         currency,
-        //         receiveType: true
-        //     });
-        // } else {
+        if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
+            dispatchNavigate('CreateInvoice', {
+                matchedRate,
+                currency,
+                receiveType: true
+            });
+        } else {
             receiveClickHandler?.(true);
-        // }
+        }
     }
 
     const onSendClickHandler = () => {
@@ -98,11 +98,21 @@ export default function Card({ onPress,
                         <Text h2 bold style={styles.check}>
                             {title}
                         </Text>
+                        {wallet==='STRIKE' ?
                         <Image
-                            source={receiveType ? CoinOSSmall : Strike2}
-                            style={styles.blink}
-                            resizeMode="contain"
-                        />
+                        source={Strike2}
+                        style={styles.blink}
+                        resizeMode="contain"
+                    />
+                    :
+                    <Image
+                        source={CoinOSSmall}
+                        style={styles.blink}
+                        resizeMode="contain"
+                    />
+                        }
+                        
+                        
                     </View>
                     <View style={styles.view}>
                         <Text h2 bold style={styles.sats}>

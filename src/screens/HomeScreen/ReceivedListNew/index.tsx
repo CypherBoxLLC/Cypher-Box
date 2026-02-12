@@ -293,6 +293,9 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
         >
           <Animated.View style={[{}, view1Style]}>
             <View style={styles.cardListContainer}>
+            <Text h2 bold style={styles.receiveToLabel}>
+              RECEIVE TO
+            </Text>
               {data?.map((item) => (
                 <GradientView
                   onPress={() => onPress(item)}
@@ -319,6 +322,8 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       justifyContent:
                         item?.type !== 0 ? "center" : "flex-start",
                       alignItems: item?.type !== 0 ? "center" : "flex-start",
+                      
+                      
                     }}
                   >
                     {item?.type !== 0 && (
@@ -347,9 +352,9 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 </GradientView>
               ))}
             </View>
-            <Text h2 bold style={styles.receiveToLabel}>
+            {/* <Text h2 bold style={styles.receiveToLabel}>
               RECEIVE TO
-            </Text>
+            </Text> */}
           </Animated.View>
           <Animated.View
             style={[{ flex: 1, position: "absolute" }, view2Style]}
