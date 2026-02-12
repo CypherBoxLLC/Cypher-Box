@@ -1,7 +1,7 @@
 import { CoinOs, CoinOSSmall, Strike2 } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
-import { formatNumber } from "@Cypher/helpers/coinosHelper";
+import { formatNumber, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
@@ -46,7 +46,8 @@ export default function Card({ onPress,
     }
 
     const getBalance = () => {
-        return `${balance} sats ~ $${convertedRate.toFixed(2)}`
+        const safeConverted = Number(convertedRate) || 0;
+        return `${balance} sats ~ ${getStrikeCurrency(currency || 'USD')}${safeConverted.toFixed(2)}`
     }
 
     const getSats = () => {

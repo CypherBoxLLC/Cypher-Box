@@ -127,6 +127,7 @@ export default function Threshold({
   const [isModalRAVisible, setModalRAVisible] = useState(false);
   const [value, setValue] = useState(receiveType ? Number(withdrawThreshold) : Number(withdrawStrikeThreshold));
   const currencyBTC = btc(1);
+  const safeMatchedRate = Number(matchedRate) || 0;
 
   const selectClickHandler = (val: number) => {
     receiveType ? setWithdrawThreshold(val) : setWithdrawStrikeThreshold(val);
@@ -287,7 +288,7 @@ export default function Threshold({
                     <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                       onPress={() => selectClickHandler(item?.sats)}>
                       <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                      <Text style={{ fontSize: 18, marginStart: 30 }}>~{getStrikeCurrency(currency || 'USD')}{(item?.sats * matchedRate * currencyBTC).toFixed(2)}</Text>
+                      <Text style={{ fontSize: 18, marginStart: 30 }}>~{getStrikeCurrency(currency || 'USD')}{(item?.sats * safeMatchedRate * currencyBTC).toFixed(2)}</Text>
                     </TouchableOpacity>
                   )
                 })}
@@ -295,7 +296,7 @@ export default function Threshold({
             </GradientCard>
           </View>
         </Modal>
-        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(value * matchedRate * currencyBTC).toFixed(2)}</Text>
+        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(value * safeMatchedRate * currencyBTC).toFixed(2)}</Text>
         <TouchableOpacity onPress={() => customizeClickHandler(0)}>
           <GradientText style={styles.gradientText}>Customize</GradientText>
         </TouchableOpacity>
@@ -329,7 +330,7 @@ export default function Threshold({
           </GradientCard>
           <Text style={styles.text}>Sats</Text>
         </View>
-        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(reserveAmt * matchedRate * currencyBTC).toFixed(2)}</Text>
+        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(reserveAmt * safeMatchedRate * currencyBTC).toFixed(2)}</Text>
         <TouchableOpacity onPress={() => customizeClickHandler(1)}>
           <GradientText style={styles.gradientText}>Customize</GradientText>
         </TouchableOpacity>
@@ -343,7 +344,7 @@ export default function Threshold({
                     <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                       onPress={() => selectRAClickHandler(item?.sats)}>
                       <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                      <Text style={{ fontSize: 18, marginStart: 30 }}>~{getStrikeCurrency(currency || 'USD')}{(item?.sats * matchedRate * currencyBTC).toFixed(2)}</Text>
+                      <Text style={{ fontSize: 18, marginStart: 30 }}>~{getStrikeCurrency(currency || 'USD')}{(item?.sats * safeMatchedRate * currencyBTC).toFixed(2)}</Text>
                     </TouchableOpacity>
                   )
                 })}

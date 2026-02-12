@@ -126,7 +126,7 @@ export default function HomeScreen({ route }: Props) {
   const [balance, setBalance] = useState(0);
   console.log("🚀 ~ balanceMAIN:", balance)
   const [strikeBalance, setStrikeBalance] = useState(0);
-  const [currency, setCurrency] = useState('$');
+  const [currency, setCurrency] = useState('USD');
   const [convertedRate, setConvertedRate] = useState(0);
   console.log("🚀 ~ convertedRate:", convertedRate)
   const [convertedStrikeRate, setConvertedStrikeRate] = useState(0);
@@ -627,6 +627,8 @@ export default function HomeScreen({ route }: Props) {
                 strikeBalance={strikeBalance}
                 wallet={wallet}
                 coldStorageWallet={coldStorageWallet}
+                matchedRateStrike={Number(matchedRateStrike || 0)}
+                currencyStrike={strikeUser?.[1]?.currency || 'USD'}
               />
             }
           </View>

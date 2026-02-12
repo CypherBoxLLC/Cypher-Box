@@ -26,6 +26,8 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     matchedRate,
     currency
 }: Props) {
+    // Validate currency is a valid ISO 4217 code, fallback to USD
+    const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
     const { strikeUser, clearStrikeAuth } = useAuthStore();
     const [dollarStrikeText, setDollarStrikeText] = useState(1000000);
     const navigation = useNavigation();
@@ -40,7 +42,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     }
 
     const buyClickHandler = () => {
-      const amt = Number(dollarStrikeText * matchedRate * btc(1))
+      const amt = Number(dollarStrikeText * (Number(matchedRate) || 0) * btc(1))
       console.log('amt: ', amt, strikeUser?.[1]?.available)
       if(strikeUser?.[1]?.available == 0){
         SimpleToast.show('Fiat balance is empty, please add cash to buy BTC', SimpleToast.SHORT);
@@ -51,16 +53,16 @@ function StrikeView({ showLogo = false, isShowButtons = false,
         return
       }
       if(Number(strikeUser?.[1]?.available) < amt){
-        dispatchNavigate('BuyBitcoin', { currency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "SELL" });    
+        dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "SELL" });    
         
         // SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
         return
       }
-      dispatchNavigate('SendScreen', { currency, matchedRate, fiatAmount: amt, fiatType: "BUY" });
+      dispatchNavigate('SendScreen', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatType: "BUY" });
     }
 
     const sellClickHandler = () => {
-        const amt = Number(dollarStrikeText * matchedRate * btc(1))
+        const amt = Number(dollarStrikeText * (Number(matchedRate) || 0) * btc(1))
         console.log('strikeUser?.[0]?.available: ', strikeUser?.[0]?.available * SATS, dollarStrikeText)
         if(strikeUser?.[0]?.available == 0){
             SimpleToast.show('Bitcoin balance is empty, please add cash to buy Fiat', SimpleToast.SHORT);
@@ -72,10 +74,10 @@ function StrikeView({ showLogo = false, isShowButtons = false,
         }
         if(Number(strikeUser?.[0]?.available) < dollarStrikeText){
             // SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
-            dispatchNavigate('BuyBitcoin', { currency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "BUY" });    
+            dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "BUY" });    
             return
         }
-        dispatchNavigate('SendScreen', { currency, matchedRate, fiatAmount: amt, fiatType: "SELL" });    
+        dispatchNavigate('SendScreen', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatType: "SELL" });    
     }
 
     const handleStrikeLogout = async () => {
@@ -93,7 +95,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                         <View style={styles.sideContainer}>
                             <View style={styles.fiatBalanceBox}>
                                 <Text h2 bold>Fiat Balance</Text>
-                                <Text h2 bold>{`${getStrikeCurrency(currency || 'USD')}${Number(strikeUser?.[1]?.available)}`}</Text>
+                                <Text h2 bold>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
                             </View>
                             <GradientView
                                 style={styles.sellBuyButton}
@@ -112,7 +114,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 linearSecondStyle={styles.fiatBalanceBox3}>
                                 <CustomProgressBar value={dollarStrikeText} />
                                 <Text h3 bold >{`${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
-                                <Text h4 semibold>{getStrikeCurrency(currency || 'USD') + (dollarStrikeText * matchedRate * btc(1)).toFixed(2)}</Text>
+                                <Text h4 semibold>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
                             </BlackBGView>
                             <GradientView
                                 style={styles.sellBuyButton}
@@ -174,7 +176,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                 </View>
             }
             <BlackBGView linearFirstStyle={styles.bitcoinPriceContainer}>
-                <Text bold style={styles.bitcoinPriceText}>{matchedRate.toLocaleString('en-US', { style: 'currency', currency: currency || 'USD' }) + ' /BTC' || `${getStrikeCurrency(currency || 'USD')}0.00` + ' /BTC'}</Text>
+                <Text bold style={styles.bitcoinPriceText}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
             </BlackBGView>
             {showLogo &&
                 <Image source={Strike} style={styles.strikeLogo} resizeMode='contain' />

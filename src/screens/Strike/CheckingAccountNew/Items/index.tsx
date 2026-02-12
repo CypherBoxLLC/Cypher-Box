@@ -17,11 +17,12 @@ interface Props {
 
 export default function Items({ matchedRate, currency, receiveType, item, onPressHandler }: Props) {
 
-    const BTCToSats = receiveType ? 0 : (Number(item.amount?.amount) * 100000000).toFixed(2);
-    const satsAmount = receiveType ? item.amount.toString().replace('-', '') : BTCToSats.toString().replace('-', ''); // Adjusted for negative sign
-    const amountSign = receiveType ? item.amount < 0 ? "-" : "+" : Number(BTCToSats) < 0 ? "-" : "+";
+    const BTCToSats = receiveType ? 0 : (Number(item.amount?.amount || 0) * 100000000).toFixed(2);
+    const satsAmount = receiveType ? Math.abs(Number(item.amount || 0)).toString() : Math.abs(Number(BTCToSats)).toString();
+    const amountSign = receiveType ? (Number(item.amount || 0)) < 0 ? "-" : "+" : Number(BTCToSats) < 0 ? "-" : "+";
     const currencyBTC = btc(1);
-    const dollarAmount = satsAmount * matchedRate * currencyBTC;
+    const safeMatchedRate = Number(matchedRate) || 0;
+    const dollarAmount = Number(satsAmount) * safeMatchedRate * currencyBTC;
 
     const textColor = {
       color: item.amount < 0 ? colors.red : colors.green,

@@ -17,6 +17,8 @@ interface Props {
     refSendRBSheet: any;
     setReceiveType: any;
     strikeBalance: any;
+    matchedRateStrike?: number;
+    currencyStrike?: string;
 }
 
 export default function WalletsView({
@@ -31,6 +33,8 @@ export default function WalletsView({
     refSendRBSheet,
     setReceiveType,
     strikeBalance,
+    matchedRateStrike = 0,
+    currencyStrike = 'USD',
 }: Props) {
     const { allBTCWallets, setWalletTab } = useAuthStore();
 
@@ -47,9 +51,9 @@ export default function WalletsView({
                     if(allBTCWallets.length > 1) {
                         tabs.length = 0;
                         tabs.push({ key: "divider", component: () => <CircularView balance={balance} convertedRate={convertedRate} currency={currency} wallet={walletTabsMap[wallet].key} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType}/> });                                    
-                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currency} matchedRate={matchedRate} /> });
+                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRate={matchedRateStrike} /> });
                     } else if (walletTabsMap[wallet].key === 'strike') {
-                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currency} matchedRate={matchedRate} /> });
+                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRate={matchedRateStrike} /> });
                     }
                 }
             });
@@ -62,7 +66,7 @@ export default function WalletsView({
 
     const walletTabsMap = {
         COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet}/> },
-        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} /> },
+        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currencyStrike} isLoading={isLoading} matchedRate={matchedRateStrike} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} /> },
     };
 
 

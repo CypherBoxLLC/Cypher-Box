@@ -78,9 +78,9 @@ export default function StrikeWallet({
     };
 
     const sendClickHandler = (walletType: boolean) => {
-        // dispatchNavigate('BuyBitcoin', { currency, matchedRate, receiveType: walletType });
+        const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
         if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
-            dispatchNavigate('SendScreen', { currency, matchedRate, receiveType: false });
+            dispatchNavigate('SendScreen', { currency: safeCurrency, matchedRate, receiveType: false });
         } else {
             setReceiveType(walletType);
             refSendRBSheet.current.open();
@@ -90,8 +90,8 @@ export default function StrikeWallet({
     const hasFilledTheBar = calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount)) === 100
 
     const checkingAccountClickHandler = (walletType: boolean) => {
-        // dispatchNavigate('CheckingAccount', { matchedRate, receiveType: walletType });
-        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: false, balance: Math.round(Number(strikeUser?.[0]?.available || 0) * SATS), converted: (Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2), currency, reserveAmount: Number(reserveStrikeAmount), withdrawThreshold: Number(withdrawStrikeThreshold) });
+        const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
+        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: false, balance: Math.round(Number(strikeUser?.[0]?.available || 0) * SATS), converted: (Number(strikeUser?.[0]?.available || 0) * (matchedRate || 0)).toFixed(2), currency: safeCurrency, reserveAmount: Number(reserveStrikeAmount), withdrawThreshold: Number(withdrawStrikeThreshold) });
     }
 
     const handleStrikeLogin = async () => {
@@ -134,7 +134,7 @@ export default function StrikeWallet({
                             </View>
                             <View style={styles.view}>
                                 <Text h2 bold style={styles.sats}>
-                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ ${getStrikeCurrency(strikeUser?.[1]?.currency || 'USD')}${(Number(strikeUser?.[0]?.available || 0) * (matchedRate || 0)).toFixed(2)}`}
+                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ ${getStrikeCurrency(currency || strikeUser?.[1]?.currency || 'USD')}${(Number(strikeUser?.[0]?.available || 0) * (Number(matchedRate) || 0)).toFixed(2)}`}
                                     {/* {strikeUser && strikeUser[0]?.available || 0} sats ~ {"$" + convertedRate.toFixed(2)} */}
                                 </Text>
                                 <Text bold style={styles.totalsats}>
