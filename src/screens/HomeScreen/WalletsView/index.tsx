@@ -50,7 +50,7 @@ export default function WalletsView({
                     tabs.push(walletTabsMap[wallet]);
                     if(allBTCWallets.length > 1) {
                         tabs.length = 0;
-                        tabs.push({ key: "divider", component: () => <CircularView balance={balance} convertedRate={convertedRate} currency={currency} wallet={walletTabsMap[wallet].key} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType}/> });                                    
+                        tabs.push({ key: "divider", component: () => <CircularView balance={balance} convertedRate={convertedRate} currency={currency} wallet={walletTabsMap[wallet].key} matchedRate={matchedRateStrike} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType}/> });                                    
                         tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRate={matchedRateStrike} /> });
                     } else if (walletTabsMap[wallet].key === 'strike') {
                         tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRate={matchedRateStrike} /> });

@@ -8,7 +8,7 @@ import { CoinOSSmall, Refresh, Strike2 } from "@Cypher/assets/images";
 import CircleTimer from "../CircleTimer";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
-import { SATS } from "@Cypher/helpers/coinosHelper";
+import { SATS, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
     wallet: any;
@@ -25,16 +25,17 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
 
 // {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ $${(Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2)}`}
     
+    const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
+    const safeMatchedRate = Number(matchedRate) || 0;
     const checkingAccount = {
         first: {
             value: `${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats`,
-            convertedValue: `~  $${(Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2)}`,
-            // convertedValue: '~  $750',
+            convertedValue: `~  ${strikeCurrencySymbol}${(Number(strikeUser?.[0]?.available || 0) * safeMatchedRate).toFixed(2)}`,
             image: Strike2,
         },
         second: {
-            value: `${balance} sats`,
-            convertedValue: `~  ${Number(convertedRate || 0).toFixed(2)}`,
+            value: `${balance || 0} sats`,
+            convertedValue: `~  $${Number(convertedRate || 0).toFixed(2)}`,
             image: CoinOSSmall,
         }
     };
@@ -51,7 +52,7 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
 
 
     const clickHandler = (value: boolean) => {
-        dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value});
+        dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value, currency, balance, converted: convertedRate});
     }
 
     return <View style={{
