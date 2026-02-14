@@ -2,7 +2,6 @@ import { Text } from "@Cypher/component-library";
 import { Card, GradientCardWithShadow } from "@Cypher/components";
 import { calculateBalancePercentage, dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
-import { SATS } from "@Cypher/helpers/coinosHelper";
 import React from "react";
 import { Image, Linking, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
@@ -17,6 +16,7 @@ interface Props {
     refRBSheet: any;
     refSendRBSheet: any;
     setReceiveType: any;
+    homeMessage?: string | null;
 }
 
 export default function CoinosWallet({
@@ -29,8 +29,9 @@ export default function CoinosWallet({
     refRBSheet,
     refSendRBSheet,
     setReceiveType,
+    homeMessage,
 }: Props) {
-    const { isAuth, withdrawThreshold, reserveAmount, clearAuth, walletID, coldStorageWalletID, isStrikeAuth, strikeUser, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
+    const { isAuth, withdrawThreshold, reserveAmount, clearAuth } = useAuthStore();
 
     const receiveClickHandler = (type: boolean) => {
         if(type){
@@ -80,10 +81,10 @@ export default function CoinosWallet({
                         receiveClickHandler={receiveClickHandler}
                         sendClickHandler={sendClickHandler}
                     />
-                    <View style={{ minHeight: 90, justifyContent: 'center' }}>
-                        {!isLoading && hasFilledTheBar && (walletID || coldStorageWalletID) &&
+                    <View style={{ minHeight: 40, justifyContent: 'center' }}>
+                        {!isLoading && homeMessage &&
                             <Text h4 style={styles.alert}>
-                                Your balance is large enough to withdraw to self-custody!
+                                {homeMessage}
                             </Text>
                         }
                     </View>

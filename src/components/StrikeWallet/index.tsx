@@ -22,6 +22,7 @@ interface Props {
     refSendRBSheet: any;
     setReceiveType: any;
     strikeBalance: any;
+    homeMessage?: string | null;
 }
 
 const config = {
@@ -60,6 +61,7 @@ export default function StrikeWallet({
     refSendRBSheet,
     setReceiveType,
     strikeBalance,
+    homeMessage,
 }: Props) {
     const { isStrikeAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
 
@@ -181,10 +183,10 @@ export default function StrikeWallet({
                             isTextShadow
                         />
                     </View>
-                    <View style={{ minHeight: 90, justifyContent: 'center' }}>
-                        {!isLoading && hasFilledTheBar && (walletID || coldStorageWalletID) &&
+                    <View style={{ minHeight: 40, justifyContent: 'center' }}>
+                        {!isLoading && homeMessage &&
                             <Text h4 style={styles.alert}>
-                                Your balance is large enough to withdraw to self-custody!
+                                {homeMessage}
                             </Text>
                         }
                     </View>

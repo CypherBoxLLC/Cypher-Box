@@ -20,8 +20,9 @@ interface Props {
     currency: any;
     balance: any;
     convertedRate: any;
+    homeMessage?: string | null;
 }
-export default function CircularView({ matchedRate, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate }: Props) {
+export default function CircularView({ matchedRate, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeMessage }: Props) {
     const { strikeUser, withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
     const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
@@ -108,6 +109,13 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
             >
                 <Text h3 style={{ ...shadow.text25 }}>Send</Text>
             </GradientView>
+        </View>
+        <View style={{ minHeight: 40, justifyContent: 'center' }}>
+            {homeMessage &&
+                <Text h4 style={{ color: '#23C47F', paddingHorizontal: 20 }}>
+                    {homeMessage}
+                </Text>
+            }
         </View>
     </View>
 }

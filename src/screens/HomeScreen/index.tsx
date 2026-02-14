@@ -308,9 +308,23 @@ export default function HomeScreen({ route }: Props) {
       }
   };
 
+  const tokenRefreshedRef = useRef(false);
+
   useEffect(() => {
     async function handleToken() {
       if (isAuth && token) {
+        // Refresh token once on first load to avoid 401 race
+        if (!tokenRefreshedRef.current) {
+          tokenRefreshedRef.current = true;
+          try {
+            const newToken = await refreshCoinOSToken();
+            if (newToken && newToken !== token) {
+              const { setToken } = useAuthStore.getState();
+              setToken(newToken);
+              return; // token change will re-trigger this effect with fresh token
+            }
+          } catch (_) {}
+        }
         handleUser();
         loadPayments();
       } else {
@@ -352,19 +366,8 @@ export default function HomeScreen({ route }: Props) {
         loadPayments();
       });
 
-      // Refresh CoinOS token silently before connecting — ensures relay gets a valid token
+      // Connect WS and register push — token already refreshed in handleToken
       const initCoinosConnection = async () => {
-        try {
-          const newToken = await refreshCoinOSToken();
-          if (newToken) {
-            const { setToken } = useAuthStore.getState();
-            setToken(newToken);
-            console.log('[CoinOS] Token refreshed on launch');
-          }
-        } catch (e) {
-          console.warn('[CoinOS] Token refresh skipped:', e);
-        }
-
         connectCoinosSocket();
 
         // Register push token for background notifications (with fresh token)
@@ -540,9 +543,7 @@ export default function HomeScreen({ route }: Props) {
       setMatchedRate(matched || 0)
       setConvertedRate((matched || 0) * currency * response.balance)
       setCurrency("USD")
-      if (response?.balance) {
-        setBalance(response?.balance || 0);
-      }
+      setBalance(response?.balance ?? 0);
       setUser(response?.username);
     } catch (error) {
       console.error('error: ', error);
@@ -658,6 +659,50 @@ export default function HomeScreen({ route }: Props) {
   //   cold: ColdStorageTab,
   // });
 
+  // Single contextual message for the homepage — priority ordered
+  const getHomeMessage = (): string | null => {
+    const coinosBalance = Number(balance) || 0;
+    const strikeBal = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
+    const coinosTotal = Number(withdrawThreshold) + Number(reserveAmount);
+    const strikeTotal = Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount);
+    const coinosThresholdMet = isAuth && coinosBalance >= coinosTotal;
+    const strikeThresholdMet = isStrikeAuth && strikeBal >= strikeTotal;
+    const anyThresholdMet = coinosThresholdMet || strikeThresholdMet;
+    const hasVault = !!(walletID || coldStorageWalletID);
+
+    // Priority 1: Threshold met
+    if (anyThresholdMet && hasVault) {
+      return "Your balance is large enough to withdraw to self-custody!";
+    }
+    if (anyThresholdMet && !hasVault) {
+      return "Threshold met! Create a vault to withdraw to self-custody.";
+    }
+
+    // Priority 2: UTXO management
+    const hotUtxos = wallet?.getUtxo?.() || [];
+    const coldUtxos = coldStorageWallet?.getUtxo?.() || [];
+    const allUtxos = [...hotUtxos, ...coldUtxos];
+    const smallUtxos = allUtxos.filter((u: any) => u.value < 100000);
+    const fee = recommendedFee?.halfHourFee || recommendedFee?.hourFee || 0;
+    const feesAreLow = fee > 0 && fee <= 15;
+
+    if (wallet && !coldStorageWallet && hotUtxos.length > 5) {
+      return "You have more than 5 UTXOs. Consider upgrading to Cold Storage to consolidate and improve security.";
+    }
+
+    if (smallUtxos.length > 5 && feesAreLow) {
+      return "Fees are low — good time to consolidate your small UTXOs to save on future transaction costs.";
+    }
+
+    if (allUtxos.length > 8) {
+      return "You have many UTXOs. When network fees drop, consider consolidating to reduce future costs.";
+    }
+
+    return null;
+  };
+
+  const homeMessage = getHomeMessage();
+
   return (
     <ScreenLayout
       
@@ -712,12 +757,18 @@ export default function HomeScreen({ route }: Props) {
                 coldStorageWallet={coldStorageWallet}
                 matchedRateStrike={Number(matchedRateStrike || 0)}
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
+                homeMessage={homeMessage}
               />
             }
           </View>
           
           {/* */}
 
+          {!isLoading && (isWalletLoaded || isColdWalletLoaded) &&
+            <View style={{height: 205, marginTop: 15, marginBottom: 0, justifyContent: 'center', alignItems: 'center'}}>
+              <ActivityIndicator size="small" color="#23C47F" />
+            </View>
+          }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
             <View style={{height: 205, marginTop: 15, marginBottom: 0}}>
               <BottomBar

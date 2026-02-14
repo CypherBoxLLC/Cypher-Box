@@ -69,16 +69,22 @@ export default function BottomBar({
 
     const pulseRef = useRef<Animated.CompositeAnimation | null>(null);
 
+    const startPulse = useCallback(() => {
+        pulseRef.current?.stop();
+        glowAnim.setValue(0);
+        pulseRef.current = Animated.loop(
+            Animated.sequence([
+                Animated.timing(glowAnim, { toValue: 1, duration: 1200, useNativeDriver: false }),
+                Animated.timing(glowAnim, { toValue: 0, duration: 1200, useNativeDriver: false }),
+            ])
+        );
+        pulseRef.current.start();
+    }, []);
+
+    // Start on mount + whenever shouldGlow changes
     useEffect(() => {
         if (shouldGlow) {
-            glowAnim.setValue(0);
-            pulseRef.current = Animated.loop(
-                Animated.sequence([
-                    Animated.timing(glowAnim, { toValue: 1, duration: 1200, useNativeDriver: false }),
-                    Animated.timing(glowAnim, { toValue: 0, duration: 1200, useNativeDriver: false }),
-                ])
-            );
-            pulseRef.current.start();
+            startPulse();
         } else {
             pulseRef.current?.stop();
             pulseRef.current = null;
@@ -88,7 +94,16 @@ export default function BottomBar({
             pulseRef.current?.stop();
             pulseRef.current = null;
         };
-    }, [shouldGlow, balance, strikeUser]);
+    }, [shouldGlow]);
+
+    // Also restart on screen focus (coming back from other screens, app reopen)
+    useFocusEffect(
+        useCallback(() => {
+            if (shouldGlow) {
+                startPulse();
+            }
+        }, [shouldGlow])
+    );
 
     const getInitialIndex = () => {
         if (vaultTab) return 1;
