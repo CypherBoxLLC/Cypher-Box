@@ -38,7 +38,8 @@ interface Props extends TouchableOpacityProps {
 
 export default function LightningVaultCreate({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = 'Savings Vault', titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
     const { wallets } = useContext(BlueStorageContext);
-    const { walletID, coldStorageWalletID, vaultTab } = useAuthStore();
+    const { walletID, coldStorageWalletID, vaultTab, strikeToken } = useAuthStore();
+    const isStrike = !!strikeToken;
     const vaultTabCheck = isVault === false || isVault === true ? isVault : vaultTab;
     const wallet = vaultTabCheck ? wallets.find(w => w.getID() === coldStorageWalletID) : wallets.find(w => w.getID() === walletID);
     const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];
@@ -73,16 +74,16 @@ export default function LightningVaultCreate({ isVault, container, innerContaine
                                 Strike
                             </Text> */}
                             <Image
-                            source={require('@Cypher/assets/images/StrikeText.png')}
-                            style={{height: 25, marginTop: 10, marginStart: 22}}
+                            source={isStrike ? require('@Cypher/assets/images/StrikeText.png') : require('@Cypher/assets/images/coinos.png')}
+                            style={{height: 20, width: 80, marginTop: 10, marginStart: 22}}
                             resizeMode="contain"
                             />
                         </View>
                         </View>
                         
                         <View style={styles.view}>
-                            <Text h2 bold style={styles.sats}>
-                            withdrawal threshold{/* {"$" + convertedRate.toFixed(2)} */}
+                            <Text bold style={[styles.sats, { fontSize: 12 }]}>
+                            withdrawal threshold
                             </Text>
                             {/* <Text bold style={styles.totalsats}>
                             {formatNumber(Number(withdrawThreshold) + Number(reserveAmount))} sats

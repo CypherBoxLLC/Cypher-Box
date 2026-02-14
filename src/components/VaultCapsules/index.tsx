@@ -1,5 +1,5 @@
-import React from "react";
-import { Image, ImageBackground, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { Animated, Image, ImageBackground, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
 import { Barcode, ProgressBar5, Tag, Transaction, TransactionBlue, Yes} from "@Cypher/assets/images";
@@ -10,6 +10,8 @@ import { blue } from "react-native-reanimated/lib/typescript/reanimated2/Colors"
 
 interface Props {
     item: any;
+    isPending?: boolean;
+    isVault?: boolean;
 }
 
 const whiteCapsule = require("@Cypher/assets/images/whitecapsule.png")
@@ -32,7 +34,23 @@ const mask8 = require("@Cypher/assets/images/mask8.png")
 const mask9 = require("@Cypher/assets/images/mask9.png")
 const mask10 = require("@Cypher/assets/images/mask10.png")
 
-const VaultCapsules = ({ item}: Props) => {
+const VaultCapsules = ({ item, isPending = false, isVault = false }: Props) => {
+    const glowAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (isPending) {
+            const loop = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(glowAnim, { toValue: 1, duration: 1000, useNativeDriver: false }),
+                    Animated.timing(glowAnim, { toValue: 0, duration: 1000, useNativeDriver: false }),
+                ]),
+            );
+            loop.start();
+            return () => loop.stop();
+        } else {
+            glowAnim.setValue(0);
+        }
+    }, [isPending]);
     const BTCAmount = btc(item?.value) + " BTC";
     const SATsAmount = item;
     //const SATsAmount = 1_100_000_000
@@ -96,7 +114,27 @@ const VaultCapsules = ({ item}: Props) => {
         //maskElement = 
 
     return (
-                    <View style={styles.tab}>
+                    <View style={[styles.tab, { position: 'relative' }]}>
+                    {isPending && (
+                        <Animated.View
+                            pointerEvents="none"
+                            style={{
+                                position: 'absolute',
+                                top: -4,
+                                left: -4,
+                                right: -4,
+                                bottom: -4,
+                                borderRadius: 6,
+                                shadowColor: '#ffd700',
+                                shadowOffset: { width: 0, height: 0 },
+                                shadowOpacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }),
+                                shadowRadius: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 28] }),
+                                elevation: 20,
+                                borderWidth: 1.5,
+                                borderColor: glowAnim.interpolate({ inputRange: [0, 1], outputRange: ['rgba(255,215,0,0.3)', 'rgba(255,215,0,0.9)'] }),
+                            }}
+                        />
+                    )}
                     <MaskedView
                             style={{ flex: 1, flexDirection: 'row', width: '100%', alignContent: 'center', alignItems:'center', justifyContent: 'center', alignSelf: 'center'}}
                             maskElement={
@@ -109,7 +147,6 @@ const VaultCapsules = ({ item}: Props) => {
                         </MaskedView>
                         
                     </View>
-                    //<Text>{SATsAmount}+</Text>
                     
     );
 };

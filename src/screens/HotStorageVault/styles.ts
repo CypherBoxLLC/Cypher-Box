@@ -216,7 +216,7 @@ export default StyleSheet.create<Style>({
         borderRadius: 21,
         borderWidth: 3,
         borderColor: colors.greenShadow,
-        width: widths - 150,
+        width: widths - 80,
         alignItems: 'center',
         justifyContent: 'center',
         // marginStart: 35,

@@ -33,7 +33,7 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { bitcoinRecommendedFee, createInvoice, getCurrencyRates, getInvoiceByLightening, getMe, getTransactionHistory } from "@Cypher/api/coinOSApis";
+import { bitcoinRecommendedFee, createInvoice, getCurrencyRates, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
 import { btc, formatNumber, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
 import loc, { formatBalance, formatBalanceWithoutSuffix } from '../../../loc';
@@ -48,6 +48,7 @@ import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../b
 import { authorize } from "react-native-app-auth";
 import { getBalances } from "@Cypher/api/strikeAPIs";
 import ReceivedListNew from "./ReceivedListNew";
+import { connect as connectCoinosSocket, disconnect as disconnectCoinosSocket, setOnPaymentReceived, registerPushToken, setUsername as setCoinosUsername } from "@Cypher/services/coinosSocket";
 import Header from "./Header";
 import BalanceView from "./BalanceView";
 import BottomBar from "./BottomBar";
@@ -55,6 +56,7 @@ import CreateLightningAccount from "./CreateLightningAccount";
 import WalletsView from "./WalletsView";
 import SendListNew from "./SendListNew";
 import WithdrawList from "./WithdrawList";
+import SwapSheet from "./SwapSheet";
 import { FiatUnit, FiatUnitType } from "models/fiatUnit";
 import untypedFiatUnit from '../../../models/fiatUnits.json';
 
@@ -68,7 +70,7 @@ const config = {
   type: 'oauth',
   issuer: "https://auth.strike.me", // Strike Identity Server URL
   clientId: "cypherbox",
-  clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
+  clientSecret: "", // DO NOT hardcode secrets in client-side code
   redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
   scopes: ["offline_access", "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
   //clientAuthMethod: "post",
@@ -119,7 +121,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike } = useAuthStore();
+  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
   const A = require('../../../blue_modules/analytics');
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -155,6 +157,7 @@ export default function HomeScreen({ route }: Props) {
   const refRBSheet = useRef<any>(null);
   const refSendRBSheet = useRef<any>(null);
   const refWithdrawRBSheet = useRef<any>(null);
+  const refSwapRBSheet = useRef<any>(null);
   const [receivedListSecondTab, setReceivedListSecondTab] = useState(false);
   const carouselRef = useRef<Carousel<any>>(null);
 
@@ -184,8 +187,13 @@ export default function HomeScreen({ route }: Props) {
 
   const getWallet = async () => {
     try {
-      const allWallets = wallets.concat(false);
-      const walletTemp = allWallets.find((w: AbstractWallet) => w.getID() === walletID);
+      // const allWallets = wallets.concat(false);
+      const walletTemp = wallets.find((w: AbstractWallet) => w.getID() === walletID);
+      if (!walletTemp) {
+        console.warn('Wallet not found for ID:', walletID);
+        setIsAllDone(false);
+        return;
+      }
       const balanceTemp = !walletTemp?.hideBalance && formatBalance(walletTemp?.getBalance(), walletTemp?.getPreferredBalanceUnit(), true);
       const balanceWithoutSuffixTemp = !walletTemp?.hideBalance && formatBalanceWithoutSuffix(Number(walletTemp?.getBalance()), walletTemp?.getPreferredBalanceUnit(), true);
       await walletTemp.fetchBalance()
@@ -208,8 +216,13 @@ export default function HomeScreen({ route }: Props) {
 
   const getColdStorageWallet = async () => {
     try {
-      const allWallets = wallets.concat(false);
-      const walletTemp = allWallets.find((w: AbstractWallet) => w.getID() === coldStorageWalletID);
+      // const allWallets = wallets.concat(false);
+      const walletTemp = wallets.find((w: AbstractWallet) => w.getID() === coldStorageWalletID);
+      if (!walletTemp) {
+        console.warn('Cold storage wallet not found for ID:', coldStorageWalletID);
+        setIsAllDone(false);
+        return;
+      }
       const balanceTemp = !walletTemp?.hideBalance && formatBalance(walletTemp?.getBalance(), walletTemp?.getPreferredBalanceUnit(), true);
       const balanceWithoutSuffixTemp = !walletTemp?.hideBalance && formatBalanceWithoutSuffix(Number(walletTemp?.getBalance()), walletTemp?.getPreferredBalanceUnit(), true);
       await walletTemp.fetchBalance()
@@ -234,11 +247,60 @@ export default function HomeScreen({ route }: Props) {
   //   successfullyAuthenticated();
   // }, [])
 
+  const loadStrikeData = async () => {
+      console.log('[Strike] loadStrikeData START', Date.now());
+      try {
+          const balances = await getBalances();
+          console.log('[Strike] getBalances DONE', Date.now());
+          if (balances.data?.status === 401) {
+              SimpleToast.show("Authorization expired. Please login again to strike account", SimpleToast.SHORT);
+              clearStrikeAuth();
+          } else if (balances) {
+              console.log('balances (post-login): ', balances);
+              // Normalize: index 0 = BTC, index 1 = fiat (API order is not guaranteed)
+              const btcBalance = balances?.find((b: any) => b.currency === 'BTC');
+              const fiatBalance = balances?.find((b: any) => b.currency !== 'BTC');
+              const normalizedBalances = [btcBalance || balances?.[0], fiatBalance || balances?.[1]];
+              console.log('Normalized balances — BTC:', btcBalance, 'Fiat:', fiatBalance);
+              setStrikeUser(normalizedBalances);
+              setStrikeBalance((normalizedBalances?.[0]?.available * SATS) || 0);
+              const strikeCurrency = normalizedBalances?.[1]?.currency || 'USD';
+              console.log('Strike currency from balances:', strikeCurrency);
+              const matchedCurrency = untypedFiatUnit?.[strikeCurrency];
+              console.log('matchedCurrency lookup:', matchedCurrency);
+              if (!matchedCurrency) {
+                  console.warn('No fiatUnit found for', strikeCurrency, '- falling back to USD');
+              }
+              console.log('[Strike] fetching exchangeRate START', Date.now());
+              const rates = await exchangeRate(matchedCurrency || untypedFiatUnit?.['USD']);
+              console.log('[Strike] exchangeRate DONE', Date.now(), rates);
+              let numericAmount = 0;
+              if (rates && rates?.Rate) {
+                  numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
+                  console.log('Strike numericAmount:', numericAmount);
+                  setMatchedRateStrike(numericAmount);
+              }
+              try {
+                  const rate = await convertFiatToUSD(Number((normalizedBalances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1)), normalizedBalances?.[1]?.currency || 'USD') || 0;
+                  setStrikeConvertedBalance(rate);
+              } catch (e) {
+                  console.warn('convertFiatToUSD failed, using direct calculation:', e);
+                  const directRate = Number((normalizedBalances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1));
+                  setStrikeConvertedBalance(directRate);
+              }
+          }
+      } catch (error) {
+          console.error('Error loading Strike data:', error);
+      }
+  };
+
   const handleStrikeLogin = async () => {
       try {
           const result = await authorize(config);
           setStrikeToken(result.accessToken);
           setStrikeAuth(true);
+          // Immediately load Strike data after login instead of waiting for focus/effect
+          await loadStrikeData();
       } catch (error) {
           console.error("OAuth error", error);
       } finally {
@@ -279,6 +341,55 @@ export default function HomeScreen({ route }: Props) {
     handleToken();
   }, [isAuth, token, wallets, walletID, coldStorageWalletID]);
 
+  // CoinOS WebSocket for real-time payment notifications
+  useEffect(() => {
+    if (isAuth && token) {
+      console.log('[CoinOS WS] Auth detected, connecting...');
+      setCoinosUsername(user?.username || user);
+      setOnPaymentReceived((data) => {
+        console.log('[CoinOS WS] Payment callback, refreshing balance...');
+        handleUser();
+        loadPayments();
+      });
+
+      // Refresh CoinOS token silently before connecting — ensures relay gets a valid token
+      const initCoinosConnection = async () => {
+        try {
+          const newToken = await refreshCoinOSToken();
+          if (newToken) {
+            const { setToken } = useAuthStore.getState();
+            setToken(newToken);
+            console.log('[CoinOS] Token refreshed on launch');
+          }
+        } catch (e) {
+          console.warn('[CoinOS] Token refresh skipped:', e);
+        }
+
+        connectCoinosSocket();
+
+        // Register push token for background notifications (with fresh token)
+        try {
+          const Notifications = require('../../../blue_modules/notifications');
+          const pushTokenData = await Notifications.default.getPushToken();
+          if (pushTokenData?.token && user) {
+            registerPushToken(user?.username || user, pushTokenData.token);
+          }
+        } catch (error) {
+          console.warn('[Push Token] Registration failed:', error);
+        }
+      };
+
+      initCoinosConnection();
+    } else {
+      disconnectCoinosSocket();
+      setOnPaymentReceived(null);
+    }
+    return () => {
+      disconnectCoinosSocket();
+      setOnPaymentReceived(null);
+    };
+  }, [isAuth, token]);
+
   useEffect(() => {
     if (isAuth && token && ((!vaultAddress.startsWith('ln') && !vaultAddress.includes('@')) || (!coldStorageAddress.startsWith('ln') && !coldStorageAddress.includes('@'))) && !recommendedFee) {
       const init = async () => {
@@ -302,43 +413,13 @@ export default function HomeScreen({ route }: Props) {
   // useEffect(()  => {
   useFocusEffect(
     useCallback(() => {
-      const getInit = async () => {
-        if(strikeToken){
-          setTimeout(async () => {
-            const balances = await getBalances();
-            if(balances.data?.status === 401){
-              SimpleToast.show("Authorization expired. Please login again to strike account", SimpleToast.SHORT)
-              clearStrikeAuth();
-            } else if (balances) {
-              console.log('balances: ', balances)
-              setStrikeUser(balances);
-              setStrikeBalance((balances?.[0]?.available * SATS) || 0);
-              const matchedCurrency = untypedFiatUnit?.[balances?.[1]?.currency];
-              console.log('matchedCurrency: ', matchedCurrency, balances)
-              const rates = await exchangeRate(matchedCurrency);
-              console.log('rates: ', rates)
-              let numericAmount = 0
-              if (rates && rates?.Rate) {
-                numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
-                setMatchedRateStrike(numericAmount);
-              }
-              const strikeAmount = async () => {
-                const rate = await convertFiatToUSD(Number((balances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1)), balances?.[1]?.currency || 'USD') || 0
-                console.log('raterate strikeAmount: ', rate, rates)
-                return rate
-              }
-
-              
-              strikeAmount().then((result) => {
-                setStrikeConvertedBalance(result);
-              })
-
-            }
-          }, 1000);
-        }
+      // Refresh CoinOS balance on focus
+      if (isAuth && token) {
+        handleUser();
       }
-
-      getInit();
+      if (strikeToken) {
+        loadStrikeData();
+      }
     }, [strikeToken])
   )
 
@@ -452,6 +533,7 @@ export default function HomeScreen({ route }: Props) {
   const handleUser = async () => {
     try {
       const response = await getMe();
+      if (!response) return; // 401 handled in getMe()
       const responsetest = await getCurrencyRates();
       const currency = btc(1);
       const matched = matchKeyAndValue(responsetest, 'USD')
@@ -464,6 +546,7 @@ export default function HomeScreen({ route }: Props) {
       setUser(response?.username);
     } catch (error) {
       console.error('error: ', error);
+      SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
     } finally {
       setIsLoading(false)
       setRefreshing(false);
@@ -476,12 +559,16 @@ export default function HomeScreen({ route }: Props) {
       setPayments(paymentList.payments);
     } catch (error) {
       console.error('Error loading payments:', error);
+      SimpleToast.show("Failed to load payments. Pull to refresh.", SimpleToast.SHORT);
     }
   };
 
   const loginClickHandler = () => {
-    // dispatchNavigate('LoginCoinOSScreen');
-    dispatchNavigate('CheckingAccountIntro');
+    if (hasSeenCustodialWarning) {
+      dispatchNavigate('CheckingAccountLogin');
+    } else {
+      dispatchNavigate('CheckingAccountIntro');
+    }
   };
 
   const onBarScanned = (value: any) => {
@@ -504,7 +591,23 @@ export default function HomeScreen({ route }: Props) {
     if(coldStorageWallet){
       await coldStorageWallet?.fetchBalance();
     }
-    handleUser()
+    handleUser();
+    // Refresh Strike balance
+    if (strikeToken) {
+      try {
+        const balances = await getBalances();
+        if (balances && !balances.data?.status) {
+          const btcBal = balances?.find((b: any) => b.currency === 'BTC');
+          const fiatBal = balances?.find((b: any) => b.currency !== 'BTC');
+          const normalized = [btcBal || balances?.[0], fiatBal || balances?.[1]];
+          setStrikeUser(normalized);
+          setStrikeBalance((normalized?.[0]?.available * SATS) || 0);
+        }
+      } catch (e) {
+        console.log('Error refreshing Strike balance:', e);
+        SimpleToast.show("Failed to refresh Strike balance.", SimpleToast.SHORT);
+      }
+    }
   };
 
 
@@ -579,37 +682,16 @@ export default function HomeScreen({ route }: Props) {
                 // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                 balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
                 convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}`}
+                showAddAccount={allBTCWallets.length < 2 && !isLoading}
+                onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
               />
             </>
           )}
 
           {/* */}
 
-          {(allBTCWallets.length > 0 && allBTCWallets.length < 2) && !isLoading &&
-            <View style={styles.checkingaccContainer}>
-
-            
-
-              
-              <TouchableOpacity
-                onPress={() => dispatchNavigate('CheckingAccountIntro')}
-                style={{ flex: 1, alignItems: 'flex-end', flexDirection: 'row', alignSelf:'center', justifyContent:'flex-end' }}>
-                {/* <BlackBGView
-                  linearFirstStyle={styles.linearFirstStyle}
-                  linearSecondStyle={styles.linearSecondStyle}
-                  linearFirstColors={[colors.pink.gradient2, colors.pink.gradient1]}
-                  linearSecondColors={[colors.primary, colors.primary]}
-                > */}
-                  {/* <Image source={PlusNew} style={styles.plusImage} resizeMode="contain" /> */}
-                  <Text h4 bold style={{color: colors.pink.dark, fontSize: 20}}>+</Text>
-                  <Text h4 semibold style={{ marginStart: 5, color: colors.pink.dark }}>Add Account</Text>
-                {/* </BlackBGView> */}
-              </TouchableOpacity>
-            </View>
-          }
-          {(allBTCWallets.length > 1 && !isLoading) &&
-            <Text bold h2 style={{ height: 32, marginTop: 10 }}>Lightning Accounts</Text>
-            } 
+                    {/* Add Account button moved into BalanceView */}
+          {/* Lightning Accounts title moved into WalletsView carousel */}
 
           <View>
             {!isAuth && !isLoading && !isStrikeAuth ?
@@ -623,6 +705,7 @@ export default function HomeScreen({ route }: Props) {
                 matchedRate={matchedRate}
                 refRBSheet={refRBSheet}
                 refSendRBSheet={refSendRBSheet}
+                refSwapRBSheet={refSwapRBSheet}
                 setReceiveType={setReceiveType}
                 strikeBalance={strikeBalance}
                 wallet={wallet}
@@ -636,7 +719,7 @@ export default function HomeScreen({ route }: Props) {
           {/* */}
 
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={{height: 205,marginVertical: 15}}>
+            <View style={{height: 205, marginTop: 15, marginBottom: 0}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}
@@ -717,7 +800,7 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <SendListNew refRBSheet={refSendRBSheet} receiveType={receiveType} matchedRate={matchedRateStrike} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
+        <SendListNew refRBSheet={refSendRBSheet} receiveType={receiveType} matchedRate={matchedRateStrike || matchedRate} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
       </RBSheet>
 
       <RBSheet
@@ -755,6 +838,39 @@ export default function HomeScreen({ route }: Props) {
           coldStorageAddress={coldStorageAddress}
           vaultAddress={vaultAddress}
           coldStorageWallet={coldStorageWallet} 
+        />
+      </RBSheet>
+
+      <RBSheet
+        ref={refSwapRBSheet}
+        customStyles={{
+          wrapper: {
+            backgroundColor: 'transparent',
+          },
+          draggableIcon: {
+            backgroundColor: 'red',
+          },
+          container: {
+            height: 420,
+            backgroundColor: 'transparent',
+          }
+        }}
+        customModalProps={{
+          animationType: 'slide',
+          statusBarTranslucent: true,
+        }}
+        customAvoidingViewProps={{
+          enabled: false,
+        }}
+      >
+        <SwapSheet 
+          refSwapRBSheet={refSwapRBSheet}
+          user={user}
+          strikeMe={strikeMe}
+          isAuth={isAuth}
+          isStrikeAuth={isStrikeAuth}
+          coinosBalance={balance}
+          strikeBalance={strikeBalance}
         />
       </RBSheet>
       

@@ -30,7 +30,7 @@ const config = {
     type: 'oauth',
     issuer: "https://auth.strike.me", // Strike Identity Server URL
     clientId: "cypherbox",
-    clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
+    clientSecret: "", // DO NOT hardcode secrets in client-side code
     redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
     scopes: ["offline_access", "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
     //clientAuthMethod: "post",
@@ -181,23 +181,13 @@ export default function StrikeWallet({
                             isTextShadow
                         />
                     </View>
-                    {!isLoading &&
-                        (hasFilledTheBar ?
+                    <View style={{ minHeight: 90, justifyContent: 'center' }}>
+                        {!isLoading && hasFilledTheBar && (walletID || coldStorageWalletID) &&
                             <Text h4 style={styles.alert}>
-                                Your sats have materialized! You can create a Hot Storage Savings Vault and take full self-custody of your money by withdrawing a large chunk of a bitcoin from your custodian Lightning Account. Click the Withdraw button to know more
-                                {/* You can receive, send, and accumulate bitcoin using your Lightning Account. New security features will be revealed once you meet the withdrawal threshold at 2 million sats */}
+                                Your balance is large enough to withdraw to self-custody!
                             </Text>
-                            : (Number(strikeBalance) === Number(withdrawStrikeThreshold + reserveStrikeAmount)) ?
-                                <Text h4 style={styles.alert}>
-                                    Congrats! You've completed the bar, It's time to create your Hot Storage Savings Vault and take full self-custody of your bitcoi. Click 'Withdraw' to know more.
-                                </Text>
-                                :
-                                <Text h4 style={styles.alertGrey}>
-                                    {/* New security upgrades will be revealed once you meet fill up the bar displayed on your Lightning Account. */}
-                                    {'\n'}
-                                </Text>
-                        )
-                    }
+                        }
+                    </View>
                 </View>
             }
 

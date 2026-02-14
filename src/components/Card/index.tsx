@@ -41,6 +41,8 @@ export default function Card({ onPress,
 }: Props) {
     const {coldStorageWalletID, walletID, allBTCWallets} = useAuthStore();
 
+    const thresholdMet = calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount)) >= 100;
+
     const onCardClickHandler = () => {
         onPress?.(true);
     }
@@ -123,7 +125,13 @@ export default function Card({ onPress,
                             {getSats()}
                         </Text>
                     </View>
-                    <View>
+                    <View style={thresholdMet ? {
+                        shadowColor: '#e84393',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 1,
+                        shadowRadius: 16,
+                        elevation: 10,
+                    } : undefined}>
                         <View style={styles.showLine} />
                         <View style={[styles.box, { left: getLineLeft() } as any]} />
                         <LinearGradient

@@ -16,7 +16,7 @@ const withAuthToken = async (requestConfig: any) => {
   // const authToken = await getAuthToken();
   const authToken = useAuthStore.getState().token;
   if (!authToken) {
-    throw new Error('Auth token not found in AsyncStorage');
+    throw new Error('Authentication required. Please login to continue.');
   }
   return {
     ...requestConfig,
@@ -97,6 +97,57 @@ export const loginUser = async (username: string, password: string, recaptchaTok
   } catch (error) {
     console.error('Error logging in user:', error);
     throw error;
+  }
+};
+
+/**
+ * Silently refresh CoinOS token using stored Keychain credentials.
+ * Returns the new token string on success, or null if refresh fails.
+ * Does NOT require captcha — CoinOS allows re-login without it for existing sessions.
+ */
+export const refreshCoinOSToken = async (): Promise<string | null> => {
+  try {
+    const Keychain = require('react-native-keychain');
+    const credentials = await Keychain.getGenericPassword({
+      service: 'coinos-login',
+      authenticationPrompt: { title: 'Authenticate to refresh CoinOS session' },
+    });
+
+    if (!credentials || !credentials.username || !credentials.password) {
+      console.log('[CoinOS] No keychain credentials for token refresh');
+      return null;
+    }
+
+    const payload = {
+      username: credentials.username,
+      password: credentials.password,
+      recaptcha: '',
+    };
+
+    const response = await fetch(`${BASE_URL}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': 'CoinOS-Mobile-App',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.warn('[CoinOS] Token refresh failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data?.token) {
+      console.log('[CoinOS] Token refreshed successfully');
+      return data.token;
+    }
+    return null;
+  } catch (e: any) {
+    console.warn('[CoinOS] Token refresh error:', e.message);
+    return null;
   }
 };
 
@@ -341,6 +392,7 @@ export const getMe = async () => {
     if(response?.status === 401){
       SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
       useAuthStore.getState().clearAuth();
+      return null;
     }
     const result = await response.json()
     console.log('result: ', result)

@@ -9,6 +9,7 @@ import QRCode from "react-native-qrcode-svg";
 import Clipboard from "@react-native-clipboard/clipboard";
 
 import { GradientView, SavingVault } from "@Cypher/components";
+import LinearGradient from "react-native-linear-gradient";
 import styles from "./styles";
 
 import { colors, heights, widths } from "@Cypher/style-guide";
@@ -136,8 +137,8 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     onPress={addressHandler}
                     style={styles.linearGradientStyle}
                     linearGradientStyle={styles.mainShadowStyle}
-                    topShadowStyle={[styles.outerShadowStyle, vaultTab && { shadowColor: colors.blueText }]}
-                    bottomShadowStyle={[styles.innerShadowStyle, vaultTab && { shadowColor: colors.blueText }]}
+                    topShadowStyle={[styles.outerShadowStyle, vaultTab && { shadowColor: colors.coldGreen }]}
+                    bottomShadowStyle={[styles.innerShadowStyle, vaultTab && { shadowColor: colors.coldGreen }]}
                     linearGradientStyleMain={styles.linearGradientStyleMain}
                 >
                     <Text h3 center>Vault Addresses</Text>
@@ -174,32 +175,63 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     {!vaultTab &&
                         <Text h4 style={styles.infoText}>You can use this vault address to receive sizable coins from another vault on the Bitcoin Network</Text>
                     }
-                    <View style={[styles.qrcode, vaultTab && { borderColor: colors.blueText, height: "40%", width: "60%" }]}>
-                        <View style={{ alignItems:'center', justifyContent: 'center',width: "100%", height: "100%", margin: 0, padding: 20, backgroundColor: 'white', borderRadius: 30 }}>
-                            <QRCode
-                                getRef={c => {
-                                    if (!c?.toDataURL) return;
-                                    c?.toDataURL((base64Image: string) => {
-                                        base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                                    });
-                                }}
-                                value={address}
-                                size={175}
-                                
-                                color="black"
-                                backgroundColor="white"
-                            />
+                    {vaultTab ? (
+                        <LinearGradient
+                            colors={[colors.cold.gradient1, colors.cold.gradient2]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={[styles.qrcode, { height: "40%", width: "60%", padding: 2 }]}
+                        >
+                            <View style={{ alignItems:'center', justifyContent: 'center', width: "100%", height: "100%", margin: 0, padding: 20, backgroundColor: 'white', borderRadius: 28 }}>
+                                <QRCode
+                                    getRef={c => {
+                                        if (!c?.toDataURL) return;
+                                        c?.toDataURL((base64Image: string) => {
+                                            base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
+                                        });
+                                    }}
+                                    value={address}
+                                    size={175}
+                                    color="black"
+                                    backgroundColor="white"
+                                />
+                            </View>
+                        </LinearGradient>
+                    ) : (
+                        <View style={styles.qrcode}>
+                            <View style={{ alignItems:'center', justifyContent: 'center', width: "100%", height: "100%", margin: 0, padding: 20, backgroundColor: 'white', borderRadius: 30 }}>
+                                <QRCode
+                                    getRef={c => {
+                                        if (!c?.toDataURL) return;
+                                        c?.toDataURL((base64Image: string) => {
+                                            base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
+                                        });
+                                    }}
+                                    value={address}
+                                    size={175}
+                                    color="black"
+                                    backgroundColor="white"
+                                />
+                            </View>
                         </View>
-                    </View>
+                    )}
                     <View style={styles.codeViewMain}>
-                        <TouchableOpacity style={[styles.codeView, vaultTab && { borderColor: colors.blueText }]} onPress={() => copyToClipboard(address)}>
-                            <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
-                            <Text semibold style={styles.address}>{shortenAddress(address)}</Text>
-                        </TouchableOpacity>
+                        {vaultTab ? (
+                            <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.coldGreen, borderRadius: 21, paddingHorizontal: 15, height: 44, width: widths - 80 }}>
+                                <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
+                                <Text semibold style={{ fontSize: 15, color: colors.white, marginStart: 10 }}>{address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'Loading...'}</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity style={styles.codeView} onPress={() => copyToClipboard(address)}>
+                                <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
+                                <Text semibold style={styles.address}>{shortenAddress(address)}</Text>
+                            </TouchableOpacity>
+                        )}
                         {/* <TouchableOpacity onPress={shareQRCode}>
                             <Image source={ShareNew} style={styles.shareImage} resizeMode="contain" />
                         </TouchableOpacity> */}
                     </View>
+{/* address shown inside copy button above */}
                     {/* <Text h4 style={styles.infoText}>You can use this Bitcoin Network address of your vault to receive coins</Text> */}
                 </>
                 :

@@ -10,9 +10,7 @@ import { dispatchReset } from "@Cypher/helpers/navigation";
 import { loginUser } from "@Cypher/api/coinOSApis";
 import useAuthStore from "@Cypher/stores/authStore";
 import { CoinOS } from "@Cypher/assets/images";
-import CheckBox from '@react-native-community/checkbox';
-import { authorize } from "react-native-app-auth";
-import RecaptchaV3 from "./RecaptchaV3";
+import * as Keychain from 'react-native-keychain';
 import RecaptchaV2 from "./RecaptchaV2";
 
 // Strike OAuth configuration
@@ -22,27 +20,39 @@ export default function LoginCoinOSScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [isRememberMe, setIsRememberMe] = useState(false);
     const {
-        userCreds,
         allBTCWallets,
+        FirstTimeCoinOS,
         setToken, 
         setAuth, 
         setUser, 
-        setUserCreds,
         setAllBTCWallets,
+        setFirstTimeCoinOS,
     } = useAuthStore();
-    const [accessToken, setAccessToken] = useState<string | null>(null);
     const [captchaToken, setCaptchaToken] = useState("");
     const [showCaptcha, setShowCaptcha] = useState(false);
 
     useEffect(() => {
-        if(userCreds){
-            setEmail(userCreds.email);
-            setPassword(userCreds.password)
-            setIsRememberMe(userCreds.isRememberMe)
-        }
-    }, [userCreds])
+        // Load saved credentials from secure keychain (prompts FaceID/TouchID if available)
+        const loadCredentials = async () => {
+            try {
+                const credentials = await Keychain.getGenericPassword({ 
+                    service: 'coinos-login',
+                    authenticationPrompt: {
+                        title: 'Authenticate to auto-fill credentials',
+                    },
+                });
+                if (credentials) {
+                    setEmail(credentials.username);
+                    setPassword(credentials.password);
+                }
+            } catch (error) {
+                // User cancelled biometric or no saved credentials — just show empty fields
+                console.log('Keychain load skipped or no credentials saved');
+            }
+        };
+        loadCredentials();
+    }, [])
 
     const handleCaptchaToken = (token: string) => {
         console.log('Captcha verified, proceeding with login...');
@@ -66,11 +76,24 @@ export default function LoginCoinOSScreen() {
                 const temp = [...allBTCWallets];
                 setAllBTCWallets([...temp, 'COINOS']);
                 
-                if(userCreds) {
-                    setUserCreds({email, password, isRememberMe: true});
+                // Save credentials securely in keychain (iOS) / keystore (Android)
+                // Protected by biometrics — FaceID/TouchID required to read them
+                try {
+                    await Keychain.setGenericPassword(email, password, { 
+                        service: 'coinos-login',
+                        accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
+                        accessible: Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
+                    });
+                } catch (error) {
+                    console.error('Error saving credentials to keychain');
                 }
                 
-                dispatchReset("HomeScreen");
+                if(FirstTimeCoinOS) {
+                    setFirstTimeCoinOS(false);
+                    dispatchNavigate("CheckingAccountCreated", { accountType: 'coinos' });
+                } else {
+                    dispatchReset("HomeScreen");
+                }
             } else {
                 SimpleToast.show("Invalid username or password", SimpleToast.SHORT);
                 setCaptchaToken(""); // Reset to allow retry
@@ -116,10 +139,6 @@ export default function LoginCoinOSScreen() {
         setShowCaptcha(false);
         setCaptchaToken("");
     };
-
-    const toggleIsRememberMe = (value: boolean | ((prevState: boolean) => boolean)) => {
-        setIsRememberMe(value)
-    }
 
     console.log('captchaToken: ', captchaToken)
     return (

@@ -104,6 +104,7 @@ interface Style {
     linearFirstStyle: ViewStyle;
     linearSecondStyle: ViewStyle;
     circleContainer: ViewStyle;
+    swapIcon: ViewStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -645,7 +646,7 @@ export default StyleSheet.create<Style>({
         shadowOffset: { width: 2, height: 2 },
         shadowRadius: 2,
         shadowOpacity: 2,
-        shadowColor: colors.white,
+        shadowColor: '#555555',
         borderRadius: 25,
         width: (widths / 2) - 60,
         height: 47,
@@ -656,7 +657,7 @@ export default StyleSheet.create<Style>({
         shadowOffset: { width: -2, height: -2 },
         shadowRadius: 2,
         shadowOpacity: 0.64,
-        shadowColor: '#1D1D1D',
+        shadowColor: '#333333',
         borderRadius: 25,
         width: (widths / 2) - 60,
         height: 47,
@@ -742,12 +743,11 @@ export default StyleSheet.create<Style>({
         position: 'absolute',
     },
     circularView: {
-        // flex: 1,
-        // paddingVertical: 40,
-        marginTop: 10,
+        marginTop: 16,
         flexDirection: 'row',
         justifyContent: 'space-between',
-        // backgroundColor: 'red'
+        alignItems: 'center',
+        overflow: 'visible',
     },
     linearFirstStyle:{
         height: 32,
@@ -760,7 +760,14 @@ export default StyleSheet.create<Style>({
         borderRadius: 10,
     },
     circleContainer:{
-        width: 135,
-        height: 135,
+        width: 140,
+        height: 140,
+        overflow: 'visible',
+    },
+    swapIcon: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 40,
+        height: 40,
     }
 });

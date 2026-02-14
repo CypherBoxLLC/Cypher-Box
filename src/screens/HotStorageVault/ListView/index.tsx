@@ -31,11 +31,11 @@ const ListView = ({ wallet, item, onPress, handleChoose, ids, vaultTab }: Props)
 
     return (
         <ImageBackground source={vaultTab ? TransactionBlue : Transaction} style={styles.main}>
-            {ids.includes(`${item.txid}:${item.vout}`) && (<View style={[styles.borderview, vaultTab && { borderColor: colors.blueText }]} />)
+            {ids.includes(`${item.txid}:${item.vout}`) && (<View style={[styles.borderview, vaultTab && { borderColor: colors.coldGreen }]} />)
             }
             <TouchableOpacity activeOpacity={0.7} style={styles.container} onPress={() => onPress(`${item.txid}:${item.vout}`)}>
                 <View style={styles.coin}>
-                    <Capsule wallet={wallet} item={item}></Capsule>
+                    <Capsule wallet={wallet} item={item} vaultTab={vaultTab}></Capsule>
                     {/* <View style={styles.tab}>
                     <MaskedView
                             style={{ flex: 1, flexDirection: 'row', height: '100%', alignContent: 'stretch', alignItems:'stretch', justifyContent: 'stretch' }}
@@ -52,7 +52,7 @@ const ListView = ({ wallet, item, onPress, handleChoose, ids, vaultTab }: Props)
                             } resizeMode='contain' style={styles.progressbar} />
                         </MaskedView>
                     </View> */}
-                    <Text bold>Address: {shortenAddress(item?.address)}</Text>
+                    {/* <Text bold>Address: {shortenAddress(item?.address)}</Text> */}
                 </View>
                 <View style={styles.size}>
                     <Text bold style={styles.value}>{BTCAmount}</Text>

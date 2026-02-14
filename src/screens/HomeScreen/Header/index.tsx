@@ -37,7 +37,7 @@ export default function Header({ onBarScanned }: Props) {
                     source={require("../../../../img/settings.png")}
                 />
             </TouchableOpacity>
-            <TouchableOpacity
+            {/* <TouchableOpacity
                 style={styles.imageViews}
                 onPress={onScanButtonPressed}
             >
@@ -46,7 +46,7 @@ export default function Header({ onBarScanned }: Props) {
                     resizeMode="contain"
                     source={require("../../../../img/scan-new@3x2.png")}
                 />
-            </TouchableOpacity>
+            </TouchableOpacity> */}
         </View>
     </View>
 }

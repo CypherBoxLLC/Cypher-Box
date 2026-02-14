@@ -115,11 +115,11 @@ export default function SendReceiveOnChain({ route }: Props) {
                 <TextView keytext="Txid:  " text={transaction?.txid} />
 
                 {isSent && transaction.confirmations == 0 &&
-                    <TouchableOpacity style={[styles.button, { marginBottom: 20 }, vaultTab && { borderColor: colors.blueText}]}>
+                    <TouchableOpacity style={[styles.button, { marginBottom: 20 }, vaultTab && { borderColor: colors.coldGreen}]}>
                         <Text bold h4 style={styles.text}>Accelrate transaction</Text>
                     </TouchableOpacity>
                 }
-                <TouchableOpacity style={[styles.button, vaultTab && { borderColor: colors.blueText}]} onPress={handleViewBtcNetExplorerClickHandler}>
+                <TouchableOpacity style={[styles.button, vaultTab && { borderColor: colors.coldGreen}]} onPress={handleViewBtcNetExplorerClickHandler}>
                     <Text bold h4 style={styles.text}>View in Bitcoin Network Explorer</Text>
                 </TouchableOpacity>
             </View>

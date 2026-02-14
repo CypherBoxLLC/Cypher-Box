@@ -11,9 +11,11 @@ import { GradientView } from "@Cypher/components";
 interface Props {
     balance: any
     convertedRate: any
+    onAddAccount?: () => void
+    showAddAccount?: boolean
 }
 
-export default function BalanceView({ balance, convertedRate }: Props) {
+export default function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount }: Props) {
     return (
         <View style={[styles.innerContainer]} >
             <Shadow
@@ -28,19 +30,21 @@ export default function BalanceView({ balance, convertedRate }: Props) {
                     {convertedRate}
                 </Text>
 
-                <TouchableOpacity
-                onPress={() => dispatchNavigate("CheckingAccountIntro")}
-                style={{flex:1, flexDirection: 'row', alignContent: 'flex-end', alignItems: 'flex-end', justifyContent: 'flex-end'}}>
-                <Text h4 bold style={{color: colors.pink.light, fontSize: 20}}>+</Text>
-                <Text h4 semibold style={{ marginStart: 5, color: colors.pink.light }}>Add Account</Text>
-                </TouchableOpacity>
-
-                
                 <Shadow
                     inner
                     useArt
                     style={StyleSheet.flatten([styles.shadowBottomBottom])}
                 />
+
+                {showAddAccount && onAddAccount && (
+                    <TouchableOpacity
+                        onPress={onAddAccount}
+                        activeOpacity={0.7}
+                        style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 15, paddingVertical: 10, zIndex: 10}}>
+                        <Text h4 bold style={{color: colors.pink.light, fontSize: 20}}>+</Text>
+                        <Text h4 semibold style={{ marginStart: 5, color: colors.pink.light }}>Add Account</Text>
+                    </TouchableOpacity>
+                )}
                 
             </Shadow>
         </View>

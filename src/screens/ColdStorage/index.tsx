@@ -5,7 +5,7 @@ import SimpleToast from "react-native-simple-toast";
 
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
-import { GradientView, ProgressBar, SavingVault } from "@Cypher/components";
+import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import Clipboard from '@react-native-clipboard/clipboard'
@@ -24,7 +24,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { scanQrHelper } from "../../../helpers/scan-qr";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
-import { ProgressBarColdStorage, ProgressBar5, Check, Edit, StrikeFull, CoinOS } from "@Cypher/assets/images";
+import { Check, Edit, StrikeFull, CoinOS } from "@Cypher/assets/images";
 
 const prompt = require('../../../helpers/prompt');
 const btcAddressRx = /^[a-zA-Z0-9]{26,35}$/;
@@ -89,7 +89,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const allBalance = formatBalanceWithoutSuffix(balance, BitcoinUnit.BTC, true);
     const balanceWallet = !wallet?.hideBalance && formatBalance(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const balanceWithoutSuffix = !wallet?.hideBalance && formatBalanceWithoutSuffix(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
-    const primaryColor = vaultTab ? colors?.blueText : colors.green
+    const primaryColor = vaultTab ? colors.coldGreen : colors.green
     const [selectedItem, setSelectedItem] = useState(isStrikeAuth ? 1 : 2);
     const [data, setData] = useState([
       ...(isStrikeAuth ? [{
@@ -185,13 +185,9 @@ export default function ColdStorage({ route, navigation }: Props) {
     
     useEffect(() => {
         // check if we have a suitable wallet
-        const suitable = wallets.filter(w => w.chain === Chain.ONCHAIN && w.allowSend());
-        if (suitable.length === 0 && type !== "TOPUP") {
-        Alert.alert(loc.errors.error, loc.send.details_wallet_before_tx);
-        return;
-        }
+        const suitable = wallets.filter(w => w && w.chain === Chain.ONCHAIN);
         console.log('vaultTabvaultTabvaultTab: ', vaultTab)
-        const newWallet = vaultTab ? ((coldStorageWalletID && wallets.find(w => w.getID() === coldStorageWalletID)) || suitable[0]) : ((walletID && wallets.find(w => w.getID() === walletID)) || suitable[0]);
+        const newWallet = vaultTab ? ((coldStorageWalletID && wallets.find(w => w && w.getID() === coldStorageWalletID)) || suitable[0]) : ((walletID && wallets.find(w => w && w.getID() === walletID)) || suitable[0]);
         setFeeUnit(newWallet.getPreferredBalanceUnit());
         setAmountUnit(newWallet.preferredBalanceUnit); // default for whole screen
 
@@ -519,7 +515,8 @@ export default function ColdStorage({ route, navigation }: Props) {
             vaultSend,
             capsuleTotal,
             isBatch,
-            fee: new BigNumber(fee).dividedBy(100000000).toNumber(),          
+            fee: new BigNumber(fee).dividedBy(100000000).toNumber(),
+            matchedRate: matchedRate,
         }
         console.log('data: ', data)
         dispatchNavigate('ConfirmTransction', {
@@ -763,8 +760,8 @@ export default function ColdStorage({ route, navigation }: Props) {
                         <View style={{flexDirection: 'row', alignItems: 'center', marginLeft: 2, marginTop: 18 }}>
                           <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', maxWidth: '72%'}}>
                             {capsulesData && capsulesData.map((item, i) => (
-                              <View style={styles.tabs}>
-                                <ProgressBar image={vaultTab ? ProgressBarColdStorage : ProgressBar5} />
+                              <View key={item.id || i} style={styles.tabs}>
+                                <VaultCapsules item={item.value} />
                               </View>
                             ))}
                           </View>
@@ -774,7 +771,26 @@ export default function ColdStorage({ route, navigation }: Props) {
                         </View>
                       </View>
                     :
-                      <Text bold style={styles.coinselected}>Coins selected: {ids.length} coins</Text>
+                      <View>
+                        <Text bold style={styles.coinselected}>Capsules selected:</Text>
+                        {capsulesData && capsulesData.length > 0 ? (
+                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                            {capsulesData.map((item: any, i: number) => (
+                              <View key={item.id || i} style={styles.tabs}>
+                                <VaultCapsules item={item.value} />
+                              </View>
+                            ))}
+                          </View>
+                        ) : (
+                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                            {Array(ids.length).fill(0).map((_, i) => (
+                              <View key={i} style={styles.tabs}>
+                                <VaultCapsules item={0} />
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
                     }
                     {/* </TouchableOpacity> */}
                     {isBatch ?
@@ -795,7 +811,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                             paddingVertical: 8, 
                             paddingHorizontal: 25, 
                             borderWidth: 2, 
-                            borderColor: vaultTab ? colors.blueText : colors.greenShadow, 
+                            borderColor: vaultTab ? colors.coldGreen : colors.greenShadow, 
                             borderRadius: 15,
                             // width: '96%'
                           }}>
@@ -822,12 +838,40 @@ export default function ColdStorage({ route, navigation }: Props) {
                       <View style={styles.priceView}>
                           <View>
                               <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : "Recipient will get:"}</Text>
-                              <Text bold style={[styles.value, vaultTab && {color: colors.blueText}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
+                              <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
+                              <View style={{flexDirection: 'row', marginTop: 8}}>
+                                  <View style={styles.tabs}>
+                                      <VaultCapsules item={((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000)} />
+                                  </View>
+                              </View>
                           </View>
                           <TouchableOpacity style={[styles.editAmount, { borderColor: satsEditable ? primaryColor : '#B6B6B6' }]} onPress={editAmountClickHandler}>
                               <Text>Edit amount</Text>
                           </TouchableOpacity>
                       </View>                    
+                    }
+                    {capsuleTotal > 0 && !isBatch &&
+                        (() => {
+                            const sendAmountSats = (Number(usd || 0) / Number(matchedRate || 0)) * 100000000;
+                            const feeSats = feePrecalc.current || 0;
+                            const changeSats = capsuleTotal - sendAmountSats - feeSats;
+                            if (changeSats > 0) {
+                                return (
+                                    <View style={[styles.priceView, {marginTop: 10}]}>
+                                        <View>
+                                            <Text style={styles.recipientTitle}>Change:</Text>
+                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
+                                            <View style={{flexDirection: 'row', marginTop: 8}}>
+                                                <View style={styles.tabs}>
+                                                    <VaultCapsules item={changeSats} />
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </View>
+                                );
+                            }
+                            return null;
+                        })()
                     }
                     {address && !isBatch &&
                         <View style={styles.priceView}>
@@ -915,7 +959,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     paddingVertical: 8, 
                                     paddingHorizontal: 25, 
                                     borderWidth: 2, 
-                                    borderColor: vaultTab ? colors.blueText : colors.greenShadow, 
+                                    borderColor: vaultTab ? colors.coldGreen : colors.greenShadow, 
                                     borderRadius: 15,
                                     width: '96%'
                                   }}>
@@ -924,13 +968,13 @@ export default function ColdStorage({ route, navigation }: Props) {
                                       width: '95%',
                                       fontSize: 16,
                                       marginTop: 3,
-                                      color: vaultTab ? colors.blueText : colors.greenShadow
+                                      color: vaultTab ? colors.coldGreen : colors.greenShadow
                                     })}>{"Vault Address: "+shortenAddress(to)}</Text>
                                     <Image source={Edit} style={styles.editImage} resizeMode='contain' />
                                   </TouchableOpacity>
                                 </View>
                                 :
-                                  <Text style={{...styles.fees, color: vaultSend ? colors.blueText : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
+                                  <Text style={{...styles.fees, color: vaultSend ? colors.coldGreen : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
                               }
                           </View>
                         </View>
@@ -964,15 +1008,17 @@ export default function ColdStorage({ route, navigation }: Props) {
                         </TouchableOpacity>
                       </>
                     }
-                    <View style={styles.priceView}>
+                    <View style={{marginTop: 15}}>
                         <View>
                             <Text style={styles.recipientTitle}>Network fee:</Text>
                             
-                            <Text bold style={styles.fees}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}</Text>
+                            <Text bold style={styles.fees}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text bold style={styles.fees}>~ {isCustomFee ? customFee + " sats/vByte" :  getCurrentFee().fee + " sats"}</Text> */}
                         </View>
                         {visibleSelection &&
-                            <View style={[styles.feesDropDown, vaultTab && {borderColor: colors.blueText}]}>
+                            <>
+                            <TouchableOpacity activeOpacity={1} onPress={() => setVisibleSelection(false)} style={{position: 'absolute', top: -1000, bottom: -1000, left: -1000, right: -1000, zIndex: 99}} />
+                            <View style={[styles.feesDropDown, vaultTab && {borderColor: colors.coldGreen}, {zIndex: 100}]}>
                                 {options.map((item, index) => {
                                     console.log('item: ', item)
                                     if(item?.fee){
@@ -1016,8 +1062,9 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     <Text bold style={selectedFees === 3 ? StyleSheet.flatten([styles.border, { paddingHorizontal: 20 }]) : {}}>Customize</Text>
                                 </TouchableOpacity> 
                             </View>
+                            </>
                         }
-                        <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6' }]}
+                        <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6', marginStart: 0, marginTop: 10, alignSelf: 'flex-start' }]}
                             onPress={editFeesClickHandler}>
                             <Text style={{ marginStart: 10, }}>{isCustomFee ? "Customize" : getCurrentFee().label}</Text>
                             <View style={{ marginHorizontal: 10 }}>
@@ -1046,7 +1093,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                         style={[styles.noteInput, { borderColor: transactionMemo?.length > 0 ? primaryColor : '#B6B6B6' }]}
                     />
                 </View>
-                <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, vaultTab && {backgroundColor: colors.blueText}]}>
+                <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, vaultTab && {backgroundColor: colors.coldGreen}]}>
                     <Text h3>Next</Text>
                 </TouchableOpacity>
             </View>

@@ -6,10 +6,11 @@ import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
-import React, { useEffect, useRef, useState } from "react";
-import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Animated, Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import Carousel from "react-native-snap-carousel";
+import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
 import TabBar from "../TabBar";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
@@ -54,19 +55,53 @@ export default function BottomBar({
     matchedRateStrike
 }: Props) {
     console.log("🚀 ~ hasSavingVault:", hasSavingVault)
-    const { isAuth, isStrikeAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, vaultTab, setVaultTab } = useAuthStore();
+    const { isAuth, isStrikeAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, reserveAmount, reserveStrikeAmount, vaultTab, setVaultTab } = useAuthStore();
 
     const carouselRef = useRef<Carousel<any>>(null);
+    const glowAnim = useRef(new Animated.Value(0)).current;
 
-    const [index, setIndex] = useState(vaultTab ? 1 : 0);
+    // Check if either account has reached its threshold
+    const coinosBalance = Number(balance) || 0;
+    const strikeBalance = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
+    const coinosTotal = Number(withdrawThreshold) + Number(reserveAmount);
+    const strikeTotal = Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount);
+    const shouldGlow = (isAuth && coinosBalance >= coinosTotal) || (isStrikeAuth && strikeBalance >= strikeTotal);
 
-    // useEffect(() => {
-    //     if(vaultTab && (wallet || coldStorageWallet)) {
-    //         carouselRef.current?.snapToItem(1, true);
-    //     } else if(!vaultTab && (wallet || coldStorageWallet)) {
-    //         carouselRef.current?.snapToItem(0, true);
-    //     }
-    // }, [vaultTab]);
+    const pulseRef = useRef<Animated.CompositeAnimation | null>(null);
+
+    useEffect(() => {
+        if (shouldGlow) {
+            glowAnim.setValue(0);
+            pulseRef.current = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(glowAnim, { toValue: 1, duration: 1200, useNativeDriver: false }),
+                    Animated.timing(glowAnim, { toValue: 0, duration: 1200, useNativeDriver: false }),
+                ])
+            );
+            pulseRef.current.start();
+        } else {
+            pulseRef.current?.stop();
+            pulseRef.current = null;
+            glowAnim.setValue(0);
+        }
+        return () => {
+            pulseRef.current?.stop();
+            pulseRef.current = null;
+        };
+    }, [shouldGlow, balance, strikeUser]);
+
+    const getInitialIndex = () => {
+        if (vaultTab) return 1;
+        if (!hasSavingVault && hasColdStorage) return 1;
+        return 0;
+    };
+    const [index, setIndex] = useState(getInitialIndex());
+
+    useEffect(() => {
+        if (!hasSavingVault && hasColdStorage && !vaultTab) {
+            setVaultTab(true);
+        }
+    }, []);
 
     const coldStorageClickHandler = () => {
         setVaultTab(true);
@@ -265,7 +300,7 @@ export default function BottomBar({
             } */}
             {(hasColdStorage && coldStorageWallet) ? (
                 <SavingVault
-                    container={StyleSheet.flatten([styles.savingVault, { marginTop: 10 }])}
+                    container={StyleSheet.flatten([styles.savingVault, { marginTop: 14 }])}
                     innerContainer={styles.savingVault}
                     shadowTopBottom={styles.savingVault}
                     shadowBottomBottom={styles.savingVault}
@@ -295,7 +330,7 @@ export default function BottomBar({
         <View style={styles.bottominner}>
             <GradientView
                 onPress={topupClickHandler}
-                topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
+                topShadowStyle={styles.outerShadowStyle}
                 bottomShadowStyle={styles.innerShadowStyle}
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
@@ -307,20 +342,54 @@ export default function BottomBar({
                 />
                 <Text bold h3 center style={{ textAlign: 'center' }}>Top-up</Text>
             </GradientView>
-            <GradientView
-                onPress={withdrawClickHandler}
-                topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
-                bottomShadowStyle={styles.innerShadowStyle}
-                style={styles.linearGradientStyle}
-                linearGradientStyle={styles.mainShadowStyle}
-            >
-                <Text bold h3 center style={{ textAlign: 'center' }}>Withdraw</Text>
-                <Image
-                    style={styles.arrowRight}
-                    resizeMode="contain"
-                    source={require("../../../../img/arrow-right.png")}
-                />
-            </GradientView>
+            <View style={{ position: 'relative' }}>
+                {shouldGlow && (
+                    <Animated.View
+                        pointerEvents="none"
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            borderRadius: 20,
+                            overflow: 'hidden',
+                            opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.1, 1] }),
+                            zIndex: 10,
+                        }}
+                    >
+                        <View style={{
+                            position: 'absolute',
+                            top: -4,
+                            left: -4,
+                            right: -4,
+                            bottom: -4,
+                            borderRadius: 24,
+                            borderWidth: 6,
+                            borderColor: '#e84393',
+                            shadowColor: '#e84393',
+                            shadowOffset: { width: 0, height: 0 },
+                            shadowOpacity: 1,
+                            shadowRadius: 12,
+                        }} />
+                    </Animated.View>
+                )}
+                <GradientView
+                    onPress={withdrawClickHandler}
+                    topShadowStyle={styles.outerShadowStyle}
+                    bottomShadowStyle={styles.innerShadowStyle}
+                    style={styles.linearGradientStyle}
+                    linearGradientStyle={styles.mainShadowStyle}
+                    gradiantColors={undefined}
+                >
+                    <Text bold h3 center style={{ textAlign: 'center', color: '#fff' }}>Withdraw</Text>
+                    <Image
+                        style={[styles.arrowRight]}
+                        resizeMode="contain"
+                        source={require("../../../../img/arrow-right.png")}
+                    />
+                </GradientView>
+            </View>
         </View>
     );
 
@@ -329,7 +398,7 @@ export default function BottomBar({
             <>
             <View style={{ width: screenWidth * 0.905 }}>
                 {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
-                    <TopUpWithdrawView isVault={index == 1 ? true : false} />
+                    <TopUpWithdrawView isVault={false} />
                 }
                 {item.component()}
             </View>

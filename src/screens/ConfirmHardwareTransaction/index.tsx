@@ -87,7 +87,6 @@ export default function ConfirmHardwareTransaction({ route, navigation }: Props)
                         <Text h3 style={{color: colors.gray.default}}>Verify on Coinb.in</Text>
                     </TouchableOpacity>
                 </View>
-                <Text h4 center>Causion: Bitcoin payments are irriversable</Text>
                 <View style={styles.swipeview}>
                     <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isLoading} />
                 </View>

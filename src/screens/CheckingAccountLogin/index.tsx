@@ -23,7 +23,7 @@ const config = {
     type: 'oauth',
     issuer: "https://auth.strike.me", // Strike Identity Server URL
     clientId: "cypherbox",
-    // clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
+    // clientSecret removed — do not hardcode secrets
     clientSecret: "",
     redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
     scopes: ["offline_access", 'partner.currency-exchange-quote.create', 'partner.currency-exchange-quote.execute', 'partner.currency-exchange-quote.read', 'partner.receive-request.read', 'partner.deposit.manage', 'partner.payout-originator.read', 'partner.payment-quote.onchain.create', 'partner.payment-quote.lightning.create', 'partner.payment-quote.execute', 'partner.receive-request.create', "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
@@ -90,7 +90,8 @@ export default function CheckingAccountLogin() {
       setStrikeMe(decoded);
       setAllBTCWallets([...temp, "STRIKE"]);
       if(FirstTimeLightning){
-        dispatchNavigate("CheckingAccountCreated");
+        setFirstTimeLightning(false);
+        dispatchNavigate("CheckingAccountCreated", { accountType: 'strike' });
       }else{
         dispatchReset("HomeScreen", {
           isComplete: true

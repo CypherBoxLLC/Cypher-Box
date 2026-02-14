@@ -22,10 +22,11 @@ interface Props {
     currency?: string;
     colors_?: string[];
     isGradient?: boolean;
+    maxBalance?: number;
 }
 
-export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], isGradient = true }: Props) {
-    const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
+export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], isGradient = true, maxBalance }: Props) {
+    const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'MAX', '0'];
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState(prevSats || '');
     const currencyBTC = btc(1);
@@ -53,14 +54,31 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
             setUSD('');
             setSATS('');
         }
-    }, [sats.length, isSats]);
+    }, [sats, isSats]);
 
+    const prevIsSats = React.useRef(isSats);
     useEffect(() => {
         if (!prevSats) {
             setSats('');
             setSATS('');
             setUSD('');
         }
+        // Convert value when switching between sats and USD
+        if (prevIsSats.current !== isSats && sats.length > 0) {
+            const currentValue = Number(sats);
+            if (currentValue > 0) {
+                if (isSats) {
+                    // Was USD, now sats: convert USD → sats
+                    const converted = Math.round((currentValue / Number(matchedRate || 1)) * SATS);
+                    setSats(String(converted));
+                } else {
+                    // Was sats, now USD: convert sats → USD
+                    const converted = (currentValue / SATS * (Number(matchedRate) || 0)).toFixed(2);
+                    setSats(String(converted));
+                }
+            }
+        }
+        prevIsSats.current = isSats;
         setIsSATS(isSats);
     }, [isSats, prevSats]);
 
@@ -70,6 +88,17 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
 
     const handleDelete = () => {
         setSats((prev) => prev.slice(0, -1));
+    };
+
+    const handleMax = () => {
+        if (maxBalance && maxBalance > 0) {
+            if (isSats) {
+                setSats(String(Math.floor(maxBalance)));
+            } else {
+                const usdAmount = (maxBalance / SATS * (Number(matchedRate) || 0)).toFixed(2);
+                setSats(String(usdAmount));
+            }
+        }
     };
 
     return (
@@ -82,9 +111,21 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
                 style={styles.linearGradient} />
             <View style={styles.keypad}>
                 {KEYSARRAY.map((key) => (
-                    <TouchableOpacity key={key} style={styles.key} onPress={() => handlePress(key)}>
-                        <Text style={styles.keyText}>{key}</Text>
-                    </TouchableOpacity>
+                    key === 'MAX' ? (
+                        <TouchableOpacity key={key} style={styles.key} onPress={handleMax}>
+                            <LinearGradient
+                                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                                colors={colors_}
+                                style={styles.maxButton}
+                            >
+                                <Text bold style={styles.maxText}>MAX</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity key={key} style={styles.key} onPress={() => handlePress(key)}>
+                            <Text style={styles.keyText}>{key}</Text>
+                        </TouchableOpacity>
+                    )
                 ))}
                 <TouchableOpacity style={styles.key} onPress={handleDelete}>
                     <Image source={Cancel} />

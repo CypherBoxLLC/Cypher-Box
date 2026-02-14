@@ -329,8 +329,8 @@ export default function BuyBitcoin({ navigation, route }: any) {
             if(info?.fiatAmount || info?.fiatTotal) {
                 dispatchNavigate('ReviewPayment', {
                     ...info,
-                    value: info?.fiatTotal ? info?.fiatType == "BUY" ? (Number(info?.fiatTotal || 0) / btc(1)) : (Number(info?.fiatTotal || 0) / info?.matchedRate * SATS).toFixed(2) : sats,
-                    converted: info?.fiatTotal ? info?.fiatType == "BUY" ? (Number(info?.fiatTotal || 0) * Number(info?.matchedRate || 0)).toFixed(2) : Number(info?.fiatTotal || 0).toFixed(2) : usd,
+                    value: info?.fiatTotal ? info?.fiatType == "BUY" ? (Number(info?.fiatTotal || 0) / Number(info?.matchedRate || 1) / btc(1)).toFixed(0) : (Number(info?.fiatTotal || 0) / btc(1)).toFixed(0) : sats,
+                    converted: info?.fiatTotal ? info?.fiatType == "BUY" ? Number(info?.fiatTotal || 0).toFixed(2) : (Number(info?.fiatTotal || 0) * Number(info?.matchedRate || 0)).toFixed(2) : usd,
                     isSats: true,
                     to: info?.isWithdrawal ? info?.to : sender,
                     fees: 0,
@@ -387,7 +387,7 @@ export default function BuyBitcoin({ navigation, route }: any) {
                                 <LinearGradient style={styles.maxBtc}
                                     colors={['#2A2A2A', '#1E1E1E']}
                                 >
-                                    <Text>Max: {getStrikeCurrency(info?.currency || 'USD')}{info?.fiatType == "BUY" ? (Number(info?.fiatTotal || 0) * Number(info?.matchedRate || 0)).toFixed(2) : Number(info?.fiatTotal || 0).toFixed(2)}</Text>
+                                    <Text>Max: {info?.fiatType == "BUY" ? `${getStrikeCurrency(info?.currency || 'USD')}${Number(info?.fiatTotal || 0).toFixed(2)}` : `${(Number(info?.fiatTotal || 0) / btc(1)).toFixed(0)} sats`}</Text>
                                 </LinearGradient>
                             </TouchableOpacity>
                         </View>

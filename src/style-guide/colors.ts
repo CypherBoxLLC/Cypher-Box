@@ -34,7 +34,7 @@ const colors = {
   },
   coldBlue: '#21C7FB',
   shadowBlue: '#05344E',
-  coldGreen: '#15A7A7', 
+  coldGreen: '#21C7FB', 
   green: '#23C47F',
   greenNew: '#0CC28A',
   greenShadow: '#6DFFD3',

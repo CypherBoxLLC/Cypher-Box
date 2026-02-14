@@ -1,7 +1,7 @@
 import { Minus, Plus, Strike } from '@Cypher/assets/images'
 import { Text } from '@Cypher/component-library'
 import React, { useState } from 'react'
-import { Image, View } from 'react-native'
+import { Image, TouchableOpacity, View } from 'react-native'
 import BlackBGView from '../BlackBGView'
 import CustomProgressBar from '../CustomProgressBar'
 import GradientView from '../GradientView'
@@ -33,12 +33,63 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     const navigation = useNavigation();
 
     const addClickHandler = () => {
-      setDollarStrikeText(dollarStrikeText + 100000)
+      if (dollarStrikeText >= 1_000_000_000) {
+        // 10 BTC - go to custom amount screen
+        buyClickHandler();
+        return;
+      } else if (dollarStrikeText >= 100_000_000) {
+        // BTC range: step 1 BTC (100M sats)
+        setDollarStrikeText(dollarStrikeText + 100_000_000);
+      } else if (dollarStrikeText >= 20_000_000) {
+        setDollarStrikeText(dollarStrikeText + 10_000_000);
+      } else if (dollarStrikeText >= 11_000_000) {
+        setDollarStrikeText(20_000_000);
+      } else if (dollarStrikeText >= 10_000_000) {
+        setDollarStrikeText(11_000_000);
+      } else if (dollarStrikeText >= 2_000_000) {
+        setDollarStrikeText(dollarStrikeText + 1_000_000);
+      } else if (dollarStrikeText >= 1_100_000) {
+        setDollarStrikeText(2_000_000);
+      } else if (dollarStrikeText >= 1_000_000) {
+        setDollarStrikeText(1_100_000);
+      } else if (dollarStrikeText >= 100_000) {
+        setDollarStrikeText(dollarStrikeText + 100_000);
+      } else {
+        setDollarStrikeText(dollarStrikeText + 10_000);
+      }
     }
 
     const subClickHandler = () => {
-      if(dollarStrikeText !== 0)
-        setDollarStrikeText(dollarStrikeText - 100000)    
+      if (dollarStrikeText <= 10_000) return;
+      if (dollarStrikeText > 100_000_000) {
+        setDollarStrikeText(dollarStrikeText - 100_000_000);
+      } else if (dollarStrikeText === 100_000_000) {
+        setDollarStrikeText(90_000_000);
+      } else if (dollarStrikeText > 20_000_000) {
+        setDollarStrikeText(dollarStrikeText - 10_000_000);
+      } else if (dollarStrikeText === 20_000_000) {
+        setDollarStrikeText(11_000_000);
+      } else if (dollarStrikeText === 11_000_000) {
+        setDollarStrikeText(10_000_000);
+      } else if (dollarStrikeText > 2_000_000) {
+        setDollarStrikeText(dollarStrikeText - 1_000_000);
+      } else if (dollarStrikeText === 2_000_000) {
+        setDollarStrikeText(1_100_000);
+      } else if (dollarStrikeText === 1_100_000) {
+        // First green chunk → back to full orange (1M)
+        setDollarStrikeText(1_000_000);
+      } else if (dollarStrikeText > 100_000) {
+        // Orange range: step 100K
+        const newVal = dollarStrikeText - 100_000;
+        setDollarStrikeText(newVal < 100_000 ? 100_000 : newVal);
+      } else if (dollarStrikeText === 100_000) {
+        // First orange chunk → back to full white (90K)
+        setDollarStrikeText(90_000);
+      } else {
+        // White range: step 10K
+        const newVal = dollarStrikeText - 10_000;
+        setDollarStrikeText(newVal < 10_000 ? 10_000 : newVal);
+      }
     }
 
     const buyClickHandler = () => {
@@ -53,7 +104,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
         return
       }
       if(Number(strikeUser?.[1]?.available) < amt){
-        dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "SELL" });    
+        dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "BUY" });    
         
         // SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
         return
@@ -74,7 +125,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
         }
         if(Number(strikeUser?.[0]?.available) < dollarStrikeText){
             // SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
-            dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "BUY" });    
+            dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "SELL" });    
             return
         }
         dispatchNavigate('SendScreen', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatType: "SELL" });    
@@ -113,7 +164,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                             <BlackBGView linearFirstStyle={styles.fiatBalanceBox2}
                                 linearSecondStyle={styles.fiatBalanceBox3}>
                                 <CustomProgressBar value={dollarStrikeText} />
-                                <Text h3 bold >{`${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
+                                <Text h3 bold >{dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} BTC` : `${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
                                 <Text h4 semibold>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
                             </BlackBGView>
                             <GradientView
@@ -152,7 +203,8 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                     </GradientView>
                 </View>
             </View>
-            {isShowButtons &&
+            {/* TODO: Deposit-Withdraw fiat - implement with Strike banking API later */}
+            {/* {isShowButtons &&
                 <View style={styles.bottomButtonsContainer}>
                     <GradientView
                         style={styles.sellBuyButton3}
@@ -163,21 +215,23 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                     >
                         <Text h3 bold center>Deposit-Withdraw fiat</Text>
                     </GradientView>
-                    <GradientView
-                        style={styles.sellBuyButton4}
-                        linearGradientStyle={styles.sellBuyGradient4}
-                        topShadowStyle={styles.topShadow4}
-                        bottomShadowStyle={styles.bottomShadow4}
-                        linearGradientStyleMain={styles.linearGradientStyleMain4}
-                        onPress={handleStrikeLogout}
-                    >
-                        <Text h3 bold center>Logout</Text>
-                    </GradientView>
                 </View>
-            }
+            } */}
             <BlackBGView linearFirstStyle={styles.bitcoinPriceContainer}>
                 <Text bold style={styles.bitcoinPriceText}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
             </BlackBGView>
+            {isShowButtons &&
+                <GradientView
+                    style={[styles.sellBuyButton4, { marginTop: 60 }]}
+                    linearGradientStyle={styles.sellBuyGradient4}
+                    topShadowStyle={styles.topShadow4}
+                    bottomShadowStyle={styles.bottomShadow4}
+                    linearGradientStyleMain={styles.linearGradientStyleMain4}
+                    onPress={handleStrikeLogout}
+                >
+                    <Text h3 bold center>Logout</Text>
+                </GradientView>
+            }
             {showLogo &&
                 <Image source={Strike} style={styles.strikeLogo} resizeMode='contain' />
             }

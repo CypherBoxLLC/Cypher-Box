@@ -8,29 +8,30 @@ import { CoinOSSmall, Refresh, Strike2 } from "@Cypher/assets/images";
 import CircleTimer from "../CircleTimer";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
-import { SATS, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
+import { SATS, getStrikeCurrency, btc } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
     wallet: any;
     matchedRate: any;
     refRBSheet: any;
     refSendRBSheet: any;
+    refSwapRBSheet?: any;
     setReceiveType: any;
     currency: any;
     balance: any;
     convertedRate: any;
 }
-export default function CircularView({ matchedRate, wallet, refRBSheet, refSendRBSheet, setReceiveType, currency, balance, convertedRate }: Props) {
-    const { strikeUser } = useAuthStore();
+export default function CircularView({ matchedRate, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate }: Props) {
+    const { strikeUser, withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
-// {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ $${(Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2)}`}
-    
     const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
     const safeMatchedRate = Number(matchedRate) || 0;
+    const strikeBtcSats = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
+    const strikeBtcFiatEquivalent = Number(strikeUser?.[0]?.available || 0) * safeMatchedRate;
     const checkingAccount = {
         first: {
-            value: `${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats`,
-            convertedValue: `~  ${strikeCurrencySymbol}${(Number(strikeUser?.[0]?.available || 0) * safeMatchedRate).toFixed(2)}`,
+            value: `${strikeBtcSats} sats`,
+            convertedValue: `~ ${strikeCurrencySymbol}${strikeBtcFiatEquivalent.toFixed(2)}`,
             image: Strike2,
         },
         second: {
@@ -52,7 +53,15 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
 
 
     const clickHandler = (value: boolean) => {
-        dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value, currency, balance, converted: convertedRate});
+        if (value) {
+            // CoinOS
+            dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value, currency, balance, converted: convertedRate, withdrawThreshold, reserveAmount });
+        } else {
+            // Strike
+            const strikeBalanceSats = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
+            const strikeConverted = Number(strikeUser?.[0]?.available || 0) * safeMatchedRate;
+            dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value, currency: strikeUser?.[1]?.currency || 'USD', balance: strikeBalanceSats, converted: strikeConverted, withdrawThreshold: withdrawStrikeThreshold, reserveAmount: reserveStrikeAmount });
+        }
     }
 
     return <View style={{
@@ -63,6 +72,9 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
         <View style={styles.circularView}>
             <TouchableOpacity onPress={() => clickHandler(false)} style={styles.circleContainer}>
                 <CircleTimer type={"STRIKE"} progress={90} size={135} strokeWidth={7} {...checkingAccount.first} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => refSwapRBSheet?.current?.open()} style={styles.swapIcon}>
+                <Image source={Refresh} style={{ width: 18, height: 29 }} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => clickHandler(true)} style={styles.circleContainer}>
                 <CircleTimer type={"COINOS"} progress={0} size={135} strokeWidth={7}{...checkingAccount.second} />

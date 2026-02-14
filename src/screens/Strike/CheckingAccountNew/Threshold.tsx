@@ -4,6 +4,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { btc, formatNumber, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import { Picker } from "@react-native-picker/picker";
 import React, { useState } from "react";
 import {
   ScrollView,
@@ -17,33 +18,25 @@ import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 
 const data = [
-  {
-    sats: 2000000,
-  },
-  {
-    sats: 3000000,
-  },
-  {
-    sats: 4000000,
-  },
-  {
-    sats: 5000000,
-  },
-  {
-    sats: 6000000,
-  },
-  {
-    sats: 7000000,
-  },
-  {
-    sats: 8000000,
-  },
-  {
-    sats: 9000000,
-  },
-  {
-    sats: 10000000,
-  },
+  { sats: 100000 },
+  { sats: 200000 },
+  { sats: 300000 },
+  { sats: 400000 },
+  { sats: 500000 },
+  { sats: 600000 },
+  { sats: 700000 },
+  { sats: 800000 },
+  { sats: 900000 },
+  { sats: 1000000 },
+  { sats: 2000000 },
+  { sats: 3000000 },
+  { sats: 4000000 },
+  { sats: 5000000 },
+  { sats: 6000000 },
+  { sats: 7000000 },
+  { sats: 8000000 },
+  { sats: 9000000 },
+  { sats: 10000000 },
 ];
 
 const reserveData = [
@@ -127,7 +120,6 @@ export default function Threshold({
   const [isModalRAVisible, setModalRAVisible] = useState(false);
   const [value, setValue] = useState(receiveType ? Number(withdrawThreshold) : Number(withdrawStrikeThreshold));
   const currencyBTC = btc(1);
-  const safeMatchedRate = Number(matchedRate) || 0;
 
   const selectClickHandler = (val: number) => {
     receiveType ? setWithdrawThreshold(val) : setWithdrawStrikeThreshold(val);
@@ -257,46 +249,36 @@ export default function Threshold({
           {/* <Text>fsds</Text> */}
         </Text>
         {/* <GradientText style={{ fontSize: 14 }}>Learn more</GradientText> */}
-        <View style={styles.priceView}>
+        <TouchableOpacity onPress={() => setModalVisible(true)} activeOpacity={0.7} style={styles.pickerButton}>
           <GradientCard disabled
             colors_={isError ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
-            style={styles.linearGradientStroke} linearStyle={styles.linearGradient}>
-            <View style={styles.background}>
-              <TouchableOpacity onPress={() => setModalVisible(true)}>
-                <Text bold style={{ fontSize: 18 }}>{formatNumber(value)}</Text>
-              </TouchableOpacity>
-              <View style={styles.straightLine} />
-              <View>
-                <TouchableOpacity onPress={increaseClickHandler}>
-                  <Icon name="angle-up" type="font-awesome" color="#FFFFFF" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={decreaseClickHandler}>
-                  <Icon name="angle-down" type="font-awesome" color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
+            style={styles.pickerStroke} linearStyle={styles.pickerInner}>
+            <View style={styles.pickerContent}>
+              <Text bold style={{ fontSize: 18 }}>{formatNumber(value)}</Text>
+              <Text style={{ fontSize: 14, color: '#AAAAAA', marginLeft: 6 }}>sats</Text>
+              <View style={{ flex: 1 }} />
+              <Icon name="chevron-down" type="font-awesome" color="#AAAAAA" size={16} />
             </View>
           </GradientCard>
-          <Text style={styles.text}>Sats</Text>
-        </View>
-        <Modal isVisible={isModalVisible}>
-          <View>
-            <GradientCard disabled
-              style={styles.modal} linearStyle={styles.linearGradient2}>
-              <ScrollView style={styles.background2}>
-                {data.map((item, index) => {
-                  return (
-                    <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
-                      onPress={() => selectClickHandler(item?.sats)}>
-                      <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                      <Text style={{ fontSize: 18, marginStart: 30 }}>~{getStrikeCurrency(currency || 'USD')}{(item?.sats * safeMatchedRate * currencyBTC).toFixed(2)}</Text>
-                    </TouchableOpacity>
-                  )
-                })}
-              </ScrollView>
-            </GradientCard>
+        </TouchableOpacity>
+        <Modal isVisible={isModalVisible} onBackdropPress={() => setModalVisible(false)}>
+          <View style={{ backgroundColor: colors.gray.dark, borderRadius: 20, padding: 16 }}>
+            <Picker
+              selectedValue={value}
+              onValueChange={(itemValue) => selectClickHandler(itemValue)}
+              itemStyle={{ color: '#FFFFFF', fontSize: 20 }}
+            >
+              {data.map((item) => (
+                <Picker.Item
+                  key={item.sats}
+                  label={`${formatNumber(item.sats)} sats  ~${getStrikeCurrency(currency || 'USD')}${(item.sats * matchedRate * currencyBTC).toFixed(2)}`}
+                  value={item.sats}
+                />
+              ))}
+            </Picker>
           </View>
         </Modal>
-        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(value * safeMatchedRate * currencyBTC).toFixed(2)}</Text>
+        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(value * matchedRate * currencyBTC).toFixed(2)}</Text>
         <TouchableOpacity onPress={() => customizeClickHandler(0)}>
           <GradientText style={styles.gradientText}>Customize</GradientText>
         </TouchableOpacity>
@@ -305,51 +287,37 @@ export default function Threshold({
           <Text h2 semibold>Reserve Amount</Text>
           {/* <Image source={Information} style={styles.image} /> */}
         </View>
-        <View style={styles.priceView}>
+        <TouchableOpacity onPress={() => setModalRAVisible(true)} activeOpacity={0.7} style={styles.pickerButton}>
           <GradientCard disabled
-            colors_={isErrorReserve ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
-            style={StyleSheet.flatten([styles.linearGradientStroke, { height: 60, width: '60%' }])} linearStyle={StyleSheet.flatten([styles.linearGradient, { height: 60 }])}>
-            <View style={[styles.background, {
-              // alignItems: 'center',
-              justifyContent: 'flex-end',
-              paddingEnd: 30,
-            }]}>
-              <TouchableOpacity onPress={() => setModalRAVisible(true)}>
-                <Text bold style={{ fontSize: 18 }}>{formatNumber(reserveAmt)}</Text>
-              </TouchableOpacity>
-              <View style={styles.straightLine} />
-              <View>
-                <TouchableOpacity onPress={increaseClickHandler_}>
-                  <Icon name="angle-up" type="font-awesome" color="#FFFFFF" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={decreaseClickHandler_}>
-                  <Icon name="angle-down" type="font-awesome" color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
+            colors_={isError ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
+            style={styles.pickerStroke} linearStyle={styles.pickerInner}>
+            <View style={styles.pickerContent}>
+              <Text bold style={{ fontSize: 18 }}>{formatNumber(reserveAmt)}</Text>
+              <Text style={{ fontSize: 14, color: '#AAAAAA', marginLeft: 6 }}>sats</Text>
+              <View style={{ flex: 1 }} />
+              <Icon name="chevron-down" type="font-awesome" color="#AAAAAA" size={16} />
             </View>
           </GradientCard>
-          <Text style={styles.text}>Sats</Text>
-        </View>
-        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(reserveAmt * safeMatchedRate * currencyBTC).toFixed(2)}</Text>
+        </TouchableOpacity>
+        <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(reserveAmt * matchedRate * currencyBTC).toFixed(2)}</Text>
         <TouchableOpacity onPress={() => customizeClickHandler(1)}>
           <GradientText style={styles.gradientText}>Customize</GradientText>
         </TouchableOpacity>
-        <Modal isVisible={isModalRAVisible}>
-          <View>
-            <GradientCard disabled
-              style={styles.modal} linearStyle={styles.linearGradient2}>
-              <ScrollView style={styles.background2}>
-                {reserveData.map((item, index) => {
-                  return (
-                    <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
-                      onPress={() => selectRAClickHandler(item?.sats)}>
-                      <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                      <Text style={{ fontSize: 18, marginStart: 30 }}>~{getStrikeCurrency(currency || 'USD')}{(item?.sats * safeMatchedRate * currencyBTC).toFixed(2)}</Text>
-                    </TouchableOpacity>
-                  )
-                })}
-              </ScrollView>
-            </GradientCard>
+        <Modal isVisible={isModalRAVisible} onBackdropPress={() => setModalRAVisible(false)}>
+          <View style={{ backgroundColor: colors.gray.dark, borderRadius: 20, padding: 16 }}>
+            <Picker
+              selectedValue={reserveAmt}
+              onValueChange={(itemValue) => selectRAClickHandler(itemValue)}
+              itemStyle={{ color: '#FFFFFF', fontSize: 20 }}
+            >
+              {reserveData.map((item) => (
+                <Picker.Item
+                  key={item.sats}
+                  label={`${formatNumber(item.sats)} sats  ~${getStrikeCurrency(currency || 'USD')}${(item.sats * matchedRate * currencyBTC).toFixed(2)}`}
+                  value={item.sats}
+                />
+              ))}
+            </Picker>
           </View>
         </Modal>
       </View>

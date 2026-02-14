@@ -72,7 +72,7 @@ export default function InvoiceNew({ route }: Props) {
                 <View style={styles.main}>
                     <View style={styles.container}>
                         <TextView keytext="Recipient will get: " text="100K sats  ~$40" />
-                        <TextView keytext="Sent from: " text="Coinos Checking Account" />
+                        <TextView keytext="Sent from: " text="Coinos Lightning Account" />
 
                         <TextView keytext="To: " text={`Bitcoin Address: \nbc1s....efwef`} />
                         <Text style={styles.fees}>Fees:  ~   0 sat</Text>

@@ -26,33 +26,25 @@ interface Transaction {
 }
 
 const data = [
-    {
-        sats: 2000000,
-    },
-    {
-        sats: 3000000,
-    },
-    {
-        sats: 4000000,
-    },
-    {
-        sats: 5000000,
-    },
-    {
-        sats: 6000000,
-    },
-    {
-        sats: 7000000,
-    },
-    {
-        sats: 8000000,
-    },
-    {
-        sats: 9000000,
-    },
-    {
-        sats: 10000000,
-    }
+    { sats: 100000 },
+    { sats: 200000 },
+    { sats: 300000 },
+    { sats: 400000 },
+    { sats: 500000 },
+    { sats: 600000 },
+    { sats: 700000 },
+    { sats: 800000 },
+    { sats: 900000 },
+    { sats: 1000000 },
+    { sats: 2000000 },
+    { sats: 3000000 },
+    { sats: 4000000 },
+    { sats: 5000000 },
+    { sats: 6000000 },
+    { sats: 7000000 },
+    { sats: 8000000 },
+    { sats: 9000000 },
+    { sats: 10000000 },
 ];
 
 const reserveData = [
@@ -437,24 +429,20 @@ export default function CheckAccount({ navigation, route }: any) {
                         </Text>
                         {/* <GradientText style={{ fontSize: 14 }}>Learn more</GradientText> */}
                         <View style={styles.priceView}>
-                            <GradientCard disabled
-                                colors_={isError ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
-                                style={styles.linearGradientStroke} linearStyle={styles.linearGradient}>
-                                <View style={styles.background}>
-                                    <TouchableOpacity onPress={() => setModalVisible(true)}>
+                            <TouchableOpacity onPress={() => setModalVisible(true)} activeOpacity={0.7}>
+                                <GradientCard disabled
+                                    colors_={isError ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
+                                    style={styles.linearGradientStroke} linearStyle={styles.linearGradient}>
+                                    <View style={styles.background}>
                                         <Text bold style={{ fontSize: 18 }}>{formatNumber(value)}</Text>
-                                    </TouchableOpacity>
-                                    <View style={styles.straightLine} />
-                                    <View>
-                                        <TouchableOpacity onPress={increaseClickHandler}>
+                                        <View style={styles.straightLine} />
+                                        <View>
                                             <Icon name="angle-up" type="font-awesome" color="#FFFFFF" />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity onPress={decreaseClickHandler}>
                                             <Icon name="angle-down" type="font-awesome" color="#FFFFFF" />
-                                        </TouchableOpacity>
+                                        </View>
                                     </View>
-                                </View>
-                            </GradientCard>
+                                </GradientCard>
+                            </TouchableOpacity>
                             <Text style={styles.text}>Sats</Text>
                         </View>
                         <Modal isVisible={isModalVisible}>
@@ -485,28 +473,20 @@ export default function CheckAccount({ navigation, route }: any) {
                             {/* <Image source={Information} style={styles.image} /> */}
                         </View>
                         <View style={styles.priceView}>
-                            <GradientCard disabled
-                                colors_={isErrorReserve ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
-                                style={StyleSheet.flatten([styles.linearGradientStroke, { height: 60, width: '60%' }])} linearStyle={StyleSheet.flatten([styles.linearGradient, { height: 60 }])}>
-                                <View style={[styles.background, {
-                                    // alignItems: 'center',
-                                    justifyContent: 'flex-end',
-                                    paddingEnd: 30,
-                                }]}>
-                                    <TouchableOpacity onPress={() => setModalRAVisible(true)}>
+                            <TouchableOpacity onPress={() => setModalRAVisible(true)} activeOpacity={0.7}>
+                                <GradientCard disabled
+                                    colors_={isErrorReserve ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
+                                    style={StyleSheet.flatten([styles.linearGradientStroke, { height: 60 }])} linearStyle={StyleSheet.flatten([styles.linearGradient, { height: 60 }])}>
+                                    <View style={styles.background}>
                                         <Text bold style={{ fontSize: 18 }}>{formatNumber(reserveAmt)}</Text>
-                                    </TouchableOpacity>
-                                    <View style={styles.straightLine} />
-                                    <View>
-                                        <TouchableOpacity onPress={increaseClickHandler_}>
+                                        <View style={styles.straightLine} />
+                                        <View>
                                             <Icon name="angle-up" type="font-awesome" color="#FFFFFF" />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity onPress={decreaseClickHandler_}>
                                             <Icon name="angle-down" type="font-awesome" color="#FFFFFF" />
-                                        </TouchableOpacity>
+                                        </View>
                                     </View>
-                                </View>
-                            </GradientCard>
+                                </GradientCard>
+                            </TouchableOpacity>
                             <Text style={styles.text}>Sats</Text>
                         </View>
                         <Text center style={styles.usd}>${(reserveAmt * matchedRate * currency).toFixed(2)}</Text>

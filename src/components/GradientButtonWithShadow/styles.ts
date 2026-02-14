@@ -21,7 +21,7 @@ export default StyleSheet.create<Style>({
     shadow: {
         shadowOffset: { width: 2, height: 2 },
         // shadowOpacity: 0.56,
-        shadowColor: colors.pink.shadowTop,
+        shadowColor: '#555555',
         shadowRadius: 2,
         borderRadius: 25,
         width: (widths / 2) - 60,
@@ -31,7 +31,7 @@ export default StyleSheet.create<Style>({
     innerShadow: {
         shadowOffset: { width: -2, height: -2 },
         // shadowOpacity: 0.64,
-        shadowColor: '#641234', //darker pink for right bottom shadow
+        shadowColor: '#333333', //neutral shadow
         shadowRadius: 2,
         borderRadius: 25,
         width: (widths / 2) - 60,

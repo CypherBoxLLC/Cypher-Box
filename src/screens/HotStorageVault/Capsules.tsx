@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Input, Text } from "@Cypher/component-library";
-import { ActivityIndicator, Animated, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { GradientCard, GradientView } from "@Cypher/components";
@@ -34,7 +34,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     const [sendToAddress, setSendToAddress] = useState();
     const [selfAddress, setSelfAddress] = useState();
     const utxo = wallet.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout);
-    const primaryColor = vaultTab ? colors.blueText : colors.green
+    const primaryColor = vaultTab ? colors.coldGreen : colors.green
     const [frozen, setFrozen] = useState(
         utxo.filter(out => wallet.getUTXOMetadata(out.txid, out.vout).frozen).map(({ txid, vout }) => `${txid}:${vout}`),
     );
@@ -152,9 +152,9 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             capsuleTotal += Number(result)
         });
         if(vaultTab && !walletID){
-            SimpleToast.show("Before creating a transaction, you must first add a Hot Vault wallet", SimpleToast.SHORT)
+            SimpleToast.show("You need to create a Hot Vault first before moving capsules to it", SimpleToast.SHORT)
         } else if(!vaultTab && !coldStorageWalletID){
-            SimpleToast.show("Before creating a transaction, you must first add a Cold Vault wallet", SimpleToast.SHORT)
+            SimpleToast.show("You need to create a Cold Vault first before moving capsules to it", SimpleToast.SHORT)
         }
         else if (ids.length > 0) {
             dispatchNavigate('ColdStorage', {wallet, currency, utxo, ids, maxUSD: total, isMaxEdit: true, inUSD: inUSD, total: total, matchedRate, capsulesData, to: sendToAddress, vaultTab, vaultSend: true, title: !vaultTab ? "Transfer To Cold Vault" : undefined, capsuleTotal});
@@ -240,7 +240,16 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     const handleSendBars = () => {
         if (ids.length > 0) {
             const usd = inUSD.toFixed(2);
-            dispatchNavigate('EditAmount', { isEdit: false, currency, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, to, toStrike });
+            let capsulesData: any = [];
+            utxo.forEach((u: any) => {
+                const result = ids.includes(`${u.txid}:${u.vout}`);
+                if (result) capsulesData.push({
+                    id: `${u.txid}:${u.vout}`,
+                    value: u.value || u.amount,
+                });
+            });
+            const capsuleTotal = capsulesData.reduce((acc: number, c: any) => acc + (c.value || 0), 0);
+            dispatchNavigate('EditAmount', { isEdit: false, currency, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, to, toStrike, capsulesData, capsuleTotal });
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }
@@ -264,12 +273,17 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                 setFrozen(f => f.filter(i => i !== `${output.txid}:${output.vout}`));
             }
         };
-        return <OutputModalContent output={output} wallet={wallet} onUseCoin={handleUseCoin} frozen={oFrozen} setFrozen={setOFrozen} />;
+        return <OutputModalContent output={output} wallet={wallet} onUseCoin={handleUseCoin} frozen={oFrozen} setFrozen={setOFrozen} vaultTab={vaultTab} />;
     };
 
     return (
         <View style={styles.flex}>
-            <Text bold style={styles.desc}>Select your UTXO capsules to send, consolidate, move to Cold Vault, or Top-up your Lightening Account:</Text>
+            <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
+                <Text bold style={[styles.desc, {flex: 1}]}>Select your UTXO capsules to send, consolidate, move to Cold Vault, or Top-up your Lightening Account:</Text>
+                <TouchableOpacity onPress={() => dispatchNavigate('CapsuleCatalog')} style={{marginLeft: 10, marginRight: 15, marginTop: 5, width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: vaultTab ? colors.coldGreen : colors.green, alignItems: 'center', justifyContent: 'center'}}>
+                    <Text bold style={{color: vaultTab ? colors.coldGreen : colors.green, fontSize: 14}}>?</Text>
+                </TouchableOpacity>
+            </View>
             <View style={styles.titleStyle}>
                 <Text bold style={styles.coin}>Capsules</Text>
                 <Text bold style={styles.size}>Size</Text>
@@ -318,16 +332,16 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                             onPress={handleSendBars}
                             style={styles.capsuleLinearGradientStyle}
                             linearGradientStyle={styles.capsuleMainShadowStyle}
-                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                         >
                             <Text h3 center>Send</Text>
                         </GradientView>
                         <GradientView
                             onPress={addressClickHandler}
-                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             style={[styles.capsuleLinearGradientStyle, { marginStart: 25 }]}
                             linearGradientStyle={styles.capsuleMainShadowStyle}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
@@ -344,16 +358,16 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                             onPress={handleSendBars}
                             style={styles.capsuleLinearGradientStyle}
                             linearGradientStyle={styles.capsuleMainShadowStyle}
-                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                         >
                             <Text h3 center>Send</Text>
                         </GradientView>
                         <GradientView
                             onPress={addressClickHandler}
-                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             style={[styles.capsuleLinearGradientStyle, { marginStart: 25 }]}
                             linearGradientStyle={styles.capsuleMainShadowStyle}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
@@ -373,16 +387,16 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                         onPress={sendToBatchClickHandler}
                         style={styles.capsuleLinearGradientStyle}
                         linearGradientStyle={styles.capsuleMainShadowStyle}
-                        topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                        bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                        topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                        bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                         linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                     >
                         <Text h3 center>Consolidate</Text>
                     </GradientView>
                     <GradientView
                         onPress={moveToVaultClickHandler}
-                        topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                        bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                        topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                        bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                         style={[styles.capsuleLinearGradientStyle]}
                         linearGradientStyle={styles.capsuleMainShadowStyle}
                         linearGradientStyleMain={[styles.capsuleLinearGradientStyleMain]}

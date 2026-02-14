@@ -2,6 +2,7 @@ import { Text } from "@Cypher/component-library";
 import { Card, GradientCardWithShadow } from "@Cypher/components";
 import { calculateBalancePercentage, dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
+import { SATS } from "@Cypher/helpers/coinosHelper";
 import React from "react";
 import { Image, Linking, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
@@ -29,7 +30,7 @@ export default function CoinosWallet({
     refSendRBSheet,
     setReceiveType,
 }: Props) {
-    const { isAuth, withdrawThreshold, reserveAmount } = useAuthStore();
+    const { isAuth, withdrawThreshold, reserveAmount, clearAuth, walletID, coldStorageWalletID, isStrikeAuth, strikeUser, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
     const receiveClickHandler = (type: boolean) => {
         if(type){
@@ -79,23 +80,13 @@ export default function CoinosWallet({
                         receiveClickHandler={receiveClickHandler}
                         sendClickHandler={sendClickHandler}
                     />
-                    {!isLoading &&
-                        (hasFilledTheBar ?
+                    <View style={{ minHeight: 90, justifyContent: 'center' }}>
+                        {!isLoading && hasFilledTheBar && (walletID || coldStorageWalletID) &&
                             <Text h4 style={styles.alert}>
-                                Your sats have materialized! You can create a Hot Storage Savings Vault and take full self-custody of your money by withdrawing a large chunk of a bitcoin from your custodian Lightning Account. Click the Withdraw button to know more
-                                {/* You can receive, send, and accumulate bitcoin using your Lightning Account. New security features will be revealed once you meet the withdrawal threshold at 2 million sats */}
+                                Your balance is large enough to withdraw to self-custody!
                             </Text>
-                            : (Number(balance) === Number(withdrawThreshold + reserveAmount)) ?
-                                <Text h4 style={styles.alert}>
-                                    Congrats! You've completed the bar, It's time to create your Hot Storage Savings Vault and take full self-custody of your bitcoi. Click 'Withdraw' to know more.
-                                </Text>
-                                :
-                                <Text h4 style={styles.alertGrey}>
-                                    {/* New security upgrades will be revealed once you meet fill up the bar displayed on your Lightning Account. */}
-                                    {'\n'}
-                                </Text>
-                        )
-                    }
+                        }
+                    </View>
                 </>
             }
 

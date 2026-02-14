@@ -4,11 +4,14 @@ import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
+import useAuthStore from "@Cypher/stores/authStore";
 
 export default function CheckingAccountIntro() {
+    const { setHasSeenCustodialWarning } = useAuthStore();
 
     const nextClickHandler = () => {
         console.log('next click');
+        setHasSeenCustodialWarning(true);
         dispatchNavigate('CheckingAccountLogin');
     }
 

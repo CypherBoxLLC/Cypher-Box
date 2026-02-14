@@ -28,9 +28,9 @@ export default function SavingVaultCreated() {
     }
 
     return (
-        <ScreenLayout disableScroll showToolbar progress={2} color={vaultTab ? [colors.blueText, colors.blueText] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
+        <ScreenLayout disableScroll showToolbar progress={2} color={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
             <View style={styles.container}>
-                <Text style={[styles.title, vaultTab ? { color: colors.blueText } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : "Savings Vault Created!"}</Text>
+                <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : "Savings Vault Created!"}</Text>
                 <View style={styles.inner}>
                     <SavingVault title={vaultTab ? "Cold Vault" : "Hot Vault"} />
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
@@ -55,7 +55,7 @@ export default function SavingVaultCreated() {
             </View>
             <Button text="Home"
                 onPress={nextClickHandler}
-                style={{...styles.button, ...{ backgroundColor: vaultTab ? colors.blueText : colors.green, marginTop: vaultTab ? 30 : 0 } }}
+                style={{...styles.button, ...{ backgroundColor: vaultTab ? colors.coldGreen : colors.green, marginTop: vaultTab ? 30 : 0 } }}
                 textStyle={styles.btnText}
             />
         </ScreenLayout>

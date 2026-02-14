@@ -34,3 +34,4 @@ export { default as StrikeWallet } from './StrikeWallet';
 export { default as StrikeDollarWallet } from './StrikeDollarWallet';
 export { default as CircularView } from './CircularView';
 export { default as CustomTabView } from './CustomTabView';
+export { default as VaultCapsules } from './VaultCapsules';

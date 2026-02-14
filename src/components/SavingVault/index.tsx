@@ -43,7 +43,6 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
     const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];
     // const inDollar = '6500';
     const emptyUTXO = !utxo ? 5 : utxo.length <= 5 ? 5 - utxo.length : utxo.length > 5 && 0;
-
     return (
         <TouchableOpacity style={[styles.container, container]} onPress={onPress}>
             <View style={[styles.innerContainer, innerContainer]}>
@@ -88,7 +87,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
 
                     <View style={styles.tabs}>
                         {Array(utxo.length > 5 ? 5 : utxo.length).fill(0).map((item, i) => (
-                            <VaultCapsules item = {utxo[i].amount}></VaultCapsules>
+                            <VaultCapsules key={i} item={utxo[i].amount} isPending={utxo[i].height === 0} isVault={vaultTabCheck}></VaultCapsules>
                             // <ProgressBar key={item} image={vaultTabCheck ? ProgressBarColdStorage : ProgressBar5} />
                         ))}
                         {Array(emptyUTXO).fill(0).map((item, i) => (

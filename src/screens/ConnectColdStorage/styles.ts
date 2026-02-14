@@ -39,7 +39,7 @@ export default StyleSheet.create<Style>({
         alignItems: 'center',
     },
     title: {
-        color: colors.blueText,
+        color: colors.coldGreen,
         fontFamily: 'Archivo-SemiBold',
         fontSize: 18,
     },
@@ -63,7 +63,7 @@ export default StyleSheet.create<Style>({
         height: 40,
     },
     importBtn: {
-        backgroundColor: colors.blueText,
+        backgroundColor: colors.coldGreen,
         height: 47,
         borderRadius: 12,
         alignItems: "center",

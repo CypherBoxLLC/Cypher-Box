@@ -10,7 +10,8 @@ import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { CustomKeyboard, GradientCard, GradientInput, GradientInputNew } from "@Cypher/components";
 import { colors, } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { bitcoinRecommendedFee, getInvoiceByLightening } from "../../api/coinOSApis";
+import { bitcoinRecommendedFee, getInvoiceByLightening, getMe } from "../../api/coinOSApis";
+import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
 import { emailRegex } from "@Cypher/helpers/regex";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
@@ -24,6 +25,40 @@ const validateEmail = (email: string) => {
     return emailRegex.test(email);
 }
 
+const validateAddress = (address: string): { valid: boolean; type: string; warning: string } => {
+    if (!address || address.length === 0) return { valid: true, type: '', warning: '' };
+    
+    const trimmed = address.trim();
+    
+    // Lightning invoice
+    if (trimmed.toLowerCase().startsWith('lnbc') || trimmed.toLowerCase().startsWith('lntb') || trimmed.toLowerCase().startsWith('lnurl')) {
+        return { valid: true, type: 'lightning', warning: '' };
+    }
+    
+    // Bitcoin onchain (mainnet)
+    if (trimmed.startsWith('bc1') || trimmed.startsWith('1') || trimmed.startsWith('3')) {
+        return { valid: true, type: 'bitcoin', warning: '' };
+    }
+    
+    // Liquid address
+    if (trimmed.startsWith('lq1') || trimmed.startsWith('VJL') || trimmed.startsWith('ex1') || trimmed.startsWith('Gz')) {
+        return { valid: true, type: 'liquid', warning: '' };
+    }
+    
+    // CoinOS username (email-like)
+    if (trimmed.includes('@')) {
+        return { valid: true, type: 'username', warning: '' };
+    }
+    
+    // Lightning invoice (generic ln prefix)
+    if (trimmed.toLowerCase().startsWith('ln')) {
+        return { valid: true, type: 'lightning', warning: '' };
+    }
+    
+    // Unrecognized
+    return { valid: false, type: 'unknown', warning: 'Unrecognized address format. Supported: Bitcoin (bc1.., 1.., 3..), Lightning (ln..), Liquid, or CoinOS username' };
+}
+
 export default function SendScreen({ navigation, route }: any) {
     const info = route.params;
     const [isSats, setIsSats] = useState(true);
@@ -32,6 +67,7 @@ export default function SendScreen({ navigation, route }: any) {
     const [sender, setSender] = useState(info?.to || info?.destination || '');
     const senderRef = useRef<TextInput>(null);
 
+    console.log('SendScreen info:', JSON.stringify({ matchedRate: info?.matchedRate, currency: info?.currency, receiveType: info?.receiveType }));
     const [convertedRate, setConvertedRate] = useState(0.00);
     const [isLoading, setIsLoading] = useState(false);
     const [recommendedFee, setRecommendedFee] = useState<any>();
@@ -40,6 +76,21 @@ export default function SendScreen({ navigation, route }: any) {
     const [addressFocused, setAddressFocused] = useState(false);
     const [maxUSD, setMaxUSD] = useState(0);
     const [isPaste, setIsPaste] = useState(info?.destination && info?.destination?.startsWith('ln') ? true : false)
+    const [maxBalance, setMaxBalance] = useState<number>(0);
+
+    useEffect(() => {
+        const fetchBalance = async () => {
+            try {
+                const me = await getMe();
+                if (me?.balance !== undefined) {
+                    setMaxBalance(Number(me.balance));
+                }
+            } catch (e) {
+                console.log('Could not fetch balance for max');
+            }
+        };
+        if (info?.receiveType) fetchBalance(); // Only for CoinOS
+    }, []);
 
     useEffect(() => {
         if (info?.isWithdrawal) {
@@ -139,6 +190,16 @@ export default function SendScreen({ navigation, route }: any) {
     const handleSendNext = async () => {
         setIsLoading(true);
         const amount = info?.receiveType ? isSats ? usd : sats : isSats ? sats : usd;
+        
+        // Validate address format before proceeding
+        if (sender && !info?.isWithdrawal && !info?.fiatAmount) {
+            const validation = validateAddress(sender);
+            if (!validation.valid) {
+                SimpleToast.show('Unsupported address format. Use Bitcoin, Lightning, Liquid, or CoinOS username.', SimpleToast.LONG);
+                setIsLoading(false);
+                return;
+            }
+        }
         if(info?.fiatAmount) {
             dispatchNavigate('ReviewPayment', {
                 ...info,
@@ -438,6 +499,11 @@ export default function SendScreen({ navigation, route }: any) {
                                                 </TouchableOpacity>
                                             )}
                                         </GradientCard>
+                                        {validateAddress(sender).warning !== '' && (
+                                            <Text style={{ color: '#FFB020', fontSize: 12, marginTop: 6, marginHorizontal: 10, textAlign: 'center' }}>
+                                                ⚠️ {validateAddress(sender).warning}
+                                            </Text>
+                                        )}
                                         <View style={styles.buttonsContainer}>
                                             <GradientCard
                                                 style={styles.linearGradientInside}
@@ -472,6 +538,7 @@ export default function SendScreen({ navigation, route }: any) {
                             setIsSATS={setIsSats}
                             matchedRate={info?.matchedRate}
                             currency={info?.currency}
+                            maxBalance={maxBalance}
                         />
                     </ScreenLayout >
                 )

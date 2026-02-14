@@ -33,7 +33,7 @@ export default function ColdVaultIntro2() {
     };
   
     return (
-      <ScreenLayout disableScroll showToolbar progress={0} color={[colors.blueText, colors.blueText]}>
+      <ScreenLayout disableScroll showToolbar progress={0} color={[colors.cold.gradient1, colors.cold.gradient2]}>
       {/* <ScreenLayout showToolbar color={[colors.green, colors.green]}> */}
         <View style={styles.container}>
           <View style={styles.innerView}>
@@ -42,7 +42,7 @@ export default function ColdVaultIntro2() {
               {'\n\n'}
               This{' '}
               <TouchableOpacity onPress={() => Linking.openURL('https://bitcoinpizza.substack.com/p/these-are-the-only-7-hardware-wallets')}>
-                <Text style={[styles.guideText, {textDecorationLine: 'underline', color: colors.coldBlue}]}>
+                <Text style={[styles.guideText, {textDecorationLine: 'underline', color: colors.coldGreen}]}>
                   guide
                 </Text>
               </TouchableOpacity> 
