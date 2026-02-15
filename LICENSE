@@ -20,39 +20,26 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Custom License Addendum
+--------------------
 
-Copyright (c) 2024 Cypher Box LLC developers
+MIT License
 
-The modifications, enhancements, and additional code contributed to this project (referred to as "Modifications") are licensed under the following terms:
+Copyright (c) 2026 Cypher Box LLC developers
 
-1. **Permitted Uses**:
-   - This software may be used for personal, internal, and non-commercial purposes only.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-2. **Prohibited Uses**:
-   - Redistribution, sublicensing, or selling of this software or the Modifications, in whole or in part, is prohibited without prior written permission from Cypher Box LLC.
-   - Use of the Modifications in any commercial product or service, including offering it as a hosted solution, is prohibited without prior written consent.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-3. **Attribution**:
-   - Users must retain this license notice and the original BlueWallet MIT License notice in all copies of the software.
-
-4. **Disclaimer**:
-   - THE MODIFICATIONS ARE PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, ARISING OUT OF OR IN CONNECTION WITH THE MODIFICATIONS OR THEIR USE.
-
-Modifications made by Cypher Box LLC include, but are not limited to:
-
-1. Custom Backend Features:
-- Integration of Third-Party Custodians: Establishes API connections for seamless receiving, sending bitcoin in custodial manner.
-- Withdrawal/Top-Up: Provides functionality to connect users' custodian accounts to their on-chain wallets (referred to as "Vaults"), enabling users to withdraw and deposit funds between their custodian accounts and Vaults.
-- Move to Cold or Hot Vault: Facilitates seamless transfers of funds between on-chain Vaults, allowing users to switch between storage options based on their preferences.
-- Onchain percentage fee: Calculates an on-chain transaction's fee as a percentage of the total amount being sent.
-2. Enhanced Frontend Functionality:
-- Splitting homepage screen into third-party custodian "Checking/spending Account" and self-custodial onchain "Vaults"
-- Withdrawal Thresholds: Introduces a threshold bar display to visualize users' balances and the counterparty risks associated with storing funds in custodian accounts.
-- Reserve Amount Threshold: Specifies a threshold value representing the remaining balance in custodian accounts after an on-chain withdrawal order is processed.
-- UTXO Shapes (Capsules): Graphical shapes displayed on Vault cards and other screens to visually represent the value of Bitcoin UTXOs, enhancing user comprehension.
-- Intuitive On-Chain Send Flow: Provides a user-friendly interface for conducting coin control as a default option before specifying the transaction amount, improving UTXO privacy and control.
-
-Commercialization or sublicensing any of these modifications is prohibited without prior written consent.
-For any questions or permissions, please contact info@cypherbox.io
-
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
