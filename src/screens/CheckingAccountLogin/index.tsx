@@ -1,5 +1,5 @@
 import React from "react";
-import { Linking, TouchableOpacity, View, Image } from "react-native";
+import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -168,6 +168,17 @@ export default function CheckingAccountLogin() {
   //     console.error("Fetch Error:", error);
   //   }
   // };
+
+  if(strikeLoading){
+    return (
+      <ScreenLayout showToolbar>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.white} />
+          <Text style={styles.loadingText}>Logging in to Strike...</Text>
+        </View>
+      </ScreenLayout>
+    );
+  }
 
   return (
     <ScreenLayout showToolbar>
