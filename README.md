@@ -5,7 +5,7 @@ Https://Cypherbox.io
 
 Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) Release 6.5.1, tailored for onboarding newbies to advanced self-custody
 
-Built with React Native, Electrum, and powered by Coinos.io API
+Built with React Native, Electrum, and powered by Coinos.io and Strike APIs
 
 ---
 
@@ -64,21 +64,24 @@ Community: [telegram group](https://t.me/BitcoinUserSupport)
 
 ---
 
-Lightning Account:
-* Create/login to Coinos.io 
-* Send and receive lightning (LNURL)
-* Receive Liquid
+Lightning Account(s):
+* Login to Coinos.io
+* Login to Strike.me (via OAuth2)
+* Send and receive lightning
+* Fiat account: Buy/sell BTC
+* Receive Liquid via Coinos
 * Send and receive onchain 
-* Create lightning address
+* Create lightning addresses
 * Payment history, Withdrawal Threshold reminder
+* Swap between Lightning accounts
 * Withdraw to Vault
 * Authentication token(s) for custodian API(s) are only accessable by the user
 
 Hot Vault:
 * Private keys never leave your device
 * SegWit-first, Bip39, Replace-By-Fee, and Child-Pay-For-Parent support
-* Coin control
-* Top-up Lightning Account
+* Coin control (label UTXOs, consolidate, etc.)
+* Top-up Lightning Accounts
 * Send to Cold Vault
 
 Cold Vault (watch-only):
@@ -90,27 +93,15 @@ Cold Vault (watch-only):
 * Send to Hot Vault
 
 ---
-Medium-term Development Milestones (last update 12th Feb '25)
-**Global**
-- ✅ Plausiable Deniability
-
-**Lightning account**
-- ⭕ Send Liquid
-- ⭕ Bolt 12
-
-**Hot vault**
-- ✅ Batching
-- ⭕ Send change to Lightning Account
-
-**Cold vault**
-- ✅ Batching
-- ⭕ Send change to Hot Vault
+- Plausiable Deniability
+- UTXO visualization
+- Connect electrum server
 ---
-Technical debt:
-- ⏱️ Notifications
-- ⏱️ UI inconsistencies
-- ⏱️ Recieve popup
-- ⏱️ Lightning Account settings 
+Upcoming tasks:
+⏱️ CI/CD pipline
+⏱️ Notifications (only for Coinos at the moment)
+⏱️ Lightning Account settings 
+⏱️ BBQr
 
 # RESPONSIBLE DISCLOSURE
 Found critical bugs/vulnerabilities?
