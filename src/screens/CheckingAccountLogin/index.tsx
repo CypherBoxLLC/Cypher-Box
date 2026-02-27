@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
@@ -59,6 +59,32 @@ export default function CheckingAccountLogin() {
     setFirstTimeLightning
   } = useAuthStore();
   const [strikeLoading, setStrikeLoading] = React.useState(false);
+  const [CoinosException, setCoinosException] = React.useState(false);
+  const [pageLoading, setPageLoading] = React.useState(true);
+
+  useEffect(() => {
+    async function fetchIPInfo() {
+      try {
+        setPageLoading(true);
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+
+        const isBlocked =
+          data.continent_code === 'EU' ||
+          ['GB', 'IN', 'CN'].includes(data.country_code);
+
+        if (isBlocked) {
+          setCoinosException(true);
+        }
+      } catch (error) {
+        console.log('IP fetch failed', error);
+      } finally {
+        setPageLoading(false);
+      }
+    }
+
+    fetchIPInfo();
+  }, []);
 
   const createCheckingAccountClickHandler = () => {
     Linking.openURL("https://coinos.io/register");
@@ -169,6 +195,16 @@ export default function CheckingAccountLogin() {
   //   }
   // };
 
+  if(pageLoading){
+    return (
+      <ScreenLayout showToolbar>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.white} />
+        </View>
+      </ScreenLayout>
+    );
+  }
+
   if(strikeLoading){
     return (
       <ScreenLayout showToolbar>
@@ -198,7 +234,7 @@ export default function CheckingAccountLogin() {
               />
             </>
           )}
-          {!isAuth && (
+          {!isAuth && !CoinosException && (
             <>
               <LoginOption
                 logo={require("@Cypher/assets/images/coinos.png")}
