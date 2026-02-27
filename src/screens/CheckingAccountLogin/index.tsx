@@ -166,35 +166,7 @@ export default function CheckingAccountLogin() {
     }
   };
 
-  // const strikeTokenExchange = async (code: string, verifier: string) => {
-  //   try {
-  //     // 1. Prepare only the necessary OAuth params for the body
-  //     const details = {
-  //       grant_type: 'authorization_code',
-  //       client_id: 'cypherbox', // CHECK IF THIS IS A UUID IN DASHBOARD
-  //       client_secret: 'RmZXluxUsQhQB3nVnJ4Uxj7xrEq697syVEYyv/ztWqk=',
-  //       code: code,
-  //       code_verifier: verifier,
-  //       redirect_uri: 'cypherbox://oauth/callback',
-  //     };      
-  //     const formBody = new URLSearchParams(details).toString();
-  //     const response = await fetch('https://auth.strike.me/connect/token', {
-  //       method: 'POST',
-  //       headers: {
-  //         'Content-Type': 'application/x-www-form-urlencoded',
-  //         'Accept': 'application/json',
-  //       },
-  //       body: formBody,
-  //     });
-  //     const text = await response.text();
-  //     console.log("--- STRIKE ATTEMPT ---");
-  //     console.log("Status Code:", response.status);
-  //     console.log("Response Body:", text);
-  //   } catch (error) {
-  //     console.error("Fetch Error:", error);
-  //   }
-  // };
-
+  
   if(pageLoading){
     return (
       <ScreenLayout showToolbar>
