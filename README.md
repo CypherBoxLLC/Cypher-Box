@@ -5,7 +5,7 @@ Https://Cypherbox.io
 
 Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) Release 6.5.1, tailored for onboarding newbies to advanced self-custody
 
-Built with React Native, Electrum, and powered by Coinos.io and Strike APIs
+Built with React Native, Electrum, and powered by Coinos.io <!-- and Strike APIs -->
 
 ---
 
@@ -66,7 +66,7 @@ Community: [telegram group](https://t.me/BitcoinUserSupport)
 
 Lightning Account(s):
 * Login to Coinos.io
-* Login to Strike.me (via OAuth2)
+<!-- * Login to Strike.me (via OAuth2) -->
 * Send and receive lightning
 * Fiat account: Buy/sell BTC
 * Receive Liquid via Coinos
