@@ -284,7 +284,7 @@ export default StyleSheet.create<Style>({
         marginTop: 15
     },
     bitcoinPriceContainer: {
-        marginTop: 16,
+        marginTop: 8,
     },
     bitcoinPriceText: {
         fontSize: 30,

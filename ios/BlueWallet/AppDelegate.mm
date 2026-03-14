@@ -193,6 +193,34 @@
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
 fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler
 {
+  // When app is in background/inactive, re-post as local notification so iOS shows the banner
+  if (application.applicationState != UIApplicationStateActive) {
+    NSDictionary *aps = userInfo[@"aps"];
+    id alert = aps[@"alert"];
+    NSString *title = nil;
+    NSString *body = nil;
+    
+    if ([alert isKindOfClass:[NSDictionary class]]) {
+      title = alert[@"title"];
+      body = alert[@"body"];
+    } else if ([alert isKindOfClass:[NSString class]]) {
+      body = alert;
+    }
+    
+    if (body) {
+      UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+      if (title) content.title = title;
+      content.body = body;
+      content.sound = [UNNotificationSound defaultSound];
+      content.userInfo = userInfo;
+      
+      UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:[[NSUUID UUID] UUIDString]
+                                                                            content:content
+                                                                            trigger:nil];
+      [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request withCompletionHandler:nil];
+    }
+  }
+  
   [RNCPushNotificationIOS didReceiveRemoteNotification:userInfo fetchCompletionHandler:completionHandler];
 }
 // Required for the registrationError event.

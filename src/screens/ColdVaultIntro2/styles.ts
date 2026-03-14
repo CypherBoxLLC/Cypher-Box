@@ -36,12 +36,12 @@ export default StyleSheet.create<Style>({
         color: colors.white,
     },
     title: {
-        color: colors.blueText,
+        color: colors.coldGreen,
         fontFamily: 'Archivo-SemiBold',
         fontSize: 18,
     },
     button: {
-        backgroundColor: colors.blueText,
+        backgroundColor: colors.coldGreen,
         borderWidth: 0,
         marginHorizontal: 20,
     },

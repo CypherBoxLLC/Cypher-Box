@@ -222,10 +222,16 @@ async function convertFiatToUSD(amount: number, fiatCurrency: string): number {
   }
 
   const usdExchangeRateKey = BTC_PREFIX + FiatUnit.USD.endPointKey;
-  const usdExchangeRate = exchangeRates[usdExchangeRateKey];
+  let usdExchangeRate = exchangeRates[usdExchangeRateKey];
 
   if (typeof usdExchangeRate !== 'number') {
-    throw new Error('USD exchange rate not available');
+    // USD rate not cached, fetch it
+    usdExchangeRate = await getFiatRate(FiatUnit.USD.endPointKey);
+    if (typeof usdExchangeRate === 'number') {
+      exchangeRates[usdExchangeRateKey] = usdExchangeRate;
+    } else {
+      throw new Error('USD exchange rate not available');
+    }
   }
   console.log('getFiatRate rate: ', amount, exchangeRate, usdExchangeRate);
   //convert any currency to USD

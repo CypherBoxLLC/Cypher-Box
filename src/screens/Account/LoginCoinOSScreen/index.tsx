@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { TouchableOpacity, View, Image, Platform, Button } from "react-native";
+import { TouchableOpacity, View, Image, Platform, Button, Modal, StyleSheet } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { GradientButton, GradientCard, GradientText } from "@Cypher/components";
@@ -10,119 +10,137 @@ import { dispatchReset } from "@Cypher/helpers/navigation";
 import { loginUser } from "@Cypher/api/coinOSApis";
 import useAuthStore from "@Cypher/stores/authStore";
 import { CoinOS } from "@Cypher/assets/images";
-import CheckBox from '@react-native-community/checkbox';
-import { authorize } from "react-native-app-auth";
+import * as Keychain from 'react-native-keychain';
+import RecaptchaV2 from "./RecaptchaV2";
 
 // Strike OAuth configuration
-const config = {
-    id: 'strike',
-    name: 'Strike',
-    type: 'oauth',
-    issuer: "https://auth.strike.me", // Strike Identity Server URL
-    clientId: "cypherbox",
-    clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
-    redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
-    scopes: ["offline_access", "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
-    //clientAuthMethod: "post",
-    //wellKnown: `https://auth.strike.me/.well-known/openid-configuration`,
-    // authorization: {
-    //     params: {
-    //         scope: 'partner.invoice.read offline_access',
-    //         response_type: 'code',
-    //     }
-    // },
-    idToken: false,
-    checks: ['pkce', 'state'],
-    // serviceConfiguration: {
-    //   authorizationEndpoint: "https://auth.strike.me/oauth/authorize",
-    //   tokenEndpoint: "https://auth.strike.me/oauth/token",
-    //   revocationEndpoint: "https://auth.strike.me/oauth/revoke",
-    // },
-};
+const SITE_KEY = "6LfCd8YkAAAAANmVJgzN3SQY3n3fv1RhiS5PgMYM"; // from env
 
 export default function LoginCoinOSScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [isRememberMe, setIsRememberMe] = useState(false);
     const {
-        userCreds,
         allBTCWallets,
+        FirstTimeCoinOS,
         setToken, 
         setAuth, 
         setUser, 
-        setUserCreds,
         setAllBTCWallets,
+        setFirstTimeCoinOS,
     } = useAuthStore();
-    const [accessToken, setAccessToken] = useState<string | null>(null);
+    const [captchaToken, setCaptchaToken] = useState("");
+    const [showCaptcha, setShowCaptcha] = useState(false);
 
     useEffect(() => {
-        if(userCreds){
-            setEmail(userCreds.email);
-            setPassword(userCreds.password)
-            setIsRememberMe(userCreds.isRememberMe)
-        }
-    }, [userCreds])
+        // Load saved credentials from secure keychain (prompts FaceID/TouchID if available)
+        const loadCredentials = async () => {
+            try {
+                const credentials = await Keychain.getGenericPassword({ 
+                    service: 'coinos-login',
+                    authenticationPrompt: {
+                        title: 'Authenticate to auto-fill credentials',
+                    },
+                });
+                if (credentials) {
+                    setEmail(credentials.username);
+                    setPassword(credentials.password);
+                }
+            } catch (error) {
+                // User cancelled biometric or no saved credentials — just show empty fields
+                console.log('Keychain load skipped or no credentials saved');
+            }
+        };
+        loadCredentials();
+    }, [])
 
-    const handleLogin = async () => {
-        try {
-            const result = await authorize(config);
-            console.log("Access Token:", result);
-            setAccessToken(result.accessToken);
-        } catch (error) {
-            console.error("OAuth error", error);
-        }
+    const handleCaptchaToken = (token: string) => {
+        console.log('Captcha verified, proceeding with login...');
+        setCaptchaToken(token);
+        setShowCaptcha(false);
+        // Automatically proceed with login after captcha
+        performLogin(token);
     };
-    
-    const nextClickHandler = async () => {
-        setIsLoading(true);
-        if (email == "") {
-            SimpleToast.show("Please enter your username", SimpleToast.SHORT);
-            setIsLoading(false);
-            return;
-        } else if (password == "") {
-            SimpleToast.show("Please enter your password", SimpleToast.SHORT);
-            setIsLoading(false);
-            return;
-        }
 
+    const performLogin = async (recaptchaToken: string) => {
+        setIsLoading(true);
+        
         try {
-            const response: any = await loginUser(email, password);
+            const response: any = await loginUser(email, password, recaptchaToken);
             console.log("User Login successful:", response);
+            
             if (response.token) {
                 setAuth(true);
-                setToken(response?.token);
-                setUser(response?.user);
+                setToken(response.token);
+                setUser(response.user);
                 const temp = [...allBTCWallets];
                 setAllBTCWallets([...temp, 'COINOS']);
-                dispatchReset("HomeScreen");
-                if(isRememberMe){
-                    setUserCreds({email, password, isRememberMe});
+                
+                // Save credentials securely in keychain (iOS) / keystore (Android)
+                // Protected by biometrics — FaceID/TouchID required to read them
+                try {
+                    await Keychain.setGenericPassword(email, password, { 
+                        service: 'coinos-login',
+                        accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
+                        accessible: Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
+                    });
+                } catch (error) {
+                    console.error('Error saving credentials to keychain');
+                }
+                
+                if(FirstTimeCoinOS) {
+                    setFirstTimeCoinOS(false);
+                    dispatchNavigate("CheckingAccountCreated", { accountType: 'coinos' });
                 } else {
-                    setUserCreds(undefined);
+                    dispatchReset("HomeScreen");
                 }
             } else {
-                SimpleToast.show("Invalid usernmae or password", SimpleToast.SHORT);
+                SimpleToast.show("Invalid username or password", SimpleToast.SHORT);
+                setCaptchaToken(""); // Reset to allow retry
             }
-
-            // await AsyncStorage.setItem("viewWithdraw", "1");
         } catch (error: any) {
             console.error("Error login user:", error?.message);
-            SimpleToast.show(error?.message, SimpleToast.SHORT);
+            
+            // More specific error messages
+            if (error?.message?.includes('Captcha')) {
+                SimpleToast.show("Captcha verification failed. Please try again.", SimpleToast.LONG);
+            } else if (error?.message?.includes('429')) {
+                SimpleToast.show("Too many attempts. Please wait and try again.", SimpleToast.LONG);
+            } else {
+                SimpleToast.show(error?.message || "Login failed. Please try again.", SimpleToast.SHORT);
+            }
+            
+            // Reset captcha on error so user can try again
+            setCaptchaToken("");
         } finally {
             setIsLoading(false);
         }
     };
 
+    const nextClickHandler = async () => {
+        if (email === "") {
+            SimpleToast.show("Please enter your username", SimpleToast.SHORT);
+            return;
+        }
+        if (password === "") {
+            SimpleToast.show("Please enter your password", SimpleToast.SHORT);
+            return;
+        }
+
+        // Show captcha modal
+        setShowCaptcha(true);
+    };
+
     const forgotClickHandler = () => {
-        dispatchNavigate('ForgotCoinOSScreen')
-    }
+        dispatchNavigate('ForgotCoinOSScreen');
+    };
 
-    const toggleIsRememberMe = (value: boolean | ((prevState: boolean) => boolean)) => {
-        setIsRememberMe(value)
-    }
+    const closeCaptcha = () => {
+        setShowCaptcha(false);
+        setCaptchaToken("");
+    };
 
-    console.log('accessToken: ', accessToken)
+    console.log('captchaToken: ', captchaToken)
     return (
         <ScreenLayout keyboardAware showToolbar>
             <View style={styles.container}>
@@ -150,7 +168,7 @@ export default function LoginCoinOSScreen() {
                     </GradientCard>
                     {/* <Button title="Login with Strike" onPress={handleLogin} /> */}
                     {/* {accessToken && <Text>Access Token: {accessToken}</Text>} */}
-                    <View 
+                    {/* <View 
                         style={{ 
                             marginTop: 15,
                             flexDirection: 'row',
@@ -174,7 +192,7 @@ export default function LoginCoinOSScreen() {
                         <Text bold style={styles.rememberMe}>
                             Remember Me
                         </Text>
-                    </View>
+                    </View> */}
                     <TouchableOpacity style={{ marginTop: 18, alignSelf: 'flex-end' }} onPress={forgotClickHandler}>
                         <Text bold style={styles.forgot}>
                             Forgot Password?
@@ -186,6 +204,52 @@ export default function LoginCoinOSScreen() {
                 </View>
                 <GradientButton title="Login" disabled={!email.length || !password.length || isLoading} onPress={nextClickHandler} />
             </View>
+            <Modal
+                visible={showCaptcha}
+                animationType="none"
+                onRequestClose={closeCaptcha}
+                presentationStyle="fullScreen"
+            >
+                <View style={modalStyles.modalContainer}>
+                    <RecaptchaV2
+                        siteKey={SITE_KEY}
+                        onToken={handleCaptchaToken}
+                        baseUrl="https://coinos.io"
+                    />                    
+                    <TouchableOpacity
+                        style={modalStyles.closeButton}
+                        onPress={closeCaptcha}
+                    >
+                        <Text style={modalStyles.closeButtonText}>✕ Close</Text>
+                    </TouchableOpacity>
+                </View>
+            </Modal>
         </ScreenLayout>
     )
 }
+
+const modalStyles = StyleSheet.create({
+    modalContainer: {
+        flex: 1,
+        backgroundColor: '#1a1a1a',
+    },
+    closeButton: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        backgroundColor: colors.pink.default,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 8,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+    },
+    closeButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+});

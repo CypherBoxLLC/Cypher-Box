@@ -29,6 +29,7 @@ import { BlueStorageContext } from '../../blue_modules/storage-context';
 import { useTheme } from '../../components/themes';
 import Button from '../../components/Button';
 import ListItem from '../../components/ListItem';
+import VaultCapsules from '../../src/components/VaultCapsules';
 import SafeArea from '../../components/SafeArea';
 
 const FrozenBadge = () => {
@@ -143,26 +144,16 @@ const OutputModal = ({ item: { address, txid, value, vout, confirmations = 0 }, 
   );
 
   return (
-    <RNElementsListItem bottomDivider containerStyle={oStyles.container}>
-      <Avatar rounded overlayContainerStyle={oStyles.avatar} />
-      <RNElementsListItem.Content>
-        <RNElementsListItem.Title numberOfLines={1} adjustsFontSizeToFit style={oStyles.amount}>
-          {amount}
-          <View style={oStyles.tranContainer}>
-            <Text style={oStyles.tranText}>{loc.formatString(loc.transactions.list_conf, { number: confirmationsFormatted })}</Text>
-          </View>
-        </RNElementsListItem.Title>
-        {memo ? (
-          <>
-            <RNElementsListItem.Subtitle style={oStyles.memo}>{memo}</RNElementsListItem.Subtitle>
-            <BlueSpacing10 />
-          </>
-        ) : null}
-        <RNElementsListItem.Subtitle style={oStyles.memo}>{address}</RNElementsListItem.Subtitle>
-        <BlueSpacing10 />
-        <RNElementsListItem.Subtitle style={oStyles.memo}>{fullId}</RNElementsListItem.Subtitle>
-      </RNElementsListItem.Content>
-    </RNElementsListItem>
+    <View style={{ paddingHorizontal: 20, paddingVertical: 15, backgroundColor: colors.elevated }}>
+      <Text style={oStyles.amount}>{amount}</Text>
+      <Text style={oStyles.tranText}>{loc.formatString(loc.transactions.list_conf, { number: confirmationsFormatted })}</Text>
+      {memo ? <Text style={oStyles.memo}>{memo}</Text> : null}
+      <View style={{ flexDirection: 'row', marginTop: 10 }}>
+        <View style={{ flex: 1, height: 12, maxWidth: 80 }}>
+          <VaultCapsules item={value} />
+        </View>
+      </View>
+    </View>
   );
 };
 
@@ -196,7 +187,7 @@ const mStyles = StyleSheet.create({
   },
 });
 
-export const OutputModalContent = ({ output, wallet, onUseCoin, frozen, setFrozen }) => {
+export const OutputModalContent = ({ output, wallet, onUseCoin, frozen, setFrozen, vaultTab }) => {
   const { colors } = useTheme();
   const { txMetadata, saveToDisk } = useContext(BlueStorageContext);
   const [memo, setMemo] = useState(wallet.getUTXOMetadata(output.txid, output.vout).memo || txMetadata[output.txid]?.memo || '');
@@ -236,7 +227,7 @@ export const OutputModalContent = ({ output, wallet, onUseCoin, frozen, setFroze
       {/* <ListItem title={loc.cc.freezeLabel} Component={TouchableWithoutFeedback} switch={switchValue} /> */}
       <BlueSpacing20 />
       <View style={mStyles.buttonContainer}>
-        <Button testID="UseCoin" title={loc.cc.use_coin} backgroundColor='#23C47F' onPress={() => onUseCoin([output])} />
+        <Button testID="UseCoin" title="Label capsule" backgroundColor={vaultTab ? '#21C7FB' : '#23C47F'} onPress={() => onUseCoin([output])} />
       </View>
       <BlueSpacing20 />
     </>

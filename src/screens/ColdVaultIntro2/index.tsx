@@ -33,7 +33,7 @@ export default function ColdVaultIntro2() {
     };
   
     return (
-      <ScreenLayout disableScroll showToolbar progress={0} color={[colors.blueText, colors.blueText]}>
+      <ScreenLayout disableScroll showToolbar progress={0} color={[colors.cold.gradient1, colors.cold.gradient2]}>
       {/* <ScreenLayout showToolbar color={[colors.green, colors.green]}> */}
         <View style={styles.container}>
           <View style={styles.innerView}>
@@ -42,7 +42,7 @@ export default function ColdVaultIntro2() {
               {'\n\n'}
               This{' '}
               <TouchableOpacity onPress={() => Linking.openURL('https://bitcoinpizza.substack.com/p/these-are-the-only-7-hardware-wallets')}>
-                <Text style={[styles.guideText, {textDecorationLine: 'underline', color: colors.coldBlue}]}>
+                <Text style={[styles.guideText, {textDecorationLine: 'underline', color: colors.coldGreen}]}>
                   guide
                 </Text>
               </TouchableOpacity> 
@@ -50,7 +50,7 @@ export default function ColdVaultIntro2() {
               {/* {'\n\n'}
               Your Hot and Cold Vaults can work in conjunction. You can use your Hot Vault as a heating funnel that melts your small capsules and transfer them to your Cold Vault as one large cold capsule thereby reducing future fee costs (UTXO consolidation). */}
             </Text>
-            <Image source={Cold2} style={{ marginTop: 25, width: 330, height: 190, resizeMode: "contain"}} />
+            <Image source={Cold2} style={{ marginTop: 25, width: 320, height: 190, resizeMode: "contain"}} />
           </View>
           <Button text="Connect Device" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
         </View>

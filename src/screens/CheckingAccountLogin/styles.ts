@@ -33,6 +33,16 @@ export default StyleSheet.create({
     marginBottom: 20,
     marginTop: 10,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: colors.white,
+  },
 });
 
 // import { colors } from "@Cypher/style-guide";

@@ -91,7 +91,7 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
             }
             <LinearGradient
                 start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-                colors={vaultTab ? [colors.blueText, colors.blueText] : [colors.green, colors.green]}
+                colors={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]}
                 style={styles.linearGradient} />
             <View style={styles.keypad}>
                 {KEYSARRAY.map((key) => (
@@ -103,7 +103,7 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
                     <Image source={Cancel} />
                 </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={onPress} disabled={disabled} style={[styles.nextBtn, vaultTab && { backgroundColor: colors.blueText }, disabled && {backgroundColor: colors.gray.disable}]}>
+            <TouchableOpacity onPress={onPress} disabled={disabled} style={[styles.nextBtn, vaultTab && { backgroundColor: colors.coldGreen }, disabled && {backgroundColor: colors.gray.disable}]}>
                 <Text h3>Next</Text>
             </TouchableOpacity>
         </View>

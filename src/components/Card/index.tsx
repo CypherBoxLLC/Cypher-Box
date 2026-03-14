@@ -1,4 +1,4 @@
-import { CoinOSSmall, Strike2 } from "@Cypher/assets/images";
+import { CoinOs, CoinOSSmall, Strike2 } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
 import { formatNumber, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
@@ -22,7 +22,6 @@ interface Props {
     withdrawThreshold: any;
     reserveAmount: any;
     isShowButtons?: boolean;
-    receiveType?: boolean;
     receiveClickHandler?(value: boolean): void;
     sendClickHandler?(value: boolean): void;
 }
@@ -36,19 +35,21 @@ export default function Card({ onPress,
     reserveAmount,
     matchedRate,
     currency,
-    receiveType,
     isShowButtons = false,
     receiveClickHandler,
     sendClickHandler,
 }: Props) {
     const {coldStorageWalletID, walletID, allBTCWallets} = useAuthStore();
 
+    const thresholdMet = calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount)) >= 100;
+
     const onCardClickHandler = () => {
         onPress?.(true);
     }
 
     const getBalance = () => {
-        return `${balance} sats ~ ${getStrikeCurrency(currency || 'USD')}${convertedRate.toFixed(2)}`
+        const safeConverted = Number(convertedRate) || 0;
+        return `${balance} sats ~ ${getStrikeCurrency(currency || 'USD')}${safeConverted.toFixed(2)}`
     }
 
     const getSats = () => {
@@ -65,15 +66,15 @@ export default function Card({ onPress,
     console.log('allBTCWallets: ', allBTCWallets)
 
     const onReceiveClickHandler = () => {
-        // if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
-        //     dispatchNavigate('CreateInvoice', {
-        //         matchedRate,
-        //         currency,
-        //         receiveType: true
-        //     });
-        // } else {
+        if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
+            dispatchNavigate('CreateInvoice', {
+                matchedRate,
+                currency,
+                receiveType: true
+            });
+        } else {
             receiveClickHandler?.(true);
-        // }
+        }
     }
 
     const onSendClickHandler = () => {
@@ -100,11 +101,21 @@ export default function Card({ onPress,
                         <Text h2 bold style={styles.check}>
                             {title}
                         </Text>
+                        {wallet==='STRIKE' ?
                         <Image
-                            source={receiveType ? CoinOSSmall : Strike2}
-                            style={styles.blink}
-                            resizeMode="contain"
-                        />
+                        source={Strike2}
+                        style={styles.blink}
+                        resizeMode="contain"
+                    />
+                    :
+                    <Image
+                        source={CoinOSSmall}
+                        style={styles.blink}
+                        resizeMode="contain"
+                    />
+                        }
+                        
+                        
                     </View>
                     <View style={styles.view}>
                         <Text h2 bold style={styles.sats}>
@@ -114,7 +125,13 @@ export default function Card({ onPress,
                             {getSats()}
                         </Text>
                     </View>
-                    <View>
+                    <View style={thresholdMet ? {
+                        shadowColor: '#e84393',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 1,
+                        shadowRadius: 16,
+                        elevation: 10,
+                    } : undefined}>
                         <View style={styles.showLine} />
                         <View style={[styles.box, { left: getLineLeft() } as any]} />
                         <LinearGradient

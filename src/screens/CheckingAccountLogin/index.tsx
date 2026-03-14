@@ -1,5 +1,5 @@
-import React from "react";
-import { Linking, TouchableOpacity, View, Image } from "react-native";
+import React, { useEffect } from "react";
+import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -15,6 +15,7 @@ import {
   HeaderWithLine,
 } from "@Cypher/components";
 import LinearGradient from "react-native-linear-gradient";
+import SimpleToast from "react-native-simple-toast";
 
 const config = {
     id: 'strike',
@@ -22,7 +23,8 @@ const config = {
     type: 'oauth',
     issuer: "https://auth.strike.me", // Strike Identity Server URL
     clientId: "cypherbox",
-    clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
+    // clientSecret removed — do not hardcode secrets
+    clientSecret: "",
     redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
     scopes: ["offline_access", 'partner.currency-exchange-quote.create', 'partner.currency-exchange-quote.execute', 'partner.currency-exchange-quote.read', 'partner.receive-request.read', 'partner.deposit.manage', 'partner.payout-originator.read', 'partner.payment-quote.onchain.create', 'partner.payment-quote.lightning.create', 'partner.payment-quote.execute', 'partner.receive-request.create', "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
     //clientAuthMethod: "post",
@@ -33,6 +35,8 @@ const config = {
     //         response_type: 'code',
     //     }
     // },
+    usePKCE: true, 
+    skipCodeExchange: true,
     idToken: false,
     checks: ['pkce', 'state'],
     // serviceConfiguration: {
@@ -54,6 +58,33 @@ export default function CheckingAccountLogin() {
     setAllBTCWallets,
     setFirstTimeLightning
   } = useAuthStore();
+  const [strikeLoading, setStrikeLoading] = React.useState(false);
+  const [CoinosException, setCoinosException] = React.useState(false);
+  const [pageLoading, setPageLoading] = React.useState(true);
+
+  useEffect(() => {
+    async function fetchIPInfo() {
+      try {
+        setPageLoading(true);
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+
+        const isBlocked =
+          data.continent_code === 'EU' ||
+          ['GB', 'IN', 'CN'].includes(data.country_code);
+
+        if (isBlocked) {
+          setCoinosException(true);
+        }
+      } catch (error) {
+        console.log('IP fetch failed', error);
+      } finally {
+        setPageLoading(false);
+      }
+    }
+
+    fetchIPInfo();
+  }, []);
 
   const createCheckingAccountClickHandler = () => {
     Linking.openURL("https://coinos.io/register");
@@ -71,10 +102,11 @@ export default function CheckingAccountLogin() {
     try {
       const result = await authorize(config);
       console.log("Access Token:", result);
-      setStrikeToken(result.accessToken);
+      const reStrikeTokenExchange = await strikeTokenExchange(result.authorizationCode, result.codeVerifier || '');
+      setStrikeToken(reStrikeTokenExchange.access_token);
       setStrikeAuth(true);
       const temp = [...allBTCWallets];
-      const tokenParts = result.accessToken.split(".");
+      const tokenParts = reStrikeTokenExchange.access_token.split(".");
       const header = Buffer.from(tokenParts[0], "base64").toString("utf8");
       const payload = Buffer.from(tokenParts[1], "base64").toString("utf8");
       const signature = tokenParts[2];
@@ -84,7 +116,8 @@ export default function CheckingAccountLogin() {
       setStrikeMe(decoded);
       setAllBTCWallets([...temp, "STRIKE"]);
       if(FirstTimeLightning){
-        dispatchNavigate("CheckingAccountCreated");
+        setFirstTimeLightning(false);
+        dispatchNavigate("CheckingAccountCreated", { accountType: 'strike' });
       }else{
         dispatchReset("HomeScreen", {
           isComplete: true
@@ -100,6 +133,60 @@ export default function CheckingAccountLogin() {
       console.error("OAuth error", error);
     }
   };
+
+  const strikeTokenExchange = async (code: string, verifier: string) => {
+    try {
+      setStrikeLoading(true);
+      const details = {
+        code: code,
+        verifier: verifier,
+      };      
+      console.log('details to send:', details);
+      const response = await fetch('https://cypherbox-backend.onrender.com/oauth/start', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(details),
+      });
+
+      const responseJSON = await response.json();
+      if (responseJSON.success) {
+        console.log("Response Body:", responseJSON);
+        return responseJSON.data;
+      } else {
+        SimpleToast.show('Strike authentication failed.', SimpleToast.SHORT);
+        return null;
+      }
+    } catch (error) {
+      console.error("Fetch Error:", error);
+    } finally {
+      setStrikeLoading(false);
+    }
+  };
+
+  
+  if(pageLoading){
+    return (
+      <ScreenLayout showToolbar>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.white} />
+        </View>
+      </ScreenLayout>
+    );
+  }
+
+  if(strikeLoading){
+    return (
+      <ScreenLayout showToolbar>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.white} />
+          <Text style={styles.loadingText}>Logging in to Strike...</Text>
+        </View>
+      </ScreenLayout>
+    );
+  }
 
   return (
     <ScreenLayout showToolbar>
@@ -119,7 +206,7 @@ export default function CheckingAccountLogin() {
               />
             </>
           )}
-          {!isAuth && (
+          {!isAuth && !CoinosException && (
             <>
               <LoginOption
                 logo={require("@Cypher/assets/images/coinos.png")}

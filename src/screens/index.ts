@@ -47,3 +47,5 @@ export { default as CheckingAccountNew } from './Strike/CheckingAccountNew';
 export { default as PaymentSuccess } from './Strike/PaymentSuccess';
 export { default as InvoiceNew } from './Strike/InvoiceNew';
 export { default as BuyBitcoin } from './Strike/BuyBitcoin';
+export { default as SwapAmount } from './SwapAmount';
+export { default as CapsuleCatalog } from './CapsuleCatalog';

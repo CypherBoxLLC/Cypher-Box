@@ -76,10 +76,18 @@ const CircleTimer = ({
 
   const clampedBalanceProgress = Math.min(balancePercentage, 100) / 100;
   const strokeBalanceDashoffset = circumference * (1 - clampedBalanceProgress);
-  // Convert to progress (0 to MAX_PROGRESS range)
+
+  const thresholdMet = balancePercentage >= 100;
 
   return (
     <View style={[styles.container, { width: size, height: size / 2 }]}>
+      <View style={thresholdMet ? {
+        shadowColor: '#e84393',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 1,
+        shadowRadius: 18,
+        elevation: 10,
+      } : undefined}>
       <Svg height={size} width={size}>
         <Defs>
           <LinearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -102,7 +110,7 @@ const CircleTimer = ({
             strokeLinecap="round"
           />
 
-          {/* Progress Arc with Gradient */}
+          {/* Progress Arc with Gradient - clamped to 270° gauge */}
           <Circle
             cx={size / 2}
             cy={size / 2}
@@ -110,9 +118,8 @@ const CircleTimer = ({
             fill="none"
             stroke="url(#progressGradient)"
             strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            // strokeDashoffset={strokeDashoffset}
-            strokeDashoffset={strokeBalanceDashoffset}
+            strokeDasharray={`${0.75 * circumference} ${circumference}`}
+            strokeDashoffset={0.75 * circumference * (1 - clampedBalanceProgress)}
             strokeLinecap="round"
           />
 
@@ -127,6 +134,7 @@ const CircleTimer = ({
           </G>
         </G>
       </Svg>
+      </View>
 
       <View style={styles.textContainer}>
         <Text bold style={styles.mainText}>{value}</Text>
