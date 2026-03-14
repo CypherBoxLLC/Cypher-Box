@@ -549,9 +549,6 @@ export default function ReviewWithdrawal({ route }: Props) {
                 </GradientCard>
             </View>
             <View style={styles.container}>
-                <Text bold style={styles.alert}>
-                    Causion: Bitcoin payments are irriversable
-                </Text>
                 <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
                 {/* <GradientButton style={styles.invoiceButton} texStyle={{ fontFamily: 'Lato-Medium', }} title="Send" onPress={sendClickHandler} /> */}
             </View>

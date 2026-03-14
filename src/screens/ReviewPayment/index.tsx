@@ -19,7 +19,7 @@ import { FeeSelection } from "./FeeSelection/FeeSelection";
 import { startsWithLn } from "../Send";
 import { calculateBalancePercentage, calculatePercentage } from "../HomeScreen";
 import { createFiatExchangeQuote, executeFiatExchangeQuote, getOnChainTiers, getPaymentQoute, getPaymentQouteByLightening, getPaymentQouteByLighteningURL, getPaymentQouteByOnChain } from "@Cypher/api/strikeAPIs";
-import { mostRecentFetchedRate } from "../../../blue_modules/currency";
+import { mostRecentFetchedRate, fetchedRate } from "../../../blue_modules/currency";
 
 interface Props {
     navigation: any;
@@ -44,9 +44,10 @@ export const shortenAddress = (address: string) => {
 };
 
 function usdToSats(usdAmount: number, exchangeRate: number): string {
+  if (!exchangeRate || exchangeRate === 0) return '0';
   const btcAmount = usdAmount / exchangeRate;
   const satoshiAmount = Number(btcAmount * 100000000).toFixed(2);
-  return satoshiAmount;
+  return isNaN(Number(satoshiAmount)) ? '0' : satoshiAmount;
 }
 
 export default function ReviewPayment({ navigation, route }: Props) {
@@ -89,7 +90,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     }, [receiveType]);
 
     useEffect(() => {
-        if(to.startsWith('bc') && receiveType == false){
+        if(to && to.startsWith('bc') && receiveType == false){
             handleStrikeOnChainFee();
         }
     }, [to, receiveType, isWithdrawal])
@@ -101,7 +102,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     }, [to, isSats, receiveType, isWithdrawal])
 
     useEffect(() => {
-        if(to.startsWith('bc') && selectedStrikeFee && !receiveType){
+        if(to && to.startsWith('bc') && selectedStrikeFee && !receiveType){
             handleStrikeBTCFee(selectedStrikeFee?.id);
         }
     }, [to, selectedStrikeFee, receiveType])
@@ -122,25 +123,44 @@ export default function ReviewPayment({ navigation, route }: Props) {
     }
 
     const handleRates = async () => {
+        // Use Strike account currency if available, otherwise default rate
+        if (currency && currency !== 'USD') {
+            const untypedFiatUnit = require('../../../models/fiatUnits.json');
+            const fiatUnit = untypedFiatUnit?.[currency];
+            if (fiatUnit) {
+                const rates = await fetchedRate(fiatUnit);
+                if (rates && rates?.Rate) {
+                    const numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
+                    console.log('Strike rate for', currency, ':', numericAmount);
+                    setMatchedRate(numericAmount);
+                }
+                return;
+            }
+        }
         const rates = await exchangeRate();
         if (rates && rates?.Rate) {
           const numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
           setMatchedRate(numericAmount);
         }
-
     }
 
     const handleFiatPayment = async () => {
         const amount =  isSats ? converted : value;
         const sats = isSats ? value : converted;
         console.log('amount: ', amount, converted, currency)
+        const fiatAmount = isSats ? converted : value;
+        const btcAmount = (isSats ? value : converted) / SATS;
         let payload = {
-            sell: type == "BUY" ? "BTC" : (currency || "USD"),
-            buy: type == "BUY" ? (currency || "USD") : "BTC",
-            amount: {
-                amount: type === 'BUY' ? sats / SATS : amount,
-                currency: type === 'BUY' ? "BTC" : currency || "USD",
-                feePolicy: type == "SELL" ? "INCLUSIVE" : "EXCLUSIVE"
+            sell: type == "BUY" ? (currency || "USD") : "BTC",
+            buy: type == "BUY" ? "BTC" : (currency || "USD"),
+            amount: type === 'BUY' ? {
+                amount: Number(fiatAmount),
+                currency: currency || "USD",
+                feePolicy: "INCLUSIVE"
+            } : {
+                amount: btcAmount,
+                currency: "BTC",
+                feePolicy: "EXCLUSIVE"
             }
         }
         const response = await createFiatExchangeQuote(payload, false);
@@ -244,14 +264,15 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     const handleStrikeOnChainFee = async () => {
         const amount =  receiveType ? isSats ? value : converted : isSats ? converted : value;
+        const btcAmount = isSats ? Number(value) / SATS : Number(value);
         try {
             const payload = {
                 btcAddress: to,
                 sourceCurrency: 'BTC',
                 amount: {
-                    amount: Number(amount),
-                    currency: currency || "USD",
-                    feePolicy: "INCLUSIVE"
+                    amount: btcAmount,
+                    currency: "BTC",
+                    feePolicy: "EXCLUSIVE"
                 },
                 description: note,
                 // onchainTierId: 'tier_fast' + Math.floor(Math.random() * 100)
@@ -408,6 +429,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const handleFeeSelect = (fee: string) => {
         console.log('fee: ', fee)
         handleFeeEstimate(fee)
+        setModalVisible(false)
     };
 
     const handleStrikeFeeSelect = (fee: any) => {
@@ -775,7 +797,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     console.log('strikeFees: ', value, to, type, recommendedFee)
     return (
-        <ScreenLayout showToolbar isBackButton title={isWithdrawal ? "Review Withdrawal" : "Review Payment"}>
+        <ScreenLayout showToolbar isBackButton title={isWithdrawal ? "Review Withdrawal" : type === 'BUY' ? "Review Purchase" : "Review Payment"}>
             <View style={styles.topView}>
                 {/* {isStartLoading ?
                     <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />
@@ -832,7 +854,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             </TouchableOpacity>
                         }
                     </View>
-                    <TextViewV2 keytext="Sent from: " text={receiveType ? "Coinos Lightning Account" : type == 'SELL' || type == 'BUY' ? "Strike Fiat Account" : "Strike Lightning Account"} />
+                    <TextViewV2 keytext={type === 'BUY' ? "Spent from: " : "Sent from: "} text={receiveType ? "Coinos Lightning Account" : type == 'SELL' || type == 'BUY' ? "Strike Fiat Account" : "Strike Lightning Account"} />
                     {isWithdrawal && to.length > 0 ?
                         <View style={{
                             marginBottom:30,
@@ -883,87 +905,98 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     {to && value && (type === 'bitcoin' || type === 'liquid') && (recommendedFee || strikeFees) ?
                         <>
                             {receiveType ?
-                                <View style={styles.feesView}>
-                                    <TextViewV2 keytext="Network Fee:  " text={` ~   ${estimatedFee} sats`} />
-                                    <GradientCard disabled
-                                        colors_={['#FFFFFF', '#B6B6B6']}
-                                        style={styles.linearGradientStroke} linearStyle={styles.linearGradient3}>
-                                        <View style={styles.background}>
-                                            <TouchableOpacity onPress={() => setModalVisible(true)}>
-                                                <Text bold style={{ fontSize: 16 }}>{selectedFeeName}</Text>
+                                <View style={{ zIndex: 100, elevation: 100 }}>
+                                    <View style={[styles.feesView, { zIndex: 100, elevation: 100 }]}>
+                                        <TextViewV2 keytext="Network Fee:  " text={` ~   ${estimatedFee} sats`} />
+                                        <View style={{ marginLeft: 10, marginTop: -10, width: 160, zIndex: 100, elevation: 100 }}>
+                                            <TouchableOpacity
+                                                onPress={() => setModalVisible(!isModalVisible)}
+                                                disabled={feeLoading}
+                                                activeOpacity={0.7}
+                                                style={{ opacity: feeLoading ? 0.5 : 1 }}>
+                                                <GradientCard disabled
+                                                    colors_={['#FFFFFF', '#B6B6B6']}
+                                                    style={{ height: 40, borderRadius: isModalVisible ? 10 : 10, width: 160 }} linearStyle={{ height: 40, borderRadius: 10 }}>
+                                                    <View style={{ backgroundColor: colors.gray.dark, flex: 1, margin: 2, borderRadius: 9, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }}>
+                                                        <Text bold style={{ fontSize: 14 }}>{selectedFeeName}</Text>
+                                                        <Icon name={isModalVisible ? "chevron-up" : "chevron-down"} type="font-awesome" color="#FFFFFF" size={12} style={{ marginLeft: 6 }} />
+                                                    </View>
+                                                </GradientCard>
                                             </TouchableOpacity>
-                                            <View style={{ paddingVertical: 5 }}>
-                                                <TouchableOpacity style={{ opacity: feeLoading ? 0.5 : 1 }} onPress={increaseClickHandler} disabled={feeLoading}>
-                                                    <Icon name="angle-up" type="font-awesome" color="#FFFFFF" />
-                                                </TouchableOpacity>
-                                                <TouchableOpacity style={{ opacity: feeLoading ? 0.5 : 1 }} onPress={decreaseClickHandler} disabled={feeLoading}>
-                                                    <Icon name="angle-down" type="font-awesome" color="#FFFFFF" />
-                                                </TouchableOpacity>
-                                            </View>
+                                            {isModalVisible && (
+                                                <View style={{ backgroundColor: colors.gray.dark, borderWidth: 1, borderTopWidth: 0, borderColor: '#333', borderBottomLeftRadius: 10, borderBottomRightRadius: 10, overflow: 'hidden', position: 'absolute', top: 40, left: 0, right: 0, zIndex: 30, elevation: 10 }}>
+                                                    {Object.entries(recommendedFee).map(([feeKey, feeValue], index) => (
+                                                        feeKey !== 'minimumFee' && (
+                                                            <TouchableOpacity
+                                                                key={feeKey}
+                                                                style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: index < Object.keys(recommendedFee).length - 2 ? 1 : 0, borderBottomColor: '#333', backgroundColor: selectedFeeName === feeKey ? colors.primary : 'transparent' }}
+                                                                onPress={() => handleFeeSelect(feeKey as Fee)}>
+                                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                    <Text bold style={{ fontSize: 13 }}>{feeNames[feeKey as Fee]}</Text>
+                                                                    <Text style={{ fontSize: 11, color: '#999' }}>{feeValue} sat/vB</Text>
+                                                                </View>
+                                                            </TouchableOpacity>
+                                                        )
+                                                    ))}
+                                                </View>
+                                            )}
                                         </View>
-                                    </GradientCard>
+                                    </View>
                                 </View>
                             :
-                                <View style={styles.feesView}>
-                                    <TextViewV2 keytext="Network Fee:  " text={` ~   ${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000).toFixed(2)} sats`} />
-                                    <GradientCard disabled
-                                        colors_={['#FFFFFF', '#B6B6B6']}
-                                        style={styles.linearGradientStroke} linearStyle={styles.linearGradient3}>
-                                        <View style={styles.background}>
-                                            <TouchableOpacity onPress={() => setModalVisible(true)}>
-                                                <Text bold style={{ fontSize: 16 }}>{selectedStrikeFee ? selectedStrikeFee.label : selectedFeeName}</Text>
+                                <View style={{ zIndex: 100, elevation: 100 }}>
+                                    <View style={[styles.feesView, { zIndex: 100, elevation: 100 }]}>
+                                        <View style={{ marginTop: -10, width: 160, zIndex: 100, elevation: 100 }}>
+                                            <TouchableOpacity
+                                                onPress={() => setModalVisible(!isModalVisible)}
+                                                disabled={feeLoading}
+                                                activeOpacity={0.7}
+                                                style={{ opacity: feeLoading ? 0.5 : 1 }}>
+                                                <GradientCard disabled
+                                                    colors_={['#FFFFFF', '#B6B6B6']}
+                                                    style={{ height: 40, width: 160 }} linearStyle={{ height: 40, borderRadius: 10 }}>
+                                                    <View style={{ backgroundColor: colors.gray.dark, flex: 1, margin: 2, borderRadius: 9, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }}>
+                                                        <Text bold style={{ fontSize: 14 }}>{selectedStrikeFee ? selectedStrikeFee.label : selectedFeeName}</Text>
+                                                        <Icon name={isModalVisible ? "chevron-up" : "chevron-down"} type="font-awesome" color="#FFFFFF" size={12} style={{ marginLeft: 6 }} />
+                                                    </View>
+                                                </GradientCard>
                                             </TouchableOpacity>
-                                            <View style={{ paddingVertical: 5 }}>
-                                                <TouchableOpacity style={{ opacity: feeLoading ? 0.5 : 1 }} onPress={increaseStrikeClickHandler} disabled={feeLoading}>
-                                                    <Icon name="angle-up" type="font-awesome" color="#FFFFFF" />
-                                                </TouchableOpacity>
-                                                <TouchableOpacity style={{ opacity: feeLoading ? 0.5 : 1 }} onPress={decreaseStrikeClickHandler} disabled={feeLoading}>
-                                                    <Icon name="angle-down" type="font-awesome" color="#FFFFFF" />
-                                                </TouchableOpacity>
-                                            </View>
+                                            {isModalVisible && (
+                                                <View style={{ backgroundColor: colors.gray.dark, borderWidth: 1, borderTopWidth: 0, borderColor: '#333', borderBottomLeftRadius: 10, borderBottomRightRadius: 10, overflow: 'hidden', position: 'absolute', top: 40, left: 0, right: 0, zIndex: 30, elevation: 10 }}>
+                                                    {strikeFees && strikeFees.map((item: any, index: number) => {
+                                                        const isDisabled = item?.label == 'Free' && item?.minimumAmount && item?.minimumAmount?.amount > (isSats ? value / SATS : converted / SATS);
+                                                        return (
+                                                            <TouchableOpacity
+                                                                key={item.id || index}
+                                                                disabled={isDisabled}
+                                                                style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: index < strikeFees.length - 1 ? 1 : 0, borderBottomColor: '#333', backgroundColor: selectedStrikeFee?.id === item.id ? colors.primary : 'transparent', opacity: isDisabled ? 0.5 : 1 }}
+                                                                onPress={() => handleStrikeFeeSelect(item)}>
+                                                                <Text bold style={{ fontSize: 13 }}>{item.label}</Text>
+                                                                {isDisabled && <Text style={{ fontSize: 9, color: '#999' }}>Min: {item.minimumAmount?.amount} BTC</Text>}
+                                                            </TouchableOpacity>
+                                                        );
+                                                    })}
+                                                </View>
+                                            )}
                                         </View>
-                                    </GradientCard>
+                                    </View>
+                                    <View style={{ marginTop: 15, marginStart: 15, height: 30 }}>
+                                        {selectedStrikeFee && <Text bold style={{ fontSize: 18 }}>Fee: <Text italic style={{ fontSize: 16, fontWeight: 'normal' }}>{`~ ${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000).toFixed(0)} sats (~$${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * (matchedRate || 0)).toFixed(2)}) (${value > 0 ? ((Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000 / Number(value)) * 100).toFixed(1) : '0'}%)`}</Text></Text>}
+                                    </View>
                                 </View>
                             }
                             {/* <TextViewV2 keytext="Coinos Fee + Service Fee:  " text={` ~   ${(networkFee || 0) + (bamskiiFee || 0)} sats`} /> */}
                             {receiveType && <TextViewV2 keytext="Coinos Fee:  " text={` ~   ${(networkFee || 0)} sats`} /> }
-                            <TextViewV2 keytext="Total Fee:  " text={isWithdrawal && receiveType ? ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~${handleWithdrawalFee((networkFee || 0) + (estimatedFee || 0)).toFixed(0)}%)` : isWithdrawal && receiveType ? ` ~   ${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000).toFixed(2)} sats` : ` ~   ${receiveType ? (networkFee || 0) + (estimatedFee || 0) : paymentQuoteData ? (paymentQuoteData?.totalFee?.amount * SATS).toFixed(2) : 0} sats ${receiveType ? `(~0.2%)` : ``}`} />
+                            {receiveType && <TextViewV2 keytext="Total Fee:  " text={isWithdrawal ? ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~${handleWithdrawalFee((networkFee || 0) + (estimatedFee || 0)).toFixed(0)}%)` : ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~0.2%)`} />}
+                            {!receiveType && !selectedStrikeFee && paymentQuoteData && <TextViewV2 keytext="Total Fee:  " text={` ~   ${(paymentQuoteData?.totalFee?.amount * SATS).toFixed(0)} sats`} />}
                         </>
                         :
                         <TextView keytext="Fees:  " text={` ~   ${receiveType ? estimatedFee : paymentQuoteData && to?.length > 0 ? usdToSats(paymentQuoteData?.totalFee?.amount || 0, (matchedRate || 0)) : paymentQuoteData && to.length == 0 ? usdToSats(paymentQuoteData?.fee?.amount || 0, (matchedRate || 0)) : 0} sats`} />
                     }
                 </View>
-
-                <ReactNativeModal isVisible={isModalVisible}>
-                    <View>
-                        <GradientCard disabled
-                            style={[styles.modal, !receiveType ? {height: 150} : {}]} linearStyle={{...styles.linearGradient4, ...{height: receiveType ? 200 : 150}}}>
-                                {receiveType ?
-                                    <ScrollView style={styles.background2}>
-                                        {Object.entries(recommendedFee).map(([feeKey, feeValue], index) => (
-                                            feeKey !== 'minimumFee' && (
-                                                <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
-                                                    onPress={() => handleFeeSelect(feeKey as Fee)}>
-                                                    <Text bold style={{ fontSize: 18 }}>{feeNames[feeKey as Fee]}</Text>
-                                                </TouchableOpacity>
-                                            )
-                                        ))}
-                                    </ScrollView>
-                                :
-                                    <ScrollView style={styles.background2}>
-                                        {strikeFees && strikeFees.map((item, index) => (
-                                            <TouchableOpacity disabled={item?.label == 'Free' && item?.minimumAmount && item?.minimumAmount?.amount > (isSats ? value / SATS : converted / SATS)} style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }, item?.label == 'Free' && item?.minimumAmount && item?.minimumAmount?.amount > (isSats ? value / SATS : converted / SATS) && { opacity: 0.5, flexDirection: 'column' }]}
-                                                onPress={() => handleStrikeFeeSelect(item)}>
-                                                <Text bold style={{ fontSize: 18 }}>{item.label}</Text>
-                                                { item?.label == 'Free' && item?.minimumAmount && item?.minimumAmount?.amount > (isSats ? value / SATS : converted / SATS) && <Text style={{ fontSize: 9 }}>Minimum Amount: {item.minimumAmount?.amount}</Text> }
-                                            </TouchableOpacity>
-                                        ))}
-                                    </ScrollView>
-
-                                }
-                        </GradientCard>
-                    </View>
-                </ReactNativeModal>
+                {!receiveType && !to.includes('blink') && to?.length > 0 &&
+                    <View style={{ marginTop: 160 }} />
+                }
                 {!receiveType && !to.includes('blink') && to?.length > 0 &&
                     <GradientCard
                         style={styles.main}
@@ -978,10 +1011,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     </GradientCard>
                 }
             </View>
+            {(type === 'bitcoin' || type === 'liquid') && <Text style={{ color: '#FFFFFF', fontSize: 15, textAlign: 'center', marginBottom: 10 }}><Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 'bold' }}>Caution:</Text> Bitcoin transactions are irreversible</Text>}
             <View style={styles.container}>
-                <Text bold style={styles.alert}>Causion: Bitcoin payments are irriversable</Text>
                 {type === 'bitcoin' || type == "SELL" || type == "BUY" ?
-                    <SwipeButton title={isWithdrawal ? 'Slide to Withdraw' : 'Slide to Send'} ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
+                    <SwipeButton title={isWithdrawal ? 'Slide to Withdraw' : type === 'BUY' ? 'Slide to Purchase' : 'Slide to Send'} ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
                     :
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
                         title={'Send'}

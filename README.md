@@ -1,11 +1,9 @@
 # Cypher Box - A Fun Way to Play Bitcoin
+Https://Cypherbox.io
 
-## License
-This software is available for personal, internal, and non-commercial use. Redistribution, selling, or offering the software as a service is prohibited without prior written consent. See the [LICENSE](./LICENSE) file for details.
+[LICENSE](./LICENSE)
 
-**APP UNDER CONSTRUCTION - PLEASE USE IT CAUTIOUSLY**
-
-Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet), tailored for newbies
+Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) Release 6.5.1, tailored for onboarding newbies to advanced self-custody
 
 Built with React Native, Electrum, and powered by Coinos.io API
 
@@ -44,7 +42,7 @@ To run on iOS:
 * `npx pod-install`
 * `npm start`
 
-In another terminal window within the BlueWallet folder:
+In another terminal window within the Cypher-Box folder:
 
 `npx react-native run-ios`
 
@@ -68,7 +66,9 @@ Community: [telegram group](https://t.me/BitcoinUserSupport)
 
 Lightning Account:
 * Create/login to Coinos.io 
-* Send and receive lightning, Liquid, and onchain payments
+* Send and receive lightning (LNURL)
+* Receive Liquid
+* Send and receive onchain 
 * Create lightning address
 * Payment history, Withdrawal Threshold reminder
 * Withdraw to Vault
@@ -90,48 +90,35 @@ Cold Vault (watch-only):
 * Send to Hot Vault
 
 ---
+Medium-term Development Milestones (last update 12th Feb '25)
+**Global**
+- ✅ Plausiable Deniability
 
-MVP development roadmap (last update 17th January '25)
-**Checking account**
-- ✅ Create Account
-- ✅ Login
-- ✅ Fetch Balance
-- ✅ Receive lightning
-- ✅ Send lightning
-- ✅ Receive onchain
-- ✅ Send onchain
-- ✅ Update Balance
-- ✅ Unit conversion
-- ⏱️ Notifications (postponed)
-- ✅ Transaction history
-- ✅ Withdraw to hot vault
-- ✅ Withdraw to cold vault
-- ✅ Threshold bar
-- ✅ Adjust Threshold
-- ✅ Adjust Reserve Amount
+**Lightning account**
+- ⭕ Send Liquid
+- ⭕ Bolt 12
 
 **Hot vault**
-- ✅ Create Hot Vault
-- ✅ Withdrawal fee estimation
-- ✅ Receive to Hot Vault
-- ✅ Coin control
-- ⏱️ Notifications (postponed)
-- ✅ Send from Hot Vault
-- ✅ Transaction history
-- ✅ Transfer to cold vault
-- ✅ Top-up to checking account
+- ✅ Batching
+- ⭕ Send change to Lightning Account
 
 **Cold vault**
-- ✅ Create Cold Vault
-- ✅ Send from Cold Vault
-- ✅ Transfer to hot vault
-- ✅ Withdrawal fee estimations
-- ✅ Top-up to checking account
-
+- ✅ Batching
+- ⭕ Send change to Hot Vault
 ---
+Technical debt:
+- ⏱️ Notifications
+- ⏱️ UI inconsistencies
+- ⏱️ Recieve popup
+- ⏱️ Lightning Account settings 
 
 # RESPONSIBLE DISCLOSURE
-Found critical bugs/vulnerabilities? Please email them info@cypherbox.io Thanks!
+Found critical bugs/vulnerabilities?
+- Please email info@cypherbox.io
+- Please do not publicly disclose vulnerabilities until they have been resolved.
+- Valid, responsible disclosures may qualify for a bounty reward based on the severity of the issue.
+Thank you for helping us keep our project secure!
+
 
 
 

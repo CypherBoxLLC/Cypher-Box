@@ -35,7 +35,7 @@ export default function CheckingAccountNew({ navigation, route }: any) {
     }, [selectedTab, vaultTab, wallet, matchedRate, receiveType, currency]);
 
     return (
-        <ScreenLayout showToolbar disableScroll title={'Checking Account'}>
+        <ScreenLayout showToolbar disableScroll title={'Lightning Account'}>
             <View style={styles.container}>
                 <Tabs onChangeSelectedTab={onChangeSelectedTab} selectedTab={selectedTab} vaultTab={vaultTab} />
                 {renderView()}

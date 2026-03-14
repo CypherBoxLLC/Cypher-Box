@@ -138,7 +138,7 @@ export default StyleSheet.create<Style>({
     },
     checkView: {
         borderWidth: 1,
-        borderColor: colors.blueText,
+        borderColor: colors.coldGreen,
         width: 27,
         height: 25,
         alignItems: 'center',

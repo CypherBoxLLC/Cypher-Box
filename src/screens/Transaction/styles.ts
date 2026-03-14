@@ -19,7 +19,8 @@ interface Style {
     extra: ViewStyle;
     ringEffect: ImageStyle;
     imageContainer: ImageStyle;
-    ringStyle: ViewStyle
+    ringStyle: ViewStyle;
+    strikeLogo: ImageStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -153,6 +154,11 @@ export default StyleSheet.create<Style>({
         width: 250,
         height: 250,
         alignItems: "center",
-        
+    },
+    strikeLogo: {
+        width: 140,
+        height: 45,
+        alignSelf: 'center',
+        marginBottom: 50,
     },
 })

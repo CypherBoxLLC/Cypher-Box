@@ -16,6 +16,7 @@ interface Props {
     refRBSheet: any;
     refSendRBSheet: any;
     setReceiveType: any;
+    homeMessage?: string | null;
 }
 
 export default function CoinosWallet({
@@ -28,8 +29,9 @@ export default function CoinosWallet({
     refRBSheet,
     refSendRBSheet,
     setReceiveType,
+    homeMessage,
 }: Props) {
-    const { isAuth, withdrawThreshold, reserveAmount } = useAuthStore();
+    const { isAuth, withdrawThreshold, reserveAmount, clearAuth } = useAuthStore();
 
     const receiveClickHandler = (type: boolean) => {
         if(type){
@@ -79,23 +81,13 @@ export default function CoinosWallet({
                         receiveClickHandler={receiveClickHandler}
                         sendClickHandler={sendClickHandler}
                     />
-                    {!isLoading &&
-                        (hasFilledTheBar ?
+                    <View style={{ minHeight: 40, justifyContent: 'center' }}>
+                        {!isLoading && homeMessage &&
                             <Text h4 style={styles.alert}>
-                                Your sats have materialized! You can create a Hot Storage Savings Vault and take full self-custody of your money by withdrawing a large chunk of a bitcoin from your custodian Lightning Account. Click the Withdraw button to know more
-                                {/* You can receive, send, and accumulate bitcoin using your Lightning Account. New security features will be revealed once you meet the withdrawal threshold at 2 million sats */}
+                                {homeMessage}
                             </Text>
-                            : (Number(balance) === Number(withdrawThreshold + reserveAmount)) ?
-                                <Text h4 style={styles.alert}>
-                                    Congrats! You've completed the bar, It's time to create your Hot Storage Savings Vault and take full self-custody of your bitcoi. Click 'Withdraw' to know more.
-                                </Text>
-                                :
-                                <Text h4 style={styles.alertGrey}>
-                                    {/* New security upgrades will be revealed once you meet fill up the bar displayed on your Lightning Account. */}
-                                    {'\n'}
-                                </Text>
-                        )
-                    }
+                        }
+                    </View>
                 </>
             }
 

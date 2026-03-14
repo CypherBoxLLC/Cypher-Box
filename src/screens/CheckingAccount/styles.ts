@@ -89,13 +89,13 @@ export default StyleSheet.create<Style>({
     },
     linearGradientStroke: {
         height: 67,
-        width: '50%',
+        width: '80%',
         marginLeft: 30,
         marginVertical: 20,
         borderRadius: 15,
     },
     modal: {
-        height: 151,
+        height: 450,
         width: '70%',
         marginVertical: 20,
         borderRadius: 25,
@@ -106,7 +106,7 @@ export default StyleSheet.create<Style>({
         borderRadius: 15
     },
     linearGradient2: {
-        height: 151,
+        height: 450,
         borderRadius: 25
     },
     priceView: {

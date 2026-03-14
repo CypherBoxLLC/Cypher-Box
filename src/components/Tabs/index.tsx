@@ -29,7 +29,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
         onChangeSelectedTab(id);
     }, []);
 
-    const primaryColor = vaultTab ? colors.blueText : colors.greenNew
+    const primaryColor = vaultTab ? colors.coldGreen : colors.greenNew
 
     const getTabStyle = (id: number) => ({
         backgroundColor: selectedTab === id ? primaryColor : colors.primary,

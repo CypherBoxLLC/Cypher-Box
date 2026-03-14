@@ -232,8 +232,8 @@ export default StyleSheet.create<Style>({
     middle: {
         flexDirection: 'row',
         alignItems: 'center',
-        alignSelf:'center',
-        justifyContent:'center',
+        alignSelf:'flex-start',
+        justifyContent:'stretch',
         flex: 1
     },
     text: {
@@ -255,7 +255,7 @@ export default StyleSheet.create<Style>({
         width: 50,
         height: 50,
         left: -5,
-        top: 10
+        top: 10,
     },
     arrow2: {
         width: 30,
@@ -670,7 +670,7 @@ export default StyleSheet.create<Style>({
         shadowOffset: { width: 2, height: 2 },
         shadowRadius: 2,
         shadowOpacity: 2,
-        shadowColor: colors.greenShadow,
+        shadowColor: '#555555',
         borderRadius: 25,
         width: (widths / 2) - 60,
         height: 47,
@@ -680,7 +680,7 @@ export default StyleSheet.create<Style>({
         shadowOffset: { width: -2, height: -2 },
         shadowRadius: 2,
         shadowOpacity: 0.64,
-        shadowColor: colors.greenShadowLight,
+        shadowColor: '#333333',
         borderRadius: 25,
         width: (widths / 2) - 60,
         height: 47,

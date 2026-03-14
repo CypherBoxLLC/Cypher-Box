@@ -42,10 +42,10 @@ export default function SendScreen({ route, navigation }: Props) {
         <ScreenLayout disableScroll showToolbar isBackButton >
             <ScrollView style={styles.container}>
                 <GradientInputNew isSats={isSats} sats={sats} setSats={setSats} usd={usd} title={'Specify  Amount'}
-                    _colors={vaultTab ? [colors.blueText, colors.blueText] : [colors.green, colors.green]}
+                    _colors={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]}
                 />
                 <Text bold h2 center style={{ marginTop: 30, marginBottom: 25 }}>Total size of selected bars:{'\n'}{maxUSD} BTC</Text>
-                <TouchableOpacity onPress={maxSendClickHandler} style={[styles.btn, vaultTab && { backgroundColor: colors.blueText }]}>
+                <TouchableOpacity onPress={maxSendClickHandler} style={[styles.btn, vaultTab && { backgroundColor: colors.coldGreen }]}>
                     <Text bold style={{ fontSize: 13 }}>Send Max: {maxUSD} BTC</Text>
                 </TouchableOpacity>
             </ScrollView>

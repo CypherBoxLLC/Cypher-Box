@@ -1,4 +1,5 @@
 {
+  "originHash" : "89509f555bc90a15b96ca0a326a69850770bdaac04a46f9cf482d81533702e3c",
   "pins" : [
     {
       "identity" : "bugsnag-cocoa",
@@ -23,10 +24,10 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/EFPrefix/swift_qrcodejs.git",
       "state" : {
-        "revision" : "aecbafebc602b8855ee34cc3fb2e73b1a9faed2b",
-        "version" : "2.3.0"
+        "revision" : "d1605333f7edac39b4518538ef4f2638fdd2e4d6",
+        "version" : "2.3.1"
       }
     }
   ],
-  "version" : 2
+  "version" : 3
 }

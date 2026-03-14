@@ -317,7 +317,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
     };
 
     return (
-        <ScreenLayout disableScroll showToolbar progress={1} color={[colors.blueText, colors.blueText]}>
+        <ScreenLayout disableScroll showToolbar progress={1} color={[colors.cold.gradient1, colors.cold.gradient2]}>
         {/* <ScreenLayout disableScroll showToolbar isBackButton title={"Connect Hardware Device"}> */}
             <View style={styles.container}>
                 <View style={styles.innerView}>
@@ -371,7 +371,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                             </View>
                         </>
                     }
-                        {/* <TouchableOpacity style={[styles.button, { borderColor: colors.blueText }]} onPress={pasteClickHandler}>
+                        {/* <TouchableOpacity style={[styles.button, { borderColor: colors.coldGreen }]} onPress={pasteClickHandler}>
                             {address ?
                                 <Text bold>{address}</Text>
                                 :

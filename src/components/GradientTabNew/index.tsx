@@ -28,7 +28,7 @@ export default function GradientTabNew({ vaultTab, isSats, setIsSats, tab1, tab2
                 <View style={styles.main}>
                     {isSats ?
                         <GradientCard
-                            colors_={vaultTab ? [colors.blueText, colors.blueText] : [colors.green, colors.green]}
+                            colors_={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]}
                             style={styles.linearGradientInside}
                             linearStyle={styles.linearStyle}
                             onPress={() => setIsSats(true)}>
@@ -47,7 +47,7 @@ export default function GradientTabNew({ vaultTab, isSats, setIsSats, tab1, tab2
                     }
                     {!isSats ?
                         <GradientCard
-                            colors_={vaultTab ? [colors.blueText, colors.blueText] : [colors.green, colors.green]}
+                            colors_={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]}
                             style={styles.linearGradientInside}
                             linearStyle={styles.linearStyle}
                             onPress={() => setIsSats(false)}>

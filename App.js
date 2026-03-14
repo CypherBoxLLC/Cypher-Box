@@ -33,6 +33,7 @@ import HandoffComponent from './components/handoff';
 import Privacy from './blue_modules/Privacy';
 import triggerHapticFeedback, { HapticFeedbackTypes } from './blue_modules/hapticFeedback';
 import MenuElements from './components/MenuElements';
+import PaymentNotification from './src/components/PaymentNotification';
 import { updateExchangeRate } from './blue_modules/currency';
 const A = require('./blue_modules/analytics');
 
@@ -73,6 +74,13 @@ const App = () => {
     payload.foreground = true;
 
     await Notifications.addNotification(payload);
+
+    // Show in-app banner for CoinOS payments received via push
+    if (payload.type === 'coinos_payment' && payload.amount > 0) {
+      const { triggerPaymentNotification } = require('./src/components/PaymentNotification');
+      triggerPaymentNotification(payload.amount, payload.confirmed || false, 'coinos', 'CoinOS');
+    }
+
     // if user is staring at the app when he receives the notification we process it instantly
     // so app refetches related wallet
     if (payload.foreground) await processPushNotifications();
@@ -147,6 +155,13 @@ const App = () => {
       const wasTapped = payload.foreground === false || (payload.foreground === true && payload.userInteraction);
 
       console.log('processing push notification:', payload);
+
+      // Show in-app banner for any payment notifications received while app was closed
+      if (payload.type === 'coinos_payment' && payload.amount > 0) {
+        const { triggerPaymentNotification } = require('./src/components/PaymentNotification');
+        triggerPaymentNotification(payload.amount, payload.confirmed || false, 'coinos', 'CoinOS');
+      }
+
       let wallet;
       switch (+payload.type) {
         case 2:
@@ -162,6 +177,14 @@ const App = () => {
       if (wallet) {
         const walletID = wallet.getID();
         fetchAndSaveWalletTransactions(walletID);
+
+        // Show in-app banner for on-chain payments (hot/cold vault)
+        if (payload.sat && payload.sat > 0) {
+          const { triggerPaymentNotification } = require('./src/components/PaymentNotification');
+          const isCold = wallet.type === 'HDsegwitBech32' && walletID === require('./src/stores/authStore').default.getState().coldStorageWalletID;
+          triggerPaymentNotification(payload.sat, true, isCold ? 'cold' : 'hot', isCold ? 'Cold Storage' : 'Hot Vault');
+        }
+
         if (wasTapped) {
           if (payload.type !== 3 || wallet.chain === Chain.OFFCHAIN) {
             NavigationService.dispatch(
@@ -302,6 +325,7 @@ const App = () => {
         <NavigationContainer ref={navigationRef} theme={colorScheme === 'dark' ? BlueDarkTheme : BlueDefaultTheme}>
           <InitRoot />
           <Notifications onProcessNotifications={processPushNotifications} />
+          <PaymentNotification />
           <MenuElements />
           <DeviceQuickActions />
         </NavigationContainer>

@@ -27,7 +27,12 @@ export const getBalances = async () => {
                 'Content-Type': 'application/json',
             },
         }));
-        return await response.json();
+        const responseJSON = await response.json();
+        if(responseJSON?.data && responseJSON?.data?.status === 401){
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
     } catch (error) {
         console.error('Error fetching balances by strike:', error);
         throw error;
@@ -52,6 +57,7 @@ export const createInvoice = async (invoiceData: any) => {
 };
 
 export const getPaymentQoute = async (url: string, data: any) => {
+    try {
         const idempotencyKey = uuidv4();
         console.log('idempotencyKey: ' ,idempotencyKey)
         const response = await fetch(`${BASE_URL}/payment-quotes/${url}`, await withAuthToken({
@@ -68,6 +74,10 @@ export const getPaymentQoute = async (url: string, data: any) => {
             useAuthStore.getState().clearStrikeAuth();
         }
         return responseJSON;
+    } catch (error) {
+        console.error('Error fetching payment quote:', error);
+        throw error;
+    }
 }
 
 export const getPaymentQouteByLightening = async (data: any, paymentQouteID: string) => {
@@ -235,7 +245,12 @@ export const getInvoices = async () => {
                 'Content-Type': 'application/json',
             },
         }));
-        return await response.json();
+        const responseJSON = await response.json();
+        if(responseJSON?.data && responseJSON?.data?.status === 401){
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
     } catch (error) {
         console.error('Error fetching invoices by strike:', error);
         throw error;
@@ -250,7 +265,12 @@ export const getInvoicesByID = async (id: string) => {
                 'Content-Type': 'application/json',
             },
         }));
-        return await response.json();
+        const responseJSON = await response.json();
+        if(responseJSON?.data && responseJSON?.data?.status === 401){
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
     } catch (error) {
         console.error('Error fetching invoices by strike:', error);
         throw error;

@@ -1,5 +1,6 @@
 import { colors } from "@Cypher/style-guide";
 import { ImageStyle, StyleSheet, TextStyle, ViewStyle } from "react-native";
+import { rgbaArrayToRGBAColor, rgbaColor } from "react-native-reanimated/lib/typescript/reanimated2/Colors";
 
 interface Style {
   container: ViewStyle;
@@ -29,6 +30,10 @@ interface Style {
   gradientText: ViewStyle;
   modal: ViewStyle;
   bottomView: ViewStyle;
+  pickerButton: ViewStyle;
+  pickerStroke: ViewStyle;
+  pickerInner: ViewStyle;
+  pickerContent: ViewStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -54,6 +59,7 @@ export default StyleSheet.create<Style>({
   text: {
     fontSize: 18,
     marginVertical: 10,
+    marginLeft: 10,
   },
   usernameContainer: {
     flexDirection: "row",
@@ -105,6 +111,7 @@ export default StyleSheet.create<Style>({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    alignContent: "center",
   },
   background2: {
     backgroundColor: colors.gray.dark,
@@ -115,7 +122,7 @@ export default StyleSheet.create<Style>({
   },
   linearGradientStroke: {
     height: 67,
-    width: "50%",
+    width: "80%",
     marginLeft: 30,
     marginVertical: 20,
     borderRadius: 15,
@@ -125,7 +132,7 @@ export default StyleSheet.create<Style>({
     borderRadius: 15,
   },
   linearGradient2: {
-    height: 151,
+    height: 450,
     borderRadius: 25,
   },
   priceView: {
@@ -135,9 +142,9 @@ export default StyleSheet.create<Style>({
   },
   straightLine: {
     width: 2,
-    backgroundColor: colors.white,
+    //backgroundColor: ,
     height: 26,
-    marginHorizontal: 20,
+    marginHorizontal: 15,
   },
   row: {
     backgroundColor: colors.black.default,
@@ -151,7 +158,7 @@ export default StyleSheet.create<Style>({
     marginTop: 20,
   },
   modal: {
-    height: 151,
+    height: 450,
     width: "70%",
     marginVertical: 20,
     borderRadius: 25,
@@ -164,5 +171,27 @@ export default StyleSheet.create<Style>({
     borderTopColor: "#5E5E5E",
     height: 130,
     justifyContent: "center",
+  },
+  pickerButton: {
+    alignSelf: "center",
+    width: "90%",
+    marginVertical: 16,
+  },
+  pickerStroke: {
+    height: 64,
+    borderRadius: 16,
+  },
+  pickerInner: {
+    height: 64,
+    borderRadius: 16,
+  },
+  pickerContent: {
+    backgroundColor: colors.gray.dark,
+    flex: 1,
+    margin: 2,
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
   },
 });

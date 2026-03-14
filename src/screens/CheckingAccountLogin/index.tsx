@@ -1,5 +1,5 @@
-import React from "react";
-import { Linking, TouchableOpacity, View, Image } from "react-native";
+import React, { useEffect } from "react";
+import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -8,6 +8,7 @@ import { colors } from "@Cypher/style-guide";
 import { authorize } from "react-native-app-auth";
 import { jwtDecode } from "jwt-decode";
 import { Buffer } from "buffer";
+import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
   LoginOption,
   RegisterPrompt,
@@ -22,7 +23,7 @@ const config = {
     type: 'oauth',
     issuer: "https://auth.strike.me", // Strike Identity Server URL
     clientId: "cypherbox",
-    // clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
+    // clientSecret removed — do not hardcode secrets
     clientSecret: "",
     redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
     scopes: ["offline_access", 'partner.currency-exchange-quote.create', 'partner.currency-exchange-quote.execute', 'partner.currency-exchange-quote.read', 'partner.receive-request.read', 'partner.deposit.manage', 'partner.payout-originator.read', 'partner.payment-quote.onchain.create', 'partner.payment-quote.lightning.create', 'partner.payment-quote.execute', 'partner.receive-request.create', "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
@@ -50,12 +51,40 @@ export default function CheckingAccountLogin() {
     isAuth,
     isStrikeAuth,
     allBTCWallets,
+    FirstTimeLightning,
     setStrikeMe,
     setStrikeAuth,
     setStrikeToken,
     setAllBTCWallets,
+    setFirstTimeLightning
   } = useAuthStore();
   const [strikeLoading, setStrikeLoading] = React.useState(false);
+  const [CoinosException, setCoinosException] = React.useState(false);
+  const [pageLoading, setPageLoading] = React.useState(true);
+
+  useEffect(() => {
+    async function fetchIPInfo() {
+      try {
+        setPageLoading(true);
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+
+        const isBlocked =
+          data.continent_code === 'EU' ||
+          ['GB', 'IN', 'CN'].includes(data.country_code);
+
+        if (isBlocked) {
+          setCoinosException(true);
+        }
+      } catch (error) {
+        console.log('IP fetch failed', error);
+      } finally {
+        setPageLoading(false);
+      }
+    }
+
+    fetchIPInfo();
+  }, []);
 
   const createCheckingAccountClickHandler = () => {
     Linking.openURL("https://coinos.io/register");
@@ -86,7 +115,15 @@ export default function CheckingAccountLogin() {
       console.log("signature: ", signature);
       setStrikeMe(decoded);
       setAllBTCWallets([...temp, "STRIKE"]);
-      dispatchNavigate("CheckingAccountCreated");
+      if(FirstTimeLightning){
+        setFirstTimeLightning(false);
+        dispatchNavigate("CheckingAccountCreated", { accountType: 'strike' });
+      }else{
+        dispatchReset("HomeScreen", {
+          isComplete: true
+        });
+      }
+      
 
       // if (balances && balances?.balances) {
       //   const numericAmount = Number(balances.balances[0].amount.replace(/[^0-9\.]/g, ''));
@@ -129,34 +166,27 @@ export default function CheckingAccountLogin() {
     }
   };
 
-  // const strikeTokenExchange = async (code: string, verifier: string) => {
-  //   try {
-  //     // 1. Prepare only the necessary OAuth params for the body
-  //     const details = {
-  //       grant_type: 'authorization_code',
-  //       client_id: 'cypherbox', // CHECK IF THIS IS A UUID IN DASHBOARD
-  //       client_secret: 'RmZXluxUsQhQB3nVnJ4Uxj7xrEq697syVEYyv/ztWqk=',
-  //       code: code,
-  //       code_verifier: verifier,
-  //       redirect_uri: 'cypherbox://oauth/callback',
-  //     };      
-  //     const formBody = new URLSearchParams(details).toString();
-  //     const response = await fetch('https://auth.strike.me/connect/token', {
-  //       method: 'POST',
-  //       headers: {
-  //         'Content-Type': 'application/x-www-form-urlencoded',
-  //         'Accept': 'application/json',
-  //       },
-  //       body: formBody,
-  //     });
-  //     const text = await response.text();
-  //     console.log("--- STRIKE ATTEMPT ---");
-  //     console.log("Status Code:", response.status);
-  //     console.log("Response Body:", text);
-  //   } catch (error) {
-  //     console.error("Fetch Error:", error);
-  //   }
-  // };
+  
+  if(pageLoading){
+    return (
+      <ScreenLayout showToolbar>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.white} />
+        </View>
+      </ScreenLayout>
+    );
+  }
+
+  if(strikeLoading){
+    return (
+      <ScreenLayout showToolbar>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.white} />
+          <Text style={styles.loadingText}>Logging in to Strike...</Text>
+        </View>
+      </ScreenLayout>
+    );
+  }
 
   return (
     <ScreenLayout showToolbar>
@@ -176,7 +206,7 @@ export default function CheckingAccountLogin() {
               />
             </>
           )}
-          {!isAuth && (
+          {!isAuth && !CoinosException && (
             <>
               <LoginOption
                 logo={require("@Cypher/assets/images/coinos.png")}

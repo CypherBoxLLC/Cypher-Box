@@ -23,8 +23,8 @@ export default StyleSheet.create<Style>({
     descption: {
         fontFamily: 'Archivo-Regular',
         marginTop: 60,
-        marginHorizontal: 30,
-        lineHeight: 24,
+        marginHorizontal: 10,
+        lineHeight: 22,
     },
     title: {
         color: colors.green,
@@ -35,7 +35,7 @@ export default StyleSheet.create<Style>({
         backgroundColor: colors.green,
         position: 'absolute',
         borderWidth: 0,
-        width: '85%',
+        width: '70%',
         alignSelf: 'center',
         bottom: 40,
     },

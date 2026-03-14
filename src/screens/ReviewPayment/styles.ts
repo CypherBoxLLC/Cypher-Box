@@ -168,9 +168,10 @@ export default StyleSheet.create<Style>({
         borderRadius: 18
     },
     feesView: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
+        marginStart: 25,
+        marginTop: 15,
     },
     top2: {
         shadowOffset: { width: 0, height: 3 },

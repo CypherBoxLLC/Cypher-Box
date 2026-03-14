@@ -122,7 +122,7 @@ export default StyleSheet.create<Style>({
     },
     view: {
         flexDirection: 'row',
-        paddingTop: 15,
+        paddingTop: 25,
         //alignItems: 'flex-end',
         // paddingHorizontal: 20,
         paddingRight:10,
@@ -159,7 +159,7 @@ export default StyleSheet.create<Style>({
         marginEnd: 25,
     },
     linearGradient2: {
-        width: '96%',
+        width: '60%',
         // paddingLeft: 15,
         // paddingRight: 15,
         borderRadius: 5,

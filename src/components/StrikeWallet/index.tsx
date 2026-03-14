@@ -22,6 +22,7 @@ interface Props {
     refSendRBSheet: any;
     setReceiveType: any;
     strikeBalance: any;
+    homeMessage?: string | null;
 }
 
 const config = {
@@ -30,7 +31,7 @@ const config = {
     type: 'oauth',
     issuer: "https://auth.strike.me", // Strike Identity Server URL
     clientId: "cypherbox",
-    clientSecret: "SbYmuewpZGS8XDktirso8ficpChSGu7dEaYuMrLx+3k=", // If needed (but avoid hardcoding secrets in client-side code)
+    clientSecret: "", // DO NOT hardcode secrets in client-side code
     redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
     scopes: ["offline_access", "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
     //clientAuthMethod: "post",
@@ -60,6 +61,7 @@ export default function StrikeWallet({
     refSendRBSheet,
     setReceiveType,
     strikeBalance,
+    homeMessage,
 }: Props) {
     const { isStrikeAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
 
@@ -78,9 +80,9 @@ export default function StrikeWallet({
     };
 
     const sendClickHandler = (walletType: boolean) => {
-        // dispatchNavigate('BuyBitcoin', { currency, matchedRate, receiveType: walletType });
+        const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
         if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
-            dispatchNavigate('SendScreen', { currency, matchedRate, receiveType: false });
+            dispatchNavigate('SendScreen', { currency: safeCurrency, matchedRate, receiveType: false });
         } else {
             setReceiveType(walletType);
             refSendRBSheet.current.open();
@@ -90,8 +92,8 @@ export default function StrikeWallet({
     const hasFilledTheBar = calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount)) === 100
 
     const checkingAccountClickHandler = (walletType: boolean) => {
-        // dispatchNavigate('CheckingAccount', { matchedRate, receiveType: walletType });
-        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: false, balance: Math.round(Number(strikeUser?.[0]?.available || 0) * SATS), converted: (Number(strikeUser?.[0]?.available || 0) * matchedRate).toFixed(2), currency, reserveAmount: Number(reserveStrikeAmount), withdrawThreshold: Number(withdrawStrikeThreshold) });
+        const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
+        dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate, receiveType: false, balance: Math.round(Number(strikeUser?.[0]?.available || 0) * SATS), converted: (Number(strikeUser?.[0]?.available || 0) * (matchedRate || 0)).toFixed(2), currency: safeCurrency, reserveAmount: Number(reserveStrikeAmount), withdrawThreshold: Number(withdrawStrikeThreshold) });
     }
 
     const handleStrikeLogin = async () => {
@@ -134,7 +136,7 @@ export default function StrikeWallet({
                             </View>
                             <View style={styles.view}>
                                 <Text h2 bold style={styles.sats}>
-                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ ${getStrikeCurrency(strikeUser?.[1]?.currency || 'USD')}${(Number(strikeUser?.[0]?.available || 0) * (matchedRate || 0)).toFixed(2)}`}
+                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ ${getStrikeCurrency(currency || strikeUser?.[1]?.currency || 'USD')}${(Number(strikeUser?.[0]?.available || 0) * (Number(matchedRate) || 0)).toFixed(2)}`}
                                     {/* {strikeUser && strikeUser[0]?.available || 0} sats ~ {"$" + convertedRate.toFixed(2)} */}
                                 </Text>
                                 <Text bold style={styles.totalsats}>
@@ -181,23 +183,13 @@ export default function StrikeWallet({
                             isTextShadow
                         />
                     </View>
-                    {!isLoading &&
-                        (hasFilledTheBar ?
+                    <View style={{ minHeight: 40, justifyContent: 'center' }}>
+                        {!isLoading && homeMessage &&
                             <Text h4 style={styles.alert}>
-                                Your sats have materialized! You can create a Hot Storage Savings Vault and take full self-custody of your money by withdrawing a large chunk of a bitcoin from your custodian Lightning Account. Click the Withdraw button to know more
-                                {/* You can receive, send, and accumulate bitcoin using your Lightning Account. New security features will be revealed once you meet the withdrawal threshold at 2 million sats */}
+                                {homeMessage}
                             </Text>
-                            : (Number(strikeBalance) === Number(withdrawStrikeThreshold + reserveStrikeAmount)) ?
-                                <Text h4 style={styles.alert}>
-                                    Congrats! You've completed the bar, It's time to create your Hot Storage Savings Vault and take full self-custody of your bitcoi. Click 'Withdraw' to know more.
-                                </Text>
-                                :
-                                <Text h4 style={styles.alertGrey}>
-                                    {/* New security upgrades will be revealed once you meet fill up the bar displayed on your Lightning Account. */}
-                                    {'\n'}
-                                </Text>
-                        )
-                    }
+                        }
+                    </View>
                 </View>
             }
 

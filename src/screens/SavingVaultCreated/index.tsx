@@ -28,15 +28,15 @@ export default function SavingVaultCreated() {
     }
 
     return (
-        <ScreenLayout disableScroll showToolbar progress={2} color={vaultTab ? [colors.blueText, colors.blueText] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
+        <ScreenLayout disableScroll showToolbar progress={2} color={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
             <View style={styles.container}>
-                <Text style={[styles.title, vaultTab ? { color: colors.blueText } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : "Savings Vault Created!"}</Text>
+                <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : "Savings Vault Created!"}</Text>
                 <View style={styles.inner}>
                     <SavingVault title={vaultTab ? "Cold Vault" : "Hot Vault"} />
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
                         {vaultTab ?
                             <>
-                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 30 }]}>Remember to keep your seed phrase safe, it's your responsibility!
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 15 }]}>Remember to keep your seed phrase safe, it's your responsibility!
                                     This is a Watch-only vault, meaning you can only inspect its balance and grab addresses from it for deposits, but in order to send out funds you need to ‘sign’ or authorize  transactions using your hardware device.
                                     {'\n\n'}
                                     ⚠️ DO NOT use any of its addresses without verifying their authenticity from your  hardware device!
@@ -55,7 +55,7 @@ export default function SavingVaultCreated() {
             </View>
             <Button text="Home"
                 onPress={nextClickHandler}
-                style={{...styles.button, ...{ backgroundColor: vaultTab ? colors.blueText : colors.green, marginTop: vaultTab ? 30 : 0 } }}
+                style={{...styles.button, ...{ backgroundColor: vaultTab ? colors.coldGreen : colors.green, marginTop: vaultTab ? 30 : 0 } }}
                 textStyle={styles.btnText}
             />
         </ScreenLayout>
