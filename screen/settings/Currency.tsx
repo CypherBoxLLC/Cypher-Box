@@ -97,6 +97,7 @@ const Currency: React.FC = () => {
   return (
     <View style={[styles.flex, { backgroundColor: colors.background }]}>
       <FlatList
+        contentContainerStyle={{ backgroundColor: colors.background }}
         contentInsetAdjustmentBehavior="automatic"
         automaticallyAdjustContentInsets
         keyExtractor={(_item, index) => `${index}`}
