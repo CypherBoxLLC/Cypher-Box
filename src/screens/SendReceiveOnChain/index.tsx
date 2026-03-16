@@ -11,6 +11,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import RBSheet from "react-native-raw-bottom-sheet";
 import { HDSegwitBech32Wallet, HDSegwitBech32Transaction } from "../../../class";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { NetworkTransactionFees } from "../../../models/networkTransactionFees";
 
 interface Props {
     route: any;
@@ -46,6 +47,7 @@ export default function SendReceiveOnChain({ route }: Props) {
     const [rbfTx, setRbfTx] = useState<HDSegwitBech32Transaction | null>(null);
     const [isRBFLoading, setIsRBFLoading] = useState(false);
     const [isRBFSubmitting, setIsRBFSubmitting] = useState(false);
+    const [feeOptions, setFeeOptions] = useState<{fast: number, medium: number, slow: number} | null>(null);
     const rbfSheetRef = useRef<any>(null);
 
     const findWalletForTransaction = () => {
@@ -142,6 +144,16 @@ export default function SendReceiveOnChain({ route }: Props) {
             }
 
             const info = await txObject.getInfo();
+            
+            // Fetch current fee options from mempool
+            try {
+                const fees = await NetworkTransactionFees.recommendedFees();
+                setFeeOptions({ fast: fees.fastestFee, medium: fees.mediumFee, slow: fees.slowFee });
+            } catch (e) {
+                console.warn('Failed to fetch fee options:', e);
+                setFeeOptions(null);
+            }
+            
             setNewFeeRate(String(info.feeRate + 1));
             setCurrentFeeRate(info.feeRate);
             setRbfTx(txObject);
@@ -283,22 +295,95 @@ export default function SendReceiveOnChain({ route }: Props) {
                             Current fee rate: {currentFeeRate} sat/vbyte
                         </Text>
                     )}
-                    <Text semibold style={{ marginBottom: 10, color: colors.white }}>New Fee Rate (sats/vbyte):</Text>
-                    <TextInput
-                        style={{
-                            backgroundColor: colors.black.bg,
-                            borderRadius: 10,
-                            padding: 15,
-                            fontSize: 18,
-                            color: colors.white,
-                            marginBottom: 20,
-                        }}
-                        keyboardType="numeric"
-                        value={newFeeRate}
-                        onChangeText={setNewFeeRate}
-                        placeholder="e.g., 10"
-                        placeholderTextColor={colors.gray.placeholder}
-                    />
+                    <Text semibold style={{ marginBottom: 10, color: colors.white }}>Select Fee Rate:</Text>
+                    
+                    {feeOptions ? (
+                        <View style={{ marginBottom: 20 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+                                <TouchableOpacity 
+                                    style={{
+                                        flex: 1,
+                                        backgroundColor: newFeeRate === String(feeOptions.slow) ? colors.green : colors.black.bg,
+                                        borderRadius: 10,
+                                        padding: 12,
+                                        marginRight: 5,
+                                        borderWidth: 1,
+                                        borderColor: newFeeRate === String(feeOptions.slow) ? colors.green : colors.gray.dark,
+                                    }}
+                                    onPress={() => setNewFeeRate(String(feeOptions.slow))}
+                                >
+                                    <Text bold center style={{ color: colors.white }}>Slow</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 12 }}>{feeOptions.slow} sat/vB</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>~{currentFeeRate ? Math.round((currentFeeRate/feeOptions.slow)*60) : '?'} min</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={{
+                                        flex: 1,
+                                        backgroundColor: newFeeRate === String(feeOptions.medium) ? colors.green : colors.black.bg,
+                                        borderRadius: 10,
+                                        padding: 12,
+                                        marginHorizontal: 5,
+                                        borderWidth: 1,
+                                        borderColor: newFeeRate === String(feeOptions.medium) ? colors.green : colors.gray.dark,
+                                    }}
+                                    onPress={() => setNewFeeRate(String(feeOptions.medium))}
+                                >
+                                    <Text bold center style={{ color: colors.white }}>Medium</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 12 }}>{feeOptions.medium} sat/vB</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>~{currentFeeRate ? Math.round((currentFeeRate/feeOptions.medium)*60) : '?'} min</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={{
+                                        flex: 1,
+                                        backgroundColor: newFeeRate === String(feeOptions.fast) ? colors.green : colors.black.bg,
+                                        borderRadius: 10,
+                                        padding: 12,
+                                        marginLeft: 5,
+                                        borderWidth: 1,
+                                        borderColor: newFeeRate === String(feeOptions.fast) ? colors.green : colors.gray.dark,
+                                    }}
+                                    onPress={() => setNewFeeRate(String(feeOptions.fast))}
+                                >
+                                    <Text bold center style={{ color: colors.white }}>Fast</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 12 }}>{feeOptions.fast} sat/vB</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>~{currentFeeRate ? Math.round((currentFeeRate/feeOptions.fast)*60) : '?'} min</Text>
+                                </TouchableOpacity>
+                            </View>
+                            
+                            <Text semibold style={{ marginBottom: 10, color: colors.white }}>Or enter custom rate:</Text>
+                            <TextInput
+                                style={{
+                                    backgroundColor: colors.black.bg,
+                                    borderRadius: 10,
+                                    padding: 15,
+                                    fontSize: 18,
+                                    color: colors.white,
+                                    marginBottom: 10,
+                                }}
+                                keyboardType="numeric"
+                                value={newFeeRate}
+                                onChangeText={setNewFeeRate}
+                                placeholder="Custom fee rate"
+                                placeholderTextColor={colors.gray.placeholder}
+                            />
+                        </View>
+                    ) : (
+                        <TextInput
+                            style={{
+                                backgroundColor: colors.black.bg,
+                                borderRadius: 10,
+                                padding: 15,
+                                fontSize: 18,
+                                color: colors.white,
+                                marginBottom: 20,
+                            }}
+                            keyboardType="numeric"
+                            value={newFeeRate}
+                            onChangeText={setNewFeeRate}
+                            placeholder="Enter fee rate (sat/vbyte)"
+                            placeholderTextColor={colors.gray.placeholder}
+                        />
+                    )}
 
                     <TouchableOpacity 
                         style={[styles.button, { marginBottom: 10 }]} 
