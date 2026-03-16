@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import GradientView from "../GradientView";
 import { Text } from "@Cypher/component-library";
@@ -23,7 +23,6 @@ interface Props {
     homeMessage?: string | null;
 }
 export default function CircularView({ matchedRate, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeMessage }: Props) {
-    const [messageDismissed, setMessageDismissed] = useState(false);
     const { strikeUser, withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
     const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
@@ -112,13 +111,10 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
             </GradientView>
         </View>
         <View style={{ minHeight: 40, justifyContent: 'center' }}>
-            {homeMessage && !messageDismissed &&
-                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 }}>
-                    <Text h4 style={{ color: '#23C47F', flex: 1 }}>{homeMessage}</Text>
-                    <TouchableOpacity onPress={() => setMessageDismissed(true)} style={{ paddingLeft: 10 }}>
-                        <Text style={{ color: '#23C47F', fontSize: 20 }}>×</Text>
-                    </TouchableOpacity>
-                </View>
+            {homeMessage &&
+                <Text h4 style={{ color: '#23C47F', paddingHorizontal: 20 }}>
+                    {homeMessage}
+                </Text>
             }
         </View>
     </View>
