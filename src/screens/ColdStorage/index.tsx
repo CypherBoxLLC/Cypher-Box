@@ -614,8 +614,8 @@ export default function ColdStorage({ route, navigation }: Props) {
 
         // Subscribe new address to GroundControl for push notifications
         try {
-            const Notifications = require('../../../blue_modules/notifications')();
-            await Notifications.majorTomToGroundControl([newAddress], [], []);
+            const GroundControl = require('../../../blue_modules/groundControl');
+            await GroundControl.majorTomToGroundControl([newAddress], [], []);
             console.log('[GroundControl] Subscribed new address:', newAddress);
         } catch (notifyErr) {
             console.warn('[GroundControl] Failed to subscribe address:', notifyErr);
