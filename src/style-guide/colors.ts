@@ -39,7 +39,6 @@ const colors = {
   greenNew: '#0CC28A',
   greenShadow: '#6DFFD3',
   greenShadowLight: '#095E44',
-  orangeShadow: '#FF9F43',
   greenText: '#13E1A2',
   green_:{
     greenGradient1: '#32D38E',
