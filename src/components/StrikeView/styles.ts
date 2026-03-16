@@ -106,7 +106,7 @@ export default StyleSheet.create<Style>({
         shadowOffset: { width: 2, height: 2 },
         shadowRadius: 2,
         shadowOpacity: 2,
-        shadowColor: colors.greenShadow,
+        shadowColor: colors.orangeShadow,
         borderRadius: 25,
         height: 33,
         width: 121,
