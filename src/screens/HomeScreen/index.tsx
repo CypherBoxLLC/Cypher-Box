@@ -777,10 +777,6 @@ export default function HomeScreen({ route }: Props) {
       return "Fees are low — good time to consolidate your small UTXOs to save on future transaction costs.";
     }
 
-    if (allUtxos.length > 8) {
-      return "You have many UTXOs. When network fees drop, consider consolidating to reduce future costs.";
-    }
-
     return null;
   };
 
