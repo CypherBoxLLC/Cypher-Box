@@ -90,7 +90,7 @@ export default StyleSheet.create<Style>({
         borderRadius: 25,
         width: '95%',
         height: '95%',
-        top: -5,
+        top: 10,
         start: 5,
         position: 'absolute',
     },
