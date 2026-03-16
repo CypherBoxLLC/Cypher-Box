@@ -87,11 +87,11 @@ export default StyleSheet.create<Style>({
     borderview: {
         borderWidth: 1.6,
         borderColor: colors.green,
-        borderRadius: 12,
-        width: '46%',
+        borderRadius: 8,
+        width: '48%',
         height: '90%',
         top: 2,
-        start: 8,
+        start: 6,
         position: 'absolute',
     },
 })
