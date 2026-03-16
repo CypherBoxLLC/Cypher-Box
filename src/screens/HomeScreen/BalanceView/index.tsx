@@ -13,11 +13,12 @@ interface Props {
     convertedRate: any
     onAddAccount?: () => void
     showAddAccount?: boolean
+    onPress?: () => void
 }
 
-export default function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount }: Props) {
+export default function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount, onPress }: Props) {
     return (
-        <View style={[styles.innerContainer]} >
+        <TouchableOpacity onPress={onPress} style={[styles.innerContainer]} >
             <Shadow
                 style={StyleSheet.flatten([styles.shadowTopBottom2])}
                 inner
@@ -47,6 +48,6 @@ export default function BalanceView({ balance, convertedRate, onAddAccount, show
                 )}
                 
             </Shadow>
-        </View>
+        </TouchableOpacity>
     )
 }
