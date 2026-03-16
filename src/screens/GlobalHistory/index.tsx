@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, RefreshControl, View } from "react-native"
 import { Text } from "@Cypher/component-library";
 import { ScreenLayout } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
-import { BlueStorageContext } from "../../../blue_modules/storage-context";
+import { BlueStorageContext } from "../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { getTransactionHistory as getCoinosHistory } from "@Cypher/api/coinOSApis";
 import { getInvoices as getStrikeHistory } from "@Cypher/api/strikeAPIs";
