@@ -19,7 +19,7 @@ import loc from '../../../loc';
 import createHash from "create-hash";
 import { BlueURDecoder, decodeUR, extractSingleWorkload } from "../../../blue_modules/ur";
 import { BlueText } from "BlueComponents";
-import { isBBQrFormat, extractXpub, isValidXpub, detectBBQrFileType } from "../../helpers/bbqrHelper";
+import { isBBQrFormat, extractXpub, isValidXpub, detectBBQrFileType } from "@Cypher/helpers/bbqrHelper";
 const fs = require('../../../blue_modules/fs');
 const Base43 = require('../../../blue_modules/base43');
 const bitcoin = require('bitcoinjs-lib');
