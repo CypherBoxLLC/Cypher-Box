@@ -76,7 +76,9 @@ export default StyleSheet.create<Style>({
     },
     editAmount: {
         // width: 103,
-        height: 42,
+        width: 'auto',
+        minWidth: 180,
+        height: 38,
         borderWidth: 3,
         borderRadius: 15,
         borderColor: '#B6B6B6',
