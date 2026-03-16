@@ -2,7 +2,7 @@ import { Text } from "@Cypher/component-library";
 import { Card, GradientCardWithShadow } from "@Cypher/components";
 import { calculateBalancePercentage, dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
-import React, { useState } from "react";
+import React from "react";
 import { Image, Linking, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 
@@ -30,8 +30,6 @@ export default function CoinosWallet({
     refSendRBSheet,
     setReceiveType,
     homeMessage,
-}: Props) {
-    const [messageDismissed, setMessageDismissed] = useState(false);
 }: Props) {
     const { isAuth, withdrawThreshold, reserveAmount, clearAuth } = useAuthStore();
 
@@ -84,13 +82,10 @@ export default function CoinosWallet({
                         sendClickHandler={sendClickHandler}
                     />
                     <View style={{ minHeight: 40, justifyContent: 'center' }}>
-                        {!isLoading && homeMessage && !messageDismissed &&
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20 }}>
-                                <Text h4 style={styles.alert}>{homeMessage}</Text>
-                                <TouchableOpacity onPress={() => setMessageDismissed(true)} style={{ padding: 4 }}>
-                                    <Text style={{ color: '#23C47F', fontSize: 18, fontWeight: 'bold' }}>×</Text>
-                                </TouchableOpacity>
-                            </View>
+                        {!isLoading && homeMessage &&
+                            <Text h4 style={styles.alert}>
+                                {homeMessage}
+                            </Text>
                         }
                     </View>
                 </>

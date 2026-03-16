@@ -4,7 +4,7 @@ import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } fro
 import { formatNumber, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
-import React, { useState } from "react";
+import React from "react";
 import { Image, Linking, StyleSheet, TouchableOpacity, View } from "react-native";
 import { authorize } from "react-native-app-auth";
 import LinearGradient from "react-native-linear-gradient";
@@ -63,7 +63,6 @@ export default function StrikeWallet({
     strikeBalance,
     homeMessage,
 }: Props) {
-    const [messageDismissed, setMessageDismissed] = useState(false);
     const { isStrikeAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
 
     const receiveClickHandler = (type: boolean) => {
@@ -185,13 +184,10 @@ export default function StrikeWallet({
                         />
                     </View>
                     <View style={{ minHeight: 40, justifyContent: 'center' }}>
-                        {!isLoading && homeMessage && !messageDismissed &&
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20 }}>
-                                <Text h4 style={styles.alert}>{homeMessage}</Text>
-                                <TouchableOpacity onPress={() => setMessageDismissed(true)} style={{ padding: 4 }}>
-                                    <Text style={{ color: '#23C47F', fontSize: 18, fontWeight: 'bold' }}>×</Text>
-                                </TouchableOpacity>
-                            </View>
+                        {!isLoading && homeMessage &&
+                            <Text h4 style={styles.alert}>
+                                {homeMessage}
+                            </Text>
                         }
                     </View>
                 </View>
