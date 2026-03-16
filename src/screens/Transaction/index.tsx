@@ -68,8 +68,12 @@ export default function Transaction({navigation, route}: any) {
     }
 
     const shortenAddress = (address: string) => {
-        // Show full address for security
-        return address;
+        // Take the first 6 characters
+        const start = address.substring(0, 6);
+        // Take the last 6 characters
+        const end = address.substring(address.length - 6);
+        // Combine with three dots in the middle
+        return `${start}...${end}`;
     };
 
     const fadeIn = () => {
