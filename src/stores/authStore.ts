@@ -28,6 +28,7 @@ export type AuthStateType = {
     walletTab: boolean;
     isStrikeAuth: boolean;
     strikeUser: any | null;
+    strikeCurrency: string; // User's Strike account currency (USD, EUR, GBP, AUD, etc.)
     allBTCWallets: string[];
     strikeToken: string | null;
     reserveStrikeAmount: number;
@@ -36,6 +37,7 @@ export type AuthStateType = {
     setMatchedRateStrike: (state: number) => void;
     setStrikeMe: (state: any) => void;
     setStrikeUser: (state: any) => void;
+    setStrikeCurrency: (state: string) => void;
     setAllBTCWallets: (state: string[]) => void;
     setWalletTab: (state: boolean) => void;
     setStrikeToken: (token: string) => void;
@@ -95,6 +97,7 @@ const createAuthStore = (
     //strike
     strikeMe: null,
     strikeUser: null,
+    strikeCurrency: 'USD',
     walletTab: false,
     strikeToken: null,
     isStrikeAuth: false,
@@ -102,6 +105,7 @@ const createAuthStore = (
     withdrawStrikeThreshold: 1000000,
     setStrikeMe: (state: any) => set({ strikeMe: state }),
     setStrikeUser: (state: any) => set({ strikeUser: state }),
+    setStrikeCurrency: (state: string) => set({ strikeCurrency: state }),
     setWalletTab: (state: boolean) => set({ walletTab: state }),
     setStrikeToken: (token: string) => set({ strikeToken: token }),
     setStrikeAuth: (state: boolean | undefined) => set({ isStrikeAuth: state }),
@@ -111,6 +115,7 @@ const createAuthStore = (
         set({
             strikeMe: null,
             strikeUser: null,
+            strikeCurrency: 'USD',
             walletTab: false,
             strikeToken: null,
             matchedRateStrike: 0,

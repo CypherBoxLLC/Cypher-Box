@@ -122,7 +122,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
+  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
   const A = require('../../../blue_modules/analytics');
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -161,6 +161,13 @@ export default function HomeScreen({ route }: Props) {
   const refSwapRBSheet = useRef<any>(null);
   const [receivedListSecondTab, setReceivedListSecondTab] = useState(false);
   const carouselRef = useRef<Carousel<any>>(null);
+
+  // Sync local currency state with store's strikeCurrency
+  useEffect(() => {
+    if (strikeCurrency) {
+      setCurrency(strikeCurrency);
+    }
+  }, [strikeCurrency]);
 
   const getWalletID = async () => {
     try {
@@ -310,12 +317,13 @@ export default function HomeScreen({ route }: Props) {
               console.log('Normalized balances — BTC:', btcBalance, 'Fiat:', fiatBalance);
               setStrikeUser(normalizedBalances);
               setStrikeBalance((normalizedBalances?.[0]?.available * SATS) || 0);
-              const strikeCurrency = normalizedBalances?.[1]?.currency || 'USD';
-              console.log('Strike currency from balances:', strikeCurrency);
-              const matchedCurrency = untypedFiatUnit?.[strikeCurrency];
+              const userCurrency = normalizedBalances?.[1]?.currency || 'USD';
+              console.log('Strike currency from balances:', userCurrency);
+              setStrikeCurrency(userCurrency); // Store user's currency in auth
+              const matchedCurrency = untypedFiatUnit?.[userCurrency];
               console.log('matchedCurrency lookup:', matchedCurrency);
               if (!matchedCurrency) {
-                  console.warn('No fiatUnit found for', strikeCurrency, '- falling back to USD');
+                  console.warn('No fiatUnit found for', userCurrency, '- falling back to USD');
               }
               console.log('[Strike] fetching exchangeRate START', Date.now());
               const rates = await exchangeRate(matchedCurrency || untypedFiatUnit?.['USD']);
@@ -676,6 +684,8 @@ export default function HomeScreen({ route }: Props) {
           const normalized = [btcBal || balances?.[0], fiatBal || balances?.[1]];
           setStrikeUser(normalized);
           setStrikeBalance((normalized?.[0]?.available * SATS) || 0);
+          const userCurrency = normalized?.[1]?.currency || 'USD';
+          setStrikeCurrency(userCurrency); // Store user's currency in auth
         }
       } catch (e) {
         console.log('Error refreshing Strike balance:', e);
