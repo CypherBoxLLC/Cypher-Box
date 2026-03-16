@@ -24,7 +24,7 @@ export default StyleSheet.create<Style>({
     },
     main: {
         width: widths,
-        height: 100,
+        height: 124,
         marginStart: 5,
         marginVertical: 5
     },
