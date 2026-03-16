@@ -95,7 +95,7 @@ const Currency: React.FC = () => {
   );
 
   return (
-    <View style={styles.flex}>
+    <View style={[styles.flex, { backgroundColor: colors.background }]}>
       <FlatList
         contentInsetAdjustmentBehavior="automatic"
         automaticallyAdjustContentInsets
