@@ -1,9 +1,11 @@
 // Simple GroundControl utility for vault push notifications
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Frisbee from 'frisbee';
-import constants from './constants';
+const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+const Frisbee = require('frisbee');
+const constants = require('./constants');
 
 const PUSH_TOKEN = 'PUSH_TOKEN';
+
+console.log('[GroundControl] Module loading...');
 
 const GroundControl = {
   getPushToken: async () => {
@@ -20,8 +22,10 @@ const GroundControl = {
       throw new Error('no addresses or hashes or txids provided');
     
     const pushToken = await GroundControl.getPushToken();
+    console.log('[GroundControl] Push token:', pushToken);
     if (!pushToken || !pushToken.token || !pushToken.os) {
       console.log('[GroundControl] No push token, skipping subscription');
+      console.log('[GroundControl] This means push notifications are not enabled for this device');
       return;
     }
 
@@ -54,4 +58,4 @@ const GroundControl = {
   },
 };
 
-export default GroundControl;
+module.exports = GroundControl;
