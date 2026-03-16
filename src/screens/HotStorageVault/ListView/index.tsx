@@ -17,12 +17,8 @@ interface Props {
     vaultTab: boolean;
 }
 const shortenAddress = (address: string) => {
-    // Take the first 6 characters
-    const start = address.substring(0, 4);
-    // Take the last 6 characters
-    const end = address.substring(address.length - 4);
-    // Combine with three dots in the middle
-    return `${start}...${end}`;
+    // Show full address for security
+    return address;
 };
 
 const ListView = ({ wallet, item, onPress, handleChoose, ids, vaultTab }: Props) => {

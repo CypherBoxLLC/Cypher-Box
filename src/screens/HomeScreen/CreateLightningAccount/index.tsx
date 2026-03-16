@@ -22,7 +22,7 @@ export default function CreateLightningAccount({ onPress }: Props) {
                 />
                 <View style={{ alignItems: 'center', justifyContent: 'center', alignSelf: 'center', paddingHorizontal: 20 }}>
                     <Text h2 style={styles.shadow} center>
-                        Create Lightning Account
+                        Unlock Lightning Account
                     </Text>
                 </View>
             </View>

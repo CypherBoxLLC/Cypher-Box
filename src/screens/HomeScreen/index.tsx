@@ -42,6 +42,7 @@ import { BlueStorageContext } from '../../../blue_modules/storage-context';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { startsWithLn } from "../Send";
 import screenHeight from "@Cypher/style-guide/screenHeight";
+import { getFiatRate } from "../../../models/fiatUnit";
 import Carousel from "react-native-snap-carousel";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../blue_modules/currency";
@@ -194,6 +195,29 @@ export default function HomeScreen({ route }: Props) {
         setIsAllDone(false);
         return;
       }
+
+      // Subscribe vault addresses to GroundControl for push notifications
+      try {
+        const Notifications = require('../../../blue_modules/notifications');
+        const pushTokenData = await Notifications.getPushToken();
+        console.log('[GroundControl] Push token:', pushTokenData);
+        
+        if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
+          console.warn('[GroundControl] No push token - notifications not enabled');
+          return;
+        }
+        
+        const externalAddresses = typeof walletTemp.getAllExternalAddresses === 'function' ? walletTemp.getAllExternalAddresses() : [];
+        const internalAddresses = typeof walletTemp.getAllInternalAddresses === 'function' ? walletTemp.getAllInternalAddresses() : [];
+        const allAddresses = [...externalAddresses, ...internalAddresses];
+        console.log('[GroundControl] Subscribing addresses:', allAddresses.length, allAddresses.slice(0, 2));
+        if (allAddresses.length > 0) {
+          await Notifications.majorTomToGroundControl(allAddresses, [], []);
+          console.log('[GroundControl] Subscribed hot vault addresses:', allAddresses.length);
+        }
+      } catch (notifyErr) {
+        console.warn('[GroundControl] Failed to subscribe addresses:', notifyErr);
+      }
       const balanceTemp = !walletTemp?.hideBalance && formatBalance(walletTemp?.getBalance(), walletTemp?.getPreferredBalanceUnit(), true);
       const balanceWithoutSuffixTemp = !walletTemp?.hideBalance && formatBalanceWithoutSuffix(Number(walletTemp?.getBalance()), walletTemp?.getPreferredBalanceUnit(), true);
       await walletTemp.fetchBalance()
@@ -222,6 +246,28 @@ export default function HomeScreen({ route }: Props) {
         console.warn('Cold storage wallet not found for ID:', coldStorageWalletID);
         setIsAllDone(false);
         return;
+      }
+
+      // Subscribe cold storage addresses to GroundControl for push notifications
+      try {
+        const Notifications = require('../../../blue_modules/notifications');
+        const pushTokenData = await Notifications.getPushToken();
+        
+        if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
+          console.warn('[GroundControl] No push token - notifications not enabled');
+          return;
+        }
+        
+        const externalAddresses = walletTemp.getAllExternalAddresses ? walletTemp.getAllExternalAddresses() : [];
+        const internalAddresses = walletTemp.getAllInternalAddresses ? walletTemp.getAllInternalAddresses() : [];
+        const allAddresses = [...externalAddresses, ...internalAddresses];
+        console.log('[GroundControl] Subscribing cold storage addresses:', allAddresses.length);
+        if (allAddresses.length > 0) {
+          await Notifications.majorTomToGroundControl(allAddresses, [], []);
+          console.log('[GroundControl] Subscribed cold storage addresses:', allAddresses.length);
+        }
+      } catch (notifyErr) {
+        console.warn('[GroundControl] Failed to subscribe cold storage addresses:', notifyErr);
       }
       const balanceTemp = !walletTemp?.hideBalance && formatBalance(walletTemp?.getBalance(), walletTemp?.getPreferredBalanceUnit(), true);
       const balanceWithoutSuffixTemp = !walletTemp?.hideBalance && formatBalanceWithoutSuffix(Number(walletTemp?.getBalance()), walletTemp?.getPreferredBalanceUnit(), true);
@@ -328,10 +374,12 @@ export default function HomeScreen({ route }: Props) {
         handleUser();
         loadPayments();
       } else {
-        const rates = await exchangeRecentRate();
-        if (rates && rates?.Rate) {
-          const numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
-          setMatchedRate(numericAmount);
+        // Not logged into Coinos - use BlueWallet's native rate for vaults
+        try {
+          const blueWalletRate = await getFiatRate('USD');
+          setMatchedRate(blueWalletRate || 0);
+        } catch (err) {
+          console.log('BlueWallet rate error:', err);
         }
         setIsLoading(false)
       }
@@ -535,18 +583,43 @@ export default function HomeScreen({ route }: Props) {
 
   const handleUser = async () => {
     try {
+      // Always get exchange rate from BlueWallet's native currency module
+      // This is used for the hot/cold vaults which are just BlueWallet wallets
+      let blueWalletRate = 0;
+      try {
+        blueWalletRate = await getFiatRate('USD') || 0;
+      } catch (rateErr) {
+        console.log('BlueWallet rate error:', rateErr);
+      }
+      setMatchedRate(blueWalletRate);
+
+      // Try to get Coinos data if logged in (for Coinos-specific balance)
       const response = await getMe();
-      if (!response) return; // 401 handled in getMe()
-      const responsetest = await getCurrencyRates();
-      const currency = btc(1);
-      const matched = matchKeyAndValue(responsetest, 'USD')
-      setMatchedRate(matched || 0)
-      setConvertedRate((matched || 0) * currency * response.balance)
+      if (!response) return; // Not logged into Coinos
+
+      // Get Coinos rate for Coinos balance display
+      try {
+        const responsetest = await getCurrencyRates();
+        const currency = btc(1);
+        const matched = matchKeyAndValue(responsetest, 'USD');
+        // Use Coinos rate for Coinos balance, BlueWallet for vaults
+        setConvertedRate((matched || blueWalletRate || 0) * currency * response.balance);
+      } catch (rateError) {
+        setConvertedRate((blueWalletRate || 0) * btc(1) * response.balance);
+      }
       setCurrency("USD")
       setBalance(response?.balance ?? 0);
       setUser(response?.username);
     } catch (error) {
       console.error('error: ', error);
+      // Try BlueWallet's native rate as fallback
+      try {
+        const blueWalletRate = await getFiatRate('USD');
+        setMatchedRate(blueWalletRate || 0);
+      } catch (bwError) {
+        console.error('BlueWallet rate failed:', bwError);
+        setMatchedRate(0);
+      }
       SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
     } finally {
       setIsLoading(false)

@@ -298,7 +298,7 @@ export default function BottomBar({
                             colors_={[colors.green_.greenGradient1, colors.green_.greenGradient2]}
                         >
                             <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                                Create Hot Vault
+                                Unlock Hot Vault
                             </Text>
                         </GradientCardWithShadow>
                     </View>
@@ -334,7 +334,7 @@ export default function BottomBar({
                     colors_={[colors.cold.gradient1, colors.cold.gradient2]}
                 >
                     <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                        Create Cold Vault
+                        Unlock Cold Vault
                     </Text>
                 </GradientCardWithShadow>
             )}

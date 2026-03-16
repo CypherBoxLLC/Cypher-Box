@@ -23,12 +23,8 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 
 const shortenAddress = (address: string) => {
-    // Take the first 6 characters
-    const start = address.substring(0, 6);
-    // Take the last 6 characters
-    const end = address.substring(address.length - 6);
-    // Combine with three dots in the middle
-    return `${start}...${end}`;
+    // Show full address for security
+    return address;
 };
 
 export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet: any, matchedRate: string, setSelectedTab: (tab: number) => void }) {
@@ -55,6 +51,8 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
         }
         console.log('newAddress: ', newAddress)
         setAddress(newAddress);
+
+
     }
 
     useFocusEffect(
@@ -128,7 +126,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                 titleStyle={styles.title}
                 title={vaultTab ? "Cold Savings" : "Hot Savings"}
                 bitcoinValue={balance}
-                inDollars={`$${(Number(balanceWithoutSuffix) * Number(matchedRate)).toFixed(2)}`}
+                inDollars={`$${(Number(balanceWithoutSuffix) * Number(matchedRate || 0)).toFixed(2)}`}
             />
             
             <View style={styles.base}>
@@ -219,7 +217,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                         {vaultTab ? (
                             <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.coldGreen, borderRadius: 21, paddingHorizontal: 15, height: 44, width: widths - 80 }}>
                                 <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
-                                <Text semibold style={{ fontSize: 15, color: colors.white, marginStart: 10 }}>{address ? `${address.substring(0, 8)}...${address.substring(address.length - 8)}` : 'Loading...'}</Text>
+                                <Text semibold style={{ fontSize: 15, color: colors.white, marginStart: 10 }}>{address || 'Loading...'}</Text>
                             </TouchableOpacity>
                         ) : (
                             <TouchableOpacity style={styles.codeView} onPress={() => copyToClipboard(address)}>
