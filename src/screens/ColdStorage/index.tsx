@@ -808,15 +808,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                       }}>
                         <Text bold style={{fontSize: 18}}>{"Batched capsule size: "}</Text>
                         <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                          <TouchableOpacity activeOpacity={0.7} onPress={editAmountClickHandler} style={{
-                            flexDirection: 'row', 
-                            alignItems: 'center', 
-                            alignSelf: 'flex-start',
-                            marginTop: 10, 
-                            paddingVertical: 8, 
-                            paddingHorizontal: 25, 
-                            // width: '96%'
-                          }}>
+                          <TouchableOpacity activeOpacity={0.7} onPress={editAmountClickHandler} style={styles.editAmount}>
                             <Text style={StyleSheet.flatten({
                               // flex: 1,
                               // width: '95%',
