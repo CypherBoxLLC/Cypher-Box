@@ -24,10 +24,9 @@ export default StyleSheet.create<Style>({
     },
     main: {
         width: widths,
-        height: 95,
+        height: 100,
         marginStart: 5,
-        marginVertical: 5,
-        paddingTop: 4,
+        marginVertical: 5
     },
     value: {
         fontSize: 18,
