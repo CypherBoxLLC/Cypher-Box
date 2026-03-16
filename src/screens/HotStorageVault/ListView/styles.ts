@@ -88,7 +88,7 @@ export default StyleSheet.create<Style>({
         borderWidth: 1.6,
         borderColor: colors.green,
         borderRadius: 25,
-        width: '95%',
+        width: '98%',
         height: '95%',
         top: 0,
         start: 5,
