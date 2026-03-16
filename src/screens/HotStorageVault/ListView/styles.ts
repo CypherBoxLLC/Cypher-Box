@@ -27,7 +27,7 @@ export default StyleSheet.create<Style>({
         height: 124,
         marginStart: 5,
         marginVertical: 5,
-        justifyContent: 'center',
+        paddingTop: 20,
     },
     value: {
         fontSize: 18,
