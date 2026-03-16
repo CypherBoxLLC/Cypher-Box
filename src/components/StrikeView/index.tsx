@@ -156,7 +156,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 linearGradientStyleMain={styles.linearGradientStyleMain}
                                 onPress={sellClickHandler}
                             >
-                                <Text h3 bold center>SELL</Text>
+                                <Text h3 bold center>$ELL</Text>
                             </GradientView>
                         </View>
 
@@ -175,7 +175,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 linearGradientStyleMain={styles.linearGradientStyleMain}
                                 onPress={buyClickHandler}
                             >
-                                <Text h3 bold center>BUY</Text>
+                                <Text h3 bold center>₿UY</Text>
                             </GradientView>
                         </View>
                     </View>
