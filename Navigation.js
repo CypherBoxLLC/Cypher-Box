@@ -101,7 +101,6 @@ import ColdVaultIntro2 from '@Cypher/screens/ColdVaultIntro2';
 import CheckingAccountIntro from '@Cypher/screens/CheckingAccountIntro';
 import CheckingAccountLogin from '@Cypher/screens/CheckingAccountLogin';
 import CheckingAccountCreated from '@Cypher/screens/CheckingAccountCreated';
-import GlobalHistory from '@Cypher/screens/GlobalHistory';
 
 const WalletsStack = createStackNavigator();
 
@@ -132,7 +131,6 @@ const WalletsRoot = () => {
         headerShown: false, translucent: false,
         cardStyleInterpolator: CardStyleInterpolators.forBottomSheetAndroid,
       }} />
-      <WalletsStack.Screen name="GlobalHistory" component={GlobalHistory} options={{ headerShown: false }} />
       <WalletsStack.Screen name="TermOfService" component={TermOfService} options={{
         headerShown: false, translucent: false,
         cardStyleInterpolator: CardStyleInterpolators.forBottomSheetAndroid,

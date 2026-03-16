@@ -812,7 +812,6 @@ export default function HomeScreen({ route }: Props) {
                 convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}`}
                 showAddAccount={allBTCWallets.length < 2 && !isLoading}
                 onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
-                onPress={() => dispatchNavigate('GlobalHistory')}
               />
             </>
           )}
