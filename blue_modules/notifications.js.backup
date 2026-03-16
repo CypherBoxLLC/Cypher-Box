@@ -443,20 +443,12 @@ function Notifications(props) {
     await configureNotifications();
     await postTokenConfig();
   })();
-
-  // Initialize on module load
-  (async () => {
-    try {
-      Notifications.setApplicationIconBadgeNumber(0);
-      if (!(await Notifications.getPushToken())) return;
-      await configureNotifications();
-      await postTokenConfig();
-    } catch (e) {
-      console.warn('[Notifications] Init error:', e);
-    }
-  })();
-
   return Notifications;
 }
 
-export default Notifications;
+console.log('[Notifications] Module loaded, Notifications:', typeof Notifications);
+console.log('[Notifications] Notifications.keys:', Object.keys(Notifications));
+console.log('[Notifications] Module loaded, getPushToken type:', typeof Notifications.getPushToken);
+const result = Notifications();
+console.log('[Notifications] After call, result.getPushToken:', typeof result.getPushToken);
+export default result;

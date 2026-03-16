@@ -611,6 +611,15 @@ export default function ColdStorage({ route, navigation }: Props) {
         }
         console.log('newAddress: ', newAddress)
         setAddress(newAddress);
+
+        // Subscribe new address to GroundControl for push notifications
+        try {
+            const Notifications = require('../../../blue_modules/notifications')();
+            await Notifications.majorTomToGroundControl([newAddress], [], []);
+            console.log('[GroundControl] Subscribed new address:', newAddress);
+        } catch (notifyErr) {
+            console.warn('[GroundControl] Failed to subscribe address:', notifyErr);
+        }
     }
 
     useFocusEffect(
@@ -806,9 +815,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                             marginTop: 10, 
                             paddingVertical: 8, 
                             paddingHorizontal: 25, 
-                            borderWidth: 2, 
-                            borderColor: vaultTab ? colors.coldGreen : colors.greenShadow, 
-                            borderRadius: 15,
                             // width: '96%'
                           }}>
                             <Text style={StyleSheet.flatten({
@@ -954,9 +960,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     marginTop: 10, 
                                     paddingVertical: 8, 
                                     paddingHorizontal: 25, 
-                                    borderWidth: 2, 
-                                    borderColor: vaultTab ? colors.coldGreen : colors.greenShadow, 
-                                    borderRadius: 15,
                                     width: '96%'
                                   }}>
                                     <Text italic style={StyleSheet.flatten({

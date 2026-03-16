@@ -52,6 +52,14 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
         console.log('newAddress: ', newAddress)
         setAddress(newAddress);
 
+        // Subscribe new address to GroundControl for push notifications
+        try {
+            const Notifications = require('../../../blue_modules/notifications')();
+            await Notifications.majorTomToGroundControl([newAddress], [], []);
+            console.log('[GroundControl] Subscribed new address:', newAddress);
+        } catch (notifyErr) {
+            console.warn('[GroundControl] Failed to subscribe address:', notifyErr);
+        }
 
     }
 
@@ -215,7 +223,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     )}
                     <View style={styles.codeViewMain}>
                         {vaultTab ? (
-                            <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.coldGreen, borderRadius: 21, paddingHorizontal: 15, height: 44, width: widths - 80 }}>
+                            <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15, height: 44, width: widths - 80 }}>
                                 <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
                                 <Text semibold style={{ fontSize: 15, color: colors.white, marginStart: 10 }}>{address || 'Loading...'}</Text>
                             </TouchableOpacity>

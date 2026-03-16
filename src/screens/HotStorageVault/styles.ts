@@ -213,9 +213,6 @@ export default StyleSheet.create<Style>({
     },
     codeView: {
         flexDirection: 'row',
-        borderRadius: 21,
-        borderWidth: 3,
-        borderColor: colors.greenShadow,
         width: widths - 80,
         alignItems: 'center',
         justifyContent: 'center',
