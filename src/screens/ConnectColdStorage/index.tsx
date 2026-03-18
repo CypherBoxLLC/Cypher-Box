@@ -19,7 +19,6 @@ import loc from '../../../loc';
 import createHash from "create-hash";
 import { BlueURDecoder, decodeUR, extractSingleWorkload } from "../../../blue_modules/ur";
 import { BlueText } from "BlueComponents";
-import { isBBQrFormat, extractXpub, isValidXpub, detectBBQrFileType } from "@Cypher/helpers/bbqrHelper";
 const fs = require('../../../blue_modules/fs');
 const Base43 = require('../../../blue_modules/base43');
 const bitcoin = require('bitcoinjs-lib');
@@ -92,30 +91,11 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
 
     const handleImport = async (textToImport: string) => {
         console.log('textToImport: ', textToImport)
-        
-        // Check if it's BBQr format first
-        let importData = textToImport;
-        
-        if (isBBQrFormat(textToImport)) {
-            console.log('Detected BBQr format!');
-            const bbqrResult = detectBBQrFileType(textToImport);
-            console.log('BBQr file type:', bbqrResult.fileType);
-            
-            // Try to extract xpub from BBQr data
-            const extractedXpub = extractXpub(textToImport);
-            if (extractedXpub) {
-                importData = extractedXpub;
-                console.log('Extracted xpub from BBQr:', extractedXpub);
-            }
-        }
-        
-        const cleanedText = importData.replace(/\[.*\]/, '');
-        
-        // Support standard xpub formats + BBQr extracted
-        const isValid = isValidXpub(cleanedText);
+        const cleanedText = textToImport.replace(/\[.*\]/, '');
+        const isValid = cleanedText.startsWith('xpub') || cleanedText.startsWith('ypub') || cleanedText.startsWith('zpub');
         console.log('isValid: ', isValid)
         if (!isValid) {
-            Alert.alert('Invalid Xpub', 'Please scan a valid xpub QR code (or BBQr format).');
+            Alert.alert('Invalid Mnemonic', 'Please check your address and try again.');
             return;
         }
 
