@@ -45,10 +45,12 @@ interface Props {
   coldStorageWallet: any;
   receiveType: boolean;
   setReceivedListSecondTab: (val: boolean) => void;
+  vaultAddress?: string;
+  coldStorageAddress?: string;
 }
 
 
-export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency }: Props) {
+export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency, vaultAddress = '', coldStorageAddress = '' }: Props) {
   const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
   const [selectedItem, setSelectedItem] = useState<number | null>(allBTCWallets.length == 1 && (!coldStorageWalletID && !walletID) && allBTCWallets[0] == "STRIKE" ? 1 : allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "COINOS" ? 2 : null);
   console.log("🚀 ~ ReceivedListNew ~ selectedItem:", selectedItem);
@@ -182,18 +184,12 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   }));
 
   const onPress = (item: any) => {
-    if (item?.id == 1 || item?.id == 2) {
+    if (item?.id == 1 || item?.id == 2 || item?.id == 3 || item?.id == 4) {
+      // Strike, Coinos, Hot Vault, Cold Vault - all expand inline now
       setSelectedItem(item.id);
       setTab(0);
       animateToSecondView();
       setReceivedListSecondTab(true);
-    } else if(item?.id == 3 || item?.id == 4){
-      refRBSheet?.current?.close();
-      setReceivedListSecondTab(false);
-      setTimeout(() => {
-        setVaultTab(item?.id == 3 ? false : true);
-        dispatchNavigate('HotStorageVault', { wallet: item?.id == 3 ? wallet : coldStorageWallet, matchedRate });
-      }, 150);
     }
   };
 
@@ -235,6 +231,16 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   }
 
   const getTabs = () => {
+    // Vaults (Hot/Cold) show Address tab
+    if (selectedItem === 3 || selectedItem === 4) {
+      return [
+        {
+          id: 0,
+          name: "Address",
+          icon: Barcode,
+        },
+      ];
+    }
     if (selectedItem === 1) {
       return [
         {
@@ -366,7 +372,53 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 onTabChange={setTab}
               />
             )}
-            {tab === 0 ? (
+            {/* Vault Address View - ONLY when vault is selected */}
+            {(selectedItem === 3 || selectedItem === 4) && tab === 0 && (
+              <View style={{ paddingHorizontal: 16, paddingBottom: 16, minHeight: 200 }}>
+                <Text h2 bold style={{ marginBottom: 4 }}>
+                  {selectedItem === 3 ? "Hot Vault" : "Cold Vault"}
+                </Text>
+                <View style={styles.addressRow}>
+                  <Text semibold style={styles.bitcoinAddressText} numberOfLines={2}>
+                    {selectedItem === 3 ? vaultAddress : coldStorageAddress}
+                  </Text>
+                  <TouchableOpacity onPress={() => {
+                    Clipboard.setString(selectedItem === 3 ? vaultAddress : coldStorageAddress);
+                    SimpleToast.show('Copied to clipboard', SimpleToast.SHORT)
+                  }}>
+                    <Image source={Copy} style={styles.copyIconImage} />
+                  </TouchableOpacity>
+                </View>
+                {(selectedItem === 3 ? vaultAddress : coldStorageAddress) &&
+                  <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
+                    <QRCode
+                      value={selectedItem === 3 ? vaultAddress : coldStorageAddress}
+                      size={180}
+                      color="black"
+                      backgroundColor="white"
+                    />
+                  </View>
+                }
+                {/* "Show Vault Address" button - simple text link */}
+                <TouchableOpacity 
+                  onPress={() => {
+                    refRBSheet?.current?.close();
+                    setReceivedListSecondTab(false);
+                    setTimeout(() => {
+                      setVaultTab(selectedItem === 3 ? false : true);
+                      dispatchNavigate('HotStorageVault', { wallet: selectedItem === 3 ? wallet : coldStorageWallet, matchedRate });
+                    }, 150);
+                  }}
+                  style={{ marginTop: 16, alignItems: 'center' }}
+                >
+                  <Text h4 style={{ color: colors.pink.main, textDecorationLine: 'underline' }}>
+                    Show Vault Address
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {/* Strike/CoinOS content - ONLY when vault is NOT selected */}
+            {selectedItem !== 3 && selectedItem !== 4 && tab === 0 ? (
               <View style={styles.lightningTabContent}>
                 <View style={styles.addressRow}>
                   <Text bold h2 style={styles.addressText} numberOfLines={1}>
@@ -407,7 +459,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 </GradientCard>
                 {/* )} */}
               </View>
-            ) : tab === 1 ? (
+            ) : selectedItem !== 3 && selectedItem !== 4 && tab === 1 ? (
               <View style={styles.bitcoinTabContent}>
                 <Text h2 bold>
                   Bitcoin Network Address
@@ -445,7 +497,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   </>
                 }
               </View>
-            ) : (
+            ) : selectedItem !== 3 && selectedItem !== 4 && (
               <View style={styles.liquidTabContent}>
                 <Text h2 bold>
                   Liquid Federation Address
@@ -488,6 +540,8 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 </Text>
               </View>
             )}
+            {/* Hide bottom action row (Strike/CoinOS logos) when vault selected */}
+            {selectedItem !== 3 && selectedItem !== 4 && (
             <View style={styles.bottomActionRow}>
               {showBackButton &&
                 <TouchableOpacity onPress={backClickHandler}>
@@ -504,6 +558,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 resizeMode="contain"
               />
             </View>
+            )}
           </Animated.View>
         </LinearGradient>
       </LinearGradient>

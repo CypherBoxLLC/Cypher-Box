@@ -904,7 +904,9 @@ export default function HomeScreen({ route }: Props) {
           matchedRate={matchedRateStrike} 
           currency={strikeUser?.[1]?.currency || 'USD'} 
           wallet={wallet} 
-          coldStorageWallet={coldStorageWallet} 
+          coldStorageWallet={coldStorageWallet}
+          vaultAddress={vaultAddress}
+          coldStorageAddress={coldStorageAddress}
         />
       </RBSheet>
 
