@@ -17,7 +17,7 @@ import { requestCameraAuthorization } from "../../../helpers/scan-qr";
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
 import { DynamicQRCode } from "../../../components/DynamicQRCode";
-import { BBQrDynamicQRCode } from "../../../components/BBQrDynamicQRCode";
+import { DynamicPSBTQRCode } from "../../../components/DynamicPSBTQRCode";
 import { SecondButton } from "../../../BlueComponents";
 
 const BlueElectrum = require('../../../blue_modules/BlueElectrum');
@@ -189,7 +189,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
                 <Text style={styles.title} center>Transaction signing</Text>
                 <View style={styles.recipientView}>
                     <Text h4 style={{marginBottom: 20}}>Scan or export this unsigned transaction (PSBT) with your hardware device and sign it from there. Tap 'Next' when you you're done.</Text>
-                    <BBQrDynamicQRCode value={psbt.toBase64()} ref={dynamicQRCode} />
+                    <DynamicPSBTQRCode value={psbt.toBase64()} ref={dynamicQRCode} />
                     <TouchableOpacity onPress={exportPSBT} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
                         <Text h3>Export</Text>
                     </TouchableOpacity>

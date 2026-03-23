@@ -174,6 +174,7 @@
     "dynamic_prev": "Previous",
     "dynamic_start": "Start",
     "dynamic_stop": "Stop",
+    "psbt_plain": "Plain QR (legacy)",
     "fee_10m": "10m",
     "fee_1d": "1d",
     "fee_3h": "3h",
