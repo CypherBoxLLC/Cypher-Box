@@ -14,6 +14,7 @@ import HandoffComponent from '../../components/handoff';
 import { useTheme } from '../../components/themes';
 import Button from '../../components/Button';
 import SafeArea from '../../components/SafeArea';
+import { colors } from '@Cypher/style-guide';
 
 const styles = StyleSheet.create({
   root: {
@@ -26,6 +27,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   share: {
+    //backgroundColor: colors.green,
+    color: colors.green,
     alignSelf: 'center',
     width: '40%',
   },
@@ -104,7 +107,7 @@ const WalletXpub = () => {
         </View>
         <HandoffComponent title={loc.wallets.xpub_title} type={HandoffComponent.activityTypes.Xpub} userInfo={{ xpub: xPubText }} />
         <View style={styles.share}>
-          <Button onPress={handleShareButtonPressed} title={loc.receive.details_share} />
+          <Button onPress={handleShareButtonPressed} color='#000000' title={loc.receive.details_share} />
         </View>
       </>
     </SafeArea>

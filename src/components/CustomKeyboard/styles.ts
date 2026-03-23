@@ -8,6 +8,8 @@ interface Style {
     key: ViewStyle;
     keyText: TextStyle;
     invoiceButton: ViewStyle;
+    maxButton: ViewStyle;
+    maxText: TextStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -43,5 +45,14 @@ export default StyleSheet.create<Style>({
         width: '90%',
         alignSelf: 'center',
         borderRadius: 10,
+    },
+    maxButton: {
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    maxText: {
+        color: '#FFFFFF',
+        fontSize: 14,
     },
 })

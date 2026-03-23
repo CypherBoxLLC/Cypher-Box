@@ -1,15 +1,14 @@
 import React, { useContext, useEffect, useState } from "react";
+import { ActivityIndicator, RefreshControl, SectionList, View } from "react-native";
+import dayjs from "dayjs";
+
 import { Text } from "@Cypher/component-library";
-import { ActivityIndicator, Image, RefreshControl, SectionList, View } from "react-native";
-import { GradientView, SavingVault } from "@Cypher/components";
 import styles from "./styles";
-import { colors, widths } from "@Cypher/style-guide";
-import { CoinOS, Copy, InformationNew, QrCode, Share, ShareNew } from "@Cypher/assets/images";
+import { colors } from "@Cypher/style-guide";
 import Items from "./Items";
 import Header from "./Header";
 import { BlueStorageContext, WalletTransactionsStatus } from "../../../blue_modules/storage-context";
 import screenHeight from "@Cypher/style-guide/screenHeight";
-import dayjs from "dayjs";
 import { dispatchNavigate } from "@Cypher/helpers";
 
 export default function History({ wallet, matchedRate, vaultTab }: any) {
@@ -151,7 +150,7 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
     
     const sections = transformDataToSections(dataSource);
 
-    console.log('getTransactionsSliced(Infinity).length: ', getTransactionsSliced(Infinity).length, limit)
+    console.log('getTransactionsSliced(Infinity).length: ', getTransactionsSliced(Infinity).length, sections, limit)
 
     return (
         <View style={{

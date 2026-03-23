@@ -13,14 +13,17 @@ import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
 import triggerHapticFeedback, {
   HapticFeedbackTypes,
 } from "../../../blue_modules/hapticFeedback";
-import { CoinOSSmall } from "@Cypher/assets/images";
+import { CoinOSSmall, PlusNew } from "@Cypher/assets/images";
 import {
+  BlackBGView,
+  CircularView,
   GradientButtonWithShadow,
   GradientCard,
   GradientCardWithShadow,
   GradientText,
   GradientView,
   SavingVault,
+  StrikeDollarWallet,
 } from "@Cypher/components";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate, isIOS } from "@Cypher/helpers";
@@ -30,8 +33,8 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { bitcoinRecommendedFee, createInvoice, getCurrencyRates, getInvoiceByLightening, getMe, getTransactionHistory } from "@Cypher/api/coinOSApis";
-import { btc, formatNumber, matchKeyAndValue } from "@Cypher/helpers/coinosHelper";
+import { bitcoinRecommendedFee, createInvoice, getCurrencyRates, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
+import { btc, formatNumber, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
 import loc, { formatBalance, formatBalanceWithoutSuffix } from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
@@ -39,13 +42,54 @@ import { BlueStorageContext } from '../../../blue_modules/storage-context';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { startsWithLn } from "../Send";
 import screenHeight from "@Cypher/style-guide/screenHeight";
+import { getFiatRate } from "../../../models/fiatUnit";
 import Carousel from "react-native-snap-carousel";
 import screenWidth from "@Cypher/style-guide/screenWidth";
-import { mostRecentFetchedRate } from "../../../blue_modules/currency";
+import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../blue_modules/currency";
+import { authorize } from "react-native-app-auth";
+import { getBalances } from "@Cypher/api/strikeAPIs";
+import ReceivedListNew from "./ReceivedListNew";
+import { connect as connectCoinosSocket, disconnect as disconnectCoinosSocket, setOnPaymentReceived, registerPushToken, setUsername as setCoinosUsername } from "@Cypher/services/coinosSocket";
+import Header from "./Header";
+import BalanceView from "./BalanceView";
+import BottomBar from "./BottomBar";
+import CreateLightningAccount from "./CreateLightningAccount";
+import WalletsView from "./WalletsView";
+import SendListNew from "./SendListNew";
+import WithdrawList from "./WithdrawList";
+import SwapSheet from "./SwapSheet";
+import { FiatUnit, FiatUnitType } from "models/fiatUnit";
+import untypedFiatUnit from '../../../models/fiatUnits.json';
 
 interface Props {
   route: any;
 }
+
+const config = {
+  id: 'strike',
+  name: 'Strike',
+  type: 'oauth',
+  issuer: "https://auth.strike.me", // Strike Identity Server URL
+  clientId: "cypherbox",
+  clientSecret: "", // DO NOT hardcode secrets in client-side code
+  redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
+  scopes: ["offline_access", "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
+  //clientAuthMethod: "post",
+  //wellKnown: `https://auth.strike.me/.well-known/openid-configuration`,
+  // authorization: {
+  //     params: {
+  //         scope: 'partner.invoice.read offline_access',
+  //         response_type: 'code',
+  //     }
+  // },
+  idToken: false,
+  checks: ['pkce', 'state'],
+  // serviceConfiguration: {
+  //   authorizationEndpoint: "https://auth.strike.me/oauth/authorize",
+  //   tokenEndpoint: "https://auth.strike.me/oauth/token",
+  //   revocationEndpoint: "https://auth.strike.me/oauth/revoke",
+  // },
+};
 
 export const calculatePercentage = (withdrawThreshold: number, reserveAmount: number) => {
   const threshold = Number(withdrawThreshold);
@@ -67,19 +111,28 @@ export function calculateBalancePercentage(balance: number, withdrawThreshold: n
   return parseFloat(resPercentage.toFixed(2)); // Return percentage rounded to 2 decimal places
 }
 
+function formatStrikeNumber(num: number) {
+  const millions = num / 1000000;
+  return `${millions.toFixed(1)}M`;
+}
+
 export default function HomeScreen({ route }: Props) {
   const { navigate } = useNavigation();
   const routeName = useRoute().name;
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab } = useAuthStore();
+  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
   const A = require('../../../blue_modules/analytics');
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [balance, setBalance] = useState(0);
-  const [currency, setCurrency] = useState('$');
+  console.log("🚀 ~ balanceMAIN:", balance)
+  const [strikeBalance, setStrikeBalance] = useState(0);
+  const [currency, setCurrency] = useState('USD');
   const [convertedRate, setConvertedRate] = useState(0);
+  console.log("🚀 ~ convertedRate:", convertedRate)
+  const [convertedStrikeRate, setConvertedStrikeRate] = useState(0);
   const [matchedRate, setMatchedRate] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [payment, setPayments] = useState([])
@@ -100,8 +153,21 @@ export default function HomeScreen({ route }: Props) {
   const [sendAddress, setSendAddress] = useState<any>()
   const [isWalletLoaded, setIsWalletLoaded] = useState(true);
   const [isColdWalletLoaded, setIsColdWalletLoaded] = useState(true);
+  const [receiveType, setReceiveType] = useState(false);
+  const [strikeConvertedBalance, setStrikeConvertedBalance] = useState(0);
   const refRBSheet = useRef<any>(null);
+  const refSendRBSheet = useRef<any>(null);
+  const refWithdrawRBSheet = useRef<any>(null);
+  const refSwapRBSheet = useRef<any>(null);
+  const [receivedListSecondTab, setReceivedListSecondTab] = useState(false);
   const carouselRef = useRef<Carousel<any>>(null);
+
+  // Sync local currency state with store's strikeCurrency
+  useEffect(() => {
+    if (strikeCurrency) {
+      setCurrency(strikeCurrency);
+    }
+  }, [strikeCurrency]);
 
   const getWalletID = async () => {
     try {
@@ -129,8 +195,36 @@ export default function HomeScreen({ route }: Props) {
 
   const getWallet = async () => {
     try {
-      const allWallets = wallets.concat(false);
-      const walletTemp = allWallets.find((w: AbstractWallet) => w.getID() === walletID);
+      // const allWallets = wallets.concat(false);
+      const walletTemp = wallets.find((w: AbstractWallet) => w.getID() === walletID);
+      if (!walletTemp) {
+        console.warn('Wallet not found for ID:', walletID);
+        setIsAllDone(false);
+        return;
+      }
+
+      // Subscribe vault addresses to GroundControl for push notifications
+      try {
+        const Notifications = require('../../../blue_modules/notifications');
+        const pushTokenData = await Notifications.getPushToken();
+        console.log('[GroundControl] Push token:', pushTokenData);
+        
+        if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
+          console.warn('[GroundControl] No push token - notifications not enabled');
+          return;
+        }
+        
+        const externalAddresses = typeof walletTemp.getAllExternalAddresses === 'function' ? walletTemp.getAllExternalAddresses() : [];
+        const internalAddresses = typeof walletTemp.getAllInternalAddresses === 'function' ? walletTemp.getAllInternalAddresses() : [];
+        const allAddresses = [...externalAddresses, ...internalAddresses];
+        console.log('[GroundControl] Subscribing addresses:', allAddresses.length, allAddresses.slice(0, 2));
+        if (allAddresses.length > 0) {
+          await Notifications.majorTomToGroundControl(allAddresses, [], []);
+          console.log('[GroundControl] Subscribed hot vault addresses:', allAddresses.length);
+        }
+      } catch (notifyErr) {
+        console.warn('[GroundControl] Failed to subscribe addresses:', notifyErr);
+      }
       const balanceTemp = !walletTemp?.hideBalance && formatBalance(walletTemp?.getBalance(), walletTemp?.getPreferredBalanceUnit(), true);
       const balanceWithoutSuffixTemp = !walletTemp?.hideBalance && formatBalanceWithoutSuffix(Number(walletTemp?.getBalance()), walletTemp?.getPreferredBalanceUnit(), true);
       await walletTemp.fetchBalance()
@@ -153,8 +247,35 @@ export default function HomeScreen({ route }: Props) {
 
   const getColdStorageWallet = async () => {
     try {
-      const allWallets = wallets.concat(false);
-      const walletTemp = allWallets.find((w: AbstractWallet) => w.getID() === coldStorageWalletID);
+      // const allWallets = wallets.concat(false);
+      const walletTemp = wallets.find((w: AbstractWallet) => w.getID() === coldStorageWalletID);
+      if (!walletTemp) {
+        console.warn('Cold storage wallet not found for ID:', coldStorageWalletID);
+        setIsAllDone(false);
+        return;
+      }
+
+      // Subscribe cold storage addresses to GroundControl for push notifications
+      try {
+        const Notifications = require('../../../blue_modules/notifications');
+        const pushTokenData = await Notifications.getPushToken();
+        
+        if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
+          console.warn('[GroundControl] No push token - notifications not enabled');
+          return;
+        }
+        
+        const externalAddresses = walletTemp.getAllExternalAddresses ? walletTemp.getAllExternalAddresses() : [];
+        const internalAddresses = walletTemp.getAllInternalAddresses ? walletTemp.getAllInternalAddresses() : [];
+        const allAddresses = [...externalAddresses, ...internalAddresses];
+        console.log('[GroundControl] Subscribing cold storage addresses:', allAddresses.length);
+        if (allAddresses.length > 0) {
+          await Notifications.majorTomToGroundControl(allAddresses, [], []);
+          console.log('[GroundControl] Subscribed cold storage addresses:', allAddresses.length);
+        }
+      } catch (notifyErr) {
+        console.warn('[GroundControl] Failed to subscribe cold storage addresses:', notifyErr);
+      }
       const balanceTemp = !walletTemp?.hideBalance && formatBalance(walletTemp?.getBalance(), walletTemp?.getPreferredBalanceUnit(), true);
       const balanceWithoutSuffixTemp = !walletTemp?.hideBalance && formatBalanceWithoutSuffix(Number(walletTemp?.getBalance()), walletTemp?.getPreferredBalanceUnit(), true);
       await walletTemp.fetchBalance()
@@ -179,17 +300,94 @@ export default function HomeScreen({ route }: Props) {
   //   successfullyAuthenticated();
   // }, [])
 
+  const loadStrikeData = async () => {
+      console.log('[Strike] loadStrikeData START', Date.now());
+      try {
+          const balances = await getBalances();
+          console.log('[Strike] getBalances DONE', Date.now());
+          if (balances.data?.status === 401) {
+              SimpleToast.show("Authorization expired. Please login again to strike account", SimpleToast.SHORT);
+              clearStrikeAuth();
+          } else if (balances) {
+              console.log('balances (post-login): ', balances);
+              // Normalize: index 0 = BTC, index 1 = fiat (API order is not guaranteed)
+              const btcBalance = balances?.find((b: any) => b.currency === 'BTC');
+              const fiatBalance = balances?.find((b: any) => b.currency !== 'BTC');
+              const normalizedBalances = [btcBalance || balances?.[0], fiatBalance || balances?.[1]];
+              console.log('Normalized balances — BTC:', btcBalance, 'Fiat:', fiatBalance);
+              setStrikeUser(normalizedBalances);
+              setStrikeBalance((normalizedBalances?.[0]?.available * SATS) || 0);
+              const userCurrency = normalizedBalances?.[1]?.currency || 'USD';
+              console.log('Strike currency from balances:', userCurrency);
+              setStrikeCurrency(userCurrency); // Store user's currency in auth
+              const matchedCurrency = untypedFiatUnit?.[userCurrency];
+              console.log('matchedCurrency lookup:', matchedCurrency);
+              if (!matchedCurrency) {
+                  console.warn('No fiatUnit found for', userCurrency, '- falling back to USD');
+              }
+              console.log('[Strike] fetching exchangeRate START', Date.now());
+              const rates = await exchangeRate(matchedCurrency || untypedFiatUnit?.['USD']);
+              console.log('[Strike] exchangeRate DONE', Date.now(), rates);
+              let numericAmount = 0;
+              if (rates && rates?.Rate) {
+                  numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
+                  console.log('Strike numericAmount:', numericAmount);
+                  setMatchedRateStrike(numericAmount);
+              }
+              try {
+                  const rate = await convertFiatToUSD(Number((normalizedBalances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1)), normalizedBalances?.[1]?.currency || 'USD') || 0;
+                  setStrikeConvertedBalance(rate);
+              } catch (e) {
+                  console.warn('convertFiatToUSD failed, using direct calculation:', e);
+                  const directRate = Number((normalizedBalances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1));
+                  setStrikeConvertedBalance(directRate);
+              }
+          }
+      } catch (error) {
+          console.error('Error loading Strike data:', error);
+      }
+  };
+
+  const handleStrikeLogin = async () => {
+      try {
+          const result = await authorize(config);
+          setStrikeToken(result.accessToken);
+          setStrikeAuth(true);
+          // Immediately load Strike data after login instead of waiting for focus/effect
+          await loadStrikeData();
+      } catch (error) {
+          console.error("OAuth error", error);
+      } finally {
+        setIsLoading(false)
+      }
+  };
+
+  const tokenRefreshedRef = useRef(false);
+
   useEffect(() => {
     async function handleToken() {
       if (isAuth && token) {
+        // Refresh token once on first load to avoid 401 race
+        if (!tokenRefreshedRef.current) {
+          tokenRefreshedRef.current = true;
+          try {
+            const newToken = await refreshCoinOSToken();
+            if (newToken && newToken !== token) {
+              const { setToken } = useAuthStore.getState();
+              setToken(newToken);
+              return; // token change will re-trigger this effect with fresh token
+            }
+          } catch (_) {}
+        }
         handleUser();
         loadPayments();
       } else {
-        const rates = await exchangeRate();
-        console.log('rates: ', rates)
-        if (rates && rates?.Rate) {
-          const numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
-          setMatchedRate(numericAmount);
+        // Not logged into Coinos - use BlueWallet's native rate for vaults
+        try {
+          const blueWalletRate = await getFiatRate('USD');
+          setMatchedRate(blueWalletRate || 0);
+        } catch (err) {
+          console.log('BlueWallet rate error:', err);
         }
         setIsLoading(false)
       }
@@ -213,6 +411,44 @@ export default function HomeScreen({ route }: Props) {
     handleToken();
   }, [isAuth, token, wallets, walletID, coldStorageWalletID]);
 
+  // CoinOS WebSocket for real-time payment notifications
+  useEffect(() => {
+    if (isAuth && token) {
+      console.log('[CoinOS WS] Auth detected, connecting...');
+      setCoinosUsername(user?.username || user);
+      setOnPaymentReceived((data) => {
+        console.log('[CoinOS WS] Payment callback, refreshing balance...');
+        handleUser();
+        loadPayments();
+      });
+
+      // Connect WS and register push — token already refreshed in handleToken
+      const initCoinosConnection = async () => {
+        connectCoinosSocket();
+
+        // Register push token for background notifications (with fresh token)
+        try {
+          const Notifications = require('../../../blue_modules/notifications');
+          const pushTokenData = await Notifications.default.getPushToken();
+          if (pushTokenData?.token && user) {
+            registerPushToken(user?.username || user, pushTokenData.token);
+          }
+        } catch (error) {
+          console.warn('[Push Token] Registration failed:', error);
+        }
+      };
+
+      initCoinosConnection();
+    } else {
+      disconnectCoinosSocket();
+      setOnPaymentReceived(null);
+    }
+    return () => {
+      disconnectCoinosSocket();
+      setOnPaymentReceived(null);
+    };
+  }, [isAuth, token]);
+
   useEffect(() => {
     if (isAuth && token && ((!vaultAddress.startsWith('ln') && !vaultAddress.includes('@')) || (!coldStorageAddress.startsWith('ln') && !coldStorageAddress.includes('@'))) && !recommendedFee) {
       const init = async () => {
@@ -233,6 +469,20 @@ export default function HomeScreen({ route }: Props) {
     }
   }, [sendAddress, isAuth, token])
 
+  // useEffect(()  => {
+  useFocusEffect(
+    useCallback(() => {
+      // Refresh CoinOS balance on focus
+      if (isAuth && token) {
+        handleUser();
+      }
+      if (strikeToken) {
+        loadStrikeData();
+      }
+    }, [strikeToken])
+  )
+
+  // console.log('strikeToken: ', strikeToken)
   const successfullyAuthenticated = async () => {
     // const hasAcceptedTerms = await AsyncStorage.getItem('hasAcceptedTermsOfService')
     await startAndDecrypt()
@@ -254,9 +504,7 @@ export default function HomeScreen({ route }: Props) {
   const handleLighteningInvoice = async () => {
     try {
       const response = await getInvoiceByLightening(sendAddress);
-      console.log('response getInvoiceByLightening: ', response)
       const dollarAmount = (response.amount_msat / 1000) * matchedRate * btc(1);
-      console.log('dollarAmount: ', dollarAmount)
       if(dollarAmount){
         dispatchNavigate('ReviewPayment', {
           value: response.amount_msat / 1000,
@@ -274,7 +522,7 @@ export default function HomeScreen({ route }: Props) {
         dispatchNavigate('SendScreen', { currency, matchedRate, destination: sendAddress.toLowerCase() });
       }
     } catch (error) {
-        console.error('Error Send Lightening:', error);
+        console.error('Error handleLighteningInvoice:', error);
         SimpleToast.show('Failed to generate lightening. Please try again.', SimpleToast.SHORT);
     }
 }
@@ -343,19 +591,44 @@ export default function HomeScreen({ route }: Props) {
 
   const handleUser = async () => {
     try {
-      const response = await getMe();
-      const responsetest = await getCurrencyRates();
-      const currency = btc(1);
-      const matched = matchKeyAndValue(responsetest, 'USD')
-      setMatchedRate(matched || 0)
-      setConvertedRate((matched || 0) * currency * response.balance)
-      setCurrency("USD")
-      if (response?.balance) {
-        setBalance(response?.balance || 0);
+      // Always get exchange rate from BlueWallet's native currency module
+      // This is used for the hot/cold vaults which are just BlueWallet wallets
+      let blueWalletRate = 0;
+      try {
+        blueWalletRate = await getFiatRate('USD') || 0;
+      } catch (rateErr) {
+        console.log('BlueWallet rate error:', rateErr);
       }
+      setMatchedRate(blueWalletRate);
+
+      // Try to get Coinos data if logged in (for Coinos-specific balance)
+      const response = await getMe();
+      if (!response) return; // Not logged into Coinos
+
+      // Get Coinos rate for Coinos balance display
+      try {
+        const responsetest = await getCurrencyRates();
+        const currency = btc(1);
+        const matched = matchKeyAndValue(responsetest, 'USD');
+        // Use Coinos rate for Coinos balance, BlueWallet for vaults
+        setConvertedRate((matched || blueWalletRate || 0) * currency * response.balance);
+      } catch (rateError) {
+        setConvertedRate((blueWalletRate || 0) * btc(1) * response.balance);
+      }
+      setCurrency("USD")
+      setBalance(response?.balance ?? 0);
       setUser(response?.username);
     } catch (error) {
       console.error('error: ', error);
+      // Try BlueWallet's native rate as fallback
+      try {
+        const blueWalletRate = await getFiatRate('USD');
+        setMatchedRate(blueWalletRate || 0);
+      } catch (bwError) {
+        console.error('BlueWallet rate failed:', bwError);
+        setMatchedRate(0);
+      }
+      SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
     } finally {
       setIsLoading(false)
       setRefreshing(false);
@@ -368,25 +641,20 @@ export default function HomeScreen({ route }: Props) {
       setPayments(paymentList.payments);
     } catch (error) {
       console.error('Error loading payments:', error);
+      SimpleToast.show("Failed to load payments. Pull to refresh.", SimpleToast.SHORT);
     }
   };
 
-  const navigateToSettings = () => {
-    dispatchNavigate("Settings");
-  };
-
-  const onScanButtonPressed = () => {
-    console.log('routeName: ', routeName)
-    scanQrHelper(navigate, routeName).then(onBarScanned);
-  };
-
   const loginClickHandler = () => {
-    dispatchNavigate('LoginCoinOSScreen');
+    if (hasSeenCustodialWarning) {
+      dispatchNavigate('CheckingAccountLogin');
+    } else {
+      dispatchNavigate('CheckingAccountIntro');
+    }
   };
 
   const onBarScanned = (value: any) => {
     if (!value) return;
-    console.log('value: ', value)
     setSendAddress(value);
     // DeeplinkSchemaMatch.navigationRouteFor(
     //   { url: value },
@@ -397,112 +665,6 @@ export default function HomeScreen({ route }: Props) {
     // );
   };
 
-  const createChekingAccountClickHandler = () => {
-    Linking.openURL('https://coinos.io/register')
-    // dispatchNavigate("CheckAccount");
-  };
-
-  const receiveClickHandler = () => {
-    refRBSheet.current.open();
-  };
-
-  const sendClickHandler = () => {
-    dispatchNavigate('SendScreen', { currency, matchedRate });
-  };
-
-  const checkingAccountClickHandler = () => {
-    dispatchNavigate('CheckingAccount', { matchedRate });
-  }
-
-  const withdrawClickHandler = () => {
-    console.log('recommendedFee: ', recommendedFee)
-    if(!isAuth){
-      SimpleToast.show('You need to be logged in to Coinos.io to withdraw', SimpleToast.SHORT);
-      return
-    }
-    if(vaultTab && !coldStorageWallet){
-      SimpleToast.show('You need to have a cold storage wallet to withdraw', SimpleToast.SHORT);
-      return
-    }
-
-    if (wallet || coldStorageWallet) {
-      const amount = withdrawThreshold > balance ? balance : withdrawThreshold;
-      dispatchNavigate('ReviewPayment', {
-        value: amount,
-        converted: ((Number(matchedRate) || 0) * btc(1) * Number(amount)).toFixed(2),
-        isSats: true,
-        to: vaultTab ? coldStorageAddress : vaultAddress,
-        fees: 0,
-        matchedRate: matchedRate,
-        currency: currency,
-        type: 'bitcoin',
-        feeForBamskki: 0,
-        recommendedFee,
-        wallet: vaultTab ? coldStorageWallet : wallet,
-        isWithdrawal: true
-      });
-    } else {
-      dispatchNavigate('SavingVaultIntro');
-    }
-  };
-
-  const topupClickHandler = async () => {
-    // dispatchNavigate('PurchaseVault', {
-    //   data: {}
-    // });
-    if(!isAuth){
-      SimpleToast.show('You need to be logged in to Coinos.io to top up', SimpleToast.SHORT);
-      return
-    }
-    if(vaultTab && !coldStorageWallet){
-      SimpleToast.show('You need to have a cold storage wallet to top up', SimpleToast.SHORT);
-      return
-    }
-    try {
-      const response = await createInvoice({
-        type: 'bitcoin',
-      });
-      dispatchNavigate('HotStorageVault', { wallet: vaultTab ? coldStorageWallet : wallet, matchedRate, to: response.hash });
-      console.log('response: ', response)
-    } catch (error) {
-      console.error('Error generating bitcoin address:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const savingVaultClickHandler = () => {
-    dispatchNavigate('HotStorageVault', { wallet: vaultTab ? coldStorageWallet : wallet, matchedRate });
-  };
-
-  const coldStorageClickHandler = () => {
-    setVaultTab(true);
-    // setIndex(1)
-    carouselRef.current?.snapToItem(1, true);
-  };
-
-  const handleCreateColdVault = () => {
-    dispatchNavigate('ConnectColdStorage');
-  }
-
-  const hotStorageClickHandler = () => {
-    setVaultTab(false);
-    // setIndex(0);
-    carouselRef.current?.snapToItem(0, true);
-    // if(!walletID){
-    //   dispatchNavigate('SavingVaultIntroNew');      
-    // }
-  };
-
-  const handleCreateVault = () => {
-    dispatchNavigate('SavingVaultIntro');
-  }
-
-  const handleRecoverSavingVault = () => {
-    dispatchNavigate('RecoverSavingVault');
-  };
-
-
   const onRefresh = async () => {
     setRefreshing(true);
     if (wallet) {
@@ -511,7 +673,25 @@ export default function HomeScreen({ route }: Props) {
     if(coldStorageWallet){
       await coldStorageWallet?.fetchBalance();
     }
-    handleUser()
+    handleUser();
+    // Refresh Strike balance
+    if (strikeToken) {
+      try {
+        const balances = await getBalances();
+        if (balances && !balances.data?.status) {
+          const btcBal = balances?.find((b: any) => b.currency === 'BTC');
+          const fiatBal = balances?.find((b: any) => b.currency !== 'BTC');
+          const normalized = [btcBal || balances?.[0], fiatBal || balances?.[1]];
+          setStrikeUser(normalized);
+          setStrikeBalance((normalized?.[0]?.available * SATS) || 0);
+          const userCurrency = normalized?.[1]?.currency || 'USD';
+          setStrikeCurrency(userCurrency); // Store user's currency in auth
+        }
+      } catch (e) {
+        console.log('Error refreshing Strike balance:', e);
+        SimpleToast.show("Failed to refresh Strike balance.", SimpleToast.SHORT);
+      }
+    }
   };
 
 
@@ -537,154 +717,15 @@ export default function HomeScreen({ route }: Props) {
     }
   };
 
-  const [index, setIndex] = useState(vaultTab ? 1 : 0); // Used for the tab index
-  const [routes] = useState([
-    { key: 'hot', title: 'Hot Storage' },
-    { key: 'cold', title: 'Cold Storage' }
-  ]);
-
-  const TopUpWithdrawView = ({isVault}: any) => (
-    <View style={styles.bottominner}>
-        <GradientView
-          onPress={topupClickHandler}
-          topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
-          bottomShadowStyle={styles.innerShadowStyle}
-          style={styles.linearGradientStyle}
-          linearGradientStyle={styles.mainShadowStyle}
-        >
-          <Image
-            style={styles.arrowLeft}
-            resizeMode="contain"
-            source={require("../../../img/arrow-right.png")}
-          />
-          <Text bold h3 center style={{ textAlign: 'center' }}>Top-up</Text>
-        </GradientView>
-       <GradientView
-          onPress={withdrawClickHandler}
-          topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
-          bottomShadowStyle={styles.innerShadowStyle}
-          style={styles.linearGradientStyle}
-          linearGradientStyle={styles.mainShadowStyle}
-        >
-          <Text bold h3 center style={{ textAlign: 'center' }}>Withdraw</Text>
-          <Image
-            style={styles.arrowRight}
-            resizeMode="contain"
-            source={require("../../../img/arrow-right.png")}
-          />
-        </GradientView>
-    </View>
-  );
-
-  const exchangeRate = async () => {
+  const exchangeRecentRate = async () => {
     const rates = await mostRecentFetchedRate();
     return rates
   }
 
-  console.log('hasSavingVault: ', matchedRate)
-  const HotStorageTab = () => (
-    <View style={{flex: 1}}>
-      {hasSavingVault && wallet ?
-        <TopUpWithdrawView isVault={false} />
-      :
-        <View style={{height: 40}} />
-      }
-      {(hasSavingVault && wallet) ? (
-        <SavingVault
-          container={StyleSheet.flatten([styles.savingVault, { marginTop: 10 }])}
-          innerContainer={styles.savingVault}
-          shadowTopBottom={styles.savingVault}
-          shadowBottomBottom={styles.savingVault}
-          bitcoinText={styles.bitcoinText}
-          isVault={false}
-          title={"Hot Vault"}
-          onPress={savingVaultClickHandler}
-          bitcoinValue={balanceVault}
-          inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)).toFixed(2)}`}
-          isColorable
-        />
-      )
-      :
-      (
-        <View style={[styles.createVaultContainer, { top: '-20%' }]}>
-        {/* <View style={styles.createVaultContainer}> */}
-          <View style={styles.alreadyView}>
-            <Text bold style={styles.text}>
-              Already have a vault?
-            </Text>
-            <TouchableOpacity onPress={handleRecoverSavingVault}>
-              <Text bold style={[styles.login, { color: colors.green }]}>
-                Recover
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity
-            onPress={handleCreateVault}
-          >
-            <LinearGradient
-              colors={['#32D38E', '#24C47F']}
-              // start={{ x: 0, y: -0.3 }}
-              // end={{ x: 0, y: 2 }}
-              start = {{ x: 0, y: 1} }
-              end = {{ x: 1, y: 1 }}
-                        // locations={[0, 1]}
-              style={styles.createVault}>
-              {/* <Text h3 style={styles.advancedText}>⚠  Advanced</Text> */}
-              <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                Create Hot Vault
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
-  );
-
-  console.log('coldStorageWallet: ', coldStorageWallet, hasColdStorage, coldStorageWalletID)
-  const ColdStorageTab = () => (
-    <View style={{flex: 1}}>
-      {coldStorageWallet ?
-        <TopUpWithdrawView isVault={true} />
-      :
-        <View style={{height: 40}} />
-      }
-      {(hasColdStorage && coldStorageWallet) ? (
-        <SavingVault
-          container={StyleSheet.flatten([styles.savingVault, { marginTop: 10 }])}
-          innerContainer={styles.savingVault}
-          shadowTopBottom={styles.savingVault}
-          shadowBottomBottom={styles.savingVault}
-          bitcoinText={styles.bitcoinText}
-          title={"Cold Storage"}
-          isVault={true}
-          onPress={savingVaultClickHandler}
-          bitcoinValue={ColdStorageBalanceVault}
-          inDollars={`$${(Number(coldStorageBalanceWithoutSuffix) * Number(matchedRate)).toFixed(2)}`}
-          isColorable
-        />
-      ) : (
-        // (
-          <View style={[styles.createVaultContainer, { top: -10 }]}>
-            <TouchableOpacity onPress={handleCreateColdVault}>
-              <LinearGradient
-                colors={['#1693EDFA', '#15A7A7']}
-                // start={{ x: 0, y: -0.3 }}
-                // end={{ x: 0, y: 2 }}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                // locations={[0, 1]}
-                style={[styles.createVault, { justifyContent: 'center' }]}
-              >
-                <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                  Create Cold Vault
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        // )
-      )}
-    </View>
-  );
+  const exchangeRate = async (fiatUnit: FiatUnitType) => {
+    const rates = await fetchedRate(fiatUnit);
+    return rates
+  }
 
   // const renderScene = ({ route }: { route: any }) => {
   //   switch (route.key) {
@@ -701,71 +742,49 @@ export default function HomeScreen({ route }: Props) {
   //   cold: ColdStorageTab,
   // });
 
-  const tabs = [
-    { key: "hot", title: "Hot Storage", component: () => <HotStorageTab /> },
-    { key: "cold", title: "Cold Storage", component: () => <ColdStorageTab /> },
-  ];
-  
-  
-  const RenderTabBar = (props: any) => {
-    return (
-        <View style={[styles.container3, { opacity: 1 }]}>
-          {/* {hasSavingVault && walletID && ( */}
-            <GradientCard colors_={['#464D6854', '#FFF']} style={styles.container2} linearStyle={styles.main} disabled={true}>
-              <View style={styles.container4}>
-                {/* {!hasSavingVault ? (
-                  <Text h3 bold style={styles.storageText} onPress={hotStorageClickHandler}>Hot Storage</Text>
-                ) : ( */}
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={hotStorageClickHandler}
-                    style={[styles.bottomBtn, !vaultTab && { borderWidth: !vaultTab ? 2 : 0, borderColor: !vaultTab ? colors.greenShadow : 'transparent', borderRadius: 25 }]}>
-                    <LinearGradient
-                      start={{ x: 1, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      locations={[0.25, 1]}
-                      colors={!vaultTab ? ['#333333', '#282727'] : ['transparent', 'transparent']}
-                      style={styles.linearGradientbottom}>
-                      <Text h3 bold style={{ color: '#FD7A68' }}>Hot Storage</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                {/* )} */}
-                {/* {isAllDone && ( */}
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={coldStorageClickHandler}
-                    style={[styles.bottomBtn, { marginEnd: 7.5, marginStart: 0 }, vaultTab && { borderWidth: vaultTab ? 2 : 0, borderColor: vaultTab ? colors.blueText : 'transparent' }]}>
-                    <LinearGradient
-                      start={{ x: 1, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      locations={[0.25, 1]}
-                      colors={ vaultTab ? ['#333333', '#282727'] : ['transparent', 'transparent']}
-                      style={styles.linearGradientbottom}>
-                      <Text h3 bold style={{ color: colors.blueText }}>Cold Storage</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                {/* )} */}
-              </View>
-            </GradientCard>
-          {/* )} */}
-        </View>
-    );
+  // Single contextual message for the homepage — priority ordered
+  const getHomeMessage = (): string | null => {
+    const coinosBalance = Number(balance) || 0;
+    const strikeBal = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
+    const coinosTotal = Number(withdrawThreshold) + Number(reserveAmount);
+    const strikeTotal = Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount);
+    const coinosThresholdMet = isAuth && coinosBalance >= coinosTotal;
+    const strikeThresholdMet = isStrikeAuth && strikeBal >= strikeTotal;
+    const anyThresholdMet = coinosThresholdMet || strikeThresholdMet;
+    const hasVault = !!(walletID || coldStorageWalletID);
+
+    // Priority 1: Threshold met
+    if (anyThresholdMet && hasVault) {
+      return "Your balance is large enough to withdraw to self-custody!";
+    }
+    if (anyThresholdMet && !hasVault) {
+      return "Threshold met! Create a vault to withdraw to self-custody.";
+    }
+
+    // Priority 2: UTXO management
+    const hotUtxos = wallet?.getUtxo?.() || [];
+    const coldUtxos = coldStorageWallet?.getUtxo?.() || [];
+    const allUtxos = [...hotUtxos, ...coldUtxos];
+    const smallUtxos = allUtxos.filter((u: any) => u.value < 100000);
+    const fee = recommendedFee?.halfHourFee || recommendedFee?.hourFee || 0;
+    const feesAreLow = fee > 0 && fee <= 15;
+
+    if (wallet && !coldStorageWallet && hotUtxos.length > 5) {
+      return "You have more than 5 UTXOs. Consider upgrading to Cold Storage to consolidate and improve security.";
+    }
+
+    if (smallUtxos.length > 5 && feesAreLow) {
+      return "Fees are low — good time to consolidate your small UTXOs to save on future transaction costs.";
+    }
+
+    return null;
   };
 
-  const renderItem = ({ item }: any) => {
-    return(
-      <View style={{ flex: 1 }}>
-        {item.component()}
-      </View>
-    )
-  };
+  const homeMessage = getHomeMessage();
 
-  const hasFilledTheBar = calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount)) === 100
-  const layout = useWindowDimensions();
-
-  console.log('matchedRate: ', matchedRate)
   return (
     <ScreenLayout
+      
       RefreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -775,233 +794,83 @@ export default function HomeScreen({ route }: Props) {
       }
       disableScroll={isAuth ? false : true}>
       <View style={styles.container}>
-        <View>
           {isLoading ? (
             <ActivityIndicator size="large" color="#ffffff" />
           )
-            :
-            (
-              <>
-                <View style={styles.title}>
-                  <Text subHeader bold>
-                    Total Balance
-                  </Text>
-                  <View style={styles.row}>
-                    <TouchableOpacity
-                      style={styles.imageView}
-                      onPress={navigateToSettings}
-                    >
-                      <Image
-                        style={styles.image}
-                        resizeMode="contain"
-                        source={require("../../../img/settings.png")}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.imageViews}
-                      onPress={onScanButtonPressed}
-                    >
-                      <Image
-                        style={styles.scan}
-                        resizeMode="contain"
-                        source={require("../../../img/scan-new.png")}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                <View style={styles.shadowView}>
-                  <Shadow
-                    style={styles.shadowTop}
-                    inner
-                    useArt
-                  >
-                    <Text subHeader bold style={styles.price}>
-                      {/* {(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC */}
-                      {((btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC
-                      </Text>
-                    <Text bold style={styles.priceusd} >
-                      {"$" + (Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}
-                    </Text>
-                    <Shadow
-                      inner
-                      useArt
-                      style={styles.shadowBottom}
-                    />
-                  </Shadow>
-                </View>
-              </>
-            )}
-
-          {isAuth &&
+          :
+          (
             <>
-              <TouchableOpacity style={styles.shadowView} onPress={checkingAccountClickHandler}>
-                <Shadow
-                  style={StyleSheet.flatten([styles.shadowTop, { shadowColor: colors.pink.shadowTop, padding: 0 }])}
-                  inner
-                  useArt
-                >
-                  <View style={styles.view}>
-                    <Text h2 bold style={styles.check}>
-                      Lightning Account
-                    </Text>
-                    <Image
-                      source={CoinOSSmall}
-                      style={styles.blink}
-                      resizeMode="contain"
-                    />
-                  </View>
-                  <View style={styles.view}>
-                    <Text h2 bold style={styles.sats}>
-                      {balance} sats ~ {"$" + convertedRate.toFixed(2)}
-                    </Text>
-                    <Text bold style={styles.totalsats}>
-                      {formatNumber(Number(withdrawThreshold) + Number(reserveAmount))} sats
-                    </Text>
-                  </View>
-                  <View>
-                    <View style={styles.showLine} />
-                    <View style={[styles.box, { left: `${calculatePercentage(Number(withdrawThreshold), (Number(reserveAmount)))}%` }]} />
-                    <LinearGradient
-                      start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-                      colors={[colors.white, colors.pink.dark]}
-                      style={[styles.linearGradient2, { width: `${calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount))}%` }]}>
-                      {/* <View style={[styles.box, {marginLeft: `${Math.min((withdrawThreshold / (Number(withdrawThreshold + reserveAmount) || 0)) * 100, 100)}%`}]} /> */}
-                      {/* <Shadow
-                          inner // <- enable inner shadow
-                          useArt // <- set this prop to use non-native shadow on ios
-                          style={styles.top2} >
-                      </Shadow> */}
-                    </LinearGradient>
-
-                    {/* <View style={styles.showLine} /> */}
-                    {/* <View style={[styles.box, {marginLeft: `${Math.min((balance / (Number(withdrawThreshold) || 0)) * 100, 100)}%`}]} />
-                    </View> */}
-                  </View>
-                  <Shadow
-                    inner
-                    useArt
-                    style={StyleSheet.flatten([styles.shadowBottom, { shadowColor: colors.pink.shadowBottom }])}
-                  />
-                </Shadow>
-              </TouchableOpacity>
-              <View style={styles.btnView}>
-                <GradientButtonWithShadow
-                  title="Receive"
-                  onPress={receiveClickHandler}
-                  isShadow
-                  isTextShadow
-                />
-                <GradientButtonWithShadow
-                  title="Send"
-                  onPress={sendClickHandler}
-                  isShadow
-                  isTextShadow
-                />
-              </View>
-              {!isLoading &&
-                (hasFilledTheBar ?
-                  <Text h4 style={styles.alert}>
-                    Your sats have materialized! You can create a Hot Storage Savings Vault and take full self-custody of your money by withdrawing a large chunk of a bitcoin from your custodian Lightning Account. Click the Withdraw button to know more
-                    {/* You can receive, send, and accumulate bitcoin using your Lightning Account. New security features will be revealed once you meet the withdrawal threshold at 2 million sats */}
-                  </Text>
-                  : (Number(balance) === Number(withdrawThreshold + reserveAmount)) ?
-                    <Text h4 style={styles.alert}>
-                      Congrats! You've completed the bar, It's time to create your Hot Storage Savings Vault and take full self-custody of your bitcoi. Click 'Withdraw' to know more.
-                    </Text>
-                  :
-                    <Text h4 style={styles.alertGrey}>
-                      {/* New security upgrades will be revealed once you meet fill up the bar displayed on your Lightning Account. */}
-                      {'\n'}
-                    </Text>
-                )
-              }
+              <Header onBarScanned={onBarScanned} />
+              <BalanceView 
+                // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
+                balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
+                convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}`}
+                showAddAccount={allBTCWallets.length < 2 && !isLoading}
+                onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
+              />
             </>
-          }
+          )}
 
-          {/* {isAuth ? (
-            <> */}
-          {!isAuth &&
-            <View style={{ height: '42%' }}>
-              <GradientCardWithShadow
-                style={styles.createView}
-                onPress={loginClickHandler}
-              >
-                <View style={styles.middle}>
-                  <Image
-                    style={styles.arrow}
-                    resizeMode="contain"
-                    source={require("../../../img/arrow-right.png")}
-                  />
-                  <Text h2 style={styles.shadow} center>
-                    Login to Your Lightning Account
-                  </Text>
-                </View>
-              </GradientCardWithShadow>
-              <View style={styles.createAccount}>
-                <Text bold style={styles.text}>
-                  Don’t have an account?
-                </Text>
-                <TouchableOpacity onPress={createChekingAccountClickHandler}>
-                  <Text bold style={styles.login}>
-                    Create on Coinos.io
-                  </Text>
-                </TouchableOpacity>
-              </View>
+          {/* */}
+
+                    {/* Add Account button moved into BalanceView */}
+          {/* Lightning Accounts title moved into WalletsView carousel */}
+
+          <View>
+            {!isAuth && !isLoading && !isStrikeAuth ?
+              <CreateLightningAccount onPress={loginClickHandler} />
+            : !isLoading &&
+              <WalletsView
+                balance={balance}
+                convertedRate={convertedRate}
+                currency={currency}
+                isLoading={isLoading}
+                matchedRate={matchedRate}
+                refRBSheet={refRBSheet}
+                refSendRBSheet={refSendRBSheet}
+                refSwapRBSheet={refSwapRBSheet}
+                setReceiveType={setReceiveType}
+                strikeBalance={strikeBalance}
+                wallet={wallet}
+                coldStorageWallet={coldStorageWallet}
+                matchedRateStrike={Number(matchedRateStrike || 0)}
+                currencyStrike={strikeUser?.[1]?.currency || 'USD'}
+                homeMessage={homeMessage}
+              />
+            }
+          </View>
+          
+          {/* */}
+
+          {!isLoading && (isWalletLoaded || isColdWalletLoaded) &&
+            <View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center'}}>
+              <ActivityIndicator size="small" color="#23C47F" />
             </View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={[{height: isIOS && !isAuth ? '36.2%' : isAuth ? '37%' : '35%' }, isIOS && {bottom: 20}, isAuth && styles.bottom]}>
-              <Carousel
-                data={tabs}
-                ref={carouselRef}
-                renderItem={renderItem}
-                firstItem={index}
-                vertical={false}
-                sliderWidth={screenWidth * 0.905}
-                itemWidth={screenWidth * 0.905}
-                onSnapToItem={(index) => {
-                  setIndex(index)
-                  setVaultTab(index === 1);
-                }} // Update pagination index
+            <View style={{height: 205, marginTop: 5, marginBottom: 0}}>
+              <BottomBar
+                balance={balance}
+                balanceVault={balanceVault}
+                refWithdrawRBSheet={refWithdrawRBSheet}
+                balanceWithoutSuffix={balanceWithoutSuffix}
+                coldStorageAddress={coldStorageAddress}
+                coldStorageBalanceVault={ColdStorageBalanceVault}
+                coldStorageBalanceWithoutSuffix={coldStorageBalanceWithoutSuffix}
+                coldStorageWallet={coldStorageWallet}
+                currency={currency}
+                currencyStrike={strikeUser?.[1]?.currency || 'USD'}
+                matchedRateStrike={Number(matchedRateStrike || 0)}
+                hasColdStorage={hasColdStorage}
+                hasSavingVault={hasSavingVault}
+                matchedRate={matchedRate}
+                recommendedFee={recommendedFee}
+                vaultAddress={vaultAddress}
+                wallet={wallet}
               />
-              <RenderTabBar />
             </View>
           }
         </View>
-      </View>
-      {/* <>
-        {!walletID &&
-          <View style={styles.createVaultContainer}>
-            <TouchableOpacity
-              onPress={handleCreateVault}
-            >
-              <LinearGradient
-                colors={['#32D38E', '#24C47F']}
-                // start={{ x: 0, y: -0.3 }}
-                // end={{ x: 0, y: 2 }}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                // locations={[0, 1]}
-                style={styles.createVault}>
-                <Text h3 style={styles.advancedText}>⚠  Advanced</Text>
-                <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                  Create Vault
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <View style={styles.alreadyView}>
-              <Text bold style={styles.text}>
-                Already have a vault?
-              </Text>
-              <TouchableOpacity onPress={handleRecoverSavingVault}>
-                <Text bold style={[styles.login, { color: colors.green }]}>
-                  Recover
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        }
-      </> */}
       <RBSheet
         ref={refRBSheet}
         customStyles={{
@@ -1012,7 +881,9 @@ export default function HomeScreen({ route }: Props) {
             backgroundColor: 'red',
           },
           container: {
-            height: heights / 2 + 80,
+            // ...receivedListSecondTab ? { height: heights / 2 + 20 } : { maxHeight: heights / 2 + 20 },
+            height: heights / 2 + 20,
+            backgroundColor: 'transparent',
           }
         }}
         customModalProps={{
@@ -1023,8 +894,116 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <ReceivedList refRBSheet={refRBSheet} matchedRate={matchedRate} currency={currency} />
+        {/* <ReceivedList refRBSheet={refRBSheet} receiveType={receiveType} matchedRate={matchedRate} currency={currency} /> */}
+        <ReceivedListNew 
+          setReceivedListSecondTab={setReceivedListSecondTab} 
+          refRBSheet={refRBSheet} 
+          receiveType={receiveType} 
+          matchedRate={matchedRateStrike} 
+          currency={strikeUser?.[1]?.currency || 'USD'} 
+          wallet={wallet} 
+          coldStorageWallet={coldStorageWallet}
+          vaultAddress={vaultAddress}
+          coldStorageAddress={coldStorageAddress}
+        />
       </RBSheet>
+
+      <RBSheet
+        ref={refSendRBSheet}
+        customStyles={{
+          wrapper: {
+            backgroundColor: 'transparent',
+          },
+          draggableIcon: {
+            backgroundColor: 'red',
+          },
+          container: {
+            height: heights / 2 + 20,
+            backgroundColor: 'transparent',
+          }
+        }}
+        customModalProps={{
+          animationType: 'slide',
+          statusBarTranslucent: true,
+        }}
+        customAvoidingViewProps={{
+          enabled: false,
+        }}
+      >
+        <SendListNew refRBSheet={refSendRBSheet} receiveType={receiveType} matchedRate={matchedRateStrike || matchedRate} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
+      </RBSheet>
+
+      <RBSheet
+        ref={refWithdrawRBSheet}
+        customStyles={{
+          wrapper: {
+            backgroundColor: 'transparent',
+          },
+          draggableIcon: {
+            backgroundColor: 'red',
+          },
+          container: {
+            height: heights / 2 + 20,
+            backgroundColor: 'transparent',
+          }
+        }}
+        customModalProps={{
+          animationType: 'slide',
+          statusBarTranslucent: true,
+        }}
+        customAvoidingViewProps={{
+          enabled: false,
+        }}
+      >
+        <WithdrawList 
+          balance={balance}
+          refRBSheet={refWithdrawRBSheet} 
+          receiveType={receiveType} 
+          matchedRate={matchedRate} 
+          currency={currency} 
+          wallet={wallet} 
+          currencyStrike={strikeUser?.[1]?.currency || 'USD'}
+          matchedRateStrike={Number(matchedRateStrike || 0)}
+          recommendedFee={recommendedFee}
+          coldStorageAddress={coldStorageAddress}
+          vaultAddress={vaultAddress}
+          coldStorageWallet={coldStorageWallet} 
+        />
+      </RBSheet>
+
+      <RBSheet
+        ref={refSwapRBSheet}
+        customStyles={{
+          wrapper: {
+            backgroundColor: 'transparent',
+          },
+          draggableIcon: {
+            backgroundColor: 'red',
+          },
+          container: {
+            height: 420,
+            backgroundColor: 'transparent',
+          }
+        }}
+        customModalProps={{
+          animationType: 'slide',
+          statusBarTranslucent: true,
+        }}
+        customAvoidingViewProps={{
+          enabled: false,
+        }}
+      >
+        <SwapSheet 
+          refSwapRBSheet={refSwapRBSheet}
+          user={user}
+          strikeMe={strikeMe}
+          isAuth={isAuth}
+          isStrikeAuth={isStrikeAuth}
+          coinosBalance={balance}
+          strikeBalance={strikeBalance}
+        />
+      </RBSheet>
+      
     </ScreenLayout>
   );
 }

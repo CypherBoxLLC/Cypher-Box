@@ -7,7 +7,7 @@ import { colors, widths, } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import * as Progress from 'react-native-progress';
 // import { Ring, Ring3, } from "@Cypher/assets/gif";
-import { Electrik } from "@Cypher/assets/images";
+import { Electrik, StrikeFull } from "@Cypher/assets/images";
 import Ring from "@Cypher/components/RingEffect";
 // import Ring from "@Cypher/components/RingEffect";
 import Animated, {
@@ -18,9 +18,10 @@ import Animated, {
 } from "react-native-reanimated";
 import { dispatchReset, resetAndNavigate } from "@Cypher/helpers/navigation";
 import { startsWithLn } from "../Send";
+import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 export default function Transaction({navigation, route}: any) {
-    const {matchedRate, type, value, converted, isSats, to, item} = route?.params;
+    const {matchedRate, currency = 'USD', type, value, converted, isSats, to, item} = route?.params;
     const amountSat = isSats ? value : converted;
     const amountUSD = !isSats ? value : converted
     const [response, setResponse] = useState(false);
@@ -55,7 +56,7 @@ export default function Transaction({navigation, route}: any) {
     }, [progress]);
 
     const onPressClickHandler = () => {
-        if(startsWithLn(to) || to.includes("@")){
+        if(startsWithLn(to) || to.includes("@") || to.length == 0) {
             dispatchReset("HomeScreen")
         } else {
             resetAndNavigate('HomeScreen', 'Invoice', {
@@ -95,11 +96,11 @@ export default function Transaction({navigation, route}: any) {
                 <View style={styles.container}>
                     {response &&
                         <Animated.View style={animatedStyle}>
-                            <Text h1 semibold center>Payment Sent</Text>
+                            <Text h1 semibold center>{type == "BUY" ? "Purchase Complete" : type == "SELL" ? "Sale Complete" : "Payment Sent"}</Text>
                             <Text semibold center style={styles.sats}>{amountSat} sats</Text>
-                            <Text subHeader bold center>${amountUSD}</Text>
-                            <View style={styles.extra} />
-                            <Text subHeader bold center>{type !== 'username' ? shortenAddress(to) : to}</Text>
+                            <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
+                            { to?.length > 0 && <View style={styles.extra} /> }
+                            { to.length > 0 && <Text subHeader bold center>{type !== 'username' ? shortenAddress(to) : to}</Text> }
                         </Animated.View>
                     }
                 </View>
@@ -165,12 +166,16 @@ export default function Transaction({navigation, route}: any) {
                     </Animated.View>
                 } */}
                 <View style={styles.extra} />
-                {response &&
+                {(type == "BUY" || type == "SELL") ?
+                    <Image source={StrikeFull} style={styles.strikeLogo} resizeMode="contain" />
+                : to.length > 0 ?
                     <Text semibold center style={styles.text}>Lightning Network</Text>
+                :
+                    <Text semibold center style={styles.text}>Fiat Network</Text>
                 }
                 {response &&
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
-                        title={startsWithLn(to) || to.includes("@") ? 'Home' : 'Payment Details'}
+                        title={startsWithLn(to) || to.includes("@") || to.length == 0 ? 'Home' : 'Payment Details'}
                         disabled={!response}
                         onPress={onPressClickHandler} />
                     // :

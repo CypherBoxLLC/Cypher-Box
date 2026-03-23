@@ -5,7 +5,7 @@ import SimpleToast from "react-native-simple-toast";
 
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
-import { ProgressBar, SavingVault } from "@Cypher/components";
+import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import Clipboard from '@react-native-clipboard/clipboard'
@@ -21,10 +21,10 @@ import BigNumber from "bignumber.js";
 import useAuthStore from "@Cypher/stores/authStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { btc } from "@Cypher/helpers/coinosHelper";
+import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { scanQrHelper } from "../../../helpers/scan-qr";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
-import { ProgressBarColdStorage, ProgressBar5, Check, Edit } from "@Cypher/assets/images";
+import { Check, Edit, StrikeFull, CoinOS } from "@Cypher/assets/images";
 
 const prompt = require('../../../helpers/prompt');
 const btcAddressRx = /^[a-zA-Z0-9]{26,35}$/;
@@ -35,18 +35,15 @@ interface Props {
 }
 
 export const shortenAddress = (address: string) => {
-    // Take the first 6 characters
-    const start = address.substring(0, 6);
-    // Take the last 6 characters
-    const end = address.substring(address.length - 6);
-    // Combine with three dots in the middle
-    return `${start}...${end}`;
+    // Show full address for security
+    return address;
 };
 
 
 export default function ColdStorage({ route, navigation }: Props) {
-    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData = null, to = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
-    const [usd, setUSD] = useState('40');
+    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
+    const [feePrecalc, setFeePrecalc] = useState({ current: null, slowFee: null, mediumFee: null, fastestFee: null });
+    const [usd, setUSD] = useState(inUSD);
     const [sats, setSats] = useState('100K sats  ~$' + usd);
     const [address, setAddress] = useState();
     const [networkFees, setNetworkFees] = useState(5000);
@@ -62,7 +59,6 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [networkFee, setNetworkFee] = useState(null);
     const [customFee, setCustomFee] = useState(null);
     const [isCustomFee, setIsCustomFee] = useState(false);
-    const [feePrecalc, setFeePrecalc] = useState({ current: null, slowFee: null, mediumFee: null, fastestFee: null });
     const [networkTransactionFees, setNetworkTransactionFees] = useState(new NetworkTransactionFee(3, 2, 1));
     const [networkTransactionFeesIsLoading, setNetworkTransactionFeesIsLoading] = useState(false);
     const [addresses, setAddresses] = useState([]);
@@ -76,8 +72,9 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     const [changeAddress, setChangeAddress] = useState();
     const { wallets, setSelectedWalletID, sleep, txMetadata, saveToDisk, isElectrumDisabled } = useContext(BlueStorageContext);
-    const { walletID, coldStorageWalletID } = useAuthStore();
+    const { walletID, coldStorageWalletID, isStrikeAuth, isAuth } = useAuthStore();
     const { navigate } = useNavigation();
+    console.log('inUSDinUSD: ', usd, inUSD)
 
 
     const [feeUSD, setFeeUSD] = useState(1);
@@ -88,7 +85,49 @@ export default function ColdStorage({ route, navigation }: Props) {
     const allBalance = formatBalanceWithoutSuffix(balance, BitcoinUnit.BTC, true);
     const balanceWallet = !wallet?.hideBalance && formatBalance(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const balanceWithoutSuffix = !wallet?.hideBalance && formatBalanceWithoutSuffix(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
-    const primaryColor = vaultTab ? colors?.blueText : colors.green
+    const primaryColor = vaultTab ? colors.coldGreen : colors.green
+    const [selectedItem, setSelectedItem] = useState(isStrikeAuth ? 1 : 2);
+    const [data, setData] = useState([
+      ...(isStrikeAuth ? [{
+        id: 1,
+        name: "Strike",
+        type: 0,
+        icon: StrikeFull,
+        // navigation: {},
+        navigation: {
+          screen: "SendScreen",
+          params: {
+            matchedRate,
+            currency: 'USD',
+            receiveType: false
+          },
+        },
+      }] : []),
+      ...(isAuth ? [{
+        id: 2,
+        name: "CoinOS",
+        type: 0,
+        icon: CoinOS,
+        description:
+          "Receive from wallets and exchanges that support the Lightning Network",
+        navigation: {
+          screen: "SendScreen",
+          params: {
+            matchedRate,
+            currency: 'USD',
+            receiveType: true
+          },
+        },
+      }] : [])
+    ]);
+
+    useEffect(() => {
+      if(feePrecalc?.current && isMaxEdit){
+        setUSD(inUSD - ((Number(feePrecalc?.current || 0) / SATS) * matchedRate))
+      } else {
+        setUSD(inUSD)
+      }
+    }, [inUSD, feePrecalc?.current, isMaxEdit])
 
     const formatFee = fee => formatBalance(fee, feeUnit, true);
 
@@ -113,10 +152,14 @@ export default function ColdStorage({ route, navigation }: Props) {
     }, [isBatch])
 
     useEffect(() => {
-      if(to){
+      if(selectedItem == 1 && toStrike){
+        setDestinationAddress(toStrike)
+      } else if (selectedItem == 2 && to){
+        setDestinationAddress(to)
+      } else if (to) {
         setDestinationAddress(to)
       }
-    }, [to])
+    }, [to, selectedItem])
 
     useEffect(() => {
         if (!wallet) return;
@@ -138,13 +181,9 @@ export default function ColdStorage({ route, navigation }: Props) {
     
     useEffect(() => {
         // check if we have a suitable wallet
-        const suitable = wallets.filter(w => w.chain === Chain.ONCHAIN && w.allowSend());
-        if (suitable.length === 0 && type !== "TOPUP") {
-        Alert.alert(loc.errors.error, loc.send.details_wallet_before_tx);
-        return;
-        }
+        const suitable = wallets.filter(w => w && w.chain === Chain.ONCHAIN);
         console.log('vaultTabvaultTabvaultTab: ', vaultTab)
-        const newWallet = vaultTab ? ((coldStorageWalletID && wallets.find(w => w.getID() === coldStorageWalletID)) || suitable[0]) : ((walletID && wallets.find(w => w.getID() === walletID)) || suitable[0]);
+        const newWallet = vaultTab ? ((coldStorageWalletID && wallets.find(w => w && w.getID() === coldStorageWalletID)) || suitable[0]) : ((walletID && wallets.find(w => w && w.getID() === walletID)) || suitable[0]);
         setFeeUnit(newWallet.getPreferredBalanceUnit());
         setAmountUnit(newWallet.preferredBalanceUnit); // default for whole screen
 
@@ -219,7 +258,7 @@ export default function ColdStorage({ route, navigation }: Props) {
   
       for (const opt of options) {
         let targets = [];
-        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: Number(inUSD).toFixed(4), amountSats: parseInt(Number(inUSD) / Number(matchedRate) * 100000000) }]
+        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: Number(usd).toFixed(4), amountSats: parseInt(Number(usd) / Number(matchedRate) * 100000000) }]
         for (const transaction of addresses) {
           if (transaction.amount === BitcoinUnit.MAX) {
             // single output with MAX
@@ -278,9 +317,9 @@ export default function ColdStorage({ route, navigation }: Props) {
         Keyboard.dismiss();
         setIsLoading(true);
         const requestedSatPerByte = feeRate;
-        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: inUSD == 0 ? 0 : Number(inUSD || 0).toFixed(4), amountSats: parseInt(Number(inUSD || 0) / Number(matchedRate || 0) * 100000000) }]
+        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: usd == 0 ? 0 : Number(usd || 0).toFixed(4), amountSats: parseInt(Number(usd || 0) / Number(matchedRate || 0) * 100000000) }]
         for (const [index, transaction] of addresses.entries()) {
-          console.log('balance: ', balance, ', inUSD: ', inUSD, ', transaction.amountSats: ', transaction.amountSats, parseInt(Number(inUSD) / Number(matchedRate) * 100000000))
+          console.log('balance: ', balance, ', usd: ', usd, ', transaction.amountSats: ', transaction.amountSats, parseInt(Number(usd) / Number(matchedRate) * 100000000))
           let error;
           if (!transaction.amount || transaction.amount < 0 || parseFloat(transaction.amount) === 0) {
             error = loc.send.details_amount_field_is_not_valid;
@@ -337,6 +376,20 @@ export default function ColdStorage({ route, navigation }: Props) {
         if (WatchOnlyWallet.type === wallet.type && !wallet.isHd()) {
           // plain watchonly - just get the address
           change = wallet.getAddress();
+        } else if (WatchOnlyWallet.type === wallet.type && wallet.isHd() && wallet.useWithHardwareWalletEnabled()) {
+          // watch-only HD with hardware wallet - initialize and get change address from internal wallet
+          try {
+            if (!wallet._hdWalletInstance) {
+              wallet.init(); // Initialize the internal HD wallet instance
+            }
+            change = await Promise.race([sleep(2000), wallet.getChangeAddressAsync()]);
+          } catch (e) {
+            console.log('Error getting change address:', e);
+          }
+          
+          if (!change && wallet._hdWalletInstance) {
+            change = wallet._hdWalletInstance.getAddress();
+          }
         } else {
           // otherwise, lets call widely-used getChangeAddressAsync()
           try {
@@ -366,7 +419,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         console.log({ requestedSatPerByte, lutxo: lutxo.length });
 
         const targets = [];
-        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: Number(inUSD).toFixed(4), amountSats: parseInt(Number(inUSD) / Number(matchedRate) * 100000000) }]
+        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: Number(usd).toFixed(4), amountSats: parseInt(Number(usd) / Number(matchedRate) * 100000000) }]
         for (const transaction of addresses) {
           if (transaction.amount === BitcoinUnit.MAX) {
             // output with MAX
@@ -410,8 +463,8 @@ export default function ColdStorage({ route, navigation }: Props) {
             memo: transactionMemo,
             fromWallet: wallet,
             psbt,
-            sats: parseInt(Number(inUSD) / Number(matchedRate) * 100000000),
-            inUSD: Number(inUSD).toFixed(4),
+            sats: parseInt(Number(usd) / Number(matchedRate) * 100000000),
+            inUSD: Number(usd).toFixed(4),
             sentFrom: address,
             destinationAddress: destinationAddress,
             networkFees: isCustomFee ? customFee : selectedFee?.fee,
@@ -425,12 +478,6 @@ export default function ColdStorage({ route, navigation }: Props) {
         }
     
         if (wallet.type === MultisigHDWallet.type) {
-        //   navigation.navigate('PsbtMultisig', {
-        //     memo: transactionMemo,
-        //     psbtBase64: psbt.toBase64(),
-        //     walletID: wallet.getID(),
-        //     launchedBy: routeParams.launchedBy,
-        //   });
           setIsLoading(false);
           return;
         }
@@ -452,9 +499,9 @@ export default function ColdStorage({ route, navigation }: Props) {
         const selectedFee = options.find(item => item.active);
 
         let data = {
-            sats: parseInt(Number(inUSD) / Number(matchedRate) * 100000000),
+            sats: parseInt(Number(usd) / Number(matchedRate) * 100000000),
             coinsSelected: ids.length,
-            inUSD: Number(inUSD).toFixed(4),
+            inUSD: Number(usd).toFixed(4),
             sentFrom: address,
             destinationAddress: destinationAddress,
             networkFees: isCustomFee ? customFee : selectedFee?.fee,
@@ -464,7 +511,7 @@ export default function ColdStorage({ route, navigation }: Props) {
             note: transactionMemo,
             createTransaction: createTransaction,
             memo: transactionMemo,
-            targets: [{ address, value: parseInt(Number(inUSD) / Number(matchedRate) * 100000000) }],
+            targets: [{ address, value: parseInt(Number(usd) / Number(matchedRate) * 100000000) }],
             walletID: wallet.getID(),
             vaultTab: vaultTab,
             satoshiPerByte: requestedSatPerByte,
@@ -474,24 +521,17 @@ export default function ColdStorage({ route, navigation }: Props) {
             psbt,
             capsulesData,
             to,
+            toStrike,
             vaultSend,
             capsuleTotal,
             isBatch,
-            fee: new BigNumber(fee).dividedBy(100000000).toNumber(),          
+            fee: new BigNumber(fee).dividedBy(100000000).toNumber(),
+            matchedRate: matchedRate,
         }
         console.log('data: ', data)
         dispatchNavigate('ConfirmTransction', {
             data: data,
         });
-        // dispatchNavigate('ConfirmTransction', {
-        //     fee: new BigNumber(fee).dividedBy(100000000).toNumber(),
-        //     memo: transactionMemo,
-        //     walletID: wallet.getID(),
-        //     tx: tx.toHex(),
-        //     recipients,
-        //     satoshiPerByte: requestedSatPerByte,
-        //     psbt,
-        // });
         setIsLoading(false);
     };
     
@@ -507,67 +547,13 @@ export default function ColdStorage({ route, navigation }: Props) {
         }
         if (btcAddressRx.test(destinationAddress) || destinationAddress.startsWith('bc1') || destinationAddress.startsWith('BC1')) {
             createTransaction()
-            // const selectedFee = options.find(item => item.active);
-            // const requestedSatPerByte = Number(feeRate);
-            // const lutxo = utxo || wallet.getUtxo();
-            // const change = await getChangeAddressAsync();
-            // const targets = [{ address, value: parseInt(Number(inUSD) / Number(matchedRate) * 100000000) }]
-
-            // const { tx, outputs, psbt, fee } = wallet.createTransaction(
-            //     lutxo,
-            //     targets,
-            //     requestedSatPerByte,
-            //     change,
-            //     isTransactionReplaceable ? HDSegwitBech32Wallet.defaultRBFSequence : HDSegwitBech32Wallet.finalRBFSequence,
-            // );
-        
-            // txMetadata[tx.getId()] = {
-            // txhex: tx.toHex(),
-            // memo: transactionMemo,
-            // };
-            // await saveToDisk();
-        
-            // let recipients = outputs.filter(({ address }) => address !== change);
-          
-            // if (recipients.length === 0) {
-            //     // special case. maybe the only destination in this transaction is our own change address..?
-            //     // (ez can be the case for single-address wallet when doing self-payment for consolidation)
-            //     recipients = outputs;
-            // }
-          
-            // let data = {
-            //     sats: parseInt(Number(inUSD) / Number(matchedRate) * 100000000),
-            //     coinsSelected: ids.length,
-            //     inUSD: Number(inUSD).toFixed(4),
-            //     sentFrom: address,
-            //     destinationAddress: destinationAddress,
-            //     networkFees: isCustomFee ? customFee : selectedFee?.fee,
-            //     serviceFees: serviceFees,
-            //     isCustomFee: isCustomFee,
-            //     totalFees: totalFees,
-            //     note: transactionMemo,
-            //     createTransaction: createTransaction,
-            //     memo: transactionMemo,
-            //     targets: [{ address, value: parseInt(Number(inUSD) / Number(matchedRate) * 100000000) }],
-            //     walletID: wallet.getID(),
-            //     satoshiPerByte: requestedSatPerByte,
-            //     payjoinUrl,
-            //     tx: tx.toHex(),
-            //     recipients,
-            //     psbt,
-            //     fee: new BigNumber(fee).dividedBy(100000000).toNumber(),          
-            // }
-            // console.log('data: ', data)
-            // dispatchNavigate('ConfirmTransction', {
-            //     data: data,
-            // });
         } else {
             SimpleToast.show("Destination Address is not valid", SimpleToast.SHORT)
         }
     }
 
     const editAmountClickHandler = () => {
-        navigation.push('EditAmount', {isEdit: true, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData, to, vaultSend, setSatsEdit: setSats_, title, capsuleTotal, isBatch });
+        navigation.push('EditAmount', {isEdit: true, currency, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData, to, toStrike, vaultSend, setSatsEdit: setSats_, title, capsuleTotal, isBatch });
     }
 
     const editFeesClickHandler = () => {
@@ -575,9 +561,9 @@ export default function ColdStorage({ route, navigation }: Props) {
     }
 
     const setSats_ = (sats: any, usd: any) => {
-        setUSD(usd);
-        const value = Number(sats) / 10000;
-        setSats(value + 'K sats ~$' + usd);
+        // setUSD(usd);
+        // const value = Number(sats) / 10000;
+        // setSats(value + 'K sats ~$' + usd);
         setSatsEditable(true);
     }
 
@@ -639,6 +625,15 @@ export default function ColdStorage({ route, navigation }: Props) {
         }
         console.log('newAddress: ', newAddress)
         setAddress(newAddress);
+
+        // Subscribe new address to GroundControl for push notifications
+        try {
+            const GroundControl = require('../../../blue_modules/groundControl');
+            await GroundControl.majorTomToGroundControl([newAddress], [], []);
+            console.log('[GroundControl] Subscribed new address:', newAddress);
+        } catch (notifyErr) {
+            console.warn('[GroundControl] Failed to subscribe address:', notifyErr);
+        }
     }
 
     useFocusEffect(
@@ -735,32 +730,34 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     const addressHandler = () => {
       console.log('to: ', to)
-        dispatchNavigate('WalletAddresses', {
-          walletID: wallet.getID(),
-          isTouchable: true,
-          wallet, 
-          vaultTab, 
-          utxo, 
-          ids, 
-          maxUSD, 
-          inUSD, 
-          total, 
-          matchedRate, 
-          capsulesData, 
-          to, 
-          vaultSend, 
-          title, 
-          type, 
-          isBatch,
-          capsuleTotal
-        });
+      dispatchNavigate('WalletAddresses', {
+        walletID: wallet.getID(),
+        isTouchable: true,
+        wallet, 
+        vaultTab, 
+        utxo, 
+        ids, 
+        maxUSD, 
+        usd, 
+        total, 
+        matchedRate, 
+        capsulesData, 
+        to, 
+        toStrike,
+        vaultSend, 
+        title, 
+        type, 
+        isBatch,
+        currency,
+        capsuleTotal
+      });
     }
 
-    console.log('to: ', to)
+    console.log('to: ', to, toStrike, selectedItem, vaultSend)
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
-                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to ? "Top-up Transaction" : "Construct transaction"}</Text>
+                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : "Construct transaction"}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -776,14 +773,14 @@ export default function ColdStorage({ route, navigation }: Props) {
                 /> */}
                 <View style={styles.recipientView}>
                     {/* <TouchableOpacity onPress={coinThresholdClickHandler}> */}
-                    {to ?
+                    {to || toStrike ?
                       <View>
                         <Text bold style={styles.coinselected}>Capsules selected:</Text>
                         <View style={{flexDirection: 'row', alignItems: 'center', marginLeft: 2, marginTop: 18 }}>
                           <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', maxWidth: '72%'}}>
                             {capsulesData && capsulesData.map((item, i) => (
-                              <View style={styles.tabs}>
-                                <ProgressBar image={vaultTab ? ProgressBarColdStorage : ProgressBar5} />
+                              <View key={item.id || i} style={styles.tabs}>
+                                <VaultCapsules item={item.value} />
                               </View>
                             ))}
                           </View>
@@ -793,7 +790,26 @@ export default function ColdStorage({ route, navigation }: Props) {
                         </View>
                       </View>
                     :
-                      <Text bold style={styles.coinselected}>Coins selected: {ids.length} coins</Text>
+                      <View>
+                        <Text bold style={styles.coinselected}>Capsules selected:</Text>
+                        {capsulesData && capsulesData.length > 0 ? (
+                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                            {capsulesData.map((item: any, i: number) => (
+                              <View key={item.id || i} style={styles.tabs}>
+                                <VaultCapsules item={item.value} />
+                              </View>
+                            ))}
+                          </View>
+                        ) : (
+                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                            {Array(ids.length).fill(0).map((_, i) => (
+                              <View key={i} style={styles.tabs}>
+                                <VaultCapsules item={0} />
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
                     }
                     {/* </TouchableOpacity> */}
                     {isBatch ?
@@ -813,9 +829,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                             marginTop: 10, 
                             paddingVertical: 8, 
                             paddingHorizontal: 25, 
-                            borderWidth: 2, 
-                            borderColor: vaultTab ? colors.blueText : colors.greenShadow, 
-                            borderRadius: 15,
                             // width: '96%'
                           }}>
                             <Text style={StyleSheet.flatten({
@@ -825,7 +838,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                               marginTop: 3,
                               marginRight: 15,
                               color: colors.white
-                            })}>{((Number(inUSD || 0) / Number(matchedRate || 0) || 0).toFixed(8)) + ' BTC'}</Text>
+                            })}>{((Number(usd || 0) / Number(matchedRate || 0) || 0).toFixed(8)) + ' BTC'}</Text>
                             <Image source={Edit} style={styles.editImage} resizeMode='contain' />
                           </TouchableOpacity>
                           <Text style={{
@@ -833,20 +846,48 @@ export default function ColdStorage({ route, navigation }: Props) {
                               marginTop: 10, 
                               marginLeft: 15,
                           }}>
-                            {'~$' + Number(inUSD).toFixed(2)}
+                            {'~$' + Number(usd).toFixed(2)}
                           </Text>
                         </View>
                       </View>
                     :
                       <View style={styles.priceView}>
                           <View>
-                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to ? "Top-up amount" : "Recipient will get:"}</Text>
-                              <Text bold style={[styles.value, vaultTab && {color: colors.blueText}]}>{((Number(inUSD || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(inUSD).toFixed(2)}</Text>
+                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : "Recipient will get:"}</Text>
+                              <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
+                              <View style={{flexDirection: 'row', marginTop: 8}}>
+                                  <View style={styles.tabs}>
+                                      <VaultCapsules item={((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000)} />
+                                  </View>
+                              </View>
                           </View>
                           <TouchableOpacity style={[styles.editAmount, { borderColor: satsEditable ? primaryColor : '#B6B6B6' }]} onPress={editAmountClickHandler}>
                               <Text>Edit amount</Text>
                           </TouchableOpacity>
                       </View>                    
+                    }
+                    {capsuleTotal > 0 && !isBatch &&
+                        (() => {
+                            const sendAmountSats = (Number(usd || 0) / Number(matchedRate || 0)) * 100000000;
+                            const feeSats = feePrecalc.current || 0;
+                            const changeSats = capsuleTotal - sendAmountSats - feeSats;
+                            if (changeSats > 0) {
+                                return (
+                                    <View style={[styles.priceView, {marginTop: 10}]}>
+                                        <View>
+                                            <Text style={styles.recipientTitle}>Change:</Text>
+                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
+                                            <View style={{flexDirection: 'row', marginTop: 8}}>
+                                                <View style={styles.tabs}>
+                                                    <VaultCapsules item={changeSats} />
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </View>
+                                );
+                            }
+                            return null;
+                        })()
                     }
                     {address && !isBatch &&
                         <View style={styles.priceView}>
@@ -856,14 +897,69 @@ export default function ColdStorage({ route, navigation }: Props) {
                             </View>
                         </View>
                     }
-                    {to ?
+                    {to || toStrike ?
                         <View style={styles.priceView}>
                           <View>
                               {!isBatch &&
-                                <Text style={styles.recipientTitle}>Sent to:</Text>
+                                <>
+                                  <Text style={[styles.recipientTitle, !vaultSend ? {marginBottom: -10} : {}]}>Sent to:</Text>
+                                  {!vaultSend &&
+                                    <View style={[styles.cardListContainer]}>
+                                      {data?.map((item) => (
+                                        <GradientView
+                                          onPress={() => setSelectedItem(item.id)}
+                                          style={styles.cardGradientStyle}
+                                          linearGradientStyle={styles.cardOuterShadow}
+                                          topShadowStyle={[
+                                            styles.cardTopShadow,
+                                            (selectedItem == null || selectedItem != item?.id) && { shadowColor : colors.gray.disable }
+                                          ]}
+                                          bottomShadowStyle={[
+                                            styles.cardInnerShadow,
+                                            (selectedItem == null || selectedItem != item?.id) && { shadowColor : colors.gray.disable }
+                                          ]}
+                                          linearGradientStyleMain={styles.cardGradientMainStyle}
+                                          gradiantColors={[colors.black.bg, colors.black.bg]}
+                                        >
+                                          <View
+                                            style={{
+                                              flexDirection: item?.type !== 0 ? "column" : "row",
+                                              justifyContent:
+                                                item?.type !== 0 ? "center" : "center",
+                                              alignItems: item?.type !== 0 ? "center" : "center",
+                                            }}
+                                          >
+                                            {item?.type !== 0 && (
+                                              <Image
+                                                source={item?.icon}
+                                                style={
+                                                  item?.id == 3
+                                                    ? styles.coldVaultIconImage
+                                                    : styles.vaultIconImage
+                                                }
+                                                resizeMode="contain"
+                                              />
+                                            )}
+                                            {item?.type === 0 ? (
+                                              <Image
+                                                source={item?.icon}
+                                                style={styles.logoImage}
+                                                resizeMode="contain"
+                                              />
+                                            ) : (
+                                              <Text h2 bold>
+                                                {item?.name}
+                                              </Text>
+                                            )}
+                                          </View>
+                                        </GradientView>
+                                      ))}
+                                    </View>
+                                  }
+                                </>
                               }
                               {!vaultSend &&
-                                <Text style={{...styles.fees, color: colors.pink.main}} italic>My Coinos Lightning Account</Text>
+                                <Text style={{...styles.fees, color: colors.pink.main}} italic>{selectedItem == 1 ? "My Strike Lightning Account" : "My Coinos Lightning Account"}</Text>
                               }
                               {isBatch ?
                                 <View style={{
@@ -878,9 +974,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     marginTop: 10, 
                                     paddingVertical: 8, 
                                     paddingHorizontal: 25, 
-                                    borderWidth: 2, 
-                                    borderColor: vaultTab ? colors.blueText : colors.greenShadow, 
-                                    borderRadius: 15,
                                     width: '96%'
                                   }}>
                                     <Text italic style={StyleSheet.flatten({
@@ -888,13 +981,13 @@ export default function ColdStorage({ route, navigation }: Props) {
                                       width: '95%',
                                       fontSize: 16,
                                       marginTop: 3,
-                                      color: vaultTab ? colors.blueText : colors.greenShadow
+                                      color: vaultTab ? colors.coldGreen : colors.greenShadow
                                     })}>{"Vault Address: "+shortenAddress(to)}</Text>
                                     <Image source={Edit} style={styles.editImage} resizeMode='contain' />
                                   </TouchableOpacity>
                                 </View>
                                 :
-                                  <Text style={{...styles.fees, color: vaultSend ? colors.blueText : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(to)}</Text>
+                                  <Text style={{...styles.fees, color: vaultSend ? colors.coldGreen : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
                               }
                           </View>
                         </View>
@@ -911,7 +1004,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                               // await scanButtonTapped();
                               Keyboard.dismiss();
                               // @ts-ignore: Fix later
-                              scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, inUSD, total, matchedRate }).then(processAddressData);
+                              scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, usd, total, matchedRate, ...route?.params }).then(processAddressData);
                           }}>
                               <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
                           </TouchableOpacity>
@@ -928,15 +1021,17 @@ export default function ColdStorage({ route, navigation }: Props) {
                         </TouchableOpacity>
                       </>
                     }
-                    <View style={styles.priceView}>
+                    <View style={{marginTop: 15}}>
                         <View>
                             <Text style={styles.recipientTitle}>Network fee:</Text>
                             
-                            <Text bold style={styles.fees}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}</Text>
+                            <Text bold style={styles.fees}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text bold style={styles.fees}>~ {isCustomFee ? customFee + " sats/vByte" :  getCurrentFee().fee + " sats"}</Text> */}
                         </View>
                         {visibleSelection &&
-                            <View style={[styles.feesDropDown, vaultTab && {borderColor: colors.blueText}]}>
+                            <>
+                            <TouchableOpacity activeOpacity={1} onPress={() => setVisibleSelection(false)} style={{position: 'absolute', top: -1000, bottom: -1000, left: -1000, right: -1000, zIndex: 99}} />
+                            <View style={[styles.feesDropDown, vaultTab && {borderColor: colors.coldGreen}, {zIndex: 100}]}>
                                 {options.map((item, index) => {
                                     console.log('item: ', item)
                                     if(item?.fee){
@@ -972,7 +1067,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                             setCustomFee(f);
                                             setIsCustomFee(true);
                                         },
-                                        wallet, utxo, ids, inUSD, total, matchedRate
+                                        wallet, utxo, ids, usd, total, matchedRate
                                     })
 
                                     setVisibleSelection(false)
@@ -980,8 +1075,9 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     <Text bold style={selectedFees === 3 ? StyleSheet.flatten([styles.border, { paddingHorizontal: 20 }]) : {}}>Customize</Text>
                                 </TouchableOpacity> 
                             </View>
+                            </>
                         }
-                        <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6' }]}
+                        <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6', marginStart: 0, marginTop: 10, alignSelf: 'flex-start' }]}
                             onPress={editFeesClickHandler}>
                             <Text style={{ marginStart: 10, }}>{isCustomFee ? "Customize" : getCurrentFee().label}</Text>
                             <View style={{ marginHorizontal: 10 }}>
@@ -1010,7 +1106,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                         style={[styles.noteInput, { borderColor: transactionMemo?.length > 0 ? primaryColor : '#B6B6B6' }]}
                     />
                 </View>
-                <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, vaultTab && {backgroundColor: colors.blueText}]}>
+                <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, vaultTab && {backgroundColor: colors.coldGreen}]}>
                     <Text h3>Next</Text>
                 </TouchableOpacity>
             </View>

@@ -14,7 +14,7 @@ interface Props {
 }
 
 export default function Invoice({ route }: Props) {
-    const { item } = route?.params;
+    const { item, receiveType } = route?.params;
     const [isLoading, setIsLoading] = useState(true);
     const [historyDetail, setHistoryDetail] = useState<any>();
     const { id: transactionId, matchedRate } = route?.params;

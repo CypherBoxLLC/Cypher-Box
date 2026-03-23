@@ -1,4 +1,4 @@
-import { colors, widths, shadow, heights } from "@Cypher/style-guide";
+import { colors, heights, shadow, widths } from "@Cypher/style-guide";
 import { ImageStyle, StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 interface Style {
@@ -42,8 +42,10 @@ interface Style {
     shadow10: any;
     shadow11: any;
     shadowBottom: any;
+    savingHeight?: ViewStyle;
     shadowView: ViewStyle;
     shadowTopBottom: any;
+    shadowTopBottom2: any;
     shadowBottomBottom: any;
     shadowViewBottom: ViewStyle;
     height: ViewStyle;
@@ -71,7 +73,7 @@ interface Style {
     closeView: ViewStyle;
     bottom: ViewStyle;
     line: ViewStyle;
-
+    descption: TextStyle;
     price: TextStyle;
     priceusd: TextStyle;
     totalsats: TextStyle;
@@ -92,7 +94,20 @@ interface Style {
     createVaultText: TextStyle;
     advancedText: TextStyle;
     createVaultContainer: ViewStyle;
-
+    addView: ViewStyle;
+    subView: ViewStyle;
+    add: TextStyle;
+    sub: TextStyle;
+    addSats: TextStyle;
+    refresh: ViewStyle;
+    shadowTop2: ViewStyle;
+    shadowBottom2: ViewStyle;
+    circularView: ViewStyle;
+    innerContainer: ViewStyle;
+    checkingaccContainer: ViewStyle;
+    plusImage: ImageStyle;
+    linearFirstStyle: ViewStyle;
+    linearSecondStyle: ViewStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -102,15 +117,56 @@ export default StyleSheet.create<Style>({
         justifyContent: 'space-between',
         paddingHorizontal: 20,
         paddingBottom: 60,
+        overflow: 'visible'
     },
     container2: {
         flex: 1,
     },
-    container3: {
-        height: 62,
-        marginTop: 12.5,
+    addView: {
+        height: 40,
+        width: 40,
+        marginTop: 10,
         marginBottom: 16,
+        borderRadius: 10,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderColor: colors.pink.default
+    },
+    subView: {
+        height: 40,
+        width: 40,
+        marginTop: 10,
+        marginLeft: 10,
+        marginBottom: 16,
+        borderRadius: 10,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderColor: colors.pink.default
+    },
+    sub: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#ffffff'
+    },
+    add: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#ffffff'
+    },
+    addSats: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#ffffff'
+    },
+    container3: {
+        // height: 62,
+        // marginTop: 10,
+        // marginBottom: 16,
         opacity: 0.5,
+        justifyContent: 'center',
+        // backgroundColor:'red'
     },
     container4: {
         backgroundColor: colors.gray.dark,
@@ -124,10 +180,17 @@ export default StyleSheet.create<Style>({
         marginTop: 10,
         alignSelf: 'center'
     },
+    descption: {
+        fontFamily: 'Archivo-SemiBold',
+        color: colors.pink.light,
+        margin: 8,
+        fontSize: 13,
+    },
     alreadyView: {
         flexDirection: 'row',
         marginTop: 10,
-        alignSelf: 'center'
+        alignSelf: 'center',
+        height: 25,
     },
     title: {
         flexDirection: 'row',
@@ -168,6 +231,8 @@ export default StyleSheet.create<Style>({
     middle: {
         flexDirection: 'row',
         alignItems: 'center',
+        alignSelf:'flex-start',
+        justifyContent:'stretch',
         flex: 1
     },
     text: {
@@ -189,7 +254,7 @@ export default StyleSheet.create<Style>({
         width: 50,
         height: 50,
         left: -5,
-        top: 10
+        top: 10,
     },
     arrow2: {
         width: 30,
@@ -303,7 +368,7 @@ export default StyleSheet.create<Style>({
     },
     shadowTop: {
         shadowOffset: { width: 2, height: 2 },
-        shadowOpacity: 1,
+        shadowOpacity: 0.7,
         shadowColor: colors.white,
         shadowRadius: 2,
         borderRadius: 24,
@@ -348,11 +413,24 @@ export default StyleSheet.create<Style>({
         paddingStart: 20,
         paddingEnd: 10,
     },
+    shadowTopBottom2: {
+        shadowOffset: { width: 2, height: 2 },
+        shadowRadius: 2,
+        shadowOpacity: 1,
+        shadowColor: '#ffffff',
+        borderRadius: 25,
+        width: widths - 40,
+        height: 128,
+        backgroundColor: '#111111',
+        padding: 15,
+        paddingStart: 20,
+        paddingEnd: 10,
+    },
     shadowBottom: {
         shadowOffset: { width: -3, height: -3 },
         shadowOpacity: 1,
-        shadowColor: '#DBDBDB',
-        shadowRadius: 2,
+        shadowColor: '#000000',
+        shadowRadius: 5,
         borderRadius: 25,
         width: widths - 40,
         height: 128,
@@ -371,13 +449,13 @@ export default StyleSheet.create<Style>({
         position: 'absolute',
     },
     shadowBottomBottom: {
-        shadowOffset: { width: -2, height: -2 },
+        shadowOffset: { width: -3, height: -3 },
         shadowOpacity: 1,
-        shadowColor: "#242424",
+        shadowColor: '#000000',
         shadowRadius: 2,
         borderRadius: 25,
         width: widths - 40,
-        height: 113,
+        height: 128,
         justifyContent: 'center',
         position: 'absolute',
     },
@@ -530,6 +608,7 @@ export default StyleSheet.create<Style>({
     bottom: {
         // opacity: 0.5,
         marginTop: 15,
+        // top: heights * 0.01,
         top: heights * 0.06
     },
     line: {
@@ -590,7 +669,7 @@ export default StyleSheet.create<Style>({
         shadowOffset: { width: 2, height: 2 },
         shadowRadius: 2,
         shadowOpacity: 2,
-        shadowColor: colors.greenShadow,
+        shadowColor: '#555555',
         borderRadius: 25,
         width: (widths / 2) - 60,
         height: 47,
@@ -600,7 +679,7 @@ export default StyleSheet.create<Style>({
         shadowOffset: { width: -2, height: -2 },
         shadowRadius: 2,
         shadowOpacity: 0.64,
-        shadowColor: colors.greenShadowLight,
+        shadowColor: '#333333',
         borderRadius: 25,
         width: (widths / 2) - 60,
         height: 47,
@@ -624,6 +703,9 @@ export default StyleSheet.create<Style>({
     savingVault: {
         width: widths - 40,
     },
+    savingHeight: {
+        height: 200
+    },
     bitcoinText: {
         fontSize: 16,
     },
@@ -644,11 +726,11 @@ export default StyleSheet.create<Style>({
     },
     createVaultContainer: {
         // top: '-10%',
-        paddingHorizontal: 5,
+        // paddingHorizontal: 5,
     },
     createVault: {
         borderRadius: 25,
-        marginTop: 20,
+        marginTop: 13,
         height: 132,
         justifyContent: 'center',
         alignItems: 'center',
@@ -658,5 +740,70 @@ export default StyleSheet.create<Style>({
     },
     advancedText: {
         margin: 10
-    }
+    },
+    refresh: {
+        height: 47,
+        width: 47,
+    },
+    shadowTop2: {
+        shadowOffset: { width: 2, height: 2 },
+        shadowRadius: 2,
+        shadowOpacity: 2,
+        shadowColor: colors.pink.shadowTop,
+        borderRadius: 25,
+        width: 47,
+        height: 47,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    shadowBottom2: {
+        shadowOffset: { width: -2, height: -2 },
+        shadowRadius: 2,
+        shadowOpacity: 0.64,
+        shadowColor: colors.pink.shadowBottom,
+        borderRadius: 25,
+        width: 47,
+        height: 47,
+        justifyContent: 'center',
+        position: 'absolute',
+    },
+    circularView: {
+        flex: 1,
+        paddingVertical: 40,
+        marginTop: 20,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    innerContainer: {
+        marginTop: 16,
+        shadowColor: '#040404CC',
+        shadowOffset: { width: 8, height: 8 },
+        shadowOpacity: 0.80,
+        shadowRadius: 16,
+        //elevation: 8,
+    },
+    checkingaccContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        // flex: 1,
+        marginTop: 15,
+        // marginBottom: 10,
+        justifyContent: 'space-between',
+    },
+    plusImage: {
+        width: 10,
+        height: 17,
+    },
+    linearFirstStyle: {
+        height: 32,
+        width: widths / 3 + 15,
+        borderRadius: 10,
+        marginEnd: 5,
+    },
+    linearSecondStyle: {
+        height: 30,
+        width: widths / 3 + 13,
+        borderRadius: 10,
+        flexDirection: 'row'
+    },
 });

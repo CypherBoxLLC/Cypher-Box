@@ -11,8 +11,7 @@ export type AuthStateType = {
     reserveAmount: number;
     coldStorageWalletID: string | undefined;
     vaultTab: boolean;
-    userCreds: {email: string, password: string, isRememberMe: boolean} | undefined;
-    setUserCreds: (state: {email: string, password: string, isRememberMe: boolean} | undefined) => void;
+    // userCreds removed — credentials now stored in secure keychain
     setVaultTab: (state: boolean) => void;
     setReserveAmount: (state: number) => void;
     setAuth: (state: boolean | undefined) => void;
@@ -22,6 +21,37 @@ export type AuthStateType = {
     setUser: (state: any) => void;
     setWithdrawThreshold: (state: any) => void;
     clearAuth: () => void;
+    clearStrikeAuth: () => void;
+
+    //strike
+    strikeMe: any | null;
+    walletTab: boolean;
+    isStrikeAuth: boolean;
+    strikeUser: any | null;
+    strikeCurrency: string; // User's Strike account currency (USD, EUR, GBP, AUD, etc.)
+    allBTCWallets: string[];
+    strikeToken: string | null;
+    reserveStrikeAmount: number;
+    withdrawStrikeThreshold: any | null;
+    matchedRateStrike: number;
+    setMatchedRateStrike: (state: number) => void;
+    setStrikeMe: (state: any) => void;
+    setStrikeUser: (state: any) => void;
+    setStrikeCurrency: (state: string) => void;
+    setAllBTCWallets: (state: string[]) => void;
+    setWalletTab: (state: boolean) => void;
+    setStrikeToken: (token: string) => void;
+    setReserveStrikeAmount: (state: number) => void;
+    setWithdrawStrikeThreshold: (state: any) => void;
+    setStrikeAuth: (state: boolean | undefined) => void;
+
+    // first-time tracking
+    FirstTimeLightning: boolean;
+    FirstTimeCoinOS: boolean;
+    hasSeenCustodialWarning: boolean;
+    setFirstTimeLightning: (state: boolean) => void;
+    setFirstTimeCoinOS: (state: boolean) => void;
+    setHasSeenCustodialWarning: (state: boolean) => void;
 };
 
 const createAuthStore = (
@@ -30,31 +60,69 @@ const createAuthStore = (
 ): AuthStateType => ({
     user: null,
     token: null,
-    withdrawThreshold: 2000000,
+    allBTCWallets: [],
+    withdrawThreshold: 500000,
     reserveAmount: 100000,
     isAuth: undefined,
     walletID: undefined,
     vaultTab: false,
-    userCreds: undefined,
+    // userCreds removed — stored in keychain
     coldStorageWalletID: undefined,
+    matchedRateStrike: 0,
+    FirstTimeLightning: true,
+    FirstTimeCoinOS: true,
+    hasSeenCustodialWarning: false,
+    setMatchedRateStrike: (state: number) => set({ matchedRateStrike: state }),
+    setAllBTCWallets: (state: string[]) => set({ allBTCWallets: state }),
     setAuth: (state: boolean | undefined) => set({ isAuth: state }),
     setVaultTab: (state: boolean) => set({ vaultTab: state }),
-    setUserCreds: (state: {email: string, password: string, isRememberMe: boolean} | undefined) => set( { userCreds: state }),
     setToken: (token: string) => set({ token: token }),
     setUser: (state: any) => set({ user: state }),
     setWalletID: (state: string | undefined) => set({walletID: state}),
     setColdStorageWalletID: (state: string | undefined) => set({coldStorageWalletID: state}),
     setReserveAmount: (state: any) => set({ reserveAmount: state }),
     setWithdrawThreshold: (state: any) => set({ withdrawThreshold: state }),
+    setFirstTimeLightning: (state: boolean) => set({ FirstTimeLightning: state }),
+    setFirstTimeCoinOS: (state: boolean) => set({ FirstTimeCoinOS: state }),
+    setHasSeenCustodialWarning: (state: boolean) => set({ hasSeenCustodialWarning: state }),
     clearAuth: () =>
         set({
             vaultTab: false,
             isAuth: undefined,
             user: null,
             token: null,
-            withdrawThreshold: 2000000,
-            reserveAmount: 100000,
-        })
+            allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'COINOS'),
+            // Keep withdrawThreshold and reserveAmount — don't reset on logout
+        }),
+    //strike
+    strikeMe: null,
+    strikeUser: null,
+    strikeCurrency: 'USD',
+    walletTab: false,
+    strikeToken: null,
+    isStrikeAuth: false,
+    reserveStrikeAmount: 100000,
+    withdrawStrikeThreshold: 1000000,
+    setStrikeMe: (state: any) => set({ strikeMe: state }),
+    setStrikeUser: (state: any) => set({ strikeUser: state }),
+    setStrikeCurrency: (state: string) => set({ strikeCurrency: state }),
+    setWalletTab: (state: boolean) => set({ walletTab: state }),
+    setStrikeToken: (token: string) => set({ strikeToken: token }),
+    setStrikeAuth: (state: boolean | undefined) => set({ isStrikeAuth: state }),
+    setReserveStrikeAmount: (state: number) => set({ reserveStrikeAmount: state }),
+    setWithdrawStrikeThreshold: (state: any) => set({ withdrawStrikeThreshold: state }),
+    clearStrikeAuth: () =>
+        set({
+            strikeMe: null,
+            strikeUser: null,
+            strikeCurrency: 'USD',
+            walletTab: false,
+            strikeToken: null,
+            matchedRateStrike: 0,
+            allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'STRIKE'),
+            isStrikeAuth: undefined,
+            // Keep reserveStrikeAmount and withdrawStrikeThreshold — don't reset on logout
+        }),
 });
 
 const useAuthStore = create<AuthStateType>()(

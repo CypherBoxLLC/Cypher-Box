@@ -10,13 +10,15 @@ import { colors } from "@Cypher/style-guide";
 interface Props {
     matchedRate: number
     item: any;
+    receiveType: boolean;
     onPressHandler(item: any): void;
 }
 
-export default function Items({ matchedRate, item, onPressHandler }: Props) {
+export default function Items({ matchedRate, receiveType, item, onPressHandler }: Props) {
 
-    const satsAmount = item.amount.toString().replace('-', ''); // Adjusted for negative sign
-    const amountSign = item.amount < 0 ? "-" : "+";
+    const BTCToSats = receiveType ? 0 : (Number(item.amount?.amount) * 100000000).toFixed(2);
+    const satsAmount = receiveType ? item.amount.toString().replace('-', '') : BTCToSats.toString().replace('-', ''); // Adjusted for negative sign
+    const amountSign = receiveType ? item.amount < 0 ? "-" : "+" : Number(BTCToSats) < 0 ? "-" : "+";
     const currency = btc(1);
     const dollarAmount = satsAmount * matchedRate * currency;
 
@@ -24,7 +26,7 @@ export default function Items({ matchedRate, item, onPressHandler }: Props) {
       color: item.amount < 0 ? colors.red : colors.green,
     };
 
-    return <TouchableOpacity style={styles.shadowView} onPress={() => onPressHandler(item)}>
+    return <TouchableOpacity disabled={receiveType ? false : true} style={styles.shadowView} onPress={() => onPressHandler(item)}>
         <Shadow
             style={styles.shadowTop}
             inner
@@ -41,13 +43,24 @@ export default function Items({ matchedRate, item, onPressHandler }: Props) {
                                 <Image source={Socked} style={styles.image} />
                         }
                     </View>
-                    <Text bold style={styles.des}>                      
-                    {item.amount > 0
-                        ? item.confirmed
-                          ? "Received"
-                          : "Pending"
-                        : "Sent"}
-                    </Text>
+                    {receiveType ? 
+                        <Text bold style={styles.des}>
+                            {item.amount > 0
+                                ? item.confirmed
+                                ? "Received"
+                                : "Pending"
+                                : "Sent"}
+                        </Text>
+                    :
+                        <Text bold style={styles.des}>
+                            {item.amount?.amount > 0
+                                ? item.state === "UNPAID" ? "Pending"
+                                : item.state === "PAID" ? "Received"
+                                : item.state === "PENDING" ? "Pending"
+                                : "Cancelled" : ""
+                            }
+                        </Text>
+                    }
                     <Text h3 style={{ color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }}>{amountSign+satsAmount} sats</Text>
                 </View>
                 <Text style={StyleSheet.flatten([styles.text, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }])}>{'$'+dollarAmount.toFixed(2)}</Text>

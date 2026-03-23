@@ -17,11 +17,12 @@ interface Props {
     refRBSheet: any;
     matchedRate: number;
     currency: string;
+    receiveType: boolean
 }
 
-export default function ReceivedList({ refRBSheet, matchedRate, currency }: Props) {
-    const {user} = useAuthStore();
-    const [data, setData] = useState([
+export default function ReceivedList({ refRBSheet, receiveType, matchedRate, currency }: Props) {
+    const {user, strikeMe} = useAuthStore();
+    const [data, setData] = useState(receiveType ? [
         {
             id: 1,
             name: 'Bitcoin-Lightning Address',
@@ -67,13 +68,50 @@ export default function ReceivedList({ refRBSheet, matchedRate, currency }: Prop
                 }
             },
         },
-    ]);
+    ]
+    :
+    [
+        {
+            id: 1,
+            name: 'Bitcoin-Lightning Address',
+            type: 0,
+            description: strikeMe?.username+'@strike.me',
+            navigation: {},
+        },
+        {
+            id: 2,
+            name: 'Bitcoin-Lightning invoice',
+            type: 0,
+            description: 'Receive from wallets and exchanges that support the Lightning Network',
+            navigation: {
+                screen: 'CreateInvoice',
+                params: {
+                    matchedRate, currency, receiveType
+                }
+            }
+        },
+        {
+            id: 4,
+            name: 'Bitcoin Network Address',
+            type: 2,
+            description: 'To deposit sizable amounts of bitcoin from the main network',
+            navigation: {
+                screen: 'QrScreen',
+                params: {
+                    isBitcoinQr: true,
+                    type: "bitcoin",
+                    receiveType
+                }
+            },
+        },
+    ]
+    );
 
     const onPress = (item: any) => { 
         refRBSheet?.current?.close();
 
         if(item?.id == 1){
-            Clipboard.setString(user+'@coinos.io');
+            Clipboard.setString(receiveType ? user+'@coinos.io' : strikeMe?.username+'@strike.me');
             SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
         
         }

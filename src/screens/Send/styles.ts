@@ -22,6 +22,7 @@ interface Style {
     deleteButton: ViewStyle;
     deleteIcon: ImageStyle;
     inputStyle: ImageStyle;
+    btn: ViewStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -130,4 +131,15 @@ export default StyleSheet.create<Style>({
         width: 50,
         height: 30,
     },
+    btn: {
+        // width: 148,
+        paddingHorizontal: 12,
+        height: 38,
+        backgroundColor: colors.pink.default,
+        borderRadius: 15,
+        alignItems: 'center',
+        justifyContent: 'center',
+        alignSelf: 'center',
+    }
+
 })

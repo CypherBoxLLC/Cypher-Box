@@ -16,9 +16,10 @@ interface Props {
     textStyle?: TextStyle;
     imageStyle?: ImageStyle;
     color_?: any;
+    tabColor_?: any;
 }
 
-export default function GradientTab({ isSats, setIsSats, tab1, tab2, firstTabImg, secondTabImg, isTextAfter = false, textStyle, imageStyle, color_ }: Props) {
+export default function GradientTab({ isSats, setIsSats, tab1, tab2, firstTabImg, secondTabImg, isTextAfter = false, textStyle, imageStyle, color_,tabColor_ = [colors.pink.extralight, colors.pink.default] }: Props) {
     return (
         <GradientCard
             colors_={color_ ? color_ : ['#383A46', '#464D6840']}
@@ -27,6 +28,7 @@ export default function GradientTab({ isSats, setIsSats, tab1, tab2, firstTabImg
                 <View style={styles.main}>
                     {isSats ?
                         <GradientCard
+                            colors_={tabColor_}
                             // colors_={isSats ? color_ ? color_ : ['#383A46', '#464D6840'] : [colors.primary, colors.primary]}
                             style={styles.linearGradientInside}
                             linearStyle={styles.linearStyle}
@@ -46,6 +48,7 @@ export default function GradientTab({ isSats, setIsSats, tab1, tab2, firstTabImg
                     }
                     {!isSats ?
                         <GradientCard
+                            colors_={tabColor_}
                             // colors_={!isSats ? color_ ? color_ : ['#464D6840', '#383A46'] : [colors.primary, colors.primary]}
                             style={styles.linearGradientInside}
                             linearStyle={styles.linearStyle}

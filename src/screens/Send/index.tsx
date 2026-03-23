@@ -10,10 +10,11 @@ import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { CustomKeyboard, GradientCard, GradientInput, GradientInputNew } from "@Cypher/components";
 import { colors, } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { bitcoinRecommendedFee, getInvoiceByLightening } from "../../api/coinOSApis";
+import { bitcoinRecommendedFee, getInvoiceByLightening, getMe } from "../../api/coinOSApis";
+import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
 import { emailRegex } from "@Cypher/helpers/regex";
-import { btc } from "@Cypher/helpers/coinosHelper";
+import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 
 
 export function startsWithLn(str: string) {
@@ -24,6 +25,40 @@ const validateEmail = (email: string) => {
     return emailRegex.test(email);
 }
 
+const validateAddress = (address: string): { valid: boolean; type: string; warning: string } => {
+    if (!address || address.length === 0) return { valid: true, type: '', warning: '' };
+    
+    const trimmed = address.trim();
+    
+    // Lightning invoice
+    if (trimmed.toLowerCase().startsWith('lnbc') || trimmed.toLowerCase().startsWith('lntb') || trimmed.toLowerCase().startsWith('lnurl')) {
+        return { valid: true, type: 'lightning', warning: '' };
+    }
+    
+    // Bitcoin onchain (mainnet)
+    if (trimmed.startsWith('bc1') || trimmed.startsWith('1') || trimmed.startsWith('3')) {
+        return { valid: true, type: 'bitcoin', warning: '' };
+    }
+    
+    // Liquid address
+    if (trimmed.startsWith('lq1') || trimmed.startsWith('VJL') || trimmed.startsWith('ex1') || trimmed.startsWith('Gz')) {
+        return { valid: true, type: 'liquid', warning: '' };
+    }
+    
+    // CoinOS username (email-like)
+    if (trimmed.includes('@')) {
+        return { valid: true, type: 'username', warning: '' };
+    }
+    
+    // Lightning invoice (generic ln prefix)
+    if (trimmed.toLowerCase().startsWith('ln')) {
+        return { valid: true, type: 'lightning', warning: '' };
+    }
+    
+    // Unrecognized
+    return { valid: false, type: 'unknown', warning: 'Unrecognized address format. Supported: Bitcoin (bc1.., 1.., 3..), Lightning (ln..), Liquid, or CoinOS username' };
+}
+
 export default function SendScreen({ navigation, route }: any) {
     const info = route.params;
     const [isSats, setIsSats] = useState(true);
@@ -32,13 +67,30 @@ export default function SendScreen({ navigation, route }: any) {
     const [sender, setSender] = useState(info?.to || info?.destination || '');
     const senderRef = useRef<TextInput>(null);
 
+    console.log('SendScreen info:', JSON.stringify({ matchedRate: info?.matchedRate, currency: info?.currency, receiveType: info?.receiveType }));
     const [convertedRate, setConvertedRate] = useState(0.00);
     const [isLoading, setIsLoading] = useState(false);
     const [recommendedFee, setRecommendedFee] = useState<any>();
     const [selectedFee, setSelectedFee] = useState<number | null>(null);
     const [isScannerActive, setIsScannerActive] = useState(false);
     const [addressFocused, setAddressFocused] = useState(false);
+    const [maxUSD, setMaxUSD] = useState(0);
     const [isPaste, setIsPaste] = useState(info?.destination && info?.destination?.startsWith('ln') ? true : false)
+    const [maxBalance, setMaxBalance] = useState<number>(0);
+
+    useEffect(() => {
+        const fetchBalance = async () => {
+            try {
+                const me = await getMe();
+                if (me?.balance !== undefined) {
+                    setMaxBalance(Number(me.balance));
+                }
+            } catch (e) {
+                console.log('Could not fetch balance for max');
+            }
+        };
+        if (info?.receiveType) fetchBalance(); // Only for CoinOS
+    }, []);
 
     useEffect(() => {
         if (info?.isWithdrawal) {
@@ -46,6 +98,14 @@ export default function SendScreen({ navigation, route }: any) {
             setUSD(info?.converted)
         }
     }, [info?.isWithdrawal])
+
+    useEffect(() => {
+        if(info?.fiatAmount){
+            let sats = Number(info?.fiatAmount / info?.matchedRate  * 100000000)
+            setUSD(String(Number(info?.fiatAmount).toFixed(2)))
+            setSats(String(sats))
+        }
+    }, [info])
 
     useEffect(() => {
         if (!sender.startsWith('ln') && !sender.includes('@') && !recommendedFee) {
@@ -59,7 +119,7 @@ export default function SendScreen({ navigation, route }: any) {
             if(info.destination){
                 setTimeout(() => handleLighteningInvoice(), 500)
             }
-            handleLighteningInvoice()
+            // handleLighteningInvoice()
         }
     }, [sender, isPaste, info?.destination])
 
@@ -102,25 +162,25 @@ export default function SendScreen({ navigation, route }: any) {
         try {
             const response = await getInvoiceByLightening(sender);
             console.log('response getInvoiceByLightening: ', response)
-                const dollarAmount = (response.amount_msat / 1000) * info?.matchedRate * btc(1);
-                console.log('dollarAmount: ', dollarAmount)
-                if(dollarAmount){
-                    dispatchNavigate('ReviewPayment', {
-                        ...info,
-                        value: response.amount_msat / 1000,
-                        converted: dollarAmount,
-                        isSats: isSats,
-                        to: info?.isWithdrawal ? info?.to : sender,
-                        fees: 0,
-                        type: 'lightening',
-                        description: response?.description,
-                        matchedRate: info?.matchedRate,
-                        currency: info?.curreny,
-                        recommendedFee: recommendedFee || 0
-                    });    
-                }
+            const dollarAmount = (response.amount_msat / 1000) * info?.matchedRate * btc(1);
+            console.log('dollarAmount: ', dollarAmount)
+            if(dollarAmount){
+                dispatchNavigate('ReviewPayment', {
+                    ...info,
+                    value: response.amount_msat / 1000,
+                    converted: dollarAmount,
+                    isSats: isSats,
+                    to: info?.isWithdrawal ? info?.to : sender,
+                    fees: 0,
+                    type: 'lightening',
+                    description: response?.description,
+                    matchedRate: info?.matchedRate,
+                    currency: info?.currency,
+                    recommendedFee: recommendedFee || 0
+                });    
+            }
         } catch (error) {
-            console.error('Error Send Lightening:', error);
+            console.error('Error handleLighteningInvoice:', error);
             SimpleToast.show('Failed to generate lightening. Please try again.', SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
@@ -129,8 +189,33 @@ export default function SendScreen({ navigation, route }: any) {
 
     const handleSendNext = async () => {
         setIsLoading(true);
-        const amount = isSats ? sats : usd;
-        if (sender == '' && (!info?.to || info?.to == '')) {
+        const amount = info?.receiveType ? isSats ? usd : sats : isSats ? sats : usd;
+        
+        // Validate address format before proceeding
+        if (sender && !info?.isWithdrawal && !info?.fiatAmount) {
+            const validation = validateAddress(sender);
+            if (!validation.valid) {
+                SimpleToast.show('Unsupported address format. Use Bitcoin, Lightning, Liquid, or CoinOS username.', SimpleToast.LONG);
+                setIsLoading(false);
+                return;
+            }
+        }
+        if(info?.fiatAmount) {
+            dispatchNavigate('ReviewPayment', {
+                ...info,
+                value: sats,
+                converted: usd,
+                isSats: isSats,
+                to: info?.isWithdrawal ? info?.to : sender,
+                fees: 0,
+                type: info?.fiatType,
+                matchedRate: info?.matchedRate,
+                currency: info?.currency,
+                recommendedFee,
+                receiveType: info?.receiveType
+            });
+            setIsLoading(false);
+        } else if (sender == '' && (!info?.to || info?.to == '')) {
             SimpleToast.show('Please enter an address or username', SimpleToast.SHORT);
             setIsLoading(false);
             return;
@@ -145,12 +230,13 @@ export default function SendScreen({ navigation, route }: any) {
                     fees: 0,
                     type: 'lightening',
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
-                    recommendedFee
+                    currency: info?.currency,
+                    recommendedFee,
+                    receiveType: info?.receiveType
                 });
 
             } catch (error) {
-                console.error('Error Send Lightening:', error);
+                console.error('Error handleSendNext:', error);
                 SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
             } finally {
                 setIsLoading(false);
@@ -162,7 +248,7 @@ export default function SendScreen({ navigation, route }: any) {
                 return;
             }
 
-            const feeForBamskki = (0.1 / 100) * Number(amount);
+            const feeForBamskki = info?.receiveType ? (0.1 / 100) * Number(amount) : 0;
             const remainingAmount = Number(amount) - feeForBamskki;
             console.log('feeForBamskki: ', feeForBamskki)
             console.log('remainingAmount: ', remainingAmount)
@@ -183,11 +269,13 @@ export default function SendScreen({ navigation, route }: any) {
                     isSats: isSats,
                     to: info?.isWithdrawal ? info?.to : sender,
                     fees: 0,
+                    total: info?.total,
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
+                    currency: info?.currency,
                     type: 'bitcoin',
                     feeForBamskki,
-                    recommendedFee
+                    recommendedFee,
+                    receiveType: info?.receiveType
                 });
             } catch (error) {
                 console.error('Error Send to bitcoin:', error);
@@ -211,16 +299,18 @@ export default function SendScreen({ navigation, route }: any) {
                     fees: 0,
                     type: 'username',
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
-                    recommendedFee
+                    currency: info?.currency,
+                    recommendedFee,
+                    receiveType: info?.receiveType
                 });
             } catch (error) {
-                console.error('Error Send Lightening:', error);
+                console.error('Error handleSendNext:', error);
                 SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
             } finally {
                 setIsLoading(false);
             }
-        } else { //liquid address
+        } else if (info?.receiveType) { //liquid address
+            console.log('Sending to liquid address: ', info?.receiveType)
             if (sats == '') {
                 SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
                 setIsLoading(false);
@@ -245,10 +335,11 @@ export default function SendScreen({ navigation, route }: any) {
                     to: info?.isWithdrawal ? info?.to : sender,
                     fees: 0,
                     matchedRate: info?.matchedRate,
-                    currency: info?.curreny,
+                    currency: info?.currency,
                     type: 'liquid',
                     feeForBamskki,
-                    recommendedFee
+                    recommendedFee,
+                    receiveType: info?.receiveType
                 });
             } catch (error) {
                 console.error('Error Send to liquid:', error);
@@ -256,6 +347,10 @@ export default function SendScreen({ navigation, route }: any) {
             } finally {
                 setIsLoading(false);
             }
+        } else {
+            SimpleToast.show('Please enter a valid address, invoice, or username', SimpleToast.SHORT);
+            setIsLoading(false);
+            return;
         }
     };
 
@@ -278,7 +373,55 @@ export default function SendScreen({ navigation, route }: any) {
         setIsScannerActive(false); // Close scanner after successful scan
     };
 
-    console.log('sender: ', sender, info)
+    useEffect(() => {
+        if(info?.editAmount){
+
+        }
+    }, [info?.editAmount])
+
+    const maxSendClickHandler = () => {
+        info?.editAmount && info?.editAmount();
+        const amount = info?.receiveType ? isSats ? usd : sats : isSats ? sats : usd;
+        const feeForBamskki = info?.receiveType ? (0.1 / 100) * Number(amount) : 0;
+        const remainingAmount = Number(amount) - feeForBamskki;
+        console.log('feeForBamskki: ', feeForBamskki)
+        console.log('remainingAmount: ', remainingAmount)
+        if (remainingAmount <= 0) {
+            SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            if (info && info?.editAmount) {
+                info?.editAmount()
+            }
+            dispatchNavigate('ReviewPayment', {
+                ...info,
+                value: info?.total * SATS,
+                converted: (info?.total * info?.matchedRate).toFixed(2), //convert in ysd
+                isSats: true,
+                to: info?.isWithdrawal ? info?.to : sender,
+                fees: 0,
+                isMaxUSDSelected: true,
+                total: info?.total,
+                matchedRate: info?.matchedRate,
+                currency: info?.currency,
+                type: 'bitcoin',
+                feeForBamskki,
+                recommendedFee,
+                receiveType: info?.receiveType
+            });
+        } catch (error) {
+            console.error('Error Send to bitcoin:', error);
+            SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    console.log('senderrr: ', sender, isLoading || ((!startsWithLn(sender)) ? (sats?.length == 0 || sender?.length == 0) : (sender?.length == 0)))
+    console.log('info: ', info)
     return (
         <>
             {isScannerActive ? (
@@ -303,15 +446,24 @@ export default function SendScreen({ navigation, route }: any) {
                         <View style={styles.container}>
                             <GradientInputNew 
                                 isSats={isSats} 
-                                sats={sats} 
+                                sats={sats.length == 0 ? '0' : sats} 
                                 setSats={setSats} 
-                                usd={usd}
+                                usd={usd.length == 0 ? '0' : usd}
                                 _colors={[colors.pink.extralight, colors.pink.default]}
                                 showTitle={false}
+                                currency={info?.currency}
                             />
 
+                            {info?.isWithdrawal && 
+                                <>
+                                    <TouchableOpacity onPress={maxSendClickHandler} style={[styles.btn]}>
+                                        <Text bold style={{ fontSize: 13 }}>Send Max: {info?.total} BTC</Text>
+                                    </TouchableOpacity>
+                                </>
+                            }
+
                             {/* <GradientInput isSats={isSats} sats={sats} setSats={setSats} usd={usd} /> */}
-                            {!info?.isWithdrawal &&
+                            {(!info?.isWithdrawal && !info?.fiatAmount) &&
                                 <>
                                     {/* <Text h2 style={styles.destination}>Destination</Text> */}
                                     <View style={styles.priceView}>
@@ -347,6 +499,11 @@ export default function SendScreen({ navigation, route }: any) {
                                                 </TouchableOpacity>
                                             )}
                                         </GradientCard>
+                                        {validateAddress(sender).warning !== '' && (
+                                            <Text style={{ color: '#FFB020', fontSize: 12, marginTop: 6, marginHorizontal: 10, textAlign: 'center' }}>
+                                                ⚠️ {validateAddress(sender).warning}
+                                            </Text>
+                                        )}
                                         <View style={styles.buttonsContainer}>
                                             <GradientCard
                                                 style={styles.linearGradientInside}
@@ -373,14 +530,15 @@ export default function SendScreen({ navigation, route }: any) {
                         </View >
                         <CustomKeyboard
                             title="Next"
-                            prevSats={info?.value ? String(info?.value) : false}
+                            prevSats={info?.value ? String(info?.value) : info?.fiatAmount ? String(info?.fiatAmount / info?.matchedRate  * 100000000) : false}
                             onPress={handleSendNext}
-                            disabled={isLoading || ((!startsWithLn(sender)) ? (sats?.length == 0 && sender?.length == 0) : sender?.length == 0)}
+                            disabled={isLoading || ((!startsWithLn(sender)) ? (sats?.length == 0 || sender?.length == 0) : (sender?.length == 0))}
                             setSATS={setSats}
                             setUSD={setUSD}
                             setIsSATS={setIsSats}
                             matchedRate={info?.matchedRate}
                             currency={info?.currency}
+                            maxBalance={maxBalance}
                         />
                     </ScreenLayout >
                 )

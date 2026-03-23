@@ -15,6 +15,7 @@ import { getTransactionHistory } from "@Cypher/api/coinOSApis";
 import screenHeight from "@Cypher/style-guide/screenHeight";
 import { btc, formatNumber } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
+import { getInvoices } from "@Cypher/api/strikeAPIs";
 
 interface Transaction {
     date: string;
@@ -25,33 +26,25 @@ interface Transaction {
 }
 
 const data = [
-    {
-        sats: 2000000,
-    },
-    {
-        sats: 3000000,
-    },
-    {
-        sats: 4000000,
-    },
-    {
-        sats: 5000000,
-    },
-    {
-        sats: 6000000,
-    },
-    {
-        sats: 7000000,
-    },
-    {
-        sats: 8000000,
-    },
-    {
-        sats: 9000000,
-    },
-    {
-        sats: 10000000,
-    }
+    { sats: 100000 },
+    { sats: 200000 },
+    { sats: 300000 },
+    { sats: 400000 },
+    { sats: 500000 },
+    { sats: 600000 },
+    { sats: 700000 },
+    { sats: 800000 },
+    { sats: 900000 },
+    { sats: 1000000 },
+    { sats: 2000000 },
+    { sats: 3000000 },
+    { sats: 4000000 },
+    { sats: 5000000 },
+    { sats: 6000000 },
+    { sats: 7000000 },
+    { sats: 8000000 },
+    { sats: 9000000 },
+    { sats: 10000000 },
 ];
 
 const reserveData = [
@@ -118,13 +111,13 @@ const reserveData = [
 ];
 
 export default function CheckAccount({ navigation, route }: any) {
-    const { withdrawThreshold, reserveAmount, setWithdrawThreshold, setReserveAmount } = useAuthStore();
+    const { withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount, setWithdrawThreshold, setWithdrawStrikeThreshold, setReserveStrikeAmount, setReserveAmount } = useAuthStore();
+    const { matchedRate, receiveType } = route.params;
     const [isTab, setIsTab] = useState(true);
-    const [value, setValue] = useState(Number(withdrawThreshold));
+    const [value, setValue] = useState(receiveType ? Number(withdrawThreshold) : Number(withdrawStrikeThreshold));
     const [isError, setIsError] = useState(false);
     const [isErrorReserve, setIsErrorReserve] = useState(false);
-    const [reserveAmt, setReserveAmt] = useState(Number(reserveAmount));
-    const { matchedRate } = route.params;
+    const [reserveAmt, setReserveAmt] = useState(receiveType ? Number(reserveAmount) : Number(reserveStrikeAmount));
     const [isLoading, setIsLoading] = useState(false);
     const [payments, setPayments] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
@@ -135,24 +128,43 @@ export default function CheckAccount({ navigation, route }: any) {
     const currency = btc(1);
 
     useEffect(() => {
-        loadPayments();
-    }, [offset]);
+        if(receiveType)
+            loadPayments();
+        else
+            loadStrikePayments();
+    }, [offset, receiveType]);
 
     useEffect(() => {
-        if (withdrawThreshold < data[0].sats || withdrawThreshold > data[data.length - 1].sats) {
-            setIsError(true);
+        if(receiveType){
+            if (withdrawThreshold < data[0].sats || withdrawThreshold > data[data.length - 1].sats) {
+                setIsError(true);
+            } else {
+                setIsError(false);
+            }
         } else {
-            setIsError(false);
+            if (withdrawStrikeThreshold < data[0].sats || withdrawStrikeThreshold > data[data.length - 1].sats) {
+                setIsError(true);
+            } else {
+                setIsError(false);
+            }
         }
-    }, [withdrawThreshold])
+    }, [withdrawThreshold, withdrawStrikeThreshold, receiveType])
 
     useEffect(() => {
-        if (reserveAmount < reserveData[0].sats || reserveAmount > reserveData[reserveData.length - 1].sats) {
-            setIsErrorReserve(true);
+        if(receiveType) {
+            if (reserveAmount < reserveData[0].sats || reserveAmount > reserveData[reserveData.length - 1].sats) {
+                setIsErrorReserve(true);
+            } else {
+                setIsErrorReserve(false);
+            }
         } else {
-            setIsErrorReserve(false);
+            if (reserveStrikeAmount < reserveData[0].sats || reserveStrikeAmount > reserveData[reserveData.length - 1].sats) {
+                setIsErrorReserve(true);
+            } else {
+                setIsErrorReserve(false);
+            }
         }
-    }, [reserveAmount])
+    }, [reserveAmount, reserveStrikeAmount, receiveType])
 
 
     const [isModalVisible, setModalVisible] = useState(false);
@@ -165,7 +177,8 @@ export default function CheckAccount({ navigation, route }: any) {
     const onPressHandler = (item: any) => {
         dispatchNavigate('Invoice', {
             item: item,
-            matchedRate
+            matchedRate,
+            receiveType
         });
     }
 
@@ -176,7 +189,7 @@ export default function CheckAccount({ navigation, route }: any) {
             console.log('index: ', currentIndex - 1);
             console.log('temp: ', newValue);
             setValue(Number(newValue));
-            setWithdrawThreshold(newValue);
+            receiveType ? setWithdrawThreshold(newValue) : setWithdrawStrikeThreshold(newValue);
         } else {
             SimpleToast.show("Withdraw Threshold cannot be less than 2M", SimpleToast.SHORT);
         }
@@ -189,7 +202,7 @@ export default function CheckAccount({ navigation, route }: any) {
             console.log('index: ', currentIndex + 1);
             console.log('temp: ', newValue);
             setValue(Number(newValue));
-            setWithdrawThreshold(newValue);
+            receiveType ? setWithdrawThreshold(newValue) : setWithdrawStrikeThreshold(newValue);
         } else {
             SimpleToast.show("Withdraw Threshold cannot be greater than 9M", SimpleToast.SHORT);
         }
@@ -202,7 +215,7 @@ export default function CheckAccount({ navigation, route }: any) {
             console.log('index: ', currentIndex - 1);
             console.log('temp: ', newValue);
             setReserveAmt(Number(newValue));
-            setReserveAmount(newValue);
+            receiveType ? setReserveAmount(newValue) : setReserveStrikeAmount(newValue);
         } else {
             SimpleToast.show("Reserve Amount cannot be less than 100K", SimpleToast.SHORT);
         }
@@ -215,20 +228,20 @@ export default function CheckAccount({ navigation, route }: any) {
             console.log('index: ', currentIndex + 1);
             console.log('temp: ', newValue);
             setReserveAmt(Number(newValue));
-            setReserveAmount(newValue);
+            receiveType ? setReserveAmount(newValue) : setReserveStrikeAmount(newValue);
         } else {
             SimpleToast.show("Reserve Amount cannot be greater than 2M", SimpleToast.SHORT);
         }
     }
 
     const selectClickHandler = (val: number) => {
-        setWithdrawThreshold(val)
+        receiveType ? setWithdrawThreshold(val) : setWithdrawStrikeThreshold(val);
         setValue(Number(val));
         setModalVisible(false);
     }
 
     const selectRAClickHandler = (val: number) => {
-        setReserveAmount(val)
+        receiveType ? setReserveAmount(val) : setReserveStrikeAmount(val);
         setReserveAmt(Number(val));
         setModalRAVisible(false);
     }
@@ -245,22 +258,42 @@ export default function CheckAccount({ navigation, route }: any) {
     }
 
     const onSelect = (value: number, index: number) => {
-        if (index == 0) {
-            if (withdrawThreshold < data[0].sats || withdrawThreshold > data[data.length - 1].sats) {
-                setIsError(true);
+        if(receiveType){
+            if (index == 0) {
+                if (withdrawThreshold < data[0].sats || withdrawThreshold > data[data.length - 1].sats) {
+                    setIsError(true);
+                } else {
+                    setIsError(false);
+                }
+                setValue(Number(value));
+                setWithdrawThreshold(value)
             } else {
-                setIsError(false);
+                if (reserveAmount < reserveData[0].sats || reserveAmount > reserveData[reserveData.length - 1].sats) {
+                    setIsErrorReserve(true);
+                } else {
+                    setIsErrorReserve(false);
+                }
+                setReserveAmt(Number(value));
+                receiveType ? setReserveAmount(value) : setReserveStrikeAmount(value)
             }
-            setValue(Number(value));
-            setWithdrawThreshold(value)
         } else {
-            if (reserveAmount < reserveData[0].sats || reserveAmount > reserveData[reserveData.length - 1].sats) {
-                setIsErrorReserve(true);
+            if (index == 0) {
+                if (withdrawStrikeThreshold < data[0].sats || withdrawStrikeThreshold > data[data.length - 1].sats) {
+                    setIsError(true);
+                } else {
+                    setIsError(false);
+                }
+                setValue(Number(value));
+                setWithdrawStrikeThreshold(value)
             } else {
-                setIsErrorReserve(false);
+                if (reserveStrikeAmount < reserveData[0].sats || reserveStrikeAmount > reserveData[reserveData.length - 1].sats) {
+                    setIsErrorReserve(true);
+                } else {
+                    setIsErrorReserve(false);
+                }
+                setReserveAmt(Number(value));
+                setReserveStrikeAmount(value)
             }
-            setReserveAmt(Number(value));
-            setReserveAmount(value)
         }
     }
 
@@ -281,6 +314,20 @@ export default function CheckAccount({ navigation, route }: any) {
             setIsLoading(false);
             setIsFetchingMore(false);
             setIsRefreshing(false);
+        }
+    };
+
+    const loadStrikePayments = async () => {
+        setIsLoading(true);
+        try {
+            const paymentList = await getInvoices();
+            let payments = paymentList.items;
+            payments = payments.filter((item: any) => item.state !== "UNPAID");
+            setPayments(payments);
+        } catch (error) {
+            console.error('Error loading payments:', error);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -351,21 +398,23 @@ export default function CheckAccount({ navigation, route }: any) {
                                         </View>
                                     )}
                                     refreshControl={
-                                        <RefreshControl
-                                            refreshing={isRefreshing}
-                                            onRefresh={handleRefresh}
-                                            tintColor="white"
-                                        />
+                                        receiveType ? (
+                                            <RefreshControl
+                                                refreshing={isRefreshing}
+                                                onRefresh={handleRefresh}
+                                                tintColor="white"
+                                            />
+                                        ) : null
                                     }
                                     keyExtractor={(item, index) => index.toString()}
-                                    renderItem={({ item }) => <Items matchedRate={matchedRate} item={item} onPressHandler={onPressHandler} />}
+                                    renderItem={({ item }) => <Items matchedRate={matchedRate} item={item} receiveType={receiveType} onPressHandler={onPressHandler} />}
                                     renderSectionHeader={({ section: { title } }) => <Header title={title} />}
                                 // invertStickyHeaders
                                 />
                             </View>
                         )}
                         <View style={styles.bottomView}>
-                            <Image source={CoinOS} />
+                            <Image source={receiveType ? CoinOS : require("../../../img/Strike.png")} />
                         </View>
                     </View>
                     :
@@ -380,24 +429,20 @@ export default function CheckAccount({ navigation, route }: any) {
                         </Text>
                         {/* <GradientText style={{ fontSize: 14 }}>Learn more</GradientText> */}
                         <View style={styles.priceView}>
-                            <GradientCard disabled
-                                colors_={isError ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
-                                style={styles.linearGradientStroke} linearStyle={styles.linearGradient}>
-                                <View style={styles.background}>
-                                    <TouchableOpacity onPress={() => setModalVisible(true)}>
+                            <TouchableOpacity onPress={() => setModalVisible(true)} activeOpacity={0.7}>
+                                <GradientCard disabled
+                                    colors_={isError ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
+                                    style={styles.linearGradientStroke} linearStyle={styles.linearGradient}>
+                                    <View style={styles.background}>
                                         <Text bold style={{ fontSize: 18 }}>{formatNumber(value)}</Text>
-                                    </TouchableOpacity>
-                                    <View style={styles.straightLine} />
-                                    <View>
-                                        <TouchableOpacity onPress={increaseClickHandler}>
+                                        <View style={styles.straightLine} />
+                                        <View>
                                             <Icon name="angle-up" type="font-awesome" color="#FFFFFF" />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity onPress={decreaseClickHandler}>
                                             <Icon name="angle-down" type="font-awesome" color="#FFFFFF" />
-                                        </TouchableOpacity>
+                                        </View>
                                     </View>
-                                </View>
-                            </GradientCard>
+                                </GradientCard>
+                            </TouchableOpacity>
                             <Text style={styles.text}>Sats</Text>
                         </View>
                         <Modal isVisible={isModalVisible}>
@@ -428,28 +473,20 @@ export default function CheckAccount({ navigation, route }: any) {
                             {/* <Image source={Information} style={styles.image} /> */}
                         </View>
                         <View style={styles.priceView}>
-                            <GradientCard disabled
-                                colors_={isErrorReserve ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
-                                style={StyleSheet.flatten([styles.linearGradientStroke, { height: 60, width: '60%' }])} linearStyle={StyleSheet.flatten([styles.linearGradient, { height: 60 }])}>
-                                <View style={[styles.background, {
-                                    // alignItems: 'center',
-                                    justifyContent: 'flex-end',
-                                    paddingEnd: 30,
-                                }]}>
-                                    <TouchableOpacity onPress={() => setModalRAVisible(true)}>
+                            <TouchableOpacity onPress={() => setModalRAVisible(true)} activeOpacity={0.7}>
+                                <GradientCard disabled
+                                    colors_={isErrorReserve ? [colors.yellow2, colors.yellow2] : ['#FFFFFF', '#B6B6B6']}
+                                    style={StyleSheet.flatten([styles.linearGradientStroke, { height: 60 }])} linearStyle={StyleSheet.flatten([styles.linearGradient, { height: 60 }])}>
+                                    <View style={styles.background}>
                                         <Text bold style={{ fontSize: 18 }}>{formatNumber(reserveAmt)}</Text>
-                                    </TouchableOpacity>
-                                    <View style={styles.straightLine} />
-                                    <View>
-                                        <TouchableOpacity onPress={increaseClickHandler_}>
+                                        <View style={styles.straightLine} />
+                                        <View>
                                             <Icon name="angle-up" type="font-awesome" color="#FFFFFF" />
-                                        </TouchableOpacity>
-                                        <TouchableOpacity onPress={decreaseClickHandler_}>
                                             <Icon name="angle-down" type="font-awesome" color="#FFFFFF" />
-                                        </TouchableOpacity>
+                                        </View>
                                     </View>
-                                </View>
-                            </GradientCard>
+                                </GradientCard>
+                            </TouchableOpacity>
                             <Text style={styles.text}>Sats</Text>
                         </View>
                         <Text center style={styles.usd}>${(reserveAmt * matchedRate * currency).toFixed(2)}</Text>

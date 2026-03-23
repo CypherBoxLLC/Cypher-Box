@@ -78,13 +78,21 @@ android {
         applicationId "io.cypherbox.btc"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "0.0.4"
+        versionCode 8
+        versionName "0.0.8"
         testBuildType System.getProperty('testBuildType', 'debug')
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         missingDimensionStrategy 'react-native-camera', 'general' //add this line
         manifestPlaceholders["appAuthRedirectScheme"] = "cypherbox" // Add this line
+    }
 
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+        resources {
+            excludes += ['**/*.png', '**/*.xml']
+        }
     }
 
     signingConfigs {

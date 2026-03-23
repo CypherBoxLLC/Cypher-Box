@@ -49,7 +49,7 @@ type Fees = {
 
 export default function ReviewWithdrawal({ route }: Props) {
     const { value, converted, isSats, to, type, isWithrawal } = route?.params;
-    const { withdrawThreshold, reserveAmount } = useAuthStore();
+    const { withdrawThreshold, reserveAmount, strikeUser } = useAuthStore();
     const [note, setNote] = useState('');
     const [balance, setBalance] = useState(0);
     const [currency, setCurrency] = useState('$');
@@ -226,7 +226,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     SimpleToast.show(response, SimpleToast.SHORT);
                 }
             } catch (error) {
-                console.error('Error Send Lightening:', error);
+                console.error('Error handleSendSats:', error);
                 SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
             } finally {
                 setIsSendLoading(false);
@@ -294,7 +294,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     SimpleToast.show(response, SimpleToast.SHORT);
                 }
             } catch (error) {
-                console.error('Error Send Lightening:', error);
+                console.error('Error handleSendSats:', error);
                 SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
             } finally {
                 setIsSendLoading(false);
@@ -549,9 +549,6 @@ export default function ReviewWithdrawal({ route }: Props) {
                 </GradientCard>
             </View>
             <View style={styles.container}>
-                <Text bold style={styles.alert}>
-                    Causion: Bitcoin payments are irriversable
-                </Text>
                 <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
                 {/* <GradientButton style={styles.invoiceButton} texStyle={{ fontFamily: 'Lato-Medium', }} title="Send" onPress={sendClickHandler} /> */}
             </View>

@@ -31,7 +31,7 @@ import BigNumber from "bignumber.js";
 import { WatchOnlyWallet } from "../../../class";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
 
-export default function Settings({wallet, to, matchedRate}: any) {
+export default function Settings({wallet, to, matchedRate, toStrike}: any) {
     // const [right] = useState(new Animated.Value(0));
     const firstView = useSharedValue(1);
     const secondView = useSharedValue(0);
@@ -263,7 +263,7 @@ export default function Settings({wallet, to, matchedRate}: any) {
         setIsLoading(true);
         await new Promise(resolve => setTimeout(resolve, 100)); // sleep for animations
         console.log('routeName: ', routeName)
-        const scannedData = await scanQrHelper(navigation.navigate, routeName, { wallet, matchedRate, to });
+        const scannedData = await scanQrHelper(navigation.navigate, routeName, { wallet, matchedRate });
         if (!scannedData) return setIsLoading(false);
     
         let tx;
@@ -440,10 +440,15 @@ export default function Settings({wallet, to, matchedRate}: any) {
                         </TouchableOpacity>
                         <View style={styles.line} />
                         {wallet && !vaultTab && wallet.allowCosignPsbt() && (
-                            <TouchableOpacity onPress={handlePsbtSign}>
+                            <TouchableOpacity onPress={() => handlePsbtSign()}>
                                 <Text bold style={styles.text}>{loc.send.psbt_sign}</Text>
                             </TouchableOpacity>
                         )}
+                        {/* {wallet && !vaultTab && wallet.allowCosignPsbt() && (
+                            <TouchableOpacity onPress={() => handlePsbtSign(toStrike)}>
+                                <Text bold style={styles.text}>{"Sign a transaction for Strike"}</Text>
+                            </TouchableOpacity>
+                        )} */}
                         {wallet && vaultTab && wallet.type === WatchOnlyWallet.type && wallet.isHd() && (
                             <>
                                 <TouchableOpacity onPress={importTransaction}>

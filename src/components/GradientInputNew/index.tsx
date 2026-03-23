@@ -4,6 +4,7 @@ import GradientCard from "../GradientCard";
 import styles from "./styles";
 import { colors } from "@Cypher/style-guide";
 import { Input, Text } from "@Cypher/component-library";
+import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
     sats: string;
@@ -14,6 +15,7 @@ interface Props {
     _colors?: string[];
     isFeeesRate?: boolean;
     showTitle?: boolean;
+    currency?: string
 }
 
 const GradientInputNew = ({
@@ -24,7 +26,8 @@ const GradientInputNew = ({
     isSats,
     title,
     isFeeesRate = false,
-    showTitle = true
+    showTitle = true,
+    currency
 }: Props) => {
     const gradientColors = sats ? _colors : [colors.gray.thin, colors.gray.thin2];
 
@@ -47,7 +50,7 @@ const GradientInputNew = ({
                     <Text
                         style={isSats ? styles.dollar : styles.btc}
                     >
-                        {isSats ? title ? 'BTC' : 'sats' : '$'}
+                        {isSats ? title ? 'BTC' : 'sats' : getStrikeCurrency(currency || 'USD')}
                     </Text>
                 )}
             </View>
@@ -62,7 +65,7 @@ const GradientInputNew = ({
                     <Text bold style={styles.tips}>Tip: The more bars and coins you select, the higher the network fees</Text> */}
                 </View>
             ) : (
-                <Text style={styles.inDollar}>{isSats ? `$${usd}` : title ? `${usd} BTC` : `${usd} sats`}</Text>
+                <Text style={styles.inDollar}>{isSats ? `${getStrikeCurrency(currency || 'USD')}${usd}` : title ? `${usd} BTC` : `${usd} sats`}</Text>
             )}
         </View>
     );
