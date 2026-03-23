@@ -116,7 +116,7 @@ export default StyleSheet.create<Style>({
         backgroundColor: colors.primary,
         justifyContent: 'space-between',
         paddingHorizontal: 20,
-        paddingBottom: 60,
+        paddingBottom: 30,
         overflow: 'visible'
     },
     container2: {
@@ -345,6 +345,7 @@ export default StyleSheet.create<Style>({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginTop: 10,
     },
     bitcoinimg: {
         width: 35,
