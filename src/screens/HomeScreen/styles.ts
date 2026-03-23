@@ -345,7 +345,7 @@ export default StyleSheet.create<Style>({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginTop: -15,
+        marginTop: 10,
     },
     bitcoinimg: {
         width: 35,
