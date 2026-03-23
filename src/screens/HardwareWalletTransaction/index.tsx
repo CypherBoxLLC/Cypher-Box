@@ -17,6 +17,7 @@ import { requestCameraAuthorization } from "../../../helpers/scan-qr";
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
 import { DynamicQRCode } from "../../../components/DynamicQRCode";
+import { BBQrDynamicQRCode } from "../../../components/BBQrDynamicQRCode";
 import { SecondButton } from "../../../BlueComponents";
 
 const BlueElectrum = require('../../../blue_modules/BlueElectrum');
@@ -41,7 +42,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
     const _combinePSBT = receivedPSBT => {
         return fromWallet.combinePsbt(psbt, receivedPSBT);
       };
-    
+
     const onBarScanned = ret => {
         if (ret && !ret.data) ret = { data: ret };
         if (ret.data.toUpperCase().startsWith('UR')) {
@@ -66,7 +67,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
           alert(Err.message);
         }
     };
-    
+
     useEffect(() => {
         if (isFocused) {
           dynamicQRCode.current?.startAutoMove();
@@ -74,12 +75,12 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
           dynamicQRCode.current?.stopAutoMove();
         }
     }, [isFocused]);
-    
+
     useEffect(() => {
         if (!psbt) {
           alert(loc.send.no_tx_signing_in_progress);
         }
-    
+
         // if (deepLinkPSBT) {
         //     const newPsbt = bitcoin.Psbt.fromBase64(deepLinkPSBT);
         //     try {
@@ -93,11 +94,11 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
         // }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [psbt]);
-    
+
     const broadcast = async () => {
         setIsLoading(true);
         const isBiometricsEnabled = await Biometric.isBiometricUseCapableAndEnabled();
-    
+
         if (isBiometricsEnabled) {
             if (!(await Biometric.unlockWithBiometrics())) {
                 setIsLoading(false);
@@ -130,11 +131,11 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
             alert(error.message);
         }
     };
-    
+
     const handleOnVerifyPressed = () => {
         Linking.openURL('https://coinb.in/?verify=' + txHex);
     };
-    
+
     const copyHexToClipboard = () => {
         Clipboard.setString(txHex);
     };
@@ -146,7 +147,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
             dynamicQRCode.current?.startAutoMove();
         });
     };
-    
+
     const openSignedTransaction = async () => {
         try {
             const res = await DocumentPicker.pickSingle({
@@ -164,7 +165,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
             }
         }
     };
-    
+
     const openScanner = () => {
         requestCameraAuthorization().then(() => {
           navigation.navigate('ScanQRCodeRoot', {
@@ -177,7 +178,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
           });
         });
     };
-    
+
     const nextClickHandler = async () => {
         navigation.navigate("HardwareWalletTransactionContinue", { walletID, isCustomFee, fromWallet, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, fee, memo, tx, psbt, to })
     };
@@ -187,8 +188,8 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
             <View style={styles.container}>
                 <Text style={styles.title} center>Transaction signing</Text>
                 <View style={styles.recipientView}>
-                    <Text h4 style={{marginBottom: 20}}>Scan or export this unsigned transaction (PSBT) with your hardware device and sign it from there. Tap ‘Next’ when you you’re done.</Text>
-                    <DynamicQRCode value={psbt.toHex()} ref={dynamicQRCode} />
+                    <Text h4 style={{marginBottom: 20}}>Scan or export this unsigned transaction (PSBT) with your hardware device and sign it from there. Tap 'Next' when you you're done.</Text>
+                    <BBQrDynamicQRCode value={psbt.toBase64()} ref={dynamicQRCode} />
                     <TouchableOpacity onPress={exportPSBT} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
                         <Text h3>Export</Text>
                     </TouchableOpacity>
@@ -212,7 +213,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
                         </View>
                     </View>
                     {memo &&
-                        <Text h4>Note: {memo}</Text>                        
+                        <Text h4>Note: {memo}</Text>
                     }
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, {backgroundColor: colors.blueText}]}>

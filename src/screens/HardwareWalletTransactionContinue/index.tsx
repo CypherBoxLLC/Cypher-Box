@@ -17,6 +17,7 @@ import { requestCameraAuthorization } from "../../../helpers/scan-qr";
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
 import { DynamicQRCode } from "../../../components/DynamicQRCode";
+import { BBQrDynamicQRCode } from "../../../components/BBQrDynamicQRCode";
 import { SecondButton } from "../../../BlueComponents";
 
 const BlueElectrum = require('../../../blue_modules/BlueElectrum');

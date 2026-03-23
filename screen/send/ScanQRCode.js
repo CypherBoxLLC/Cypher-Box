@@ -4,6 +4,7 @@ import { CameraScreen } from 'react-native-camera-kit';
 import { Icon } from 'react-native-elements';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { decodeUR, extractSingleWorkload, BlueURDecoder } from '../../blue_modules/ur';
+import { joinQRs } from 'bbqr';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import loc from '../../loc';
 import { BlueLoading, BlueText, BlueSpacing40 } from '../../BlueComponents';
@@ -96,6 +97,9 @@ const ScanQRCode = () => {
   const [backdoorText, setBackdoorText] = useState('');
   const [backdoorVisible, setBackdoorVisible] = useState(false);
   const [animatedQRCodeData, setAnimatedQRCodeData] = useState({});
+  const [bbqrTotal, setBbqrTotal] = useState(0);
+  const [bbqrHave, setBbqrHave] = useState(0);
+  const [bbqrData, setBbqrData] = useState({});
   const [cameraStatusGranted, setCameraStatusGranted] = useState(false);
   const stylesHook = StyleSheet.create({
     openSettingsContainer: {
@@ -201,6 +205,62 @@ const ScanQRCode = () => {
     }
   };
 
+  // Handle BBQr multi-part QR codes
+  const _onReadBBQrAnimatedQRCode = part => {
+    try {
+      // Parse BBQr format: BBQr:P0/1#data or BBQR:P0/1#data
+      const match = part.match(/^BBQr:?(P\d+)\/(\d+)(#|$)/i);
+      if (!match) {
+        console.log('[BBQr] Invalid format, trying full decode');
+        // Try to join without parsing
+        const result = joinQRs([part]);
+        if (result && result.raw) {
+          const psbtBase64 = Buffer.from(result.raw).toString('base64');
+          if (launchedBy) {
+            navigation.navigate({ name: launchedBy, params: {}, merge: true });
+          }
+          onBarScanned({ data: psbtBase64 });
+          return;
+        }
+        return;
+      }
+
+      const currentIndex = parseInt(match[1].replace('P', ''));
+      const total = parseInt(match[2]);
+      
+      console.log('[BBQr] Part', currentIndex + 1, 'of', total);
+      
+      // Store the QR part
+      const newBbqrData = { ...bbqrData };
+      newBbqrData[currentIndex] = part;
+      setBbqrData(newBbqrData);
+      setBbqrTotal(total);
+      setBbqrHave(Object.keys(newBbqrData).length);
+
+      // Check if we have all parts
+      if (Object.keys(newBbqrData).length === total) {
+        console.log('[BBQr] All parts received, joining...');
+        // Join all QR parts
+        const parts = [];
+        for (let i = 0; i < total; i++) {
+          parts.push(newBbqrData[i]);
+        }
+        
+        const result = joinQRs(parts);
+        if (result && result.raw) {
+          const psbtBase64 = Buffer.from(result.raw).toString('base64');
+          console.log('[BBQr] Joined PSBT, length:', psbtBase64.length);
+          if (launchedBy) {
+            navigation.navigate({ name: launchedBy, params: {}, merge: true });
+          }
+          onBarScanned({ data: psbtBase64 });
+        }
+      }
+    } catch (error) {
+      console.warn('[BBQr] Error processing BBQr QR:', error);
+    }
+  };
+
   const onBarCodeRead = ret => {
     const h = HashIt(ret.data);
     if (scannedCache[h]) {
@@ -230,6 +290,12 @@ const ScanQRCode = () => {
 
     if (ret.data.toUpperCase().startsWith('UR')) {
       return _onReadUniformResource(ret.data);
+    }
+
+    // Check for BBQr format (multi-part PSBT)
+    if (ret.data.toUpperCase().startsWith('BBQR') || ret.data.toUpperCase().startsWith('BBQR:') || /^BBQR:P\d+\/\d+/.test(ret.data.toUpperCase())) {
+      console.log('[BBQr] Detected BBQr format, adding to multi-part QR');
+      return _onReadBBQrAnimatedQRCode(ret.data);
     }
 
     // is it base43? stupid electrum desktop
@@ -349,6 +415,14 @@ const ScanQRCode = () => {
           <BlueText>{loc.wallets.please_continue_scanning}</BlueText>
           <BlueText>
             {urHave} / {urTotal}
+          </BlueText>
+        </View>
+      )}
+      {bbqrTotal > 0 && (
+        <View style={[styles.progressWrapper, stylesHook.progressWrapper]} testID="BbqrProgressBar">
+          <BlueText>{loc.wallets.please_continue_scanning}</BlueText>
+          <BlueText>
+            {bbqrHave} / {bbqrTotal}
           </BlueText>
         </View>
       )}
