@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - development
+      - Bam-development
     paths:
       - 'app-fixed/**'
       - 'docker-compose.yml'
