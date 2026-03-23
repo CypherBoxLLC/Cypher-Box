@@ -38,10 +38,24 @@ export class DynamicPSBTQRCode extends Component {
   psbtBase64 = '';
 
   componentDidMount() {
-    const { value } = this.props;
+    const { value, capacity = 200 } = this.props;
     this.psbtBase64 = value;
     
-    // Try BBQr first (best compression for animated QRs)
+    // Try UR encoding first (for Coldcard, Jade, etc.) - matches original BlueWallet behavior
+    try {
+      const urFragments = encodeUR(value, capacity);
+      if (urFragments && urFragments.length > 0) {
+        this.fragments = urFragments;
+        this.setState({ format: 'ur' });
+        console.log('[PSBT QR] Using UR format,', this.fragments.length, 'parts');
+        this._startAnimation();
+        return;
+      }
+    } catch (e) {
+      console.log('[PSBT QR] UR failed:', e.message);
+    }
+    
+    // Fall back to BBQr (for Jade, Passport, etc.)
     try {
       const bbqrResult = splitBBQrQRs(value, {
         encoding: 'Z',
@@ -58,20 +72,6 @@ export class DynamicPSBTQRCode extends Component {
       }
     } catch (e) {
       console.log('[PSBT QR] BBQr failed:', e.message);
-    }
-    
-    // Fall back to UR encoding (for Coldcard, Jade, etc.)
-    try {
-      const urFragments = encodeUR(value, 200);
-      if (urFragments && urFragments.length > 0) {
-        this.fragments = urFragments;
-        this.setState({ format: 'ur' });
-        console.log('[PSBT QR] Using UR format,', this.fragments.length, 'parts');
-        this._startAnimation();
-        return;
-      }
-    } catch (e) {
-      console.log('[PSBT QR] UR failed:', e.message);
     }
     
     // Final fallback: plain QR (single QR code, no animation)
