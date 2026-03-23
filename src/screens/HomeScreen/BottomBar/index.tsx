@@ -266,7 +266,7 @@ export default function BottomBar({
         <View>
             {(hasSavingVault && wallet) ? (
                 <SavingVault
-                    container={StyleSheet.flatten([styles.savingVault, { marginTop: 6 }])}
+                    container={StyleSheet.flatten([styles.savingVault, { marginTop: 14 }])}
                     innerContainer={styles.savingVault}
                     shadowTopBottom={styles.savingVault}
                     shadowBottomBottom={styles.savingVault}
@@ -315,7 +315,7 @@ export default function BottomBar({
             } */}
             {(hasColdStorage && coldStorageWallet) ? (
                 <SavingVault
-                    container={StyleSheet.flatten([styles.savingVault, { marginTop: 6 }])}
+                    container={StyleSheet.flatten([styles.savingVault, { marginTop: 14 }])}
                     innerContainer={styles.savingVault}
                     shadowTopBottom={styles.savingVault}
                     shadowBottomBottom={styles.savingVault}

@@ -55,7 +55,7 @@ export default function WalletsView({
                     tabs.push(walletTabsMap[wallet]);
                     if(allBTCWallets.length > 1) {
                         tabs.length = 0;
-                        tabs.push({ key: "divider", showTitle: true, component: () => <><Text bold h2 style={{ height: 32, marginTop: 0 }}>Lightning Accounts</Text><CircularView balance={balance} convertedRate={convertedRate} currency={currency} wallet={walletTabsMap[wallet].key} matchedRate={matchedRateStrike} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} refSwapRBSheet={refSwapRBSheet} setReceiveType={setReceiveType} homeMessage={homeMessage}/></> });                                    
+                        tabs.push({ key: "divider", showTitle: true, component: () => <><Text bold h2 style={{ height: 32, marginTop: 10 }}>Lightning Accounts</Text><CircularView balance={balance} convertedRate={convertedRate} currency={currency} wallet={walletTabsMap[wallet].key} matchedRate={matchedRateStrike} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} refSwapRBSheet={refSwapRBSheet} setReceiveType={setReceiveType} homeMessage={homeMessage}/></> });                                    
                         tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRate={matchedRateStrike} /> });
                     } else if (walletTabsMap[wallet].key === 'strike') {
                         tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRate={matchedRateStrike} /> });
