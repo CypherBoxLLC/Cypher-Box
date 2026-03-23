@@ -118,7 +118,6 @@ export default StyleSheet.create<Style>({
         paddingHorizontal: 20,
         paddingBottom: 60,
         overflow: 'visible'
-        //zIndex:999
     },
     container2: {
         flex: 1,
@@ -702,7 +701,7 @@ export default StyleSheet.create<Style>({
         elevation: 8,
     },
     savingVault: {
-        width: widths - 40,
+        width: widths - 100,
     },
     savingHeight: {
         height: 200

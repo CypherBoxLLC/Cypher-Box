@@ -794,7 +794,6 @@ export default function HomeScreen({ route }: Props) {
       }
       disableScroll={isAuth ? false : true}>
       <View style={styles.container}>
-        <View>
           {isLoading ? (
             <ActivityIndicator size="large" color="#ffffff" />
           )
@@ -844,12 +843,12 @@ export default function HomeScreen({ route }: Props) {
           {/* */}
 
           {!isLoading && (isWalletLoaded || isColdWalletLoaded) &&
-            <View style={{height: 205, marginTop: 15, marginBottom: 0, justifyContent: 'center', alignItems: 'center'}}>
+            <View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center'}}>
               <ActivityIndicator size="small" color="#23C47F" />
             </View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={{height: 205, marginTop: 15, marginBottom: 0}}>
+            <View style={{height: 205, marginTop: 5, marginBottom: 0}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}
@@ -872,7 +871,6 @@ export default function HomeScreen({ route }: Props) {
             </View>
           }
         </View>
-      </View>
       <RBSheet
         ref={refRBSheet}
         customStyles={{
