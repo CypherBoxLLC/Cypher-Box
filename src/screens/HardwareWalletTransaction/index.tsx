@@ -206,15 +206,6 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
                             <Text style={StyleSheet.flatten([styles.fees, { color: colors.blueText }])}>Bitcoin Address: {shortenAddress(destinationAddress)}</Text>
                         </View>
                     </View>
-                    <View style={styles.priceView}>
-                        <View>
-                            <Text style={styles.recipientTitle}>Network fee:</Text>
-                            <Text style={StyleSheet.flatten(styles.fees)}>~ {isCustomFee ? networkFees + " sats/vByte" :  networkFees + " sats"}</Text>
-                        </View>
-                    </View>
-                    {memo &&
-                        <Text h4>Note: {memo}</Text>
-                    }
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, {backgroundColor: colors.blueText}]}>
                     <Text h3>Next</Text>
