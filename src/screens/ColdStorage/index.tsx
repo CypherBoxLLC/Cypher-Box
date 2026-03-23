@@ -376,6 +376,20 @@ export default function ColdStorage({ route, navigation }: Props) {
         if (WatchOnlyWallet.type === wallet.type && !wallet.isHd()) {
           // plain watchonly - just get the address
           change = wallet.getAddress();
+        } else if (WatchOnlyWallet.type === wallet.type && wallet.isHd() && wallet.useWithHardwareWalletEnabled()) {
+          // watch-only HD with hardware wallet - initialize and get change address from internal wallet
+          try {
+            if (!wallet._hdWalletInstance) {
+              wallet.init(); // Initialize the internal HD wallet instance
+            }
+            change = await Promise.race([sleep(2000), wallet.getChangeAddressAsync()]);
+          } catch (e) {
+            console.log('Error getting change address:', e);
+          }
+          
+          if (!change && wallet._hdWalletInstance) {
+            change = wallet._hdWalletInstance.getAddress();
+          }
         } else {
           // otherwise, lets call widely-used getChangeAddressAsync()
           try {
