@@ -37,6 +37,7 @@ export async function isTorDaemonDisabled(): Promise<boolean> {
   return result;
 }
 
-export const isHandset: boolean = getDeviceType() === 'Handset';
+// Force phone navigation on all devices (including tablets)
+export const isHandset: boolean = true;
 export const isTorCapable: boolean = getIsTorCapable();
 export { isDesktop, isTablet };

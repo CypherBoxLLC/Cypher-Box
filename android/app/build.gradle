@@ -90,6 +90,9 @@ android {
         jniLibs {
             useLegacyPackaging = false
         }
+        resources {
+            excludes += ['**/*.png', '**/*.xml']
+        }
     }
 
     signingConfigs {
