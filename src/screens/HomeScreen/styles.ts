@@ -701,7 +701,7 @@ export default StyleSheet.create<Style>({
         elevation: 8,
     },
     savingVault: {
-        width: widths - 100,
+        width: widths - 60,
     },
     savingHeight: {
         height: 200
