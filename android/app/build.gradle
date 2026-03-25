@@ -90,8 +90,9 @@ android {
         jniLibs {
             useLegacyPackaging = false
         }
+        // Pick first on duplicate resources (fixes RN 0.72 bundler conflict)
         resources {
-            excludes += ['**/*.png', '**/*.xml']
+            pickFirsts += ['**/*.png', '**/*.xml']
         }
     }
 
