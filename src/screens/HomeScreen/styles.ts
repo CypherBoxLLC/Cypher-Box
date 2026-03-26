@@ -161,12 +161,9 @@ export default StyleSheet.create<Style>({
         color: '#ffffff'
     },
     container3: {
-        // height: 62,
-        // marginTop: 10,
-        // marginBottom: 16,
+        paddingBottom: 40,
         opacity: 0.5,
         justifyContent: 'center',
-        // backgroundColor:'red'
     },
     container4: {
         backgroundColor: colors.gray.dark,
