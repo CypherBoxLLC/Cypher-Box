@@ -309,7 +309,7 @@ export default function BottomBar({
     const ColdStorageTab = () => (
         <View>
             {/* {coldStorageWallet ?
-                <TopUpWithdrawView isVault={true} style={{ marginTop: -30 }} />
+                <TopUpWithdrawView isVault={true} />
                 :
                 <View style={{ height: 40 }} />
             } */}
