@@ -848,7 +848,7 @@ export default function HomeScreen({ route }: Props) {
             </View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={{height: 205, marginTop: 5, marginBottom: 0}}>
+            <View style={{height: 205, marginTop: 5, marginBottom: -20}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}
