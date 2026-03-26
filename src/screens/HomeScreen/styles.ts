@@ -161,7 +161,7 @@ export default StyleSheet.create<Style>({
         color: '#ffffff'
     },
     container3: {
-        marginTop: -20,
+        marginTop: -50,
         opacity: 0.5,
         justifyContent: 'center',
     },
