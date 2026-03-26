@@ -161,12 +161,9 @@ export default StyleSheet.create<Style>({
         color: '#ffffff'
     },
     container3: {
-        // height: 62,
-        // marginTop: 10,
-        // marginBottom: 16,
+        marginTop: -20,
         opacity: 0.5,
         justifyContent: 'center',
-        // backgroundColor:'red'
     },
     container4: {
         backgroundColor: colors.gray.dark,
@@ -725,8 +722,7 @@ export default StyleSheet.create<Style>({
         borderRadius: 25,
     },
     createVaultContainer: {
-        // top: '-10%',
-        // paddingHorizontal: 5,
+        marginTop: -30,
     },
     createVault: {
         borderRadius: 25,
