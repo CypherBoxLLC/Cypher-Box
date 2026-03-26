@@ -309,7 +309,7 @@ export default function BottomBar({
     const ColdStorageTab = () => (
         <View>
             {/* {coldStorageWallet ?
-                <TopUpWithdrawView isVault={true} style={{ marginTop: -100 }} />
+                <TopUpWithdrawView isVault={true} />
                 :
                 <View style={{ height: 40 }} />
             } */}
@@ -342,7 +342,7 @@ export default function BottomBar({
     );
 
     const TopUpWithdrawView = ({ isVault, style }: { isVault: boolean; style?: any }) => (
-        <>
+        <View style={[styles.bottominner, style]}>
             <GradientView
                 onPress={topupClickHandler}
                 topShadowStyle={styles.outerShadowStyle}
@@ -405,13 +405,16 @@ export default function BottomBar({
                     />
                 </GradientView>
             </View>
-        </>
+        </View>
     );
 
     const renderItem = ({ item, index }: any) => {
         return (
             <>
             <View style={{ width: screenWidth * 0.905 }}>
+                {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
+                    <TopUpWithdrawView isVault={false}  />
+                }
                 {item.component()}
             </View>
             </>
@@ -437,9 +440,6 @@ export default function BottomBar({
                 }}
             />
             <TabBar isVault={index == 1 ? true : false} coldStorageClickHandler={coldStorageClickHandler} hotStorageClickHandler={hotStorageClickHandler} />
-            {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
-                <TopUpWithdrawView isVault={false} style={{ marginTop: -100 }} />
-            }
         </>
     )
 }
