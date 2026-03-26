@@ -432,6 +432,7 @@ export default function BottomBar({
                 vertical={false}
                 sliderWidth={screenWidth}
                 itemWidth={screenWidth}
+                style={{ marginBottom: -30 }}
                 onSnapToItem={(index) => {
                     console.log('onSnappppp')
                     setIndex(index)
