@@ -107,7 +107,7 @@ class AppStorage {
     try {
       return await this.getItem(key);
     } catch (error) {
-      console.warn('error reading', key, error.message);
+      console.warn('error reading', key, '- error:', error.message, '- code:', error.code, '- stack:', error.stack);
       console.warn('fallback to realm');
       const realmKeyValue = await this.openRealmKeyValue();
       const obj = realmKeyValue.objectForPrimaryKey('KeyValue', key); // search for a realm object with a primary key
