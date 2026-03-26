@@ -341,8 +341,8 @@ export default function BottomBar({
         </View>
     );
 
-    const TopUpWithdrawView = ({ isVault }: any) => (
-        <View style={styles.bottominner}>
+    const TopUpWithdrawView = ({ isVault, style }: { isVault: boolean; style?: any }) => (
+        <View style={[styles.bottominner, style]}>
             <GradientView
                 onPress={topupClickHandler}
                 topShadowStyle={styles.outerShadowStyle}
@@ -413,7 +413,7 @@ export default function BottomBar({
             <>
             <View style={{ width: screenWidth * 0.905 }}>
                 {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
-                    <TopUpWithdrawView isVault={false} />
+                    <TopUpWithdrawView isVault={false} style={{ marginTop: -30 }} />
                 }
                 {item.component()}
             </View>
