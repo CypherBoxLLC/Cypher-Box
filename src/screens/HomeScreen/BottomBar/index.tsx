@@ -413,7 +413,7 @@ export default function BottomBar({
             <>
             <View style={{ width: screenWidth * 0.905 }}>
                 {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
-                    <TopUpWithdrawView isVault={false} style={{ marginTop: -30 }} />
+                    <TopUpWithdrawView isVault={false}  />
                 }
                 {item.component()}
             </View>
