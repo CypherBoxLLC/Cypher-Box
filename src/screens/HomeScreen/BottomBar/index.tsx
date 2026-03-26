@@ -342,7 +342,7 @@ export default function BottomBar({
     );
 
     const TopUpWithdrawView = ({ isVault, style }: { isVault: boolean; style?: any }) => (
-        <View style={[styles.bottominner, style]}>
+        <>
             <GradientView
                 onPress={topupClickHandler}
                 topShadowStyle={styles.outerShadowStyle}
@@ -405,7 +405,7 @@ export default function BottomBar({
                     />
                 </GradientView>
             </View>
-        </View>
+        </>
     );
 
     const renderItem = ({ item, index }: any) => {
