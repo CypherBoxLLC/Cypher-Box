@@ -411,7 +411,7 @@ export default function BottomBar({
     const renderItem = ({ item, index }: any) => {
         return (
             <>
-            <View style={{ width: screenWidth * 0.905, marginBottom: -40 }}>
+            <View style={{ width: screenWidth * 0.905 }}>
                 {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
                     <TopUpWithdrawView isVault={false} />
                 }
