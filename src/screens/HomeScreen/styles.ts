@@ -722,7 +722,8 @@ export default StyleSheet.create<Style>({
         borderRadius: 25,
     },
     createVaultContainer: {
-        paddingBottom: 40,
+        // top: '-10%',
+        // paddingHorizontal: 5,
     },
     createVault: {
         borderRadius: 25,
