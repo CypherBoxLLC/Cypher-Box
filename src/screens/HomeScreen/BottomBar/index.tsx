@@ -309,7 +309,7 @@ export default function BottomBar({
     const ColdStorageTab = () => (
         <View>
             {/* {coldStorageWallet ?
-                <TopUpWithdrawView isVault={true} />
+                <TopUpWithdrawView isVault={true} style={{ marginTop: -100 }} />
                 :
                 <View style={{ height: 40 }} />
             } */}
@@ -412,9 +412,6 @@ export default function BottomBar({
         return (
             <>
             <View style={{ width: screenWidth * 0.905 }}>
-                {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
-                    <TopUpWithdrawView isVault={false}  />
-                }
                 {item.component()}
             </View>
             </>
@@ -440,6 +437,9 @@ export default function BottomBar({
                 }}
             />
             <TabBar isVault={index == 1 ? true : false} coldStorageClickHandler={coldStorageClickHandler} hotStorageClickHandler={hotStorageClickHandler} />
+            {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
+                <TopUpWithdrawView isVault={false} style={{ marginTop: -100 }} />
+            }
         </>
     )
 }
