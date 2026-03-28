@@ -47,7 +47,7 @@ import Carousel from "react-native-snap-carousel";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../blue_modules/currency";
 import { authorize } from "react-native-app-auth";
-import { getBalances } from "@Cypher/api/strikeAPIs";
+import { getBalances, getStrikeRates } from "@Cypher/api/strikeAPIs";
 import ReceivedListNew from "./ReceivedListNew";
 import { connect as connectCoinosSocket, disconnect as disconnectCoinosSocket, setOnPaymentReceived, registerPushToken, setUsername as setCoinosUsername } from "@Cypher/services/coinosSocket";
 import Header from "./Header";
@@ -316,30 +316,39 @@ export default function HomeScreen({ route }: Props) {
               const normalizedBalances = [btcBalance || balances?.[0], fiatBalance || balances?.[1]];
               console.log('Normalized balances — BTC:', btcBalance, 'Fiat:', fiatBalance);
               setStrikeUser(normalizedBalances);
+              console.log('Setting strikeBalance:', normalizedBalances?.[0]?.available * SATS);
               setStrikeBalance((normalizedBalances?.[0]?.available * SATS) || 0);
               const userCurrency = normalizedBalances?.[1]?.currency || 'USD';
               console.log('Strike currency from balances:', userCurrency);
               setStrikeCurrency(userCurrency); // Store user's currency in auth
-              const matchedCurrency = untypedFiatUnit?.[userCurrency];
-              console.log('matchedCurrency lookup:', matchedCurrency);
-              if (!matchedCurrency) {
-                  console.warn('No fiatUnit found for', userCurrency, '- falling back to USD');
-              }
-              console.log('[Strike] fetching exchangeRate START', Date.now());
-              const rates = await exchangeRate(matchedCurrency || untypedFiatUnit?.['USD']);
-              console.log('[Strike] exchangeRate DONE', Date.now(), rates);
-              let numericAmount = 0;
-              if (rates && rates?.Rate) {
-                  numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
-                  console.log('Strike numericAmount:', numericAmount);
-                  setMatchedRateStrike(numericAmount);
-              }
+              
+              // Fetch rates from Strike API (not external sources)
+              console.log('[Strike] fetching rates from Strike API START', Date.now());
+              const strikeRates = await getStrikeRates();
+              console.log('[Strike] getStrikeRates DONE', Date.now(), strikeRates);
+              
+              // Find the rate for user's currency (e.g., USD, EUR) - look at sourceCurrency for BTC rate
+              // Strike API returns array directly, not wrapped in .data
+              console.log('[Strike] looking for BTC ->', userCurrency);
+              const ratesArray = strikeRates?.data || strikeRates;
+              console.log('[Strike] ratesArray:', JSON.stringify(ratesArray));
+              const currencyRate = ratesArray?.find((r: any) => r.sourceCurrency === 'BTC' && r.targetCurrency === userCurrency);
+              console.log('[Strike] matched rate:', currencyRate);
+              const numericAmount = currencyRate ? Number(currencyRate?.amount || 0) : 0;
+              console.log('[Strike] rate for', userCurrency + ':', numericAmount);
+              setMatchedRateStrike(numericAmount);
+              
               try {
-                  const rate = await convertFiatToUSD(Number((normalizedBalances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1)), normalizedBalances?.[1]?.currency || 'USD') || 0;
+                  // Calculate: sats * exchange_rate = USD value
+                  const btcSats = Number(normalizedBalances?.[0]?.available || 0) * SATS;
+                  console.log('[Strike] btcSats:', btcSats, 'numericAmount:', numericAmount);
+                  const rate = Number(btcSats * (numericAmount || 0));
+                  console.log('[Strike] strikeConverted (rate):', rate);
                   setStrikeConvertedBalance(rate);
               } catch (e) {
-                  console.warn('convertFiatToUSD failed, using direct calculation:', e);
-                  const directRate = Number((normalizedBalances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1));
+                  console.warn('Failed to calculate strike converted balance:', e);
+                  const btcSats = Number(normalizedBalances?.[0]?.available || 0) * SATS;
+                  const directRate = Number(btcSats * (numericAmount || 0));
                   setStrikeConvertedBalance(directRate);
               }
           }
