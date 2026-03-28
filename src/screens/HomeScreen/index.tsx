@@ -793,7 +793,7 @@ export default function HomeScreen({ route }: Props) {
         />
       }
       disableScroll={isAuth ? false : true}>
-      <View style={styles.container}>
+        <View style={styles.container}>
           {isLoading ? (
             <ActivityIndicator size="large" color="#ffffff" />
           )

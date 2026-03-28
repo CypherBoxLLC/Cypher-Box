@@ -342,10 +342,10 @@ export default function BottomBar({
     );
 
     const TopUpWithdrawView = ({ isVault, style }: { isVault: boolean; style?: any }) => (
-        <View style={[styles.bottominner, style]}>
+        <View style={styles.bottominner}>
             <GradientView
                 onPress={topupClickHandler}
-                topShadowStyle={styles.outerShadowStyle}
+                topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
                 bottomShadowStyle={styles.innerShadowStyle}
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
@@ -357,54 +357,20 @@ export default function BottomBar({
                 />
                 <Text bold h3 center style={{ textAlign: 'center' }}>Top-up</Text>
             </GradientView>
-            <View style={{ position: 'relative' }}>
-                {shouldGlow && (
-                    <Animated.View
-                        pointerEvents="none"
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            borderRadius: 20,
-                            overflow: 'hidden',
-                            opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.1, 1] }),
-                            zIndex: 10,
-                        }}
-                    >
-                        <View style={{
-                            position: 'absolute',
-                            top: -4,
-                            left: -4,
-                            right: -4,
-                            bottom: -4,
-                            borderRadius: 24,
-                            borderWidth: 6,
-                            borderColor: '#e84393',
-                            shadowColor: '#e84393',
-                            shadowOffset: { width: 0, height: 0 },
-                            shadowOpacity: 1,
-                            shadowRadius: 12,
-                        }} />
-                    </Animated.View>
-                )}
-                <GradientView
-                    onPress={withdrawClickHandler}
-                    topShadowStyle={styles.outerShadowStyle}
-                    bottomShadowStyle={styles.innerShadowStyle}
-                    style={styles.linearGradientStyle}
-                    linearGradientStyle={styles.mainShadowStyle}
-                    gradiantColors={undefined}
-                >
-                    <Text bold h3 center style={{ textAlign: 'center', color: '#fff' }}>Withdraw</Text>
-                    <Image
-                        style={[styles.arrowRight]}
-                        resizeMode="contain"
-                        source={require("../../../../img/arrow-right.png")}
-                    />
-                </GradientView>
-            </View>
+            <GradientView
+                onPress={withdrawClickHandler}
+                topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
+                bottomShadowStyle={styles.innerShadowStyle}
+                style={styles.linearGradientStyle}
+                linearGradientStyle={styles.mainShadowStyle}
+            >
+                <Text bold h3 center style={{ textAlign: 'center' }}>Withdraw</Text>
+                <Image
+                    style={styles.arrowRight}
+                    resizeMode="contain"
+                    source={require("../../../../img/arrow-right.png")}
+                />
+            </GradientView>
         </View>
     );
 
@@ -413,7 +379,7 @@ export default function BottomBar({
             <>
             <View style={{ width: screenWidth * 0.905 }}>
                 {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
-                    <TopUpWithdrawView isVault={false}  />
+                    <TopUpWithdrawView isVault={index == 1 ? true : false} />
                 }
                 {item.component()}
             </View>
@@ -432,7 +398,6 @@ export default function BottomBar({
                 vertical={false}
                 sliderWidth={screenWidth}
                 itemWidth={screenWidth}
-                style={{ marginBottom: -60 }}
                 onSnapToItem={(index) => {
                     console.log('onSnappppp')
                     setIndex(index)
