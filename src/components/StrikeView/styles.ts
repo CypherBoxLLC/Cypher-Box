@@ -42,7 +42,7 @@ interface Style {
 
 export default StyleSheet.create<Style>({
     container: {
-        marginTop: 14,
+        // marginTop: 14,
     },
     gradientBorder: {
         borderRadius: 12,

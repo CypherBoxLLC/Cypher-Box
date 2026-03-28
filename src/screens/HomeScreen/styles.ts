@@ -214,7 +214,7 @@ export default StyleSheet.create<Style>({
         justifyContent: 'flex-start',
     },
     createView: {
-        marginTop: 20,
+        marginTop: 5,
         backgroundColor: 'transparent'
     },
     image: {
@@ -772,7 +772,7 @@ export default StyleSheet.create<Style>({
         justifyContent: 'space-between',
     },
     innerContainer: {
-        marginTop: 16,
+        // marginTop: 16,
         shadowColor: '#040404CC',
         shadowOffset: { width: 8, height: 8 },
         shadowOpacity: 0.80,
