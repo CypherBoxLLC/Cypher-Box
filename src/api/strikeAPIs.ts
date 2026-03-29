@@ -39,6 +39,26 @@ export const getBalances = async () => {
     }
 };
 
+export const getStrikeRates = async () => {
+    try {
+        const response = await fetch(`${BASE_URL}/rates/ticker`, await withAuthToken({
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        }));
+        const responseJSON = await response.json();
+        if(responseJSON?.status === 401){
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error fetching Strike rates:', error);
+        throw error;
+    }
+};
+
 export const createInvoice = async (invoiceData: any) => {
   try {
     console.log('invoiceData: ', invoiceData)

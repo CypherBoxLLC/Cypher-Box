@@ -7,16 +7,16 @@ import SimpleToast from "react-native-simple-toast";
 
 
 interface Props {
-    matchedRate: any;
+    matchedRateStrike: any;
     currency: any;
 }
 
 export default function StrikeDollarWallet({
-    matchedRate,
+    matchedRateStrike,
     currency,
 }: Props) {
     const { isStrikeAuth } = useAuthStore();
     return (
-        isStrikeAuth && <StrikeView currency={currency} matchedRate={matchedRate} />
+        isStrikeAuth && <StrikeView currency={currency} matchedRateStrike={matchedRateStrike} />
     )
 }

@@ -24,7 +24,7 @@ export default StyleSheet.create({
         borderRadius: 25,
         width: widths - 40,
         height: 128,
-        marginTop: 15,
+        marginTop: 5,
         borderColor: "transparent",
         backgroundColor: colors.white,
     },

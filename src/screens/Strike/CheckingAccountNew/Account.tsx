@@ -24,18 +24,22 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
   console.log('balance: ', balance, 'converted: ', converted, 'currency: ', currency);
   return (
     <ScrollView contentContainerStyle={styles.container2}>
-      <Card
-        balance={Number(balance)}
-        currency={currency}
-        matchedRate={Number(matchedRate)}
-        convertedRate={Number(converted)}
-        reserveAmount={Number(reserveAmount)}
-        withdrawThreshold={Number(withdrawThreshold)}
-        receiveType={receiveType}
-        wallet={receiveType ? 'COINOS' : 'STRIKE'}
-      />
+      <View style={{ marginTop: 20 }}>
+        <Card
+          balance={Number(balance)}
+          currency={currency}
+          matchedRate={Number(matchedRate)}
+          convertedRate={Number(converted)}
+          reserveAmount={Number(reserveAmount)}
+          withdrawThreshold={Number(withdrawThreshold)}
+          receiveType={receiveType}
+          wallet={receiveType ? 'COINOS' : 'STRIKE'}
+        />
+      </View>
       {!receiveType &&
-        <StrikeView currency={currency} matchedRate={Number(matchedRate)} isShowButtons />
+        <View style={{ marginTop: 20 }}>
+          <StrikeView currency={currency} matchedRateStrike={Number(matchedRate)} isShowButtons />
+        </View>
       }
       {receiveType &&
         <GradientView

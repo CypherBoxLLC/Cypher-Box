@@ -20,6 +20,7 @@ interface Props {
     setReceiveType: any;
     strikeBalance: any;
     matchedRateStrike?: number;
+    strikeConvertedBalance?: number;
     currencyStrike?: string;
     homeMessage?: string | null;
 }
@@ -38,6 +39,7 @@ export default function WalletsView({
     setReceiveType,
     strikeBalance,
     matchedRateStrike = 0,
+    strikeConvertedBalance = 0,
     currencyStrike = 'USD',
     homeMessage = null,
 }: Props) {
@@ -55,23 +57,23 @@ export default function WalletsView({
                     tabs.push(walletTabsMap[wallet]);
                     if(allBTCWallets.length > 1) {
                         tabs.length = 0;
-                        tabs.push({ key: "divider", showTitle: true, component: () => <><Text bold h2 style={{ height: 32, marginTop: 10 }}>Lightning Accounts</Text><CircularView balance={balance} convertedRate={convertedRate} currency={currency} wallet={walletTabsMap[wallet].key} matchedRate={matchedRateStrike} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} refSwapRBSheet={refSwapRBSheet} setReceiveType={setReceiveType} homeMessage={homeMessage}/></> });                                    
-                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRate={matchedRateStrike} /> });
+                        tabs.push({ key: "divider", showTitle: true, component: () => <><Text bold h2 style={{ height: 32, marginTop: 10 }}>Lightning Accounts</Text><CircularView balance={balance} convertedRate={convertedRate} currency={currency} wallet={walletTabsMap[wallet].key} matchedRateStrike={matchedRateStrike} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} refSwapRBSheet={refSwapRBSheet} setReceiveType={setReceiveType} homeMessage={homeMessage}/></> });                                    
+                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRateStrike={matchedRateStrike} /> });
                     } else if (walletTabsMap[wallet].key === 'strike') {
-                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRate={matchedRateStrike} /> });
+                        tabs.push({ key: "divider", component: () => <StrikeDollarWallet currency={currencyStrike} matchedRateStrike={matchedRateStrike} /> });
                     }
                 }
             });
 
             setWTabs(tabs)
         }
-    }, [allBTCWallets, isLoading]);
+    }, [allBTCWallets, isLoading, matchedRateStrike, strikeBalance, convertedRate]);
 
     type WalletName = keyof typeof walletTabsMap;
 
     const walletTabsMap = {
         COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet} homeMessage={homeMessage}/> },
-        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currencyStrike} isLoading={isLoading} matchedRate={matchedRateStrike} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} homeMessage={homeMessage}/> },
+        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currencyStrike} isLoading={isLoading} matchedRateStrike={matchedRateStrike} strikeConvertedBalance={strikeConvertedBalance} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} homeMessage={homeMessage}/> },
     };
 
 

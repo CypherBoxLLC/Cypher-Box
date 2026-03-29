@@ -24,7 +24,7 @@ export default function Header({ onBarScanned }: Props) {
 
     return <View style={styles.title}>
         <Text subHeader bold>
-            Total Assests
+            Total Assets
         </Text>
         <View style={styles.row}>
             <TouchableOpacity

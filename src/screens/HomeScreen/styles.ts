@@ -161,12 +161,9 @@ export default StyleSheet.create<Style>({
         color: '#ffffff'
     },
     container3: {
-        // height: 62,
-        // marginTop: 10,
-        // marginBottom: 16,
+        paddingBottom: 5,
         opacity: 0.5,
         justifyContent: 'center',
-        // backgroundColor:'red'
     },
     container4: {
         backgroundColor: colors.gray.dark,
@@ -217,7 +214,7 @@ export default StyleSheet.create<Style>({
         justifyContent: 'flex-start',
     },
     createView: {
-        marginTop: 20,
+        marginTop: 5,
         backgroundColor: 'transparent'
     },
     image: {
@@ -775,7 +772,7 @@ export default StyleSheet.create<Style>({
         justifyContent: 'space-between',
     },
     innerContainer: {
-        marginTop: 16,
+        // marginTop: 16,
         shadowColor: '#040404CC',
         shadowOffset: { width: 8, height: 8 },
         shadowOpacity: 0.80,

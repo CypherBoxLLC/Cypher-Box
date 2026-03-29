@@ -442,7 +442,7 @@ export default StyleSheet.create<Style>({
         borderRadius: 25,
         width: widths - 40,
         height: 128,
-        marginTop: 15,
+        marginTop: 0,
         borderColor: "transparent",
         backgroundColor: colors.white,
     },

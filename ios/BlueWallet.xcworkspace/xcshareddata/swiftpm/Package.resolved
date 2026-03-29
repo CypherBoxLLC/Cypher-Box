@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/EFPrefix/swift_qrcodejs.git",
       "state" : {
-        "revision" : "aecbafebc602b8855ee34cc3fb2e73b1a9faed2b",
-        "version" : "2.3.0"
+        "revision" : "d1605333f7edac39b4518538ef4f2638fdd2e4d6",
+        "version" : "2.3.1"
       }
     }
   ],

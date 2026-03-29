@@ -336,7 +336,7 @@ PODS:
   - React-jsinspector (0.72.10)
   - React-logger (0.72.10):
     - glog
-  - react-native-app-auth (8.0.3):
+  - react-native-app-auth (8.1.0):
     - AppAuth (>= 1.7.6)
     - React-Core
   - react-native-blue-crypto (1.0.0):
@@ -898,7 +898,7 @@ SPEC CHECKSUMS:
   React-jsiexecutor: 82f0f431eb415ab249d892dba44b43751aa13abf
   React-jsinspector: de0198127395fec3058140a20c045167f761bb16
   React-logger: 13a8b7094f27626adf648a8458e842e27fa70e13
-  react-native-app-auth: eb42594042a25455119a8c57194b4fd25b9352f4
+  react-native-app-auth: e21c8ee920876b960e38c9381971bd189ebea06b
   react-native-blue-crypto: de5babd59b17fbf3fc31d2e1e5d59ec859093fbc
   react-native-blur: 4541c56d40f9e4a980e9c10ff37b205c35d3767b
   react-native-bw-file-access: fe925b77dbf48500df0b294c6851f8c84607a203

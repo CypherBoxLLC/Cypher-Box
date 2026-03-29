@@ -47,7 +47,7 @@ import Carousel from "react-native-snap-carousel";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../blue_modules/currency";
 import { authorize } from "react-native-app-auth";
-import { getBalances } from "@Cypher/api/strikeAPIs";
+import { getBalances, getStrikeRates } from "@Cypher/api/strikeAPIs";
 import ReceivedListNew from "./ReceivedListNew";
 import { connect as connectCoinosSocket, disconnect as disconnectCoinosSocket, setOnPaymentReceived, registerPushToken, setUsername as setCoinosUsername } from "@Cypher/services/coinosSocket";
 import Header from "./Header";
@@ -316,30 +316,40 @@ export default function HomeScreen({ route }: Props) {
               const normalizedBalances = [btcBalance || balances?.[0], fiatBalance || balances?.[1]];
               console.log('Normalized balances — BTC:', btcBalance, 'Fiat:', fiatBalance);
               setStrikeUser(normalizedBalances);
+              console.log('Setting strikeBalance:', normalizedBalances?.[0]?.available * SATS);
               setStrikeBalance((normalizedBalances?.[0]?.available * SATS) || 0);
               const userCurrency = normalizedBalances?.[1]?.currency || 'USD';
               console.log('Strike currency from balances:', userCurrency);
               setStrikeCurrency(userCurrency); // Store user's currency in auth
-              const matchedCurrency = untypedFiatUnit?.[userCurrency];
-              console.log('matchedCurrency lookup:', matchedCurrency);
-              if (!matchedCurrency) {
-                  console.warn('No fiatUnit found for', userCurrency, '- falling back to USD');
-              }
-              console.log('[Strike] fetching exchangeRate START', Date.now());
-              const rates = await exchangeRate(matchedCurrency || untypedFiatUnit?.['USD']);
-              console.log('[Strike] exchangeRate DONE', Date.now(), rates);
-              let numericAmount = 0;
-              if (rates && rates?.Rate) {
-                  numericAmount = Number(rates.Rate.replace(/[^0-9\.]/g, ''));
-                  console.log('Strike numericAmount:', numericAmount);
-                  setMatchedRateStrike(numericAmount);
-              }
+              
+              // Fetch rates from Strike API (not external sources)
+              console.log('[Strike] fetching rates from Strike API START', Date.now());
+              const strikeRates = await getStrikeRates();
+              console.log('[Strike] getStrikeRates DONE', Date.now(), strikeRates);
+              
+              // Find the rate for user's currency (e.g., USD, EUR) - look at sourceCurrency for BTC rate
+              // Strike API returns array directly, not wrapped in .data
+              console.log('[Strike] looking for BTC ->', userCurrency);
+              const ratesArray = strikeRates?.data || strikeRates;
+              console.log('[Strike] ratesArray:', JSON.stringify(ratesArray));
+              const currencyRate = ratesArray?.find((r: any) => r.sourceCurrency === 'BTC' && r.targetCurrency === userCurrency);
+              console.log('[Strike] matched rate:', currencyRate);
+              const numericAmount = currencyRate ? Number(currencyRate?.amount || 0) : 0;
+              console.log('[Strike] rate for', userCurrency + ':', numericAmount);
+              setMatchedRateStrike(numericAmount);
+              
               try {
-                  const rate = await convertFiatToUSD(Number((normalizedBalances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1)), normalizedBalances?.[1]?.currency || 'USD') || 0;
+                  // Strike returns BTC amount (e.g., 0.00004814), not sats
+                  // Just multiply directly by exchange rate to get USD
+                  const availableBalance = Number(normalizedBalances?.[0]?.available || 0);
+                  console.log('[Strike] availableBalance (BTC):', availableBalance, 'numericAmount:', numericAmount);
+                  const rate = Number(availableBalance * (numericAmount || 0));
+                  console.log('[Strike] strikeConverted (rate):', rate);
                   setStrikeConvertedBalance(rate);
               } catch (e) {
-                  console.warn('convertFiatToUSD failed, using direct calculation:', e);
-                  const directRate = Number((normalizedBalances?.[0]?.available || 0) * SATS * (numericAmount || 0) * btc(1));
+                  console.warn('Failed to calculate strike converted balance:', e);
+                  const availableBalance = Number(normalizedBalances?.[0]?.available || 0);
+                  const directRate = Number(availableBalance * (numericAmount || 0));
                   setStrikeConvertedBalance(directRate);
               }
           }
@@ -591,36 +601,42 @@ export default function HomeScreen({ route }: Props) {
 
   const handleUser = async () => {
     try {
-      // Always get exchange rate from BlueWallet's native currency module
-      // This is used for the hot/cold vaults which are just BlueWallet wallets
+      // Try to get Coinos data if logged in (for Coinos-specific balance)
+      const response = await getMe();
+      if (!response) return; // Not logged into Coinos
+
+      // Get Coinos rate for Coinos balance display (PRIMARY source)
+      let coinosRate = 0;
+      try {
+        const responsetest = await getCurrencyRates();
+        const currency = btc(1);
+        const matched = matchKeyAndValue(responsetest, 'USD');
+        coinosRate = (matched || 0) * currency;
+        console.log('[Coinos] rate from API:', coinosRate);
+      } catch (rateError) {
+        console.log('[Coinos] rate API failed, trying BlueWallet fallback');
+      }
+      
+      // Use Coinos rate if available, fallback to BlueWallet
       let blueWalletRate = 0;
       try {
         blueWalletRate = await getFiatRate('USD') || 0;
       } catch (rateErr) {
         console.log('BlueWallet rate error:', rateErr);
       }
-      setMatchedRate(blueWalletRate);
+      
+      const finalRate = coinosRate || blueWalletRate;
+      setMatchedRate(finalRate);
+      console.log('[Coinos] matchedRate set to:', finalRate, '(coinos:', coinosRate, ', bluewallet:', blueWalletRate, ')');
 
-      // Try to get Coinos data if logged in (for Coinos-specific balance)
-      const response = await getMe();
-      if (!response) return; // Not logged into Coinos
-
-      // Get Coinos rate for Coinos balance display
-      try {
-        const responsetest = await getCurrencyRates();
-        const currency = btc(1);
-        const matched = matchKeyAndValue(responsetest, 'USD');
-        // Use Coinos rate for Coinos balance, BlueWallet for vaults
-        setConvertedRate((matched || blueWalletRate || 0) * currency * response.balance);
-      } catch (rateError) {
-        setConvertedRate((blueWalletRate || 0) * btc(1) * response.balance);
-      }
+      // Calculate converted rate using the same rate
+      setConvertedRate(finalRate * response.balance);
       setCurrency("USD")
       setBalance(response?.balance ?? 0);
       setUser(response?.username);
     } catch (error) {
       console.error('error: ', error);
-      // Try BlueWallet's native rate as fallback
+      // Try BlueWallet's native rate as absolute fallback
       try {
         const blueWalletRate = await getFiatRate('USD');
         setMatchedRate(blueWalletRate || 0);
@@ -793,7 +809,7 @@ export default function HomeScreen({ route }: Props) {
         />
       }
       disableScroll={isAuth ? false : true}>
-      <View style={styles.container}>
+        <View style={styles.container}>
           {isLoading ? (
             <ActivityIndicator size="large" color="#ffffff" />
           )
@@ -834,6 +850,7 @@ export default function HomeScreen({ route }: Props) {
                 wallet={wallet}
                 coldStorageWallet={coldStorageWallet}
                 matchedRateStrike={Number(matchedRateStrike || 0)}
+                strikeConvertedBalance={Number(strikeConvertedBalance || 0)}
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
                 homeMessage={homeMessage}
               />
@@ -848,7 +865,7 @@ export default function HomeScreen({ route }: Props) {
             </View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={{height: 205, marginTop: 5, marginBottom: 0}}>
+            <View style={{height: 205, marginBottom: 20}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}
@@ -861,6 +878,7 @@ export default function HomeScreen({ route }: Props) {
                 currency={currency}
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
                 matchedRateStrike={Number(matchedRateStrike || 0)}
+                strikeConvertedBalance={Number(strikeConvertedBalance || 0)}
                 hasColdStorage={hasColdStorage}
                 hasSavingVault={hasSavingVault}
                 matchedRate={matchedRate}
@@ -964,6 +982,7 @@ export default function HomeScreen({ route }: Props) {
           wallet={wallet} 
           currencyStrike={strikeUser?.[1]?.currency || 'USD'}
           matchedRateStrike={Number(matchedRateStrike || 0)}
+                strikeConvertedBalance={Number(strikeConvertedBalance || 0)}
           recommendedFee={recommendedFee}
           coldStorageAddress={coldStorageAddress}
           vaultAddress={vaultAddress}
