@@ -1,3 +1,4 @@
+import { colors, shadow } from "@Cypher/style-guide";
 import React, { ReactNode } from "react";
 import {
     StyleSheet,
@@ -6,9 +7,8 @@ import {
     View,
 } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
-import { colors } from "@Cypher/style-guide";
-import styles from "./styles";
 import { Shadow } from "react-native-neomorph-shadows";
+import styles from "./styles";
 
 interface Props extends TouchableOpacityProps {
     onPress?(): void;
@@ -19,6 +19,8 @@ interface Props extends TouchableOpacityProps {
     bottomShadowStyle: any;
     linearGradientStyle?: any;
     linearGradientStyleMain?: any;
+    gradiantColors?: string[];
+    isShadow?: boolean;
 }
 
 export default function GradientView({
@@ -29,11 +31,13 @@ export default function GradientView({
     topShadowStyle,
     bottomShadowStyle,
     linearGradientStyle,
-    linearGradientStyleMain
+    linearGradientStyleMain,
+    isShadow = false,
+    gradiantColors = [colors.black.gradientTop, colors.black.gradientBottom],
 }: Props) {
     return (
         <TouchableOpacity
-            style={[styles.linearGradient, style]}
+            style={[styles.linearGradient, isShadow && shadow.shadow25, style]}
             onPress={onPress}
             disabled={disabled}
         >
@@ -44,7 +48,7 @@ export default function GradientView({
                     colors={
                         disabled
                             ? [colors.gray.light, colors.gray.light]
-                            : ['#333333', '#282727']
+                            : gradiantColors
                     }
                     style={[styles.linearGradient, linearGradientStyleMain]}
                 >

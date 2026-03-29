@@ -25,7 +25,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
         onChangeSelectedTab(id);
     }, []);
 
-    const primaryColor = vaultTab ? colors.blueText : colors.greenNew
+    const primaryColor = vaultTab ? colors.coldGreen : colors.greenNew
 
     const getTabStyle = (id: number) => ({
         backgroundColor: selectedTab === id ? primaryColor : colors.primary,
@@ -38,7 +38,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
             {tabs.map(tab => (
                 <View key={tab.id} style={styles.container}>
                     <TouchableOpacity
-                        style={[styles.inner, { backgroundColor: getTabStyle(tab.id).backgroundColor }, vaultTab && { borderColor: colors.blueText}]}
+                        style={[styles.inner, { backgroundColor: getTabStyle(tab.id).backgroundColor }, vaultTab && { borderColor: colors.coldGreen}]}
                         onPress={() => tabClickListener(tab.id)}
                         activeOpacity={1}
                     >

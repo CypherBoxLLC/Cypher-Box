@@ -4,7 +4,7 @@ import styles from "./styles";
 import LinearGradient from "react-native-linear-gradient";
 import { Bitcoin, Cancel, Currency, CurrencyWhite, Sats, Small } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
-import { btc } from "@Cypher/helpers/coinosHelper";
+import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 import GradientTabNew from "../GradientTabNew";
 
@@ -36,16 +36,15 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
     //     if(sats !== prevSats && prevSats)
     //         setSats(prevSats)
     // }, [prevSats])
-
     useEffect(() => {
         if (sats.length > 0) {
             let amount = 0;
             if (isSats) {
-                amount = (Number(matchedRate || 0) * Number(sats)).toFixed(2)
+                amount = ((Number(sats || 0) * Number(matchedRate || 0))).toFixed(2)
                 setSATS(sats);
                 setUSD(String(amount));
             } else {
-                amount = ((Number(sats) / (Number(matchedRate) || 0))).toFixed(6);
+                amount = ((Number(sats || 0) / (Number(matchedRate) || 1))).toFixed(2);
                 // const multiplier = isSats ? 0.000594 : 1683.79;
                 // const total = multiplier * Number(sats);
                 // const total_ = total.toFixed(4);
@@ -92,7 +91,7 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
             }
             <LinearGradient
                 start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-                colors={vaultTab ? [colors.blueText, colors.blueText] : [colors.green, colors.green]}
+                colors={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]}
                 style={styles.linearGradient} />
             <View style={styles.keypad}>
                 {KEYSARRAY.map((key) => (
@@ -104,7 +103,7 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
                     <Image source={Cancel} />
                 </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={onPress} disabled={disabled} style={[styles.nextBtn, vaultTab && { backgroundColor: colors.blueText }, disabled && {backgroundColor: colors.gray.disable}]}>
+            <TouchableOpacity onPress={onPress} disabled={disabled} style={[styles.nextBtn, vaultTab && { backgroundColor: colors.coldGreen }, disabled && {backgroundColor: colors.gray.disable}]}>
                 <Text h3>Next</Text>
             </TouchableOpacity>
         </View>

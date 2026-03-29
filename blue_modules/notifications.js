@@ -16,6 +16,8 @@ let alreadyConfigured = false;
 let baseURI = constants.groundControlUri;
 
 function Notifications(props) {
+  console.log('[Notifications] Function called, props:', !!props);
+  console.log('[Notifications] Notifications.getPushToken BEFORE:', typeof Notifications.getPushToken);
   async function _setPushToken(token) {
     token = JSON.stringify(token);
     return AsyncStorage.setItem(PUSH_TOKEN, token);
@@ -441,7 +443,20 @@ function Notifications(props) {
     await configureNotifications();
     await postTokenConfig();
   })();
-  return null;
+
+  // Initialize on module load
+  (async () => {
+    try {
+      Notifications.setApplicationIconBadgeNumber(0);
+      if (!(await Notifications.getPushToken())) return;
+      await configureNotifications();
+      await postTokenConfig();
+    } catch (e) {
+      console.warn('[Notifications] Init error:', e);
+    }
+  })();
+
+  return Notifications;
 }
 
 export default Notifications;

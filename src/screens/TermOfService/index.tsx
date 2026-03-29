@@ -64,7 +64,7 @@ const TermsOfService = () => {
                         transfer of requests and callbacks through their API. Due to all the
                         uncertainties mentioned above; we highly recommend that you read and
                         follow the instructions and only store a measured amount of bitcoin
-                        inside your Lightning Account, use multiple custodian Checking Accounts
+                        inside your Lightning Account, use multiple custodian Lightning Accounts
                         to spread the counter-party risk, periodically monitor your Checking
                         Accounts’ balances and activities from the custodian(s) website or
                         application, and once you’re knowledgeable enough to understand
@@ -138,7 +138,7 @@ const TermsOfService = () => {
                     <Text style={styles.paragraph}>
                         Our Services provide a number of ways for you to secure your funds and
                         help ensure you, and only you, are able to access and transact through
-                        Checking Accounts and Vaults. These features include API authentication
+                        Lightning Accounts and Vaults. These features include API authentication
                         tokens, backup seedphrases, passwords, biometrics, among other features.
                     </Text>
                 </View>

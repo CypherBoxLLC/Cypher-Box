@@ -24,9 +24,10 @@ export default StyleSheet.create<Style>({
     },
     main: {
         width: widths,
-        height: 100,
+        height: 124,
         marginStart: 5,
-        marginVertical: 5
+        marginVertical: 5,
+        paddingTop: 12,
     },
     value: {
         fontSize: 18,
@@ -34,21 +35,25 @@ export default StyleSheet.create<Style>({
         marginTop: 5,
     },
     tab: {
-        width: '45%',
+        width: '43%',
         height: 12,
-        borderRadius: 4,
+        borderRadius: 4.5,
         borderWidth: 1,
         borderColor: colors.white,
         justifyContent: 'center',
+        alignContent: 'center',
+        alignItems: 'center',
         marginEnd: 10,
         marginBottom: 10,
         marginTop: 5,
     },
     progressbar: {
         height: 6,
-        width: undefined,
-        marginHorizontal: 2,
+        //width: undefined,
+        marginHorizontal: 0,
         justifyContent: 'center',
+        alignSelf: 'center',
+        
     },
     coin: {
         flex: 2.2,
@@ -83,10 +88,10 @@ export default StyleSheet.create<Style>({
         borderWidth: 1.6,
         borderColor: colors.green,
         borderRadius: 25,
-        width: '95%',
+        width: '96%',
         height: '95%',
-        top: -5,
-        start: 5,
+        top: 0,
+        start: 4,
         position: 'absolute',
     },
 })

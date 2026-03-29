@@ -27,7 +27,7 @@ const Settings = ({ navigation }) => {
   // By simply having it here, it'll re-render the UI if language is changed
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { language } = useContext(BlueStorageContext);
-  const { isAuth, clearAuth } = useAuthStore();
+  const { isAuth, isStrikeAuth, clearAuth, clearStrikeAuth } = useAuthStore();
 
   const initialState = useCallback(async () => {
     const isStorageEncryptedSwitchEnabled = await isStorageEncrypted();
@@ -43,6 +43,14 @@ const Settings = ({ navigation }) => {
 
   const handleLogout = async () => {
     clearAuth();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'HomeScreen' }],
+    });
+  };
+
+  const handleStrikeLogout = async () => {
+    clearStrikeAuth();
     navigation.reset({
       index: 0,
       routes: [{ name: 'HomeScreen' }],
@@ -129,6 +137,7 @@ const Settings = ({ navigation }) => {
           }} 
         />
         <ListItem title={loc.settings.network} onPress={() => navigate('NetworkSettings')} testID="NetworkSettings" chevron />
+        <ListItem title="Push Notifications" onPress={() => navigate('NotificationSettings')} testID="NotificationSettings" chevron />
         {isAuth && <ListItem title={"Set Recover Email (Coinos.io)"} onPress={() => navigate('ChangeUsername', { goBack: true })} testID="ChangeUsername" chevron /> }
         {/* <ListItem title={loc.settings.tools} onPress={() => navigate('Tools')} testID="Tools" chevron /> */}
         {/* <ListItem title={loc.settings.about} onPress={() => navigate('About')} testID="AboutButton" chevron /> */}
@@ -141,6 +150,7 @@ const Settings = ({ navigation }) => {
           switch={{ onValueChange: onEncryptStorageSwitch, value: storageIsEncryptedSwitchEnabled }}
         /> */}
         {isAuth && <ListItem title={"Logout from Coinos.io"} onPress={handleLogout} testID="LogoutButton" chevron />}
+        {isStrikeAuth && <ListItem title={"Logout from Strike"} onPress={handleStrikeLogout} testID="LogoutButton" chevron />}
       </ScrollView>
     </SafeAreaView>
   );

@@ -20,7 +20,7 @@ export default function TextView({ keytext, text, textStyle }: Props) {
 const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
-        marginBottom:15,
+        marginBottom:25,
         marginStart:15,
         marginEnd: 10,
         alignItems:'flex-start',

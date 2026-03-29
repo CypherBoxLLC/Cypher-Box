@@ -17,6 +17,7 @@ import ProgressBar from "../ProgressBar";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import VaultCapsules from "../VaultCapsules";
 
 interface Props extends TouchableOpacityProps {
     isVault?: boolean;
@@ -42,17 +43,30 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
     const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];
     // const inDollar = '6500';
     const emptyUTXO = !utxo ? 5 : utxo.length <= 5 ? 5 - utxo.length : utxo.length > 5 && 0;
-
     return (
         <TouchableOpacity style={[styles.container, container]} onPress={onPress}>
             <View style={[styles.innerContainer, innerContainer]}>
                 <Shadow
-                    style={StyleSheet.flatten([styles.shadowTopBottom, shadowTopBottom, vaultTabCheck && { shadowColor: colors.blueText }])}
+                    style={StyleSheet.flatten([styles.shadowTopBottom, shadowTopBottom, vaultTabCheck && { shadowColor: '#21C7FB' }])}
                     inner
                     useArt
                 >
                     <View style={styles.bottominner}>
+                        <View style={{flexDirection: "row", flex:1, justifyContent: "start", alignItems: "center"}}>
+                        {title === 'Hot Vault' ? 
+                            <Image
+                            source={require('@Cypher/assets/images/fireShield.png')}
+                            style={{width:25, height: 25, marginRight:8}}
+                            resizeMode="contain"
+                            /> :
+                            <Image
+                                source={require('@Cypher/assets/images/coldShield.png')}
+                                style={{width:25, height: 25, marginRight:8}}
+                                resizeMode="contain"
+                            />
+                        }
                         <Text h3 bold style={titleStyle}>{title}</Text>
+                        </View>
                         <View style={styles.row}>
                             <Text h4 bold style={StyleSheet.flatten([styles.bitcointext, bitcoinText])}>
                                 Bitcoin Network
@@ -73,7 +87,8 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
 
                     <View style={styles.tabs}>
                         {Array(utxo.length > 5 ? 5 : utxo.length).fill(0).map((item, i) => (
-                            <ProgressBar key={item} image={vaultTabCheck ? ProgressBarColdStorage : ProgressBar5} />
+                            <VaultCapsules key={i} item={utxo[i].amount} isPending={utxo[i].height === 0} isVault={vaultTabCheck}></VaultCapsules>
+                            // <ProgressBar key={item} image={vaultTabCheck ? ProgressBarColdStorage : ProgressBar5} />
                         ))}
                         {Array(emptyUTXO).fill(0).map((item, i) => (
                             <View key={item} style={styles.tab} />
@@ -83,7 +98,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                     <Shadow
                         inner
                         useArt
-                        style={StyleSheet.flatten([styles.shadowBottomBottom, shadowBottomBottom, vaultTabCheck && { shadowColor: colors.blueText }])}
+                        style={StyleSheet.flatten([styles.shadowBottomBottom, shadowBottomBottom, vaultTabCheck && { shadowColor: colors.shadowBlue }])}
                     />
                 </Shadow>
             </View>

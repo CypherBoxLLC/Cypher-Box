@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function WithdrawThreshold({ navigation, route }: Props) {
-    const { title, titleBtn, index, matchedRate } = route?.params;
+    const { title, titleBtn, index, matchedRate, currency } = route?.params;
     const [isSats, setIsSats] = useState(true);
     const [isError, setIsError] = useState(false);
     const [isLow, setIsLow] = useState(false);
@@ -69,7 +69,7 @@ export default function WithdrawThreshold({ navigation, route }: Props) {
     return (
         <ScreenLayout showToolbar isBackButton title={title}>
             <View style={styles.container}>
-                <GradientInput isSats={isSats} sats={sats} setSats={setSats} usd={usd} />
+                <GradientInput walletInfo={route?.params} isSats={isSats} sats={sats} setSats={setSats} usd={usd} />
                 {isError && isLow && index == 0 &&
                     <Text style={styles.error}>Withdrawal threshold is too low, indicating that you would incur a higher network fee if you intend to take self-custody of the funds in the future. We recommend keeping it between 2M to 10M sats.</Text>
                 }
@@ -92,6 +92,7 @@ export default function WithdrawThreshold({ navigation, route }: Props) {
                 setIsSATS={setIsSats}
                 isError={isError}
                 matchedRate={matchedRate}
+                currency={currency || 'USD'}
             />
         </ScreenLayout>
     )

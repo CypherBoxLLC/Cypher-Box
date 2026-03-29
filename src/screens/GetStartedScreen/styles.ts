@@ -66,6 +66,7 @@ export default StyleSheet.create<Style>({
     },
 
     container4: {
+        padding: 2,
         backgroundColor: '#171717',
         flex: 1,
         borderRadius: 10,

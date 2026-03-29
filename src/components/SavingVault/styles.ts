@@ -24,7 +24,7 @@ export default StyleSheet.create<Style>({
         shadowColor: '#040404',
         elevation: 24,
         borderRadius: 25,
-        width: widths - 80,
+        width: widths - 40,
         height: 128,
         marginTop: 16,
         borderColor: "transparent",
@@ -44,7 +44,7 @@ export default StyleSheet.create<Style>({
         shadowOpacity: 1,
         shadowColor: colors.greenShadow,
         borderRadius: 25,
-        width: widths - 80,
+        width: widths - 40,
         height: 128,
         backgroundColor: colors.primary,
         padding: 15,
@@ -57,7 +57,7 @@ export default StyleSheet.create<Style>({
         shadowOpacity: 1,
         shadowColor: colors.greenShadowLight,
         borderRadius: 25,
-        width: widths - 80,
+        width: widths - 40,
         height: 128,
         justifyContent: 'center',
         position: 'absolute',
@@ -72,8 +72,8 @@ export default StyleSheet.create<Style>({
         ...shadow.text25,
     },
     bitcoinimg: {
-        width: 25,
-        height: 25,
+        width: 35,
+        height: 35,
     },
 
     row: {

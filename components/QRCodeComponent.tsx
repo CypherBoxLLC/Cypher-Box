@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
+import 'text-encoding';
 import QRCode from 'react-native-qrcode-svg';
 import ToolTipMenu from './TooltipMenu';
 import Share from 'react-native-share';

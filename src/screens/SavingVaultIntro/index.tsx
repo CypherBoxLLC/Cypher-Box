@@ -1,5 +1,5 @@
 import React, {useContext, useReducer, useState} from "react";
-import { View } from "react-native";
+import { View, Image} from "react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -56,13 +56,20 @@ export default function SavingVaultIntro() {
         <ScreenLayout showToolbar progress={0} color={[colors.green, colors.green]}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text style={styles.title}>Savings Vault</Text>
-                    <Text h4 style={styles.descption}>Savings Vault, commonly known as a ‘hot wallet’, allows you to become the sole owner of your bitcoin, as the saying goes: Not your keys, not your coins. Money stored in this vault will be secured by the main Bitcoin network, not by a third party custodian.
+                    <Text style={styles.title}>Hot Savings Vault</Text>
+                    <Text h4 style={styles.descption}>Hot Vault, commonly known as a ‘hot wallet’, allows you to become the sole owner of your bitcoin, as the saying goes: Not your keys, not your coins. Money stored in this vault will be secured by the main Bitcoin network, not by a third party custodian.
                         {'\n\n'}
-                        To create a Savings Vault, you first need to generate your keys: your phone will  create the private key, encrypt it, and store it in a securely in its memory.  It will also create  a backup copy , just in case you lose access to your phone.
+                        To create a Hot Vault, you first need to generate your keys: your phone will  create the private key, encrypt it, and store it in its memory. It will also create a backup copy (12 words), just in case you lose access to your phone.
+                        
                         {'\n\n'}
-                        The backup looks like a series of 12 words. You need to write down them on a piece of paper and store them in a secure location(s).
+                        Caution: while it offers a much more secure storage environment than the Lightning Account, the keys to your Hot Vault are generated and stored on an internet-connect device. As your balance and technical skills increase, you should think about investing in an offline hardware signing device for enhanced security.
                     </Text>
+
+                    <Image
+                      source={require('@Cypher/assets/images/fireShield.png')}
+                      style={{height: 80}}
+                      resizeMode="contain"
+                    />
                 </View>
                 <Button text="Generate Private Key" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
             </View>

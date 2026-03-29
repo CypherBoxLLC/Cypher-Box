@@ -31,7 +31,16 @@ interface Style {
     tabs: ViewStyle;
     checkView: ViewStyle;
     checkImage: ImageStyle;
-    editImage: ImageStyle
+    editImage: ImageStyle;
+    cardListContainer: ViewStyle;
+    cardGradientStyle: ViewStyle;
+    cardOuterShadow: ViewStyle;
+    cardGradientMainStyle: ViewStyle;
+    cardInnerShadow: ViewStyle;
+    cardTopShadow: ViewStyle;
+    logoImage: ImageStyle;
+    vaultIconImage: ImageStyle;
+    coldVaultIconImage: ImageStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -129,7 +138,7 @@ export default StyleSheet.create<Style>({
     },
     checkView: {
         borderWidth: 1,
-        borderColor: colors.blueText,
+        borderColor: colors.coldGreen,
         width: 27,
         height: 25,
         alignItems: 'center',
@@ -214,5 +223,74 @@ export default StyleSheet.create<Style>({
         flexDirection: 'row',
         marginTop: 20,
         alignItems: 'center'
+    },  
+    cardListContainer: {
+        marginVertical: 20,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    logoImage: {
+        width: 80,
+        height: 35,
+        // alignSelf: "center",
+    },
+    cardGradientStyle: {
+        shadowColor: "#040404",
+        shadowOffset: { width: 8, height: 8 },
+        shadowOpacity: 0.8,
+        shadowRadius: 16,
+        elevation: 8,
+        height: 60,
+        marginTop: 15,
+        width: widths * 0.3,
+    },
+    cardOuterShadow: {
+        shadowColor: "#27272C",
+        shadowOffset: { width: -8, height: -8 },
+        shadowOpacity: 0.48,
+        shadowRadius: 12,
+        elevation: 8,
+        flex: 1,
+    },
+    cardGradientMainStyle: {
+        borderRadius: 20,
+        height: 60,
+        justifyContent: "center",
+        // width: widths - 40,
+        width: widths * 0.3,
+    },
+    cardInnerShadow: {
+        shadowOffset: { width: -2, height: -2 },
+        shadowRadius: 2,
+        shadowOpacity: 0.64,
+        shadowColor: colors.pink.shadowBottom,
+        borderRadius: 20,
+        // width: widths - 40,
+        width: widths * 0.3,
+        height: 60,
+        justifyContent: "center",
+        position: "absolute",
+    },
+    cardTopShadow: {
+        shadowOffset: { width: 3, height: 3 },
+        shadowColor: colors.pink.shadowTopNew,
+        shadowRadius: 2,
+        borderRadius: 20,
+        // width: widths - 40,
+        width: widths * 0.3,
+        height: 60,
+        justifyContent: "center",
+    },
+    vaultIconImage: {
+        width: 12,
+        height: 10,
+        marginEnd: 5,
+        marginStart: 5,
+    },
+    coldVaultIconImage: {
+        width: 39,
+        height: 29,
+        marginEnd: 5,
     },
 })

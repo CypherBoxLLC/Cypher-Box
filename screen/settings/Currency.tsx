@@ -95,8 +95,9 @@ const Currency: React.FC = () => {
   );
 
   return (
-    <View style={styles.flex}>
+    <View style={[styles.flex, { backgroundColor: colors.background }]}>
       <FlatList
+        contentContainerStyle={{ backgroundColor: colors.background }}
         contentInsetAdjustmentBehavior="automatic"
         automaticallyAdjustContentInsets
         keyExtractor={(_item, index) => `${index}`}
@@ -125,6 +126,13 @@ const Currency: React.FC = () => {
 };
 
 /* @ts-ignore TODO: fix typescript error later */
-Currency.navigationOptions = navigationStyle({}, (opts: any) => ({ ...opts, title: loc.settings.currency }));
+Currency.navigationOptions = navigationStyle({}, (opts: any) => ({ 
+  ...opts, 
+  title: loc.settings.currency,
+  headerStyle: {
+    backgroundColor: '#0D1421',
+  },
+  headerTintColor: '#FFFFFF',
+}));
 
 export default Currency;

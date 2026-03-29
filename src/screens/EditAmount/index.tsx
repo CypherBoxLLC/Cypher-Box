@@ -12,7 +12,7 @@ interface Props {
 }
 
 export default function SendScreen({ route, navigation }: Props) {
-    const { isEdit, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, setSatsEdit, capsulesData = null, to = null, vaultSend, isBatch, capsuleTotal, title } = route?.params;
+    const { isEdit, vaultTab, currency, wallet, utxo, ids, maxUSD, inUSD, total, toStrike, matchedRate, setSatsEdit, capsulesData = null, to = null, vaultSend, isBatch, capsuleTotal, title } = route?.params;
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState('0');
     const [usd, setUSD] = useState('0');
@@ -28,24 +28,24 @@ export default function SendScreen({ route, navigation }: Props) {
 
     const nextClickHandler = () => {
         setSatsEdit && setSatsEdit();
-        dispatchNavigate('ColdStorage', { wallet, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, to, title, isBatch, capsuleTotal });
+        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, toStrike, to, title, isBatch, capsuleTotal });
         // // route?.params?.setSats(sats, usd);
         // navigation?.pop();
     }
 
     const maxSendClickHandler = () => {
         setSatsEdit && setSatsEdit();
-        dispatchNavigate('ColdStorage', { wallet, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, matchedRate, capsulesData, vaultSend, to, title, isBatch, capsuleTotal });
+        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, isMaxEdit: true, matchedRate, capsulesData, vaultSend, to, toStrike, title, isBatch, capsuleTotal });
     }
 
     return (
         <ScreenLayout disableScroll showToolbar isBackButton >
             <ScrollView style={styles.container}>
                 <GradientInputNew isSats={isSats} sats={sats} setSats={setSats} usd={usd} title={'Specify  Amount'}
-                    _colors={vaultTab ? [colors.blueText, colors.blueText] : [colors.green, colors.green]}
+                    _colors={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]}
                 />
                 <Text bold h2 center style={{ marginTop: 30, marginBottom: 25 }}>Total size of selected bars:{'\n'}{maxUSD} BTC</Text>
-                <TouchableOpacity onPress={maxSendClickHandler} style={[styles.btn, vaultTab && { backgroundColor: colors.blueText }]}>
+                <TouchableOpacity onPress={maxSendClickHandler} style={[styles.btn, vaultTab && { backgroundColor: colors.coldGreen }]}>
                     <Text bold style={{ fontSize: 13 }}>Send Max: {maxUSD} BTC</Text>
                 </TouchableOpacity>
             </ScrollView>

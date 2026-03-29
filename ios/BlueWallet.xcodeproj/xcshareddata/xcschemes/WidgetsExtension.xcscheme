@@ -30,7 +30,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "BlueWallet.app"
+               BuildableName = "CypherBox.app"
                BlueprintName = "BlueWallet"
                ReferencedContainer = "container:BlueWallet.xcodeproj">
             </BuildableReference>
@@ -84,7 +84,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "BlueWallet.app"
+            BuildableName = "CypherBox.app"
             BlueprintName = "BlueWallet"
             ReferencedContainer = "container:BlueWallet.xcodeproj">
          </BuildableReference>
@@ -120,7 +120,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "BlueWallet.app"
+            BuildableName = "CypherBox.app"
             BlueprintName = "BlueWallet"
             ReferencedContainer = "container:BlueWallet.xcodeproj">
          </BuildableReference>

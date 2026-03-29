@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Input, Text } from "@Cypher/component-library";
-import { ActivityIndicator, Animated, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { GradientCard, GradientView } from "@Cypher/components";
@@ -19,24 +19,26 @@ import { OutputModalContent } from "../../../screen/send/coinControl";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { AbstractWallet } from "../../../class";
 import useAuthStore from "@Cypher/stores/authStore";
+import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 // import { Bitcoin, Transaction, TransactionN } from "@Cypher/assets/svg";
 
-export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
+export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, toStrike }: any) {
     const { colors: themeColors } = useTheme();
     const [ids, setIds] = useState([]);
     const [loading, setLoading] = useState(true);
     const [output, setOutput] = useState();
     const [bitcoinHash, setBitcoinHash] = useState();
+    const [bitcoinStrikeHash, setBitcoinStrikeHash] = useState();
     console.log("🚀 ~ Capsules ~ ids:", ids)
     const [btc, setBtc] = useState('0.00');
     const [sendToAddress, setSendToAddress] = useState();
     const [selfAddress, setSelfAddress] = useState();
     const utxo = wallet.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout);
-    const primaryColor = vaultTab ? colors.blueText : colors.green
+    const primaryColor = vaultTab ? colors.coldGreen : colors.green
     const [frozen, setFrozen] = useState(
         utxo.filter(out => wallet.getUTXOMetadata(out.txid, out.vout).frozen).map(({ txid, vout }) => `${txid}:${vout}`),
     );
-    const { walletID, coldStorageWalletID, isAuth } = useAuthStore();
+    const { walletID, coldStorageWalletID, isAuth, isStrikeAuth, strikeUser } = useAuthStore();
     const { wallets, saveToDisk, sleep, isElectrumDisabled } = useContext(BlueStorageContext);
 
     const debouncedSaveFronen = useRef(
@@ -70,18 +72,38 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
     // console.log("🚀 ~ Coins ~ offset:", offset);
 
     useEffect(() => {
-        (async () => {
-            try {
-                const response = await createInvoice({
-                type: 'bitcoin',
-                });
-                setBitcoinHash(response.hash)
-                console.log('response: ', response)
-            } catch (error) {
-                console.error('Error generating bitcoin address:', error);
-            }
-        })();
-    }, []);
+        if(isAuth){
+            (async () => {
+                try {
+                    const response = await createInvoice({
+                        type: 'bitcoin',
+                    });
+                    setBitcoinHash(response.hash)
+                    console.log('response: ', response)
+                } catch (error) {
+                    console.error('Error generating bitcoin address Capsules createInvoice:', error);
+                }
+            })();
+        }
+    }, [isAuth]);
+
+    useEffect(() => {
+        if(isStrikeAuth){
+            (async () => {
+                try {
+                    const responseStrike = await createInvoiceStrike({
+                        onchain: {
+                        },
+                        targetCurrency: strikeUser?.[1].currency || "USD"
+                    });
+                    console.warn('responseStrike: ', responseStrike)
+                    setBitcoinStrikeHash(responseStrike.onchain?.address)
+                } catch (error) {
+                    console.error('Error generating bitcoin address Capsules createInvoiceStrike:', error);
+                }
+            })();
+        }
+    }, [isStrikeAuth])
 
     const obtainWalletAddress = async () => {
         let newAddress;
@@ -130,12 +152,12 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
             capsuleTotal += Number(result)
         });
         if(vaultTab && !walletID){
-            SimpleToast.show("Before creating a transaction, you must first add a Hot Vault wallet", SimpleToast.SHORT)
+            SimpleToast.show("You need to create a Hot Vault first before moving capsules to it", SimpleToast.SHORT)
         } else if(!vaultTab && !coldStorageWalletID){
-            SimpleToast.show("Before creating a transaction, you must first add a Cold Vault wallet", SimpleToast.SHORT)
+            SimpleToast.show("You need to create a Cold Vault first before moving capsules to it", SimpleToast.SHORT)
         }
         else if (ids.length > 0) {
-            dispatchNavigate('ColdStorage', {wallet, utxo, ids, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: sendToAddress, vaultTab, vaultSend: true, title: !vaultTab ? "Transfer To Cold Vault" : undefined, capsuleTotal});
+            dispatchNavigate('ColdStorage', {wallet, currency, utxo, ids, maxUSD: total, isMaxEdit: true, inUSD: inUSD, total: total, matchedRate, capsulesData, to: sendToAddress, vaultTab, vaultSend: true, title: !vaultTab ? "Transfer To Cold Vault" : undefined, capsuleTotal});
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }
@@ -155,16 +177,20 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
         });
         console.log('capsuleTotal: ', capsuleTotal)
         if (ids.length > 0) {
-            dispatchNavigate('ColdStorage', {wallet, capsuleTotal, utxo, ids, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: selfAddress, vaultTab, vaultSend: true, title: vaultTab ? "Batch Capsules" : undefined, isBatch: true});
+            dispatchNavigate('ColdStorage', {wallet, currency, capsuleTotal, utxo, ids, isMaxEdit: true, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: selfAddress, vaultTab, vaultSend: true, title: vaultTab ? "Batch Capsules" : undefined, isBatch: true});
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }
     }
 
     const addressClickHandler = async () => {
-        if(!isAuth){
-            SimpleToast.show('You need to be logged in to Coinos.io to top up', SimpleToast.SHORT);
-            return;
+        // if(!isAuth){
+        //     SimpleToast.show('You need to be logged in to Coinos.io to top up', SimpleToast.SHORT);
+        //     return;
+        // }
+        if (!isAuth && !isStrikeAuth) {
+            SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
+            return
         }
         let capsulesData: any = [];
         let capsuleTotal: any = 0;
@@ -176,7 +202,8 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
             capsuleTotal += Number(result)
         });
         if (ids.length > 0) {
-            dispatchNavigate('ColdStorage', {wallet, capsuleTotal, utxo, ids, vaultTab, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: bitcoinHash, type: "TOPUP"});
+            dispatchNavigate('EditAmount', { isEdit: false, currency, capsuleTotal, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP" });
+            // dispatchNavigate('ColdStorage', {wallet, currency, capsuleTotal, utxo, ids, vaultTab, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP"});
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }
@@ -213,7 +240,16 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
     const handleSendBars = () => {
         if (ids.length > 0) {
             const usd = inUSD.toFixed(2);
-            dispatchNavigate('EditAmount', { isEdit: false, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, to });
+            let capsulesData: any = [];
+            utxo.forEach((u: any) => {
+                const result = ids.includes(`${u.txid}:${u.vout}`);
+                if (result) capsulesData.push({
+                    id: `${u.txid}:${u.vout}`,
+                    value: u.value || u.amount,
+                });
+            });
+            const capsuleTotal = capsulesData.reduce((acc: number, c: any) => acc + (c.value || 0), 0);
+            dispatchNavigate('EditAmount', { isEdit: false, currency, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, to, toStrike, capsulesData, capsuleTotal });
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
         }
@@ -237,12 +273,17 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
                 setFrozen(f => f.filter(i => i !== `${output.txid}:${output.vout}`));
             }
         };
-        return <OutputModalContent output={output} wallet={wallet} onUseCoin={handleUseCoin} frozen={oFrozen} setFrozen={setOFrozen} />;
+        return <OutputModalContent output={output} wallet={wallet} onUseCoin={handleUseCoin} frozen={oFrozen} setFrozen={setOFrozen} vaultTab={vaultTab} />;
     };
 
     return (
         <View style={styles.flex}>
-            <Text bold style={styles.desc}>Tap on your coins to label them. Select multiple coins and batch them together to optimize fees for future transactions:</Text>
+            <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
+                <Text bold style={[styles.desc, {flex: 1}]}>Select your UTXO capsules to send, consolidate, move to Cold Vault, or Top-up your Lightening Account:</Text>
+                <TouchableOpacity onPress={() => dispatchNavigate('CapsuleCatalog')} style={{marginLeft: 10, marginRight: 15, marginTop: 5, width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: vaultTab ? colors.coldGreen : colors.green, alignItems: 'center', justifyContent: 'center'}}>
+                    <Text bold style={{color: vaultTab ? colors.coldGreen : colors.green, fontSize: 14}}>?</Text>
+                </TouchableOpacity>
+            </View>
             <View style={styles.titleStyle}>
                 <Text bold style={styles.coin}>Capsules</Text>
                 <Text bold style={styles.size}>Size</Text>
@@ -258,7 +299,7 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
                     keyExtractor={(_, index) => index.toString()}
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={() => (
-                        <View style={{ height: screenHeight / 3.2, justifyContent: 'center', alignItems: 'center', marginTop: 30 }}>
+                        <View style={{ height: screenHeight / 3.5, justifyContent: 'center', alignItems: 'center', marginTop: 30 }}>
                             <Text white h3 bold>This wallet does not have any coins at the moment.</Text>
                         </View>
                     )}
@@ -281,7 +322,7 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
                     />
                     <Text h2 bold numberOfLines={1} style={{ marginStart: 10, width: 100, }}>~$ {inUSD.toFixed(2)}</Text>
                 </View>
-                <Text bold center style={styles.tips}>Tip: Selecting dust coins will increase network fees</Text>
+                <Text bold center style={styles.tips}>Tip: Selecting small capsules will increase network fees</Text>
                 {vaultTab ?
                     <View style={{
                         flexDirection: 'row',
@@ -291,16 +332,16 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
                             onPress={handleSendBars}
                             style={styles.capsuleLinearGradientStyle}
                             linearGradientStyle={styles.capsuleMainShadowStyle}
-                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                         >
-                            <Text h3 center>Send Capsule</Text>
+                            <Text h3 center>Send</Text>
                         </GradientView>
                         <GradientView
                             onPress={addressClickHandler}
-                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             style={[styles.capsuleLinearGradientStyle, { marginStart: 25 }]}
                             linearGradientStyle={styles.capsuleMainShadowStyle}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
@@ -317,16 +358,16 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
                             onPress={handleSendBars}
                             style={styles.capsuleLinearGradientStyle}
                             linearGradientStyle={styles.capsuleMainShadowStyle}
-                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                         >
-                            <Text h3 center>Send Capsule</Text>
+                            <Text h3 center>Send</Text>
                         </GradientView>
                         <GradientView
                             onPress={addressClickHandler}
-                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                            topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                            bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             style={[styles.capsuleLinearGradientStyle, { marginStart: 25 }]}
                             linearGradientStyle={styles.capsuleMainShadowStyle}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
@@ -346,21 +387,21 @@ export default function Capsules({ wallet, matchedRate, to, vaultTab }: any) {
                         onPress={sendToBatchClickHandler}
                         style={styles.capsuleLinearGradientStyle}
                         linearGradientStyle={styles.capsuleMainShadowStyle}
-                        topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                        bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                        topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                        bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                         linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                     >
-                        <Text h3 center>Batch</Text>
+                        <Text h3 center>Consolidate</Text>
                     </GradientView>
                     <GradientView
                         onPress={moveToVaultClickHandler}
-                        topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
-                        bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.blueText}]}
+                        topShadowStyle={[styles.capsuleOuterShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
+                        bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                         style={[styles.capsuleLinearGradientStyle]}
                         linearGradientStyle={styles.capsuleMainShadowStyle}
                         linearGradientStyleMain={[styles.capsuleLinearGradientStyleMain]}
                     >
-                        <Text h3 center>{vaultTab ? "Move to Hot Vault" : "Move to Cold Vault"}</Text>
+                        <Text h4 center>{vaultTab ? "Move to Hot Vault" : "Move to Cold Vault"}</Text>
                     </GradientView>
                 </View>
             </View>

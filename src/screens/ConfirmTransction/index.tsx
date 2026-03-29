@@ -4,7 +4,7 @@ import { Icon } from 'react-native-elements';
 
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
-import { SavingVault, SwipeButton } from "@Cypher/components";
+import { SavingVault, SwipeButton, VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { shortenAddress } from "../ColdStorage";
@@ -167,17 +167,60 @@ export default function ConfirmTransction({ route }: Props) {
                 /> */}
                 <View style={styles.recipientView}>
                     {!isBatch &&
-                        <Text bold style={styles.coinselected}>Coins selected: {data?.coinsSelected} coins</Text>
+                        <Text bold style={styles.coinselected}>Capsules selected:</Text>
                     }
+                    {capsulesData && capsulesData.length > 0 ? (
+                        <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                            {capsulesData.map((item: any, i: number) => (
+                                <View key={item.id || i} style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                                    <VaultCapsules item={item.value} />
+                                </View>
+                            ))}
+                        </View>
+                    ) : !isBatch && (
+                        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                            {Array(data?.coinsSelected || 0).fill(0).map((_, i) => (
+                                <View key={i} style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                                    <VaultCapsules item={0} />
+                                </View>
+                            ))}
+                        </View>
+                    )}
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>{isBatch ? "Amount to be batched:" : to ? "Top-up amount:" : "Recipient will get:"}</Text>
-                            <Text bold style={[styles.value, vaultTab && {color: colors.blueText}]}>{data?.sats + ' sats ~$'+ data?.inUSD}</Text>
+                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{data?.sats + ' sats ~$'+ data?.inUSD}</Text>
+                            <View style={{flexDirection: 'row', marginTop: 8}}>
+                                <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                                    <VaultCapsules item={data?.sats || 0} />
+                                </View>
+                            </View>
                         </View>
                         {/* <TouchableOpacity style={styles.editAmount} onPress={editAmountClickHandler}>
                             <Text>Edit amount</Text>
                         </TouchableOpacity> */}
                     </View>
+                    {data?.capsuleTotal > 0 && data?.networkFees > 0 && !isBatch &&
+                        (() => {
+                            const changeSats = data.capsuleTotal - data.sats - data.networkFees;
+                            if (changeSats > 0) {
+                                return (
+                                    <View style={[styles.priceView, {marginTop: 5}]}>
+                                        <View>
+                                            <Text style={styles.recipientTitle}>Change:</Text>
+                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats' + (data?.matchedRate ? ' ~$' + (changeSats / 100000000 * Number(data.matchedRate)).toFixed(2) : '')}</Text>
+                                            <View style={{flexDirection: 'row', marginTop: 8}}>
+                                                <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                                                    <VaultCapsules item={changeSats} />
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </View>
+                                );
+                            }
+                            return null;
+                        })()
+                    }
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>Sent from:</Text>
@@ -187,13 +230,13 @@ export default function ConfirmTransction({ route }: Props) {
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>{to && !vaultSend ? "To Coinos Bitcoin address" : "To:"}</Text>
-                            <Text style={StyleSheet.flatten([styles.fees, { color: vaultTab ? colors.blueText : colors.green }])}>{isBatch ? "Cold Vault address: " : "Bitcoin Address: "}{shortenAddress(data?.destinationAddress)}</Text>
+                            <Text style={StyleSheet.flatten([styles.fees, { color: vaultTab ? colors.coldGreen : colors.green }])}>{isBatch ? "Cold Vault address: " : "Bitcoin Address: "}{shortenAddress(data?.destinationAddress)}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>Network fee:</Text>
-                            <Text style={StyleSheet.flatten(styles.fees)}>~ {data?.isCustomFee ? data.networkFees + " sats/vByte" :  data?.networkFees + " sats"}</Text>
+                            <Text style={StyleSheet.flatten(styles.fees)}>~ {data?.isCustomFee ? data.networkFees + " sats/vByte" :  data?.networkFees + " sats"}{!data?.isCustomFee && data?.networkFees && data?.matchedRate ? ` (~$${(data.networkFees / 100000000 * Number(data.matchedRate)).toFixed(2)}) (${(data.networkFees / data.sats * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text style={StyleSheet.flatten(styles.fees)}>~ {btcToSatoshi(data?.fee)}</Text> */}
                         </View>
                     </View>
@@ -213,7 +256,6 @@ export default function ConfirmTransction({ route }: Props) {
                         <Text h4>Note: {data?.note}</Text>                        
                     }
                 </View>
-                <Text h4 center>Causion: Bitcoin payments are irriversable</Text>
                 <View style={styles.swipeview}>
                     <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isLoading} />
                 </View>

@@ -1,3 +1,4 @@
+
 const colors = {
   primary: '#1E1E1E',
 
@@ -6,9 +7,14 @@ const colors = {
     light: '#F959CC',
     extralight: '#FF65DD',
     main: '#E335DC',
-    shadowBottom: '#EA49BD',
+    shadowBottom: '#641234',
     shadowTop: '#D64FB0',
     dark: '#FB17A0',
+    shadowTopNew: '#FF2FC5',
+    gradient1: '#FF65D4',
+    gradient2: '#D617A1',
+    progress: '#FF64DD',
+    stop: '#FFC1F1',
   },
 
   shadow25: 'rgba(0, 0, 0, 0.25)',
@@ -24,12 +30,20 @@ const colors = {
     thin: '#B6B6B6',
     thin2: '#B6B6B6FF',
     disable: '#4A4A4A',
+    bg: '#5F5F5F',
   },
+  coldBlue: '#21C7FB',
+  shadowBlue: '#05344E',
+  coldGreen: '#21C7FB', 
   green: '#23C47F',
   greenNew: '#0CC28A',
   greenShadow: '#6DFFD3',
   greenShadowLight: '#095E44',
   greenText: '#13E1A2',
+  green_:{
+    greenGradient1: '#32D38E',
+    greenGradient2: '#24C47F',
+  },
   blueText: '#1693ED',
   silver: '#C3C3C3',
   tundora: '#2D2D2D',
@@ -43,10 +57,24 @@ const colors = {
     dark: '#090909',
     top: '#010101',
     bottom: '#847C7C',
+    bg: '#262626',
+    gradientTop: '#333333',
+    gradientBottom: '#282727',
+    gradientTop2: '#303030',
   },
   red: '#FF0000',
+  redLight: '#FD7A68',
   stroke: '#A1A1A1',
   border: '#6F6F6F',
+  gradientGray: '#464D6854',
+  cold :{
+    gradient1: '#1693EDFA',
+    gradient2: '#15A7A7',
+  },
+  border_:{
+    gradient1: '#FFFFFF4D',
+    gradient2: '#FFFFFF1A',
+  }
 };
 
 export default colors;
