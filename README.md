@@ -1,4 +1,5 @@
 # Cypher Box - A Fun Way to Play Bitcoin
+Https://Cypherbox.io
 
 **Website:** [cypherbox.io](https://cypherbox.io) | **Community:** [Telegram](https://t.me/BitcoinUserSupport) | **Email:** info@cypherbox.io
 
@@ -60,6 +61,7 @@ npm install
 3. `npx react-native run-android`
 
 ### iOS
+In another terminal window within the Cypher-Box folder:
 
 ```bash
 npx pod-install
@@ -81,22 +83,18 @@ npm start
 
 ---
 
-# UPCOMING
-
-* CI/CD pipeline
-* Push notifications for Strike accounts
-* Lightning Account settings screen
-
----
+Upcoming tasks:
+⏱️ CI/CD pipline
+⏱️ Notifications (only for Coinos at the moment)
+⏱️ Lightning Account settings 
+⏱️ BBQr
 
 # RESPONSIBLE DISCLOSURE
-
-Found a bug or vulnerability?
-* Email: **info@cypherbox.io**
-* Do not publicly disclose until resolved
-* Valid disclosures may qualify for a bounty reward
-
----
+Found critical bugs/vulnerabilities?
+- Please email info@cypherbox.io
+- Please do not publicly disclose vulnerabilities until they have been resolved.
+- Valid, responsible disclosures may qualify for a bounty reward based on the severity of the issue.
+Thank you for helping us keep our project secure!
 
 **License:** [MIT](./LICENSE)  
 **BlueWallet repo:** [github.com/BlueWallet/BlueWallet](https://github.com/BlueWallet/BlueWallet)
