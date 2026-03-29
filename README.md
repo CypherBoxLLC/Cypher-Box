@@ -86,7 +86,6 @@ npm start
 * CI/CD pipeline
 * Push notifications for Strike accounts
 * Lightning Account settings screen
-* Boltz reverse swap integration (Lightning → On-chain)
 
 ---
 
