@@ -22,6 +22,7 @@ interface Props {
     withdrawThreshold: any;
     reserveAmount: any;
     isShowButtons?: boolean;
+    receiveType?: boolean;
     receiveClickHandler?(value: boolean): void;
     sendClickHandler?(value: boolean): void;
 }
@@ -36,6 +37,7 @@ export default function Card({ onPress,
     matchedRate,
     currency,
     isShowButtons = false,
+    receiveType = false,
     receiveClickHandler,
     sendClickHandler,
 }: Props) {

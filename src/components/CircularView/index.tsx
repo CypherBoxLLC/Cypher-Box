@@ -12,7 +12,7 @@ import { SATS, getStrikeCurrency, btc } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
     wallet: any;
-    matchedRate: any;
+    matchedRateStrike: any;
     refRBSheet: any;
     refSendRBSheet: any;
     refSwapRBSheet?: any;
@@ -22,11 +22,11 @@ interface Props {
     convertedRate: any;
     homeMessage?: string | null;
 }
-export default function CircularView({ matchedRate, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeMessage }: Props) {
+export default function CircularView({ matchedRateStrike, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeMessage }: Props) {
     const { strikeUser, withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
     const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
-    const safeMatchedRate = Number(matchedRate) || 0;
+    const safeMatchedRate = Number(matchedRateStrike) || 0;
     const strikeBtcSats = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
     const strikeBtcFiatEquivalent = Number(strikeUser?.[0]?.available || 0) * safeMatchedRate;
     const checkingAccount = {
@@ -49,19 +49,19 @@ export default function CircularView({ matchedRate, wallet, refRBSheet, refSendR
 
     const sendClickHandler = (walletType: boolean) => {
         refSendRBSheet.current.open();
-        // dispatchNavigate('SendScreen', { currency, matchedRate, receiveType: walletType });
+        // dispatchNavigate('SendScreen', { currency, matchedRateStrike, receiveType: walletType });
     };
 
 
     const clickHandler = (value: boolean) => {
         if (value) {
             // CoinOS
-            dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value, currency, balance, converted: convertedRate, withdrawThreshold, reserveAmount });
+            dispatchNavigate('CheckingAccountNew', { wallet, matchedRateStrike, receiveType: value, currency, balance, converted: convertedRate, withdrawThreshold, reserveAmount });
         } else {
             // Strike
             const strikeBalanceSats = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
             const strikeConverted = Number(strikeUser?.[0]?.available || 0) * safeMatchedRate;
-            dispatchNavigate('CheckingAccountNew', { wallet, matchedRate, receiveType: value, currency: strikeUser?.[1]?.currency || 'USD', balance: strikeBalanceSats, converted: strikeConverted, withdrawThreshold: withdrawStrikeThreshold, reserveAmount: reserveStrikeAmount });
+            dispatchNavigate('CheckingAccountNew', { wallet, matchedRateStrike, receiveType: value, currency: strikeUser?.[1]?.currency || 'USD', balance: strikeBalanceSats, converted: strikeConverted, withdrawThreshold: withdrawStrikeThreshold, reserveAmount: reserveStrikeAmount });
         }
     }
 

@@ -17,15 +17,17 @@ interface Props {
     showLogo?: boolean;
     isShowButtons?: boolean;
     btcValue?: string;
-    matchedRate: number;
+    matchedRateStrike: number;
     currency: string;
 }
 
 function StrikeView({ showLogo = false, isShowButtons = false,
     btcValue = '$80,000 /BTC',
-    matchedRate,
+    matchedRateStrike,
     currency
 }: Props) {
+    // Use Strike API rate for Strike wallet, fall back to matchedRate prop if passed
+    const matchedRate = matchedRateStrike;
     // Validate currency is a valid ISO 4217 code, fallback to USD
     const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
     const { strikeUser, clearStrikeAuth } = useAuthStore();
