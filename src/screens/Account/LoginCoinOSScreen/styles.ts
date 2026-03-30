@@ -71,5 +71,12 @@ export default StyleSheet.create<Style>({
     coinOsImage: {
         alignItems: 'center',
         marginVertical: 60
-    }
+    },
+    twoFAText: {
+        color: colors.gray.thin2,
+        fontSize: 14,
+        textAlign: 'center',
+        marginTop: 10,
+        marginBottom: 20,
+    },
 })

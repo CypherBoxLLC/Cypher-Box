@@ -447,3 +447,139 @@ export const getTransactionDetail = async (id: number) => {
     throw error;
   }
 };
+
+// ===========================================
+// Two-Factor Authentication (2FA/TOTP)
+// ===========================================
+
+/**
+ * Get OTP secret for 2FA setup.
+ * Requires user to have a PIN set (server uses requirePin middleware).
+ * Returns: { secret: string, username: string }
+ */
+export const getOTPsecret = async () => {
+  try {
+    const response = await fetch(`${BASE_URL}/user/otpsecret`, await withAuthToken({
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }));
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (response.status === 401 && errorText.includes('pin')) {
+        throw new Error('PIN required. Please set a PIN in your CoinOS account first.');
+      }
+      throw new Error(`Failed to get OTP secret: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error getting OTP secret:', error);
+    throw error;
+  }
+};
+
+/**
+ * Enable 2FA on the user's account.
+ * @param token - 6-digit TOTP code from authenticator app
+ */
+export const enableTwoFA = async (token: string) => {
+  try {
+    const response = await fetch(`${BASE_URL}/user/2fa/enable`, await withAuthToken({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token }),
+    }));
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Invalid TOTP code. Please try again.');
+      }
+      throw new Error(`Failed to enable 2FA: ${errorText}`);
+    }
+
+    console.log('[CoinOS] 2FA enabled successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('Error enabling 2FA:', error);
+    throw error;
+  }
+};
+
+/**
+ * Disable 2FA on the user's account.
+ * @param token - 6-digit TOTP code from authenticator app
+ */
+export const disableTwoFA = async (token: string) => {
+  try {
+    const response = await fetch(`${BASE_URL}/user/2fa/disable`, await withAuthToken({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token }),
+    }));
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Invalid TOTP code. Please try again.');
+      }
+      throw new Error(`Failed to disable 2FA: ${errorText}`);
+    }
+
+    console.log('[CoinOS] 2FA disabled successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('Error disabling 2FA:', error);
+    throw error;
+  }
+};
+
+/**
+ * Submit 2FA token during login (after password auth).
+ * Re-sends login credentials with the TOTP token.
+ */
+export const verifyTwoFALogin = async (token: string, username: string, password: string, captchaToken?: string) => {
+  try {
+    // Re-login with credentials + 2FA token + original captcha token
+    const payload = {
+      username,
+      password,
+      token: token,  // This is the TOTP code
+      recaptcha: captchaToken || ''  // Pass the original captcha token
+    };
+    console.log('[2FA] Sending login with token:', { username, tokenLength: token.length, hasCaptcha: !!captchaToken });
+    
+    const response = await fetch(`${BASE_URL}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': 'CoinOS-Mobile-App',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const responseText = await response.text();
+    console.log('[2FA] Response status:', response.status, 'body:', responseText);
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Invalid 2FA code. Please try again.');
+      }
+      throw new Error(`2FA verification failed: ${responseText}`);
+    }
+
+    // Returns updated user object with full session
+    return JSON.parse(responseText);
+  } catch (error) {
+    console.error('[2FA] Error verifying 2FA login:', error);
+    throw error;
+  }
+};

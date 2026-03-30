@@ -52,6 +52,12 @@ export type AuthStateType = {
     setFirstTimeLightning: (state: boolean) => void;
     setFirstTimeCoinOS: (state: boolean) => void;
     setHasSeenCustodialWarning: (state: boolean) => void;
+
+    // 2FA state
+    twoFARequired: boolean;
+    twoFAVerified: boolean;
+    setTwoFARequired: (state: boolean) => void;
+    setTwoFAVerified: (state: boolean) => void;
 };
 
 const createAuthStore = (
@@ -72,6 +78,9 @@ const createAuthStore = (
     FirstTimeLightning: true,
     FirstTimeCoinOS: true,
     hasSeenCustodialWarning: false,
+    // 2FA state
+    twoFARequired: false,
+    twoFAVerified: false,
     setMatchedRateStrike: (state: number) => set({ matchedRateStrike: state }),
     setAllBTCWallets: (state: string[]) => set({ allBTCWallets: state }),
     setAuth: (state: boolean | undefined) => set({ isAuth: state }),
@@ -85,6 +94,9 @@ const createAuthStore = (
     setFirstTimeLightning: (state: boolean) => set({ FirstTimeLightning: state }),
     setFirstTimeCoinOS: (state: boolean) => set({ FirstTimeCoinOS: state }),
     setHasSeenCustodialWarning: (state: boolean) => set({ hasSeenCustodialWarning: state }),
+    // 2FA setters
+    setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),
+    setTwoFAVerified: (state: boolean) => set({ twoFAVerified: state }),
     clearAuth: () =>
         set({
             vaultTab: false,
