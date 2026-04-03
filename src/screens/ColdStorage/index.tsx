@@ -52,7 +52,6 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [note, setNote] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [destinationAddress, setDestinationAddress] = useState('');
-    // Lightning bridge toggle
     const [useLightningBridge, setUseLightningBridge] = useState(false);
     const [lightningInvoice, setLightningInvoice] = useState('');
     // style = { styles.pasteAddress }
@@ -652,12 +651,11 @@ export default function ColdStorage({ route, navigation }: Props) {
     const coinThresholdClickHandler = () => { }
 
     const handleLightningPaste = async () => {
-            try {
-                const txt = await Clipboard.getString();
-                if (txt) { setLightningInvoice(txt.trim()); SimpleToast.show('Pasted', SimpleToast.SHORT); }
-            } catch(e) { console.log(e); }
-        };
-
+        try {
+            const txt = await Clipboard.getString();
+            if (txt) setLightningInvoice(txt.trim());
+        } catch(e) { console.log(e); }
+    };
     const pasteClickHandler = async () => {
         const text = await Clipboard.getString();
         console.log("🚀 ~ pasteClickHandler ~ text:", text)
@@ -1016,20 +1014,23 @@ export default function ColdStorage({ route, navigation }: Props) {
                               // @ts-ignore: Fix later
                               scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, usd, total, matchedRate, ...route?.params }).then(processAddressData);
                           }}>
-                              <View style={{ marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
-                            <Text style={{ fontSize: 14, color: '#ccc' }}>Lightning</Text>
-                            <Switch value={useLightningBridge} onValueChange={(v) => { setUseLightningBridge(v); if(!v) setLightningInvoice(''); LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); }} ios_backgroundColor="#333333" thumbColor="#ffffff" trackColor={{false:'#666666',true:'#FF65D4'}} />
-                        </View>
-                        {useLightningBridge && (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                                <TouchableOpacity style={{ flex:1, borderRadius:14, borderWidth:1, borderColor:'#FF65D4', backgroundColor:'#1a1a1a', paddingVertical:14, paddingHorizontal:14 }} onPress={handleLightningPaste}>
-                                    <Text style={{color: lightningInvoice ? '#FF65D4' : '#888', fontSize:14 }} numberOfLines={1}>{lightningInvoice || 'Paste invoice'}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={{marginLeft:8, padding:8}}><Image source={require("../../../img/scan-new.png")} style={{width:20,height:20}} /></TouchableOpacity>
-                            </View>
-                        )}
-
-                        <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
+                              <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
+                      </View>
+                      <View style={{ marginTop: 70, paddingHorizontal: 20 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
+                              <Text style={{ fontSize: 14, color: '#ccc' }}>Lightning</Text>
+                              <Switch value={useLightningBridge} onValueChange={(v) => { setUseLightningBridge(v); if(!v) setLightningInvoice(''); LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); }} ios_backgroundColor="#333333" thumbColor="#ffffff" trackColor={{false:'#666666',true:'#FF65D4'}} />
+                          </View>
+                          {useLightningBridge && (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                                  <TouchableOpacity style={{ flex:1, borderRadius:14, borderWidth:1, borderColor:'#FF65D4', backgroundColor:'#1a1a1a', paddingVertical:14, paddingHorizontal:14 }} onPress={handleLightningPaste}>
+                                      <Text style={{color: lightningInvoice ? '#FF65D4' : '#888', fontSize:14 }} numberOfLines={1}>{lightningInvoice || 'Paste invoice'}</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity style={{marginLeft:8, padding:8}}><Image source={require("../../../img/scan-new.png")} style={{width:20,height:20}} /></TouchableOpacity>
+                              </View>
+                          )}
+                      </View>
+                      <View style={{ paddingHorizontal: 20 }}>
                           </TouchableOpacity>
                       </View>
                     }
