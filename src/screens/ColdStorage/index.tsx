@@ -56,6 +56,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [bridgeProvider, setBridgeProvider] = useState<'STRIKE' | 'COINOS' | null>(null);
     const [lightningInvoice, setLightningInvoice] = useState('');
     const [showFeeInfo, setShowFeeInfo] = useState(false);
+    const [showFirePopup, setShowFirePopup] = useState(false);
     // style = { styles.pasteAddress }
     const [visibleSelection, setVisibleSelection] = useState(false);
     const [selectedFees, setSelectedFees] = useState(1);
@@ -1094,7 +1095,9 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                 )}
                                             </View>
                                             {bridgeProvider && (
+                                                <>
                                                 <Text style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Bridge fee: {bridgeProvider === 'STRIKE' ? '0 sats (free)' : '1-100 sats (routing fees)'}</Text>
+                                                </>
                                             )}
                                             
                                         </>
@@ -1192,6 +1195,45 @@ export default function ColdStorage({ route, navigation }: Props) {
                     <Text h3>Next</Text>
                 </TouchableOpacity>
             </View>
+            {showFirePopup && (
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+                        <View style={{ backgroundColor: '#0a0a0a', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#FF65D4', width: '85%', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>On-chain confirmed! Ready to fire Lightning ⚡</Text>
+                            
+                            {/* Electrified Capsule */}
+                            <View style={{ marginVertical: 20 }}>
+                                <View style={{ 
+                                    backgroundColor: '#FF65D4', 
+                                    paddingVertical: 12, 
+                                    paddingHorizontal: 32, 
+                                    borderRadius: 30,
+                                    borderWidth: 2,
+                                    borderColor: '#fff',
+                                    shadowColor: '#FF65D4',
+                                    shadowOffset: {width: 0, height: 0},
+                                    shadowOpacity: 0.8,
+                                    shadowRadius: 20,
+                                    elevation: 10
+                                }}>
+                                    <Text style={{ fontSize: 24, color: '#fff', fontWeight: 'bold' }}>{usd || '0'} sats</Text>
+                                </View>
+                            </View>
+                            
+                            <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>Route Lightning payment</Text>
+                            
+                            <TouchableOpacity 
+                                onPress={() => setShowFirePopup(false)}
+                                style={{ backgroundColor: '#FF65D4', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 25 }}
+                            >
+                                <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>⚡ Route Lightning</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity onPress={() => setShowFirePopup(false)} style={{ marginTop: 16 }}>
+                                <Text style={{ fontSize: 14, color: '#666' }}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
             </ScrollView>
         </ScreenLayout>
     )
