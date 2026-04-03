@@ -100,6 +100,55 @@ export const getStrikeDepositAddress = async (): Promise<{ bitcoinAddress: strin
     throw error;
   }
 };
+
+export const sendStrikeLightningPayment = async (invoice: string, amount?: number): Promise<any> => {
+  try {
+    const idempotencyKey = uuidv4();
+    
+    // Step 1: Create Lightning payment quote
+    const quoteData: any = { invoice };
+    if (amount) {
+      quoteData.amount = amount;
+    }
+    
+    const quoteResponse = await fetch(`${BASE_URL}/payment-quotes/lightning`, await withAuthToken({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'idempotency-key': idempotencyKey
+      },
+      body: JSON.stringify(quoteData),
+    }));
+    
+    if (!quoteResponse.ok) {
+      throw new Error(`Strike quote error: ${quoteResponse.status}`);
+    }
+    
+    const quoteDataResponse = await quoteResponse.json();
+    const paymentQuoteId = quoteDataResponse.paymentQuoteId;
+    console.log('Lightning payment quote ID:', paymentQuoteId);
+    
+    // Step 2: Execute the Lightning payment
+    const executeResponse = await fetch(`${BASE_URL}/payment-quotes/${paymentQuoteId}/execute`, await withAuthToken({
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }));
+    
+    if (!executeResponse.ok) {
+      throw new Error(`Strike execute error: ${executeResponse.status}`);
+    }
+    
+    const executeData = await executeResponse.json();
+    console.log('Lightning payment result:', executeData);
+    return executeData;
+  } catch (error) {
+    console.error('Error sending Strike Lightning payment:', error);
+    throw error;
+  }
+};
+
 export const getPaymentQoute = async (url: string, data: any) => {
     try {
         const idempotencyKey = uuidv4();
