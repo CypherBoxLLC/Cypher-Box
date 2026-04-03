@@ -1036,11 +1036,18 @@ export default function ColdStorage({ route, navigation }: Props) {
                             {/* Lightning Bridge Toggle */}
                         <View style={{ marginTop: 4, paddingHorizontal: 20 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
-                                <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address</Text>
+                                <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text>
                                 <Switch 
                                     value={useLightningBridge}
-                                    disabled={!isStrikeAuth && !isAuth}
-                                    onValueChange={(v) => { setUseLightningBridge(v); if(!v) { setLightningInvoice(''); setBridgeProvider(null); } LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); }} 
+                                    onValueChange={(v) => { 
+                                        if (v && !isStrikeAuth && !isAuth) {
+                                            Alert.alert('Lightning Account Required', 'Please unlock a Lightning account (Strike or Coinos) to use this feature.');
+                                            return;
+                                        }
+                                        setUseLightningBridge(v); 
+                                        if(!v) { setLightningInvoice(''); setBridgeProvider(null); } 
+                                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); 
+                                    }} 
                                     ios_backgroundColor="#333333" 
                                     thumbColor="#ffffff" 
                                     trackColor={{ false: '#666666', true: (isStrikeAuth || isAuth) ? '#FF65D4' : '#444' }} 
@@ -1048,9 +1055,16 @@ export default function ColdStorage({ route, navigation }: Props) {
                             </View>
                             {useLightningBridge && (
                                 <View>
-                                    {(isStrikeAuth || isAuth) ? (
+                                    <Text style={{ fontSize: 12, color: '#888', marginBottom: 8, marginTop: 4 }}>Paste Lightning address or invoice:</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <TouchableOpacity style={{ flex:1, borderRadius:14, borderWidth:1, borderColor:'#FF65D4', backgroundColor:'#1a1a1a', paddingVertical:14, paddingHorizontal:14 }} onPress={handleLightningPaste}>
+                                            <Text style={{color: lightningInvoice ? '#FF65D4' : '#888', fontSize:14 }} numberOfLines={1}>{lightningInvoice || 'Paste Lightning address or invoice'}</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={{marginLeft:8, padding:8}}><Image source={require("../../../img/scan-new.png")} style={{width:20,height:20}} /></TouchableOpacity>
+                                    </View>
+                                    {(isStrikeAuth || isAuth) && (
                                         <>
-                                            <Text style={{ fontSize: 12, color: '#888', marginBottom: 8, marginTop: 4 }}>Choose bridge:</Text>
+                                            <Text style={{ fontSize: 12, color: '#888', marginBottom: 8, marginTop: 16 }}>Choose bridge:</Text>
                                             <View style={{ flexDirection: 'row', gap: 10 }}>
                                                 {isStrikeAuth && (
                                                     <TouchableOpacity 
@@ -1070,16 +1084,9 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                 )}
                                             </View>
                                         </>
-                                    ) : (
-                                        <Text style={{ color: '#888', fontSize: 13, fontStyle: 'italic', marginTop: 8 }}>Unlock Lightning Account first</Text>
                                     )}
-                                    {bridgeProvider && (
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
-                                            <TouchableOpacity style={{ flex:1, borderRadius:14, borderWidth:1, borderColor:'#FF65D4', backgroundColor:'#1a1a1a', paddingVertical:14, paddingHorizontal:14 }} onPress={handleLightningPaste}>
-                                                <Text style={{color: lightningInvoice ? '#FF65D4' : '#888', fontSize:14 }} numberOfLines={1}>{lightningInvoice || 'Paste Lightning address or invoice'}</Text>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity style={{marginLeft:8, padding:8}}><Image source={require("../../../img/scan-new.png")} style={{width:20,height:20}} /></TouchableOpacity>
-                                        </View>
+                                    {!isStrikeAuth && !isAuth && (
+                                        <Text style={{ color: '#888', fontSize: 13, fontStyle: 'italic', marginTop: 8 }}>Unlock Lightning Account first</Text>
                                     )}
                                 </View>
                             )}
