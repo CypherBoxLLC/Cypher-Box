@@ -76,6 +76,30 @@ export const createInvoice = async (invoiceData: any) => {
   }
 };
 
+
+
+export const getStrikeDepositAddress = async (): Promise<{ bitcoinAddress: string }> => {
+  try {
+    // Request on-chain deposit address from Strike
+    const response = await fetch(`${BASE_URL}/receive-requests`, await withAuthToken({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ onchain: {} }),
+    }));
+    
+    if (!response.ok) {
+      throw new Error(`Strike API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return { bitcoinAddress: data.bitcoinAddress };
+  } catch (error) {
+    console.error('Error getting Strike deposit address:', error);
+    throw error;
+  }
+};
 export const getPaymentQoute = async (url: string, data: any) => {
     try {
         const idempotencyKey = uuidv4();
