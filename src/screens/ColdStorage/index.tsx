@@ -53,6 +53,14 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [isLoading, setIsLoading] = useState(false);
     const [destinationAddress, setDestinationAddress] = useState('');
     const [useLightningBridge, setUseLightningBridge] = useState(false);
+    useEffect(() => { 
+        LayoutAnimation.configureNext({
+            duration: 250,
+            create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+            update: { type: LayoutAnimation.Types.easeInEaseOut, springDamping: 0.8 },
+            delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity }
+        });
+    }, [useLightningBridge]);
     const [lightningInvoice, setLightningInvoice] = useState('');
     // style = { styles.pasteAddress }
     const [visibleSelection, setVisibleSelection] = useState(false);
@@ -760,7 +768,7 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     console.log('to: ', to, toStrike, selectedItem, vaultSend)
     return (
-        <ScreenLayout showToolbar disableScroll>
+        <ScreenLayout showToolbar>
             <View style={styles.container}>
                 <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : "Construct transaction"}</Text>
                 {/* <SavingVault
@@ -1012,24 +1020,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                               scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, usd, total, matchedRate, ...route?.params }).then(processAddressData);
                           }}>
                               <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
-                          </View>
-                      </View>
-                      <View style={{ marginTop: 60, paddingHorizontal: 20 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
-                              <Text style={{ fontSize: 14, color: '#ccc' }}>Lightning</Text>
-                              <Switch value={useLightningBridge} onValueChange={(v) => { setUseLightningBridge(v); if(!v) setLightningInvoice(''); LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); }} ios_backgroundColor="#333333" thumbColor="#ffffff" trackColor={{false:'#666666',true:'#FF65D4'}} />
-                          </View>
-                          {useLightningBridge && (
-                              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                                  <TouchableOpacity style={{ flex:1, borderRadius:14, borderWidth:1, borderColor:'#FF65D4', backgroundColor:'#1a1a1a', paddingVertical:14, paddingHorizontal:14 }} onPress={handleLightningPaste}>
-                                      <Text style={{color: lightningInvoice ? '#FF65D4' : '#888', fontSize:14 }} numberOfLines={1}>{lightningInvoice || 'Paste invoice'}</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity style={{marginLeft:8, padding:8}}><Image source={require("../../../img/scan-new.png")} style={{width:20,height:20}} /></TouchableOpacity>
-                              </View>
-                          )}
-                      </View>
-                      <View style={{ paddingHorizontal: 20 }}>
-                          <TouchableOpacity style={styles.button} onPress={pasteClickHandler}>
                           </TouchableOpacity>
                       </View>
                     }
@@ -1046,7 +1036,22 @@ export default function ColdStorage({ route, navigation }: Props) {
                     }
                     <View style={{marginTop: 15}}>
                         <View>
-                            <Text style={styles.recipientTitle}>Network fee:</Text>
+                            {/* Lightning Bridge Toggle */}
+                        <View style={{ marginTop: 4, paddingHorizontal: 20 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
+                                <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address</Text>
+                                <Switch value={useLightningBridge} onValueChange={(v) => { setUseLightningBridge(v); if(!v) setLightningInvoice(''); LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); }} ios_backgroundColor="#333333" thumbColor="#ffffff" trackColor={{false:'#666666',true:'#FF65D4'}} />
+                            </View>
+                            {useLightningBridge && (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                                    <TouchableOpacity style={{ flex:1, borderRadius:14, borderWidth:1, borderColor:'#FF65D4', backgroundColor:'#1a1a1a', paddingVertical:14, paddingHorizontal:14 }} onPress={handleLightningPaste}>
+                                        <Text style={{color: lightningInvoice ? '#FF65D4' : '#888', fontSize:14 }} numberOfLines={1}>{lightningInvoice || 'Paste Lightning address or invoice'}</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={{marginLeft:8, padding:8}}><Image source={require("../../../img/scan-new.png")} style={{width:20,height:20}} /></TouchableOpacity>
+                                </View>
+                            )}
+                        </View>
+                        <Text style={styles.recipientTitle}>Network fee:</Text>
                             
                             <Text bold style={styles.fees}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text bold style={styles.fees}>~ {isCustomFee ? customFee + " sats/vByte" :  getCurrentFee().fee + " sats"}</Text> */}
