@@ -55,6 +55,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [useLightningBridge, setUseLightningBridge] = useState(false);
     const [bridgeProvider, setBridgeProvider] = useState<'STRIKE' | 'COINOS' | null>(null);
     const [lightningInvoice, setLightningInvoice] = useState('');
+    const [showFeeInfo, setShowFeeInfo] = useState(false);
     // style = { styles.pasteAddress }
     const [visibleSelection, setVisibleSelection] = useState(false);
     const [selectedFees, setSelectedFees] = useState(1);
@@ -1083,6 +1084,14 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                     </TouchableOpacity>
                                                 )}
                                             </View>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+                                                <Text style={{ fontSize: 12, color: '#888', marginRight: 8 }}>Fee:</Text>
+                                                <TouchableOpacity onPress={() => setShowFeeInfo(true)}>
+                                                    <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: '#666', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <Text style={{ fontSize: 10, color: '#666' }}>i</Text>
+                                                    </View>
+                                                </TouchableOpacity>
+                                            </View>
                                         </>
                                     )}
                                     {!isStrikeAuth && !isAuth && (
@@ -1091,6 +1100,22 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 </View>
                             )}
                         </View>
+                        {showFeeInfo && (
+                            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 999 }}>
+                                <TouchableOpacity onPress={() => setShowFeeInfo(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+                                <View style={{ backgroundColor: '#1a1a1a', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#333', width: '80%' }}>
+                                    <Text style={{ fontSize: 14, color: '#FF65D4', fontWeight: 'bold', marginBottom: 10 }}>Deposit Time</Text>
+                                    <Text style={{ fontSize: 13, color: '#ccc', lineHeight: 20 }}>
+                                    ~10-30 minutes after first on-chain confirmation.{'
+
+'}Select a higher on-chain fee to speed up the transaction.
+                                </Text>
+                                    <TouchableOpacity onPress={() => setShowFeeInfo(false)} style={{ marginTop: 16, alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 20, backgroundColor: '#FF65D4', borderRadius: 8 }}>
+                                        <Text style={{ color: '#fff', fontWeight: 'bold' }}>OK</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
                         <Text style={styles.recipientTitle}>Network fee:</Text>
                             
                             <Text bold style={styles.fees}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
