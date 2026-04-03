@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Alert, Image, Keyboard, LayoutAnimation, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Image, Keyboard, LayoutAnimation, StyleSheet, Switch, TextInput, TouchableOpacity, View } from "react-native";
 import { Icon } from 'react-native-elements';
 import SimpleToast from "react-native-simple-toast";
 
@@ -52,6 +52,10 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [note, setNote] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [destinationAddress, setDestinationAddress] = useState('');
+    // Lightning Bridge
+    const [network, setNetwork] = useState<'onchain' | 'lightning'>('onchain');
+    const [bridgeProvider, setBridgeProvider] = useState<'COINOS' | 'STRIKE' | null>(null);
+    const [lightningInvoice, setLightningInvoice] = useState('');
     // style = { styles.pasteAddress }
     const [visibleSelection, setVisibleSelection] = useState(false);
     const [selectedFees, setSelectedFees] = useState(1);
@@ -648,7 +652,25 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     const coinThresholdClickHandler = () => { }
 
-    const pasteClickHandler = async () => {
+        const handleLightningPaste = async () => {
+        try {
+            const text = await Clipboard.getString();
+            if (text) {
+                setLightningInvoice(text.trim());
+                SimpleToast.show('Lightning invoice pasted', SimpleToast.SHORT);
+            } else {
+                SimpleToast.show('Nothing to paste', SimpleToast.SHORT);
+            }
+        } catch (error) {
+            console.error('Error pasting lightning invoice:', error);
+        }
+    };
+
+    const handleLightningScan = () => {
+        SimpleToast.show('Scan Lightning invoice (coming soon)', SimpleToast.SHORT);
+    };
+
+const pasteClickHandler = async () => {
         const text = await Clipboard.getString();
         console.log("🚀 ~ pasteClickHandler ~ text:", text)
         setDestinationAddress(text);
@@ -755,7 +777,7 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     console.log('to: ', to, toStrike, selectedItem, vaultSend)
     return (
-        <ScreenLayout showToolbar disableScroll>
+        <ScreenLayout showToolbar>
             <View style={styles.container}>
                 <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : "Construct transaction"}</Text>
                 {/* <SavingVault
@@ -851,6 +873,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                         </View>
                       </View>
                     :
+                      <>
                       <View style={styles.priceView}>
                           <View>
                               <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : "Recipient will get:"}</Text>
@@ -864,9 +887,47 @@ export default function ColdStorage({ route, navigation }: Props) {
                           <TouchableOpacity style={[styles.editAmount, { borderColor: satsEditable ? primaryColor : '#B6B6B6' }]} onPress={editAmountClickHandler}>
                               <Text>Edit amount</Text>
                           </TouchableOpacity>
-                      </View>                    
-                    }
-                    {capsuleTotal > 0 && !isBatch &&
+                      </View>
+
+                    <View style={{ marginTop: 16, alignItems: 'center' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: '#888', marginRight: 12 }}>Send via Lightning</Text>
+                                <Switch
+                                    value={network === 'lightning'}
+                                    ios_backgroundColor="#333333"
+                                    onValueChange={(value) => {
+                                        setNetwork(value ? 'lightning' : 'onchain');
+                                        if (!value) {
+                                            setLightningInvoice('');
+                                        }
+                                        // Simple fade animation
+                                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                    }}
+                                    thumbColor="#ffffff"
+                                    trackColor={{ false: '#666666', true: '#FF65D4' }}
+                                />
+                            </View>
+                            {network === 'lightning' && (
+                                <View style={{ marginTop: 12, width: '100%' }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <TouchableOpacity
+                                            style={{ flex: 1, borderRadius: 14, borderWidth: 1, borderColor: '#FF65D4', backgroundColor: '#1a1a1a', paddingVertical: 14, paddingHorizontal: 14 }}
+                                            onPress={handleLightningPaste}
+                                        >
+                                            <Text numberOfLines={1} style={{ color: lightningInvoice ? '#FF65D4' : '#888', fontSize: 14 }}>
+                                                {lightningInvoice || 'Paste invoice or Lightning address'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={handleLightningScan} style={{ marginLeft: 8, padding: 8 }}>
+                                            <Image source={require("../../../img/scan-new.png")} style={{ width: 20, height: 20 }} resizeMode='contain' />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                </>
+                }
+                {capsuleTotal > 0 && !isBatch &&
                         (() => {
                             const sendAmountSats = (Number(usd || 0) / Number(matchedRate || 0)) * 100000000;
                             const feeSats = feePrecalc.current || 0;
