@@ -651,10 +651,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const coinThresholdClickHandler = () => { }
 
     const handleLightningPaste = async () => {
-        try {
-            const txt = await Clipboard.getString();
-            if (txt) setLightningInvoice(txt.trim());
-        } catch(e) { console.log(e); }
+        try { const txt = await Clipboard.getString(); if (txt) setLightningInvoice(txt.trim()); } catch(e) {}
     };
     const pasteClickHandler = async () => {
         const text = await Clipboard.getString();
@@ -1015,8 +1012,9 @@ export default function ColdStorage({ route, navigation }: Props) {
                               scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, usd, total, matchedRate, ...route?.params }).then(processAddressData);
                           }}>
                               <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
+                          </View>
                       </View>
-                      <View style={{ marginTop: 70, paddingHorizontal: 20 }}>
+                      <View style={{ marginTop: 60, paddingHorizontal: 20 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
                               <Text style={{ fontSize: 14, color: '#ccc' }}>Lightning</Text>
                               <Switch value={useLightningBridge} onValueChange={(v) => { setUseLightningBridge(v); if(!v) setLightningInvoice(''); LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); }} ios_backgroundColor="#333333" thumbColor="#ffffff" trackColor={{false:'#666666',true:'#FF65D4'}} />
@@ -1031,6 +1029,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                           )}
                       </View>
                       <View style={{ paddingHorizontal: 20 }}>
+                          <TouchableOpacity style={styles.button} onPress={pasteClickHandler}>
                           </TouchableOpacity>
                       </View>
                     }
