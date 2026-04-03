@@ -1,5 +1,6 @@
 import React, { useContext, useRef, useState } from "react";
 import { Image, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+import SimpleToast from 'react-native-simple-toast';
 import { Icon } from 'react-native-elements';
 
 import styles from "./styles";
@@ -48,9 +49,13 @@ export default function ConfirmTransction({ route }: Props) {
     const { wallets, fetchAndSaveWalletTransactions } = useContext(BlueStorageContext);
     const [isLoading, setIsLoading] = useState(false);
     const [isPayjoinEnabled, setIsPayjoinEnabled] = useState(false);
+    const [showFirePopup, setShowFirePopup] = useState(false);
     const wallet = wallets.find(w => w.getID() === walletID);
   
     const [isBiometricUseCapableAndEnabled, setIsBiometricUseCapableAndEnabled] = useState(false);
+    
+    // Lightning bridge params
+    const { useLightningBridge, bridgeProvider, lightningInvoice } = route?.params || {};
 
 
     const setSats_ = (sats: any, usd: any) => {
@@ -259,7 +264,67 @@ export default function ConfirmTransction({ route }: Props) {
                 <View style={styles.swipeview}>
                     <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isLoading} />
                 </View>
-            </View>
+                </View>
+                
+                {useLightningBridge && (
+                    <TouchableOpacity 
+                        onPress={() => setShowFirePopup(true)}
+                        style={{ marginTop: 16, padding: 12, backgroundColor: '#333', borderRadius: 8, alignItems: 'center' }}
+                    >
+                        <Text style={{ color: '#FF65D4', fontSize: 14 }}>TEST: Trigger Fire Popup</Text>
+                    </TouchableOpacity>
+                )}
+                
+                {useLightningBridge && showFirePopup && (
+
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+                    <View style={{ backgroundColor: '#0a0a0a', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#FF65D4', width: '85%', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>On-chain confirmed! Ready to fire Lightning</Text>
+                        
+                        {/* Destination */}
+                        <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
+                            <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>To:</Text>
+                            <Text style={{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }}>{lightningInvoice}</Text>
+                        </View>
+                        
+                        {/* Amount */}
+                        <View style={{ marginVertical: 20 }}>
+                            <View style={{ 
+                                backgroundColor: '#FF65D4', 
+                                paddingVertical: 12, 
+                                paddingHorizontal: 32, 
+                                borderRadius: 30,
+                                borderWidth: 2,
+                                borderColor: '#fff',
+                                shadowColor: '#FF65D4',
+                                shadowOffset: {width: 0, height: 0},
+                                shadowOpacity: 0.8,
+                                shadowRadius: 20,
+                                elevation: 10
+                            }}>
+                                <Text style={{ fontSize: 24, color: '#fff', fontWeight: 'bold' }}>{data?.sats || '0'} sats</Text>
+                            </View>
+                        </View>
+                        
+                        <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>Via {bridgeProvider}</Text>
+                        
+                        <TouchableOpacity 
+                            onPress={() => {
+                                // TODO: Call sendLightningPayment()
+                                setShowFirePopup(false);
+                                SimpleToast.show('Lightning payment sent!', SimpleToast.SHORT);
+                            }}
+                            style={{ backgroundColor: '#FF65D4', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 25 }}
+                        >
+                            <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>Route Lightning</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity onPress={() => setShowFirePopup(false)} style={{ marginTop: 16 }}>
+                            <Text style={{ fontSize: 14, color: '#666' }}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
         </ScreenLayout>
     )
 }
