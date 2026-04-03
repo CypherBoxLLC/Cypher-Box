@@ -536,12 +536,21 @@ export default function ColdStorage({ route, navigation }: Props) {
         console.log('data: ', data)
         dispatchNavigate('ConfirmTransction', {
             data: data,
+            useLightningBridge: useLightningBridge && lightningInvoice && bridgeProvider,
+            bridgeProvider: bridgeProvider,
+            lightningInvoice: lightningInvoice,
         });
         setIsLoading(false);
     };
     
 
     const nextClickHandler = async () => {
+        // Check if using Lightning bridge
+        if (useLightningBridge && lightningInvoice && bridgeProvider) {
+            // Pass Lightning bridge info to next screen
+            SimpleToast.show('Proceeding with Lightning bridge...', SimpleToast.SHORT);
+        }
+
         if(!destinationAddress || destinationAddress.length == 0){
             SimpleToast.show("Please Enter Destination Address", SimpleToast.SHORT)
             return
@@ -1200,6 +1209,12 @@ export default function ColdStorage({ route, navigation }: Props) {
                         <View style={{ backgroundColor: '#0a0a0a', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#FF65D4', width: '85%', alignItems: 'center' }}>
                             <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>On-chain confirmed! Ready to fire Lightning ⚡</Text>
                             
+                            {/* Destination */}
+                            <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
+                                <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>To:</Text>
+                                <Text style={{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }}>{lightningInvoice}</Text>
+                            </View>
+                            
                             {/* Electrified Capsule */}
                             <View style={{ marginVertical: 20 }}>
                                 <View style={{ 
@@ -1215,7 +1230,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     shadowRadius: 20,
                                     elevation: 10
                                 }}>
-                                    <Text style={{ fontSize: 24, color: '#fff', fontWeight: 'bold' }}>{usd || '0'} sats</Text>
+                                    <Text style={{ fontSize: 24, color: '#fff', fontWeight: 'bold' }}>{Math.round((Number(usd || 0) / Number(matchedRate || 1)) * 100000000)} sats</Text>
                                 </View>
                             </View>
                             
