@@ -8,7 +8,7 @@ const BASE_URL = 'https://api.strike.me/v1';
 const withAuthToken = async (requestConfig: any) => {
     const authToken = useAuthStore.getState().strikeToken;
     if (!authToken) {
-        throw new Error('Auth token not found in AsyncStorage');
+        throw new Error('Strike not logged in. Please log into Strike first.');
     }
     return {
         ...requestConfig,
@@ -81,20 +81,28 @@ export const createInvoice = async (invoiceData: any) => {
 export const getStrikeDepositAddress = async (): Promise<{ bitcoinAddress: string }> => {
   try {
     // Request on-chain deposit address from Strike
-    const response = await fetch(`${BASE_URL}/receive-requests`, await withAuthToken({
+    const token = useAuthStore.getState().strikeToken;
+    console.log('>>> getStrikeDepositAddress token:', token ? 'EXISTS' : 'MISSING');
+    console.log('>>> Token value:', token?.substring(0, 20) + '...');
+    
+    const response = await fetch(`${BASE_URL}/receive-requests`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({ onchain: {} }),
-    }));
+    });
+    
+    console.log('>>> API response status:', response.status);
     
     if (!response.ok) {
       throw new Error(`Strike API error: ${response.status}`);
     }
     
     const data = await response.json();
-    return { bitcoinAddress: data.bitcoinAddress };
+    console.log('>>> API response data:', JSON.stringify(data));
+    return { bitcoinAddress: data.onchain?.address };
   } catch (error) {
     console.error('Error getting Strike deposit address:', error);
     throw error;

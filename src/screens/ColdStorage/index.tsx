@@ -55,6 +55,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [destinationAddress, setDestinationAddress] = useState('');
     const [useLightningBridge, setUseLightningBridge] = useState(false);
     const [bridgeProvider, setBridgeProvider] = useState<'STRIKE' | 'COINOS' | null>(null);
+    const [bridgeDepositAddress, setBridgeDepositAddress] = useState<string | null>(null);
     const [lightningInvoice, setLightningInvoice] = useState('');
     const [showFeeInfo, setShowFeeInfo] = useState(false);
     const [showFirePopup, setShowFirePopup] = useState(false);
@@ -550,19 +551,28 @@ export default function ColdStorage({ route, navigation }: Props) {
         if (useLightningBridge && lightningInvoice && bridgeProvider) {
             // Use bridge's deposit address as on-chain destination
             if (bridgeProvider === 'STRIKE') {
-                // Get Strike deposit address via API
-                try {
-                    const strikeData = await getStrikeDepositAddress();
-                    if (strikeData?.bitcoinAddress) {
-                        setDestinationAddress(strikeData.bitcoinAddress);
-                        SimpleToast.show('Proceeding with Lightning bridge via Strike...', SimpleToast.SHORT);
-                        createTransaction();
-                    } else {
-                        SimpleToast.show('Failed to get Strike deposit address', SimpleToast.SHORT);
+                // Use bridge deposit address that was already fetched
+                console.log('bridgeDepositAddress:', bridgeDepositAddress);
+                console.log('strikeToken:', useAuthStore.getState().strikeToken ? 'exists' : 'missing');
+                if (bridgeDepositAddress) {
+                    setDestinationAddress(bridgeDepositAddress);
+                    SimpleToast.show('Proceeding with Lightning bridge via Strike...', SimpleToast.SHORT);
+                    createTransaction();
+                } else {
+                    // Try fetching now as fallback
+                    SimpleToast.show('Fetching Strike address...', SimpleToast.SHORT);
+                    try {
+                        const data = await getStrikeDepositAddress();
+                        if (data?.bitcoinAddress) {
+                            setBridgeDepositAddress(data.bitcoinAddress);
+                            setDestinationAddress(data.bitcoinAddress);
+                            SimpleToast.show('Proceeding with Lightning bridge via Strike...', SimpleToast.SHORT);
+                            createTransaction();
+                        }
+                    } catch (err) {
+                        console.error('Fetch error:', err);
+                        SimpleToast.show('Failed to get Strike address: ' + err.message, SimpleToast.LONG);
                     }
-                } catch (error) {
-                    console.error('Error getting Strike deposit address:', error);
-                    SimpleToast.show('Error getting deposit address', SimpleToast.SHORT);
                 }
                 return;
             } else if (bridgeProvider === 'COINOS') {
@@ -1033,7 +1043,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                           </View>
                         </View>
                     :
-                      {!useLightningBridge && (
+                      (!useLightningBridge && (
                           <View style={styles.pasteview}>
                               <TouchableOpacity style={[styles.button, { borderColor: destinationAddress?.length > 0 ? primaryColor : '#B6B6B6' }]} onPress={pasteClickHandler}>
                                   {destinationAddress ?
@@ -1051,7 +1061,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                   <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
                               </TouchableOpacity>
                           </View>
-                      )}
+                      ))
                     }
                     {title &&
                       <>
@@ -1130,6 +1140,12 @@ export default function ColdStorage({ route, navigation }: Props) {
                                             </View>
                                             {bridgeProvider && (
                                                 <>
+                                                {bridgeProvider === 'STRIKE' && bridgeDepositAddress && (
+                                                    <View style={{ marginTop: 16, padding: 12, backgroundColor: '#1a1a1a', borderRadius: 12, borderWidth: 1, borderColor: '#FF65D4' }}>
+                                                        <Text style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Bridge deposit address (verify on device):</Text>
+                                                        <Text style={{ fontSize: 12, color: '#FF65D4', fontWeight: '600' }} numberOfLines={2}>{bridgeDepositAddress}</Text>
+                                                    </View>
+                                                )}
                                                 <Text style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Bridge fee: {bridgeProvider === 'STRIKE' ? '0 sats (free)' : '1-100 sats (routing fees)'}</Text>
                                                 </>
                                             )}
