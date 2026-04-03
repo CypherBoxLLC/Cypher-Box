@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Alert, Image, Keyboard, LayoutAnimation, StyleSheet, Switch, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Image, Keyboard, LayoutAnimation, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from "react-native";
 import { Icon } from 'react-native-elements';
 import SimpleToast from "react-native-simple-toast";
 
@@ -763,7 +763,8 @@ export default function ColdStorage({ route, navigation }: Props) {
     console.log('to: ', to, toStrike, selectedItem, vaultSend)
     return (
         <ScreenLayout showToolbar>
-            <View style={styles.container}>
+            <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
+            <View>
                 <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : "Construct transaction"}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
@@ -899,8 +900,8 @@ export default function ColdStorage({ route, navigation }: Props) {
                     {address && !isBatch &&
                         <View style={styles.priceView}>
                             <View>
-                                <Text style={styles.recipientTitle}>Sent from:</Text>
-                                <Text style={styles.fees}>Vault address: {shortenAddress(address)}</Text>
+                                <Text style={styles.recipientTitle}>Send from vault address:</Text>
+                                <Text style={[styles.fees, { color: vaultTab ? '#87CEEB' : '#4CAF50' }]}>{shortenAddress(address)}</Text>
                             </View>
                         </View>
                     }
@@ -1034,22 +1035,34 @@ export default function ColdStorage({ route, navigation }: Props) {
                         <View style={{ marginTop: 4, paddingHorizontal: 20 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
                                 <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text>
-                                <Switch 
-                                    value={useLightningBridge}
-                                    onValueChange={(v) => { 
-                                        if (v && !isStrikeAuth && !isAuth) {
-                                            Alert.alert('Lightning Account Required', 'Please unlock a Lightning account (Strike or Coinos) to use this feature.');
-                                            return;
-                                        }
-                                        setUseLightningBridge(v); 
-                                        if(!v) { setLightningInvoice(''); setBridgeProvider(null); } 
-                                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); 
-                                    }} 
-                                    ios_backgroundColor="#333333" 
-                                    thumbColor="#ffffff" 
-                                    trackColor={{ false: '#666666', true: (isStrikeAuth || isAuth) ? '#FF65D4' : '#444' }} 
-                                />
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <TouchableOpacity onPress={() => setShowFeeInfo(!showFeeInfo)} style={{ marginRight: 12 }}>
+                                        <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: '#666', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Text style={{ fontSize: 10, color: '#666' }}>i</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                    <Switch 
+                                        value={useLightningBridge}
+                                        onValueChange={(v) => { 
+                                            if (v && !isStrikeAuth && !isAuth) {
+                                                Alert.alert('Lightning Account Required', 'Please unlock a Lightning account (Strike or Coinos) to use this feature.');
+                                                return;
+                                            }
+                                            setUseLightningBridge(v); 
+                                            if(!v) { setLightningInvoice(''); setBridgeProvider(null); } 
+                                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); 
+                                        }} 
+                                        ios_backgroundColor="#333333" 
+                                        thumbColor="#ffffff" 
+                                        trackColor={{ false: '#666666', true: (isStrikeAuth || isAuth) ? '#FF65D4' : '#444' }} 
+                                    />
+                                </View>
                             </View>
+                            {showFeeInfo && (
+                                <View style={{ marginTop: 4, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF65D4', backgroundColor: '#1a1a1a' }}>
+                                    <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16 }}>Sending Bitcoin capsules through the Lightning Network takes two steps: sending from an onchain transaction to a Lightning bridge which takes about ~10-30 min to confirm and for the provider to credit your account. Once that's done, it will ask you to manually approve routing the payment and it will instantaneously reach destination Lightning address.</Text>
+                                </View>
+                            )}
                             {useLightningBridge && (
                                 <View>
                                     <Text style={{ fontSize: 12, color: '#888', marginBottom: 8, marginTop: 4 }}>Paste Lightning address or invoice:</Text>
@@ -1065,7 +1078,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                             <View style={{ flexDirection: 'row', gap: 10 }}>
                                                 {isStrikeAuth && (
                                                     <TouchableOpacity 
-                                                        style={{ flex: 1, borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#000', backgroundColor: '#000000', paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' }} 
+                                                        style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#333', backgroundColor: '#000000', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }} 
                                                         onPress={() => setBridgeProvider('STRIKE')}
                                                     >
                                                         <Text style={{ color: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#fff', fontSize: 14, fontWeight: '600' }}>Strike</Text>
@@ -1073,21 +1086,17 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                 )}
                                                 {isAuth && (
                                                     <TouchableOpacity 
-                                                        style={{ flex: 1, borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'COINOS' ? '#FF65D4' : '#444', backgroundColor: bridgeProvider === 'COINOS' ? '#FF65D433' : '#1a1a1a', paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' }} 
+                                                        style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'COINOS' ? '#FF65D4' : '#444', backgroundColor: bridgeProvider === 'COINOS' ? '#FF65D433' : '#1a1a1a', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }} 
                                                         onPress={() => setBridgeProvider('COINOS')}
                                                     >
                                                         <Text style={{ color: bridgeProvider === 'COINOS' ? '#FF65D4' : '#ccc', fontSize: 14, fontWeight: '600' }}>Coinos</Text>
                                                     </TouchableOpacity>
                                                 )}
                                             </View>
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
-                                                <Text style={{ fontSize: 12, color: '#888', marginRight: 8 }}>Fee:</Text>
-                                                <TouchableOpacity onPress={() => setShowFeeInfo(true)}>
-                                                    <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: '#666', alignItems: 'center', justifyContent: 'center' }}>
-                                                        <Text style={{ fontSize: 10, color: '#666' }}>i</Text>
-                                                    </View>
-                                                </TouchableOpacity>
-                                            </View>
+                                            {bridgeProvider && (
+                                                <Text style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Bridge fee: {bridgeProvider === 'STRIKE' ? '0 sats (free)' : '1-100 sats (routing fees)'}</Text>
+                                            )}
+                                            
                                         </>
                                     )}
                                     {!isStrikeAuth && !isAuth && (
@@ -1096,23 +1105,9 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 </View>
                             )}
                         </View>
-                        {showFeeInfo && (
-                            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999 }}>
-                                <TouchableOpacity onPress={() => setShowFeeInfo(false)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
-                                <View style={{ position: 'absolute', bottom: 200, left: 20, right: 20, backgroundColor: '#1a1a1a', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#FF65D4' }}>
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <Text style={{ fontSize: 13, color: '#FF65D4', fontWeight: 'bold' }}>Estimated time</Text>
-                                        <TouchableOpacity onPress={() => setShowFeeInfo(false)}>
-                                            <Text style={{ color: '#FF65D4', fontSize: 16 }}>X</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                    <Text style={{ fontSize: 12, color: '#ccc', marginTop: 8, lineHeight: 18 }}>Sending Bitcoin capsules from any of your vaults to a bridge take about ~10-30 min to confirm on-chain and the provider (i.e Strike) credits your Lightning account. Once that's done, it will ask you to manually approve routing the payment and it will instantaneously reach destination Lightning address.</Text>
-                                </View>
-                            </View>
-                        )}
-                        <Text style={styles.recipientTitle}>Network fee:</Text>
+                        <Text style={[styles.recipientTitle, { marginTop: 20 }]}>Network fee:</Text>
                             
-                            <Text bold style={styles.fees}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
+                            <Text bold style={[styles.fees, { marginTop: 8 }]}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text bold style={styles.fees}>~ {isCustomFee ? customFee + " sats/vByte" :  getCurrentFee().fee + " sats"}</Text> */}
                         </View>
                         {visibleSelection &&
@@ -1164,7 +1159,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                             </View>
                             </>
                         }
-                        <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6', marginStart: 0, marginTop: 10, alignSelf: 'flex-start' }]}
+                        <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6', marginStart: 0, marginTop: 16, alignSelf: 'flex-start' }]}
                             onPress={editFeesClickHandler}>
                             <Text style={{ marginStart: 10, }}>{isCustomFee ? "Customize" : getCurrentFee().label}</Text>
                             <View style={{ marginHorizontal: 10 }}>
@@ -1190,13 +1185,14 @@ export default function ColdStorage({ route, navigation }: Props) {
                         onChangeText={setTransactionMemo}
                         placeholder="Add note"
                         placeholderTextColor={colors.white}
-                        style={[styles.noteInput, { borderColor: transactionMemo?.length > 0 ? primaryColor : '#B6B6B6' }]}
+                        style={[styles.noteInput, { borderColor: transactionMemo?.length > 0 ? primaryColor : '#B6B6B6', marginTop: 20 }]}
                     />
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, vaultTab && {backgroundColor: colors.coldGreen}]}>
                     <Text h3>Next</Text>
                 </TouchableOpacity>
             </View>
+            </ScrollView>
         </ScreenLayout>
     )
 }
