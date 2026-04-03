@@ -25,6 +25,7 @@ import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { scanQrHelper } from "../../../helpers/scan-qr";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
 import { Check, Edit, StrikeFull, CoinOS } from "@Cypher/assets/images";
+import { getStrikeDepositAddress } from "@Cypher/api/strikeAPIs";
 
 const prompt = require('../../../helpers/prompt');
 const btcAddressRx = /^[a-zA-Z0-9]{26,35}$/;
@@ -545,10 +546,32 @@ export default function ColdStorage({ route, navigation }: Props) {
     
 
     const nextClickHandler = async () => {
-        // Check if using Lightning bridge
+        // Lightning bridge mode: skip on-chain destination validation
         if (useLightningBridge && lightningInvoice && bridgeProvider) {
-            // Pass Lightning bridge info to next screen
-            SimpleToast.show('Proceeding with Lightning bridge...', SimpleToast.SHORT);
+            // Use bridge's deposit address as on-chain destination
+            if (bridgeProvider === 'STRIKE') {
+                // Get Strike deposit address via API
+                try {
+                    const strikeData = await getStrikeDepositAddress();
+                    if (strikeData?.bitcoinAddress) {
+                        setDestinationAddress(strikeData.bitcoinAddress);
+                        SimpleToast.show('Proceeding with Lightning bridge via Strike...', SimpleToast.SHORT);
+                        createTransaction();
+                    } else {
+                        SimpleToast.show('Failed to get Strike deposit address', SimpleToast.SHORT);
+                    }
+                } catch (error) {
+                    console.error('Error getting Strike deposit address:', error);
+                    SimpleToast.show('Error getting deposit address', SimpleToast.SHORT);
+                }
+                return;
+            } else if (bridgeProvider === 'COINOS') {
+                // For Coinos, use existing coinos deposit address
+                SimpleToast.show('Proceeding with Lightning bridge via Coinos...', SimpleToast.SHORT);
+                // TODO: Get Coinos deposit address if needed
+                createTransaction();
+                return;
+            }
         }
 
         if(!destinationAddress || destinationAddress.length == 0){
@@ -1010,23 +1033,25 @@ export default function ColdStorage({ route, navigation }: Props) {
                           </View>
                         </View>
                     :
-                      <View style={styles.pasteview}>
-                          <TouchableOpacity style={[styles.button, { borderColor: destinationAddress?.length > 0 ? primaryColor : '#B6B6B6' }]} onPress={pasteClickHandler}>
-                              {destinationAddress ?
-                                  <Text h3 bold>{destinationAddress}</Text>
-                                  :
-                                  <Text bold>Paste destination address</Text>
-                              }
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={async () => {
-                              // await scanButtonTapped();
-                              Keyboard.dismiss();
-                              // @ts-ignore: Fix later
-                              scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, usd, total, matchedRate, ...route?.params }).then(processAddressData);
-                          }}>
-                              <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
-                          </TouchableOpacity>
-                      </View>
+                      {!useLightningBridge && (
+                          <View style={styles.pasteview}>
+                              <TouchableOpacity style={[styles.button, { borderColor: destinationAddress?.length > 0 ? primaryColor : '#B6B6B6' }]} onPress={pasteClickHandler}>
+                                  {destinationAddress ?
+                                      <Text h3 bold>{destinationAddress}</Text>
+                                      :
+                                      <Text bold>Paste destination Bitcoin network address</Text>
+                                  }
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={async () => {
+                                  // await scanButtonTapped();
+                                  Keyboard.dismiss();
+                                  // @ts-ignore: Fix later
+                                  scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, usd, total, matchedRate, ...route?.params }).then(processAddressData);
+                              }}>
+                                  <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
+                              </TouchableOpacity>
+                          </View>
+                      )}
                     }
                     {title &&
                       <>
