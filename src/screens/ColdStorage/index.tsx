@@ -999,14 +999,12 @@ export default function ColdStorage({ route, navigation }: Props) {
                           </View>
                         </View>
                     :
-                      <>
-                      {!useLightningBridge && (
                       <View style={styles.pasteview}>
                           <TouchableOpacity style={[styles.button, { borderColor: destinationAddress?.length > 0 ? primaryColor : '#B6B6B6' }]} onPress={pasteClickHandler}>
                               {destinationAddress ?
                                   <Text h3 bold>{destinationAddress}</Text>
                                   :
-                                  <Text bold>Paste destination Bitcoin network address</Text>
+                                  <Text bold>Paste destination address</Text>
                               }
                           </TouchableOpacity>
                           <TouchableOpacity onPress={async () => {
@@ -1018,8 +1016,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                               <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
                           </TouchableOpacity>
                       </View>
-                      )}
-                      </>
                     }
                     {title &&
                       <>
@@ -1069,10 +1065,10 @@ export default function ColdStorage({ route, navigation }: Props) {
                                             <View style={{ flexDirection: 'row', gap: 10 }}>
                                                 {isStrikeAuth && (
                                                     <TouchableOpacity 
-                                                        style={{ flex: 1, borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#444', backgroundColor: bridgeProvider === 'STRIKE' ? '#FF65D433' : '#1a1a1a', paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' }} 
+                                                        style={{ flex: 1, borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#000', backgroundColor: '#000000', paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' }} 
                                                         onPress={() => setBridgeProvider('STRIKE')}
                                                     >
-                                                        <Text style={{ color: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#ccc', fontSize: 14, fontWeight: '600' }}>Strike</Text>
+                                                        <Text style={{ color: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#fff', fontSize: 14, fontWeight: '600' }}>Strike</Text>
                                                     </TouchableOpacity>
                                                 )}
                                                 {isAuth && (
@@ -1101,18 +1097,16 @@ export default function ColdStorage({ route, navigation }: Props) {
                             )}
                         </View>
                         {showFeeInfo && (
-                            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 999 }}>
-                                <TouchableOpacity onPress={() => setShowFeeInfo(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-                                <View style={{ backgroundColor: '#1a1a1a', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#333', width: '80%' }}>
-                                    <Text style={{ fontSize: 14, color: '#FF65D4', fontWeight: 'bold', marginBottom: 10 }}>Deposit Time</Text>
-                                    <Text style={{ fontSize: 13, color: '#ccc', lineHeight: 20 }}>
-                                    ~10-30 minutes after first on-chain confirmation.{'
-
-'}Select a higher on-chain fee to speed up the transaction.
-                                </Text>
-                                    <TouchableOpacity onPress={() => setShowFeeInfo(false)} style={{ marginTop: 16, alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 20, backgroundColor: '#FF65D4', borderRadius: 8 }}>
-                                        <Text style={{ color: '#fff', fontWeight: 'bold' }}>OK</Text>
-                                    </TouchableOpacity>
+                            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999 }}>
+                                <TouchableOpacity onPress={() => setShowFeeInfo(false)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
+                                <View style={{ position: 'absolute', bottom: 200, left: 20, right: 20, backgroundColor: '#1a1a1a', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#FF65D4' }}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <Text style={{ fontSize: 13, color: '#FF65D4', fontWeight: 'bold' }}>Estimated time</Text>
+                                        <TouchableOpacity onPress={() => setShowFeeInfo(false)}>
+                                            <Text style={{ color: '#FF65D4', fontSize: 16 }}>X</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    <Text style={{ fontSize: 12, color: '#ccc', marginTop: 8, lineHeight: 18 }}>Sending Bitcoin capsules from any of your vaults to a bridge take about ~10-30 min to confirm on-chain and the provider (i.e Strike) credits your Lightning account. Once that's done, it will ask you to manually approve routing the payment and it will instantaneously reach destination Lightning address.</Text>
                                 </View>
                             </View>
                         )}
