@@ -20,6 +20,8 @@ import Notifications from "../../../blue_modules/notifications";
 import { BitcoinUnit } from "../../../models/bitcoinUnits";
 import { btcToSatoshi } from "../../../blue_modules/currency";
 const BlueElectrum = require('../../../blue_modules/BlueElectrum');
+import { sendLightningPayment } from "@Cypher/api/coinOSApis";
+import { sendStrikeLightningPayment } from "@Cypher/api/strikeAPIs";
 const bitcoin = require('bitcoinjs-lib');
 
 interface Props {
@@ -309,10 +311,30 @@ export default function ConfirmTransction({ route }: Props) {
                         <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>Via {bridgeProvider}</Text>
                         
                         <TouchableOpacity 
-                            onPress={() => {
-                                // TODO: Call sendLightningPayment()
-                                setShowFirePopup(false);
-                                SimpleToast.show('Lightning payment sent!', SimpleToast.SHORT);
+                            onPress={async () => {
+                                if (bridgeProvider === 'STRIKE') {
+                                    try {
+                                        SimpleToast.show('Sending via Strike...', SimpleToast.SHORT);
+                                        const result = await sendStrikeLightningPayment(lightningInvoice);
+                                        console.log('Strike Lightning result:', result);
+                                        setShowFirePopup(false);
+                                        SimpleToast.show('Lightning payment sent via Strike!', SimpleToast.SHORT);
+                                    } catch (err) {
+                                        console.error('Strike payment error:', err);
+                                        SimpleToast.show('Payment failed: ' + err.message, SimpleToast.LONG);
+                                    }
+                                } else if (bridgeProvider === 'COINOS') {
+                                    try {
+                                        SimpleToast.show('Sending via Coinos...', SimpleToast.SHORT);
+                                        const result = await sendLightningPayment(lightningInvoice, '', data?.sats);
+                                        console.log('Coinos Lightning result:', result);
+                                        setShowFirePopup(false);
+                                        SimpleToast.show('Lightning payment sent via Coinos!', SimpleToast.SHORT);
+                                    } catch (err) {
+                                        console.error('Coinos payment error:', err);
+                                        SimpleToast.show('Payment failed: ' + err.message, SimpleToast.LONG);
+                                    }
+                                }
                             }}
                             style={{ backgroundColor: '#FF65D4', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 25 }}
                         >
