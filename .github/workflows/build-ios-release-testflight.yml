@@ -1,4 +1,4 @@
-name: Build Release and Upload to TestFlight (iOS)
+name: Build and Upload to TestFlight (iOS)
 
 concurrency: 
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,71 +14,66 @@ jobs:
   build:
     runs-on: macos-latest
     timeout-minutes: 180
-    outputs:
-      new_build_number: ${{ steps.generate_build_number.outputs.build_number }}
-      project_version: ${{ steps.determine_marketing_version.outputs.project_version }}
-      latest_commit_message: ${{ steps.get_latest_commit_message.outputs.commit_message }}
-    env:
-      APPLE_ID: ${{ secrets.APPLE_ID }}
+
     steps:
       - name: Checkout project
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v4
 
       - name: Specify node version
-        uses: actions/setup-node@v2-beta
+        uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - uses: maxim-lobanov/setup-xcode@v1
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          bundler-cache: true
-
-      - name: Install dependencies with Bundler
-        run: bundle install
-
-      - name: Install Fastlane
-        run: gem install fastlane
-
-      - name: Clear Derived Data
-        run: bundle exec fastlane ios clear_derived_data_lane
-        working-directory: ./ios
-
-      - name: Determine Build Number
-        id: generate_build_number
-        run: echo "::set-output name=build_number::$(date +%Y%m%d%H%M)"
-
-      - name: Determine Marketing Version
-        id: determine_marketing_version
+      - name: Install Ruby dependencies
         run: |
-          VERSION=$(grep -m1 "versionName" android/app/build.gradle | sed 's/.*versionName "\(.*\)"/\1/')
-          echo "::set-output name=project_version::$VERSION"
+          cd ios
+          bundle install || gem install fastlane
 
-      - name: Get Latest Commit Message
-        id: get_latest_commit_message
-        run: echo "::set-output name=commit_message::$(git log -1 --pretty=%B)"
+      - name: Install CocoaPods
+        run: cd ios && pod install
 
-      - name: Build iOS
-        run: bundle exec fastlane ios build_testflight
-        working-directory: ./ios
+      - name: Build iOS (without code signing for now)
         env:
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          ITC_TEAM_ID: ${{ secrets.ITC_TEAM_ID }}
+        run: |
+          cd ios
+          xcodebuild -workspace BlueWallet.xcworkspace \
+            -scheme BlueWallet-NoLDK \
+            -configuration Release \
+            -archivePath ./build/BlueWallet.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Create IPA
+        run: |
+          cd ios
+          mkdir -p ./build
+          xcodebuild -exportArchive \
+            -archivePath ./build/BlueWallet.xcarchive \
+            -exportPath ./build \
+            -exportOptionsPlist ExportOptions.plist \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload IPA as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypherbox-ios-build
+          path: ./ios/build/BlueWallet.ipa
+
+      - name: Upload to TestFlight
+        if: env.APPLE_ID != ''
+        env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          PROVISIONING_PROFILE_SPECIFIER: ${{ secrets.PROVISIONING_PROFILE_SPECIFIER }}
-          CODE_SIGNING_IDENTITY: ${{ secrets.CODE_SIGNING_IDENTITY }}
-          DEPLOYMENT_TARGET: ${{ secrets.DEPLOYMENT_TARGET }}
-
-      - name: Upload build number and version
         run: |
-          echo "Build Number: ${{ steps.generate_build_number.outputs.build_number }}"
-          echo "Version: ${{ steps.determine_marketing_version.outputs.project_version }}"
-          echo "Commit: ${{ steps.get_latest_commit_message.outputs.commit_message }}"
+          # Upload using altool (Apple's tool)
+          altool --upload-app -f ./ios/build/BlueWallet.ipa \
+            -t ios \
+            -u "$APPLE_ID" \
+            -p "$APPLE_ID_PASSWORD" \
+            --output-format xml
