@@ -9,6 +9,15 @@ on:
     branches:
       - CB-Production
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Upload target'
+        required: true
+        default: 'internal'
+        type: choice
+        options:
+          - internal
+          - external
 
 jobs:
   build:
@@ -65,14 +74,63 @@ jobs:
           name: cypherbox-ios-build
           path: ./ios/build/BlueWallet.ipa
 
-      - name: Upload to TestFlight
-        if: env.APPLE_ID != ''
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+  # Upload to Internal TestFlight (auto on push to CB-Production)
+  upload-internal:
+    needs: build
+    runs-on: macos-latest
+    if: github.event_name == 'push'
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+      ITC_TEAM_ID: ${{ secrets.ITC_TEAM_ID }}
+    steps:
+      - name: Download IPA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cypherbox-ios-build
+          path: ./build
+
+      - name: Upload to TestFlight (Internal)
         run: |
-          # Upload using altool (Apple's tool)
-          altool --upload-app -f ./ios/build/BlueWallet.ipa \
+          altool --upload-app -f ./build/BlueWallet.ipa \
+            -t ios \
+            -u "$APPLE_ID" \
+            -p "$APPLE_ID_PASSWORD" \
+            --output-format xml
+
+      - name: Comment on PR
+        if: github.event_name == 'push' && github.event.pull_request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Internal TestFlight build uploaded successfully!'
+            })
+
+  # Upload to External TestFlight (manual trigger only, requires Apple review)
+  upload-external:
+    needs: build
+    runs-on: macos-latest
+    if: github.event_name == 'workflow_dispatch' && github.inputs.target == 'external'
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+      ITC_TEAM_ID: ${{ secrets.ITC_TEAM_ID }}
+    steps:
+      - name: Download IPA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cypherbox-ios-build
+          path: ./build
+
+      - name: Upload to TestFlight (External - requires Beta App Review)
+        run: |
+          echo "⚠️ External TestFlight requires Apple Beta App Review (1-2 days)"
+          echo "Uploading to TestFlight External..."
+          altool --upload-app -f ./build/BlueWallet.ipa \
             -t ios \
             -u "$APPLE_ID" \
             -p "$APPLE_ID_PASSWORD" \
