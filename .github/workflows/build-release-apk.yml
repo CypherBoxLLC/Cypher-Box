@@ -1,5 +1,12 @@
 name: BuildReleaseApk
-on: [pull_request]
+on:
+  push:
+    branches:
+      - Bam-development
+  pull_request:
+    branches:
+      - Bam-development
+      - CB-Development
 
 jobs:
   buildReleaseApk:
@@ -40,8 +47,19 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: ./scripts/build-release-apk.sh
 
-      - uses: actions/upload-artifact@v3
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v3
         if: success()
         with:
-          name: apk
+          name: cypherbox-android-${{ github.sha }}
           path: ./android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload to GitHub Releases (on merge to CB-Development)
+        if: github.event_name == 'push' && contains(github.ref, 'CB-Development')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./android/app/build/outputs/apk/release/app-release.apk
+          tag_name: android-${{ github.sha }}
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
