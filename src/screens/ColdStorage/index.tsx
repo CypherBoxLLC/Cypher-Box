@@ -24,8 +24,9 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { scanQrHelper } from "../../../helpers/scan-qr";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
-import { Check, Edit, StrikeFull, CoinOS } from "@Cypher/assets/images";
-import { getStrikeDepositAddress } from "@Cypher/api/strikeAPIs";
+import { Check, Edit, StrikeFull, CoinOS, Hot } from "@Cypher/assets/images";
+import { getStrikeDepositAddress, createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import { createInvoice as createInvoiceCoinos } from "@Cypher/api/coinOSApis";
 
 const prompt = require('../../../helpers/prompt');
 const btcAddressRx = /^[a-zA-Z0-9]{26,35}$/;
@@ -78,6 +79,9 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [isCheck, setIsCheck] = useState(false);
 
     const [changeAddress, setChangeAddress] = useState();
+    const [changeDestination, setChangeDestination] = useState<'SELF' | 'STRIKE' | 'COINOS' | 'HOT_VAULT'>('SELF');
+    const [changeDepositAddress, setChangeDepositAddress] = useState<string | null>(null);
+    const [changeFetchLoading, setChangeFetchLoading] = useState(false);
     const { wallets, setSelectedWalletID, sleep, txMetadata, saveToDisk, isElectrumDisabled } = useContext(BlueStorageContext);
     const { walletID, coldStorageWalletID, isStrikeAuth, isAuth } = useAuthStore();
     const { navigate } = useNavigation();
@@ -367,6 +371,12 @@ export default function ColdStorage({ route, navigation }: Props) {
           }
         }
     
+        if (changeDestination !== 'SELF' && !changeDepositAddress) {
+          setIsLoading(false);
+          SimpleToast.show('Waiting for change deposit address. Please try again.', SimpleToast.SHORT);
+          return;
+        }
+
         try {
           await createPsbtTransaction();
         } catch (Err) {
@@ -415,12 +425,68 @@ export default function ColdStorage({ route, navigation }: Props) {
         }
     
         if (change) setChangeAddress(change); // cache
-    
+
         return change;
       };
-    
+
+    const handleChangeDestination = async (destination: 'SELF' | 'STRIKE' | 'COINOS' | 'HOT_VAULT') => {
+        if (destination === changeDestination) return;
+        setChangeDestination(destination);
+        setChangeDepositAddress(null);
+
+        if (destination === 'SELF') return;
+
+        setChangeFetchLoading(true);
+        try {
+            if (destination === 'STRIKE') {
+                const response = await createInvoiceStrike({ onchain: {} });
+                if (response?.onchain?.address) {
+                    setChangeDepositAddress(response.onchain.address);
+                } else {
+                    SimpleToast.show('Failed to get Strike deposit address', SimpleToast.SHORT);
+                    setChangeDestination('SELF');
+                }
+            } else if (destination === 'COINOS') {
+                const response = await createInvoiceCoinos({ type: 'bitcoin' });
+                if (response?.hash) {
+                    setChangeDepositAddress(response.hash);
+                } else {
+                    SimpleToast.show('Failed to get CoinOS deposit address', SimpleToast.SHORT);
+                    setChangeDestination('SELF');
+                }
+            } else if (destination === 'HOT_VAULT') {
+                const hotVaultWallet = wallets.find(w => w.getID() === walletID);
+                if (hotVaultWallet) {
+                    let addr;
+                    if (hotVaultWallet instanceof AbstractHDElectrumWallet) {
+                        addr = hotVaultWallet._getExternalAddressByIndex(hotVaultWallet.getNextFreeAddressIndex());
+                    } else {
+                        addr = hotVaultWallet.getAddress();
+                    }
+                    if (addr) {
+                        setChangeDepositAddress(addr);
+                    } else {
+                        SimpleToast.show('Failed to get Hot Vault address', SimpleToast.SHORT);
+                        setChangeDestination('SELF');
+                    }
+                } else {
+                    SimpleToast.show('Hot Vault not found', SimpleToast.SHORT);
+                    setChangeDestination('SELF');
+                }
+            }
+        } catch (err) {
+            console.error('Error fetching change deposit address:', err);
+            SimpleToast.show('Failed to get deposit address: ' + err.message, SimpleToast.SHORT);
+            setChangeDestination('SELF');
+        } finally {
+            setChangeFetchLoading(false);
+        }
+    };
+
     const createPsbtTransaction = async () => {
-        const change = await getChangeAddressAsync();
+        const change = changeDestination !== 'SELF' && changeDepositAddress
+            ? changeDepositAddress
+            : await getChangeAddressAsync();
         const requestedSatPerByte = Number(feeRate);
         const lutxo = utxo || wallet.getUtxo();
         console.log({ requestedSatPerByte, lutxo: lutxo.length });
@@ -479,6 +545,10 @@ export default function ColdStorage({ route, navigation }: Props) {
             totalFees: totalFees,
             isCustomFee: isCustomFee,
             walletID: wallet.getID(),
+            changeRouting: changeDestination !== 'SELF' ? {
+                destination: changeDestination,
+                depositAddress: changeDepositAddress,
+            } : null,
           });
           setIsLoading(false);
           return;
@@ -541,6 +611,10 @@ export default function ColdStorage({ route, navigation }: Props) {
             useLightningBridge: useLightningBridge && lightningInvoice && bridgeProvider,
             bridgeProvider: bridgeProvider,
             lightningInvoice: lightningInvoice,
+            changeRouting: changeDestination !== 'SELF' ? {
+                destination: changeDestination,
+                depositAddress: changeDepositAddress,
+            } : null,
         });
         setIsLoading(false);
     };
@@ -922,18 +996,108 @@ export default function ColdStorage({ route, navigation }: Props) {
                             const sendAmountSats = (Number(usd || 0) / Number(matchedRate || 0)) * 100000000;
                             const feeSats = feePrecalc.current || 0;
                             const changeSats = capsuleTotal - sendAmountSats - feeSats;
+                            const hotVaultWallet = walletID ? wallets.find(w => w.getID() === walletID) : null;
+                            const isSourceHotVault = wallet?.getID() === walletID;
+                            const showHotVault = !!hotVaultWallet && !isSourceHotVault;
                             if (changeSats > 0) {
                                 return (
-                                    <View style={[styles.priceView, {marginTop: 10}]}>
-                                        <View>
-                                            <Text style={styles.recipientTitle}>Change:</Text>
-                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
-                                            <View style={{flexDirection: 'row', marginTop: 8}}>
-                                                <View style={styles.tabs}>
-                                                    <VaultCapsules item={changeSats} />
+                                    <View style={[styles.priceView, {marginTop: 10, flexDirection: 'column'}]}>
+                                        <View style={{flexDirection: 'row'}}>
+                                            <View>
+                                                <Text style={styles.recipientTitle}>Change:</Text>
+                                                <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
+                                                <View style={{flexDirection: 'row', marginTop: 8}}>
+                                                    <View style={styles.tabs}>
+                                                        <VaultCapsules item={changeSats} />
+                                                    </View>
                                                 </View>
                                             </View>
                                         </View>
+                                        {(isStrikeAuth || isAuth || showHotVault) && (
+                                            <View style={{marginTop: 12}}>
+                                                <Text style={[styles.recipientTitle, {fontSize: 14, color: '#AAAAAA'}]}>Deposit change to:</Text>
+                                                <View style={{flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, gap: 8}}>
+                                                    <TouchableOpacity
+                                                        style={{
+                                                            flexDirection: 'row',
+                                                            alignItems: 'center',
+                                                            paddingHorizontal: 12,
+                                                            paddingVertical: 6,
+                                                            borderRadius: 15,
+                                                            borderWidth: 2,
+                                                            borderColor: changeDestination === 'SELF' ? (vaultTab ? colors.coldGreen : colors.green) : '#555',
+                                                            backgroundColor: changeDestination === 'SELF' ? (vaultTab ? 'rgba(135,206,235,0.15)' : 'rgba(76,175,80,0.15)') : 'transparent',
+                                                        }}
+                                                        onPress={() => handleChangeDestination('SELF')}
+                                                    >
+                                                        <Text style={{fontSize: 13, color: changeDestination === 'SELF' ? '#FFFFFF' : '#999'}}>Self</Text>
+                                                    </TouchableOpacity>
+                                                    {isStrikeAuth && (
+                                                        <TouchableOpacity
+                                                            style={{
+                                                                flexDirection: 'row',
+                                                                alignItems: 'center',
+                                                                paddingHorizontal: 12,
+                                                                paddingVertical: 6,
+                                                                borderRadius: 15,
+                                                                borderWidth: 2,
+                                                                borderColor: changeDestination === 'STRIKE' ? '#FF65D4' : '#555',
+                                                                backgroundColor: changeDestination === 'STRIKE' ? 'rgba(255,101,212,0.15)' : 'transparent',
+                                                            }}
+                                                            onPress={() => handleChangeDestination('STRIKE')}
+                                                            disabled={changeFetchLoading}
+                                                        >
+                                                            <Image source={StrikeFull} style={{width: 50, height: 18, marginRight: 4}} resizeMode="contain" />
+                                                        </TouchableOpacity>
+                                                    )}
+                                                    {isAuth && (
+                                                        <TouchableOpacity
+                                                            style={{
+                                                                flexDirection: 'row',
+                                                                alignItems: 'center',
+                                                                paddingHorizontal: 12,
+                                                                paddingVertical: 6,
+                                                                borderRadius: 15,
+                                                                borderWidth: 2,
+                                                                borderColor: changeDestination === 'COINOS' ? '#FF65D4' : '#555',
+                                                                backgroundColor: changeDestination === 'COINOS' ? 'rgba(255,101,212,0.15)' : 'transparent',
+                                                            }}
+                                                            onPress={() => handleChangeDestination('COINOS')}
+                                                            disabled={changeFetchLoading}
+                                                        >
+                                                            <Image source={CoinOS} style={{width: 55, height: 18, marginRight: 4}} resizeMode="contain" />
+                                                        </TouchableOpacity>
+                                                    )}
+                                                    {showHotVault && (
+                                                        <TouchableOpacity
+                                                            style={{
+                                                                flexDirection: 'row',
+                                                                alignItems: 'center',
+                                                                paddingHorizontal: 12,
+                                                                paddingVertical: 6,
+                                                                borderRadius: 15,
+                                                                borderWidth: 2,
+                                                                borderColor: changeDestination === 'HOT_VAULT' ? colors.green : '#555',
+                                                                backgroundColor: changeDestination === 'HOT_VAULT' ? 'rgba(76,175,80,0.15)' : 'transparent',
+                                                            }}
+                                                            onPress={() => handleChangeDestination('HOT_VAULT')}
+                                                            disabled={changeFetchLoading}
+                                                        >
+                                                            <Image source={Hot} style={{width: 14, height: 14, marginRight: 4}} resizeMode="contain" />
+                                                            <Text style={{fontSize: 13, color: changeDestination === 'HOT_VAULT' ? '#FFFFFF' : '#999'}}>Hot Vault</Text>
+                                                        </TouchableOpacity>
+                                                    )}
+                                                </View>
+                                                {changeFetchLoading && (
+                                                    <Text style={{fontSize: 12, color: '#888', marginTop: 6}}>Fetching deposit address...</Text>
+                                                )}
+                                                {changeDestination !== 'SELF' && changeDepositAddress && !changeFetchLoading && (
+                                                    <Text style={{fontSize: 11, color: '#777', marginTop: 6}} numberOfLines={1} ellipsizeMode="middle">
+                                                        → {changeDepositAddress}
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        )}
                                     </View>
                                 );
                             }
@@ -1079,7 +1243,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                             {/* Lightning Bridge Toggle */}
                         <View style={{ marginTop: 4, paddingHorizontal: 20 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
-                                {/* <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text> */}
+                                <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                     <TouchableOpacity onPress={() => setShowFeeInfo(!showFeeInfo)} style={{ marginRight: 12 }}>
                                         <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: '#666', alignItems: 'center', justifyContent: 'center' }}>

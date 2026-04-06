@@ -358,6 +358,199 @@ export const getInvoices = async () => {
     }
 };
 
+// ===== Account Profile & Limits =====
+
+export const getStrikeProfile = async () => {
+    try {
+        const response = await fetch(`${BASE_URL}/accounts/profile`, await withAuthToken({
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error fetching Strike profile:', error);
+        throw error;
+    }
+};
+
+export const getStrikeLimits = async () => {
+    try {
+        const response = await fetch(`${BASE_URL}/accounts/limits`, await withAuthToken({
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error fetching Strike limits:', error);
+        throw error;
+    }
+};
+
+// ===== Bank Payment Methods =====
+
+export const getBankPaymentMethods = async () => {
+    try {
+        const response = await fetch(`${BASE_URL}/payment-methods/bank`, await withAuthToken({
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error fetching bank payment methods:', error);
+        throw error;
+    }
+};
+
+// ===== Fiat Deposits =====
+
+export const estimateDepositFee = async (amount: string, paymentMethodId: string) => {
+    try {
+        const response = await fetch(`${BASE_URL}/deposits/fee`, await withAuthToken({
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ amount, paymentMethodId }),
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error estimating deposit fee:', error);
+        throw error;
+    }
+};
+
+export const initiateDeposit = async (amount: string, paymentMethodId: string) => {
+    const idempotencyKey = uuidv4();
+    try {
+        const response = await fetch(`${BASE_URL}/deposits`, await withAuthToken({
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'idempotency-key': idempotencyKey,
+            },
+            body: JSON.stringify({ amount, paymentMethodId }),
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error initiating deposit:', error);
+        throw error;
+    }
+};
+
+export const getDeposits = async () => {
+    try {
+        const response = await fetch(`${BASE_URL}/deposits`, await withAuthToken({
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error fetching deposits:', error);
+        throw error;
+    }
+};
+
+// ===== Fiat Withdrawals (Payouts) =====
+
+export const createPayout = async (amount: string, paymentMethodId: string) => {
+    try {
+        const response = await fetch(`${BASE_URL}/payouts`, await withAuthToken({
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ amount, paymentMethodId }),
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error creating payout:', error);
+        throw error;
+    }
+};
+
+export const initiatePayout = async (payoutId: string) => {
+    try {
+        const response = await fetch(`${BASE_URL}/payouts/${payoutId}/initiate`, await withAuthToken({
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error initiating payout:', error);
+        throw error;
+    }
+};
+
+export const getPayouts = async () => {
+    try {
+        const response = await fetch(`${BASE_URL}/payouts`, await withAuthToken({
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        }));
+        const responseJSON = await response.json();
+        if (responseJSON?.data?.status === 401) {
+            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
+            useAuthStore.getState().clearStrikeAuth();
+        }
+        return responseJSON;
+    } catch (error) {
+        console.error('Error fetching payouts:', error);
+        throw error;
+    }
+};
+
 export const getInvoicesByID = async (id: string) => {
     try {
         const response = await fetch(`${BASE_URL}/invoices/${id}`, await withAuthToken({

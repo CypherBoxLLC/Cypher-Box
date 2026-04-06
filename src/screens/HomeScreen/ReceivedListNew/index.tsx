@@ -54,62 +54,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
   const [selectedItem, setSelectedItem] = useState<number | null>(allBTCWallets.length == 1 && (!coldStorageWalletID && !walletID) && allBTCWallets[0] == "STRIKE" ? 1 : allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "COINOS" ? 2 : null);
   console.log("🚀 ~ ReceivedListNew ~ selectedItem:", selectedItem);
-  const [data, setData] = useState([
-    ...(isStrikeAuth ? [{
-      id: 1,
-      name: "Strike",
-      type: 0,
-      icon: StrikeFull,
-      description: user + "@coinos.io",
-      navigation: {},
-    }] : []),
-    ...(isAuth ? [{
-      id: 2,
-      name: "CoinOS",
-      type: 0,
-      icon: CoinOS,
-      description:
-        "Receive from wallets and exchanges that support the Lightning Network",
-      navigation: {
-        screen: "CreateInvoice",
-        params: {
-          matchedRate,
-          currency,
-          receiveType: false
-        },
-      },
-    }] : []),
-    ...(walletID ? [{
-      id: 3,
-      name: "Hot Vault",
-      type: 1,
-      icon: Hot,
-      description:
-        "Receive from wallets and exchanges that support the Liquid Federation",
-      navigation: {
-        screen: "QrScreen",
-        params: {
-          isBitcoinQr: true,
-          type: "liquid",
-        },
-      },
-    }] : []),
-    ...(coldStorageWalletID ? [{
-      id: 4,
-      name: "Cold Vault",
-      type: 2,
-      icon: Cold1,
-      description:
-        "To deposit sizable amounts of bitcoin from the main network",
-      navigation: {
-        screen: "QrScreen",
-        params: {
-          isBitcoinQr: true,
-          type: "bitcoin",
-        },
-      },
-    }] : []),
-  ]);
+
   const [tab, setTab] = useState(0);
   const [showSecondView, setShowSecondView] = useState(allBTCWallets.length == 1 ? true : false);
   const [hashLiquid, setHashLiquid] = useState('');
@@ -117,8 +62,11 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   const qrCode = useRef();
   const base64QrCodeRef = useRef('');
 
-
   const [isLoading, setIsLoading] = useState(false);
+
+  const hasLightning = isStrikeAuth || isAuth;
+  const hasHotVault = !!walletID;
+  const hasColdVault = !!coldStorageWalletID;
 
   useEffect(() => {
     if (tab == 1) {
@@ -185,7 +133,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
 
   const onPress = (item: any) => {
     if (item?.id == 1 || item?.id == 2 || item?.id == 3 || item?.id == 4) {
-      // Strike, Coinos, Hot Vault, Cold Vault - all expand inline now
       setSelectedItem(item.id);
       setTab(0);
       animateToSecondView();
@@ -231,7 +178,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   }
 
   const getTabs = () => {
-    // Vaults (Hot/Cold) show Address tab
     if (selectedItem === 3 || selectedItem === 4) {
       return [
         {
@@ -279,9 +225,93 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   const tabs = getTabs();
 
   const showBackButton = allBTCWallets.length > 1 ||
-  (allBTCWallets.length == 1 && coldStorageWalletID) || 
-  (allBTCWallets.length == 1 && walletID) || 
+  (allBTCWallets.length == 1 && coldStorageWalletID) ||
+  (allBTCWallets.length == 1 && walletID) ||
   (coldStorageWalletID && walletID);
+
+  // --- 2x2 Grid Tile Component ---
+  const renderGridTile = (
+    id: number,
+    label: string,
+    subtitle: string,
+    icon: any,
+    iconStyle: any,
+    isEnabled: boolean,
+    accentColor: string,
+    shadowColor: string,
+  ) => {
+    const isLogo = id === 1 || id === 2; // Strike/CoinOS use logo images
+    return (
+      <View style={{ width: '48%', opacity: isEnabled ? 1 : 0.3 }} pointerEvents={isEnabled ? 'auto' : 'none'}>
+        <GradientView
+          onPress={() => isEnabled && onPress({ id })}
+          style={{
+            shadowColor: "#040404",
+            shadowOffset: { width: 6, height: 6 },
+            shadowOpacity: 0.7,
+            shadowRadius: 12,
+            elevation: 6,
+            height: 100,
+            width: '100%',
+          }}
+          linearGradientStyle={{
+            shadowColor: "#27272C",
+            shadowOffset: { width: -6, height: -6 },
+            shadowOpacity: 0.4,
+            shadowRadius: 10,
+            elevation: 6,
+            flex: 1,
+          }}
+          topShadowStyle={{
+            shadowOffset: { width: 2, height: 2 },
+            shadowColor: shadowColor,
+            shadowRadius: 3,
+            borderRadius: 20,
+            width: '100%',
+            height: 100,
+            justifyContent: "center",
+          }}
+          bottomShadowStyle={{
+            shadowOffset: { width: -2, height: -2 },
+            shadowRadius: 2,
+            shadowOpacity: 0.5,
+            shadowColor: shadowColor,
+            borderRadius: 20,
+            width: '100%',
+            height: 100,
+            justifyContent: "center",
+            position: "absolute",
+          }}
+          linearGradientStyleMain={{
+            borderRadius: 20,
+            height: 100,
+            justifyContent: "center",
+            alignItems: "center",
+            width: '100%',
+          }}
+          gradiantColors={[colors.black.bg, colors.black.bg]}
+        >
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+            {isLogo ? (
+              <Image
+                source={icon}
+                style={{ width: 90, height: 32, marginBottom: 6 }}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Image source={icon} style={iconStyle} resizeMode="contain" />
+                <Text bold style={{ fontSize: 16, marginLeft: 6 }}>{label}</Text>
+              </View>
+            )}
+            <Text style={{ fontSize: 11, color: '#888', textAlign: 'center' }} numberOfLines={2}>
+              {subtitle}
+            </Text>
+          </View>
+        </GradientView>
+      </View>
+    );
+  };
 
   return (
     <>
@@ -297,74 +327,102 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
           colors={[colors.black.gradientTop2, colors.black.default]}
           style={styles.containerGradientView}
         >
+          {/* ======= FIRST VIEW: 2x2 Grid ======= */}
           <Animated.View style={[{}, view1Style]}>
-            <View style={styles.cardListContainer}>
-            <Text h2 bold style={styles.receiveToLabel}>
-              RECEIVE TO
-            </Text>
-              {data?.map((item) => (
-                <GradientView
-                  onPress={() => onPress(item)}
-                  style={styles.cardGradientStyle}
-                  linearGradientStyle={styles.cardOuterShadow}
-                  topShadowStyle={[
-                    styles.cardTopShadow,
-                    item?.id == 4
-                      ? { shadowColor: colors.blueText }
-                      : item?.id == 3 && { shadowColor: colors.greenShadow },
-                  ]}
-                  bottomShadowStyle={[
-                    styles.cardInnerShadow,
-                    item?.id == 4
-                      ? { shadowColor: colors.blueText }
-                      : item?.id == 3 && { shadowColor: colors.greenShadow },
-                  ]}
-                  linearGradientStyleMain={styles.cardGradientMainStyle}
-                  gradiantColors={[colors.black.bg, colors.black.bg]}
-                >
-                  <View
-                    style={{
-                      flexDirection: item?.type !== 0 ? "row" : "column",
-                      justifyContent:
-                        item?.type !== 0 ? "center" : "flex-start",
-                      alignItems: item?.type !== 0 ? "center" : "flex-start",
-                      
-                      
-                    }}
-                  >
-                    {item?.type !== 0 && (
-                      <Image
-                        source={item?.icon}
-                        style={
-                          item?.id == 3
-                            ? styles.coldVaultIconImage
-                            : styles.vaultIconImage
-                        }
-                        resizeMode="contain"
-                      />
-                    )}
-                    {item?.type === 0 ? (
-                      <Image
-                        source={item?.icon}
-                        style={styles.logoImage}
-                        resizeMode="contain"
-                      />
-                    ) : (
-                      <Text h2 bold>
-                        {item?.name}
-                      </Text>
-                    )}
-                  </View>
-                </GradientView>
-              ))}
+            <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
+              <Text h2 bold style={{ alignSelf: 'center', marginBottom: 16 }}>
+                RECEIVE TO
+              </Text>
+
+              {/* Top row: Lightning custodians */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                {renderGridTile(
+                  1,
+                  'Strike',
+                  'Small–medium amounts',
+                  StrikeFull,
+                  {},
+                  isStrikeAuth,
+                  '#FF65D4',
+                  colors.pink.shadowTopNew,
+                )}
+                {renderGridTile(
+                  2,
+                  'CoinOS',
+                  'Small–medium amounts',
+                  CoinOS,
+                  {},
+                  isAuth,
+                  '#FF65D4',
+                  colors.pink.shadowTopNew,
+                )}
+              </View>
+
+              {/* Bottom row: Vaults */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                {renderGridTile(
+                  3,
+                  'Hot Vault',
+                  'Medium–large amounts',
+                  Hot,
+                  { width: 22, height: 30, marginEnd: 2 },
+                  hasHotVault,
+                  colors.green,
+                  colors.greenShadow,
+                )}
+                {renderGridTile(
+                  4,
+                  'Cold Vault',
+                  'Medium–large amounts',
+                  Cold1,
+                  { width: 30, height: 22, marginEnd: 2 },
+                  hasColdVault,
+                  colors.coldGreen,
+                  colors.blueText,
+                )}
+              </View>
             </View>
-            {/* <Text h2 bold style={styles.receiveToLabel}>
-              RECEIVE TO
-            </Text> */}
           </Animated.View>
+
+          {/* ======= SECOND VIEW: Sub-menus ======= */}
           <Animated.View
-            style={[{ flex: 1, position: "absolute" }, view2Style]}
+            style={[{ flex: 1, position: "absolute", width: '100%' }, view2Style]}
           >
+            {/* Back button + title header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 }}>
+              {showBackButton && (
+                <TouchableOpacity onPress={backClickHandler} style={{ padding: 4 }}>
+                  <Image
+                    source={Back}
+                    style={{ width: 26, height: 24 }}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+              )}
+              <View style={{ flex: 1, alignItems: 'center', marginRight: showBackButton ? 30 : 0 }}>
+                <Image
+                  source={
+                    selectedItem === 1 ? StrikeFull
+                    : selectedItem === 2 ? CoinOS
+                    : selectedItem === 3 ? Hot
+                    : Cold1
+                  }
+                  style={
+                    (selectedItem === 1 || selectedItem === 2)
+                      ? { width: 100, height: 32 }
+                      : { width: 28, height: 28 }
+                  }
+                  resizeMode="contain"
+                />
+                {(selectedItem === 3 || selectedItem === 4) && (
+                  <Text bold style={{ fontSize: 14, marginTop: 2 }}>
+                    {selectedItem === 3 ? 'Hot Vault' : 'Cold Vault'}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {/* Tabs */}
             {tabs.length > 0 && (
               <CustomTabView
                 tabs={tabs}
@@ -372,52 +430,72 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 onTabChange={setTab}
               />
             )}
-            {/* Vault Address View - ONLY when vault is selected */}
+
+            {/* ---- Vault Sub-menu (Hot/Cold) ---- */}
             {(selectedItem === 3 || selectedItem === 4) && tab === 0 && (
-              <View style={{ paddingHorizontal: 16, paddingBottom: 16, minHeight: 200 }}>
-                <Text h2 bold style={{ marginBottom: 4 }}>
-                  {selectedItem === 3 ? "Hot Vault" : "Cold Vault"}
-                </Text>
-                <View style={styles.addressRow}>
-                  <Text semibold style={styles.bitcoinAddressText} numberOfLines={2}>
-                    {selectedItem === 3 ? vaultAddress : coldStorageAddress}
-                  </Text>
-                  <TouchableOpacity onPress={() => {
-                    Clipboard.setString(selectedItem === 3 ? vaultAddress : coldStorageAddress);
-                    SimpleToast.show('Copied to clipboard', SimpleToast.SHORT)
-                  }}>
-                    <Image source={Copy} style={styles.copyIconImage} />
-                  </TouchableOpacity>
-                </View>
-                {(selectedItem === 3 ? vaultAddress : coldStorageAddress) &&
-                  <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
+              <View style={{ paddingHorizontal: 20, alignItems: 'center' }}>
+                {/* QR Code */}
+                {(selectedItem === 3 ? vaultAddress : coldStorageAddress) ? (
+                  <View style={{ backgroundColor: 'white', padding: 10, borderRadius: 8, marginTop: 12 }}>
                     <QRCode
                       value={selectedItem === 3 ? vaultAddress : coldStorageAddress}
-                      size={180}
+                      size={150}
                       color="black"
                       backgroundColor="white"
                     />
                   </View>
-                }
-                {/* "Show Vault Address" button - simple text link */}
-                <TouchableOpacity 
+                ) : (
+                  <ActivityIndicator size="large" color="#ffffff" style={{ marginTop: 30 }} />
+                )}
+
+                {/* Address + Copy */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingHorizontal: 10 }}>
+                  <Text style={{ fontSize: 13, color: '#CCC', flex: 1, textAlign: 'center' }} numberOfLines={2}>
+                    {selectedItem === 3 ? vaultAddress : coldStorageAddress}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const addr = selectedItem === 3 ? vaultAddress : coldStorageAddress;
+                      Clipboard.setString(addr);
+                      SimpleToast.show('Address copied', SimpleToast.SHORT);
+                    }}
+                    style={{ marginLeft: 8 }}
+                  >
+                    <Image source={Copy} style={{ width: 28, height: 20 }} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* View All Addresses button */}
+                <TouchableOpacity
                   onPress={() => {
                     refRBSheet?.current?.close();
                     setReceivedListSecondTab(false);
                     setTimeout(() => {
-                      setVaultTab(selectedItem === 3 ? false : true);
-                      dispatchNavigate('HotStorageVault', { wallet: selectedItem === 3 ? wallet : coldStorageWallet, matchedRate });
+                      setVaultTab(selectedItem === 4);
+                      dispatchNavigate('HotStorageVault', {
+                        wallet: selectedItem === 3 ? wallet : coldStorageWallet,
+                        matchedRate,
+                        initialTab: 0,
+                      });
                     }, 150);
                   }}
-                  style={{ marginTop: 16, alignItems: 'center' }}
+                  style={{
+                    marginTop: 16,
+                    paddingVertical: 10,
+                    paddingHorizontal: 24,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: selectedItem === 3 ? colors.green : colors.coldGreen,
+                  }}
                 >
-                  <Text h4 style={{ color: colors.pink.main, textDecorationLine: 'underline' }}>
-                    Show Vault Address
+                  <Text style={{ fontSize: 14, color: selectedItem === 3 ? colors.green : colors.coldGreen, textAlign: 'center' }}>
+                    View All Vault Addresses
                   </Text>
                 </TouchableOpacity>
               </View>
             )}
-            {/* Strike/CoinOS content - ONLY when vault is NOT selected */}
+
+            {/* ---- Strike/CoinOS Lightning Tab ---- */}
             {selectedItem !== 3 && selectedItem !== 4 && tab === 0 ? (
               <View style={styles.lightningTabContent}>
                 <View style={styles.addressRow}>
@@ -430,7 +508,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     <Image source={Copy} style={styles.copyIconImage} />
                   </TouchableOpacity>
                 </View>
-                {/* {selectedItem === 2 && ( */}
                 <GradientCard
                   colors_={[colors.gray.light, colors.white]}
                   style={styles.invoiceCardContainer}
@@ -457,7 +534,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     </View>
                   </View>
                 </GradientCard>
-                {/* )} */}
               </View>
             ) : selectedItem !== 3 && selectedItem !== 4 && tab === 1 ? (
               <View style={styles.bitcoinTabContent}>
@@ -539,25 +615,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   Receive from wallets and exchanges that support the Liquid Federation
                 </Text>
               </View>
-            )}
-            {/* Hide bottom action row (Strike/CoinOS logos) when vault selected */}
-            {selectedItem !== 3 && selectedItem !== 4 && (
-            <View style={styles.bottomActionRow}>
-              {showBackButton &&
-                <TouchableOpacity onPress={backClickHandler}>
-                  <Image
-                    source={Back}
-                    style={styles.backButtonImage}
-                    resizeMode="contain"
-                  />
-                </TouchableOpacity>
-              }
-              <Image
-                source={selectedItem === 1 ? StrikeFull : CoinOS}
-                style={styles.strikeLogoImage}
-                resizeMode="contain"
-              />
-            </View>
             )}
           </Animated.View>
         </LinearGradient>

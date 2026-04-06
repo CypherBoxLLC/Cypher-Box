@@ -14,6 +14,8 @@ module.exports = {
       new RegExp(`${path.resolve(__dirname, 'windows').replace(/[/\\]/g, '/')}.*`),
       // This prevents "react-native run-windows" from hitting: EBUSY: resource busy or locked, open msbuild.ProjectImports.zip
       /.*\.ProjectImports\.zip/,
+      // Exclude Claude Code worktrees to avoid duplicate module errors
+      new RegExp(`${path.resolve(__dirname, '.claude').replace(/[/\\]/g, '/')}.*`),
     ]),
   },
   transformer: {
