@@ -69,6 +69,19 @@ jobs:
           name: cypherbox-android
           path: ./android/app/build/outputs/apk/release/app-release.apk
 
+      - name: Comment on PR with artifact link
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `✅ **Build complete!**\n\nDownload the APK from the **Actions** tab above, or click the artifact in this run.\n\n**Version:** dev-${'${{ github.sha }}'.substring(0, 7)}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
       - name: Upload to GitHub Releases (on merge to CB-Development)
         if: github.event_name == 'push' && contains(github.ref, 'CB-Development')
         uses: softprops/action-gh-release@v1
@@ -78,57 +91,6 @@ jobs:
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Upload to GCS for immediate testing on CB-Development
-      - name: Upload to GCS for testing
-        if: (github.event_name == 'push' || github.event_name == 'pull_request') && (github.ref == 'refs/heads/CB-Development' || github.event_name == 'pull_request')
-        env:
-          ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
-        run: |
-          echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
-          gcloud auth activate-service-account --key-file=gcp-key.json --project=cypherbox-app
-          
-          # Create version tag from commit short SHA
-          VERSION_TAG="dev-$(echo ${{ github.sha }} | cut -c1-7)"
-          gsutil cp ./android/app/build/outputs/apk/release/app-release.apk gs://cypherbox-test-builds/cypherbox-$VERSION_TAG.apk
-          gsutil cp ./android/app/build/outputs/apk/release/app-release.apk gs://cypherbox-test-builds/cypherbox-latest.apk
-          
-          echo "APK_URL=https://storage.googleapis.com/cypherbox-test-builds/cypherbox-$VERSION_TAG.apk" >> $GITHUB_ENV
-          echo "LATEST_URL=https://storage.googleapis.com/cypherbox-test-builds/cypherbox-latest.apk" >> $GITHUB_ENV
-
-      - name: Comment on PR with download link
-        if: (github.event_name == 'push' || github.event_name == 'pull_request') && (github.ref == 'refs/heads/CB-Development' || github.event_name == 'pull_request')
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const link = process.env.APK_URL;
-            const latestLink = process.env.LATEST_URL;
-            const body = `📦 **Android APK ready for testing!**\n\n- **Version:** dev-${'${{ github.sha }}'.substring(0, 7)}\n- **Download:** ${latestLink}\n\n_Install on your phone to test. This link always points to the latest build._`;
-            
-            if (context.eventName === 'pull_request') {
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: body
-              });
-            } else {
-              // For push to CB-Development, find the PR and comment there
-              const prs = await github.rest.pulls.list({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                head: 'CB-Development',
-                state: 'open'
-              });
-              if (prs.data.length > 0) {
-                github.rest.issues.createComment({
-                  issue_number: prs.data[0].number,
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  body: body
-                });
-              }
-            }
 
   # Upload to Internal Testing (auto on push to CB-Production)
   upload-internal:
