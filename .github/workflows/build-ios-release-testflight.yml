@@ -7,7 +7,7 @@ concurrency:
 on:
   push:
     branches:
-      - CB-Production
+      - CB-Development
   workflow_dispatch:
     inputs:
       target:
@@ -46,7 +46,7 @@ jobs:
       - name: Install CocoaPods
         run: cd ios && pod install
 
-      - name: Build iOS (without code signing for now)
+      - name: Build iOS
         env:
           ITC_TEAM_ID: ${{ secrets.ITC_TEAM_ID }}
         run: |
@@ -74,7 +74,7 @@ jobs:
           name: cypherbox-ios-build
           path: ./ios/build/BlueWallet.ipa
 
-  # Upload to Internal TestFlight (auto on push to CB-Production)
+  # Upload to Internal TestFlight (auto on push to CB-Development)
   upload-internal:
     needs: build
     runs-on: macos-latest
@@ -110,7 +110,7 @@ jobs:
               body: '✅ Internal TestFlight build uploaded successfully!'
             })
 
-  # Upload to External TestFlight (manual trigger only, requires Apple review)
+  # Upload to External TestFlight (manual trigger only)
   upload-external:
     needs: build
     runs-on: macos-latest
@@ -129,7 +129,6 @@ jobs:
       - name: Upload to TestFlight (External - requires Beta App Review)
         run: |
           echo "⚠️ External TestFlight requires Apple Beta App Review (1-2 days)"
-          echo "Uploading to TestFlight External..."
           altool --upload-app -f ./build/BlueWallet.ipa \
             -t ios \
             -u "$APPLE_ID" \

@@ -101,9 +101,6 @@ jobs:
           gcloud auth activate-service-account --key-file=gcp-key.json
           
           # Upload to internal track (no review required)
-          gsutil cp ./build/app-release.apk gs://cypherbox-internal-upload/
-          
-          # Use fastlane to upload to Play Store internal track
           cd android
           bundle exec fastlane supply \
             --json_key ../gcp-key.json \
@@ -123,7 +120,7 @@ jobs:
               body: '✅ Internal Play Store build uploaded successfully!'
             })
 
-  # Upload to Production (manual trigger only, requires review)
+  # Upload to Production (manual trigger only)
   upload-production:
     needs: build
     runs-on: macos-latest
@@ -140,13 +137,12 @@ jobs:
       - name: Upload to Play Store (Production - requires review)
         run: |
           echo "⚠️ Production upload requires Play Store review (typically 1-7 days)"
-          echo "Uploading to Play Store Production..."
           
           # Set up GCP service account
           echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
           gcloud auth activate-service-account --key-file=gcp-key.json
           
-          # Upload to production track (requires review)
+          # Upload to production track
           cd android
           bundle exec fastlane supply \
             --json_key ../gcp-key.json \
