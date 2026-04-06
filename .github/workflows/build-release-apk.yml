@@ -1,15 +1,30 @@
-name: BuildReleaseApk
+name: Build and Upload to Play Store (Android)
+
 on:
   push:
     branches:
-      - Bam-development
+      - CB-Development
   pull_request:
     branches:
       - Bam-development
       - CB-Development
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Upload target'
+        required: true
+        default: 'internal'
+        type: choice
+        options:
+          - internal
+          - production
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  buildReleaseApk:
+  build:
     runs-on: macos-latest
 
     steps:
@@ -51,7 +66,7 @@ jobs:
         uses: actions/upload-artifact@v3
         if: success()
         with:
-          name: cypherbox-android-${{ github.sha }}
+          name: cypherbox-android
           path: ./android/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload to GitHub Releases (on merge to CB-Development)
@@ -63,3 +78,78 @@ jobs:
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Upload to Internal Testing (auto on push to CB-Development)
+  upload-internal:
+    needs: build
+    runs-on: macos-latest
+    if: github.event_name == 'push'
+    env:
+      ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cypherbox-android
+          path: ./build
+
+      - name: Upload to Play Store (Internal Testing)
+        run: |
+          echo "Uploading to Play Store Internal Testing..."
+          # Set up GCP service account
+          echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
+          gcloud auth activate-service-account --key-file=gcp-key.json
+          
+          # Upload to internal track (no review required)
+          gsutil cp ./build/app-release.apk gs://cypherbox-internal-upload/
+          
+          # Use fastlane to upload to Play Store internal track
+          cd android
+          bundle exec fastlane supply \
+            --json_key ../gcp-key.json \
+            --package_name io.cypherbox.app \
+            --track internal \
+            --apk ../build/app-release.apk
+
+      - name: Comment on PR
+        if: github.event_name == 'push' && github.event.pull_request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Internal Play Store build uploaded successfully!'
+            })
+
+  # Upload to Production (manual trigger only, requires review)
+  upload-production:
+    needs: build
+    runs-on: macos-latest
+    if: github.event_name == 'workflow_dispatch' && github.inputs.target == 'production'
+    env:
+      ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cypherbox-android
+          path: ./build
+
+      - name: Upload to Play Store (Production - requires review)
+        run: |
+          echo "⚠️ Production upload requires Play Store review (typically 1-7 days)"
+          echo "Uploading to Play Store Production..."
+          
+          # Set up GCP service account
+          echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
+          gcloud auth activate-service-account --key-file=gcp-key.json
+          
+          # Upload to production track (requires review)
+          cd android
+          bundle exec fastlane supply \
+            --json_key ../gcp-key.json \
+            --package_name io.cypherbox.app \
+            --track production \
+            --apk ../build/app-release.apk
