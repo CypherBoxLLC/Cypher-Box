@@ -7,7 +7,7 @@ concurrency:
 on:
   push:
     branches:
-      - CB-Development
+      - CB-Production
   workflow_dispatch:
     inputs:
       target:
@@ -74,7 +74,7 @@ jobs:
           name: cypherbox-ios-build
           path: ./ios/build/BlueWallet.ipa
 
-  # Upload to Internal TestFlight (auto on push to CB-Development)
+  # Upload to Internal TestFlight (auto on push to CB-Production)
   upload-internal:
     needs: build
     runs-on: macos-latest
@@ -98,19 +98,7 @@ jobs:
             -p "$APPLE_ID_PASSWORD" \
             --output-format xml
 
-      - name: Comment on PR
-        if: github.event_name == 'push' && github.event.pull_request
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ Internal TestFlight build uploaded successfully!'
-            })
-
-  # Upload to External TestFlight (manual trigger only)
+  # Upload to External TestFlight (manual trigger from main)
   upload-external:
     needs: build
     runs-on: macos-latest

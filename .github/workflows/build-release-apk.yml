@@ -3,7 +3,7 @@ name: Build and Upload to Play Store (Android)
 on:
   push:
     branches:
-      - CB-Development
+      - CB-Production
   pull_request:
     branches:
       - Bam-development
@@ -79,7 +79,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Upload to Internal Testing (auto on push to CB-Development)
+  # Upload to Internal Testing (auto on push to CB-Production)
   upload-internal:
     needs: build
     runs-on: macos-latest
@@ -96,11 +96,8 @@ jobs:
       - name: Upload to Play Store (Internal Testing)
         run: |
           echo "Uploading to Play Store Internal Testing..."
-          # Set up GCP service account
           echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
           gcloud auth activate-service-account --key-file=gcp-key.json
-          
-          # Upload to internal track (no review required)
           cd android
           bundle exec fastlane supply \
             --json_key ../gcp-key.json \
@@ -108,19 +105,7 @@ jobs:
             --track internal \
             --apk ../build/app-release.apk
 
-      - name: Comment on PR
-        if: github.event_name == 'push' && github.event.pull_request
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ Internal Play Store build uploaded successfully!'
-            })
-
-  # Upload to Production (manual trigger only)
+  # Upload to Production (manual trigger from main)
   upload-production:
     needs: build
     runs-on: macos-latest
@@ -137,12 +122,8 @@ jobs:
       - name: Upload to Play Store (Production - requires review)
         run: |
           echo "⚠️ Production upload requires Play Store review (typically 1-7 days)"
-          
-          # Set up GCP service account
           echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
           gcloud auth activate-service-account --key-file=gcp-key.json
-          
-          # Upload to production track
           cd android
           bundle exec fastlane supply \
             --json_key ../gcp-key.json \
