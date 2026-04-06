@@ -1079,7 +1079,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                             {/* Lightning Bridge Toggle */}
                         <View style={{ marginTop: 4, paddingHorizontal: 20 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
-                                <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text>
+                                {/* <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text> */}
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                     <TouchableOpacity onPress={() => setShowFeeInfo(!showFeeInfo)} style={{ marginRight: 12 }}>
                                         <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: '#666', alignItems: 'center', justifyContent: 'center' }}>
