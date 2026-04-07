@@ -26,6 +26,9 @@ concurrency:
 jobs:
   build:
     runs-on: macos-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout project
@@ -95,60 +98,88 @@ jobs:
               body: body
             });
 
-      - name: Upload to GitHub Releases (on merge to CB-Development)
+      - name: Create GitHub Release (on push to CB-Development)
         if: github.event_name == 'push' && contains(github.ref, 'CB-Development')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: ./android/app/build/outputs/apk/release/app-release.apk
-          tag_name: android-${{ github.sha }}
+          tag_name: android-${{ github.run_number }}-${{ github.sha }}
+          name: Android Build #${{ github.run_number }}
           draft: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          generate_release_notes: true
 
   upload-internal:
     needs: build
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/CB-Production'
-    env:
-      ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
     steps:
+      - name: Checkout (for fastlane)
+        uses: actions/checkout@v4
+
       - name: Download APK artifact
         uses: actions/download-artifact@v4
         with:
           name: cypherbox-android
           path: ./build
 
+      - name: Set up Ruby (for fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Install fastlane
+        run: gem install fastlane
+
       - name: Upload to Play Store (Internal Testing)
+        env:
+          ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
         run: |
           echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
-          gcloud auth activate-service-account --key-file=gcp-key.json
-          cd android
-          bundle exec fastlane supply \
-            --json_key ../gcp-key.json \
-            --package_name io.cypherbox.app \
+          fastlane supply \
+            --json_key gcp-key.json \
+            --package_name io.cypherbox.btc \
             --track internal \
-            --apk ../build/app-release.apk
+            --apk ./build/app-release.apk \
+            --skip_upload_metadata \
+            --skip_upload_images \
+            --skip_upload_screenshots
+          rm gcp-key.json
 
   upload-production:
     needs: build
-    runs-on: macos-latest
-    if: github.event_name == 'workflow_dispatch' && github.inputs.target == 'production'
-    env:
-      ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production'
     steps:
+      - name: Checkout (for fastlane)
+        uses: actions/checkout@v4
+
       - name: Download APK artifact
         uses: actions/download-artifact@v4
         with:
           name: cypherbox-android
           path: ./build
 
+      - name: Set up Ruby (for fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Install fastlane
+        run: gem install fastlane
+
       - name: Upload to Play Store (Production)
+        env:
+          ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
         run: |
           echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
-          gcloud auth activate-service-account --key-file=gcp-key.json
-          cd android
-          bundle exec fastlane supply \
-            --json_key ../gcp-key.json \
-            --package_name io.cypherbox.app \
+          fastlane supply \
+            --json_key gcp-key.json \
+            --package_name io.cypherbox.btc \
             --track production \
-            --apk ../build/app-release.apk
+            --apk ./build/app-release.apk \
+            --skip_upload_metadata \
+            --skip_upload_images \
+            --skip_upload_screenshots
+          rm gcp-key.json
