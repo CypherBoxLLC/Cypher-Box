@@ -22,7 +22,7 @@ echo "Keystore created at: $(pwd)/app/cypherbox-release-key.keystore ($(wc -c < 
 # file() in build.gradle resolves relative to the app/ module dir,
 # so the path must be just the filename since the keystore is in app/
 sed -i '' "s|^MYAPP_RELEASE_STORE_FILE=.*|MYAPP_RELEASE_STORE_FILE=cypherbox-release-key.keystore|" gradle.properties
-sed -i '' "s|^MYAPP_RELEASE_KEY_ALIAS=.*|MYAPP_RELEASE_KEY_ALIAS=cypherbox|" gradle.properties
+sed -i '' "s|^MYAPP_RELEASE_KEY_ALIAS=.*|MYAPP_RELEASE_KEY_ALIAS=my-key-alias|" gradle.properties
 sed -i '' "s|^MYAPP_RELEASE_STORE_PASSWORD=.*|MYAPP_RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD|" gradle.properties
 sed -i '' "s|^MYAPP_RELEASE_KEY_PASSWORD=.*|MYAPP_RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD|" gradle.properties
 
