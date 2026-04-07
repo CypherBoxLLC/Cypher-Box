@@ -39,7 +39,7 @@ jobs:
           node-version: 16
 
       - name: Use npm caches
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -63,7 +63,7 @@ jobs:
         run: ./scripts/build-release-apk.sh
 
       - name: Upload APK as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: success()
         with:
           name: cypherbox-android
