@@ -2,10 +2,6 @@
 
 
 # assumes 2 env variables: KEYSTORE_FILE_HEX & KEYSTORE_PASSWORD
-#
-# PS. to turn file to hex and back:
-#     $ xxd -plain test.txt > test.hex
-#     $ xxd -plain -revert test.hex test2.txt
 
 
 # Create keystore from hex
@@ -15,16 +11,24 @@ rm cypherbox-release-key.keystore.hex
 
 cd android
 
-# Update gradle.properties to use our keystore
-sed -i'.original' -e "s|MYAPP_RELEASE_STORE_FILE=.*|MYAPP_RELEASE_STORE_FILE=cypherbox-release-key.keystore|" \
-                   -e "s|MYAPP_RELEASE_KEY_ALIAS=.*|MYAPP_RELEASE_KEY_ALIAS=cypherbox|" \
-                   -e "s|MYAPP_RELEASE_STORE_PASSWORD=.*|MYAPP_RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD|" \
-                   -e "s|MYAPP_RELEASE_KEY_PASSWORD=.*|MYAPP_RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD|" \
-                   gradle.properties
+# Directly update gradle.properties with correct values
+cat > gradle.properties << PROPS
+# Project-wide Gradle settings.
+org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
+org.gradle.parallel=true
+android.useAndroidX=true
+android.enableJetifier=true
+hermesEnabled=true
+newArchEnabled=false
+MYAPP_RELEASE_STORE_FILE=cypherbox-release-key.keystore
+MYAPP_RELEASE_KEY_ALIAS=cypherbox
+MYAPP_RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD
+MYAPP_RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD
+PROPS
 
 # Update versionCode with timestamp
 TIMESTAMP=$(date +%s)
-sed -i'.original' "s/versionCode 1/versionCode $TIMESTAMP/g" app/build.gradle
+sed -i "s/versionCode [0-9]*/versionCode $TIMESTAMP/g" app/build.gradle
 
 # Build release APK
 ./gradlew assembleRelease --no-daemon
@@ -37,19 +41,11 @@ ls -la ./app/build/outputs/apk/release/ || echo "No release directory"
 APK_PATH=$(find ./app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
 if [ -z "$APK_PATH" ]; then
     echo "ERROR: No APK found in outputs"
-    # Try debug build
-    echo "Trying debug build..."
-    ./gradlew assembleDebug --no-daemon
-    APK_PATH=$(find ./app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
-    if [ -z "$APK_PATH" ]; then
-        echo "ERROR: No APK found in debug outputs either"
-        exit 1
-    fi
+    exit 1
 fi
 
 # Rename if needed
 if [ "$APK_PATH" != "./app/build/outputs/apk/release/app-release.apk" ]; then
-    mkdir -p ./app/build/outputs/apk/release/
     mv "$APK_PATH" ./app/build/outputs/apk/release/app-release.apk
 fi
 
