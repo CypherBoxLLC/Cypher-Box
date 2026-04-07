@@ -17,7 +17,13 @@ TIMESTAMP=$(date +%s)
 sed -i'.original'  "s/versionCode 1/versionCode $TIMESTAMP/g" app/build.gradle
 ./gradlew assembleRelease
 mv ./app/build/outputs/apk/release/app-release-unsigned.apk ./app/build/outputs/apk/release/app-release.apk
-echo wheres waldo?
-find $ANDROID_HOME | grep apksigner | grep -v jar
-$ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks ./cypherbox-release-key.keystore   --ks-pass=pass:$KEYSTORE_PASSWORD ./app/build/outputs/apk/release/app-release.apk
 
+# Find any available apksigner version
+APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" 2>/dev/null | head -1)
+if [ -z "$APKSIGNER" ]; then
+    echo "ERROR: No apksigner found"
+    exit 1
+fi
+
+echo "Using apksigner: $APKSIGNER"
+$APKSIGNER sign --ks ./cypherbox-release-key.keystore --ks-pass=pass:$KEYSTORE_PASSWORD ./app/build/outputs/apk/release/app-release.apk
