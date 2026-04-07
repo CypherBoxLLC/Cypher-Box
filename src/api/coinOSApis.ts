@@ -1,19 +1,9 @@
 import useAuthStore from '@Cypher/stores/authStore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import SimpleToast from "react-native-simple-toast";
 
 const BASE_URL = 'https://coinos.io/api';
-const getAuthToken = async () => {
-  try {
-    return await AsyncStorage.getItem('authToken');
-  } catch (error) {
-    console.error('Error getting auth token from AsyncStorage:', error);
-    throw error;
-  }
-};
 
 const withAuthToken = async (requestConfig: any) => {
-  // const authToken = await getAuthToken();
   const authToken = useAuthStore.getState().token;
   if (!authToken) {
     throw new Error('Authentication required. Please login to continue.');
