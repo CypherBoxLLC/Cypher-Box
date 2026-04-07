@@ -29,38 +29,51 @@ jobs:
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: "0"
+        uses: actions/checkout@v4
 
       - name: Specify node version
-        uses: actions/setup-node@v2-beta
+        uses: actions/setup-node@v4
         with:
-          node-version: 16
+          node-version: 20
 
-      - name: Use npm caches
+      # Cache node_modules for faster install
+      - name: Cache node_modules
         uses: actions/cache@v4
         with:
-          path: ~/.npm
+          path: node_modules
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
 
-      - name: Use specific Java version for sdkmanager to work
-        uses: actions/setup-java@v3
+      - name: Install dependencies
+        run: npm install
+
+      # Cache Gradle for faster builds
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
         with:
           distribution: "temurin"
-          java-version: "11"
-          cache: "gradle"
-
-      - name: Install node_modules
-        run: npm install
+          java-version: "17"
 
       - name: Build
         env:
           KEYSTORE_FILE_HEX: ${{ secrets.KEYSTORE_FILE_HEX }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: ./scripts/build-release-apk.sh
+        run: |
+          cd android
+          chmod +x ../scripts/build-release-apk.sh
+          ../scripts/build-release-apk.sh
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
@@ -74,7 +87,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const body = `✅ **Build complete!**\n\nDownload the APK from the **Actions** tab above, or click the artifact in this run.\n\n**Version:** dev-${'${{ github.sha }}'.substring(0, 7)}`;
+            const body = '✅ **Build complete!**\n\nDownload the APK from the **Actions** tab above, or click the artifact in this run.\n\n**Version:** dev-${'${{ github.sha }}'.substring(0, 7)}';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
@@ -92,7 +105,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Upload to Internal Testing (auto on push to CB-Production)
   upload-internal:
     needs: build
     runs-on: macos-latest
@@ -108,7 +120,6 @@ jobs:
 
       - name: Upload to Play Store (Internal Testing)
         run: |
-          echo "Uploading to Play Store Internal Testing..."
           echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
           gcloud auth activate-service-account --key-file=gcp-key.json
           cd android
@@ -118,7 +129,6 @@ jobs:
             --track internal \
             --apk ../build/app-release.apk
 
-  # Upload to Production (manual trigger from main)
   upload-production:
     needs: build
     runs-on: macos-latest
@@ -132,9 +142,8 @@ jobs:
           name: cypherbox-android
           path: ./build
 
-      - name: Upload to Play Store (Production - requires review)
+      - name: Upload to Play Store (Production)
         run: |
-          echo "⚠️ Production upload requires Play Store review (typically 1-7 days)"
           echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
           gcloud auth activate-service-account --key-file=gcp-key.json
           cd android
