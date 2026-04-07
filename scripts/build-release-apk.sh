@@ -2,19 +2,15 @@
 
 
 # assumes 2 env variables: KEYSTORE_FILE_HEX & KEYSTORE_PASSWORD
+# NOTE: This script is run from the android/ folder (workflow does cd android first)
 
 
-# Create keystore from hex - put in project root, then move
+# Create keystore from hex - we're already in android folder
 echo $KEYSTORE_FILE_HEX > cypherbox-release-key.keystore.hex
-xxd -plain -revert cypherbox-release-key.keystore.hex > cypherbox-release-key.keystore
+xxd -plain -revert cypherbox-release-key.keystore.hex > app/cypherbox-release-key.keystore
 rm cypherbox-release-key.keystore.hex
 
-cd android
-
-# Move keystore to android folder
-mv ../cypherbox-release-key.keystore app/
-
-# Create gradle.properties in android/ folder
+# Create gradle.properties
 cat > gradle.properties << PROPS
 # Project-wide Gradle settings.
 org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
