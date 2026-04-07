@@ -1,39 +1,43 @@
 #!/bin/bash
-
+set -euo pipefail
 
 # assumes 2 env variables: KEYSTORE_FILE_HEX & KEYSTORE_PASSWORD
 # NOTE: This script is run from the android/ folder (workflow does cd android first)
 
+echo "=== Setting up keystore ==="
 
-# Create keystore from hex - we're already in android folder
-echo $KEYSTORE_FILE_HEX > cypherbox-release-key.keystore.hex
+# Create keystore from hex - place directly in app/ folder
+echo "$KEYSTORE_FILE_HEX" > cypherbox-release-key.keystore.hex
 xxd -plain -revert cypherbox-release-key.keystore.hex > app/cypherbox-release-key.keystore
 rm cypherbox-release-key.keystore.hex
 
-# Create gradle.properties
-cat > gradle.properties << PROPS
-# Project-wide Gradle settings.
-org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m
-org.gradle.parallel=true
-android.useAndroidX=true
-android.enableJetifier=true
-hermesEnabled=true
-newArchEnabled=false
+# Verify keystore was created
+if [ ! -f app/cypherbox-release-key.keystore ]; then
+    echo "ERROR: Failed to create keystore file"
+    exit 1
+fi
+echo "Keystore created at: $(pwd)/app/cypherbox-release-key.keystore ($(wc -c < app/cypherbox-release-key.keystore) bytes)"
 
-# Override signing config - keystore is in app/ folder
-MYAPP_RELEASE_STORE_FILE=app/cypherbox-release-key.keystore
-MYAPP_RELEASE_KEY_ALIAS=cypherbox
-MYAPP_RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD
-MYAPP_RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD
-PROPS
+# Patch signing config in gradle.properties (preserve all existing settings)
+# file() in build.gradle resolves relative to the app/ module dir,
+# so the path must be just the filename since the keystore is in app/
+sed -i '' "s|^MYAPP_RELEASE_STORE_FILE=.*|MYAPP_RELEASE_STORE_FILE=cypherbox-release-key.keystore|" gradle.properties
+sed -i '' "s|^MYAPP_RELEASE_KEY_ALIAS=.*|MYAPP_RELEASE_KEY_ALIAS=cypherbox|" gradle.properties
+sed -i '' "s|^MYAPP_RELEASE_STORE_PASSWORD=.*|MYAPP_RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD|" gradle.properties
+sed -i '' "s|^MYAPP_RELEASE_KEY_PASSWORD=.*|MYAPP_RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD|" gradle.properties
 
-# Update versionCode with timestamp
+echo "=== gradle.properties signing config ==="
+grep "^MYAPP_RELEASE" gradle.properties
+
+# Update versionCode with timestamp (use sed -i '' for macOS BSD sed)
 TIMESTAMP=$(date +%s)
-sed -i "s/versionCode [0-9]*/versionCode $TIMESTAMP/g" app/build.gradle
+sed -i '' "s/versionCode [0-9]*/versionCode $TIMESTAMP/g" app/build.gradle
+echo "Set versionCode to $TIMESTAMP"
 
 # Build release APK
+echo ""
 echo "=== Building Release APK ==="
-./gradlew assembleRelease --no-daemon 2>&1 | tail -30
+./gradlew assembleRelease --no-daemon 2>&1 | tail -50
 
 # Debug: list what was built
 echo ""
