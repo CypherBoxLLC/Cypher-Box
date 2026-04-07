@@ -246,5 +246,8 @@
     "_stream_duplex": "readable-stream/duplex",
     "_stream_passthrough": "readable-stream/passthrough",
     "stream": "stream-browserify"
+  },
+  "overrides": {
+    "pbkdf2": "3.1.3"
   }
 }
