@@ -207,7 +207,7 @@ export default function HomeScreen({ route }: Props) {
       try {
         const Notifications = require('../../../blue_modules/notifications');
         const pushTokenData = await Notifications.getPushToken();
-        console.log('[GroundControl] Push token:', pushTokenData);
+        if (__DEV__) console.log('[GroundControl] Push token:', pushTokenData);
         
         if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
           console.warn('[GroundControl] No push token - notifications not enabled');

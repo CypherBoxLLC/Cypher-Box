@@ -61,7 +61,7 @@ export const getStrikeRates = async () => {
 
 export const createInvoice = async (invoiceData: any) => {
   try {
-    console.log('invoiceData: ', invoiceData)
+if (__DEV__) console.log('invoiceData: ', invoiceData)
     const response = await fetch(`${BASE_URL}/receive-requests`, await withAuthToken({
       method: 'POST',
       headers: {
@@ -82,8 +82,7 @@ export const getStrikeDepositAddress = async (): Promise<{ bitcoinAddress: strin
   try {
     // Request on-chain deposit address from Strike
     const token = useAuthStore.getState().strikeToken;
-    console.log('>>> getStrikeDepositAddress token:', token ? 'EXISTS' : 'MISSING');
-    console.log('>>> Token value:', token?.substring(0, 20) + '...');
+    if (__DEV__) console.log('>>> getStrikeDepositAddress token:', token ? 'EXISTS' : 'MISSING');
     
     const response = await fetch(`${BASE_URL}/receive-requests`, {
       method: 'POST',
@@ -94,14 +93,14 @@ export const getStrikeDepositAddress = async (): Promise<{ bitcoinAddress: strin
       body: JSON.stringify({ onchain: {} }),
     });
     
-    console.log('>>> API response status:', response.status);
+if (__DEV__) console.log('>>> API response status:', response.status);
     
     if (!response.ok) {
       throw new Error(`Strike API error: ${response.status}`);
     }
     
     const data = await response.json();
-    console.log('>>> API response data:', JSON.stringify(data));
+if (__DEV__) console.log('>>> API response data:', JSON.stringify(data));
     return { bitcoinAddress: data.onchain?.address };
   } catch (error) {
     console.error('Error getting Strike deposit address:', error);
@@ -134,7 +133,7 @@ export const sendStrikeLightningPayment = async (invoice: string, amount?: numbe
     
     const quoteDataResponse = await quoteResponse.json();
     const paymentQuoteId = quoteDataResponse.paymentQuoteId;
-    console.log('Lightning payment quote ID:', paymentQuoteId);
+if (__DEV__) console.log('Lightning payment quote ID:', paymentQuoteId);
     
     // Step 2: Execute the Lightning payment
     const executeResponse = await fetch(`${BASE_URL}/payment-quotes/${paymentQuoteId}/execute`, await withAuthToken({
@@ -149,7 +148,7 @@ export const sendStrikeLightningPayment = async (invoice: string, amount?: numbe
     }
     
     const executeData = await executeResponse.json();
-    console.log('Lightning payment result:', executeData);
+if (__DEV__) console.log('Lightning payment result:', executeData);
     return executeData;
   } catch (error) {
     console.error('Error sending Strike Lightning payment:', error);
@@ -160,7 +159,7 @@ export const sendStrikeLightningPayment = async (invoice: string, amount?: numbe
 export const getPaymentQoute = async (url: string, data: any) => {
     try {
         const idempotencyKey = uuidv4();
-        console.log('idempotencyKey: ' ,idempotencyKey)
+if (__DEV__) console.log('idempotencyKey: ' ,idempotencyKey)
         const response = await fetch(`${BASE_URL}/payment-quotes/${url}`, await withAuthToken({
             method: 'POST',
             headers: {
@@ -183,7 +182,7 @@ export const getPaymentQoute = async (url: string, data: any) => {
 
 export const getPaymentQouteByLightening = async (data: any, paymentQouteID: string) => {
     const idempotencyKey = uuidv4();
-    console.log('idempotencyKey: ', idempotencyKey)
+if (__DEV__) console.log('idempotencyKey: ', idempotencyKey)
     try {
         // const response = await fetch(`${BASE_URL}/payment-quotes/lightning/lnurl`, await withAuthToken({
         //     method: 'POST',
@@ -204,7 +203,7 @@ export const getPaymentQouteByLightening = async (data: any, paymentQouteID: str
             },
         }));
         const responsePaymentJSON = await responsePayment.json();
-        console.log('responsePaymentJSON: ', responsePaymentJSON)
+if (__DEV__) console.log('responsePaymentJSON: ', responsePaymentJSON)
         return responsePaymentJSON;
     } catch (error) {
         console.error('Error fetching getPaymentQouteByLightening:', error);
@@ -254,7 +253,7 @@ export const executeFiatExchangeQuote = async (paymentQouteID: string) => {
 
 export const getPaymentQouteByLighteningURL = async (data: any, paymentQouteID: string) => {
     const idempotencyKey = uuidv4();
-    console.log('idempotencyKey: ', idempotencyKey)
+if (__DEV__) console.log('idempotencyKey: ', idempotencyKey)
     try {
         // const response = await fetch(`${BASE_URL}/payment-quotes/lightning`, await withAuthToken({
         //     method: 'POST',
@@ -291,7 +290,7 @@ export const getOnChainTiers = async (data: any) => {
             },
             body: JSON.stringify(data),
         }));
-        console.log('response: ', response)
+if (__DEV__) console.log('response: ', response)
         const responseJSON = await response.json();
         if(responseJSON?.data && responseJSON?.data?.status === 401){
             SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
@@ -306,7 +305,7 @@ export const getOnChainTiers = async (data: any) => {
 
 export const getPaymentQouteByOnChain = async (data: any, paymentQouteID: string) => {
     const idempotencyKey = uuidv4();
-    console.log('idempotencyKey: ', idempotencyKey)
+if (__DEV__) console.log('idempotencyKey: ', idempotencyKey)
     try {
         // const response = await fetch(`${BASE_URL}/payment-quotes/onchain`, await withAuthToken({
         //     method: 'POST',
