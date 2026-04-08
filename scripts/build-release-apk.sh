@@ -34,10 +34,27 @@ TIMESTAMP=$(date +%s)
 sed -i '' "s/versionCode [0-9]*/versionCode $TIMESTAMP/g" app/build.gradle
 echo "Set versionCode to $TIMESTAMP"
 
+# Test JS bundle first to catch Metro errors early
+echo ""
+echo "=== Testing JS Bundle ==="
+npx react-native bundle \
+  --platform android \
+  --dev false \
+  --entry-file index.js \
+  --bundle-output /tmp/test-bundle.js \
+  --assets-dest /tmp/test-assets \
+  2>&1 | tail -80
+
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+  echo "ERROR: JS bundling failed — see errors above"
+  exit 1
+fi
+echo "JS bundle OK"
+
 # Build release APK
 echo ""
 echo "=== Building Release APK ==="
-./gradlew assembleRelease --no-daemon 2>&1 | tail -50
+./gradlew assembleRelease --no-daemon 2>&1 | tail -80
 
 # Debug: list what was built
 echo ""
