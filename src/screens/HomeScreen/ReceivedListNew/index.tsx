@@ -433,13 +433,13 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
 
             {/* ---- Vault Sub-menu (Hot/Cold) ---- */}
             {(selectedItem === 3 || selectedItem === 4) && tab === 0 && (
-              <View style={{ paddingHorizontal: 20, alignItems: 'center' }}>
+              <View style={{ paddingHorizontal: 24, alignItems: 'center', marginTop: 8 }}>
                 {/* QR Code */}
                 {(selectedItem === 3 ? vaultAddress : coldStorageAddress) ? (
-                  <View style={{ backgroundColor: 'white', padding: 10, borderRadius: 8, marginTop: 12 }}>
+                  <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 12, marginTop: 8 }}>
                     <QRCode
                       value={selectedItem === 3 ? vaultAddress : coldStorageAddress}
-                      size={150}
+                      size={180}
                       color="black"
                       backgroundColor="white"
                     />
@@ -448,24 +448,34 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   <ActivityIndicator size="large" color="#ffffff" style={{ marginTop: 30 }} />
                 )}
 
-                {/* Address + Copy */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingHorizontal: 10 }}>
-                  <Text style={{ fontSize: 13, color: '#CCC', flex: 1, textAlign: 'center' }} numberOfLines={2}>
-                    {selectedItem === 3 ? vaultAddress : coldStorageAddress}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      const addr = selectedItem === 3 ? vaultAddress : coldStorageAddress;
+                {/* Address + Copy row */}
+                <TouchableOpacity
+                  onPress={() => {
+                    const addr = selectedItem === 3 ? vaultAddress : coldStorageAddress;
+                    if (addr) {
                       Clipboard.setString(addr);
                       SimpleToast.show('Address copied', SimpleToast.SHORT);
-                    }}
-                    style={{ marginLeft: 8 }}
-                  >
-                    <Image source={Copy} style={{ width: 28, height: 20 }} />
-                  </TouchableOpacity>
-                </View>
+                    }
+                  }}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginTop: 14,
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    borderRadius: 10,
+                    width: '100%',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }} numberOfLines={2}>
+                    {selectedItem === 3 ? vaultAddress : coldStorageAddress}
+                  </Text>
+                  <Image source={Copy} style={{ width: 22, height: 18, marginLeft: 10, tintColor: '#aaa' }} resizeMode="contain" />
+                </TouchableOpacity>
 
-                {/* View All Addresses button */}
+                {/* View All Vault Addresses button */}
                 <TouchableOpacity
                   onPress={() => {
                     refRBSheet?.current?.close();
@@ -480,15 +490,16 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     }, 150);
                   }}
                   style={{
-                    marginTop: 16,
-                    paddingVertical: 10,
-                    paddingHorizontal: 24,
+                    marginTop: 18,
+                    paddingVertical: 12,
+                    paddingHorizontal: 28,
                     borderRadius: 12,
+                    backgroundColor: selectedItem === 3 ? 'rgba(76,175,80,0.15)' : 'rgba(135,206,235,0.15)',
                     borderWidth: 1.5,
                     borderColor: selectedItem === 3 ? colors.green : colors.coldGreen,
                   }}
                 >
-                  <Text style={{ fontSize: 14, color: selectedItem === 3 ? colors.green : colors.coldGreen, textAlign: 'center' }}>
+                  <Text bold style={{ fontSize: 14, color: selectedItem === 3 ? colors.green : colors.coldGreen, textAlign: 'center' }}>
                     View All Vault Addresses
                   </Text>
                 </TouchableOpacity>

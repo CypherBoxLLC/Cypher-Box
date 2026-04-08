@@ -1015,7 +1015,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                         </View>
                                         {(isStrikeAuth || isAuth || showHotVault) && (
                                             <View style={{marginTop: 12}}>
-                                                <Text style={[styles.recipientTitle, {fontSize: 14, color: '#AAAAAA'}]}>Deposit change to:</Text>
+                                                <Text style={[styles.recipientTitle, {fontSize: 14, color: '#AAAAAA'}]}>Sweep change to:</Text>
                                                 <View style={{flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, gap: 8}}>
                                                     <TouchableOpacity
                                                         style={{
@@ -1030,7 +1030,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                         }}
                                                         onPress={() => handleChangeDestination('SELF')}
                                                     >
-                                                        <Text style={{fontSize: 13, color: changeDestination === 'SELF' ? '#FFFFFF' : '#999'}}>Self</Text>
+                                                        <Text style={{fontSize: 13, color: changeDestination === 'SELF' ? '#FFFFFF' : '#999'}}>{vaultTab ? 'Cold Vault' : 'Hot Vault'}</Text>
                                                     </TouchableOpacity>
                                                     {isStrikeAuth && (
                                                         <TouchableOpacity
@@ -1246,9 +1246,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                     <TouchableOpacity onPress={() => setShowFeeInfo(!showFeeInfo)} style={{ marginRight: 12 }}>
-                                        <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: '#666', alignItems: 'center', justifyContent: 'center' }}>
-                                            <Text style={{ fontSize: 10, color: '#666' }}>i</Text>
-                                        </View>
+                                        <Icon name="info-circle" type="font-awesome" color={showFeeInfo ? '#FF65D4' : '#888'} size={18} />
                                     </TouchableOpacity>
                                     <Switch 
                                         value={useLightningBridge}

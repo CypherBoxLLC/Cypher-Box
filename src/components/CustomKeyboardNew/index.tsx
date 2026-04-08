@@ -55,7 +55,7 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
             setUSD('0');
             setSATS('0');
         }
-    }, [sats.length, isSats]);
+    }, [sats.length, isSats, matchedRate]);
 
     useEffect(() => {
         if(!isEdit){

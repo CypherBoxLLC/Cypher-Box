@@ -79,6 +79,7 @@ export default function LoginCoinOSScreen() {
                 // Check if 2FA is required
                 if (response.user?.twofa) {
                     // 2FA is enabled, prompt for TOTP code
+                    setStoredCaptchaToken(recaptchaToken);
                     setShowTwoFA(true);
                     setIsLoading(false);
                     return;

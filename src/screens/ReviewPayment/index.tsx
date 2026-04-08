@@ -3,6 +3,7 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, Vie
 import SimpleToast from "react-native-simple-toast";
 import { Icon } from "react-native-elements";
 import ReactNativeModal from "react-native-modal";
+import QRCode from 'react-native-qrcode-svg';
 import styles from "./styles";
 import { Input, LoadingSpinner, ScreenLayout, Text } from "@Cypher/component-library";
 import { Check, CoinOSSmall, Edit } from "@Cypher/assets/images";
@@ -58,6 +59,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const [convertedRate, setConvertedRate] = useState(0);
     const [matchedRate, setMatchedRate] = useState(0);
     const [isStartLoading, setIsStartLoading] = useState(false)
+    const [showAddressQR, setShowAddressQR] = useState(false)
     const [selectedFee, setSelectedFee] = useState<number | null>(null);
     const [selectedFeeName, setSelectedFeeName] = useState<string>("Select Fee");
     const [estimatedFee, setEstimatedFee] = useState<number>(0);
@@ -875,15 +877,29 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             }}>
                                 <Text italic style={StyleSheet.flatten({
                                     flex: 1,
-                                    fontSize: 16,
+                                    fontSize: 12,
                                     marginTop: 3,
+                                    fontFamily: 'monospace',
                                     color: vaultTab ? colors.blueText : colors.greenShadow
-                                })}>{"Vault Address: "}{!to.includes('@') && to.length > 20 ? shortenAddress(to) : to}</Text>
+                                })}>{"Vault Address: "}{to}</Text>
+                                <TouchableOpacity onPress={() => setShowAddressQR(true)} style={{ marginRight: 8 }}>
+                                    <Icon name="qrcode" type="font-awesome" color={vaultTab ? colors.blueText : colors.greenShadow} size={20} />
+                                </TouchableOpacity>
                                 <Image source={Edit} style={styles.editImage} resizeMode='contain' />
                             </TouchableOpacity>
                         </View>
                     : to.length > 0 &&
-                        <TextViewV2 keytext="To: " text={!to.includes('@') && to.length > 20 ? shortenAddress(to) : to} />
+                        <View style={{ marginHorizontal: 12, marginBottom: 10 }}>
+                            <Text bold style={{fontSize: 18}}>{"To: "}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                                <Text style={{ flex: 1, fontSize: 12, fontFamily: 'monospace', color: '#CCC' }}>{to}</Text>
+                                {!to.includes('@') && to.length > 20 && (
+                                    <TouchableOpacity onPress={() => setShowAddressQR(true)} style={{ marginLeft: 8 }}>
+                                        <Icon name="qrcode" type="font-awesome" color="#CCC" size={22} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </View>
                     }
                     {/* {isWithdrawal &&
                         <TouchableOpacity onPress={addressHandler}>
@@ -1026,5 +1042,32 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 {/* <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }} title="Send" onPress={sendClickHandler} /> */}
             </View>
         </ScreenLayout>
+
+        {/* Address QR Modal — for hardware wallet verification */}
+        <ReactNativeModal
+            isVisible={showAddressQR}
+            onBackdropPress={() => setShowAddressQR(false)}
+            onBackButtonPress={() => setShowAddressQR(false)}
+            style={{ alignItems: 'center', justifyContent: 'center' }}
+        >
+            <View style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 24, alignItems: 'center', width: '85%' }}>
+                <Text bold style={{ fontSize: 16, marginBottom: 4 }}>Verify Address</Text>
+                <Text style={{ fontSize: 12, color: '#888', marginBottom: 16, textAlign: 'center' }}>
+                    Scan with your hardware wallet to confirm
+                </Text>
+                <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 12 }}>
+                    <QRCode value={to} size={200} color="black" backgroundColor="white" />
+                </View>
+                <Text style={{ fontSize: 11, fontFamily: 'monospace', color: '#CCC', marginTop: 16, textAlign: 'center', lineHeight: 18 }}>
+                    {to}
+                </Text>
+                <TouchableOpacity
+                    onPress={() => setShowAddressQR(false)}
+                    style={{ marginTop: 20, paddingVertical: 10, paddingHorizontal: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                >
+                    <Text style={{ fontSize: 14, color: '#FFF' }}>Close</Text>
+                </TouchableOpacity>
+            </View>
+        </ReactNativeModal>
     )
 }
