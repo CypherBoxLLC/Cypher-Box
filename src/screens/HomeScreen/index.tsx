@@ -393,9 +393,10 @@ export default function HomeScreen({ route }: Props) {
         loadPayments();
       } else {
         // Not logged into Coinos - use BlueWallet's native rate for vaults
+        // Convert from USD-per-BTC to USD-per-sat (matchedRate format used by keyboard)
         try {
           const blueWalletRate = await getFiatRate('USD');
-          setMatchedRate(blueWalletRate || 0);
+          setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
         } catch (err) {
           console.log('BlueWallet rate error:', err);
         }
@@ -620,11 +621,12 @@ export default function HomeScreen({ route }: Props) {
       // Use Coinos rate if available, fallback to BlueWallet
       let blueWalletRate = 0;
       try {
-        blueWalletRate = await getFiatRate('USD') || 0;
+        const rawRate = await getFiatRate('USD') || 0;
+        blueWalletRate = rawRate * btc(1); // Convert USD-per-BTC to USD-per-sat
       } catch (rateErr) {
         console.log('BlueWallet rate error:', rateErr);
       }
-      
+
       const finalRate = coinosRate || blueWalletRate;
       setMatchedRate(finalRate);
       console.log('[Coinos] matchedRate set to:', finalRate, '(coinos:', coinosRate, ', bluewallet:', blueWalletRate, ')');
@@ -639,7 +641,7 @@ export default function HomeScreen({ route }: Props) {
       // Try BlueWallet's native rate as absolute fallback
       try {
         const blueWalletRate = await getFiatRate('USD');
-        setMatchedRate(blueWalletRate || 0);
+        setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
       } catch (bwError) {
         console.error('BlueWallet rate failed:', bwError);
         setMatchedRate(0);
@@ -899,8 +901,7 @@ export default function HomeScreen({ route }: Props) {
             backgroundColor: 'red',
           },
           container: {
-            // ...receivedListSecondTab ? { height: heights / 2 + 20 } : { maxHeight: heights / 2 + 20 },
-            height: heights / 2 + 20,
+            height: heights * 0.72,
             backgroundColor: 'transparent',
           }
         }}

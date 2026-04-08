@@ -537,13 +537,16 @@ if (__DEV__) console.log('[CoinOS] 2FA disabled successfully');
  */
 export const verifyTwoFALogin = async (token: string, username: string, password: string, captchaToken?: string) => {
   try {
-    // Re-login with credentials + 2FA token + original captcha token
-    const payload = {
+    // Re-login with credentials + 2FA TOTP code
+    // Only include recaptcha if we have it (may have expired since first attempt)
+    const payload: any = {
       username,
       password,
-      token: token,  // This is the TOTP code
-      recaptcha: captchaToken || ''  // Pass the original captcha token
+      token: token,  // 6-digit TOTP code
     };
+    if (captchaToken) {
+      payload.recaptcha = captchaToken;
+    }
 if (__DEV__) console.log('[2FA] Sending login with token:', { username, tokenLength: token.length, hasCaptcha: !!captchaToken });
     
     const response = await fetch(`${BASE_URL}/login`, {
