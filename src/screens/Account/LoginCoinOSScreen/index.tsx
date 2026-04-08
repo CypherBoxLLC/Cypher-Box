@@ -148,26 +148,30 @@ export default function LoginCoinOSScreen() {
         }
     };
 
-    // Handle 2FA verification
+    // Handle 2FA verification — needs fresh recaptcha token since original expired
+    const [showTwoFACaptcha, setShowTwoFACaptcha] = useState(false);
+
     const handleTwoFASubmit = async () => {
         if (twoFACode.length !== 6) {
             SimpleToast.show("Please enter a valid 6-digit code", SimpleToast.SHORT);
             return;
         }
-        
+        // Trigger fresh recaptcha for the 2FA re-login
+        setShowTwoFACaptcha(true);
+    };
+
+    const onTwoFACaptchaToken = async (freshCaptchaToken: string) => {
+        setShowTwoFACaptcha(false);
         setIsVerifyingTwoFA(true);
-        
+
         try {
-            // Use the stored captcha token from initial login attempt
-            const response: any = await verifyTwoFALogin(twoFACode, email, password, storedCaptchaToken);
-            console.log("2FA verification successful:", response);
-            
-            // Update user data with full session
+            const response: any = await verifyTwoFALogin(twoFACode, email, password, freshCaptchaToken);
+            if (__DEV__) console.log("2FA verification successful:", response);
+
             setUser(response.user);
             setToken(response.token);
             setShowTwoFA(false);
-            
-            // Complete the login flow
+
             completeLogin(response);
         } catch (error: any) {
             console.error("2FA verification failed:", error?.message);
@@ -293,6 +297,11 @@ export default function LoginCoinOSScreen() {
                 onRequestClose={() => setShowTwoFA(false)}
                 presentationStyle="pageSheet"
             >
+                {showTwoFACaptcha ? (
+                    <View style={modalStyles.modalContainer}>
+                        <RecaptchaV2 siteKey={SITE_KEY} onToken={onTwoFACaptchaToken} />
+                    </View>
+                ) : (
                 <ScreenLayout showToolbar>
                     <View style={styles.container}>
                         <View style={styles.innerView}>
@@ -302,7 +311,7 @@ export default function LoginCoinOSScreen() {
                                 Enter the 6-digit code from your authenticator app
                             </Text>
                             <GradientCard style={{ width: '100%' }} colors_={twoFACode ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}>
-                                <Input 
+                                <Input
                                     onChange={setTwoFACode}
                                     value={twoFACode}
                                     style={styles.textInput}
@@ -313,17 +322,16 @@ export default function LoginCoinOSScreen() {
                                 />
                             </GradientCard>
                             <View style={styles.extra} />
-                            <GradientButton 
-                                title="Verify" 
-                                disabled={twoFACode.length !== 6 || isVerifyingTwoFA} 
+                            <GradientButton
+                                title={isVerifyingTwoFA ? "Verifying..." : "Verify"}
+                                disabled={twoFACode.length !== 6 || isVerifyingTwoFA}
                                 onPress={handleTwoFASubmit}
                             />
-                            <TouchableOpacity 
-                                style={{ marginTop: 18, alignSelf: 'center' }} 
+                            <TouchableOpacity
+                                style={{ marginTop: 18, alignSelf: 'center' }}
                                 onPress={() => {
                                     setShowTwoFA(false);
                                     setTwoFACode('');
-                                    // Clear auth and go back to login
                                     setAuth(false);
                                     setToken(null);
                                     setUser(null);
@@ -336,6 +344,7 @@ export default function LoginCoinOSScreen() {
                         </View>
                     </View>
                 </ScreenLayout>
+                )}
             </Modal>
         </ScreenLayout>
     )
