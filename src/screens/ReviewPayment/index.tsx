@@ -1041,33 +1041,32 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 {/* <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} /> */}
                 {/* <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }} title="Send" onPress={sendClickHandler} /> */}
             </View>
-        </ScreenLayout>
-
-        {/* Address QR Modal — for hardware wallet verification */}
-        <ReactNativeModal
-            isVisible={showAddressQR}
-            onBackdropPress={() => setShowAddressQR(false)}
-            onBackButtonPress={() => setShowAddressQR(false)}
-            style={{ alignItems: 'center', justifyContent: 'center' }}
-        >
-            <View style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 24, alignItems: 'center', width: '85%' }}>
-                <Text bold style={{ fontSize: 16, marginBottom: 4 }}>Verify Address</Text>
-                <Text style={{ fontSize: 12, color: '#888', marginBottom: 16, textAlign: 'center' }}>
-                    Scan with your hardware wallet to confirm
-                </Text>
-                <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 12 }}>
-                    <QRCode value={to} size={200} color="black" backgroundColor="white" />
+            {/* Address QR Modal — for hardware wallet verification */}
+            <ReactNativeModal
+                isVisible={showAddressQR}
+                onBackdropPress={() => setShowAddressQR(false)}
+                onBackButtonPress={() => setShowAddressQR(false)}
+                style={{ alignItems: 'center', justifyContent: 'center' }}
+            >
+                <View style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 24, alignItems: 'center', width: '85%' }}>
+                    <Text bold style={{ fontSize: 16, marginBottom: 4 }}>Verify Address</Text>
+                    <Text style={{ fontSize: 12, color: '#888', marginBottom: 16, textAlign: 'center' }}>
+                        Scan with your hardware wallet to confirm
+                    </Text>
+                    <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 12 }}>
+                        <QRCode value={to} size={200} color="black" backgroundColor="white" />
+                    </View>
+                    <Text style={{ fontSize: 11, fontFamily: 'monospace', color: '#CCC', marginTop: 16, textAlign: 'center', lineHeight: 18 }}>
+                        {to}
+                    </Text>
+                    <TouchableOpacity
+                        onPress={() => setShowAddressQR(false)}
+                        style={{ marginTop: 20, paddingVertical: 10, paddingHorizontal: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                    >
+                        <Text style={{ fontSize: 14, color: '#FFF' }}>Close</Text>
+                    </TouchableOpacity>
                 </View>
-                <Text style={{ fontSize: 11, fontFamily: 'monospace', color: '#CCC', marginTop: 16, textAlign: 'center', lineHeight: 18 }}>
-                    {to}
-                </Text>
-                <TouchableOpacity
-                    onPress={() => setShowAddressQR(false)}
-                    style={{ marginTop: 20, paddingVertical: 10, paddingHorizontal: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' }}
-                >
-                    <Text style={{ fontSize: 14, color: '#FFF' }}>Close</Text>
-                </TouchableOpacity>
-            </View>
-        </ReactNativeModal>
+            </ReactNativeModal>
+        </ScreenLayout>
     )
 }
