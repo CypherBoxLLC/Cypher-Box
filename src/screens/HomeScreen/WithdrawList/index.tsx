@@ -323,6 +323,14 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
           colors={[colors.black.gradientTop2, colors.black.default]}
           style={styles.containerGradientView}
         >
+          {/* Close button */}
+          <TouchableOpacity
+            onPress={() => refRBSheet?.current?.close()}
+            style={{ position: 'absolute', top: 14, right: 16, zIndex: 10, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontSize: 18, color: '#888' }}>✕</Text>
+          </TouchableOpacity>
+
           <Animated.View style={[{}, view1Style]}>
             <Text h2 bold style={styles.receiveToLabel}>
               WITHDRAW FROM

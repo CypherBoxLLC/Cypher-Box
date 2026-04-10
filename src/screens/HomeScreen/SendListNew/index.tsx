@@ -265,6 +265,14 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
           colors={[colors.black.gradientTop2, colors.black.default]}
           style={styles.containerGradientView}
         >
+          {/* Close button */}
+          <TouchableOpacity
+            onPress={() => refRBSheet?.current?.close()}
+            style={{ position: 'absolute', top: 14, right: 16, zIndex: 10, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontSize: 18, color: '#888' }}>✕</Text>
+          </TouchableOpacity>
+
           {/* ======= FIRST VIEW: 2x2 Grid ======= */}
           <Animated.View style={[{}, view1Style]}>
             <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
@@ -344,7 +352,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                     paddingHorizontal: 4,
                     paddingBottom: 6,
                   }}
-                  style={{ flex: 1, marginTop: 10 }}
+                  style={{ maxHeight: Dimensions.get('window').height * 0.30, marginTop: 10 }}
                 >
                   {utxoList.map((item: any) => renderCapsuleTile(item))}
                 </ScrollView>

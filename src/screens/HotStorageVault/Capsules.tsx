@@ -149,7 +149,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             if (found) capsulesData.push({
                 id, value: found.value, address: found.address
             });
-            capsuleTotal += Number(result)
+            if (found) capsuleTotal += found.value
         });
         if(vaultTab && !walletID){
             SimpleToast.show("You need to create a Hot Vault first before moving capsules to it", SimpleToast.SHORT)
@@ -173,7 +173,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             if (found) capsulesData.push({
                 id, value: found.value, address: found.address
             });
-            capsuleTotal += Number(result)
+            if (found) capsuleTotal += found.value
         });
         console.log('capsuleTotal: ', capsuleTotal)
         if (ids.length > 0) {
@@ -199,7 +199,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             if (found) capsulesData.push({
                 id, value: found.value, address: found.address
             });
-            capsuleTotal += Number(result)
+            if (found) capsuleTotal += found.value
         });
         if (ids.length > 0) {
             dispatchNavigate('EditAmount', { isEdit: false, currency, capsuleTotal, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP" });

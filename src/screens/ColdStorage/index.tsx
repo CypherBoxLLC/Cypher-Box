@@ -101,12 +101,12 @@ export default function ColdStorage({ route, navigation }: Props) {
     const primaryColor = vaultTab ? colors.coldGreen : colors.green
     const [selectedItem, setSelectedItem] = useState(isStrikeAuth ? 1 : 2);
     const [data, setData] = useState([
-      ...(isStrikeAuth ? [{
+      {
         id: 1,
         name: "Strike",
         type: 0,
         icon: StrikeFull,
-        // navigation: {},
+        enabled: isStrikeAuth,
         navigation: {
           screen: "SendScreen",
           params: {
@@ -115,14 +115,13 @@ export default function ColdStorage({ route, navigation }: Props) {
             receiveType: false
           },
         },
-      }] : []),
-      ...(isAuth ? [{
+      },
+      {
         id: 2,
         name: "CoinOS",
         type: 0,
         icon: CoinOS,
-        description:
-          "Receive from wallets and exchanges that support the Lightning Network",
+        enabled: isAuth,
         navigation: {
           screen: "SendScreen",
           params: {
@@ -131,7 +130,7 @@ export default function ColdStorage({ route, navigation }: Props) {
             receiveType: true
           },
         },
-      }] : [])
+      },
     ]);
 
     useEffect(() => {
@@ -884,7 +883,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         <ScreenLayout showToolbar>
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
-                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : "Construct transaction"}</Text>
+                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : vaultSend ? (vaultTab ? "Move to Hot Vault" : "Move to Cold Vault") : "Construct transaction"}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -970,7 +969,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                     :
                       <View style={styles.priceView}>
                           <View>
-                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : "Recipient will get:"}</Text>
+                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : vaultSend ? "Amount moved" : "Recipient will get:"}</Text>
                               <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
                               <View style={{flexDirection: 'row', marginTop: 8}}>
                                   <View style={styles.tabs}>
@@ -1100,20 +1099,20 @@ export default function ColdStorage({ route, navigation }: Props) {
                         })()
                     }
                     {/* Send-from address removed — now shown per-capsule below */}
-                    {!isBatch && (
-                        <Text bold style={{ fontSize: 18, color: '#fff', marginTop: 16, paddingHorizontal: 0 }}>Recipient address</Text>
-                    )}
                     {to || toStrike ?
-                        <View style={styles.priceView}>
+                        <View style={[styles.priceView, { marginTop: 0 }]}>
                           <View>
                               {!isBatch &&
                                 <>
                                   {!vaultSend &&
-                                    <View style={[styles.cardListContainer]}>
+                                    <View style={[styles.cardListContainer, type === 'TOPUP' && { justifyContent: 'center' }, { marginTop: 0, marginBottom: 5, gap: 20 }]}>
                                       {data?.map((item) => (
                                         <GradientView
-                                          onPress={() => setSelectedItem(item.id)}
-                                          style={styles.cardGradientStyle}
+                                          key={item.id}
+                                          onPress={() => {
+                                            if (item.enabled) setSelectedItem(item.id);
+                                          }}
+                                          style={[styles.cardGradientStyle, !item.enabled && { opacity: 0.35 }]}
                                           linearGradientStyle={styles.cardOuterShadow}
                                           topShadowStyle={[
                                             styles.cardTopShadow,
@@ -1126,36 +1125,12 @@ export default function ColdStorage({ route, navigation }: Props) {
                                           linearGradientStyleMain={styles.cardGradientMainStyle}
                                           gradiantColors={[colors.black.bg, colors.black.bg]}
                                         >
-                                          <View
-                                            style={{
-                                              flexDirection: item?.type !== 0 ? "column" : "row",
-                                              justifyContent:
-                                                item?.type !== 0 ? "center" : "center",
-                                              alignItems: item?.type !== 0 ? "center" : "center",
-                                            }}
-                                          >
-                                            {item?.type !== 0 && (
-                                              <Image
-                                                source={item?.icon}
-                                                style={
-                                                  item?.id == 3
-                                                    ? styles.coldVaultIconImage
-                                                    : styles.vaultIconImage
-                                                }
-                                                resizeMode="contain"
-                                              />
-                                            )}
-                                            {item?.type === 0 ? (
-                                              <Image
-                                                source={item?.icon}
-                                                style={styles.logoImage}
-                                                resizeMode="contain"
-                                              />
-                                            ) : (
-                                              <Text h2 bold>
-                                                {item?.name}
-                                              </Text>
-                                            )}
+                                          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+                                            <Image
+                                              source={item?.icon}
+                                              style={styles.logoImage}
+                                              resizeMode="contain"
+                                            />
                                           </View>
                                         </GradientView>
                                       ))}
@@ -1164,36 +1139,37 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 </>
                               }
                               {!vaultSend &&
-                                <Text style={{...styles.fees, color: colors.pink.main}} italic>{selectedItem == 1 ? "My Strike Lightning Account" : "My Coinos Lightning Account"}</Text>
+                                <Text style={{fontSize: 12, color: '#AAAAAA'}}>{selectedItem == 1 ? "Strike Lightning account deposit address" : "CoinOS Lightning account deposit address"}</Text>
                               }
-                              {isBatch ?
-                                <View style={{
-                                  // marginBottom:30,
-                                  // marginStart:15,
-                                  // marginEnd: 10,
-                                }}>
-                                  <Text bold style={{fontSize: 18}}>{"To: "}</Text>
-                                  <TouchableOpacity activeOpacity={0.7} onPress={addressHandler} style={{
-                                    flexDirection: 'row', 
-                                    alignItems: 'center', 
-                                    marginTop: 10, 
-                                    paddingVertical: 8, 
-                                    paddingHorizontal: 25, 
-                                    width: '96%'
+                              {type !== 'TOPUP' && (
+                                isBatch ?
+                                  <View style={{
+                                    // marginBottom:30,
+                                    // marginStart:15,
+                                    // marginEnd: 10,
                                   }}>
-                                    <Text italic style={StyleSheet.flatten({
-                                      // flex: 1,
-                                      width: '95%',
-                                      fontSize: 16,
-                                      marginTop: 3,
-                                      color: vaultTab ? colors.coldGreen : colors.greenShadow
-                                    })}>{"Vault Address: "+shortenAddress(to)}</Text>
-                                    <Image source={Edit} style={styles.editImage} resizeMode='contain' />
-                                  </TouchableOpacity>
-                                </View>
-                                :
-                                  <Text style={{...styles.fees, color: vaultSend ? colors.coldGreen : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
-                              }
+                                    <Text bold style={{fontSize: 18}}>{"To: "}</Text>
+                                    <TouchableOpacity activeOpacity={0.7} onPress={addressHandler} style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      marginTop: 10,
+                                      paddingVertical: 8,
+                                      paddingHorizontal: 25,
+                                      width: '96%'
+                                    }}>
+                                      <Text italic style={StyleSheet.flatten({
+                                        // flex: 1,
+                                        width: '95%',
+                                        fontSize: 16,
+                                        marginTop: 3,
+                                        color: vaultTab ? colors.coldGreen : colors.greenShadow
+                                      })}>{"Vault Address: "+shortenAddress(to)}</Text>
+                                      <Image source={Edit} style={styles.editImage} resizeMode='contain' />
+                                    </TouchableOpacity>
+                                  </View>
+                                  :
+                                    <Text style={{fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888', marginTop: 4}}>{vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
+                              )}
                           </View>
                         </View>
                     :

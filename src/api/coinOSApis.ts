@@ -564,7 +564,13 @@ if (__DEV__) console.log('[2FA] Response status:', response.status, 'body:', res
     
     if (!response.ok) {
       if (response.status === 401) {
-        throw new Error('Invalid 2FA code. Please try again.');
+        if (responseText.includes('captcha')) {
+          throw new Error('Captcha verification failed. Please try again.');
+        }
+        if (responseText.includes('2fa')) {
+          throw new Error('Invalid 2FA code. Please try again.');
+        }
+        throw new Error(responseText || 'Invalid 2FA code. Please try again.');
       }
       throw new Error(`2FA verification failed: ${responseText}`);
     }
