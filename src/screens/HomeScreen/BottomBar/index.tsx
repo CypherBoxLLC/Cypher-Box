@@ -1,4 +1,5 @@
-import { createInvoice } from "@Cypher/api/coinOSApis";
+// createInvoice moved to TopupList
+
 import { Text } from "@Cypher/component-library";
 import { GradientCardWithShadow, GradientView, SavingVault } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -13,7 +14,7 @@ import Carousel from "react-native-snap-carousel";
 import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
 import TabBar from "../TabBar";
-import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+// createInvoiceStrike moved to TopupList
 
 interface Props {
     balance: any;
@@ -31,16 +32,20 @@ interface Props {
     vaultAddress: any;
     recommendedFee: any;
     refWithdrawRBSheet: any;
+    refTopupRBSheet: any;
     currencyStrike: any;
     matchedRateStrike: any;
+    matchedRateBTC: any;
 }
 
 export default function BottomBar({
     balance,
     wallet,
     refWithdrawRBSheet,
+    refTopupRBSheet,
     currency,
     matchedRate,
+    matchedRateBTC,
     balanceVault,
     hasSavingVault,
     balanceWithoutSuffix,
@@ -139,44 +144,16 @@ export default function BottomBar({
         dispatchNavigate('ColdVaultIntro');
     }
 
-    const topupClickHandler = async () => {
-        // dispatchNavigate('PurchaseVault', {
-        //   data: {}
-        // });
+    const topupClickHandler = () => {
         if (!isAuth && !isStrikeAuth) {
             SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
-            return
+            return;
         }
-
-        // if (!isAuth) {
-        //     SimpleToast.show('You need to be logged in to Coinos.io to top up', SimpleToast.SHORT);
-        //     return
-        // }
-        // if (vaultTab && !coldStorageWallet) {
-        //     SimpleToast.show('You need to have a cold storage wallet to top up', SimpleToast.SHORT);
-        //     return
-        // }
-        try {
-            let response, responseStrike;
-            if(isAuth){
-                response = await createInvoice({
-                    type: 'bitcoin',
-                });
-            }
-            if(isStrikeAuth) {
-                responseStrike = await createInvoiceStrike({
-                    onchain: {
-                    },
-                    targetCurrency: strikeUser?.[1]?.currency || "USD"
-                });
-            }
-
-            dispatchNavigate('HotStorageVault', { wallet: vaultTab && coldStorageWallet ? coldStorageWallet : wallet && wallet, matchedRate, to: isAuth ? response?.hash : null, toStrike: isStrikeAuth ? responseStrike.onchain?.address : null });
-        } catch (error) {
-            console.error('Error generating bitcoin address topupClickHandler:', error);
-        } finally {
-            // setIsLoading(false);
+        if (!wallet && !coldStorageWallet) {
+            SimpleToast.show('You need to create a vault first', SimpleToast.SHORT);
+            return;
         }
+        refTopupRBSheet?.current?.open();
     };
 
     const withdrawClickHandler = () => {
@@ -254,7 +231,7 @@ export default function BottomBar({
     };
 
     const savingVaultClickHandler = () => {
-        dispatchNavigate('HotStorageVault', { wallet: vaultTab ? coldStorageWallet : wallet, matchedRate });
+        dispatchNavigate('HotStorageVault', { wallet: vaultTab ? coldStorageWallet : wallet, matchedRate: matchedRateBTC });
     };
 
     const tabs = [
@@ -275,7 +252,7 @@ export default function BottomBar({
                     title={"Hot Vault"}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={balanceVault}
-                    inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)).toFixed(2)}`}
+                    inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
                 />
             )
@@ -324,7 +301,7 @@ export default function BottomBar({
                     isVault={true}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={coldStorageBalanceVault}
-                    inDollars={`$${(Number(coldStorageBalanceWithoutSuffix) * Number(matchedRate)).toFixed(2)}`}
+                    inDollars={`$${(Number(coldStorageBalanceWithoutSuffix) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
                 />
             ) : (

@@ -56,6 +56,7 @@ import BottomBar from "./BottomBar";
 import CreateLightningAccount from "./CreateLightningAccount";
 import WalletsView from "./WalletsView";
 import SendListNew from "./SendListNew";
+import TopupList from "./TopupList";
 import WithdrawList from "./WithdrawList";
 import SwapSheet from "./SwapSheet";
 import { FiatUnit, FiatUnitType } from "models/fiatUnit";
@@ -134,6 +135,7 @@ export default function HomeScreen({ route }: Props) {
   console.log("🚀 ~ convertedRate:", convertedRate)
   const [convertedStrikeRate, setConvertedStrikeRate] = useState(0);
   const [matchedRate, setMatchedRate] = useState(0);
+  const [matchedRateBTC, setMatchedRateBTC] = useState(0); // USD-per-BTC for vault screens
   const [refreshing, setRefreshing] = useState(false);
   const [payment, setPayments] = useState([])
   const [wt, setWt] = useState<number>();
@@ -157,9 +159,12 @@ export default function HomeScreen({ route }: Props) {
   const [strikeConvertedBalance, setStrikeConvertedBalance] = useState(0);
   const refRBSheet = useRef<any>(null);
   const refSendRBSheet = useRef<any>(null);
+  const reopenSendSheet = useRef(false);
   const refWithdrawRBSheet = useRef<any>(null);
+  const refTopupRBSheet = useRef<any>(null);
   const refSwapRBSheet = useRef<any>(null);
   const [receivedListSecondTab, setReceivedListSecondTab] = useState(false);
+  const [initialVaultType, setInitialVaultType] = useState<'hot' | 'cold' | null>(null);
   const carouselRef = useRef<Carousel<any>>(null);
 
   // Sync local currency state with store's strikeCurrency
@@ -184,14 +189,39 @@ export default function HomeScreen({ route }: Props) {
       if (!coldStorageWalletID) setColdStorageWallet(undefined)
       if (!walletID) setWallet(undefined)
 
-      // if(!walletID && coldStorageWalletID) {
-      //   setVaultTab(true);
-      // } else if(walletID && !coldStorageWalletID) {
-      //   setVaultTab(false);
-      // }
-    }, [wallet, coldStorageWalletID, walletID]),
+      // Handle address selected from WalletAddresses screen
+      if (route?.params?.selectedVaultAddress) {
+        const addr = route.params.selectedVaultAddress;
+        const type = route.params.selectedVaultType as 'hot' | 'cold';
+        if (type === 'cold') {
+          setColdStorageAddress(addr);
+        } else {
+          setVaultAddress(addr);
+        }
+        setInitialVaultType(type);
+        // Open the receive popup with the selected address
+        setTimeout(() => {
+          refRBSheet?.current?.open();
+          // Clear after popup is open so it doesn't affect future opens
+          setTimeout(() => setInitialVaultType(null), 500);
+        }, 300);
+        // Clear the param so it doesn't re-trigger
+        if (route.params) {
+          route.params.selectedVaultAddress = undefined;
+          route.params.selectedVaultType = undefined;
+        }
+      }
+    }, [wallet, coldStorageWalletID, walletID, route?.params?.selectedVaultAddress]),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      if (reopenSendSheet.current) {
+        reopenSendSheet.current = false;
+        setTimeout(() => refSendRBSheet?.current?.open(), 300);
+      }
+    }, []),
+  );
 
   const getWallet = async () => {
     try {
@@ -397,6 +427,7 @@ export default function HomeScreen({ route }: Props) {
         try {
           const blueWalletRate = await getFiatRate('USD');
           setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
+          setMatchedRateBTC(blueWalletRate || 0);
         } catch (err) {
           console.log('BlueWallet rate error:', err);
         }
@@ -602,49 +633,58 @@ export default function HomeScreen({ route }: Props) {
 
   const handleUser = async () => {
     try {
+      // Always fetch exchange rates first — needed for vault USD conversion
+      let coinosRate = 0;
+      let blueWalletRate = 0;
+      let blueWalletRateRaw = 0; // USD-per-BTC (for vaults)
+
       // Try to get Coinos data if logged in (for Coinos-specific balance)
       const response = await getMe();
-      if (!response) return; // Not logged into Coinos
 
-      // Get Coinos rate for Coinos balance display (PRIMARY source)
-      let coinosRate = 0;
-      try {
-        const responsetest = await getCurrencyRates();
-        const currency = btc(1);
-        const matched = matchKeyAndValue(responsetest, 'USD');
-        coinosRate = (matched || 0) * currency;
-        console.log('[Coinos] rate from API:', coinosRate);
-      } catch (rateError) {
-        console.log('[Coinos] rate API failed, trying BlueWallet fallback');
+      if (response) {
+        // Get Coinos rate for Coinos balance display (PRIMARY source)
+        try {
+          const responsetest = await getCurrencyRates();
+          const currency = btc(1);
+          const matched = matchKeyAndValue(responsetest, 'USD');
+          coinosRate = (matched || 0) * currency;
+          console.log('[Coinos] rate from API:', coinosRate);
+        } catch (rateError) {
+          console.log('[Coinos] rate API failed, trying BlueWallet fallback');
+        }
       }
-      
+
       // Use Coinos rate if available, fallback to BlueWallet
-      let blueWalletRate = 0;
       try {
-        const rawRate = await getFiatRate('USD') || 0;
-        blueWalletRate = rawRate * btc(1); // Convert USD-per-BTC to USD-per-sat
+        blueWalletRateRaw = await getFiatRate('USD') || 0;
+        blueWalletRate = blueWalletRateRaw * btc(1); // Convert USD-per-BTC to USD-per-sat
       } catch (rateErr) {
         console.log('BlueWallet rate error:', rateErr);
       }
 
       const finalRate = coinosRate || blueWalletRate;
       setMatchedRate(finalRate);
+      setMatchedRateBTC(blueWalletRateRaw || (coinosRate ? coinosRate / btc(1) : 0));
       console.log('[Coinos] matchedRate set to:', finalRate, '(coinos:', coinosRate, ', bluewallet:', blueWalletRate, ')');
 
-      // Calculate converted rate using the same rate
-      setConvertedRate(finalRate * response.balance);
-      setCurrency("USD")
-      setBalance(response?.balance ?? 0);
-      setUser(response?.username);
+      if (response) {
+        // Calculate converted rate using the same rate
+        setConvertedRate(finalRate * response.balance);
+        setCurrency("USD")
+        setBalance(response?.balance ?? 0);
+        setUser(response?.username);
+      }
     } catch (error) {
       console.error('error: ', error);
       // Try BlueWallet's native rate as absolute fallback
       try {
         const blueWalletRate = await getFiatRate('USD');
         setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
+        setMatchedRateBTC(blueWalletRate || 0);
       } catch (bwError) {
         console.error('BlueWallet rate failed:', bwError);
         setMatchedRate(0);
+        setMatchedRateBTC(0);
       }
       SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
     } finally {
@@ -810,7 +850,7 @@ export default function HomeScreen({ route }: Props) {
           tintColor="white"
         />
       }
-      disableScroll={isAuth ? false : true}>
+      disableScroll={false}>
         <View style={styles.container}>
           {isLoading ? (
             <ActivityIndicator size="large" color="#ffffff" />
@@ -818,14 +858,17 @@ export default function HomeScreen({ route }: Props) {
           :
           (
             <>
+              <View style={{ height: 40 }} />
               <Header onBarScanned={onBarScanned} />
-              <BalanceView 
-                // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
-                balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
-                convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRate || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)))).toFixed(2)}`}
-                showAddAccount={allBTCWallets.length < 2 && !isLoading}
-                onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
-              />
+              <View style={{ transform: [{ translateY: -20 }] }}>
+                <BalanceView
+                  // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
+                  balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
+                  convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)))).toFixed(2)}`}
+                  showAddAccount={allBTCWallets.length < 2 && !isLoading}
+                  onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
+                />
+              </View>
             </>
           )}
 
@@ -834,10 +877,34 @@ export default function HomeScreen({ route }: Props) {
                     {/* Add Account button moved into BalanceView */}
           {/* Lightning Accounts title moved into WalletsView carousel */}
 
-          <View>
-            {!isAuth && !isLoading && !isStrikeAuth ?
-              <CreateLightningAccount onPress={loginClickHandler} />
-            : !isLoading &&
+          <View style={{ transform: [{ translateY: -20 }] }}>
+            {!isAuth && !isLoading && !isStrikeAuth ? (
+              <>
+                <CreateLightningAccount onPress={loginClickHandler} />
+                {(hasSavingVault || hasColdStorage) && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingHorizontal: 20 }}>
+                    <GradientView
+                      onPress={() => { setReceiveType(true); refRBSheet.current.open(); }}
+                      topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowOpacity: 2, shadowColor: '#555555', borderRadius: 25, width: (screenWidth / 2) - 60, height: 47, justifyContent: 'center', alignItems: 'center' }}
+                      bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 0.64, shadowColor: '#333333', borderRadius: 25, width: (screenWidth / 2) - 60, height: 47, justifyContent: 'center', position: 'absolute' }}
+                      style={{ shadowColor: '#040404CC', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.80, shadowRadius: 16, elevation: 8 }}
+                      linearGradientStyle={{ shadowColor: '#27272C7A', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
+                    >
+                      <Text h3 style={{ ...shadow.text25 }}>Receive</Text>
+                    </GradientView>
+                    <GradientView
+                      onPress={() => { refSendRBSheet.current.open(); }}
+                      topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowOpacity: 2, shadowColor: '#555555', borderRadius: 25, width: (screenWidth / 2) - 60, height: 47, justifyContent: 'center', alignItems: 'center' }}
+                      bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 0.64, shadowColor: '#333333', borderRadius: 25, width: (screenWidth / 2) - 60, height: 47, justifyContent: 'center', position: 'absolute' }}
+                      style={{ shadowColor: '#040404CC', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.80, shadowRadius: 16, elevation: 8 }}
+                      linearGradientStyle={{ shadowColor: '#27272C7A', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
+                    >
+                      <Text h3 style={{ ...shadow.text25 }}>Send</Text>
+                    </GradientView>
+                  </View>
+                )}
+              </>
+            ) : !isLoading && (
               <WalletsView
                 balance={balance}
                 convertedRate={convertedRate}
@@ -856,18 +923,18 @@ export default function HomeScreen({ route }: Props) {
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
                 homeMessage={homeMessage}
               />
-            }
+            )}
           </View>
-          
+
           {/* */}
 
           {!isLoading && (isWalletLoaded || isColdWalletLoaded) &&
-            <View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center'}}>
+            <View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', transform: [{ translateY: (isAuth || isStrikeAuth) ? -20 : -60 }]}}>
               <ActivityIndicator size="small" color="#23C47F" />
             </View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={{height: 205, marginBottom: 20}}>
+            <View style={{height: 205, marginBottom: 20, transform: [{ translateY: (isAuth || isStrikeAuth) ? -20 : -60 }]}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}
@@ -884,9 +951,11 @@ export default function HomeScreen({ route }: Props) {
                 hasColdStorage={hasColdStorage}
                 hasSavingVault={hasSavingVault}
                 matchedRate={matchedRate}
+                matchedRateBTC={matchedRateBTC}
                 recommendedFee={recommendedFee}
                 vaultAddress={vaultAddress}
                 wallet={wallet}
+                refTopupRBSheet={refTopupRBSheet}
               />
             </View>
           }
@@ -901,7 +970,7 @@ export default function HomeScreen({ route }: Props) {
             backgroundColor: 'red',
           },
           container: {
-            height: heights * 0.72,
+            height: heights / 2 + 20,
             backgroundColor: 'transparent',
           }
         }}
@@ -914,16 +983,17 @@ export default function HomeScreen({ route }: Props) {
         }}
       >
         {/* <ReceivedList refRBSheet={refRBSheet} receiveType={receiveType} matchedRate={matchedRate} currency={currency} /> */}
-        <ReceivedListNew 
-          setReceivedListSecondTab={setReceivedListSecondTab} 
-          refRBSheet={refRBSheet} 
-          receiveType={receiveType} 
-          matchedRate={matchedRateStrike} 
-          currency={strikeUser?.[1]?.currency || 'USD'} 
-          wallet={wallet} 
+        <ReceivedListNew
+          setReceivedListSecondTab={setReceivedListSecondTab}
+          refRBSheet={refRBSheet}
+          receiveType={receiveType}
+          matchedRate={matchedRateStrike}
+          currency={strikeUser?.[1]?.currency || 'USD'}
+          wallet={wallet}
           coldStorageWallet={coldStorageWallet}
           vaultAddress={vaultAddress}
           coldStorageAddress={coldStorageAddress}
+          initialVaultType={initialVaultType}
         />
       </RBSheet>
 
@@ -949,7 +1019,7 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <SendListNew refRBSheet={refSendRBSheet} receiveType={receiveType} matchedRate={matchedRateStrike || matchedRate} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
+        <SendListNew refRBSheet={refSendRBSheet} reopenSendSheet={reopenSendSheet} receiveType={receiveType} matchedRate={matchedRateStrike || matchedRate} matchedRateBTC={matchedRateBTC} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
       </RBSheet>
 
       <RBSheet
@@ -988,6 +1058,37 @@ export default function HomeScreen({ route }: Props) {
           coldStorageAddress={coldStorageAddress}
           vaultAddress={vaultAddress}
           coldStorageWallet={coldStorageWallet} 
+        />
+      </RBSheet>
+
+      <RBSheet
+        ref={refTopupRBSheet}
+        customStyles={{
+          wrapper: {
+            backgroundColor: 'transparent',
+          },
+          draggableIcon: {
+            backgroundColor: 'red',
+          },
+          container: {
+            height: heights / 2 + 20,
+            backgroundColor: 'transparent',
+          }
+        }}
+        customModalProps={{
+          animationType: 'slide',
+          statusBarTranslucent: true,
+        }}
+        customAvoidingViewProps={{
+          enabled: false,
+        }}
+      >
+        <TopupList
+          refRBSheet={refTopupRBSheet}
+          matchedRateBTC={matchedRateBTC}
+          currency={strikeUser?.[1]?.currency || 'USD'}
+          wallet={wallet}
+          coldStorageWallet={coldStorageWallet}
         />
       </RBSheet>
 

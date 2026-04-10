@@ -23,10 +23,11 @@ interface Props {
     firstTabText?: string;
     isEdit?: string;
     vaultTab?: boolean;
+    onMaxPress?(): void;
 }
 
-export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, isConverter = true, firstTabText = "Sats" }: Props) {
-    const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
+export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, isConverter = true, firstTabText = "Sats", onMaxPress }: Props) {
+    const KEYSARRAY = onMaxPress ? ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'MAX', '0'] : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState(prevSats || '');
     const currency = btc(1);
@@ -40,14 +41,14 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
         if (sats.length > 0) {
             let amount = 0;
             if (isSats) {
+                // BTC/Sats → USD: use 2 decimal places for dollar amount
                 amount = ((Number(sats || 0) * Number(matchedRate || 0))).toFixed(2)
                 setSATS(sats);
                 setUSD(String(amount));
             } else {
-                amount = ((Number(sats || 0) / (Number(matchedRate) || 1))).toFixed(2);
-                // const multiplier = isSats ? 0.000594 : 1683.79;
-                // const total = multiplier * Number(sats);
-                // const total_ = total.toFixed(4);
+                // USD → BTC/Sats: use 8 decimal places for BTC, 0 for sats
+                const converted = Number(sats || 0) / (Number(matchedRate) || 1);
+                amount = firstTabText === "BTC" ? converted.toFixed(8) : converted.toFixed(2);
                 setSATS(String(sats));
                 setUSD(String(amount));
             }
@@ -95,9 +96,22 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
                 style={styles.linearGradient} />
             <View style={styles.keypad}>
                 {KEYSARRAY.map((key) => (
-                    <TouchableOpacity key={key} style={styles.key} onPress={() => handlePress(key)}>
-                        <Text style={styles.keyText}>{key}</Text>
-                    </TouchableOpacity>
+                    key === 'MAX' ? (
+                        <TouchableOpacity key={key} style={styles.key} onPress={onMaxPress}>
+                            <View style={{
+                                backgroundColor: vaultTab ? colors.coldGreen : colors.green,
+                                paddingHorizontal: 16,
+                                paddingVertical: 6,
+                                borderRadius: 10,
+                            }}>
+                                <Text style={[styles.keyText, { fontSize: 14, color: '#000', fontWeight: 'bold' }]}>MAX</Text>
+                            </View>
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity key={key} style={styles.key} onPress={() => handlePress(key)}>
+                            <Text style={styles.keyText}>{key}</Text>
+                        </TouchableOpacity>
+                    )
                 ))}
                 <TouchableOpacity style={styles.key} onPress={handleDelete}>
                     <Image source={Cancel} />

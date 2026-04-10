@@ -214,7 +214,7 @@ export default StyleSheet.create<Style>({
         justifyContent: 'flex-start',
     },
     createView: {
-        marginTop: 5,
+        marginTop: 15,
         backgroundColor: 'transparent'
     },
     image: {

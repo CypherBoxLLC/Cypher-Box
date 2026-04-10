@@ -22,7 +22,7 @@ export default function Header({ onBarScanned }: Props) {
         scanQrHelper(navigate, routeName).then(onBarScanned);
     };
 
-    return <View style={styles.title}>
+    return <View style={[styles.title, { transform: [{ translateY: -20 }] }]}>
         <Text subHeader bold>
             Total Assets
         </Text>

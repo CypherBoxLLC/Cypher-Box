@@ -145,9 +145,9 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         let capsulesData: any = [];
         let capsuleTotal: any = 0;
         ids.forEach(id => {
-            const result = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id)?.value;
-            if (result) capsulesData.push({
-                id, value: result
+            const found = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id);
+            if (found) capsulesData.push({
+                id, value: found.value, address: found.address
             });
             capsuleTotal += Number(result)
         });
@@ -169,9 +169,9 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         let capsulesData: any = [];
         let capsuleTotal: any = 0;
         ids.forEach(id => {
-            const result = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id)?.value;
-            if (result) capsulesData.push({
-                id, value: result
+            const found = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id);
+            if (found) capsulesData.push({
+                id, value: found.value, address: found.address
             });
             capsuleTotal += Number(result)
         });
@@ -195,9 +195,9 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         let capsulesData: any = [];
         let capsuleTotal: any = 0;
         ids.forEach(id => {
-            const result = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id)?.value;
-            if (result) capsulesData.push({
-                id, value: result
+            const found = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id);
+            if (found) capsulesData.push({
+                id, value: found.value, address: found.address
             });
             capsuleTotal += Number(result)
         });
@@ -217,11 +217,10 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             const result = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id)?.value;
             if (result) total += result;
         });
-        const currency = btcHandle(1);
-        const inUSD = Number(total) * Number(matchedRate) * currency;
         const BTCAmount = btcHandle(total);
+        // matchedRate is now USD-per-BTC, so BTC * rate = USD
+        const inUSD = Number(BTCAmount) * Number(matchedRate);
 
-        // const inUSD = total * 63749.40;
         return { total: BTCAmount, inUSD };
     }, [ids, utxo]);
 
@@ -246,6 +245,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                 if (result) capsulesData.push({
                     id: `${u.txid}:${u.vout}`,
                     value: u.value || u.amount,
+                    address: u.address,
                 });
             });
             const capsuleTotal = capsulesData.reduce((acc: number, c: any) => acc + (c.value || 0), 0);
@@ -279,7 +279,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     return (
         <View style={styles.flex}>
             <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
-                <Text bold style={[styles.desc, {flex: 1}]}>Select your UTXO capsules to send, consolidate, move to Cold Vault, or Top-up your Lightening Account:</Text>
+                <Text bold style={[styles.desc, {flex: 1, marginHorizontal: undefined, marginRight: 20, marginLeft: 60}]}>Select your UTXO capsules to send, consolidate, move to Cold Vault, or Top-up your Lightening Account:</Text>
                 <TouchableOpacity onPress={() => dispatchNavigate('CapsuleCatalog')} style={{marginLeft: 10, marginRight: 15, marginTop: 5, width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: vaultTab ? colors.coldGreen : colors.green, alignItems: 'center', justifyContent: 'center'}}>
                     <Text bold style={{color: vaultTab ? colors.coldGreen : colors.green, fontSize: 14}}>?</Text>
                 </TouchableOpacity>

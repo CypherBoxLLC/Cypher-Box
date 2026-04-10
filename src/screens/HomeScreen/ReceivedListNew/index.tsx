@@ -47,16 +47,26 @@ interface Props {
   setReceivedListSecondTab: (val: boolean) => void;
   vaultAddress?: string;
   coldStorageAddress?: string;
+  initialVaultType?: 'hot' | 'cold' | null;
 }
 
 
-export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency, vaultAddress = '', coldStorageAddress = '' }: Props) {
+export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency, vaultAddress = '', coldStorageAddress = '', initialVaultType = null }: Props) {
   const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
-  const [selectedItem, setSelectedItem] = useState<number | null>(allBTCWallets.length == 1 && (!coldStorageWalletID && !walletID) && allBTCWallets[0] == "STRIKE" ? 1 : allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "COINOS" ? 2 : null);
+
+  const getInitialSelectedItem = () => {
+    if (initialVaultType === 'hot') return 3;
+    if (initialVaultType === 'cold') return 4;
+    if (allBTCWallets.length == 1 && (!coldStorageWalletID && !walletID) && allBTCWallets[0] == "STRIKE") return 1;
+    if (allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "COINOS") return 2;
+    return null;
+  };
+
+  const [selectedItem, setSelectedItem] = useState<number | null>(getInitialSelectedItem());
   console.log("🚀 ~ ReceivedListNew ~ selectedItem:", selectedItem);
 
   const [tab, setTab] = useState(0);
-  const [showSecondView, setShowSecondView] = useState(allBTCWallets.length == 1 ? true : false);
+  const [showSecondView, setShowSecondView] = useState(initialVaultType !== null || allBTCWallets.length == 1 ? true : false);
   const [hashLiquid, setHashLiquid] = useState('');
   const [hashBitcoin, setHashBitcoin] = useState('');
   const qrCode = useRef();
@@ -77,10 +87,11 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   }, [tab, selectedItem])
 
   useEffect(() => {
-    if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
+    if(initialVaultType !== null || (allBTCWallets.length == 1 && !coldStorageWalletID && !walletID)) {
       animateToSecondView();
+      setReceivedListSecondTab(true);
     }
-  }, [allBTCWallets.length, coldStorageWalletID, walletID])
+  }, [allBTCWallets.length, coldStorageWalletID, walletID, initialVaultType])
 
   const handleCreateInvoice = async (type: string) => {
     setIsLoading(true);
@@ -106,8 +117,8 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     }
   };
 
-  const translateX1 = useSharedValue(0);
-  const translateX2 = useSharedValue(SCREEN_WIDTH);
+  const translateX1 = useSharedValue(initialVaultType !== null ? -SCREEN_WIDTH : 0);
+  const translateX2 = useSharedValue(initialVaultType !== null ? 0 : SCREEN_WIDTH);
 
   const animateToSecondView = () => {
     translateX1.value = withTiming(-SCREEN_WIDTH, { duration: 300 });
@@ -178,14 +189,9 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   }
 
   const getTabs = () => {
+    // Vaults only have one address view — no tab bar needed
     if (selectedItem === 3 || selectedItem === 4) {
-      return [
-        {
-          id: 0,
-          name: "Address",
-          icon: Barcode,
-        },
-      ];
+      return [];
     }
     if (selectedItem === 1) {
       return [
@@ -227,9 +233,13 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   const showBackButton = allBTCWallets.length > 1 ||
   (allBTCWallets.length == 1 && coldStorageWalletID) ||
   (allBTCWallets.length == 1 && walletID) ||
-  (coldStorageWalletID && walletID);
+  (coldStorageWalletID && walletID) ||
+  (allBTCWallets.length == 0 && (walletID || coldStorageWalletID));
 
   // --- 2x2 Grid Tile Component ---
+  // Shadow/ART requires absolute pixel dimensions — percentage strings produce NaN
+  const TILE_WIDTH = Math.floor((SCREEN_WIDTH - 48) * 0.48);
+
   const renderGridTile = (
     id: number,
     label: string,
@@ -242,7 +252,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   ) => {
     const isLogo = id === 1 || id === 2; // Strike/CoinOS use logo images
     return (
-      <View style={{ width: '48%', opacity: isEnabled ? 1 : 0.3 }} pointerEvents={isEnabled ? 'auto' : 'none'}>
+      <View style={{ width: TILE_WIDTH, opacity: isEnabled ? 1 : 0.3 }} pointerEvents={isEnabled ? 'auto' : 'none'}>
         <GradientView
           onPress={() => isEnabled && onPress({ id })}
           style={{
@@ -252,7 +262,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             shadowRadius: 12,
             elevation: 6,
             height: 100,
-            width: '100%',
+            width: TILE_WIDTH,
           }}
           linearGradientStyle={{
             shadowColor: "#27272C",
@@ -260,14 +270,15 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             shadowOpacity: 0.4,
             shadowRadius: 10,
             elevation: 6,
-            flex: 1,
+            height: 100,
+            width: TILE_WIDTH,
           }}
           topShadowStyle={{
             shadowOffset: { width: 2, height: 2 },
             shadowColor: shadowColor,
             shadowRadius: 3,
             borderRadius: 20,
-            width: '100%',
+            width: TILE_WIDTH,
             height: 100,
             justifyContent: "center",
           }}
@@ -277,7 +288,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             shadowOpacity: 0.5,
             shadowColor: shadowColor,
             borderRadius: 20,
-            width: '100%',
+            width: TILE_WIDTH,
             height: 100,
             justifyContent: "center",
             position: "absolute",
@@ -287,7 +298,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             height: 100,
             justifyContent: "center",
             alignItems: "center",
-            width: '100%',
+            width: TILE_WIDTH,
           }}
           gradiantColors={[colors.black.bg, colors.black.bg]}
         >
@@ -386,7 +397,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
 
           {/* ======= SECOND VIEW: Sub-menus ======= */}
           <Animated.View
-            style={[{ flex: 1, position: "absolute", width: '100%' }, view2Style]}
+            style={[{ position: "absolute", width: '100%', height: '100%' }, view2Style]}
           >
             {/* Back button + title header */}
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 }}>
@@ -433,19 +444,19 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
 
             {/* ---- Vault Sub-menu (Hot/Cold) ---- */}
             {(selectedItem === 3 || selectedItem === 4) && tab === 0 && (
-              <View style={{ paddingHorizontal: 24, alignItems: 'center', marginTop: 8 }}>
+              <View style={{ paddingHorizontal: 24, alignItems: 'center', flex: 1, justifyContent: 'space-evenly', paddingBottom: 12 }}>
                 {/* QR Code */}
                 {(selectedItem === 3 ? vaultAddress : coldStorageAddress) ? (
-                  <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 12, marginTop: 8 }}>
+                  <View style={{ backgroundColor: 'white', padding: 10, borderRadius: 10 }}>
                     <QRCode
                       value={selectedItem === 3 ? vaultAddress : coldStorageAddress}
-                      size={180}
+                      size={150}
                       color="black"
                       backgroundColor="white"
                     />
                   </View>
                 ) : (
-                  <ActivityIndicator size="large" color="#ffffff" style={{ marginTop: 30 }} />
+                  <ActivityIndicator size="large" color="#ffffff" style={{ marginTop: 20 }} />
                 )}
 
                 {/* Address + Copy row */}
@@ -461,18 +472,17 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    marginTop: 14,
-                    paddingHorizontal: 16,
+                    paddingHorizontal: 14,
                     paddingVertical: 10,
                     backgroundColor: 'rgba(255,255,255,0.08)',
                     borderRadius: 10,
                     width: '100%',
                   }}
                 >
-                  <Text style={{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }} numberOfLines={2}>
+                  <Text style={{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }} numberOfLines={1}>
                     {selectedItem === 3 ? vaultAddress : coldStorageAddress}
                   </Text>
-                  <Image source={Copy} style={{ width: 22, height: 18, marginLeft: 10, tintColor: '#aaa' }} resizeMode="contain" />
+                  <Image source={Copy} style={{ width: 20, height: 16, marginLeft: 8, tintColor: '#aaa' }} resizeMode="contain" />
                 </TouchableOpacity>
 
                 {/* View All Vault Addresses button */}
@@ -480,26 +490,26 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   onPress={() => {
                     refRBSheet?.current?.close();
                     setReceivedListSecondTab(false);
+                    const targetWallet = selectedItem === 3 ? wallet : coldStorageWallet;
+                    setVaultTab(selectedItem === 4);
                     setTimeout(() => {
-                      setVaultTab(selectedItem === 4);
-                      dispatchNavigate('HotStorageVault', {
-                        wallet: selectedItem === 3 ? wallet : coldStorageWallet,
-                        matchedRate,
-                        initialTab: 0,
+                      dispatchNavigate('WalletAddresses', {
+                        walletID: targetWallet?.getID?.(),
+                        isTouchable: true,
+                        selectForReceive: true,
                       });
                     }, 150);
                   }}
                   style={{
-                    marginTop: 18,
-                    paddingVertical: 12,
-                    paddingHorizontal: 28,
-                    borderRadius: 12,
+                    paddingVertical: 10,
+                    paddingHorizontal: 24,
+                    borderRadius: 10,
                     backgroundColor: selectedItem === 3 ? 'rgba(76,175,80,0.15)' : 'rgba(135,206,235,0.15)',
                     borderWidth: 1.5,
                     borderColor: selectedItem === 3 ? colors.green : colors.coldGreen,
                   }}
                 >
-                  <Text bold style={{ fontSize: 14, color: selectedItem === 3 ? colors.green : colors.coldGreen, textAlign: 'center' }}>
+                  <Text bold style={{ fontSize: 13, color: selectedItem === 3 ? colors.green : colors.coldGreen, textAlign: 'center' }}>
                     View All Vault Addresses
                   </Text>
                 </TouchableOpacity>

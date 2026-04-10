@@ -24,7 +24,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { scanQrHelper } from "../../../helpers/scan-qr";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
-import { Check, Edit, StrikeFull, CoinOS, Hot } from "@Cypher/assets/images";
+import { Check, Edit, StrikeFull, CoinOS, Hot, Cold1 } from "@Cypher/assets/images";
 import { getStrikeDepositAddress, createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import { createInvoice as createInvoiceCoinos } from "@Cypher/api/coinOSApis";
 
@@ -59,6 +59,8 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [bridgeDepositAddress, setBridgeDepositAddress] = useState<string | null>(null);
     const [lightningInvoice, setLightningInvoice] = useState('');
     const [showFeeInfo, setShowFeeInfo] = useState(false);
+    const [showChangeInfo, setShowChangeInfo] = useState(false);
+    const [showChangeMenu, setShowChangeMenu] = useState(false);
     const [showFirePopup, setShowFirePopup] = useState(false);
     // style = { styles.pasteAddress }
     const [visibleSelection, setVisibleSelection] = useState(false);
@@ -898,35 +900,26 @@ export default function ColdStorage({ route, navigation }: Props) {
                 /> */}
                 <View style={styles.recipientView}>
                     {/* <TouchableOpacity onPress={coinThresholdClickHandler}> */}
-                    {to || toStrike ?
-                      <View>
-                        <Text bold style={styles.coinselected}>Capsules selected:</Text>
-                        <View style={{flexDirection: 'row', alignItems: 'center', marginLeft: 2, marginTop: 18 }}>
-                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', maxWidth: '72%'}}>
-                            {capsulesData && capsulesData.map((item, i) => (
-                              <View key={item.id || i} style={styles.tabs}>
-                                <VaultCapsules item={item.value} />
-                              </View>
-                            ))}
-                          </View>
-                          <View style={{ alignSelf: 'flex-start' }}>
-                            <Text bold style={[styles.coinselected, {fontSize: 12}]}>Total: {formatBalance(capsuleTotal, BitcoinUnit.BTC, true)}</Text>
-                          </View>
-                        </View>
-                      </View>
-                    :
-                      <View>
+                    <View>
                         <Text bold style={styles.coinselected}>Capsules selected:</Text>
                         {capsulesData && capsulesData.length > 0 ? (
-                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                          <View style={{ marginTop: 10, marginBottom: 10 }}>
                             {capsulesData.map((item: any, i: number) => (
-                              <View key={item.id || i} style={styles.tabs}>
-                                <VaultCapsules item={item.value} />
+                              <View key={item.id || i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                                <View style={styles.tabs}>
+                                  <VaultCapsules item={item.value} />
+                                </View>
+                                <Text style={{ fontSize: 11, color: vaultTab ? '#87CEEB' : '#4CAF50', marginLeft: 8 }}>
+                                  {item.value?.toLocaleString()} sats
+                                </Text>
                               </View>
                             ))}
+                            {(to || toStrike) && capsuleTotal > 0 && (
+                              <Text bold style={[styles.coinselected, { fontSize: 12, marginTop: 4 }]}>Total: {formatBalance(capsuleTotal, BitcoinUnit.BTC, true)}</Text>
+                            )}
                           </View>
                         ) : (
-                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10 }}>
                             {Array(ids.length).fill(0).map((_, i) => (
                               <View key={i} style={styles.tabs}>
                                 <VaultCapsules item={0} />
@@ -935,7 +928,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                           </View>
                         )}
                       </View>
-                    }
                     {/* </TouchableOpacity> */}
                     {isBatch ?
                       <View style={{
@@ -1003,10 +995,23 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 return (
                                     <View style={[styles.priceView, {marginTop: 10, flexDirection: 'column'}]}>
                                         <View style={{flexDirection: 'row'}}>
-                                            <View>
-                                                <Text style={styles.recipientTitle}>Change:</Text>
+                                            <View style={{flex: 1}}>
+                                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                                    <Text style={styles.recipientTitle}>Change capsule</Text>
+                                                    <TouchableOpacity
+                                                        onPress={() => setShowChangeInfo(!showChangeInfo)}
+                                                        style={{marginLeft: 6, marginTop: -2}}
+                                                    >
+                                                        <Icon name="info-circle" type="font-awesome" color={showChangeInfo ? (vaultTab ? colors.coldGreen : colors.green) : '#888'} size={14} />
+                                                    </TouchableOpacity>
+                                                </View>
+                                                {showChangeInfo && (
+                                                    <View style={{ marginTop: 6, marginBottom: 4, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: vaultTab ? colors.coldGreen : colors.green, backgroundColor: '#1a1a1a' }}>
+                                                        <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16 }}>Change capsule is the amount of Bitcoin sent back to you as a remainder. If it's a small amount, you can sweep it to your Lightning Account for quick spending or deposit it to your Hot Vault for future consolidation cycle.</Text>
+                                                    </View>
+                                                )}
                                                 <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
-                                                <View style={{flexDirection: 'row', marginTop: 8}}>
+                                                <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 8}}>
                                                     <View style={styles.tabs}>
                                                         <VaultCapsules item={changeSats} />
                                                     </View>
@@ -1014,87 +1019,77 @@ export default function ColdStorage({ route, navigation }: Props) {
                                             </View>
                                         </View>
                                         {(isStrikeAuth || isAuth || showHotVault) && (
-                                            <View style={{marginTop: 12}}>
-                                                <Text style={[styles.recipientTitle, {fontSize: 14, color: '#AAAAAA'}]}>Sweep change to:</Text>
-                                                <View style={{flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, gap: 8}}>
+                                            <View style={{marginTop: 10}}>
+                                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                                    <Text style={{fontSize: 13, color: '#AAAAAA', marginRight: 8}}>Sweep change to:</Text>
                                                     <TouchableOpacity
+                                                        onPress={() => setShowChangeMenu(!showChangeMenu)}
+                                                        disabled={changeFetchLoading}
                                                         style={{
                                                             flexDirection: 'row',
                                                             alignItems: 'center',
                                                             paddingHorizontal: 12,
-                                                            paddingVertical: 6,
-                                                            borderRadius: 15,
-                                                            borderWidth: 2,
-                                                            borderColor: changeDestination === 'SELF' ? (vaultTab ? colors.coldGreen : colors.green) : '#555',
-                                                            backgroundColor: changeDestination === 'SELF' ? (vaultTab ? 'rgba(135,206,235,0.15)' : 'rgba(76,175,80,0.15)') : 'transparent',
+                                                            paddingVertical: 5,
+                                                            borderRadius: 8,
+                                                            borderWidth: 1.5,
+                                                            borderColor: changeDestination === 'SELF'
+                                                                ? (vaultTab ? colors.coldGreen : colors.green)
+                                                                : changeDestination === 'HOT_VAULT' ? colors.green
+                                                                : '#FF65D4',
+                                                            backgroundColor: 'rgba(255,255,255,0.05)',
                                                         }}
-                                                        onPress={() => handleChangeDestination('SELF')}
                                                     >
-                                                        <Text style={{fontSize: 13, color: changeDestination === 'SELF' ? '#FFFFFF' : '#999'}}>{vaultTab ? 'Cold Vault' : 'Hot Vault'}</Text>
+                                                        <Text style={{fontSize: 12, color: '#fff'}}>
+                                                            {changeDestination === 'SELF' ? (vaultTab ? 'Cold Vault' : 'Hot Vault')
+                                                            : changeDestination === 'HOT_VAULT' ? 'Hot Vault'
+                                                            : changeDestination === 'STRIKE' ? 'Strike'
+                                                            : 'CoinOS'}
+                                                        </Text>
+                                                        <Icon name={showChangeMenu ? 'caret-up' : 'caret-down'} type="font-awesome" color="#999" size={12} containerStyle={{marginLeft: 6}} />
                                                     </TouchableOpacity>
-                                                    {isStrikeAuth && (
-                                                        <TouchableOpacity
-                                                            style={{
-                                                                flexDirection: 'row',
-                                                                alignItems: 'center',
-                                                                paddingHorizontal: 12,
-                                                                paddingVertical: 6,
-                                                                borderRadius: 15,
-                                                                borderWidth: 2,
-                                                                borderColor: changeDestination === 'STRIKE' ? '#FF65D4' : '#555',
-                                                                backgroundColor: changeDestination === 'STRIKE' ? 'rgba(255,101,212,0.15)' : 'transparent',
-                                                            }}
-                                                            onPress={() => handleChangeDestination('STRIKE')}
-                                                            disabled={changeFetchLoading}
-                                                        >
-                                                            <Image source={StrikeFull} style={{width: 50, height: 18, marginRight: 4}} resizeMode="contain" />
-                                                        </TouchableOpacity>
-                                                    )}
-                                                    {isAuth && (
-                                                        <TouchableOpacity
-                                                            style={{
-                                                                flexDirection: 'row',
-                                                                alignItems: 'center',
-                                                                paddingHorizontal: 12,
-                                                                paddingVertical: 6,
-                                                                borderRadius: 15,
-                                                                borderWidth: 2,
-                                                                borderColor: changeDestination === 'COINOS' ? '#FF65D4' : '#555',
-                                                                backgroundColor: changeDestination === 'COINOS' ? 'rgba(255,101,212,0.15)' : 'transparent',
-                                                            }}
-                                                            onPress={() => handleChangeDestination('COINOS')}
-                                                            disabled={changeFetchLoading}
-                                                        >
-                                                            <Image source={CoinOS} style={{width: 55, height: 18, marginRight: 4}} resizeMode="contain" />
-                                                        </TouchableOpacity>
-                                                    )}
-                                                    {showHotVault && (
-                                                        <TouchableOpacity
-                                                            style={{
-                                                                flexDirection: 'row',
-                                                                alignItems: 'center',
-                                                                paddingHorizontal: 12,
-                                                                paddingVertical: 6,
-                                                                borderRadius: 15,
-                                                                borderWidth: 2,
-                                                                borderColor: changeDestination === 'HOT_VAULT' ? colors.green : '#555',
-                                                                backgroundColor: changeDestination === 'HOT_VAULT' ? 'rgba(76,175,80,0.15)' : 'transparent',
-                                                            }}
-                                                            onPress={() => handleChangeDestination('HOT_VAULT')}
-                                                            disabled={changeFetchLoading}
-                                                        >
-                                                            <Image source={Hot} style={{width: 14, height: 14, marginRight: 4}} resizeMode="contain" />
-                                                            <Text style={{fontSize: 13, color: changeDestination === 'HOT_VAULT' ? '#FFFFFF' : '#999'}}>Hot Vault</Text>
-                                                        </TouchableOpacity>
+                                                    {changeFetchLoading && (
+                                                        <Text style={{fontSize: 11, color: '#888', marginLeft: 8}}>...</Text>
                                                     )}
                                                 </View>
-                                                {changeFetchLoading && (
-                                                    <Text style={{fontSize: 12, color: '#888', marginTop: 6}}>Fetching deposit address...</Text>
-                                                )}
-                                                {changeDestination !== 'SELF' && changeDepositAddress && !changeFetchLoading && (
-                                                    <Text style={{fontSize: 11, color: '#777', marginTop: 6}} numberOfLines={1} ellipsizeMode="middle">
-                                                        → {changeDepositAddress}
-                                                    </Text>
+                                                {showChangeMenu && (
+                                                    <View style={{marginTop: 6, backgroundColor: '#1a1a1a', borderRadius: 8, borderWidth: 1, borderColor: '#333', overflow: 'hidden'}}>
+                                                        <TouchableOpacity
+                                                            onPress={() => { handleChangeDestination('SELF'); setShowChangeMenu(false); }}
+                                                            style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#333'}}
+                                                        >
+                                                            <Image source={vaultTab ? Cold1 : Hot} style={{width: 14, height: 14, marginRight: 8}} resizeMode="contain" />
+                                                            <Text style={{fontSize: 13, color: changeDestination === 'SELF' ? '#fff' : '#999'}}>{vaultTab ? 'Cold Vault' : 'Hot Vault'}</Text>
+                                                            {changeDestination === 'SELF' && <Icon name="check" type="font-awesome" color={vaultTab ? colors.coldGreen : colors.green} size={12} containerStyle={{marginLeft: 'auto'}} />}
+                                                        </TouchableOpacity>
+                                                        {showHotVault && (
+                                                            <TouchableOpacity
+                                                                onPress={() => { handleChangeDestination('HOT_VAULT'); setShowChangeMenu(false); }}
+                                                                style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#333'}}
+                                                            >
+                                                                <Image source={Hot} style={{width: 14, height: 14, marginRight: 8}} resizeMode="contain" />
+                                                                <Text style={{fontSize: 13, color: changeDestination === 'HOT_VAULT' ? '#fff' : '#999'}}>Hot Vault</Text>
+                                                                {changeDestination === 'HOT_VAULT' && <Icon name="check" type="font-awesome" color={colors.green} size={12} containerStyle={{marginLeft: 'auto'}} />}
+                                                            </TouchableOpacity>
+                                                        )}
+                                                        {isStrikeAuth && (
+                                                            <TouchableOpacity
+                                                                onPress={() => { handleChangeDestination('STRIKE'); setShowChangeMenu(false); }}
+                                                                style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#333'}}
+                                                            >
+                                                                <Image source={StrikeFull} style={{width: 45, height: 16, marginRight: 8}} resizeMode="contain" />
+                                                                {changeDestination === 'STRIKE' && <Icon name="check" type="font-awesome" color="#FF65D4" size={12} containerStyle={{marginLeft: 'auto'}} />}
+                                                            </TouchableOpacity>
+                                                        )}
+                                                        {isAuth && (
+                                                            <TouchableOpacity
+                                                                onPress={() => { handleChangeDestination('COINOS'); setShowChangeMenu(false); }}
+                                                                style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10}}
+                                                            >
+                                                                <Image source={CoinOS} style={{width: 50, height: 16, marginRight: 8}} resizeMode="contain" />
+                                                                {changeDestination === 'COINOS' && <Icon name="check" type="font-awesome" color="#FF65D4" size={12} containerStyle={{marginLeft: 'auto'}} />}
+                                                            </TouchableOpacity>
+                                                        )}
+                                                    </View>
                                                 )}
                                             </View>
                                         )}
@@ -1104,20 +1099,15 @@ export default function ColdStorage({ route, navigation }: Props) {
                             return null;
                         })()
                     }
-                    {address && !isBatch &&
-                        <View style={styles.priceView}>
-                            <View>
-                                <Text style={styles.recipientTitle}>Send from vault address:</Text>
-                                <Text style={[styles.fees, { color: vaultTab ? '#87CEEB' : '#4CAF50' }]}>{shortenAddress(address)}</Text>
-                            </View>
-                        </View>
-                    }
+                    {/* Send-from address removed — now shown per-capsule below */}
+                    {!isBatch && (
+                        <Text bold style={{ fontSize: 18, color: '#fff', marginTop: 16, paddingHorizontal: 0 }}>Recipient address</Text>
+                    )}
                     {to || toStrike ?
                         <View style={styles.priceView}>
                           <View>
                               {!isBatch &&
                                 <>
-                                  <Text style={[styles.recipientTitle, !vaultSend ? {marginBottom: -10} : {}]}>Sent to:</Text>
                                   {!vaultSend &&
                                     <View style={[styles.cardListContainer]}>
                                       {data?.map((item) => (
@@ -1240,7 +1230,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                     }
                     <View style={{marginTop: 15}}>
                         <View>
-                            {/* Lightning Bridge Toggle */}
+                            {/* Lightning Bridge Toggle — DISABLED FOR NOW, will edit later
                         <View style={{ marginTop: 4, paddingHorizontal: 20 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
                                 <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text>
@@ -1248,20 +1238,20 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     <TouchableOpacity onPress={() => setShowFeeInfo(!showFeeInfo)} style={{ marginRight: 12 }}>
                                         <Icon name="info-circle" type="font-awesome" color={showFeeInfo ? '#FF65D4' : '#888'} size={18} />
                                     </TouchableOpacity>
-                                    <Switch 
+                                    <Switch
                                         value={useLightningBridge}
-                                        onValueChange={(v) => { 
+                                        onValueChange={(v) => {
                                             if (v && !isStrikeAuth && !isAuth) {
                                                 Alert.alert('Lightning Account Required', 'Please unlock a Lightning account (Strike or Coinos) to use this feature.');
                                                 return;
                                             }
-                                            setUseLightningBridge(v); 
-                                            if(!v) { setLightningInvoice(''); setBridgeProvider(null); } 
-                                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); 
-                                        }} 
-                                        ios_backgroundColor="#333333" 
-                                        thumbColor="#ffffff" 
-                                        trackColor={{ false: '#666666', true: (isStrikeAuth || isAuth) ? '#FF65D4' : '#444' }} 
+                                            setUseLightningBridge(v);
+                                            if(!v) { setLightningInvoice(''); setBridgeProvider(null); }
+                                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                        }}
+                                        ios_backgroundColor="#333333"
+                                        thumbColor="#ffffff"
+                                        trackColor={{ false: '#666666', true: (isStrikeAuth || isAuth) ? '#FF65D4' : '#444' }}
                                     />
                                 </View>
                             </View>
@@ -1284,16 +1274,16 @@ export default function ColdStorage({ route, navigation }: Props) {
                                             <Text style={{ fontSize: 12, color: '#888', marginBottom: 8, marginTop: 16 }}>Choose bridge:</Text>
                                             <View style={{ flexDirection: 'row', gap: 10 }}>
                                                 {isStrikeAuth && (
-                                                    <TouchableOpacity 
-                                                        style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#333', backgroundColor: '#000000', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }} 
+                                                    <TouchableOpacity
+                                                        style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#333', backgroundColor: '#000000', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }}
                                                         onPress={() => setBridgeProvider('STRIKE')}
                                                     >
                                                         <Text style={{ color: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#fff', fontSize: 14, fontWeight: '600' }}>Strike</Text>
                                                     </TouchableOpacity>
                                                 )}
                                                 {isAuth && (
-                                                    <TouchableOpacity 
-                                                        style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'COINOS' ? '#FF65D4' : '#444', backgroundColor: bridgeProvider === 'COINOS' ? '#FF65D433' : '#1a1a1a', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }} 
+                                                    <TouchableOpacity
+                                                        style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'COINOS' ? '#FF65D4' : '#444', backgroundColor: bridgeProvider === 'COINOS' ? '#FF65D433' : '#1a1a1a', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }}
                                                         onPress={() => setBridgeProvider('COINOS')}
                                                     >
                                                         <Text style={{ color: bridgeProvider === 'COINOS' ? '#FF65D4' : '#ccc', fontSize: 14, fontWeight: '600' }}>Coinos</Text>
@@ -1311,7 +1301,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                 <Text style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Bridge fee: {bridgeProvider === 'STRIKE' ? '0 sats (free)' : '1-100 sats (routing fees)'}</Text>
                                                 </>
                                             )}
-                                            
+
                                         </>
                                     )}
                                     {!isStrikeAuth && !isAuth && (
@@ -1320,6 +1310,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 </View>
                             )}
                         </View>
+                        */}
                         <Text style={[styles.recipientTitle, { marginTop: 20 }]}>Network fee:</Text>
                             
                             <Text bold style={[styles.fees, { marginTop: 8 }]}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
