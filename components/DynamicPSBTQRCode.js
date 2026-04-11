@@ -57,12 +57,13 @@ export class DynamicPSBTQRCode extends Component {
     
     // Fall back to BBQr (for Jade, Passport, etc.)
     try {
-      const bbqrResult = splitBBQrQRs(value, {
+      const raw = Uint8Array.from(Buffer.from(value, 'base64'));
+      const bbqrResult = splitBBQrQRs(raw, 'P', {
         encoding: 'Z',
         minVersion: 5,
         maxVersion: 40,
       });
-      
+
       if (bbqrResult.parts && bbqrResult.parts.length > 0) {
         this.fragments = bbqrResult.parts;
         this.setState({ format: 'bbqr' });
