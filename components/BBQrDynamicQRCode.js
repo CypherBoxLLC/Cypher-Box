@@ -29,8 +29,8 @@ export class BBQrDynamicQRCode extends Component {
   componentDidMount() {
     const { value, fileType = 'P' } = this.props;
     try {
-      // Convert base64 PSBT string to Uint8Array for BBQr
-      const raw = Uint8Array.from(Buffer.from(value, 'base64'));
+      // Convert hex PSBT string to Uint8Array for BBQr
+      const raw = Uint8Array.from(Buffer.from(value, 'hex'));
       const result = splitQRs(raw, fileType, {
         encoding: 'Z',
         minVersion: 5,
