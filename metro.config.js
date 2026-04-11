@@ -17,6 +17,8 @@ module.exports = {
       // Exclude Claude Code worktrees to avoid duplicate module errors
       new RegExp(`${path.resolve(__dirname, '.claude').replace(/[/\\]/g, '/')}.*`),
     ]),
+    // bbqr package has no 'main' field — tell Metro to check 'module' field in package.json
+    resolverMainFields: ['react-native', 'browser', 'main', 'module'],
   },
   transformer: {
     getTransformOptions: async () => ({

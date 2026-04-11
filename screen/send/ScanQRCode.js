@@ -254,7 +254,8 @@ const ScanQRCode = () => {
         }
       }
     } catch (error) {
-      console.warn('[BBQr] Error processing BBQr QR:', error);
+      console.error('[BBQr] Error processing BBQr QR:', error);
+      Alert.alert(loc.send.scan_error, 'BBQr decode failed: ' + (error.message || error));
     }
   };
 
