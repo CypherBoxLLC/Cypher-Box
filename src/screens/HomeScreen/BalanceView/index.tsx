@@ -15,7 +15,7 @@ interface Props {
     showAddAccount?: boolean
 }
 
-export default function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount }: Props) {
+export default React.memo(function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount }: Props) {
     return (
         <View style={[styles.innerContainer]} >
             <Shadow
@@ -49,4 +49,4 @@ export default function BalanceView({ balance, convertedRate, onAddAccount, show
             </Shadow>
         </View>
     )
-}
+})

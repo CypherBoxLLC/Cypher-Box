@@ -21,6 +21,7 @@ export default function GradientButton({ onPress, disabled = false, title, style
     return (
         <TouchableOpacity style={[styles.linearGradient, isShadow && shadow.shadow25, style]}
             onPress={onPress}
+            activeOpacity={0.7}
             disabled={disabled}>
 
             <LinearGradient start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} colors={disabled ? [colors.gray.disable, colors.gray.disable] : isError ? [colors.yellow2, colors.yellow2] : [colors.pink.light, colors.pink.default]} style={[styles.linearGradient, isIcon && styles.pureview, style]}>

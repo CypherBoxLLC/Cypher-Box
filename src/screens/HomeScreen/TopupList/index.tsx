@@ -120,7 +120,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
     try {
       await Promise.race([vaultWallet.fetchUtxo(), sleep(10000)]);
     } catch (e) {
-      console.log('TopupList: fetchUtxo failed');
+      if (__DEV__) console.log('TopupList: fetchUtxo failed');
     }
     const freshUtxo = vaultWallet.getUtxo(true).sort(
       (a: any, b: any) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout
@@ -399,11 +399,11 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
 
               {/* Capsule grid */}
               {loadingUtxos ? (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <View style={{ maxHeight: Dimensions.get('window').height * 0.30, justifyContent: 'center', alignItems: 'center', marginTop: 10 }}>
                   <ActivityIndicator size="large" color={primaryColor} />
                 </View>
               ) : utxoList.length === 0 ? (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <View style={{ maxHeight: Dimensions.get('window').height * 0.30, justifyContent: 'center', alignItems: 'center', marginTop: 10 }}>
                   <Text style={{ color: '#888' }}>No capsules in this vault</Text>
                 </View>
               ) : (
@@ -416,7 +416,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                     paddingHorizontal: 4,
                     paddingBottom: 6,
                   }}
-                  style={{ flex: 1, marginTop: 10 }}
+                  style={{ maxHeight: Dimensions.get('window').height * 0.30, marginTop: 10 }}
                 >
                   {utxoList.map((item: any) => renderCapsuleTile(item))}
                 </ScrollView>

@@ -84,7 +84,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
     try {
       await Promise.race([vaultWallet.fetchUtxo(), sleep(10000)]);
     } catch (e) {
-      console.log('SendListNew: fetchUtxo failed');
+      if (__DEV__) console.log('SendListNew: fetchUtxo failed');
     }
     const freshUtxo = vaultWallet.getUtxo(true).sort(
       (a: any, b: any) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout
@@ -293,7 +293,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
             <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 12 }}>
               {/* Header — centered */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10, position: 'relative' }}>
-                <TouchableOpacity onPress={backClickHandler} style={{ position: 'absolute', left: 0 }}>
+                <TouchableOpacity activeOpacity={0.6} onPress={backClickHandler} style={{ position: 'absolute', left: 0, padding: 8 }}>
                   <Image source={Back} style={{ width: 24, height: 22 }} resizeMode="contain" />
                 </TouchableOpacity>
                 <Image
@@ -312,6 +312,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                   Select the utxo capsules you want to spend from:
                 </Text>
                 <TouchableOpacity
+                  activeOpacity={0.6}
                   onPress={() => {
                     reopenSendSheet.current = true;
                     refRBSheet?.current?.close();
@@ -319,9 +320,9 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                   }}
                   style={{
                     marginRight: 20,
-                    width: 22,
-                    height: 22,
-                    borderRadius: 11,
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
                     borderWidth: 1.5,
                     borderColor: primaryColor,
                     backgroundColor: 'transparent',

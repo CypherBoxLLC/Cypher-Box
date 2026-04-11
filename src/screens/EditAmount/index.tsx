@@ -133,12 +133,25 @@ export default function SendScreen({ route, navigation }: Props) {
                             </ScrollView>
                         </View>
 
-                        {/* Total size of selected capsules */}
+                        {/* Total + MAX button */}
                         <View style={{ alignItems: 'center', marginTop: 6, marginBottom: 4 }}>
-                            <Text bold style={{ fontSize: 13, color: '#aaa' }}>
-                                Total: {totalBTC} BTC
-                                <Text style={{ fontSize: 12, color: '#666' }}>  ~${totalUSD}</Text>
-                            </Text>
+                            <TouchableOpacity
+                                onPress={maxSendClickHandler}
+                                activeOpacity={0.7}
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    backgroundColor: vaultTab ? colors.coldGreen : colors.green,
+                                    borderRadius: 10,
+                                    paddingVertical: 8,
+                                    paddingHorizontal: 16,
+                                }}
+                            >
+                                <Text bold style={{ fontSize: 13, color: '#000' }}>
+                                    Max: {totalBTC} BTC
+                                </Text>
+                                <Text style={{ fontSize: 11, color: '#000', marginLeft: 6 }}>~${totalUSD}</Text>
+                            </TouchableOpacity>
                         </View>
 
                         {/* Sending capsule + Change capsule side by side */}
@@ -215,7 +228,6 @@ export default function SendScreen({ route, navigation }: Props) {
                 firstTabText="BTC"
                 matchedRate={matchedRate}
                 vaultTab={vaultTab}
-                onMaxPress={isVaultFlow ? maxSendClickHandler : undefined}
             />
         </ScreenLayout>
     )

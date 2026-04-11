@@ -138,10 +138,10 @@ const Settings = ({ navigation }) => {
         />
         <ListItem title={loc.settings.network} onPress={() => navigate('NetworkSettings')} testID="NetworkSettings" chevron />
         <ListItem title="Push Notifications" onPress={() => navigate('NotificationSettings')} testID="NotificationSettings" chevron />
-        {isAuth && <ListItem title={"Set Recover Email (Coinos.io)"} onPress={() => navigate('ChangeUsername', { goBack: true })} testID="ChangeUsername" chevron /> }
+        {isAuth && <ListItem title={"Set Recovery Email (CoinOS)"} onPress={() => navigate('ChangeUsername', { goBack: true })} testID="ChangeUsername" chevron /> }
         {/* <ListItem title={loc.settings.tools} onPress={() => navigate('Tools')} testID="Tools" chevron /> */}
         {/* <ListItem title={loc.settings.about} onPress={() => navigate('About')} testID="AboutButton" chevron /> */}
-        <ListItem title={"Term of service & Privacy Policy"} onPress={() => navigate('TermOfService')} testID="TermOfServiceButton" chevron />
+        <ListItem title={"Terms of Service & Privacy Policy"} onPress={() => navigate('TermOfService')} testID="TermOfServiceButton" chevron />
         {/* <ListItem
           testID="EncyptedAndPasswordProtected"
           hideChevron
@@ -149,8 +149,8 @@ const Settings = ({ navigation }) => {
           Component={TouchableWithoutFeedback}
           switch={{ onValueChange: onEncryptStorageSwitch, value: storageIsEncryptedSwitchEnabled }}
         /> */}
-        {isAuth && <ListItem title={"Logout from Coinos.io"} onPress={handleLogout} testID="LogoutButton" chevron />}
-        {isStrikeAuth && <ListItem title={"Logout from Strike"} onPress={handleStrikeLogout} testID="LogoutButton" chevron />}
+        {isAuth && <ListItem title={"Log Out from CoinOS"} onPress={handleLogout} testID="LogoutButton" chevron />}
+        {isStrikeAuth && <ListItem title={"Log Out from Strike"} onPress={handleStrikeLogout} testID="StrikeLogoutButton" chevron />}
       </ScrollView>
     </SafeAreaView>
   );

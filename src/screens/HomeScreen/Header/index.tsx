@@ -10,7 +10,7 @@ interface Props {
     onBarScanned(value: any): void;
 }
 
-export default function Header({ onBarScanned }: Props) {
+export default React.memo(function Header({ onBarScanned }: Props) {
     const { navigate } = useNavigation();
     const routeName = useRoute().name;
 
@@ -28,6 +28,7 @@ export default function Header({ onBarScanned }: Props) {
         </Text>
         <View style={styles.row}>
             <TouchableOpacity
+                activeOpacity={0.6}
                 style={styles.imageView}
                 onPress={navigateToSettings}
             >
@@ -49,4 +50,4 @@ export default function Header({ onBarScanned }: Props) {
             </TouchableOpacity> */}
         </View>
     </View>
-}
+})

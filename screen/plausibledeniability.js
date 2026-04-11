@@ -10,10 +10,12 @@ import alert from '../components/Alert';
 import Button from '../components/Button';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../blue_modules/hapticFeedback';
 import SafeArea from '../components/SafeArea';
+import useAuthStore from '@Cypher/stores/authStore';
 const prompt = require('../helpers/prompt');
 
 const PlausibleDeniability = ({navigation}) => {
   const { cachedPassword, isPasswordInUse, createFakeStorage, resetWallets } = useContext(BlueStorageContext);
+  const { setWalletID, setColdStorageWalletID } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const { popToTop } = useNavigation();
 
@@ -42,6 +44,9 @@ const PlausibleDeniability = ({navigation}) => {
       await createFakeStorage(p1);
       console.log("2: ", p1, p2)
       await resetWallets();
+      // Clear vault IDs — they belong to the real storage context, not this decoy
+      setWalletID(undefined);
+      setColdStorageWalletID(undefined);
       console.log("3: ", p1, p2)
       triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
       console.log("4: ", p1, p2)

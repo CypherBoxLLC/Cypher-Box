@@ -53,6 +53,7 @@ import { connect as connectCoinosSocket, disconnect as disconnectCoinosSocket, s
 import Header from "./Header";
 import BalanceView from "./BalanceView";
 import BottomBar from "./BottomBar";
+const A = require('../../../blue_modules/analytics');
 import CreateLightningAccount from "./CreateLightningAccount";
 import WalletsView from "./WalletsView";
 import SendListNew from "./SendListNew";
@@ -124,15 +125,12 @@ export default function HomeScreen({ route }: Props) {
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
   const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
-  const A = require('../../../blue_modules/analytics');
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [balance, setBalance] = useState(0);
-  console.log("🚀 ~ balanceMAIN:", balance)
   const [strikeBalance, setStrikeBalance] = useState(0);
   const [currency, setCurrency] = useState('USD');
   const [convertedRate, setConvertedRate] = useState(0);
-  console.log("🚀 ~ convertedRate:", convertedRate)
   const [convertedStrikeRate, setConvertedStrikeRate] = useState(0);
   const [matchedRate, setMatchedRate] = useState(0);
   const [matchedRateBTC, setMatchedRateBTC] = useState(0); // USD-per-BTC for vault screens
@@ -225,6 +223,10 @@ export default function HomeScreen({ route }: Props) {
 
   const getWallet = async () => {
     try {
+      if (!walletID) {
+        setIsAllDone(false);
+        return;
+      }
       // const allWallets = wallets.concat(false);
       const walletTemp = wallets.find((w: AbstractWallet) => w.getID() === walletID);
       if (!walletTemp) {
@@ -247,10 +249,10 @@ export default function HomeScreen({ route }: Props) {
         const externalAddresses = typeof walletTemp.getAllExternalAddresses === 'function' ? walletTemp.getAllExternalAddresses() : [];
         const internalAddresses = typeof walletTemp.getAllInternalAddresses === 'function' ? walletTemp.getAllInternalAddresses() : [];
         const allAddresses = [...externalAddresses, ...internalAddresses];
-        console.log('[GroundControl] Subscribing addresses:', allAddresses.length, allAddresses.slice(0, 2));
+        if (__DEV__) console.log('[GroundControl] Subscribing addresses:', allAddresses.length, allAddresses.slice(0, 2));
         if (allAddresses.length > 0) {
           await Notifications.majorTomToGroundControl(allAddresses, [], []);
-          console.log('[GroundControl] Subscribed hot vault addresses:', allAddresses.length);
+          if (__DEV__) console.log('[GroundControl] Subscribed hot vault addresses:', allAddresses.length);
         }
       } catch (notifyErr) {
         console.warn('[GroundControl] Failed to subscribe addresses:', notifyErr);
@@ -298,10 +300,10 @@ export default function HomeScreen({ route }: Props) {
         const externalAddresses = walletTemp.getAllExternalAddresses ? walletTemp.getAllExternalAddresses() : [];
         const internalAddresses = walletTemp.getAllInternalAddresses ? walletTemp.getAllInternalAddresses() : [];
         const allAddresses = [...externalAddresses, ...internalAddresses];
-        console.log('[GroundControl] Subscribing cold storage addresses:', allAddresses.length);
+        if (__DEV__) console.log('[GroundControl] Subscribing cold storage addresses:', allAddresses.length);
         if (allAddresses.length > 0) {
           await Notifications.majorTomToGroundControl(allAddresses, [], []);
-          console.log('[GroundControl] Subscribed cold storage addresses:', allAddresses.length);
+          if (__DEV__) console.log('[GroundControl] Subscribed cold storage addresses:', allAddresses.length);
         }
       } catch (notifyErr) {
         console.warn('[GroundControl] Failed to subscribe cold storage addresses:', notifyErr);
@@ -331,50 +333,50 @@ export default function HomeScreen({ route }: Props) {
   // }, [])
 
   const loadStrikeData = async () => {
-      console.log('[Strike] loadStrikeData START', Date.now());
+      if (__DEV__) console.log('[Strike] loadStrikeData START', Date.now());
       try {
           const balances = await getBalances();
-          console.log('[Strike] getBalances DONE', Date.now());
+          if (__DEV__) console.log('[Strike] getBalances DONE', Date.now());
           if (balances.data?.status === 401) {
               SimpleToast.show("Authorization expired. Please login again to strike account", SimpleToast.SHORT);
               clearStrikeAuth();
           } else if (balances) {
-              console.log('balances (post-login): ', balances);
+              if (__DEV__) console.log('balances (post-login): ', balances);
               // Normalize: index 0 = BTC, index 1 = fiat (API order is not guaranteed)
               const btcBalance = balances?.find((b: any) => b.currency === 'BTC');
               const fiatBalance = balances?.find((b: any) => b.currency !== 'BTC');
               const normalizedBalances = [btcBalance || balances?.[0], fiatBalance || balances?.[1]];
-              console.log('Normalized balances — BTC:', btcBalance, 'Fiat:', fiatBalance);
+              if (__DEV__) console.log('Normalized balances — BTC:', btcBalance, 'Fiat:', fiatBalance);
               setStrikeUser(normalizedBalances);
-              console.log('Setting strikeBalance:', normalizedBalances?.[0]?.available * SATS);
+              if (__DEV__) console.log('Setting strikeBalance:', normalizedBalances?.[0]?.available * SATS);
               setStrikeBalance((normalizedBalances?.[0]?.available * SATS) || 0);
               const userCurrency = normalizedBalances?.[1]?.currency || 'USD';
-              console.log('Strike currency from balances:', userCurrency);
+              if (__DEV__) console.log('Strike currency from balances:', userCurrency);
               setStrikeCurrency(userCurrency); // Store user's currency in auth
               
               // Fetch rates from Strike API (not external sources)
-              console.log('[Strike] fetching rates from Strike API START', Date.now());
+              if (__DEV__) console.log('[Strike] fetching rates from Strike API START', Date.now());
               const strikeRates = await getStrikeRates();
-              console.log('[Strike] getStrikeRates DONE', Date.now(), strikeRates);
+              if (__DEV__) console.log('[Strike] getStrikeRates DONE', Date.now(), strikeRates);
               
               // Find the rate for user's currency (e.g., USD, EUR) - look at sourceCurrency for BTC rate
               // Strike API returns array directly, not wrapped in .data
-              console.log('[Strike] looking for BTC ->', userCurrency);
+              if (__DEV__) console.log('[Strike] looking for BTC ->', userCurrency);
               const ratesArray = strikeRates?.data || strikeRates;
-              console.log('[Strike] ratesArray:', JSON.stringify(ratesArray));
+              if (__DEV__) console.log('[Strike] ratesArray:', JSON.stringify(ratesArray));
               const currencyRate = ratesArray?.find((r: any) => r.sourceCurrency === 'BTC' && r.targetCurrency === userCurrency);
-              console.log('[Strike] matched rate:', currencyRate);
+              if (__DEV__) console.log('[Strike] matched rate:', currencyRate);
               const numericAmount = currencyRate ? Number(currencyRate?.amount || 0) : 0;
-              console.log('[Strike] rate for', userCurrency + ':', numericAmount);
+              if (__DEV__) console.log('[Strike] rate for', userCurrency + ':', numericAmount);
               setMatchedRateStrike(numericAmount);
               
               try {
                   // Strike returns BTC amount (e.g., 0.00004814), not sats
                   // Just multiply directly by exchange rate to get USD
                   const availableBalance = Number(normalizedBalances?.[0]?.available || 0);
-                  console.log('[Strike] availableBalance (BTC):', availableBalance, 'numericAmount:', numericAmount);
+                  if (__DEV__) console.log('[Strike] availableBalance (BTC):', availableBalance, 'numericAmount:', numericAmount);
                   const rate = Number(availableBalance * (numericAmount || 0));
-                  console.log('[Strike] strikeConverted (rate):', rate);
+                  if (__DEV__) console.log('[Strike] strikeConverted (rate):', rate);
                   setStrikeConvertedBalance(rate);
               } catch (e) {
                   console.warn('Failed to calculate strike converted balance:', e);
@@ -429,7 +431,7 @@ export default function HomeScreen({ route }: Props) {
           setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
           setMatchedRateBTC(blueWalletRate || 0);
         } catch (err) {
-          console.log('BlueWallet rate error:', err);
+          if (__DEV__) console.log('BlueWallet rate error:', err);
         }
         setIsLoading(false)
       }
@@ -456,10 +458,10 @@ export default function HomeScreen({ route }: Props) {
   // CoinOS WebSocket for real-time payment notifications
   useEffect(() => {
     if (isAuth && token) {
-      console.log('[CoinOS WS] Auth detected, connecting...');
+      if (__DEV__) console.log('[CoinOS WS] Auth detected, connecting...');
       setCoinosUsername(user?.username || user);
       setOnPaymentReceived((data) => {
-        console.log('[CoinOS WS] Payment callback, refreshing balance...');
+        if (__DEV__) console.log('[CoinOS WS] Payment callback, refreshing balance...');
         handleUser();
         loadPayments();
       });
@@ -607,7 +609,7 @@ export default function HomeScreen({ route }: Props) {
           try {
             await Promise.race([wallet?.fetchUtxo(), sleep(10000)]);
           } catch (e) {
-            console.log('coincontrol wallet.fetchUtxo() failed'); // either sleep expired or fetchUtxo threw an exception
+            if (__DEV__) console.log('coincontrol wallet.fetchUtxo() failed'); // either sleep expired or fetchUtxo threw an exception
           }
         })();
       }
@@ -623,7 +625,7 @@ export default function HomeScreen({ route }: Props) {
           try {
             await Promise.race([coldStorageWallet?.fetchUtxo(), sleep(10000)]);
           } catch (e) {
-            console.log('coincontrol coldStorageWallet.fetchUtxo() failed'); // either sleep expired or fetchUtxo threw an exception
+            if (__DEV__) console.log('coincontrol coldStorageWallet.fetchUtxo() failed'); // either sleep expired or fetchUtxo threw an exception
           }
         })();
       }
@@ -648,9 +650,9 @@ export default function HomeScreen({ route }: Props) {
           const currency = btc(1);
           const matched = matchKeyAndValue(responsetest, 'USD');
           coinosRate = (matched || 0) * currency;
-          console.log('[Coinos] rate from API:', coinosRate);
+          if (__DEV__) console.log('[Coinos] rate from API:', coinosRate);
         } catch (rateError) {
-          console.log('[Coinos] rate API failed, trying BlueWallet fallback');
+          if (__DEV__) console.log('[Coinos] rate API failed, trying BlueWallet fallback');
         }
       }
 
@@ -659,13 +661,13 @@ export default function HomeScreen({ route }: Props) {
         blueWalletRateRaw = await getFiatRate('USD') || 0;
         blueWalletRate = blueWalletRateRaw * btc(1); // Convert USD-per-BTC to USD-per-sat
       } catch (rateErr) {
-        console.log('BlueWallet rate error:', rateErr);
+        if (__DEV__) console.log('BlueWallet rate error:', rateErr);
       }
 
       const finalRate = coinosRate || blueWalletRate;
       setMatchedRate(finalRate);
       setMatchedRateBTC(blueWalletRateRaw || (coinosRate ? coinosRate / btc(1) : 0));
-      console.log('[Coinos] matchedRate set to:', finalRate, '(coinos:', coinosRate, ', bluewallet:', blueWalletRate, ')');
+      if (__DEV__) console.log('[Coinos] matchedRate set to:', finalRate, '(coinos:', coinosRate, ', bluewallet:', blueWalletRate, ')');
 
       if (response) {
         // Calculate converted rate using the same rate
@@ -746,7 +748,7 @@ export default function HomeScreen({ route }: Props) {
           setStrikeCurrency(userCurrency); // Store user's currency in auth
         }
       } catch (e) {
-        console.log('Error refreshing Strike balance:', e);
+        if (__DEV__) console.log('Error refreshing Strike balance:', e);
         SimpleToast.show("Failed to refresh Strike balance.", SimpleToast.SHORT);
       }
     }
@@ -962,20 +964,28 @@ export default function HomeScreen({ route }: Props) {
         </View>
       <RBSheet
         ref={refRBSheet}
+        height={heights / 2 + 20}
+        openDuration={350}
+        closeDuration={250}
+        draggable
+        dragOnContent
+        closeOnPressBack
         customStyles={{
           wrapper: {
-            backgroundColor: 'transparent',
+            backgroundColor: 'rgba(0,0,0,0.5)',
           },
           draggableIcon: {
-            backgroundColor: 'red',
+            backgroundColor: '#555',
+            width: 40,
           },
           container: {
-            height: heights / 2 + 20,
             backgroundColor: 'transparent',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
           }
         }}
         customModalProps={{
-          animationType: 'slide',
+          animationType: 'fade',
           statusBarTranslucent: true,
         }}
         customAvoidingViewProps={{
@@ -999,20 +1009,28 @@ export default function HomeScreen({ route }: Props) {
 
       <RBSheet
         ref={refSendRBSheet}
+        height={heights / 2 + 20}
+        openDuration={350}
+        closeDuration={250}
+        draggable
+        dragOnContent
+        closeOnPressBack
         customStyles={{
           wrapper: {
-            backgroundColor: 'transparent',
+            backgroundColor: 'rgba(0,0,0,0.5)',
           },
           draggableIcon: {
-            backgroundColor: 'red',
+            backgroundColor: '#555',
+            width: 40,
           },
           container: {
-            height: heights / 2 + 20,
             backgroundColor: 'transparent',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
           }
         }}
         customModalProps={{
-          animationType: 'slide',
+          animationType: 'fade',
           statusBarTranslucent: true,
         }}
         customAvoidingViewProps={{
@@ -1024,20 +1042,28 @@ export default function HomeScreen({ route }: Props) {
 
       <RBSheet
         ref={refWithdrawRBSheet}
+        height={heights / 2 + 20}
+        openDuration={350}
+        closeDuration={250}
+        draggable
+        dragOnContent
+        closeOnPressBack
         customStyles={{
           wrapper: {
-            backgroundColor: 'transparent',
+            backgroundColor: 'rgba(0,0,0,0.5)',
           },
           draggableIcon: {
-            backgroundColor: 'red',
+            backgroundColor: '#555',
+            width: 40,
           },
           container: {
-            height: heights / 2 + 20,
             backgroundColor: 'transparent',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
           }
         }}
         customModalProps={{
-          animationType: 'slide',
+          animationType: 'fade',
           statusBarTranslucent: true,
         }}
         customAvoidingViewProps={{
@@ -1063,20 +1089,28 @@ export default function HomeScreen({ route }: Props) {
 
       <RBSheet
         ref={refTopupRBSheet}
+        height={heights / 2 + 20}
+        openDuration={350}
+        closeDuration={250}
+        draggable
+        dragOnContent
+        closeOnPressBack
         customStyles={{
           wrapper: {
-            backgroundColor: 'transparent',
+            backgroundColor: 'rgba(0,0,0,0.5)',
           },
           draggableIcon: {
-            backgroundColor: 'red',
+            backgroundColor: '#555',
+            width: 40,
           },
           container: {
-            height: heights / 2 + 20,
             backgroundColor: 'transparent',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
           }
         }}
         customModalProps={{
-          animationType: 'slide',
+          animationType: 'fade',
           statusBarTranslucent: true,
         }}
         customAvoidingViewProps={{
@@ -1094,20 +1128,28 @@ export default function HomeScreen({ route }: Props) {
 
       <RBSheet
         ref={refSwapRBSheet}
+        height={420}
+        openDuration={350}
+        closeDuration={250}
+        draggable
+        dragOnContent
+        closeOnPressBack
         customStyles={{
           wrapper: {
-            backgroundColor: 'transparent',
+            backgroundColor: 'rgba(0,0,0,0.5)',
           },
           draggableIcon: {
-            backgroundColor: 'red',
+            backgroundColor: '#555',
+            width: 40,
           },
           container: {
-            height: 420,
             backgroundColor: 'transparent',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
           }
         }}
         customModalProps={{
-          animationType: 'slide',
+          animationType: 'fade',
           statusBarTranslucent: true,
         }}
         customAvoidingViewProps={{

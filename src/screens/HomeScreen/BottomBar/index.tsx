@@ -59,8 +59,9 @@ export default function BottomBar({
     currencyStrike,
     matchedRateStrike
 }: Props) {
-    console.log("🚀 ~ hasSavingVault:", hasSavingVault)
+    if (__DEV__) console.log("🚀 ~ hasSavingVault:", hasSavingVault)
     const { isAuth, isStrikeAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, reserveAmount, reserveStrikeAmount, vaultTab, setVaultTab } = useAuthStore();
+    const bothVaultsExist = !!(wallet && coldStorageWallet);
 
     const carouselRef = useRef<Carousel<any>>(null);
     const glowAnim = useRef(new Animated.Value(0)).current;
@@ -188,7 +189,7 @@ export default function BottomBar({
             // });
         } else if(isAuth) {
             const amount = withdrawThreshold > balance ? balance : withdrawThreshold;
-            console.log('amount: ', amount)
+            if (__DEV__) console.log('amount: ', amount)
             dispatchNavigate('ReviewPayment', {
                 value: amount,
                 converted: ((Number(matchedRate) || 0) * btc(1) * Number(amount)).toFixed(2),
@@ -209,7 +210,7 @@ export default function BottomBar({
         } else if (isStrikeAuth) {
               const strikeBalance = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
               const amount = withdrawStrikeThreshold > strikeBalance ? strikeBalance : withdrawStrikeThreshold;
-              console.log('amount: ', amount)
+              if (__DEV__) console.log('amount: ', amount)
               dispatchNavigate('ReviewPayment', {
                   value: amount,
                   converted: ((Number(matchedRateStrike) || 0) * btc(1) * Number(amount)).toFixed(2),
@@ -322,7 +323,7 @@ export default function BottomBar({
         <View style={styles.bottominner}>
             <GradientView
                 onPress={topupClickHandler}
-                topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
+                topShadowStyle={styles.outerShadowStyle}
                 bottomShadowStyle={styles.innerShadowStyle}
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
@@ -336,7 +337,7 @@ export default function BottomBar({
             </GradientView>
             <GradientView
                 onPress={withdrawClickHandler}
-                topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
+                topShadowStyle={styles.outerShadowStyle}
                 bottomShadowStyle={styles.innerShadowStyle}
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
@@ -355,7 +356,7 @@ export default function BottomBar({
         return (
             <>
             <View style={{ width: screenWidth * 0.905 }}>
-                {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
+                {!bothVaultsExist && ((wallet && index == 0) || (coldStorageWallet && index == 1)) && (isAuth || isStrikeAuth) &&
                     <TopUpWithdrawView isVault={index == 1 ? true : false} />
                 }
                 {item.component()}
@@ -364,9 +365,12 @@ export default function BottomBar({
         )
     };
 
-    console.log('index: ', index, vaultTab)
+    if (__DEV__) console.log('index: ', index, vaultTab)
     return (
         <>
+            {bothVaultsExist && (isAuth || isStrikeAuth) && (
+                <TopUpWithdrawView isVault={index === 1} />
+            )}
             <Carousel
                 data={tabs}
                 ref={carouselRef}
@@ -376,7 +380,7 @@ export default function BottomBar({
                 sliderWidth={screenWidth}
                 itemWidth={screenWidth}
                 onSnapToItem={(index) => {
-                    console.log('onSnappppp')
+                    if (__DEV__) console.log('onSnappppp')
                     setIndex(index)
                     setVaultTab(index === 1 && coldStorageWallet ? true : wallet && false);
                 }}

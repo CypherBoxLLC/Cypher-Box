@@ -959,11 +959,16 @@ export default function ColdStorage({ route, navigation }: Props) {
                           </TouchableOpacity>
                           <Text style={{
                               fontSize: 16,
-                              marginTop: 10, 
+                              marginTop: 10,
                               marginLeft: 15,
                           }}>
                             {'~$' + Number(usd).toFixed(2)}
                           </Text>
+                        </View>
+                        <View style={{flexDirection: 'row', marginTop: 8}}>
+                          <View style={styles.tabs}>
+                            <VaultCapsules item={((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000)} />
+                          </View>
                         </View>
                       </View>
                     :

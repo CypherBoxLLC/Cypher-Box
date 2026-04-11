@@ -63,7 +63,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   };
 
   const [selectedItem, setSelectedItem] = useState<number | null>(getInitialSelectedItem());
-  console.log("🚀 ~ ReceivedListNew ~ selectedItem:", selectedItem);
+  if (__DEV__) console.log("🚀 ~ ReceivedListNew ~ selectedItem:", selectedItem);
 
   const [tab, setTab] = useState(0);
   const [showSecondView, setShowSecondView] = useState(initialVaultType !== null || allBTCWallets.length == 1 ? true : false);
@@ -172,7 +172,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     },
   };
 
-  console.log('matchedRate: ', matchedRate, currency)
+  if (__DEV__) console.log('matchedRate: ', matchedRate, currency)
   const onPressNew = (item: any) => {
     refRBSheet?.current?.close();
     setReceivedListSecondTab(false);
@@ -181,7 +181,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
 
     }
-    console.log('item?.navigation?.params: ', item?.navigation?.params)
+    if (__DEV__) console.log('item?.navigation?.params: ', item?.navigation?.params)
     item?.navigation?.screen &&
       setTimeout(() => {
         dispatchNavigate(item?.navigation?.screen, item?.navigation?.params);
@@ -338,6 +338,15 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
           colors={[colors.black.gradientTop2, colors.black.default]}
           style={styles.containerGradientView}
         >
+          {/* Close button */}
+          <TouchableOpacity
+            onPress={() => refRBSheet?.current?.close()}
+            activeOpacity={0.6}
+            style={{ position: 'absolute', top: 14, right: 16, zIndex: 10, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontSize: 18, color: '#888' }}>&#x2715;</Text>
+          </TouchableOpacity>
+
           {/* ======= FIRST VIEW: 2x2 Grid ======= */}
           <Animated.View style={[{}, view1Style]}>
             <View style={{ paddingHorizontal: 24, marginTop: 20 }}>

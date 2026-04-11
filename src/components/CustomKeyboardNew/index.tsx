@@ -27,7 +27,7 @@ interface Props {
 }
 
 export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, isConverter = true, firstTabText = "Sats", onMaxPress }: Props) {
-    const KEYSARRAY = onMaxPress ? ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'MAX', '0'] : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
+    const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState(prevSats || '');
     const currency = btc(1);
@@ -96,22 +96,9 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
                 style={styles.linearGradient} />
             <View style={styles.keypad}>
                 {KEYSARRAY.map((key) => (
-                    key === 'MAX' ? (
-                        <TouchableOpacity key={key} style={styles.key} onPress={onMaxPress}>
-                            <View style={{
-                                backgroundColor: vaultTab ? colors.coldGreen : colors.green,
-                                paddingHorizontal: 16,
-                                paddingVertical: 6,
-                                borderRadius: 10,
-                            }}>
-                                <Text style={[styles.keyText, { fontSize: 14, color: '#000', fontWeight: 'bold' }]}>MAX</Text>
-                            </View>
-                        </TouchableOpacity>
-                    ) : (
-                        <TouchableOpacity key={key} style={styles.key} onPress={() => handlePress(key)}>
-                            <Text style={styles.keyText}>{key}</Text>
-                        </TouchableOpacity>
-                    )
+                    <TouchableOpacity key={key} style={styles.key} onPress={() => handlePress(key)}>
+                        <Text style={styles.keyText}>{key}</Text>
+                    </TouchableOpacity>
                 ))}
                 <TouchableOpacity style={styles.key} onPress={handleDelete}>
                     <Image source={Cancel} />
