@@ -45,13 +45,20 @@ export default function SplashScreen_() {
         });
     };
 
+    // Bump this when TOS/Privacy Policy content changes to force re-acceptance
+    const CURRENT_TOS_VERSION = '2026-04';
+
     const successfullyAuthenticated = async () => {
         const hasAcceptedTerms = await AsyncStorage.getItem('hasAcceptedTermsOfService')
+        const acceptedTosVersion = await AsyncStorage.getItem('acceptedTosVersion')
 
         if (await startAndDecrypt()) {
             setWalletsInitialized(true);
-            if (hasAcceptedTerms === 'true') {
+            if (hasAcceptedTerms === 'true' && acceptedTosVersion === CURRENT_TOS_VERSION) {
                 dispatch(StackActions.replace(isHandset ? 'Navigation' : 'DrawerRoot'));
+            } else if (hasAcceptedTerms === 'true' && acceptedTosVersion !== CURRENT_TOS_VERSION) {
+                // Returning user, TOS updated — show re-acceptance screen
+                dispatch(StackActions.replace('GetStartedScreen', { returningUser: true }));
             } else {
                 dispatch(StackActions.replace('GetStartedScreen'));
             }

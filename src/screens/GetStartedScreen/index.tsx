@@ -102,6 +102,7 @@ interface Props {
 }
 
 export default function GetStartedScreen({ route }: Props) {
+    const returningUser = route?.params?.returningUser === true;
     const [hasAcceptedTermsOfService, setHasAcceptedTermsOfService] = useState(false)
     const opacity = useRef(new Animated.Value(1));
     const translateY = useRef(new Animated.Value(0));
@@ -120,6 +121,7 @@ export default function GetStartedScreen({ route }: Props) {
     const handleStartClick = () => {
         if (hasAcceptedTermsOfService) {
             AsyncStorage.setItem('hasAcceptedTermsOfService', JSON.stringify(true))
+            AsyncStorage.setItem('acceptedTosVersion', '2026-04')
             const routeName = isHandset ? 'Navigation' : 'DrawerRoot'
 
             dispatchNavigate(routeName)
@@ -159,16 +161,29 @@ export default function GetStartedScreen({ route }: Props) {
                     },
                 ]}
             >
-                <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                <View style={{ alignItems: ‘center’, justifyContent: ‘center’ }}>
                     <CyberBoxText />
                     <CyberBoxLogo />
                 </View>
-                <View style={styles.textContainer}>
-                    <Text h2>{'\u2022'}{' '}A ‘sat’ is a tiny fraction of a Bitcoin</Text>
-                    <Text h2>{'\u2022'}{' '}100M sats equal 1 Bitcoin</Text>
-                    <Text h2>{'\u2022'}{' '}There will only ever be 21M Bitcoin</Text>
-                </View>
-                <GoodLuck />
+                {returningUser ? (
+                    <View style={[styles.textContainer, { alignItems: ‘center’, marginTop: 20 }]}>
+                        <Text style={{ fontSize: 28, fontWeight: ‘900’, color: ‘#fff’, fontFamily: ‘Archivo-Black’, letterSpacing: 1, textAlign: ‘center’ }}>
+                            Ready to play again?
+                        </Text>
+                        <Text h3 style={{ color: ‘#888’, marginTop: 10, textAlign: ‘center’ }}>
+                            We’ve updated our Terms of Service{‘\n’}& Privacy Policy
+                        </Text>
+                    </View>
+                ) : (
+                    <>
+                        <View style={styles.textContainer}>
+                            <Text h2>{‘\u2022’}{‘ ‘}A ‘sat’ is a tiny fraction of a Bitcoin</Text>
+                            <Text h2>{‘\u2022’}{‘ ‘}100M sats equal 1 Bitcoin</Text>
+                            <Text h2>{‘\u2022’}{‘ ‘}There will only ever be 21M Bitcoin</Text>
+                        </View>
+                        <GoodLuck />
+                    </>
+                )}
                 <View style={styles.checkBoxContainer}>
                     <CheckBox
                         boxType="square"
