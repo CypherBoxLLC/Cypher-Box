@@ -24,7 +24,9 @@ ios/.xcode.env.local
 *.hprof
 .cxx/
 *.keystore
+*.jks
 !debug.keystore
+keystore.properties
 # Android/IntelliJ
 #
 build/
