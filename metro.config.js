@@ -1,13 +1,16 @@
 /**
  * Metro configuration for React Native
- * https://github.com/facebook/react-native
+ * https://reactnative.dev/docs/metro
  *
  * @format
  */
 const path = require('path');
+const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
 const exclusionList = require('metro-config/src/defaults/exclusionList');
 
-module.exports = {
+const defaultConfig = getDefaultConfig(__dirname);
+
+const config = {
   resolver: {
     blockList: exclusionList([
       // This stops "react-native run-windows" from causing the metro server to crash if its already running
@@ -29,3 +32,5 @@ module.exports = {
     }),
   },
 };
+
+module.exports = mergeConfig(defaultConfig, config);
