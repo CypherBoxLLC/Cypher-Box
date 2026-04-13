@@ -35,7 +35,8 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:requestLegacyExternalStorage="true"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="false"
+        tools:replace="android:usesCleartextTraffic">
 
         <meta-data
             android:name="com.dieam.reactnativepushnotification.notification_channel_name"
