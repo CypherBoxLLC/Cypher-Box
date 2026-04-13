@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - CB-Development
+      - CB-Production
   pull_request:
     branches:
       - Bam-development

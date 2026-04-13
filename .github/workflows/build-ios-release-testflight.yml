@@ -38,6 +38,20 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply patches
+        run: npm run patches
+
       - name: Install Ruby dependencies
         run: |
           cd ios
