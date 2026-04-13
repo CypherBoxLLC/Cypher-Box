@@ -1,16 +1,16 @@
 package io.cypherbox.btc;
 
 import android.app.Application;
-import android.content.Context;
 import com.facebook.react.PackageList;
 import com.facebook.react.ReactApplication;
-import com.facebook.react.ReactInstanceManager;
+import com.facebook.react.ReactHost;
 import com.facebook.react.ReactNativeHost;
 import com.facebook.react.ReactPackage;
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint;
+import com.facebook.react.defaults.DefaultReactHost;
 import com.facebook.react.defaults.DefaultReactNativeHost;
+import com.facebook.react.soloader.OpenSourceMergedSoMapping;
 import com.facebook.soloader.SoLoader;
-import java.lang.reflect.InvocationTargetException;
 import com.facebook.react.modules.i18nmanager.I18nUtil;
 import java.util.List;
 import com.bugsnag.android.Bugsnag;
@@ -28,8 +28,6 @@ public class MainApplication extends Application implements ReactApplication {
         protected List<ReactPackage> getPackages() {
           @SuppressWarnings("UnnecessaryLocalVariable")
           List<ReactPackage> packages = new PackageList(this).getPackages();
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // packages.add(new MyReactNativePackage());
           return packages;
         }
 
@@ -38,15 +36,15 @@ public class MainApplication extends Application implements ReactApplication {
           return "index";
         }
 
-           @Override
-	        protected boolean isNewArchEnabled() {
-	          return BuildConfig.IS_NEW_ARCHITECTURE_ENABLED;
-	        }
-	
-	        @Override
-	        protected Boolean isHermesEnabled() {
-	          return BuildConfig.IS_HERMES_ENABLED;
-	        }
+        @Override
+        protected boolean isNewArchEnabled() {
+          return BuildConfig.IS_NEW_ARCHITECTURE_ENABLED;
+        }
+
+        @Override
+        protected Boolean isHermesEnabled() {
+          return BuildConfig.IS_HERMES_ENABLED;
+        }
       };
 
   @Override
@@ -55,15 +53,23 @@ public class MainApplication extends Application implements ReactApplication {
   }
 
   @Override
+  public ReactHost getReactHost() {
+    return DefaultReactHost.getDefaultReactHost(getApplicationContext(), mReactNativeHost);
+  }
+
+  @Override
   public void onCreate() {
     super.onCreate();
     Bugsnag.start(this);
     I18nUtil sharedI18nUtilInstance = I18nUtil.getInstance();
     sharedI18nUtilInstance.allowRTL(getApplicationContext(), true);
-    SoLoader.init(this, /* native exopackage */ false);
-      if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
-	      // If you opted-in for the New Architecture, we load the native entry point for this app.
-	      DefaultNewArchitectureEntryPoint.load();
-	    }
+    try {
+      SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);
+    } catch (java.io.IOException e) {
+      throw new RuntimeException(e);
+    }
+    if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
+      DefaultNewArchitectureEntryPoint.load();
+    }
   }
 }
