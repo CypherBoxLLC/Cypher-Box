@@ -57,7 +57,7 @@
     "build:ios": "react-native bundle --entry-file='index.js' --bundle-output='./ios/main.jsbundle' --dev=false --platform='ios'",
     "iosNoLDK": "react-native run-ios --scheme 'BlueWallet-NoLDK' --mode Debug",
     "postinstall": "rn-nodeify --install buffer,events,process,stream,inherits,path,assert,crypto --hack; npm run releasenotes2json; npm run branch2json; npm run patches",
-    "patches": "patch -p1   < scripts/rn-ldk.patch; patch -p1   < scripts/react-native-camera-kit.patch;  patch -p1   < scripts/react-native-widget-center.patch",
+    "patches": "patch -p1 < scripts/rn-ldk.patch && patch -p1 < scripts/react-native-camera-kit.patch && patch -p1 < scripts/react-native-widget-center.patch",
     "test": "npm run tslint && npm run lint && npm run unit && npm run jest",
     "jest": "jest -b tests/integration/*",
     "windowspatches": "./scripts/windows-patches.sh",

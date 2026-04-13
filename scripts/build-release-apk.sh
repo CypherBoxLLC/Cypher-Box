@@ -54,7 +54,7 @@ echo "JS bundle OK"
 # Build release APK
 echo ""
 echo "=== Building Release APK ==="
-./gradlew assembleRelease --no-daemon 2>&1 | tail -80
+./gradlew clean assembleRelease --no-daemon 2>&1 | tail -80
 
 # Debug: list what was built
 echo ""

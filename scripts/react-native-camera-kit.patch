@@ -1,5 +1,5 @@
---- a/node_modules/react-native-camera-kit/android/src/main/java/com/rncamerakit/RNCameraKitPackage.kt
-+++ b/node_modules/react-native-camera-kit/android/src/main/java/com/rncamerakit/RNCameraKitPackage.kt
+--- ../node_modules/react-native-camera-kit/android/src/main/java/com/rncamerakit/RNCameraKitPackage.kt
++++ ../node_modules/react-native-camera-kit/android/src/main/java/com/rncamerakit/RNCameraKitPackage.kt
 @@ -32,6 +32,7 @@
                  RNCameraKitModule.REACT_CLASS,
                  false,  // canOverrideExistingModule
