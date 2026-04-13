@@ -60,9 +60,7 @@ jobs:
       - name: Install CocoaPods
         run: cd ios && pod install
 
-      - name: Build iOS
-        env:
-          ITC_TEAM_ID: ${{ secrets.ITC_TEAM_ID }}
+      - name: Archive iOS
         run: |
           cd ios
           xcodebuild -workspace BlueWallet.xcworkspace \
@@ -70,17 +68,15 @@ jobs:
             -configuration Release \
             -archivePath ./build/BlueWallet.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            archive
 
       - name: Create IPA
         run: |
           cd ios
-          mkdir -p ./build
           xcodebuild -exportArchive \
             -archivePath ./build/BlueWallet.xcarchive \
             -exportPath ./build \
-            -exportOptionsPlist ExportOptions.plist \
-            CODE_SIGNING_ALLOWED=NO
+            -exportOptionsPlist ExportOptions.plist
 
       - name: Upload IPA as artifact
         uses: actions/upload-artifact@v4

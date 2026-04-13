@@ -18,16 +18,16 @@ if [ ! -f app/cypherbox-release-key.keystore ]; then
 fi
 echo "Keystore created at: $(pwd)/app/cypherbox-release-key.keystore ($(wc -c < app/cypherbox-release-key.keystore) bytes)"
 
-# Patch signing config in gradle.properties (preserve all existing settings)
-# file() in build.gradle resolves relative to the app/ module dir,
-# so the path must be just the filename since the keystore is in app/
-sed -i '' "s|^MYAPP_RELEASE_STORE_FILE=.*|MYAPP_RELEASE_STORE_FILE=cypherbox-release-key.keystore|" gradle.properties
-sed -i '' "s|^MYAPP_RELEASE_KEY_ALIAS=.*|MYAPP_RELEASE_KEY_ALIAS=my-key-alias|" gradle.properties
-sed -i '' "s|^MYAPP_RELEASE_STORE_PASSWORD=.*|MYAPP_RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD|" gradle.properties
-sed -i '' "s|^MYAPP_RELEASE_KEY_PASSWORD=.*|MYAPP_RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD|" gradle.properties
+# Create keystore.properties for build.gradle signing config
+cat > keystore.properties <<PROPS
+storeFile=cypherbox-release-key.keystore
+keyAlias=my-key-alias
+storePassword=$KEYSTORE_PASSWORD
+keyPassword=$KEYSTORE_PASSWORD
+PROPS
 
-echo "=== gradle.properties signing config ==="
-grep "^MYAPP_RELEASE" gradle.properties
+echo "=== keystore.properties ==="
+grep -v "Password" keystore.properties
 
 # Update versionCode with timestamp (use sed -i '' for macOS BSD sed)
 TIMESTAMP=$(date +%s)
