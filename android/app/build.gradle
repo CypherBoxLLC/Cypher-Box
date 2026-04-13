@@ -92,6 +92,10 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         missingDimensionStrategy 'react-native-camera', 'general' //add this line
         manifestPlaceholders["appAuthRedirectScheme"] = "cypherbox" // Add this line
+        // Only ship ARM ABIs — x86/x86_64 are emulator-only and bloat the APK
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a"
+        }
     }
 
     packagingOptions {
