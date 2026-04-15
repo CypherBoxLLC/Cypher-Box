@@ -1,37 +1,26 @@
 {
   "project_info": {
-    "project_number": "993804676679",
-    "firebase_url": "https://bluewallet-d7cd5.firebaseio.com",
-    "project_id": "bluewallet-d7cd5",
-    "storage_bucket": "bluewallet-d7cd5.appspot.com"
+    "project_number": "404148357398",
+    "project_id": "cypher-box-1803c-ae39d",
+    "storage_bucket": "cypher-box-1803c-ae39d.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:993804676679:android:3e611cf30d58bac8b5cb62",
+        "mobilesdk_app_id": "1:404148357398:android:3dfe8413b9c70a28312837",
         "android_client_info": {
           "package_name": "io.cypherbox.btc"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "993804676679-cntmqmnbkrm9c89lcr1cq6rhaq8tfi0u.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCzJxNtavou1G10ZLIjzC-b2mX6TrVF3Ew"
+          "current_key": "AIzaSyDoZzXj-ERUtRl5w8qZrRCT6WBfjilAErk"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "993804676679-cntmqmnbkrm9c89lcr1cq6rhaq8tfi0u.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

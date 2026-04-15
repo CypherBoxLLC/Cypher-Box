@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Input, Text } from "@Cypher/component-library";
-import { ActivityIndicator, Animated, Dimensions, FlatList, ImageBackground, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, FlatList, Image, ImageBackground, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { GradientCard, GradientView } from "@Cypher/components";
@@ -20,6 +20,78 @@ import { createInvoice } from "@Cypher/api/coinOSApis";
 import { AbstractWallet } from "../../../class";
 import useAuthStore from "@Cypher/stores/authStore";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import MaskedView from "@react-native-masked-view/masked-view";
+
+const whiteCapsule = require("@Cypher/assets/images/whitecapsule.png");
+const orangeCapsule = require("@Cypher/assets/images/orangeCapsule.png");
+const grassCapsule = require("@Cypher/assets/images/grasscapsule.png");
+const blueCapsule = require("@Cypher/assets/images/bluecapsule.png");
+const pinkCapsule = require("@Cypher/assets/images/pinkcapsule.png");
+const redCapsule = require("@Cypher/assets/images/redcapsule.png");
+
+const mask1 = require("@Cypher/assets/images/mask1.png");
+const mask2 = require("@Cypher/assets/images/mask2.png");
+const mask3 = require("@Cypher/assets/images/mask3.png");
+const mask4 = require("@Cypher/assets/images/mask4.png");
+const mask5 = require("@Cypher/assets/images/mask5.png");
+const mask6 = require("@Cypher/assets/images/mask6.png");
+const mask7 = require("@Cypher/assets/images/mask7.png");
+const mask8 = require("@Cypher/assets/images/mask8.png");
+const mask9 = require("@Cypher/assets/images/mask9.png");
+const mask10 = require("@Cypher/assets/images/mask10.png");
+
+function getCapsuleVisuals(satsAmount: number) {
+    const ranges = [
+        { barColor: blueCapsule, max: 1_100_000_000, min: 100_000_000 },
+        { barColor: pinkCapsule, max: 110_000_000, min: 10_000_000 },
+        { barColor: grassCapsule, max: 11_000_000, min: 1_000_000 },
+        { barColor: orangeCapsule, max: 1_100_000, min: 100_000 },
+        { barColor: whiteCapsule, max: 100_000, min: 0 },
+    ];
+
+    const barColor = satsAmount >= 1_100_000_000 ? redCapsule :
+        satsAmount >= 110_000_000 ? blueCapsule :
+        satsAmount >= 11_000_000 ? pinkCapsule :
+        satsAmount >= 1_100_000 ? grassCapsule :
+        satsAmount >= 100_000 ? orangeCapsule : whiteCapsule;
+
+    const range = ranges.find(e => e.barColor === barColor);
+    if (!range) return { barColor, maskElement: mask1 };
+
+    const percentage = ((satsAmount - range.min) / (range.max - range.min));
+
+    const maskElement = (1_100_000 <= satsAmount && satsAmount < 2_000_000) ||
+        (11_000_000 <= satsAmount && satsAmount < 20_000_000) ||
+        (110_000_000 <= satsAmount && satsAmount < 200_000_000) ? mask1 :
+        percentage >= 0.9 ? mask10 :
+        percentage >= 0.8 ? mask9 :
+        percentage >= 0.7 ? mask8 :
+        percentage >= 0.6 ? mask7 :
+        percentage >= 0.5 ? mask6 :
+        percentage >= 0.4 ? mask5 :
+        percentage >= 0.3 ? mask4 :
+        percentage >= 0.2 ? mask3 :
+        percentage >= 0.1 ? mask2 : mask1;
+
+    return { barColor, maskElement };
+}
+
+function ResultCapsulePreview({ satsAmount }: { satsAmount: number }) {
+    if (satsAmount <= 0) return null;
+    const { barColor, maskElement } = getCapsuleVisuals(satsAmount);
+    return (
+        <View style={{ width: 80, height: 18, borderRadius: 5, borderWidth: 1, borderColor: colors.white, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
+            <MaskedView
+                style={{ flex: 1, flexDirection: 'row', width: '100%', alignItems: 'center', justifyContent: 'center' }}
+                maskElement={
+                    <Image source={maskElement} resizeMode="contain" style={{ backgroundColor: 'transparent', width: '100%' }} />
+                }
+            >
+                <Image source={barColor} resizeMode="contain" style={{ width: '99%', justifyContent: 'center', alignSelf: 'center' }} />
+            </MaskedView>
+        </View>
+    );
+}
 // import { Bitcoin, Transaction, TransactionN } from "@Cypher/assets/svg";
 
 export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, toStrike }: any) {
@@ -145,11 +217,11 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         let capsulesData: any = [];
         let capsuleTotal: any = 0;
         ids.forEach(id => {
-            const result = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id)?.value;
-            if (result) capsulesData.push({
-                id, value: result
+            const found = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id);
+            if (found) capsulesData.push({
+                id, value: found.value, address: found.address
             });
-            capsuleTotal += Number(result)
+            if (found) capsuleTotal += found.value
         });
         if(vaultTab && !walletID){
             SimpleToast.show("You need to create a Hot Vault first before moving capsules to it", SimpleToast.SHORT)
@@ -169,11 +241,11 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         let capsulesData: any = [];
         let capsuleTotal: any = 0;
         ids.forEach(id => {
-            const result = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id)?.value;
-            if (result) capsulesData.push({
-                id, value: result
+            const found = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id);
+            if (found) capsulesData.push({
+                id, value: found.value, address: found.address
             });
-            capsuleTotal += Number(result)
+            if (found) capsuleTotal += found.value
         });
         console.log('capsuleTotal: ', capsuleTotal)
         if (ids.length > 0) {
@@ -195,11 +267,11 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         let capsulesData: any = [];
         let capsuleTotal: any = 0;
         ids.forEach(id => {
-            const result = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id)?.value;
-            if (result) capsulesData.push({
-                id, value: result
+            const found = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id);
+            if (found) capsulesData.push({
+                id, value: found.value, address: found.address
             });
-            capsuleTotal += Number(result)
+            if (found) capsuleTotal += found.value
         });
         if (ids.length > 0) {
             dispatchNavigate('EditAmount', { isEdit: false, currency, capsuleTotal, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP" });
@@ -211,18 +283,17 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     
     // const addressClickHandler = () => { }
 
-    const { total, inUSD } = useMemo(() => {
-        let total = 0;
+    const { total, totalSats, inUSD } = useMemo(() => {
+        let totalSats = 0;
         ids.forEach(id => {
             const result = utxo?.find(obj => `${obj.txid}:${obj.vout}` === id)?.value;
-            if (result) total += result;
+            if (result) totalSats += result;
         });
-        const currency = btcHandle(1);
-        const inUSD = Number(total) * Number(matchedRate) * currency;
-        const BTCAmount = btcHandle(total);
+        const BTCAmount = btcHandle(totalSats);
+        // matchedRate is now USD-per-BTC, so BTC * rate = USD
+        const inUSD = Number(BTCAmount) * Number(matchedRate);
 
-        // const inUSD = total * 63749.40;
-        return { total: BTCAmount, inUSD };
+        return { total: BTCAmount, totalSats, inUSD };
     }, [ids, utxo]);
 
     const onPressClickHandler = (id_: string) => {
@@ -246,6 +317,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                 if (result) capsulesData.push({
                     id: `${u.txid}:${u.vout}`,
                     value: u.value || u.amount,
+                    address: u.address,
                 });
             });
             const capsuleTotal = capsulesData.reduce((acc: number, c: any) => acc + (c.value || 0), 0);
@@ -279,7 +351,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     return (
         <View style={styles.flex}>
             <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
-                <Text bold style={[styles.desc, {flex: 1}]}>Select your UTXO capsules to send, consolidate, move to Cold Vault, or Top-up your Lightening Account:</Text>
+                <Text bold style={[styles.desc, {flex: 1, marginHorizontal: undefined, marginRight: 10, marginLeft: 20}]}>Select your UTXO capsules to send, consolidate, move to Cold Vault, or Top-up your Lightning Account:</Text>
                 <TouchableOpacity onPress={() => dispatchNavigate('CapsuleCatalog')} style={{marginLeft: 10, marginRight: 15, marginTop: 5, width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: vaultTab ? colors.coldGreen : colors.green, alignItems: 'center', justifyContent: 'center'}}>
                     <Text bold style={{color: vaultTab ? colors.coldGreen : colors.green, fontSize: 14}}>?</Text>
                 </TouchableOpacity>

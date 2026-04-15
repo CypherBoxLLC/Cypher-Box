@@ -87,7 +87,7 @@ export default function WalletsView({
         )
     };
 
-    console.log('allBTCWallets: ', allBTCWallets, wTabs)
+    if (__DEV__) console.log('allBTCWallets: ', allBTCWallets, wTabs)
     return (
         <Carousel
             data={wTabs}

@@ -34,7 +34,7 @@ export const setUsername = (username: string | null) => {
 const auth = () => {
   const token = useAuthStore.getState().token;
   if (token && _username) {
-    console.log('[CoinOS WS] Sending login for', _username);
+if (__DEV__) console.log('[CoinOS WS] Sending login for', _username);
     send('login', { username: _username, coinosToken: token });
   } else if (!_username) {
     console.warn('[CoinOS WS] Cannot authenticate - username not set');
@@ -44,17 +44,17 @@ const auth = () => {
 const handleMessage = (event: WebSocketMessageEvent) => {
   try {
     const { type, data } = JSON.parse(event.data);
-    console.log('[CoinOS WS] Message:', type, data);
+if (__DEV__) console.log('[CoinOS WS] Message:', type, data);
 
     switch (type) {
       case 'authenticated':
-        console.log('[CoinOS WS] Authenticated with relay as', data?.username);
+if (__DEV__) console.log('[CoinOS WS] Authenticated with relay as', data?.username);
         reconnectDelay = 1000;
         break;
 
       case 'payment':
         if (data && typeof data.amount === 'number' && data.amount > 0) {
-          console.log('[CoinOS WS] Payment received:', data.amount, 'sats');
+if (__DEV__) console.log('[CoinOS WS] Payment received:', data.amount, 'sats');
 
           // Show in-app banner
           triggerPaymentNotification(data.amount, data.confirmed, 'coinos', 'CoinOS');
@@ -68,11 +68,11 @@ const handleMessage = (event: WebSocketMessageEvent) => {
         break;
 
       case 'id':
-        console.log('[CoinOS WS] Session ID:', data);
+if (__DEV__) console.log('[CoinOS WS] Session ID:', data);
         break;
 
       case 'logout':
-        console.log('[CoinOS WS] Server requested logout');
+if (__DEV__) console.log('[CoinOS WS] Server requested logout');
         disconnect();
         break;
     }
@@ -85,7 +85,7 @@ const scheduleReconnect = () => {
   if (intentionalClose) return;
   if (reconnectTimer) clearTimeout(reconnectTimer);
 
-  console.log(`[CoinOS WS] Reconnecting in ${reconnectDelay}ms...`);
+if (__DEV__) console.log(`[CoinOS WS] Reconnecting in ${reconnectDelay}ms...`);
   reconnectTimer = setTimeout(() => {
     connect();
   }, reconnectDelay);
@@ -96,31 +96,31 @@ const scheduleReconnect = () => {
 export const connect = () => {
   const token = useAuthStore.getState().token;
   if (!token) {
-    console.log('[CoinOS WS] No token, skipping connect');
+if (__DEV__) console.log('[CoinOS WS] No token, skipping connect');
     return;
   }
 
   // Already connected
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
-    console.log('[CoinOS WS] Already connected/connecting');
+if (__DEV__) console.log('[CoinOS WS] Already connected/connecting');
     return;
   }
 
   intentionalClose = false;
-  console.log('[CoinOS WS] Connecting to relay', RELAY_WS_URL);
+if (__DEV__) console.log('[CoinOS WS] Connecting to relay', RELAY_WS_URL);
 
   try {
     socket = new WebSocket(RELAY_WS_URL);
 
     socket.onopen = () => {
-      console.log('[CoinOS WS] Socket opened, authenticating...');
+if (__DEV__) console.log('[CoinOS WS] Socket opened, authenticating...');
       auth();
     };
 
     socket.onmessage = handleMessage;
 
     socket.onclose = (e) => {
-      console.log('[CoinOS WS] Socket closed:', e.code, e.reason);
+if (__DEV__) console.log('[CoinOS WS] Socket closed:', e.code, e.reason);
       socket = null;
       scheduleReconnect();
     };
@@ -141,7 +141,7 @@ export const disconnect = () => {
     reconnectTimer = null;
   }
   if (socket) {
-    console.log('[CoinOS WS] Disconnecting');
+if (__DEV__) console.log('[CoinOS WS] Disconnecting');
     socket.close();
     socket = null;
   }
@@ -153,19 +153,19 @@ export const isConnected = () => socket?.readyState === WebSocket.OPEN;
 export const registerPushToken = async (username: string, pushToken: string) => {
   const token = useAuthStore.getState().token;
   if (!token) {
-    console.log('[CoinOS Relay] Missing token for push registration');
+if (__DEV__) console.log('[CoinOS Relay] Missing token for push registration');
     return;
   }
   if (!username) {
-    console.log('[CoinOS Relay] Missing username for push registration');
+if (__DEV__) console.log('[CoinOS Relay] Missing username for push registration');
     return;
   }
   if (!pushToken) {
-    console.log('[CoinOS Relay] Missing push token for push registration');
+if (__DEV__) console.log('[CoinOS Relay] Missing push token for push registration');
     return;
   }
   if (!coinosRelayUri) {
-    console.log('[CoinOS Relay] Missing relay URI for push registration');
+if (__DEV__) console.log('[CoinOS Relay] Missing relay URI for push registration');
     return;
   }
 
@@ -181,7 +181,7 @@ export const registerPushToken = async (username: string, pushToken: string) => 
       }),
     });
     const result = await response.json();
-    console.log('[CoinOS Relay] Push registration:', result);
+if (__DEV__) console.log('[CoinOS Relay] Push registration:', result);
   } catch (e) {
     console.warn('[CoinOS Relay] Push registration failed:', e);
   }
@@ -196,7 +196,7 @@ export const unregisterPushToken = async (username: string, pushToken: string) =
       headers: { 'Content-Type': 'application/json', 'X-API-Key': RELAY_API_KEY },
       body: JSON.stringify({ username, pushToken }),
     });
-    console.log('[CoinOS Relay] Push unregistered');
+if (__DEV__) console.log('[CoinOS Relay] Push unregistered');
   } catch (e) {
     console.warn('[CoinOS Relay] Push unregister failed:', e);
   }

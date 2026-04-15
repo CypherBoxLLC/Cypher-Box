@@ -53,7 +53,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
   const { user, strikeMe, vaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, withdrawThreshold, withdrawStrikeThreshold, strikeUser } = useAuthStore();
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [selectedWallet, setSelectedWallet] = useState<number | null>(null);
-  console.log("🚀 ~ WithdrawList ~ selectedItem:", selectedItem);
+  if (__DEV__) console.log("🚀 ~ WithdrawList ~ selectedItem:", selectedItem);
   const [data, setData] = useState([
     ...(isStrikeAuth ? [{
       id: 1,
@@ -239,7 +239,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
     //   SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
 
     // }
-    console.log('item?.navigation?.params: ', item?.navigation?.params)
+    if (__DEV__) console.log('item?.navigation?.params: ', item?.navigation?.params)
     item?.navigation?.screen &&
       setTimeout(() => {
         dispatchNavigate(item?.navigation?.screen, item?.navigation?.params);
@@ -287,7 +287,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
     setTimeout(() => {
       const strikeBalance = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
       const amount = selectedItem === 1 ? withdrawStrikeThreshold > strikeBalance ? strikeBalance : withdrawStrikeThreshold : withdrawThreshold > balance ? balance : withdrawThreshold;
-      console.log('amount: ', amount)
+      if (__DEV__) console.log('amount: ', amount)
       dispatchNavigate('ReviewPayment', {
           value: amount,
           converted: ((Number(selectedItem === 2 ? matchedRate : matchedRateStrike) || 0) * btc(1) * Number(amount)).toFixed(2),
@@ -323,6 +323,14 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
           colors={[colors.black.gradientTop2, colors.black.default]}
           style={styles.containerGradientView}
         >
+          {/* Close button */}
+          <TouchableOpacity
+            onPress={() => refRBSheet?.current?.close()}
+            style={{ position: 'absolute', top: 14, right: 16, zIndex: 10, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontSize: 18, color: '#888' }}>✕</Text>
+          </TouchableOpacity>
+
           <Animated.View style={[{}, view1Style]}>
             <Text h2 bold style={styles.receiveToLabel}>
               WITHDRAW FROM
@@ -440,7 +448,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
               ))}
             </View>
           </Animated.View>
-          <TouchableOpacity onPress={onNext} disabled={selectedItem === null || selectedWallet === null} style={[styles.nextBtn, (selectedItem == null || selectedWallet == null) && {backgroundColor: colors.gray.disable}]}>
+          <TouchableOpacity activeOpacity={0.7} onPress={onNext} disabled={selectedItem === null || selectedWallet === null} style={[styles.nextBtn, (selectedItem == null || selectedWallet == null) && {backgroundColor: colors.gray.disable}]}>
               <Text h3>Next</Text>
           </TouchableOpacity>
         </LinearGradient>

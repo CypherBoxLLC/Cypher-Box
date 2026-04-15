@@ -45,7 +45,7 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
         }
     }, [])
 
-    console.log('secretList: ', secretList)
+    if (__DEV__) console.log('secretList: ', secretList)
     const viewClickHandler = () => {
         setLoading(true);
         setTimeout(() => {

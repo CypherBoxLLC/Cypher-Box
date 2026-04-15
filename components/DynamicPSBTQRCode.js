@@ -1,11 +1,13 @@
 /* eslint react/prop-types: "off", react-native/no-inline-styles: "off" */
 /**
- * Multi-format PSBT QR Code exporter
- * 
- * Tries formats in order of preference (like BlueWallet):
- * 1. BBQr - Best compression, animated QR (for Jade, Passport, etc.)
- * 2. UR - For Coldcard and other UR-compatible devices
- * 3. Plain QR - For legacy wallets that don't support either
+ * Multi-format PSBT QR Code exporter with format picker
+ *
+ * Supports:
+ * - UR (Uniform Resources) — Coldcard, Keystone, etc.
+ * - BBQr (Better Bitcoin QR) — Coldcard Q, Jade, Passport, SeedSigner
+ * - Plain QR — legacy wallets (small PSBTs only)
+ *
+ * Input value is a hex-encoded PSBT string (from psbt.toHex()).
  */
 import React, { Component } from 'react';
 import { Text } from 'react-native-elements';
@@ -30,60 +32,75 @@ export class DynamicPSBTQRCode extends Component {
       qrCodeHeight: Math.min(qrCodeHeight, qrCodeMaxHeight),
       intervalHandler: null,
       displayQRCode: true,
-      format: null, // 'bbqr', 'ur', or 'plain'
+      format: 'ur', // 'bbqr', 'ur', or 'plain'
+      availableFormats: [],
     };
   }
 
   fragments = [];
-  psbtBase64 = '';
+  urFragments = [];
+  bbqrFragments = [];
+  plainFragments = [];
 
   componentDidMount() {
     const { value, capacity = 200 } = this.props;
-    this.psbtBase64 = value;
-    
-    // Try UR encoding first (for Coldcard, Jade, etc.) - matches original BlueWallet behavior
+    const available = [];
+
+    // Prepare UR fragments
     try {
-      const urFragments = encodeUR(value, capacity);
-      if (urFragments && urFragments.length > 0) {
-        this.fragments = urFragments;
-        this.setState({ format: 'ur' });
-        console.log('[PSBT QR] Using UR format,', this.fragments.length, 'parts');
-        this._startAnimation();
-        return;
+      const ur = encodeUR(value, capacity);
+      if (ur && ur.length > 0) {
+        this.urFragments = ur;
+        available.push('ur');
+        console.log('[PSBT QR] UR ready,', ur.length, 'parts');
       }
     } catch (e) {
       console.log('[PSBT QR] UR failed:', e.message);
     }
-    
-    // Fall back to BBQr (for Jade, Passport, etc.)
+
+    // Prepare BBQr fragments — value is hex, convert to raw bytes
     try {
-      const bbqrResult = splitBBQrQRs(value, {
+      const raw = Uint8Array.from(Buffer.from(value, 'hex'));
+      const bbqr = splitBBQrQRs(raw, 'P', {
         encoding: 'Z',
         minVersion: 5,
         maxVersion: 40,
       });
-      
-      if (bbqrResult.parts && bbqrResult.parts.length > 0) {
-        this.fragments = bbqrResult.parts;
-        this.setState({ format: 'bbqr' });
-        console.log('[PSBT QR] Using BBQr format,', this.fragments.length, 'parts');
-        this._startAnimation();
-        return;
+      if (bbqr.parts && bbqr.parts.length > 0) {
+        this.bbqrFragments = bbqr.parts;
+        available.push('bbqr');
+        console.log('[PSBT QR] BBQr ready,', bbqr.parts.length, 'parts, encoding:', bbqr.encoding);
       }
     } catch (e) {
       console.log('[PSBT QR] BBQr failed:', e.message);
     }
-    
-    // Final fallback: plain QR (single QR code, no animation)
-    // For small PSBTs that fit in one QR
-    this.fragments = [value];
-    this.setState({ format: 'plain', total: 1 });
-    console.log('[PSBT QR] Using plain QR format');
+
+    // Plain fallback is always available
+    this.plainFragments = [value];
+    available.push('plain');
+
+    // Default to UR if available, otherwise BBQr, otherwise plain
+    const defaultFormat = available.includes('ur') ? 'ur' : available.includes('bbqr') ? 'bbqr' : 'plain';
+
+    this.setState({ availableFormats: available });
+    this._switchFormat(defaultFormat);
   }
 
-  _startAnimation() {
+  _switchFormat = (format) => {
+    this.stopAutoMove();
+
+    if (format === 'ur') {
+      this.fragments = this.urFragments;
+    } else if (format === 'bbqr') {
+      this.fragments = this.bbqrFragments;
+    } else {
+      this.fragments = this.plainFragments;
+    }
+
     this.setState(
       {
+        format,
+        index: 0,
         total: this.fragments.length,
         displayQRCode: true,
       },
@@ -91,7 +108,7 @@ export class DynamicPSBTQRCode extends Component {
         this.startAutoMove();
       },
     );
-  }
+  };
 
   moveToNextFragment = () => {
     const { index, total } = this.state;
@@ -103,7 +120,6 @@ export class DynamicPSBTQRCode extends Component {
   };
 
   startAutoMove = () => {
-    // Only auto-animate if we have multiple fragments
     if (this.fragments.length <= 1) return;
     if (!this.state.intervalHandler) {
       this.setState(() => ({
@@ -134,19 +150,37 @@ export class DynamicPSBTQRCode extends Component {
   getCurrentValue() {
     const currentFragment = this.fragments[this.state.index];
     if (!currentFragment) return '';
-    
+
     const { format } = this.state;
-    
-    if (format === 'bbqr') {
-      // BBQr parts are already complete QR strings
-      return currentFragment;
-    } else if (format === 'ur') {
-      // UR parts need to be uppercased
+
+    if (format === 'ur') {
       return currentFragment.toUpperCase();
-    } else {
-      // Plain format - use as-is
-      return currentFragment;
     }
+    // BBQr and plain return as-is
+    return currentFragment;
+  }
+
+  renderFormatPicker() {
+    const { format, availableFormats } = this.state;
+    // Only show picker if both UR and BBQr are available
+    if (!availableFormats.includes('ur') || !availableFormats.includes('bbqr')) return null;
+
+    return (
+      <View style={pickerStyles.container}>
+        <TouchableOpacity
+          style={[pickerStyles.tab, format === 'ur' && pickerStyles.activeTab]}
+          onPress={() => this._switchFormat('ur')}
+        >
+          <Text style={[pickerStyles.tabText, format === 'ur' && pickerStyles.activeTabText]}>UR</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[pickerStyles.tab, format === 'bbqr' && pickerStyles.activeTab]}
+          onPress={() => this._switchFormat('bbqr')}
+        >
+          <Text style={[pickerStyles.tabText, format === 'bbqr' && pickerStyles.activeTabText]}>BBQr</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   render() {
@@ -162,6 +196,8 @@ export class DynamicPSBTQRCode extends Component {
 
     return (
       <View style={animatedQRCodeStyle.container}>
+        {this.renderFormatPicker()}
+
         <TouchableOpacity
           accessibilityRole="button"
           testID="DynamicPSBTCode"
@@ -189,8 +225,8 @@ export class DynamicPSBTQRCode extends Component {
             <BlueSpacing20 />
             <View>
               <Text style={animatedQRCodeStyle.text}>
-                {this.state.format === 'plain' 
-                  ? `${loc.send.psbt_plain}` 
+                {this.state.format === 'plain'
+                  ? `${loc.send.psbt_plain}`
                   : loc.formatString(loc._.of, { number: this.state.index + 1, total: this.state.total })
                 }
               </Text>
@@ -203,7 +239,7 @@ export class DynamicPSBTQRCode extends Component {
                 onPress={this.moveToPreviousFragment}
                 disabled={this.state.total <= 1}
               >
-                <Text style={[animatedQRCodeStyle.text, this.state.total <= 1 && styles.disabled]}>
+                <Text style={[animatedQRCodeStyle.text, this.state.total <= 1 && disabledStyles.disabled]}>
                   {loc.send.dynamic_prev}
                 </Text>
               </TouchableOpacity>
@@ -213,7 +249,7 @@ export class DynamicPSBTQRCode extends Component {
                 onPress={this.state.intervalHandler ? this.stopAutoMove : this.startAutoMove}
                 disabled={this.state.total <= 1}
               >
-                <Text style={[animatedQRCodeStyle.text, this.state.total <= 1 && styles.disabled]}>
+                <Text style={[animatedQRCodeStyle.text, this.state.total <= 1 && disabledStyles.disabled]}>
                   {this.state.intervalHandler ? loc.send.dynamic_stop : loc.send.dynamic_start}
                 </Text>
               </TouchableOpacity>
@@ -223,7 +259,7 @@ export class DynamicPSBTQRCode extends Component {
                 onPress={this.moveToNextFragment}
                 disabled={this.state.total <= 1}
               >
-                <Text style={[animatedQRCodeStyle.text, this.state.total <= 1 && styles.disabled]}>
+                <Text style={[animatedQRCodeStyle.text, this.state.total <= 1 && disabledStyles.disabled]}>
                   {loc.send.dynamic_next}
                 </Text>
               </TouchableOpacity>
@@ -266,7 +302,33 @@ const animatedQRCodeStyle = StyleSheet.create({
   },
 });
 
-const styles = StyleSheet.create({
+const pickerStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    backgroundColor: '#2a2a2e',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 12,
+  },
+  tab: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  activeTab: {
+    backgroundColor: '#4a90d9',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#888',
+  },
+  activeTabText: {
+    color: '#fff',
+  },
+});
+
+const disabledStyles = StyleSheet.create({
   disabled: {
     opacity: 0.3,
   },

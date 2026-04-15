@@ -20,7 +20,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
         { id: 0, name: 'Account', icon: Bank },
         { id: 1, name: 'Threshold', icon: Threshold },
         { id: 2, name: 'History', icon: Time },
-        // { id: 3, name: 'Settings', icon: Settings },
+        { id: 3, name: 'Settings', icon: Settings },
     ], []);
 
 
@@ -49,7 +49,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
                         <Image
                             source={tab.icon}
                             style={[
-                                tab.id === 1 ? styles.coinos : tab.id === 0 ? styles.key : styles.icon,
+                                tab.id === 1 ? styles.coinos : tab.id === 0 ? styles.key : tab.id === 3 ? styles.key : styles.icon,
                                 // { tintColor: getTabStyle(tab.id).tintColor }
                             ]}
                             resizeMode="contain"

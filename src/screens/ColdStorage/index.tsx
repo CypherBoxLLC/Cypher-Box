@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Alert, Image, Keyboard, LayoutAnimation, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Image, Keyboard, LayoutAnimation, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from "react-native";
 import { Icon } from 'react-native-elements';
 import SimpleToast from "react-native-simple-toast";
 
@@ -24,7 +24,9 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { scanQrHelper } from "../../../helpers/scan-qr";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
-import { Check, Edit, StrikeFull, CoinOS } from "@Cypher/assets/images";
+import { Check, Edit, StrikeFull, CoinOS, Hot, Cold1 } from "@Cypher/assets/images";
+import { getStrikeDepositAddress, createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import { createInvoice as createInvoiceCoinos } from "@Cypher/api/coinOSApis";
 
 const prompt = require('../../../helpers/prompt');
 const btcAddressRx = /^[a-zA-Z0-9]{26,35}$/;
@@ -52,6 +54,14 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [note, setNote] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [destinationAddress, setDestinationAddress] = useState('');
+    const [useLightningBridge, setUseLightningBridge] = useState(false);
+    const [bridgeProvider, setBridgeProvider] = useState<'STRIKE' | 'COINOS' | null>(null);
+    const [bridgeDepositAddress, setBridgeDepositAddress] = useState<string | null>(null);
+    const [lightningInvoice, setLightningInvoice] = useState('');
+    const [showFeeInfo, setShowFeeInfo] = useState(false);
+    const [showChangeInfo, setShowChangeInfo] = useState(false);
+    const [showChangeMenu, setShowChangeMenu] = useState(false);
+    const [showFirePopup, setShowFirePopup] = useState(false);
     // style = { styles.pasteAddress }
     const [visibleSelection, setVisibleSelection] = useState(false);
     const [selectedFees, setSelectedFees] = useState(1);
@@ -71,6 +81,9 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [isCheck, setIsCheck] = useState(false);
 
     const [changeAddress, setChangeAddress] = useState();
+    const [changeDestination, setChangeDestination] = useState<'SELF' | 'STRIKE' | 'COINOS' | 'HOT_VAULT'>('SELF');
+    const [changeDepositAddress, setChangeDepositAddress] = useState<string | null>(null);
+    const [changeFetchLoading, setChangeFetchLoading] = useState(false);
     const { wallets, setSelectedWalletID, sleep, txMetadata, saveToDisk, isElectrumDisabled } = useContext(BlueStorageContext);
     const { walletID, coldStorageWalletID, isStrikeAuth, isAuth } = useAuthStore();
     const { navigate } = useNavigation();
@@ -88,12 +101,12 @@ export default function ColdStorage({ route, navigation }: Props) {
     const primaryColor = vaultTab ? colors.coldGreen : colors.green
     const [selectedItem, setSelectedItem] = useState(isStrikeAuth ? 1 : 2);
     const [data, setData] = useState([
-      ...(isStrikeAuth ? [{
+      {
         id: 1,
         name: "Strike",
         type: 0,
         icon: StrikeFull,
-        // navigation: {},
+        enabled: isStrikeAuth,
         navigation: {
           screen: "SendScreen",
           params: {
@@ -102,14 +115,13 @@ export default function ColdStorage({ route, navigation }: Props) {
             receiveType: false
           },
         },
-      }] : []),
-      ...(isAuth ? [{
+      },
+      {
         id: 2,
         name: "CoinOS",
         type: 0,
         icon: CoinOS,
-        description:
-          "Receive from wallets and exchanges that support the Lightning Network",
+        enabled: isAuth,
         navigation: {
           screen: "SendScreen",
           params: {
@@ -118,7 +130,7 @@ export default function ColdStorage({ route, navigation }: Props) {
             receiveType: true
           },
         },
-      }] : [])
+      },
     ]);
 
     useEffect(() => {
@@ -360,6 +372,12 @@ export default function ColdStorage({ route, navigation }: Props) {
           }
         }
     
+        if (changeDestination !== 'SELF' && !changeDepositAddress) {
+          setIsLoading(false);
+          SimpleToast.show('Waiting for change deposit address. Please try again.', SimpleToast.SHORT);
+          return;
+        }
+
         try {
           await createPsbtTransaction();
         } catch (Err) {
@@ -408,12 +426,68 @@ export default function ColdStorage({ route, navigation }: Props) {
         }
     
         if (change) setChangeAddress(change); // cache
-    
+
         return change;
       };
-    
+
+    const handleChangeDestination = async (destination: 'SELF' | 'STRIKE' | 'COINOS' | 'HOT_VAULT') => {
+        if (destination === changeDestination) return;
+        setChangeDestination(destination);
+        setChangeDepositAddress(null);
+
+        if (destination === 'SELF') return;
+
+        setChangeFetchLoading(true);
+        try {
+            if (destination === 'STRIKE') {
+                const response = await createInvoiceStrike({ onchain: {} });
+                if (response?.onchain?.address) {
+                    setChangeDepositAddress(response.onchain.address);
+                } else {
+                    SimpleToast.show('Failed to get Strike deposit address', SimpleToast.SHORT);
+                    setChangeDestination('SELF');
+                }
+            } else if (destination === 'COINOS') {
+                const response = await createInvoiceCoinos({ type: 'bitcoin' });
+                if (response?.hash) {
+                    setChangeDepositAddress(response.hash);
+                } else {
+                    SimpleToast.show('Failed to get CoinOS deposit address', SimpleToast.SHORT);
+                    setChangeDestination('SELF');
+                }
+            } else if (destination === 'HOT_VAULT') {
+                const hotVaultWallet = wallets.find(w => w.getID() === walletID);
+                if (hotVaultWallet) {
+                    let addr;
+                    if (hotVaultWallet instanceof AbstractHDElectrumWallet) {
+                        addr = hotVaultWallet._getExternalAddressByIndex(hotVaultWallet.getNextFreeAddressIndex());
+                    } else {
+                        addr = hotVaultWallet.getAddress();
+                    }
+                    if (addr) {
+                        setChangeDepositAddress(addr);
+                    } else {
+                        SimpleToast.show('Failed to get Hot Vault address', SimpleToast.SHORT);
+                        setChangeDestination('SELF');
+                    }
+                } else {
+                    SimpleToast.show('Hot Vault not found', SimpleToast.SHORT);
+                    setChangeDestination('SELF');
+                }
+            }
+        } catch (err) {
+            console.error('Error fetching change deposit address:', err);
+            SimpleToast.show('Failed to get deposit address: ' + err.message, SimpleToast.SHORT);
+            setChangeDestination('SELF');
+        } finally {
+            setChangeFetchLoading(false);
+        }
+    };
+
     const createPsbtTransaction = async () => {
-        const change = await getChangeAddressAsync();
+        const change = changeDestination !== 'SELF' && changeDepositAddress
+            ? changeDepositAddress
+            : await getChangeAddressAsync();
         const requestedSatPerByte = Number(feeRate);
         const lutxo = utxo || wallet.getUtxo();
         console.log({ requestedSatPerByte, lutxo: lutxo.length });
@@ -472,6 +546,10 @@ export default function ColdStorage({ route, navigation }: Props) {
             totalFees: totalFees,
             isCustomFee: isCustomFee,
             walletID: wallet.getID(),
+            changeRouting: changeDestination !== 'SELF' ? {
+                destination: changeDestination,
+                depositAddress: changeDepositAddress,
+            } : null,
           });
           setIsLoading(false);
           return;
@@ -531,12 +609,56 @@ export default function ColdStorage({ route, navigation }: Props) {
         console.log('data: ', data)
         dispatchNavigate('ConfirmTransction', {
             data: data,
+            useLightningBridge: useLightningBridge && lightningInvoice && bridgeProvider,
+            bridgeProvider: bridgeProvider,
+            lightningInvoice: lightningInvoice,
+            changeRouting: changeDestination !== 'SELF' ? {
+                destination: changeDestination,
+                depositAddress: changeDepositAddress,
+            } : null,
         });
         setIsLoading(false);
     };
     
 
     const nextClickHandler = async () => {
+        // Lightning bridge mode: skip on-chain destination validation
+        if (useLightningBridge && lightningInvoice && bridgeProvider) {
+            // Use bridge's deposit address as on-chain destination
+            if (bridgeProvider === 'STRIKE') {
+                // Use bridge deposit address that was already fetched
+                console.log('bridgeDepositAddress:', bridgeDepositAddress);
+                console.log('strikeToken:', useAuthStore.getState().strikeToken ? 'exists' : 'missing');
+                if (bridgeDepositAddress) {
+                    setDestinationAddress(bridgeDepositAddress);
+                    SimpleToast.show('Proceeding with Lightning bridge via Strike...', SimpleToast.SHORT);
+                    createTransaction();
+                } else {
+                    // Try fetching now as fallback
+                    SimpleToast.show('Fetching Strike address...', SimpleToast.SHORT);
+                    try {
+                        const data = await getStrikeDepositAddress();
+                        if (data?.bitcoinAddress) {
+                            setBridgeDepositAddress(data.bitcoinAddress);
+                            setDestinationAddress(data.bitcoinAddress);
+                            SimpleToast.show('Proceeding with Lightning bridge via Strike...', SimpleToast.SHORT);
+                            createTransaction();
+                        }
+                    } catch (err) {
+                        console.error('Fetch error:', err);
+                        SimpleToast.show('Failed to get Strike address: ' + err.message, SimpleToast.LONG);
+                    }
+                }
+                return;
+            } else if (bridgeProvider === 'COINOS') {
+                // For Coinos, use existing coinos deposit address
+                SimpleToast.show('Proceeding with Lightning bridge via Coinos...', SimpleToast.SHORT);
+                // TODO: Get Coinos deposit address if needed
+                createTransaction();
+                return;
+            }
+        }
+
         if(!destinationAddress || destinationAddress.length == 0){
             SimpleToast.show("Please Enter Destination Address", SimpleToast.SHORT)
             return
@@ -648,6 +770,9 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     const coinThresholdClickHandler = () => { }
 
+    const handleLightningPaste = async () => {
+        try { const txt = await Clipboard.getString(); if (txt) setLightningInvoice(txt.trim()); } catch(e) {}
+    };
     const pasteClickHandler = async () => {
         const text = await Clipboard.getString();
         console.log("🚀 ~ pasteClickHandler ~ text:", text)
@@ -755,9 +880,10 @@ export default function ColdStorage({ route, navigation }: Props) {
 
     console.log('to: ', to, toStrike, selectedItem, vaultSend)
     return (
-        <ScreenLayout showToolbar disableScroll>
-            <View style={styles.container}>
-                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : "Construct transaction"}</Text>
+        <ScreenLayout showToolbar>
+            <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
+            <View>
+                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : vaultSend ? (vaultTab ? "Move to Hot Vault" : "Move to Cold Vault") : "Construct transaction"}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -773,35 +899,26 @@ export default function ColdStorage({ route, navigation }: Props) {
                 /> */}
                 <View style={styles.recipientView}>
                     {/* <TouchableOpacity onPress={coinThresholdClickHandler}> */}
-                    {to || toStrike ?
-                      <View>
-                        <Text bold style={styles.coinselected}>Capsules selected:</Text>
-                        <View style={{flexDirection: 'row', alignItems: 'center', marginLeft: 2, marginTop: 18 }}>
-                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', maxWidth: '72%'}}>
-                            {capsulesData && capsulesData.map((item, i) => (
-                              <View key={item.id || i} style={styles.tabs}>
-                                <VaultCapsules item={item.value} />
-                              </View>
-                            ))}
-                          </View>
-                          <View style={{ alignSelf: 'flex-start' }}>
-                            <Text bold style={[styles.coinselected, {fontSize: 12}]}>Total: {formatBalance(capsuleTotal, BitcoinUnit.BTC, true)}</Text>
-                          </View>
-                        </View>
-                      </View>
-                    :
-                      <View>
+                    <View>
                         <Text bold style={styles.coinselected}>Capsules selected:</Text>
                         {capsulesData && capsulesData.length > 0 ? (
-                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                          <View style={{ marginTop: 10, marginBottom: 10 }}>
                             {capsulesData.map((item: any, i: number) => (
-                              <View key={item.id || i} style={styles.tabs}>
-                                <VaultCapsules item={item.value} />
+                              <View key={item.id || i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                                <View style={styles.tabs}>
+                                  <VaultCapsules item={item.value} />
+                                </View>
+                                <Text style={{ fontSize: 11, color: vaultTab ? '#87CEEB' : '#4CAF50', marginLeft: 8 }}>
+                                  {item.value?.toLocaleString()} sats
+                                </Text>
                               </View>
                             ))}
+                            {(to || toStrike) && capsuleTotal > 0 && (
+                              <Text bold style={[styles.coinselected, { fontSize: 12, marginTop: 4 }]}>Total: {formatBalance(capsuleTotal, BitcoinUnit.BTC, true)}</Text>
+                            )}
                           </View>
                         ) : (
-                          <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10 }}>
                             {Array(ids.length).fill(0).map((_, i) => (
                               <View key={i} style={styles.tabs}>
                                 <VaultCapsules item={0} />
@@ -810,7 +927,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                           </View>
                         )}
                       </View>
-                    }
                     {/* </TouchableOpacity> */}
                     {isBatch ?
                       <View style={{
@@ -843,17 +959,22 @@ export default function ColdStorage({ route, navigation }: Props) {
                           </TouchableOpacity>
                           <Text style={{
                               fontSize: 16,
-                              marginTop: 10, 
+                              marginTop: 10,
                               marginLeft: 15,
                           }}>
                             {'~$' + Number(usd).toFixed(2)}
                           </Text>
                         </View>
+                        <View style={{flexDirection: 'row', marginTop: 8}}>
+                          <View style={styles.tabs}>
+                            <VaultCapsules item={((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000)} />
+                          </View>
+                        </View>
                       </View>
                     :
                       <View style={styles.priceView}>
                           <View>
-                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : "Recipient will get:"}</Text>
+                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : vaultSend ? "Amount moved" : "Recipient will get:"}</Text>
                               <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
                               <View style={{flexDirection: 'row', marginTop: 8}}>
                                   <View style={styles.tabs}>
@@ -871,44 +992,132 @@ export default function ColdStorage({ route, navigation }: Props) {
                             const sendAmountSats = (Number(usd || 0) / Number(matchedRate || 0)) * 100000000;
                             const feeSats = feePrecalc.current || 0;
                             const changeSats = capsuleTotal - sendAmountSats - feeSats;
+                            const hotVaultWallet = walletID ? wallets.find(w => w.getID() === walletID) : null;
+                            const isSourceHotVault = wallet?.getID() === walletID;
+                            const showHotVault = !!hotVaultWallet && !isSourceHotVault;
                             if (changeSats > 0) {
                                 return (
-                                    <View style={[styles.priceView, {marginTop: 10}]}>
-                                        <View>
-                                            <Text style={styles.recipientTitle}>Change:</Text>
-                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
-                                            <View style={{flexDirection: 'row', marginTop: 8}}>
-                                                <View style={styles.tabs}>
-                                                    <VaultCapsules item={changeSats} />
+                                    <View style={[styles.priceView, {marginTop: 10, flexDirection: 'column'}]}>
+                                        <View style={{flexDirection: 'row'}}>
+                                            <View style={{flex: 1}}>
+                                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                                    <Text style={styles.recipientTitle}>Change capsule</Text>
+                                                    <TouchableOpacity
+                                                        onPress={() => setShowChangeInfo(!showChangeInfo)}
+                                                        style={{marginLeft: 6, marginTop: -2}}
+                                                    >
+                                                        <Icon name="info-circle" type="font-awesome" color={showChangeInfo ? (vaultTab ? colors.coldGreen : colors.green) : '#888'} size={14} />
+                                                    </TouchableOpacity>
+                                                </View>
+                                                {showChangeInfo && (
+                                                    <View style={{ marginTop: 6, marginBottom: 4, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: vaultTab ? colors.coldGreen : colors.green, backgroundColor: '#1a1a1a' }}>
+                                                        <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16 }}>Change capsule is the amount of Bitcoin sent back to you as a remainder. If it's a small amount, you can sweep it to your Lightning Account for quick spending or deposit it to your Hot Vault for future consolidation cycle.</Text>
+                                                    </View>
+                                                )}
+                                                <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
+                                                <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 8}}>
+                                                    <View style={styles.tabs}>
+                                                        <VaultCapsules item={changeSats} />
+                                                    </View>
                                                 </View>
                                             </View>
                                         </View>
+                                        {(isStrikeAuth || isAuth || showHotVault) && (
+                                            <View style={{marginTop: 10}}>
+                                                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                                    <Text style={{fontSize: 13, color: '#AAAAAA', marginRight: 8}}>Sweep change to:</Text>
+                                                    <TouchableOpacity
+                                                        onPress={() => setShowChangeMenu(!showChangeMenu)}
+                                                        disabled={changeFetchLoading}
+                                                        style={{
+                                                            flexDirection: 'row',
+                                                            alignItems: 'center',
+                                                            paddingHorizontal: 12,
+                                                            paddingVertical: 5,
+                                                            borderRadius: 8,
+                                                            borderWidth: 1.5,
+                                                            borderColor: changeDestination === 'SELF'
+                                                                ? (vaultTab ? colors.coldGreen : colors.green)
+                                                                : changeDestination === 'HOT_VAULT' ? colors.green
+                                                                : '#FF65D4',
+                                                            backgroundColor: 'rgba(255,255,255,0.05)',
+                                                        }}
+                                                    >
+                                                        <Text style={{fontSize: 12, color: '#fff'}}>
+                                                            {changeDestination === 'SELF' ? (vaultTab ? 'Cold Vault' : 'Hot Vault')
+                                                            : changeDestination === 'HOT_VAULT' ? 'Hot Vault'
+                                                            : changeDestination === 'STRIKE' ? 'Strike'
+                                                            : 'CoinOS'}
+                                                        </Text>
+                                                        <Icon name={showChangeMenu ? 'caret-up' : 'caret-down'} type="font-awesome" color="#999" size={12} containerStyle={{marginLeft: 6}} />
+                                                    </TouchableOpacity>
+                                                    {changeFetchLoading && (
+                                                        <Text style={{fontSize: 11, color: '#888', marginLeft: 8}}>...</Text>
+                                                    )}
+                                                </View>
+                                                {showChangeMenu && (
+                                                    <View style={{marginTop: 6, backgroundColor: '#1a1a1a', borderRadius: 8, borderWidth: 1, borderColor: '#333', overflow: 'hidden'}}>
+                                                        <TouchableOpacity
+                                                            onPress={() => { handleChangeDestination('SELF'); setShowChangeMenu(false); }}
+                                                            style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#333'}}
+                                                        >
+                                                            <Image source={vaultTab ? Cold1 : Hot} style={{width: 14, height: 14, marginRight: 8}} resizeMode="contain" />
+                                                            <Text style={{fontSize: 13, color: changeDestination === 'SELF' ? '#fff' : '#999'}}>{vaultTab ? 'Cold Vault' : 'Hot Vault'}</Text>
+                                                            {changeDestination === 'SELF' && <Icon name="check" type="font-awesome" color={vaultTab ? colors.coldGreen : colors.green} size={12} containerStyle={{marginLeft: 'auto'}} />}
+                                                        </TouchableOpacity>
+                                                        {showHotVault && (
+                                                            <TouchableOpacity
+                                                                onPress={() => { handleChangeDestination('HOT_VAULT'); setShowChangeMenu(false); }}
+                                                                style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#333'}}
+                                                            >
+                                                                <Image source={Hot} style={{width: 14, height: 14, marginRight: 8}} resizeMode="contain" />
+                                                                <Text style={{fontSize: 13, color: changeDestination === 'HOT_VAULT' ? '#fff' : '#999'}}>Hot Vault</Text>
+                                                                {changeDestination === 'HOT_VAULT' && <Icon name="check" type="font-awesome" color={colors.green} size={12} containerStyle={{marginLeft: 'auto'}} />}
+                                                            </TouchableOpacity>
+                                                        )}
+                                                        {isStrikeAuth && (
+                                                            <TouchableOpacity
+                                                                onPress={() => { handleChangeDestination('STRIKE'); setShowChangeMenu(false); }}
+                                                                style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#333'}}
+                                                            >
+                                                                <Image source={StrikeFull} style={{width: 45, height: 16, marginRight: 8}} resizeMode="contain" />
+                                                                {changeDestination === 'STRIKE' && <Icon name="check" type="font-awesome" color="#FF65D4" size={12} containerStyle={{marginLeft: 'auto'}} />}
+                                                            </TouchableOpacity>
+                                                        )}
+                                                        {isAuth && (
+                                                            <TouchableOpacity
+                                                                onPress={() => { handleChangeDestination('COINOS'); setShowChangeMenu(false); }}
+                                                                style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10}}
+                                                            >
+                                                                <Image source={CoinOS} style={{width: 50, height: 16, marginRight: 8}} resizeMode="contain" />
+                                                                {changeDestination === 'COINOS' && <Icon name="check" type="font-awesome" color="#FF65D4" size={12} containerStyle={{marginLeft: 'auto'}} />}
+                                                            </TouchableOpacity>
+                                                        )}
+                                                    </View>
+                                                )}
+                                            </View>
+                                        )}
                                     </View>
                                 );
                             }
                             return null;
                         })()
                     }
-                    {address && !isBatch &&
-                        <View style={styles.priceView}>
-                            <View>
-                                <Text style={styles.recipientTitle}>Sent from:</Text>
-                                <Text style={styles.fees}>Vault address: {shortenAddress(address)}</Text>
-                            </View>
-                        </View>
-                    }
+                    {/* Send-from address removed — now shown per-capsule below */}
                     {to || toStrike ?
-                        <View style={styles.priceView}>
+                        <View style={[styles.priceView, { marginTop: 0 }]}>
                           <View>
                               {!isBatch &&
                                 <>
-                                  <Text style={[styles.recipientTitle, !vaultSend ? {marginBottom: -10} : {}]}>Sent to:</Text>
                                   {!vaultSend &&
-                                    <View style={[styles.cardListContainer]}>
+                                    <View style={[styles.cardListContainer, type === 'TOPUP' && { justifyContent: 'center' }, { marginTop: 0, marginBottom: 5, gap: 20 }]}>
                                       {data?.map((item) => (
                                         <GradientView
-                                          onPress={() => setSelectedItem(item.id)}
-                                          style={styles.cardGradientStyle}
+                                          key={item.id}
+                                          onPress={() => {
+                                            if (item.enabled) setSelectedItem(item.id);
+                                          }}
+                                          style={[styles.cardGradientStyle, !item.enabled && { opacity: 0.35 }]}
                                           linearGradientStyle={styles.cardOuterShadow}
                                           topShadowStyle={[
                                             styles.cardTopShadow,
@@ -921,36 +1130,12 @@ export default function ColdStorage({ route, navigation }: Props) {
                                           linearGradientStyleMain={styles.cardGradientMainStyle}
                                           gradiantColors={[colors.black.bg, colors.black.bg]}
                                         >
-                                          <View
-                                            style={{
-                                              flexDirection: item?.type !== 0 ? "column" : "row",
-                                              justifyContent:
-                                                item?.type !== 0 ? "center" : "center",
-                                              alignItems: item?.type !== 0 ? "center" : "center",
-                                            }}
-                                          >
-                                            {item?.type !== 0 && (
-                                              <Image
-                                                source={item?.icon}
-                                                style={
-                                                  item?.id == 3
-                                                    ? styles.coldVaultIconImage
-                                                    : styles.vaultIconImage
-                                                }
-                                                resizeMode="contain"
-                                              />
-                                            )}
-                                            {item?.type === 0 ? (
-                                              <Image
-                                                source={item?.icon}
-                                                style={styles.logoImage}
-                                                resizeMode="contain"
-                                              />
-                                            ) : (
-                                              <Text h2 bold>
-                                                {item?.name}
-                                              </Text>
-                                            )}
+                                          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+                                            <Image
+                                              source={item?.icon}
+                                              style={styles.logoImage}
+                                              resizeMode="contain"
+                                            />
                                           </View>
                                         </GradientView>
                                       ))}
@@ -959,56 +1144,59 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 </>
                               }
                               {!vaultSend &&
-                                <Text style={{...styles.fees, color: colors.pink.main}} italic>{selectedItem == 1 ? "My Strike Lightning Account" : "My Coinos Lightning Account"}</Text>
+                                <Text style={{fontSize: 12, color: '#AAAAAA'}}>{selectedItem == 1 ? "Strike Lightning account deposit address" : "CoinOS Lightning account deposit address"}</Text>
                               }
-                              {isBatch ?
-                                <View style={{
-                                  // marginBottom:30,
-                                  // marginStart:15,
-                                  // marginEnd: 10,
-                                }}>
-                                  <Text bold style={{fontSize: 18}}>{"To: "}</Text>
-                                  <TouchableOpacity activeOpacity={0.7} onPress={addressHandler} style={{
-                                    flexDirection: 'row', 
-                                    alignItems: 'center', 
-                                    marginTop: 10, 
-                                    paddingVertical: 8, 
-                                    paddingHorizontal: 25, 
-                                    width: '96%'
+                              {type !== 'TOPUP' && (
+                                isBatch ?
+                                  <View style={{
+                                    // marginBottom:30,
+                                    // marginStart:15,
+                                    // marginEnd: 10,
                                   }}>
-                                    <Text italic style={StyleSheet.flatten({
-                                      // flex: 1,
-                                      width: '95%',
-                                      fontSize: 16,
-                                      marginTop: 3,
-                                      color: vaultTab ? colors.coldGreen : colors.greenShadow
-                                    })}>{"Vault Address: "+shortenAddress(to)}</Text>
-                                    <Image source={Edit} style={styles.editImage} resizeMode='contain' />
-                                  </TouchableOpacity>
-                                </View>
-                                :
-                                  <Text style={{...styles.fees, color: vaultSend ? colors.coldGreen : colors.pink.main}} italic>{vaultSend ? "Vault Address: " + shortenAddress(to) : "Deposit address: " + shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
-                              }
+                                    <Text bold style={{fontSize: 18}}>{"To: "}</Text>
+                                    <TouchableOpacity activeOpacity={0.7} onPress={addressHandler} style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      marginTop: 10,
+                                      paddingVertical: 8,
+                                      paddingHorizontal: 25,
+                                      width: '96%'
+                                    }}>
+                                      <Text italic style={StyleSheet.flatten({
+                                        // flex: 1,
+                                        width: '95%',
+                                        fontSize: 16,
+                                        marginTop: 3,
+                                        color: vaultTab ? colors.coldGreen : colors.greenShadow
+                                      })}>{"Vault Address: "+shortenAddress(to)}</Text>
+                                      <Image source={Edit} style={styles.editImage} resizeMode='contain' />
+                                    </TouchableOpacity>
+                                  </View>
+                                  :
+                                    <Text style={{fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888', marginTop: 4}}>{vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
+                              )}
                           </View>
                         </View>
                     :
-                      <View style={styles.pasteview}>
-                          <TouchableOpacity style={[styles.button, { borderColor: destinationAddress?.length > 0 ? primaryColor : '#B6B6B6' }]} onPress={pasteClickHandler}>
-                              {destinationAddress ?
-                                  <Text h3 bold>{destinationAddress}</Text>
-                                  :
-                                  <Text bold>Paste destination address</Text>
-                              }
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={async () => {
-                              // await scanButtonTapped();
-                              Keyboard.dismiss();
-                              // @ts-ignore: Fix later
-                              scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, usd, total, matchedRate, ...route?.params }).then(processAddressData);
-                          }}>
-                              <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
-                          </TouchableOpacity>
-                      </View>
+                      (!useLightningBridge && (
+                          <View style={styles.pasteview}>
+                              <TouchableOpacity style={[styles.button, { borderColor: destinationAddress?.length > 0 ? primaryColor : '#B6B6B6' }]} onPress={pasteClickHandler}>
+                                  {destinationAddress ?
+                                      <Text h3 bold>{destinationAddress}</Text>
+                                      :
+                                      <Text bold>Paste destination Bitcoin network address</Text>
+                                  }
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={async () => {
+                                  // await scanButtonTapped();
+                                  Keyboard.dismiss();
+                                  // @ts-ignore: Fix later
+                                  scanQrHelper(navigate, "ColdStorage", { wallet, utxo, ids, usd, total, matchedRate, ...route?.params }).then(processAddressData);
+                              }}>
+                                  <Image source={require("../../../img/scan-new.png")} style={styles.qrcode} resizeMode="contain" />
+                              </TouchableOpacity>
+                          </View>
+                      ))
                     }
                     {title &&
                       <>
@@ -1023,9 +1211,90 @@ export default function ColdStorage({ route, navigation }: Props) {
                     }
                     <View style={{marginTop: 15}}>
                         <View>
-                            <Text style={styles.recipientTitle}>Network fee:</Text>
+                            {/* Lightning Bridge Toggle — DISABLED FOR NOW, will edit later
+                        <View style={{ marginTop: 4, paddingHorizontal: 20 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
+                                <Text style={{ fontSize: 14, color: '#ccc' }}>Send to Lightning address ⚡</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <TouchableOpacity onPress={() => setShowFeeInfo(!showFeeInfo)} style={{ marginRight: 12 }}>
+                                        <Icon name="info-circle" type="font-awesome" color={showFeeInfo ? '#FF65D4' : '#888'} size={18} />
+                                    </TouchableOpacity>
+                                    <Switch
+                                        value={useLightningBridge}
+                                        onValueChange={(v) => {
+                                            if (v && !isStrikeAuth && !isAuth) {
+                                                Alert.alert('Lightning Account Required', 'Please unlock a Lightning account (Strike or Coinos) to use this feature.');
+                                                return;
+                                            }
+                                            setUseLightningBridge(v);
+                                            if(!v) { setLightningInvoice(''); setBridgeProvider(null); }
+                                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                        }}
+                                        ios_backgroundColor="#333333"
+                                        thumbColor="#ffffff"
+                                        trackColor={{ false: '#666666', true: (isStrikeAuth || isAuth) ? '#FF65D4' : '#444' }}
+                                    />
+                                </View>
+                            </View>
+                            {showFeeInfo && (
+                                <View style={{ marginTop: 4, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#FF65D4', backgroundColor: '#1a1a1a' }}>
+                                    <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16 }}>Sending Bitcoin capsules through the Lightning Network takes two steps: sending from an onchain transaction to a Lightning bridge which takes about ~10-30 min to confirm and for the provider to credit your account. Once that's done, it will ask you to manually approve routing the payment and it will instantaneously reach destination Lightning address.</Text>
+                                </View>
+                            )}
+                            {useLightningBridge && (
+                                <View>
+                                    <Text style={{ fontSize: 12, color: '#888', marginBottom: 8, marginTop: 4 }}>Paste Lightning address or invoice:</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <TouchableOpacity style={{ flex:1, borderRadius:14, borderWidth:1, borderColor:'#FF65D4', backgroundColor:'#1a1a1a', paddingVertical:14, paddingHorizontal:14 }} onPress={handleLightningPaste}>
+                                            <Text style={{color: lightningInvoice ? '#FF65D4' : '#888', fontSize:14 }} numberOfLines={1}>{lightningInvoice || 'Paste Lightning address or invoice'}</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={{marginLeft:8, padding:8}}><Image source={require("../../../img/scan-new.png")} style={{width:20,height:20}} /></TouchableOpacity>
+                                    </View>
+                                    {(isStrikeAuth || isAuth) && (
+                                        <>
+                                            <Text style={{ fontSize: 12, color: '#888', marginBottom: 8, marginTop: 16 }}>Choose bridge:</Text>
+                                            <View style={{ flexDirection: 'row', gap: 10 }}>
+                                                {isStrikeAuth && (
+                                                    <TouchableOpacity
+                                                        style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#333', backgroundColor: '#000000', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }}
+                                                        onPress={() => setBridgeProvider('STRIKE')}
+                                                    >
+                                                        <Text style={{ color: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#fff', fontSize: 14, fontWeight: '600' }}>Strike</Text>
+                                                    </TouchableOpacity>
+                                                )}
+                                                {isAuth && (
+                                                    <TouchableOpacity
+                                                        style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'COINOS' ? '#FF65D4' : '#444', backgroundColor: bridgeProvider === 'COINOS' ? '#FF65D433' : '#1a1a1a', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }}
+                                                        onPress={() => setBridgeProvider('COINOS')}
+                                                    >
+                                                        <Text style={{ color: bridgeProvider === 'COINOS' ? '#FF65D4' : '#ccc', fontSize: 14, fontWeight: '600' }}>Coinos</Text>
+                                                    </TouchableOpacity>
+                                                )}
+                                            </View>
+                                            {bridgeProvider && (
+                                                <>
+                                                {bridgeProvider === 'STRIKE' && bridgeDepositAddress && (
+                                                    <View style={{ marginTop: 16, padding: 12, backgroundColor: '#1a1a1a', borderRadius: 12, borderWidth: 1, borderColor: '#FF65D4' }}>
+                                                        <Text style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>Bridge deposit address (verify on device):</Text>
+                                                        <Text style={{ fontSize: 12, color: '#FF65D4', fontWeight: '600' }} numberOfLines={2}>{bridgeDepositAddress}</Text>
+                                                    </View>
+                                                )}
+                                                <Text style={{ fontSize: 12, color: '#888', marginTop: 8 }}>Bridge fee: {bridgeProvider === 'STRIKE' ? '0 sats (free)' : '1-100 sats (routing fees)'}</Text>
+                                                </>
+                                            )}
+
+                                        </>
+                                    )}
+                                    {!isStrikeAuth && !isAuth && (
+                                        <Text style={{ color: '#888', fontSize: 13, fontStyle: 'italic', marginTop: 8 }}>Unlock Lightning Account first</Text>
+                                    )}
+                                </View>
+                            )}
+                        </View>
+                        */}
+                        <Text style={[styles.recipientTitle, { marginTop: 20 }]}>Network fee:</Text>
                             
-                            <Text bold style={styles.fees}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
+                            <Text bold style={[styles.fees, { marginTop: 8 }]}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text bold style={styles.fees}>~ {isCustomFee ? customFee + " sats/vByte" :  getCurrentFee().fee + " sats"}</Text> */}
                         </View>
                         {visibleSelection &&
@@ -1077,7 +1346,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                             </View>
                             </>
                         }
-                        <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6', marginStart: 0, marginTop: 10, alignSelf: 'flex-start' }]}
+                        <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6', marginStart: 0, marginTop: 16, alignSelf: 'flex-start' }]}
                             onPress={editFeesClickHandler}>
                             <Text style={{ marginStart: 10, }}>{isCustomFee ? "Customize" : getCurrentFee().label}</Text>
                             <View style={{ marginHorizontal: 10 }}>
@@ -1103,13 +1372,59 @@ export default function ColdStorage({ route, navigation }: Props) {
                         onChangeText={setTransactionMemo}
                         placeholder="Add note"
                         placeholderTextColor={colors.white}
-                        style={[styles.noteInput, { borderColor: transactionMemo?.length > 0 ? primaryColor : '#B6B6B6' }]}
+                        style={[styles.noteInput, { borderColor: transactionMemo?.length > 0 ? primaryColor : '#B6B6B6', marginTop: 20 }]}
                     />
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, vaultTab && {backgroundColor: colors.coldGreen}]}>
                     <Text h3>Next</Text>
                 </TouchableOpacity>
             </View>
+            {showFirePopup && (
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+                        <View style={{ backgroundColor: '#0a0a0a', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#FF65D4', width: '85%', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>On-chain confirmed! Ready to fire Lightning ⚡</Text>
+                            
+                            {/* Destination */}
+                            <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
+                                <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>To:</Text>
+                                <Text style={{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }}>{lightningInvoice}</Text>
+                            </View>
+                            
+                            {/* Electrified Capsule */}
+                            <View style={{ marginVertical: 20 }}>
+                                <View style={{ 
+                                    backgroundColor: '#FF65D4', 
+                                    paddingVertical: 12, 
+                                    paddingHorizontal: 32, 
+                                    borderRadius: 30,
+                                    borderWidth: 2,
+                                    borderColor: '#fff',
+                                    shadowColor: '#FF65D4',
+                                    shadowOffset: {width: 0, height: 0},
+                                    shadowOpacity: 0.8,
+                                    shadowRadius: 20,
+                                    elevation: 10
+                                }}>
+                                    <Text style={{ fontSize: 24, color: '#fff', fontWeight: 'bold' }}>{Math.round((Number(usd || 0) / Number(matchedRate || 1)) * 100000000)} sats</Text>
+                                </View>
+                            </View>
+                            
+                            <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>Route Lightning payment</Text>
+                            
+                            <TouchableOpacity 
+                                onPress={() => setShowFirePopup(false)}
+                                style={{ backgroundColor: '#FF65D4', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 25 }}
+                            >
+                                <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>⚡ Route Lightning</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity onPress={() => setShowFirePopup(false)} style={{ marginTop: 16 }}>
+                                <Text style={{ fontSize: 14, color: '#666' }}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+            </ScrollView>
         </ScreenLayout>
     )
 }

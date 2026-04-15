@@ -4,12 +4,10 @@ on:
   push:
     branches:
       - main
-      - development
-      - Bam-development
     paths:
       - 'app-fixed/**'
       - 'docker-compose.yml'
-      - '.github/workflows/**'
+      - '.github/workflows/deploy-vps.yml'
   workflow_dispatch:
 
 jobs:

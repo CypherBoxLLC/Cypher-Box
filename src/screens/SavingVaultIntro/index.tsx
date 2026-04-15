@@ -39,12 +39,14 @@ export default function SavingVaultIntro() {
   
           await w.generate();
           addWallet(w);
+          // Set vault ID before saveToDisk so it's included in the encrypted per-context data
+          if (w.type === HDSegwitP2SHWallet.type || w.type === HDSegwitBech32Wallet.type) {
+            setWalletID(w.getID());
+          }
           await saveToDisk();
           A(A.ENUM.CREATED_WALLET);
           triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
           if (w.type === HDSegwitP2SHWallet.type || w.type === HDSegwitBech32Wallet.type) {
-            // @ts-ignore: Return later to update
-            setWalletID(w.getID());
             dispatchNavigate('SavingVault', {
               walletID: w.getID(),
             });
