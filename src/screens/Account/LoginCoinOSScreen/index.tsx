@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { TouchableOpacity, View, Image, Platform, Button, Modal, StyleSheet } from "react-native";
+import { TouchableOpacity, View, Image, Platform, Button, Modal, StyleSheet, TextInput } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { GradientButton, GradientCard, GradientText } from "@Cypher/components";
@@ -7,7 +7,7 @@ import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { loginUser } from "@Cypher/api/coinOSApis";
+import { loginUser, verifyTwoFALogin } from "@Cypher/api/coinOSApis";
 import useAuthStore from "@Cypher/stores/authStore";
 import { CoinOS } from "@Cypher/assets/images";
 import * as Keychain from 'react-native-keychain';
@@ -20,6 +20,12 @@ export default function LoginCoinOSScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    // 2FA state
+    const [showTwoFA, setShowTwoFA] = useState(false);
+    const [twoFACode, setTwoFACode] = useState('');
+    const [isVerifyingTwoFA, setIsVerifyingTwoFA] = useState(false);
+    // Store captcha token for re-login after 2FA check
+    const [storedCaptchaToken, setStoredCaptchaToken] = useState('');
     const {
         allBTCWallets,
         FirstTimeCoinOS,
@@ -70,36 +76,32 @@ export default function LoginCoinOSScreen() {
             console.log("User Login successful:", response);
             
             if (response.token) {
-                setAuth(true);
-                setToken(response.token);
-                setUser(response.user);
-                const temp = [...allBTCWallets];
-                setAllBTCWallets([...temp, 'COINOS']);
-                
-                // Save credentials securely in keychain (iOS) / keystore (Android)
-                // Protected by biometrics — FaceID/TouchID required to read them
-                try {
-                    await Keychain.setGenericPassword(email, password, { 
-                        service: 'coinos-login',
-                        accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
-                        accessible: Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
-                    });
-                } catch (error) {
-                    console.error('Error saving credentials to keychain');
+                // Check if 2FA is required
+                if (response.user?.twofa) {
+                    // 2FA is enabled, prompt for TOTP code
+                    setStoredCaptchaToken(recaptchaToken);
+                    setShowTwoFA(true);
+                    setIsLoading(false);
+                    return;
                 }
                 
-                if(FirstTimeCoinOS) {
-                    setFirstTimeCoinOS(false);
-                    dispatchNavigate("CheckingAccountCreated", { accountType: 'coinos' });
-                } else {
-                    dispatchReset("HomeScreen");
-                }
+                // No 2FA, proceed normally
+                completeLogin(response);
             } else {
                 SimpleToast.show("Invalid username or password", SimpleToast.SHORT);
                 setCaptchaToken(""); // Reset to allow retry
             }
         } catch (error: any) {
             console.error("Error login user:", error?.message);
+            
+        // Check if 2FA is required (server returned "2fa required")
+            if (error?.message?.includes('2fa required')) {
+                // Store the captcha token for re-login after 2FA
+                setStoredCaptchaToken(recaptchaToken);
+                setShowTwoFA(true);
+                setIsLoading(false);
+                return;
+            }
             
             // More specific error messages
             if (error?.message?.includes('Captcha')) {
@@ -114,6 +116,69 @@ export default function LoginCoinOSScreen() {
             setCaptchaToken("");
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // Complete login after 2FA verification or if 2FA not enabled
+    const completeLogin = async (response: any) => {
+        setAuth(true);
+        setToken(response.token);
+        setUser(response.user);
+        
+        const temp = [...allBTCWallets];
+        setAllBTCWallets([...temp, 'COINOS']);
+        
+        // Save credentials securely in keychain (iOS) / keystore (Android)
+        // Protected by biometrics — FaceID/TouchID required to read them
+        try {
+            await Keychain.setGenericPassword(email, password, { 
+                service: 'coinos-login',
+                accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
+                accessible: Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
+            });
+        } catch (error) {
+            console.error('Error saving credentials to keychain');
+        }
+        
+        if(FirstTimeCoinOS) {
+            setFirstTimeCoinOS(false);
+            dispatchNavigate("CheckingAccountCreated", { accountType: 'coinos' });
+        } else {
+            dispatchReset("HomeScreen");
+        }
+    };
+
+    // Handle 2FA verification — needs fresh recaptcha token since original expired
+    const [showTwoFACaptcha, setShowTwoFACaptcha] = useState(false);
+
+    const handleTwoFASubmit = async () => {
+        if (twoFACode.length !== 6) {
+            SimpleToast.show("Please enter a valid 6-digit code", SimpleToast.SHORT);
+            return;
+        }
+        // Trigger fresh recaptcha for the 2FA re-login
+        setShowTwoFACaptcha(true);
+    };
+
+    const onTwoFACaptchaToken = async (freshCaptchaToken: string) => {
+        setShowTwoFACaptcha(false);
+        setIsVerifyingTwoFA(true);
+
+        try {
+            const response: any = await verifyTwoFALogin(twoFACode, email, password, freshCaptchaToken);
+            if (__DEV__) console.log("2FA verification successful:", response);
+
+            setUser(response.user);
+            setToken(response.token);
+            setShowTwoFA(false);
+
+            completeLogin(response);
+        } catch (error: any) {
+            console.error("2FA verification failed:", error?.message);
+            SimpleToast.show(error?.message || "Invalid 2FA code. Please try again.", SimpleToast.SHORT);
+            setTwoFACode('');
+        } finally {
+            setIsVerifyingTwoFA(false);
         }
     };
 
@@ -223,6 +288,63 @@ export default function LoginCoinOSScreen() {
                         <Text style={modalStyles.closeButtonText}>✕ Close</Text>
                     </TouchableOpacity>
                 </View>
+            </Modal>
+
+            {/* 2FA Verification Modal */}
+            <Modal
+                visible={showTwoFA}
+                animationType="slide"
+                onRequestClose={() => setShowTwoFA(false)}
+                presentationStyle="pageSheet"
+            >
+                {showTwoFACaptcha ? (
+                    <View style={modalStyles.modalContainer}>
+                        <RecaptchaV2 siteKey={SITE_KEY} onToken={onTwoFACaptchaToken} />
+                    </View>
+                ) : (
+                <ScreenLayout showToolbar>
+                    <View style={styles.container}>
+                        <View style={styles.innerView}>
+                            <GradientText>Two-Factor Authentication</GradientText>
+                            <View style={styles.space} />
+                            <Text style={styles.twoFAText}>
+                                Enter the 6-digit code from your authenticator app
+                            </Text>
+                            <GradientCard style={{ width: '100%' }} colors_={twoFACode ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}>
+                                <Input
+                                    onChange={setTwoFACode}
+                                    value={twoFACode}
+                                    style={styles.textInput}
+                                    keyboardType="numeric"
+                                    maxLength={6}
+                                    placeholder="000000"
+                                    label="Authentication Code"
+                                />
+                            </GradientCard>
+                            <View style={styles.extra} />
+                            <GradientButton
+                                title={isVerifyingTwoFA ? "Verifying..." : "Verify"}
+                                disabled={twoFACode.length !== 6 || isVerifyingTwoFA}
+                                onPress={handleTwoFASubmit}
+                            />
+                            <TouchableOpacity
+                                style={{ marginTop: 18, alignSelf: 'center' }}
+                                onPress={() => {
+                                    setShowTwoFA(false);
+                                    setTwoFACode('');
+                                    setAuth(false);
+                                    setToken(null);
+                                    setUser(null);
+                                }}
+                            >
+                                <Text bold style={styles.forgot}>
+                                    Cancel (Logout)
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </ScreenLayout>
+                )}
             </Modal>
         </ScreenLayout>
     )

@@ -61,11 +61,11 @@ const VaultCapsules = ({ item, isPending = false, isVault = false }: Props) => {
             // {barColor: redCapsule,
             // max: 2_000_387_900,
             // min: 1_010_195_889},
-            {barColor: pinkCapsule,
+            {barColor: blueCapsule,
             max: 1_100_000_000,
             min: 100_000_000, //1.1BTC = 110_021_334
             },
-            {barColor: blueCapsule,
+            {barColor: pinkCapsule,
             max: 110_000_000, //110_021_334
             min: 10_000_000 //11M
             },
@@ -84,8 +84,8 @@ const VaultCapsules = ({ item, isPending = false, isVault = false }: Props) => {
         ]
 
         const barColor = SATsAmount >= 1_100_000_000 ? redCapsule : //10.1 BTC
-        SATsAmount >= 110_000_000 ? pinkCapsule : //1.1M BTC
-        SATsAmount >= 11_000_000 ? blueCapsule : //11M sats
+        SATsAmount >= 110_000_000 ? blueCapsule : //110M sats
+        SATsAmount >= 11_000_000 ? pinkCapsule : //11M sats
         SATsAmount >= 1_100_000 ? grassCapsule : //1.1M sats
         SATsAmount >= 100_000 ? orangeCapsule : whiteCapsule//100k sats
         

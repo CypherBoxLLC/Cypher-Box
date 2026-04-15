@@ -1,4 +1,5 @@
-import { createInvoice } from "@Cypher/api/coinOSApis";
+// createInvoice moved to TopupList
+
 import { Text } from "@Cypher/component-library";
 import { GradientCardWithShadow, GradientView, SavingVault } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -13,7 +14,7 @@ import Carousel from "react-native-snap-carousel";
 import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
 import TabBar from "../TabBar";
-import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+// createInvoiceStrike moved to TopupList
 
 interface Props {
     balance: any;
@@ -31,16 +32,20 @@ interface Props {
     vaultAddress: any;
     recommendedFee: any;
     refWithdrawRBSheet: any;
+    refTopupRBSheet: any;
     currencyStrike: any;
     matchedRateStrike: any;
+    matchedRateBTC: any;
 }
 
 export default function BottomBar({
     balance,
     wallet,
     refWithdrawRBSheet,
+    refTopupRBSheet,
     currency,
     matchedRate,
+    matchedRateBTC,
     balanceVault,
     hasSavingVault,
     balanceWithoutSuffix,
@@ -54,8 +59,9 @@ export default function BottomBar({
     currencyStrike,
     matchedRateStrike
 }: Props) {
-    console.log("🚀 ~ hasSavingVault:", hasSavingVault)
+    if (__DEV__) console.log("🚀 ~ hasSavingVault:", hasSavingVault)
     const { isAuth, isStrikeAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, reserveAmount, reserveStrikeAmount, vaultTab, setVaultTab } = useAuthStore();
+    const bothVaultsExist = !!(wallet && coldStorageWallet);
 
     const carouselRef = useRef<Carousel<any>>(null);
     const glowAnim = useRef(new Animated.Value(0)).current;
@@ -139,44 +145,16 @@ export default function BottomBar({
         dispatchNavigate('ColdVaultIntro');
     }
 
-    const topupClickHandler = async () => {
-        // dispatchNavigate('PurchaseVault', {
-        //   data: {}
-        // });
+    const topupClickHandler = () => {
         if (!isAuth && !isStrikeAuth) {
             SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
-            return
+            return;
         }
-
-        // if (!isAuth) {
-        //     SimpleToast.show('You need to be logged in to Coinos.io to top up', SimpleToast.SHORT);
-        //     return
-        // }
-        // if (vaultTab && !coldStorageWallet) {
-        //     SimpleToast.show('You need to have a cold storage wallet to top up', SimpleToast.SHORT);
-        //     return
-        // }
-        try {
-            let response, responseStrike;
-            if(isAuth){
-                response = await createInvoice({
-                    type: 'bitcoin',
-                });
-            }
-            if(isStrikeAuth) {
-                responseStrike = await createInvoiceStrike({
-                    onchain: {
-                    },
-                    targetCurrency: strikeUser?.[1]?.currency || "USD"
-                });
-            }
-
-            dispatchNavigate('HotStorageVault', { wallet: vaultTab && coldStorageWallet ? coldStorageWallet : wallet && wallet, matchedRate, to: isAuth ? response?.hash : null, toStrike: isStrikeAuth ? responseStrike.onchain?.address : null });
-        } catch (error) {
-            console.error('Error generating bitcoin address topupClickHandler:', error);
-        } finally {
-            // setIsLoading(false);
+        if (!wallet && !coldStorageWallet) {
+            SimpleToast.show('You need to create a vault first', SimpleToast.SHORT);
+            return;
         }
+        refTopupRBSheet?.current?.open();
     };
 
     const withdrawClickHandler = () => {
@@ -211,7 +189,7 @@ export default function BottomBar({
             // });
         } else if(isAuth) {
             const amount = withdrawThreshold > balance ? balance : withdrawThreshold;
-            console.log('amount: ', amount)
+            if (__DEV__) console.log('amount: ', amount)
             dispatchNavigate('ReviewPayment', {
                 value: amount,
                 converted: ((Number(matchedRate) || 0) * btc(1) * Number(amount)).toFixed(2),
@@ -232,7 +210,7 @@ export default function BottomBar({
         } else if (isStrikeAuth) {
               const strikeBalance = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
               const amount = withdrawStrikeThreshold > strikeBalance ? strikeBalance : withdrawStrikeThreshold;
-              console.log('amount: ', amount)
+              if (__DEV__) console.log('amount: ', amount)
               dispatchNavigate('ReviewPayment', {
                   value: amount,
                   converted: ((Number(matchedRateStrike) || 0) * btc(1) * Number(amount)).toFixed(2),
@@ -254,7 +232,7 @@ export default function BottomBar({
     };
 
     const savingVaultClickHandler = () => {
-        dispatchNavigate('HotStorageVault', { wallet: vaultTab ? coldStorageWallet : wallet, matchedRate });
+        dispatchNavigate('HotStorageVault', { wallet: vaultTab ? coldStorageWallet : wallet, matchedRate: matchedRateBTC });
     };
 
     const tabs = [
@@ -275,7 +253,7 @@ export default function BottomBar({
                     title={"Hot Vault"}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={balanceVault}
-                    inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRate || 0)).toFixed(2)}`}
+                    inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
                 />
             )
@@ -324,7 +302,7 @@ export default function BottomBar({
                     isVault={true}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={coldStorageBalanceVault}
-                    inDollars={`$${(Number(coldStorageBalanceWithoutSuffix) * Number(matchedRate)).toFixed(2)}`}
+                    inDollars={`$${(Number(coldStorageBalanceWithoutSuffix) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
                 />
             ) : (
@@ -345,7 +323,7 @@ export default function BottomBar({
         <View style={styles.bottominner}>
             <GradientView
                 onPress={topupClickHandler}
-                topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
+                topShadowStyle={styles.outerShadowStyle}
                 bottomShadowStyle={styles.innerShadowStyle}
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
@@ -359,7 +337,7 @@ export default function BottomBar({
             </GradientView>
             <GradientView
                 onPress={withdrawClickHandler}
-                topShadowStyle={[styles.outerShadowStyle, isVault && { shadowColor: colors.blueText }]}
+                topShadowStyle={styles.outerShadowStyle}
                 bottomShadowStyle={styles.innerShadowStyle}
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
@@ -378,7 +356,7 @@ export default function BottomBar({
         return (
             <>
             <View style={{ width: screenWidth * 0.905 }}>
-                {((wallet && index == 0) || (coldStorageWallet && index == 1) ) && (isAuth || isStrikeAuth) &&
+                {!bothVaultsExist && ((wallet && index == 0) || (coldStorageWallet && index == 1)) && (isAuth || isStrikeAuth) &&
                     <TopUpWithdrawView isVault={index == 1 ? true : false} />
                 }
                 {item.component()}
@@ -387,9 +365,12 @@ export default function BottomBar({
         )
     };
 
-    console.log('index: ', index, vaultTab)
+    if (__DEV__) console.log('index: ', index, vaultTab)
     return (
         <>
+            {bothVaultsExist && (isAuth || isStrikeAuth) && (
+                <TopUpWithdrawView isVault={index === 1} />
+            )}
             <Carousel
                 data={tabs}
                 ref={carouselRef}
@@ -399,7 +380,7 @@ export default function BottomBar({
                 sliderWidth={screenWidth}
                 itemWidth={screenWidth}
                 onSnapToItem={(index) => {
-                    console.log('onSnappppp')
+                    if (__DEV__) console.log('onSnappppp')
                     setIndex(index)
                     setVaultTab(index === 1 && coldStorageWallet ? true : wallet && false);
                 }}

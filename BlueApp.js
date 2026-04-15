@@ -436,6 +436,30 @@ class AppStorage {
         }
       }
       if (realm) realm.close();
+
+      // Restore vault IDs from this storage context's encrypted data
+      try {
+        const authStore = require('./src/stores/authStore').default;
+        const { setWalletID, setColdStorageWalletID } = authStore.getState();
+        // Only restore if vault IDs are present in encrypted data (new format).
+        // Old data without vault IDs: fall back to stale-ID clearing by wallet match.
+        if ('walletID' in data) {
+          setWalletID(data.walletID || undefined);
+          setColdStorageWalletID(data.coldStorageWalletID || undefined);
+        } else {
+          // Legacy data: clear IDs that don't match any loaded wallet
+          const { walletID, coldStorageWalletID } = authStore.getState();
+          if (walletID && !this.wallets.find(w => w.getID() === walletID)) {
+            setWalletID(undefined);
+          }
+          if (coldStorageWalletID && !this.wallets.find(w => w.getID() === coldStorageWalletID)) {
+            setColdStorageWalletID(undefined);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to restore vault IDs from disk:', e);
+      }
+
       return true;
     } else {
       return false; // failed loading data or loading/decryptin data
@@ -619,9 +643,20 @@ class AppStorage {
         walletsToSave.push(JSON.stringify({ ...keyCloned, type: keyCloned.type }));
       }
       if (realm) realm.close();
+      // Include vault IDs so each encrypted storage context remembers its own vaults
+      let vaultIDs = {};
+      try {
+        const authStore = require('./src/stores/authStore').default;
+        const { walletID, coldStorageWalletID } = authStore.getState();
+        vaultIDs = { walletID, coldStorageWalletID };
+      } catch (e) {
+        console.warn('Failed to read vault IDs for saveToDisk:', e);
+      }
+
       let data = {
         wallets: walletsToSave,
         tx_metadata: this.tx_metadata,
+        ...vaultIDs,
       };
 
       if (this.cachedPassword) {
@@ -918,7 +953,7 @@ const startAndDecrypt = async retry => {
 
   if (success) {
     console.log('loaded from disk');
-    // We want to return true to let the UnlockWith screen that its ok to proceed.
+    // Vault IDs are now restored per-context inside loadFromDisk()
     return true;
   }
 

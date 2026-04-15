@@ -16,6 +16,8 @@ export { default as GetAddressScreen } from './GetAddress';
 export { default as SendScreen } from './Send';
 export { default as CreateCoinOSScreen } from './Account/CreateCoinOSScreen';
 export { default as LoginCoinOSScreen } from './Account/LoginCoinOSScreen';
+export { default as EnableTwoFA } from './Account/EnableTwoFA';
+export { default as DisableTwoFA } from './Account/DisableTwoFA';
 export { default as CopyInvoice } from './CopyInvoice';
 export { default as ReviewPayment } from './ReviewPayment';
 export { default as CheckingAccount } from './CheckingAccount';

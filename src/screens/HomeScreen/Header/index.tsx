@@ -10,7 +10,7 @@ interface Props {
     onBarScanned(value: any): void;
 }
 
-export default function Header({ onBarScanned }: Props) {
+export default React.memo(function Header({ onBarScanned }: Props) {
     const { navigate } = useNavigation();
     const routeName = useRoute().name;
 
@@ -22,12 +22,13 @@ export default function Header({ onBarScanned }: Props) {
         scanQrHelper(navigate, routeName).then(onBarScanned);
     };
 
-    return <View style={styles.title}>
+    return <View style={[styles.title, { transform: [{ translateY: -34 }] }]}>
         <Text subHeader bold>
             Total Assets
         </Text>
         <View style={styles.row}>
             <TouchableOpacity
+                activeOpacity={0.6}
                 style={styles.imageView}
                 onPress={navigateToSettings}
             >
@@ -49,4 +50,4 @@ export default function Header({ onBarScanned }: Props) {
             </TouchableOpacity> */}
         </View>
     </View>
-}
+})

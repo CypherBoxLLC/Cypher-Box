@@ -61,23 +61,24 @@ const WalletAddresses = () => {
 
   const { wallets } = useContext(BlueStorageContext);
 
-  const { 
-    walletID, 
+  const {
+    walletID,
     isTouchable,
-    value, 
-    converted, 
-    isSats, 
-    to, 
-    type, 
-    recommendedFee, 
-    isWithdrawal, 
+    selectForReceive,
+    value,
+    converted,
+    isSats,
+    to,
+    type,
+    recommendedFee,
+    isWithdrawal,
 
 
-    vaultTab, 
-    utxo, 
-    ids, 
-    maxUSD, 
-    inUSD, 
+    vaultTab,
+    utxo,
+    ids,
+    maxUSD,
+    inUSD,
     total, 
     matchedRate, 
     capsulesData, 
@@ -161,21 +162,29 @@ const WalletAddresses = () => {
   );
 
   const navigateToReceive = (item) => {
+    // When opened from receive popup, return selected address to HomeScreen
+    if(selectForReceive){
+      dispatchNavigate('HomeScreen', {
+        selectedVaultAddress: item.address,
+        selectedVaultType: vaultTab ? 'cold' : 'hot',
+      });
+      return;
+    }
     if(isBatch){
       dispatchNavigate('ColdStorage', {
-        wallet, 
-        vaultTab, 
-        utxo, 
-        ids, 
-        maxUSD, 
-        inUSD, 
-        total, 
-        matchedRate, 
-        capsulesData, 
-        to: item.address, 
-        vaultSend, 
-        title, 
-        type, 
+        wallet,
+        vaultTab,
+        utxo,
+        ids,
+        maxUSD,
+        inUSD,
+        total,
+        matchedRate,
+        capsulesData,
+        to: item.address,
+        vaultSend,
+        title,
+        type,
         isBatch,
         currency,
         capsuleTotal
@@ -192,7 +201,7 @@ const WalletAddresses = () => {
         recommendedFee,
         wallet,
         isWithdrawal: isWithdrawal
-      });  
+      });
     }
     // navigate('ReceiveDetailsRoot', {
     //   screen: 'ReceiveDetails',

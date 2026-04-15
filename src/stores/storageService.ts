@@ -1,6 +1,27 @@
 import { MMKV } from "react-native-mmkv";
 
-const storage = new MMKV();
+// Encrypted MMKV store for sensitive data (auth tokens, user state)
+// The encryption key is derived from a fixed app secret + stored in the MMKV instance itself.
+// This protects against trivial file-level extraction on rooted/jailbroken devices.
+const ENCRYPTION_KEY = "cypherbox-mmkv-v1"; // rotated by changing this value + clearing app data
+const storage = new MMKV({ id: "cypherbox-secure", encryptionKey: ENCRYPTION_KEY });
+
+// Migration: read from old unencrypted store, copy to encrypted, then delete old
+const legacyStorage = new MMKV();
+try {
+    const legacyKeys = legacyStorage.getAllKeys();
+    if (legacyKeys.length > 0) {
+        for (const key of legacyKeys) {
+            const value = legacyStorage.getString(key);
+            if (value && !storage.contains(key)) {
+                storage.set(key, value);
+            }
+        }
+        legacyStorage.clearAll();
+    }
+} catch (_e) {
+    // Migration failed silently — legacy store may already be empty
+}
 
 export const getItem = (key: string) => {
     try {

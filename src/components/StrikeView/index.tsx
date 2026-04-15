@@ -1,7 +1,7 @@
 import { Minus, Plus, Strike } from '@Cypher/assets/images'
 import { Text } from '@Cypher/component-library'
-import React, { useState } from 'react'
-import { Image, TouchableOpacity, View } from 'react-native'
+import React, { useEffect, useState } from 'react'
+import { ActivityIndicator, Alert, Image, LayoutAnimation, TextInput, TouchableOpacity, View } from 'react-native'
 import BlackBGView from '../BlackBGView'
 import CustomProgressBar from '../CustomProgressBar'
 import GradientView from '../GradientView'
@@ -12,6 +12,8 @@ import { btc, getStrikeCurrency, SATS } from '@Cypher/helpers/coinosHelper'
 import useAuthStore from '@Cypher/stores/authStore'
 import SimpleToast from "react-native-simple-toast";
 import { useNavigation } from '@react-navigation/native'
+import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout } from '@Cypher/api/strikeAPIs'
+import { colors } from '@Cypher/style-guide'
 
 interface Props {
     showLogo?: boolean;
@@ -33,6 +35,13 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     const { strikeUser, clearStrikeAuth } = useAuthStore();
     const [dollarStrikeText, setDollarStrikeText] = useState(1000000);
     const navigation = useNavigation();
+    const [showFiatPanel, setShowFiatPanel] = useState(false);
+    const [fiatMode, setFiatMode] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
+    const [fiatAmount, setFiatAmount] = useState('');
+    const [bankMethods, setBankMethods] = useState<any[]>([]);
+    const [selectedBank, setSelectedBank] = useState<any>(null);
+    const [fiatLoading, setFiatLoading] = useState(false);
+    const [bankLoading, setBankLoading] = useState(false);
 
     const addClickHandler = () => {
       if (dollarStrikeText >= 1_000_000_000) {
@@ -205,20 +214,245 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                     </GradientView>
                 </View>
             </View>
-            {/* TODO: Deposit-Withdraw fiat - implement with Strike banking API later */}
-            {/* {isShowButtons &&
-                <View style={styles.bottomButtonsContainer}>
-                    <GradientView
-                        style={styles.sellBuyButton3}
-                        linearGradientStyle={styles.sellBuyGradient3}
-                        topShadowStyle={styles.topShadow3}
-                        bottomShadowStyle={styles.bottomShadow3}
-                        linearGradientStyleMain={styles.linearGradientStyleMain3}
-                    >
-                        <Text h3 bold center>Deposit-Withdraw fiat</Text>
-                    </GradientView>
+            {/* Deposit/Withdraw Fiat Button */}
+            {isShowButtons && (
+                <TouchableOpacity
+                    onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        if (!showFiatPanel) {
+                            // Fetch bank methods when opening
+                            setBankLoading(true);
+                            getBankPaymentMethods()
+                                .then(res => {
+                                    const methods = Array.isArray(res) ? res : res?.items || [];
+                                    const readyMethods = methods.filter((m: any) => m?.state === 'READY');
+                                    setBankMethods(readyMethods);
+                                    if (readyMethods.length > 0 && !selectedBank) {
+                                        setSelectedBank(readyMethods[0]);
+                                    }
+                                })
+                                .catch(err => console.error('Error loading banks:', err))
+                                .finally(() => setBankLoading(false));
+                        }
+                        setShowFiatPanel(!showFiatPanel);
+                    }}
+                    style={{
+                        marginTop: 16,
+                        paddingVertical: 10,
+                        paddingHorizontal: 20,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        borderColor: showFiatPanel ? '#FF65D4' : '#555',
+                        backgroundColor: showFiatPanel ? 'rgba(255,101,212,0.08)' : 'transparent',
+                        alignSelf: 'center',
+                    }}
+                >
+                    <Text bold style={{ fontSize: 14, color: showFiatPanel ? '#FF65D4' : '#CCC', textAlign: 'center' }}>
+                        {showFiatPanel ? 'Close' : 'Deposit / Withdraw Fiat'}
+                    </Text>
+                </TouchableOpacity>
+            )}
+
+            {/* Fiat Deposit/Withdraw Panel */}
+            {showFiatPanel && (
+                <View style={{
+                    marginTop: 12,
+                    backgroundColor: '#1a1a1a',
+                    borderRadius: 16,
+                    padding: 16,
+                    marginHorizontal: 4,
+                }}>
+                    {/* Mode Toggle */}
+                    <View style={{ flexDirection: 'row', marginBottom: 14, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#333' }}>
+                        <TouchableOpacity
+                            onPress={() => { setFiatMode('DEPOSIT'); setFiatAmount(''); }}
+                            style={{
+                                flex: 1,
+                                paddingVertical: 10,
+                                backgroundColor: fiatMode === 'DEPOSIT' ? '#1B6B3A' : 'transparent',
+                                alignItems: 'center',
+                            }}
+                        >
+                            <Text bold style={{ color: fiatMode === 'DEPOSIT' ? '#FFF' : '#888', fontSize: 14 }}>Deposit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => { setFiatMode('WITHDRAW'); setFiatAmount(''); }}
+                            style={{
+                                flex: 1,
+                                paddingVertical: 10,
+                                backgroundColor: fiatMode === 'WITHDRAW' ? '#8B3A3A' : 'transparent',
+                                alignItems: 'center',
+                            }}
+                        >
+                            <Text bold style={{ color: fiatMode === 'WITHDRAW' ? '#FFF' : '#888', fontSize: 14 }}>Withdraw</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Bank Account Selector */}
+                    {bankLoading ? (
+                        <ActivityIndicator size="small" color="#FF65D4" style={{ marginVertical: 10 }} />
+                    ) : bankMethods.length === 0 ? (
+                        <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+                            <Text style={{ color: '#888', fontSize: 13, textAlign: 'center' }}>
+                                No bank accounts linked.{'\n'}Connect a bank account in the Strike app first.
+                            </Text>
+                        </View>
+                    ) : (
+                        <>
+                            <Text style={{ color: '#AAA', fontSize: 12, marginBottom: 6 }}>
+                                {fiatMode === 'DEPOSIT' ? 'Deposit from:' : 'Withdraw to:'}
+                            </Text>
+                            {bankMethods.map((bank: any) => (
+                                <TouchableOpacity
+                                    key={bank.id}
+                                    onPress={() => setSelectedBank(bank)}
+                                    style={{
+                                        flexDirection: 'row',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        paddingVertical: 10,
+                                        paddingHorizontal: 12,
+                                        borderRadius: 10,
+                                        borderWidth: 1.5,
+                                        borderColor: selectedBank?.id === bank.id ? '#FF65D4' : '#333',
+                                        backgroundColor: selectedBank?.id === bank.id ? 'rgba(255,101,212,0.06)' : 'transparent',
+                                        marginBottom: 6,
+                                    }}
+                                >
+                                    <View>
+                                        <Text bold style={{ fontSize: 14 }}>{bank.bankName || 'Bank'}</Text>
+                                        <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                                            ****{bank.accountNumber?.slice(-4) || '????'} {bank.transferType ? `(${bank.transferType})` : ''}
+                                        </Text>
+                                    </View>
+                                    {selectedBank?.id === bank.id && (
+                                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#FF65D4' }} />
+                                    )}
+                                </TouchableOpacity>
+                            ))}
+
+                            {/* Amount Input */}
+                            <View style={{ marginTop: 12 }}>
+                                <Text style={{ color: '#AAA', fontSize: 12, marginBottom: 6 }}>Amount ({safeCurrency})</Text>
+                                <View style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    borderWidth: 1.5,
+                                    borderColor: '#444',
+                                    borderRadius: 10,
+                                    paddingHorizontal: 12,
+                                    height: 44,
+                                    backgroundColor: '#111',
+                                }}>
+                                    <Text bold style={{ fontSize: 18, color: '#888', marginRight: 4 }}>
+                                        {getStrikeCurrency(safeCurrency)}
+                                    </Text>
+                                    <TextInput
+                                        value={fiatAmount}
+                                        onChangeText={setFiatAmount}
+                                        placeholder="0.00"
+                                        placeholderTextColor="#555"
+                                        keyboardType="decimal-pad"
+                                        style={{
+                                            flex: 1,
+                                            color: '#FFF',
+                                            fontSize: 18,
+                                            fontFamily: 'Lato-Bold',
+                                            padding: 0,
+                                        }}
+                                    />
+                                </View>
+                                {fiatMode === 'WITHDRAW' && (
+                                    <Text style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+                                        Available: {getStrikeCurrency(safeCurrency)}{Number(strikeUser?.[1]?.available || 0).toFixed(2)}
+                                    </Text>
+                                )}
+                            </View>
+
+                            {/* Confirm Button */}
+                            <TouchableOpacity
+                                disabled={fiatLoading || !fiatAmount || Number(fiatAmount) <= 0 || !selectedBank}
+                                onPress={() => {
+                                    const amt = Number(fiatAmount);
+                                    if (!amt || amt <= 0) {
+                                        SimpleToast.show('Enter a valid amount', SimpleToast.SHORT);
+                                        return;
+                                    }
+                                    if (fiatMode === 'WITHDRAW' && amt > Number(strikeUser?.[1]?.available || 0)) {
+                                        SimpleToast.show('Amount exceeds available balance', SimpleToast.SHORT);
+                                        return;
+                                    }
+                                    Alert.alert(
+                                        `Confirm ${fiatMode === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'}`,
+                                        `${fiatMode === 'DEPOSIT' ? 'Deposit' : 'Withdraw'} ${getStrikeCurrency(safeCurrency)}${amt.toFixed(2)} ${fiatMode === 'DEPOSIT' ? 'from' : 'to'} ${selectedBank?.bankName || 'bank'} (****${selectedBank?.accountNumber?.slice(-4) || '????'})?`,
+                                        [
+                                            { text: 'Cancel', style: 'cancel' },
+                                            {
+                                                text: 'Confirm',
+                                                onPress: async () => {
+                                                    setFiatLoading(true);
+                                                    try {
+                                                        if (fiatMode === 'DEPOSIT') {
+                                                            const result = await initiateDeposit(amt.toFixed(2), selectedBank.id);
+                                                            console.log('Deposit result:', result);
+                                                            if (result?.id) {
+                                                                SimpleToast.show('Deposit initiated! Settlement may take 1-5 business days.', SimpleToast.LONG);
+                                                                setFiatAmount('');
+                                                                setShowFiatPanel(false);
+                                                            } else {
+                                                                SimpleToast.show(result?.message || result?.data?.message || 'Deposit failed. Check Strike app for details.', SimpleToast.LONG);
+                                                            }
+                                                        } else {
+                                                            // Withdraw: create payout then initiate
+                                                            const payout = await createPayout(amt.toFixed(2), selectedBank.id);
+                                                            console.log('Payout created:', payout);
+                                                            if (payout?.id && payout?.state === 'NEW') {
+                                                                const initiated = await initiatePayout(payout.id);
+                                                                console.log('Payout initiated:', initiated);
+                                                                if (initiated?.state === 'INITIATED' || initiated?.state === 'COMPLETED') {
+                                                                    SimpleToast.show('Withdrawal initiated! Funds will arrive in 1-5 business days.', SimpleToast.LONG);
+                                                                    setFiatAmount('');
+                                                                    setShowFiatPanel(false);
+                                                                } else {
+                                                                    SimpleToast.show(initiated?.message || 'Withdrawal initiation failed.', SimpleToast.LONG);
+                                                                }
+                                                            } else {
+                                                                SimpleToast.show(payout?.message || payout?.data?.message || 'Payout creation failed. Check Strike app.', SimpleToast.LONG);
+                                                            }
+                                                        }
+                                                    } catch (err: any) {
+                                                        console.error('Fiat operation error:', err);
+                                                        SimpleToast.show('Error: ' + (err?.message || 'Unknown error'), SimpleToast.LONG);
+                                                    } finally {
+                                                        setFiatLoading(false);
+                                                    }
+                                                },
+                                            },
+                                        ],
+                                    );
+                                }}
+                                style={{
+                                    marginTop: 16,
+                                    paddingVertical: 12,
+                                    borderRadius: 12,
+                                    backgroundColor: (!fiatAmount || Number(fiatAmount) <= 0 || !selectedBank || fiatLoading)
+                                        ? '#333'
+                                        : fiatMode === 'DEPOSIT' ? '#1B6B3A' : '#8B3A3A',
+                                    alignItems: 'center',
+                                }}
+                            >
+                                {fiatLoading ? (
+                                    <ActivityIndicator size="small" color="#FFF" />
+                                ) : (
+                                    <Text bold style={{ color: '#FFF', fontSize: 15 }}>
+                                        {fiatMode === 'DEPOSIT' ? 'Deposit' : 'Withdraw'} {fiatAmount ? `${getStrikeCurrency(safeCurrency)}${Number(fiatAmount).toFixed(2)}` : ''}
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
                 </View>
-            } */}
+            )}
             <BlackBGView linearFirstStyle={styles.bitcoinPriceContainer}>
                 <Text bold style={styles.bitcoinPriceText}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
             </BlackBGView>

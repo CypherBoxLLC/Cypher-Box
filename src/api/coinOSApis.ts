@@ -1,19 +1,9 @@
 import useAuthStore from '@Cypher/stores/authStore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import SimpleToast from "react-native-simple-toast";
 
 const BASE_URL = 'https://coinos.io/api';
-const getAuthToken = async () => {
-  try {
-    return await AsyncStorage.getItem('authToken');
-  } catch (error) {
-    console.error('Error getting auth token from AsyncStorage:', error);
-    throw error;
-  }
-};
 
 const withAuthToken = async (requestConfig: any) => {
-  // const authToken = await getAuthToken();
   const authToken = useAuthStore.getState().token;
   if (!authToken) {
     throw new Error('Authentication required. Please login to continue.');
@@ -35,7 +25,7 @@ export const registerUser = async (username: string, password: string) => {
             password: password,
         }
     }
-    console.log('payload:', payload)
+if (__DEV__) console.log('payload:', payload)
     const response = await fetch(`${BASE_URL}/register`, {
       method: 'POST',
       headers: {
@@ -60,7 +50,7 @@ export const loginUser = async (username: string, password: string, recaptchaTok
         recaptcha: recaptchaToken || '' // Send empty string if no token
     };
     
-    console.log('Logging in with username:', username);
+if (__DEV__) console.log('Logging in with username:', username);
     
     const response = await fetch(`${BASE_URL}/login`, {
       method: 'POST',
@@ -72,7 +62,7 @@ export const loginUser = async (username: string, password: string, recaptchaTok
       body: JSON.stringify(payload),
     });
     
-    console.log('Response status:', response.status);
+if (__DEV__) console.log('Response status:', response.status);
     
     if (response.status === 401) {
       const errorText = await response.text();
@@ -114,7 +104,7 @@ export const refreshCoinOSToken = async (): Promise<string | null> => {
     });
 
     if (!credentials || !credentials.username || !credentials.password) {
-      console.log('[CoinOS] No keychain credentials for token refresh');
+if (__DEV__) console.log('[CoinOS] No keychain credentials for token refresh');
       return null;
     }
 
@@ -141,7 +131,7 @@ export const refreshCoinOSToken = async (): Promise<string | null> => {
 
     const data = await response.json();
     if (data?.token) {
-      console.log('[CoinOS] Token refreshed successfully');
+if (__DEV__) console.log('[CoinOS] Token refreshed successfully');
       return data.token;
     }
     return null;
@@ -233,7 +223,7 @@ export const getInvoiceByHash = async (hash: string) => {
 
 export const sendLightningPayment = async (payreq: string, memo: string, amount?: any) => {
   try {
-    console.log('sendLightningPayment payload: ', amount, amount && amount !== '' && amount !== 0 ? { payreq: payreq, memo: memo, amount } : { payreq: payreq, memo: memo })
+if (__DEV__) console.log('sendLightningPayment payload: ', amount, amount && amount !== '' && amount !== 0 ? { payreq: payreq, memo: memo, amount } : { payreq: payreq, memo: memo })
     const response = await fetch(`${BASE_URL}/payments`, await withAuthToken({
       method: 'POST',
       headers: {
@@ -242,9 +232,9 @@ export const sendLightningPayment = async (payreq: string, memo: string, amount?
       body: JSON.stringify(amount && amount !== '' && amount !== 0 ? { payreq: payreq, memo: memo, amount } : { payreq: payreq, memo: memo }),
     }));
 
-    console.log('response: ', response)
+if (__DEV__) console.log('response: ', response)
     const responseJSON = await response.text();
-    console.log('responseJSON: ', responseJSON)
+if (__DEV__) console.log('responseJSON: ', responseJSON)
     return responseJSON;
   } catch (error) {
     console.error('Error sending lightning payment:', error);
@@ -265,9 +255,9 @@ export const sendCoinsViaUsername = async (address: string, amount: number, memo
     let url = `https://${domain}/.well-known/lnurlp/${name}`;
     
     const response = await fetch(url);
-    console.log('sendCoinsViaLNURL response: ', response)
+if (__DEV__) console.log('sendCoinsViaLNURL response: ', response)
     const lnurlPayData = await response.json();
-    console.log('sendCoinsViaLNURL lnurlPayData: ', lnurlPayData)
+if (__DEV__) console.log('sendCoinsViaLNURL lnurlPayData: ', lnurlPayData)
 
     if (lnurlPayData.tag === "payRequest") {
       const paymentResponse = await fetch(lnurlPayData.callback+'?amount='+(amount * 1000), {
@@ -276,12 +266,12 @@ export const sendCoinsViaUsername = async (address: string, amount: number, memo
           "Content-Type": "application/json",
         },
       });
-      console.log('sendCoinsViaLNURL paymentResponse: ', paymentResponse)
+if (__DEV__) console.log('sendCoinsViaLNURL paymentResponse: ', paymentResponse)
 
       const paymentResult = await paymentResponse.json();
-      console.log('sendCoinsViaLNURL paymentResult: ', paymentResult)
+if (__DEV__) console.log('sendCoinsViaLNURL paymentResult: ', paymentResult)
       if(paymentResult.pr){
-        console.log('domain: ', domain)
+if (__DEV__) console.log('domain: ', domain)
         if(domain == 'coinos.io'){
           const response = await fetch(`${BASE_URL}/payments`, await withAuthToken({
             method: 'POST',
@@ -291,14 +281,14 @@ export const sendCoinsViaUsername = async (address: string, amount: number, memo
             body: JSON.stringify({ amount: amount, hash: paymentResult.pr }),
           }));
       
-          console.log('response: ', response)
+if (__DEV__) console.log('response: ', response)
           const responseJSON = await response.json();
-          console.log('responseJSON: ', responseJSON)
+if (__DEV__) console.log('responseJSON: ', responseJSON)
           return responseJSON;
         } else {
           const sendToUser = await sendLightningPayment(paymentResult.pr, memo, amount)
 
-          console.log('sendToUser: ' ,sendToUser)
+if (__DEV__) console.log('sendToUser: ' ,sendToUser)
           return sendToUser;  
   
         }
@@ -388,14 +378,14 @@ export const getMe = async () => {
         'Content-Type': 'application/json',
       },
     }));
-    console.log('response: ', response?.status)
+if (__DEV__) console.log('response: ', response?.status)
     if(response?.status === 401){
       SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
       useAuthStore.getState().clearAuth();
       return null;
     }
     const result = await response.json()
-    console.log('result: ', result)
+if (__DEV__) console.log('result: ', result)
     return result;
   } catch (error) {
     console.error('Error getting me:', error);
@@ -444,6 +434,151 @@ export const getTransactionDetail = async (id: number) => {
     return await response.json();
   } catch (error) {
     console.error('Error fetching getTransactionDetail:', error);
+    throw error;
+  }
+};
+
+// ===========================================
+// Two-Factor Authentication (2FA/TOTP)
+// ===========================================
+
+/**
+ * Get OTP secret for 2FA setup.
+ * Requires user to have a PIN set (server uses requirePin middleware).
+ * Returns: { secret: string, username: string }
+ */
+export const getOTPsecret = async () => {
+  try {
+    const response = await fetch(`${BASE_URL}/user/otpsecret`, await withAuthToken({
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }));
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (response.status === 401 && errorText.includes('pin')) {
+        throw new Error('PIN required. Please set a PIN in your CoinOS account first.');
+      }
+      throw new Error(`Failed to get OTP secret: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error getting OTP secret:', error);
+    throw error;
+  }
+};
+
+/**
+ * Enable 2FA on the user's account.
+ * @param token - 6-digit TOTP code from authenticator app
+ */
+export const enableTwoFA = async (token: string) => {
+  try {
+    const response = await fetch(`${BASE_URL}/user/2fa/enable`, await withAuthToken({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token }),
+    }));
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Invalid TOTP code. Please try again.');
+      }
+      throw new Error(`Failed to enable 2FA: ${errorText}`);
+    }
+
+if (__DEV__) console.log('[CoinOS] 2FA enabled successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('Error enabling 2FA:', error);
+    throw error;
+  }
+};
+
+/**
+ * Disable 2FA on the user's account.
+ * @param token - 6-digit TOTP code from authenticator app
+ */
+export const disableTwoFA = async (token: string) => {
+  try {
+    const response = await fetch(`${BASE_URL}/user/2fa/disable`, await withAuthToken({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token }),
+    }));
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Invalid TOTP code. Please try again.');
+      }
+      throw new Error(`Failed to disable 2FA: ${errorText}`);
+    }
+
+if (__DEV__) console.log('[CoinOS] 2FA disabled successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('Error disabling 2FA:', error);
+    throw error;
+  }
+};
+
+/**
+ * Submit 2FA token during login (after password auth).
+ * Re-sends login credentials with the TOTP token.
+ */
+export const verifyTwoFALogin = async (token: string, username: string, password: string, captchaToken?: string) => {
+  try {
+    // Re-login with credentials + 2FA TOTP code
+    // Only include recaptcha if we have it (may have expired since first attempt)
+    const payload: any = {
+      username,
+      password,
+      token: token,  // 6-digit TOTP code
+    };
+    if (captchaToken) {
+      payload.recaptcha = captchaToken;
+    }
+if (__DEV__) console.log('[2FA] Sending login with token:', { username, tokenLength: token.length, hasCaptcha: !!captchaToken });
+    
+    const response = await fetch(`${BASE_URL}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': 'CoinOS-Mobile-App',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const responseText = await response.text();
+if (__DEV__) console.log('[2FA] Response status:', response.status, 'body:', responseText);
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        if (responseText.includes('captcha')) {
+          throw new Error('Captcha verification failed. Please try again.');
+        }
+        if (responseText.includes('2fa')) {
+          throw new Error('Invalid 2FA code. Please try again.');
+        }
+        throw new Error(responseText || 'Invalid 2FA code. Please try again.');
+      }
+      throw new Error(`2FA verification failed: ${responseText}`);
+    }
+
+    // Returns updated user object with full session
+    return JSON.parse(responseText);
+  } catch (error) {
+    console.error('[2FA] Error verifying 2FA login:', error);
     throw error;
   }
 };

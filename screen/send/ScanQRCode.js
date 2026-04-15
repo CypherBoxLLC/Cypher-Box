@@ -206,30 +206,21 @@ const ScanQRCode = () => {
   };
 
   // Handle BBQr multi-part QR codes
+  // BBQr frame format: B$ + encoding(1) + fileType(1) + total(2 base36) + index(2 base36) + data
   const _onReadBBQrAnimatedQRCode = part => {
     try {
-      // Parse BBQr format: BBQr:P0/1#data or BBQR:P0/1#data
-      const match = part.match(/^BBQr:?(P\d+)\/(\d+)(#|$)/i);
-      if (!match) {
-        console.log('[BBQr] Invalid format, trying full decode');
-        // Try to join without parsing
-        const result = joinQRs([part]);
-        if (result && result.raw) {
-          const psbtBase64 = Buffer.from(result.raw).toString('base64');
-          if (launchedBy) {
-            navigation.navigate({ name: launchedBy, params: {}, merge: true });
-          }
-          onBarScanned({ data: psbtBase64 });
-          return;
-        }
+      const encoding = part[2];
+      const fileType = part[3];
+      const total = parseInt(part.slice(4, 6), 36);
+      const currentIndex = parseInt(part.slice(6, 8), 36);
+
+      if (isNaN(total) || isNaN(currentIndex)) {
+        console.warn('[BBQr] Could not parse header from:', part.slice(0, 10));
         return;
       }
 
-      const currentIndex = parseInt(match[1].replace('P', ''));
-      const total = parseInt(match[2]);
-      
-      console.log('[BBQr] Part', currentIndex + 1, 'of', total);
-      
+      console.log(`[BBQr] Part ${currentIndex + 1} of ${total} (type=${fileType}, enc=${encoding})`);
+
       // Store the QR part
       const newBbqrData = { ...bbqrData };
       newBbqrData[currentIndex] = part;
@@ -240,24 +231,31 @@ const ScanQRCode = () => {
       // Check if we have all parts
       if (Object.keys(newBbqrData).length === total) {
         console.log('[BBQr] All parts received, joining...');
-        // Join all QR parts
         const parts = [];
         for (let i = 0; i < total; i++) {
           parts.push(newBbqrData[i]);
         }
-        
+
         const result = joinQRs(parts);
         if (result && result.raw) {
-          const psbtBase64 = Buffer.from(result.raw).toString('base64');
-          console.log('[BBQr] Joined PSBT, length:', psbtBase64.length);
+          let data;
+          if (result.fileType === 'P') {
+            // PSBT — convert raw bytes to base64
+            data = Buffer.from(result.raw).toString('base64');
+          } else {
+            // Text-based (xpub, JSON, etc.) — decode as UTF-8
+            data = Buffer.from(result.raw).toString('utf8');
+          }
+          console.log(`[BBQr] Joined ${result.fileType}, length: ${data.length}`);
           if (launchedBy) {
             navigation.navigate({ name: launchedBy, params: {}, merge: true });
           }
-          onBarScanned({ data: psbtBase64 });
+          onBarScanned({ data });
         }
       }
     } catch (error) {
-      console.warn('[BBQr] Error processing BBQr QR:', error);
+      console.error('[BBQr] Error processing BBQr QR:', error);
+      Alert.alert(loc.send.scan_error, 'BBQr decode failed: ' + (error.message || error));
     }
   };
 
@@ -292,9 +290,9 @@ const ScanQRCode = () => {
       return _onReadUniformResource(ret.data);
     }
 
-    // Check for BBQr format (multi-part PSBT)
-    if (ret.data.toUpperCase().startsWith('BBQR') || ret.data.toUpperCase().startsWith('BBQR:') || /^BBQR:P\d+\/\d+/.test(ret.data.toUpperCase())) {
-      console.log('[BBQr] Detected BBQr format, adding to multi-part QR');
+    // Check for BBQr format (frames start with "B$")
+    if (ret.data.startsWith('B$')) {
+      console.log('[BBQr] Detected BBQr frame');
       return _onReadBBQrAnimatedQRCode(ret.data);
     }
 

@@ -1,47 +1,189 @@
-name: BuildReleaseApk
-on: [pull_request]
+name: Build and Upload to Play Store (Android)
+
+on:
+  push:
+    branches:
+      - CB-Development
+      - CB-Production
+  pull_request:
+    branches:
+      - Bam-development
+      - CB-Development
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Upload target'
+        required: true
+        default: 'internal'
+        type: choice
+        options:
+          - internal
+          - production
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  buildReleaseApk:
+  build:
     runs-on: macos-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: "0"
+        uses: actions/checkout@v4
 
       - name: Specify node version
-        uses: actions/setup-node@v2-beta
+        uses: actions/setup-node@v4
         with:
-          node-version: 16
+          node-version: 20
 
-      - name: Use npm caches
-        uses: actions/cache@v2
+      # Cache node_modules for faster install
+      - name: Cache node_modules
+        uses: actions/cache@v4
         with:
-          path: ~/.npm
+          path: node_modules
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
 
-      - name: Use specific Java version for sdkmanager to work
-        uses: actions/setup-java@v3
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply patches
+        run: npm run patches
+
+      # Cache Gradle for faster builds
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
         with:
           distribution: "temurin"
-          java-version: "11"
-          cache: "gradle"
-
-      - name: Install node_modules
-        run: npm install --production
+          java-version: "17"
 
       - name: Build
         env:
           KEYSTORE_FILE_HEX: ${{ secrets.KEYSTORE_FILE_HEX }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: ./scripts/build-release-apk.sh
+        run: |
+          cd android
+          chmod +x ../scripts/build-release-apk.sh
+          ../scripts/build-release-apk.sh
 
-      - uses: actions/upload-artifact@v3
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: apk
+          name: cypherbox-android
           path: ./android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Comment on PR with artifact link
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = '✅ **Build complete!**\n\nDownload the APK from the **Actions** tab above, or click the artifact in this run.\n\n**Version:** dev-${'${{ github.sha }}'.substring(0, 7)}';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Create GitHub Release (on push to CB-Development)
+        if: github.event_name == 'push' && contains(github.ref, 'CB-Development')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./android/app/build/outputs/apk/release/app-release.apk
+          tag_name: android-${{ github.run_number }}-${{ github.sha }}
+          name: Android Build #${{ github.run_number }}
+          draft: true
+          generate_release_notes: true
+
+  upload-internal:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/CB-Production'
+    steps:
+      - name: Checkout (for fastlane)
+        uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cypherbox-android
+          path: ./build
+
+      - name: Set up Ruby (for fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Install fastlane
+        run: gem install fastlane
+
+      - name: Upload to Play Store (Internal Testing)
+        env:
+          ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
+        run: |
+          echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
+          fastlane supply \
+            --json_key gcp-key.json \
+            --package_name io.cypherbox.btc \
+            --track internal \
+            --apk ./build/app-release.apk \
+            --skip_upload_metadata \
+            --skip_upload_images \
+            --skip_upload_screenshots
+          rm gcp-key.json
+
+  upload-production:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production'
+    steps:
+      - name: Checkout (for fastlane)
+        uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cypherbox-android
+          path: ./build
+
+      - name: Set up Ruby (for fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Install fastlane
+        run: gem install fastlane
+
+      - name: Upload to Play Store (Production)
+        env:
+          ANDROID_SERVICE_ACCOUNT: ${{ secrets.ANDROID_SERVICE_ACCOUNT }}
+        run: |
+          echo "$ANDROID_SERVICE_ACCOUNT" | base64 -d > gcp-key.json
+          fastlane supply \
+            --json_key gcp-key.json \
+            --package_name io.cypherbox.btc \
+            --track production \
+            --apk ./build/app-release.apk \
+            --skip_upload_metadata \
+            --skip_upload_images \
+            --skip_upload_screenshots
+          rm gcp-key.json

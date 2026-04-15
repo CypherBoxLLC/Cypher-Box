@@ -27,17 +27,18 @@ export class BBQrDynamicQRCode extends Component {
   fragments = [];
 
   componentDidMount() {
-    const { value } = this.props;
+    const { value, fileType = 'P' } = this.props;
     try {
-      // Use BBQr to split PSBT into multiple QR codes
-      const result = splitQRs(value, {
-        encoding: 'Z', // Use Zlib compression for best size
+      // Convert hex PSBT string to Uint8Array for BBQr
+      const raw = Uint8Array.from(Buffer.from(value, 'hex'));
+      const result = splitQRs(raw, fileType, {
+        encoding: 'Z',
         minVersion: 5,
         maxVersion: 40,
       });
-      
+
       this.fragments = result.parts;
-      console.log('[BBQr] Split PSBT into', this.fragments.length, 'parts, encoding:', result.encoding);
+      console.log('[BBQr] Split into', this.fragments.length, 'parts, encoding:', result.encoding);
       
       this.setState(
         {

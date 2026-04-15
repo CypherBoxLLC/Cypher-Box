@@ -27,8 +27,8 @@ export default function CheckingAccountNew({ navigation, route }: any) {
                 return <Threshold currency={currency} matchedRate={matchedRate} receiveType={receiveType} />;
             case 2:
                 return <History currency={currency} matchedRate={matchedRate} receiveType={receiveType} />;
-            // case 3:
-            //     return <Settings />;
+            case 3:
+                return <Settings receiveType={receiveType} currency={currency} />;
             default:
                 return <Account currency={currency} matchedRate={matchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
         }
