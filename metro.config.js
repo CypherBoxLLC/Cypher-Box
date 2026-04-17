@@ -22,6 +22,23 @@ const config = {
     ]),
     // bbqr package has no 'main' field — tell Metro to check 'module' field in package.json
     resolverMainFields: ['react-native', 'browser', 'main', 'module'],
+    resolveRequest: (context, moduleName, platform) => {
+      if (moduleName === 'react-native-neomorph-shadows') {
+        return {
+          filePath: path.resolve(__dirname, 'shims/react-native-neomorph-shadows/index.js'),
+          type: 'sourceFile',
+        };
+      }
+      // @realm/fetch@0.1.1 ships package.json with `"module": "true"` (a string literal, not a path),
+      // which breaks Metro's entry resolution. Redirect to the actual RN entry.
+      if (moduleName === '@realm/fetch') {
+        return {
+          filePath: path.resolve(__dirname, 'node_modules/@realm/fetch/dist/react-native/react-native.js'),
+          type: 'sourceFile',
+        };
+      }
+      return context.resolveRequest(context, moduleName, platform);
+    },
   },
   transformer: {
     getTransformOptions: async () => ({
