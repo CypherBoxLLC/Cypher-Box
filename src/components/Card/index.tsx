@@ -6,7 +6,6 @@ import { colors } from "@Cypher/style-guide";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
-import { Shadow } from "react-native-neomorph-shadows";
 import GradientButtonWithShadow from "../GradientButtonWithShadow";
 import styles from "./styles";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -94,10 +93,8 @@ export default function Card({ onPress,
     return (
         <View>
             <TouchableOpacity style={styles.shadowView} onPress={onCardClickHandler}>
-                <Shadow
+                <View
                     style={styles.shadowTop}
-                    inner
-                    useArt
                 >
                     <View style={styles.view}>
                         <Text h2 bold style={styles.check}>
@@ -116,8 +113,8 @@ export default function Card({ onPress,
                         resizeMode="contain"
                     />
                         }
-                        
-                        
+
+
                     </View>
                     <View style={styles.view}>
                         <Text h2 bold style={styles.sats}>
@@ -142,12 +139,7 @@ export default function Card({ onPress,
                             style={[styles.linearGradient2, { width: getWidth() } as any]}>
                         </LinearGradient>
                     </View>
-                    <Shadow
-                        inner
-                        useArt
-                        style={styles.shadowBottom}
-                    />
-                </Shadow>
+                </View>
             </TouchableOpacity>
             {isShowButtons &&
                 <View style={styles.btnView}>

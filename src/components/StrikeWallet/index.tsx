@@ -8,7 +8,6 @@ import React from "react";
 import { Image, Linking, StyleSheet, TouchableOpacity, View } from "react-native";
 import { authorize } from "react-native-app-auth";
 import LinearGradient from "react-native-linear-gradient";
-import { Shadow } from "react-native-neomorph-shadows";
 import styles from "./styles";
 
 
@@ -68,17 +67,8 @@ export default function StrikeWallet({
     const { isStrikeAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
 
     const receiveClickHandler = (type: boolean) => {
-        // dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate });
-        // if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
-        //     dispatchNavigate('CreateInvoice', {
-        //         matchedRate,
-        //         currency,
-        //         receiveType: false
-        //     });
-        // } else {
-            setReceiveType(type);
-            refRBSheet.current.open();
-        // }
+        setReceiveType(type);
+        refRBSheet.current.open();
     };
 
     const sendClickHandler = (walletType: boolean) => {
@@ -112,19 +102,15 @@ export default function StrikeWallet({
 
     const createStrikeAccountClickHandler = () => {
         Linking.openURL('https://dashboard.strike.me/signup')
-        // dispatchNavigate("CheckAccount");
     };
 
     return (
         <>
             {isStrikeAuth &&
-                // <View style={{ height: '42%' }}>
                 <View>
                     <TouchableOpacity style={styles.shadowView} onPress={() => checkingAccountClickHandler(false)}>
-                        <Shadow
+                        <View
                             style={StyleSheet.flatten([styles.shadowTop, { shadowColor: colors.pink.shadowTop, padding: 0 }])}
-                            inner
-                            useArt
                         >
                             <View style={styles.view}>
                                 <Text h2 bold style={styles.check}>
@@ -139,7 +125,6 @@ export default function StrikeWallet({
                             <View style={styles.view}>
                                 <Text h2 bold style={styles.sats}>
                                     {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ ${getStrikeCurrency(currency || strikeUser?.[1]?.currency || 'USD')}${(Number(strikeConvertedBalance) || (Number(strikeUser?.[0]?.available || 0) * (Number(matchedRateStrike) || 0))).toFixed(2)}`}
-                                    {/* {strikeUser && strikeUser[0]?.available || 0} sats ~ {"$" + convertedRate.toFixed(2)} */}
                                 </Text>
                                 <Text bold style={styles.totalsats}>
                                     {formatNumber(Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount))} sats
@@ -152,24 +137,9 @@ export default function StrikeWallet({
                                     start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
                                     colors={[colors.white, colors.pink.dark]}
                                     style={[styles.linearGradient2, { width: `${calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount))}%` }]}>
-                                    {/* <View style={[styles.box, {marginLeft: `${Math.min((withdrawThreshold / (Number(withdrawThreshold + reserveAmount) || 0)) * 100, 100)}%`}]} /> */}
-                                    {/* <Shadow
-                            inner // <- enable inner shadow
-                            useArt // <- set this prop to use non-native shadow on ios
-                            style={styles.top2} >
-                        </Shadow> */}
                                 </LinearGradient>
-
-                                {/* <View style={styles.showLine} /> */}
-                                {/* <View style={[styles.box, {marginLeft: `${Math.min((balance / (Number(withdrawThreshold) || 0)) * 100, 100)}%`}]} />
-                      </View> */}
                             </View>
-                            <Shadow
-                                inner
-                                useArt
-                                style={StyleSheet.flatten([styles.shadowBottom, { shadowColor: colors.pink.shadowBottom }])}
-                            />
-                        </Shadow>
+                        </View>
                     </TouchableOpacity>
                     <View style={styles.btnView}>
                         <GradientButtonWithShadow
@@ -196,7 +166,6 @@ export default function StrikeWallet({
             }
 
             {!isStrikeAuth &&
-                // <View style={{ height: '42%' }}>
                 <View>
                     <GradientCardWithShadow
                         style={styles.createView}
@@ -215,7 +184,7 @@ export default function StrikeWallet({
                     </GradientCardWithShadow>
                     <View style={styles.createAccount}>
                         <Text bold style={styles.text}>
-                            Don’t have an account?
+                            Don't have an account?
                         </Text>
                         <TouchableOpacity onPress={createStrikeAccountClickHandler}>
                             <Text bold style={styles.login}>

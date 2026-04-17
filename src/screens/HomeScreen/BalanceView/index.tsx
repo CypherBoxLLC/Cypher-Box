@@ -4,7 +4,6 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors, shadow, widths } from "@Cypher/style-guide";
 import React from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
-import { Shadow } from "react-native-neomorph-shadows";
 import styles from "../styles";
 import { GradientView } from "@Cypher/components";
 
@@ -18,10 +17,8 @@ interface Props {
 export default React.memo(function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount }: Props) {
     return (
         <View style={[styles.innerContainer]} >
-            <Shadow
+            <View
                 style={StyleSheet.flatten([styles.shadowTopBottom2])}
-                inner
-                useArt
             >
                 <Text subHeader bold style={styles.price}>
                     {balance}
@@ -29,12 +26,6 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
                 <Text bold style={styles.priceusd} >
                     {convertedRate}
                 </Text>
-
-                <Shadow
-                    inner
-                    useArt
-                    style={StyleSheet.flatten([styles.shadowBottomBottom])}
-                />
 
                 {showAddAccount && onAddAccount && (
                     <TouchableOpacity
@@ -45,8 +36,8 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
                         <Text h4 semibold style={{ marginStart: 5, color: colors.pink.light }}>Add Account</Text>
                     </TouchableOpacity>
                 )}
-                
-            </Shadow>
+
+            </View>
         </View>
     )
 })

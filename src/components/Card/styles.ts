@@ -29,15 +29,11 @@ export default StyleSheet.create({
         backgroundColor: colors.white,
     },
     shadowTop: {
-        shadowOffset: { width: 2, height: 2 },
-        shadowOpacity: 1,
-        shadowRadius: 2,
         borderRadius: 24,
         width: widths - 40,
         height: 128,
         backgroundColor: colors.primary,
         paddingHorizontal: 30,
-        shadowColor: colors.pink.shadowTop,
         padding: 0
     },
     view: {

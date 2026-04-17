@@ -11,7 +11,6 @@ import {
 } from "react-native";
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
-import { Shadow } from "react-native-neomorph-shadows";
 import { ProgressBar5, ProgressBarColdStorage } from "@Cypher/assets/images";
 import ProgressBar from "../ProgressBar";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -46,14 +45,12 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
     return (
         <TouchableOpacity style={[styles.container, container]} onPress={onPress}>
             <View style={[styles.innerContainer, innerContainer]}>
-                <Shadow
-                    style={StyleSheet.flatten([styles.shadowTopBottom, shadowTopBottom, vaultTabCheck && { shadowColor: '#21C7FB' }])}
-                    inner
-                    useArt
+                <View
+                    style={StyleSheet.flatten([styles.shadowTopBottom, shadowTopBottom, vaultTabCheck && { borderColor: '#21C7FB', shadowColor: '#21C7FB' }])}
                 >
                     <View style={styles.bottominner}>
                         <View style={{flexDirection: "row", flex:1, justifyContent: "start", alignItems: "center"}}>
-                        {title === 'Hot Vault' ? 
+                        {title === 'Hot Vault' ?
                             <Image
                             source={require('@Cypher/assets/images/fireShield.png')}
                             style={{width:25, height: 25, marginRight:8}}
@@ -94,13 +91,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                             <View key={item} style={styles.tab} />
                         ))}
                     </View>
-
-                    <Shadow
-                        inner
-                        useArt
-                        style={StyleSheet.flatten([styles.shadowBottomBottom, shadowBottomBottom, vaultTabCheck && { shadowColor: colors.shadowBlue }])}
-                    />
-                </Shadow>
+                </View>
             </View>
         </TouchableOpacity>
     );

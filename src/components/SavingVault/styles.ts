@@ -18,31 +18,15 @@ interface Style {
 
 export default StyleSheet.create<Style>({
     container: {
-        shadowOffset: { width: 8, height: 8 },
-        shadowRadius: 18,
-        shadowOpacity: 0.8,
-        shadowColor: '#040404',
-        elevation: 24,
         borderRadius: 25,
-        width: widths - 40,
         height: 128,
         marginTop: 16,
-        borderColor: "transparent",
         backgroundColor: colors.primary,
         alignSelf: "center",
     },
     innerContainer: {
-        shadowColor: '#27272C',
-        shadowOffset: { width: -8, height: -8 },
-        shadowOpacity: 0.48,
-        shadowRadius: 12,
-        elevation: 8,
     },
     shadowTopBottom: {
-        shadowOffset: { width: 2, height: 2 },
-        shadowRadius: 2,
-        shadowOpacity: 1,
-        shadowColor: colors.greenShadow,
         borderRadius: 25,
         width: widths - 40,
         height: 128,
@@ -50,6 +34,8 @@ export default StyleSheet.create<Style>({
         padding: 15,
         paddingStart: 20,
         paddingEnd: 10,
+        borderWidth: 1.5,
+        borderColor: colors.greenShadow,
     },
     shadowBottomBottom: {
         shadowOffset: { width: -2, height: -2 },

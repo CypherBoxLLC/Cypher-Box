@@ -354,10 +354,6 @@ export default StyleSheet.create<Style>({
         ...shadow.text25,
     },
     shadowTop: {
-        shadowOffset: { width: 2, height: 2 },
-        shadowOpacity: 1,
-        shadowColor: colors.white,
-        shadowRadius: 2,
         borderRadius: 24,
         width: widths - 40,
         height: 128,
