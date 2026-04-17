@@ -10,6 +10,7 @@
 #import <RNCPushNotificationIOS.h>
 #import "EventEmitter.h"
 #import <React/RCTRootView.h>
+#import <React/RCTLegacyViewManagerInteropComponentView.h>
 
 @interface AppDelegate() <UNUserNotificationCenterDelegate>
 
@@ -21,6 +22,9 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+  // Register legacy Paper view managers (react-native-camera) with Fabric's interop layer.
+  [RCTLegacyViewManagerInteropComponentView supportLegacyViewManagerWithName:@"RNCamera"];
+
   [Bugsnag start];
   [self copyDeviceUID];
   
@@ -64,6 +68,11 @@
 }
 
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
+{
+  return [self bundleURL];
+}
+
+- (NSURL *)bundleURL
 {
 #if DEBUG
   return [[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"index"];
