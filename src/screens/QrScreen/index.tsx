@@ -107,12 +107,6 @@ export default function QrScreen({ route }: Props) {
 
                         <View style={{ margin: 20, padding: 30, backgroundColor: 'white', borderRadius: 30 }}>
                             <QRCode
-                                getRef={c => {
-                                    if (!c?.toDataURL) return;
-                                        c?.toDataURL((base64Image: string) => {
-                                        base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                                    });
-                                }}
                                 value={hash}
                                     size={250}
                                     color="black"

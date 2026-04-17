@@ -587,12 +587,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     {hashBitcoin &&
                       <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
                         <QRCode
-                          getRef={c => {
-                            if (!c?.toDataURL) return;
-                            c?.toDataURL((base64Image: string) => {
-                              base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                            });
-                          }}
                           value={hashBitcoin}
                           size={50}
                           color="black"
@@ -626,12 +620,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     {hashLiquid &&
                       <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
                         <QRCode
-                          getRef={c => {
-                            if (!c?.toDataURL) return;
-                            c?.toDataURL((base64Image: string) => {
-                              base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                            });
-                          }}
                           value={hashLiquid}
                           size={50}
                           color="black"
