@@ -534,7 +534,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       ? user + "@coinos.io"
                       : strikeMe?.username + "@strike.me"}
                   </Text>
-                  <TouchableOpacity onPress={() => onPressNew(data[0])}>
+                  <TouchableOpacity onPress={() => onPressNew({ id: 1 })}>
                     <Image source={Copy} style={styles.copyIconImage} />
                   </TouchableOpacity>
                 </View>
