@@ -94,8 +94,18 @@ if (__DEV__) console.log('Response status:', response.status);
  * Silently refresh CoinOS token using stored Keychain credentials.
  * Returns the new token string on success, or null if refresh fails.
  * Does NOT require captcha — CoinOS allows re-login without it for existing sessions.
+ *
+ * De-duped across the JS bundle lifetime: reading the biometric-protected
+ * keychain entry always shows a FaceID/TouchID prompt, so only do it once
+ * per app launch regardless of how many times HomeScreen mounts.
  */
+let _coinosTokenRefreshAttempted = false;
+export const resetCoinOSTokenRefresh = () => {
+  _coinosTokenRefreshAttempted = false;
+};
 export const refreshCoinOSToken = async (): Promise<string | null> => {
+  if (_coinosTokenRefreshAttempted) return null;
+  _coinosTokenRefreshAttempted = true;
   try {
     const Keychain = require('react-native-keychain');
     const credentials = await Keychain.getGenericPassword({
