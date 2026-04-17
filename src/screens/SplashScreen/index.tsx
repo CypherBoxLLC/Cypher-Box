@@ -13,12 +13,17 @@ export default function SplashScreen_() {
     const [isLoading, setIsLoading] = useState(true);
     const opacity = useRef(new Animated.Value(1));
     const translateY = useRef(new Animated.Value(0));
+    const decryptPromiseRef = useRef<Promise<boolean> | null>(null);
 
     const { setWalletsInitialized, startAndDecrypt } = useContext(BlueStorageContext);
     const { dispatch } = useNavigation();
 
     const initialise = async () => {
         BootSplash.hide({ fade: true });
+
+        // Start wallet loading immediately — don't wait for animation to finish.
+        // This runs in parallel with the animation, saving ~1.7s on startup.
+        decryptPromiseRef.current = startAndDecrypt();
 
         const useNativeDriver = true;
 
@@ -49,10 +54,18 @@ export default function SplashScreen_() {
     const CURRENT_TOS_VERSION = '2026-04';
 
     const successfullyAuthenticated = async () => {
-        const hasAcceptedTerms = await AsyncStorage.getItem('hasAcceptedTermsOfService')
-        const acceptedTosVersion = await AsyncStorage.getItem('acceptedTosVersion')
+        // Await the decrypt/load that was kicked off in parallel with the animation.
+        // If the animation took longer than the load, this resolves instantly.
+        const decryptResult = decryptPromiseRef.current
+            ? await decryptPromiseRef.current
+            : await startAndDecrypt();
 
-        if (await startAndDecrypt()) {
+        const [hasAcceptedTerms, acceptedTosVersion] = await Promise.all([
+            AsyncStorage.getItem('hasAcceptedTermsOfService'),
+            AsyncStorage.getItem('acceptedTosVersion'),
+        ]);
+
+        if (decryptResult) {
             setWalletsInitialized(true);
             if (hasAcceptedTerms === 'true' && acceptedTosVersion === CURRENT_TOS_VERSION) {
                 dispatch(StackActions.replace(isHandset ? 'Navigation' : 'DrawerRoot'));

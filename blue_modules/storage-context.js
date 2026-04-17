@@ -110,6 +110,9 @@ export const BlueStorageProvider = ({ children }) => {
   const refreshAllWalletTransactions = async (lastSnappedTo, showUpdateStatusIndicator = true) => {
     let noErr = true;
     try {
+      // Lazy-inflate any wallets that haven't loaded tx history from Realm yet
+      await Promise.all(wallets.map(w => BlueApp.ensureWalletInflated(w)));
+
       await BlueElectrum.waitTillConnected();
       if (showUpdateStatusIndicator) {
         setWalletTransactionUpdateStatus(WalletTransactionsStatus.ALL);
@@ -137,6 +140,8 @@ export const BlueStorageProvider = ({ children }) => {
 
   const fetchAndSaveWalletTransactions = async walletID => {
     const index = wallets.findIndex(wallet => wallet.getID() === walletID);
+    // Lazy-inflate wallet tx history from Realm before fetching new txs
+    if (index >= 0) await BlueApp.ensureWalletInflated(wallets[index]);
     let noErr = true;
     try {
       // 5sec debounce:

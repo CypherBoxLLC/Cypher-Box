@@ -456,7 +456,7 @@ function Notifications(props) {
     }
   })();
 
-  return Notifications;
+  return null;
 }
 
 export default Notifications;
