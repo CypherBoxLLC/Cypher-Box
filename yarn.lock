@@ -8984,11 +8984,6 @@ react-native-pager-view@^6.5.1:
   resolved "git+ssh://git@github.com/BlueWallet/react-native-passcode-auth.git#a2ff977ba92b36f8d0a5567f59c05cc608e8bd12"
   integrity sha512-8FL4NDMZZVrbHr1f4555dV+GY3PLpmSbJ1wIbdW1r6zSaFe59g9ns4sdLliisjO+RvyDJP7UDPDaeu+2iJ26Bg==
 
-react-native-permissions@^2.0.2:
-  version "2.2.2"
-  resolved "https://registry.npmjs.org/react-native-permissions/-/react-native-permissions-2.2.2.tgz"
-  integrity sha512-ihf4shQDSX5Oo9ChQXb9kr13mmyyNem5MaEvOpr3dCjhBOBWyEMztXm9/uPK1Qg5PsNpaYLa1KpcPZDCw87LXg==
-
 react-native-permissions@^5.5.1:
   version "5.5.1"
   resolved "https://registry.npmjs.org/react-native-permissions/-/react-native-permissions-5.5.1.tgz"

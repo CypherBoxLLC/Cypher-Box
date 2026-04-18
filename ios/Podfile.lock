@@ -1908,7 +1908,7 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - Yoga
-  - RealmJS (12.15.0):
+  - RealmJS (12.14.2):
     - React
   - RNBootSplash (5.5.3):
     - DoubleConversion
@@ -2792,7 +2792,7 @@ SPEC CHECKSUMS:
   ReactCodegen: f853a20cc9125c5521c8766b4b49375fec20648b
   ReactCommon: 300d8d9c5cb1a6cd79a67cf5d8f91e4d477195f9
   ReactNativeCameraKit: b201ccb184f096f3dd8c78e9787b940c26adc508
-  RealmJS: 10fb99cdac98cad8a6c4471c967bd6be10307741
+  RealmJS: ff8a7d6d6e339c1b3410a96ceb4151b151fe56f5
   RNBootSplash: 0f8943657af94a081e26737ef23fd670e2c9c02d
   RNCAsyncStorage: 52c9415cd84ef457827319c862c89412e1b0e362
   RNCCheckbox: 33b44487ca8008394ce658cc32b26eab04f426ef
@@ -2822,6 +2822,6 @@ SPEC CHECKSUMS:
   Toast: 1f5ea13423a1e6674c4abdac5be53587ae481c4e
   Yoga: feb4910aba9742cfedc059e2b2902e22ffe9954a
 
-PODFILE CHECKSUM: 0ece2001dc9f8157e88b0fecf66386a036f581ba
+PODFILE CHECKSUM: 591ab340082d1a6a3826c691d6d920496d2d9d15
 
 COCOAPODS: 1.16.2
