@@ -7,6 +7,7 @@ interface Style {
     buttonText: ViewStyle;
     viewStyle: ViewStyle;
     hideView: ViewStyle;
+    hideOverlay: ViewStyle;
     title: TextStyle;
     detail: TextStyle;
     viewBtn: TextStyle;
@@ -55,9 +56,6 @@ export default StyleSheet.create<Style>({
         position: 'absolute',
         width: 300,
         height: 300,
-        // flex: 1,
-        // backgroundColor: '#222531',
-        // opacity: 0.95,
         borderWidth: 1,
         borderColor: colors.gray.disable,
         borderRadius: 10,
@@ -65,6 +63,14 @@ export default StyleSheet.create<Style>({
         alignItems: 'center',
         alignContent: 'center',
         justifyContent: 'center',
+    },
+    hideOverlay: {
+        // Near-opaque dark surface that stands in for the BlurView we
+        // removed. 0.97 alpha keeps a hair of see-through so the grid
+        // border line behind still registers subconsciously as "there's
+        // something beneath this panel" — matches the previous
+        // blurType="dark" visual weight without the native-view cost.
+        backgroundColor: 'rgba(34, 37, 49, 0.97)',
     },
     title: {
         fontFamily: 'Archivo-Bold',

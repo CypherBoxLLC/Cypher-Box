@@ -53,6 +53,15 @@ export type AuthStateType = {
     setFirstTimeCoinOS: (state: boolean) => void;
     setHasSeenCustodialWarning: (state: boolean) => void;
 
+    // Hot Vault Keychain backup tracking.
+    // Record<walletID, true> — only set after a successful Keychain save.
+    // Persisted via zustand `persist` so we can render the "✓ Backed up" state
+    // without hitting Keychain (and triggering biometric) on every mount.
+    // NOTE: the zustand flag is a UI hint, not ground truth. Ground truth is
+    // the Keychain entry itself — which we only read on explicit recovery.
+    hotVaultKeychainBackups: Record<string, boolean>;
+    setHotVaultKeychainBackup: (walletID: string, backedUp: boolean) => void;
+
     // 2FA state
     twoFARequired: boolean;
     twoFAVerified: boolean;
@@ -78,6 +87,7 @@ const createAuthStore = (
     FirstTimeLightning: true,
     FirstTimeCoinOS: true,
     hasSeenCustodialWarning: false,
+    hotVaultKeychainBackups: {},
     // 2FA state
     twoFARequired: false,
     twoFAVerified: false,
@@ -94,6 +104,16 @@ const createAuthStore = (
     setFirstTimeLightning: (state: boolean) => set({ FirstTimeLightning: state }),
     setFirstTimeCoinOS: (state: boolean) => set({ FirstTimeCoinOS: state }),
     setHasSeenCustodialWarning: (state: boolean) => set({ hasSeenCustodialWarning: state }),
+    setHotVaultKeychainBackup: (walletID: string, backedUp: boolean) =>
+        set(state => {
+            const next = { ...state.hotVaultKeychainBackups };
+            if (backedUp) {
+                next[walletID] = true;
+            } else {
+                delete next[walletID];
+            }
+            return { hotVaultKeychainBackups: next };
+        }),
     // 2FA setters
     setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),
     setTwoFAVerified: (state: boolean) => set({ twoFAVerified: state }),

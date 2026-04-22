@@ -3,7 +3,6 @@ import { ActivityIndicator, Image, TouchableOpacity, View } from "react-native"
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
 import { EyeVisible } from "@Cypher/assets/images";
-import { BlurView } from "@react-native-community/blur";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
 import { AbstractWallet } from '../../../class';
@@ -18,7 +17,7 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
     const { wallets } = useContext(BlueStorageContext);
     const { walletID } = useAuthStore();
     const wallet = wallets.find((w: AbstractWallet) => w.getID() === walletID);
-    
+
     const navigation = useNavigation();
     const { colors } = useTheme();
 
@@ -27,7 +26,6 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
     const [secretList, setSecretList] = useState([]);
 
     useEffect(() => {
-        console.log('wallet: ', wallet)
         const entries = wallet?.getSecret().split(/\s/).entries();
         if(entries){
             setLoading(true)
@@ -44,8 +42,6 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
             setLoading(false)
         }
     }, [])
-
-    if (__DEV__) console.log('secretList: ', secretList)
     const viewClickHandler = () => {
         setLoading(true);
         setTimeout(() => {
@@ -84,29 +80,41 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                     </TouchableOpacity>
                 ))}
             </View>
-            {!isView &&
-                <BlurView
-                    style={styles.hideView}
-                    blurType="dark"
-                    blurAmount={9}
-                    reducedTransparencyFallbackColor="white"
-                >
-                    {loading ?
-                        <ActivityIndicator style={{ position: 'absolute', top: 100, bottom: 0, left: 0, right: 0 }} />
-                    :
-                        <View style={styles.centerView}>
-                            <View>
-                                <Text style={styles.title} center>Tap to reveal your seed phrase</Text>
-                                <Text style={styles.detail} center>Make sure no one is watching your screen.</Text>
+            {!isView && (
+                <>
+                    {/*
+                      Plain dark overlay instead of @react-native-community/blur.
+                      BlurView wraps iOS UIVisualEffectView, whose first mount
+                      is expensive (empirically 1–2s on simulator, several
+                      hundred ms on device) — it was the root cause of the
+                      "black screen for 2 seconds after tapping Generate Private
+                      Key" jank. A solid ~95% opaque dark surface is visually
+                      equivalent for the "seed hidden until you tap View" use
+                      case here; no sensitive content is visible underneath in
+                      either case. Rendering a plain View also sidesteps the
+                      historical iOS touch-passthrough bug where
+                      UIVisualEffectView would absorb taps meant for overlaid
+                      TouchableOpacity children — so the "View" button can be
+                      a direct child again without the sibling-overlay dance.
+                    */}
+                    <View style={[styles.hideView, styles.hideOverlay]}>
+                        {loading ? (
+                            <ActivityIndicator style={{ position: 'absolute', top: 100, bottom: 0, left: 0, right: 0 }} />
+                        ) : (
+                            <View style={styles.centerView}>
+                                <View>
+                                    <Text style={styles.title} center>Tap to reveal your seed phrase</Text>
+                                    <Text style={styles.detail} center>Make sure no one is watching your screen.</Text>
+                                </View>
+                                <TouchableOpacity style={styles.viewStyle} onPress={viewClickHandler}>
+                                    <Image source={EyeVisible} />
+                                    <Text h3 style={styles.viewBtn}>View</Text>
+                                </TouchableOpacity>
                             </View>
-                            <TouchableOpacity style={styles.viewStyle} onPress={viewClickHandler}>
-                                <Image source={EyeVisible} />
-                                <Text h3 style={styles.viewBtn}>View</Text>
-                            </TouchableOpacity>
-                        </View>
-                    }
-                </BlurView>
-            }
+                        )}
+                    </View>
+                </>
+            )}
         </View>
     );
 }

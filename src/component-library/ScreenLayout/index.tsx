@@ -14,7 +14,6 @@ import {
 // *** Third Party Import
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import LinearGradient from 'react-native-linear-gradient';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 
 // *** Custom component
@@ -158,19 +157,23 @@ function ScreenLayout({
 
   const barStyle: StatusBarStyle = isIOS ? 'dark-content' : 'light-content';
 
+  // Removed the outer <LinearGradient colors={[colors.white, colors.white]} />.
+  // Under RN 0.76 New Arch (Fabric) with react-native-linear-gradient@2.8.3
+  // (no codegenConfig → routed through the slow bridge interop), each
+  // LinearGradient native-view creation costs ~800ms on mount. This outer
+  // one was painting solid white (same-color stops) and was fully
+  // overlaid by the SafeAreaView's colors.primary backgroundColor, so it
+  // contributed nothing visual but was the single biggest commit-phase
+  // cost in every ScreenLayout-based screen. Replaced with a plain View.
   return (
-    <LinearGradient
-      useAngle
-      angle={180}
-      colors={[colors.white, colors.white]}
-      style={styles.inner}>
+    <View style={styles.inner}>
       <SafeAreaView
         edges={edges ? edges : ['right', 'left', 'top']}
         style={StyleSheet.flatten([styles.inner, style])}>
         <StatusBar backgroundColor={colors.primary} barStyle={barStyle} />
         {renderContent()}
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
