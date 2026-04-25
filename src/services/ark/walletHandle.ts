@@ -17,6 +17,26 @@ let handle: WalletInterface | null = null;
 let onchainHandle: OnchainWalletInterface | null = null;
 let uniffiReady: Promise<void> | null = null;
 
+// In-memory mnemonic cache. Populated whenever the wallet is opened/created
+// so other modules (e.g. the auto-backup routine) can read the seed without
+// hitting Keychain — which on some iOS configurations triggers a biometric
+// prompt. Only ever holds one value (there is exactly one Ark wallet per
+// session). Cleared when the handle is torn down so a dangling mnemonic
+// string can't outlive its wallet.
+let cachedMnemonic: string | null = null;
+
+/**
+ * Return the mnemonic that was used to open the current Ark wallet handle.
+ * Returns null if no wallet is open (handle was cleared or never created).
+ *
+ * Primary consumer: the auto-backup routine in useArkSync, which needs the
+ * seed for PBKDF2 key derivation but cannot prompt biometric on a background
+ * tick. The auto-backup reads this cached value instead of hitting Keychain.
+ */
+export function getCachedArkMnemonic(): string | null {
+    return cachedMnemonic;
+}
+
 function ensureUniffi(): Promise<void> {
     if (!uniffiReady) uniffiReady = uniffiInitAsync();
     return uniffiReady;
@@ -64,6 +84,7 @@ export async function createArkWallet(
 
     try {
         handle = await Wallet.open(mnemonic, config, datadir);
+        cachedMnemonic = mnemonic;
         if (__DEV__) console.log('[Ark] Opened existing wallet from datadir');
         return handle;
     } catch (openErr) {
@@ -73,6 +94,7 @@ export async function createArkWallet(
     }
 
     handle = await Wallet.create(mnemonic, config, datadir, forceRescan);
+    cachedMnemonic = mnemonic;
     if (__DEV__) console.log('[Ark] Created new wallet in datadir (forceRescan=' + forceRescan + ')');
     return handle;
 }
@@ -82,6 +104,7 @@ export async function openArkWallet(mnemonic: string): Promise<WalletInterface> 
     const datadir = await ensureArkDatadir();
     const config = createArkConfig();
     handle = await Wallet.open(mnemonic, config, datadir);
+    cachedMnemonic = mnemonic;
     return handle;
 }
 
@@ -122,6 +145,7 @@ export function clearArkWalletHandle(): void {
     }
     handle = null;
     onchainHandle = null;
+    cachedMnemonic = null;
 }
 
 export function getArkOnchainHandle(): OnchainWalletInterface | null {

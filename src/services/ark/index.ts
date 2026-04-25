@@ -25,6 +25,7 @@ export {
     clearArkWalletHandle,
     getArkOnchainHandle,
     ensureArkOnchainHandle,
+    getCachedArkMnemonic,
 } from './walletHandle';
 
 export { fetchArkBalance } from './balance';
@@ -48,9 +49,12 @@ export { fetchChainTipHeight, blocksToDays, AVG_BLOCK_MINUTES } from './chainTip
 export { syncArkWallet } from './sync';
 
 export {
+    AUTO_BACKUP_PATH,
     buildArkBackupBlob,
     restoreArkBackupBlob,
+    writeArkAutoBackup,
     writeArkBackupToTempFile,
+    clearArkKeyCache,
 } from './backup';
 
 export {

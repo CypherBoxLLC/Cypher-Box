@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 
+import { clearArkKeyCache } from './backup';
 import { deleteArkDatadir } from './datadir';
 import { clearArkWalletHandle } from './walletHandle';
 
@@ -28,6 +29,8 @@ const KEYCHAIN_SERVICE = 'ark-seed-phrase';
  */
 export async function resetArkWalletState(): Promise<void> {
     clearArkWalletHandle();
+    // Scrub the in-memory PBKDF2 key so it doesn't carry over to a new wallet.
+    clearArkKeyCache();
 
     try {
         await deleteArkDatadir();

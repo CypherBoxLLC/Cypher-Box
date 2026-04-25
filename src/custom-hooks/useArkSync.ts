@@ -5,8 +5,10 @@ import {
     fetchArkBalance,
     fetchArkVtxos,
     fetchChainTipHeight,
+    getCachedArkMnemonic,
     syncArkWallet,
     tryClaimArkLightningReceives,
+    writeArkAutoBackup,
 } from '@Cypher/services/ark';
 import useAuthStore from '@Cypher/stores/authStore';
 
@@ -44,6 +46,7 @@ export default function useArkSync(): UseArkSync {
     const setArkVtxos = useAuthStore((s) => s.setArkVtxos);
     const setArkChainTipHeight = useAuthStore((s) => s.setArkChainTipHeight);
     const setArkLastSyncedAt = useAuthStore((s) => s.setArkLastSyncedAt);
+    const setArkLastBackupAt = useAuthStore((s) => s.setArkLastBackupAt);
 
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastError, setLastError] = useState<Error | null>(null);
@@ -146,6 +149,45 @@ export default function useArkSync(): UseArkSync {
             }
             setArkLastSyncedAt(Date.now());
             setLastError(null);
+
+            // --- Auto-backup (fire-and-forget, off the critical path) ---
+            //
+            // After every successful sync the datadir reflects current wallet
+            // state. We write an encrypted snapshot to AUTO_BACKUP_PATH in
+            // Documents so the user's funds are recoverable even if they never
+            // tap "Back up wallet state" manually.
+            //
+            // We do NOT await this — backup takes ~0.5-1s (file reads + AES)
+            // and must not stall the sync cycle or block the UI. The backup
+            // runs concurrently; the next sync tick starts fresh either way.
+            //
+            // We use getCachedArkMnemonic() rather than hitting Keychain so
+            // there is no biometric prompt during a background tick. The seed
+            // was cached in walletHandle when the wallet was opened.
+            const mnemonic = getCachedArkMnemonic();
+            if (mnemonic) {
+                writeArkAutoBackup(mnemonic)
+                    .then(({ sizeBytes, createdAt }) => {
+                        setArkLastBackupAt(createdAt);
+                        if (__DEV__) {
+                            console.log(
+                                '[Ark auto-backup] wrote',
+                                (sizeBytes / 1024).toFixed(1),
+                                'KB to Documents',
+                            );
+                        }
+                    })
+                    .catch((err) => {
+                        // Swallow — auto-backup is best-effort. The user still
+                        // has the manual "Back up wallet state" button. A
+                        // failure here is typically a filesystem issue (low
+                        // storage) or a concurrent write; it won't repeat
+                        // indefinitely since the next successful sync retries.
+                        if (__DEV__) {
+                            console.warn('[Ark auto-backup] failed:', err?.message ?? err);
+                        }
+                    });
+            }
         } catch (err) {
             console.warn('[Ark] sync failed:', err);
             setLastError(err instanceof Error ? err : new Error(String(err)));
@@ -159,6 +201,7 @@ export default function useArkSync(): UseArkSync {
         setArkVtxos,
         setArkChainTipHeight,
         setArkLastSyncedAt,
+        setArkLastBackupAt,
     ]);
 
     // Primary driver: mount + interval. Restarts whenever auth flips on,
