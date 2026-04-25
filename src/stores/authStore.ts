@@ -1,6 +1,7 @@
 import { create, GetState, SetState } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { zustandStorage } from "./index";
+import type { ArkBalanceSummary, ArkVtxoView } from "@Cypher/services/ark";
 
 export type AuthStateType = {
     user: null | any;
@@ -48,9 +49,11 @@ export type AuthStateType = {
     // first-time tracking
     FirstTimeLightning: boolean;
     FirstTimeCoinOS: boolean;
+    FirstTimeArk: boolean;
     hasSeenCustodialWarning: boolean;
     setFirstTimeLightning: (state: boolean) => void;
     setFirstTimeCoinOS: (state: boolean) => void;
+    setFirstTimeArk: (state: boolean) => void;
     setHasSeenCustodialWarning: (state: boolean) => void;
 
     // Hot Vault Keychain backup tracking.
@@ -61,6 +64,52 @@ export type AuthStateType = {
     // the Keychain entry itself — which we only read on explicit recovery.
     hotVaultKeychainBackups: Record<string, boolean>;
     setHotVaultKeychainBackup: (walletID: string, backedUp: boolean) => void;
+
+    // Ark (experimental — Second.tech)
+    // Non-custodial; no token/credential. We persist a lightweight descriptor:
+    //   arkWallet: { id, createdAt, useHotVaultSeed }  — actual secret lives in native/Keychain
+    //   arkBalance, thresholds, thresholds behave like Strike/CoinOS for UX parity
+    isArkAuth: boolean;
+    arkWallet: any | null;
+    arkBalance: number;
+    // Full Balance breakdown from Bark SDK, in plain number sats (bigints
+    // stripped at the service boundary). Null until first successful fetch.
+    arkBalanceDetail: ArkBalanceSummary | null;
+    // Live VTXO list from wallet.allVtxos(), projected to a plain-number
+    // view. Spendable-only subset drives the capsule UI.
+    arkVtxos: ArkVtxoView[];
+    // Current chain tip height (from esplora). Needed to convert VTXO
+    // expiryHeight → blocks-until-expiry for the depletion ring.
+    arkChainTipHeight: number | null;
+    // Timestamp (ms) of the last successful balance+vtxo sync. Used to
+    // decide whether to block the UI on a fresh fetch or serve cached.
+    arkLastSyncedAt: number | null;
+    /**
+     * Timestamp (ms) of the last successful encrypted datadir export to a
+     * .cbark file. Drives the recoverability badges on the Capsules tab:
+     * a Pubkey/Spendable VTXO is only ACTUALLY recoverable if a backup
+     * was made AFTER the VTXO appeared.
+     *
+     * `null` = never backed up. Cleared on reset / disconnect so a stale
+     * timestamp from a previous wallet doesn't grant false confidence to
+     * the next one.
+     */
+    arkLastBackupAt: number | null;
+    arkUseHotVaultSeed: boolean;
+    withdrawArkThreshold: any | null;
+    reserveArkAmount: number;
+    setArkAuth: (state: boolean) => void;
+    setArkWallet: (state: any) => void;
+    setArkBalance: (state: number) => void;
+    setArkBalanceDetail: (state: ArkBalanceSummary | null) => void;
+    setArkVtxos: (state: ArkVtxoView[]) => void;
+    setArkChainTipHeight: (state: number | null) => void;
+    setArkLastSyncedAt: (state: number | null) => void;
+    setArkLastBackupAt: (state: number | null) => void;
+    setArkUseHotVaultSeed: (state: boolean) => void;
+    setWithdrawArkThreshold: (state: any) => void;
+    setReserveArkAmount: (state: number) => void;
+    clearArkAuth: () => void;
 
     // 2FA state
     twoFARequired: boolean;
@@ -86,8 +135,22 @@ const createAuthStore = (
     matchedRateStrike: 0,
     FirstTimeLightning: true,
     FirstTimeCoinOS: true,
+    FirstTimeArk: true,
     hasSeenCustodialWarning: false,
     hotVaultKeychainBackups: {},
+
+    // Ark (experimental) defaults
+    isArkAuth: false,
+    arkWallet: null,
+    arkBalance: 0,
+    arkBalanceDetail: null,
+    arkVtxos: [],
+    arkChainTipHeight: null,
+    arkLastSyncedAt: null,
+    arkLastBackupAt: null,
+    arkUseHotVaultSeed: false,
+    withdrawArkThreshold: 500000,
+    reserveArkAmount: 100000,
     // 2FA state
     twoFARequired: false,
     twoFAVerified: false,
@@ -103,6 +166,7 @@ const createAuthStore = (
     setWithdrawThreshold: (state: any) => set({ withdrawThreshold: state }),
     setFirstTimeLightning: (state: boolean) => set({ FirstTimeLightning: state }),
     setFirstTimeCoinOS: (state: boolean) => set({ FirstTimeCoinOS: state }),
+    setFirstTimeArk: (state: boolean) => set({ FirstTimeArk: state }),
     setHasSeenCustodialWarning: (state: boolean) => set({ hasSeenCustodialWarning: state }),
     setHotVaultKeychainBackup: (walletID: string, backedUp: boolean) =>
         set(state => {
@@ -113,6 +177,32 @@ const createAuthStore = (
                 delete next[walletID];
             }
             return { hotVaultKeychainBackups: next };
+        }),
+    // Ark setters
+    setArkAuth: (state: boolean) => set({ isArkAuth: state }),
+    setArkWallet: (state: any) => set({ arkWallet: state }),
+    setArkBalance: (state: number) => set({ arkBalance: state }),
+    setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
+    setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
+    setArkChainTipHeight: (state: number | null) => set({ arkChainTipHeight: state }),
+    setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
+    setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
+    setArkUseHotVaultSeed: (state: boolean) => set({ arkUseHotVaultSeed: state }),
+    setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
+    setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),
+    clearArkAuth: () =>
+        set({
+            isArkAuth: false,
+            arkWallet: null,
+            arkBalance: 0,
+            arkBalanceDetail: null,
+            arkVtxos: [],
+            arkChainTipHeight: null,
+            arkLastSyncedAt: null,
+            arkLastBackupAt: null,
+            arkUseHotVaultSeed: false,
+            allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
+            // Keep thresholds — don't reset on logout
         }),
     // 2FA setters
     setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),

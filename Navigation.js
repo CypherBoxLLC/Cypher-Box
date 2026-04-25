@@ -103,8 +103,11 @@ import CheckingAccountLogin from '@Cypher/screens/CheckingAccountLogin';
 import CheckingAccountCreated from '@Cypher/screens/CheckingAccountCreated';
 import CreateArkScreen from '@Cypher/screens/Account/CreateArkScreen';
 import ArkSeedPhraseScreen from '@Cypher/screens/Account/ArkSeedPhraseScreen';
+import RecoverArkScreen from '@Cypher/screens/Account/RecoverArkScreen';
 import ArkReceiveScreen from '@Cypher/screens/Ark/ArkReceiveScreen';
 import ArkInvoiceScreen from '@Cypher/screens/Ark/ArkInvoiceScreen';
+import ArkTransactionDetailsScreen from '@Cypher/screens/Ark/ArkTransactionDetailsScreen';
+import ArkSendScreen from '@Cypher/screens/Ark/ArkSendScreen';
 
 const WalletsStack = createStackNavigator();
 
@@ -185,8 +188,11 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="CreateCoinOSScreen" component={CreateCoinOSScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CreateArkScreen" component={CreateArkScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkSeedPhraseScreen" component={ArkSeedPhraseScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="RecoverArkScreen" component={RecoverArkScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkReceiveScreen" component={ArkReceiveScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkInvoiceScreen" component={ArkInvoiceScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="ArkTransactionDetailsScreen" component={ArkTransactionDetailsScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="ArkSendScreen" component={ArkSendScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ForgotCoinOSScreen" component={ForgetPassword} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ChangeUsername" component={ChangeUsername} options={{ headerShown: false }} />
       <WalletsStack.Screen name="LoginCoinOSScreen" component={LoginCoinOSScreen} options={{ headerShown: false }} />

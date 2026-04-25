@@ -4,14 +4,25 @@ import { useNavigation } from "@react-navigation/native";
 
 import { Card, GradientView, StrikeView } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
-import { widths } from "@Cypher/style-guide";
+import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
 import useAuthStore from "@Cypher/stores/authStore";
 
 import { btc } from "@Cypher/helpers/coinosHelper";
 
-export default function Account({ matchedRate, currency, receiveType, balance, converted, reserveAmount, withdrawThreshold }: { matchedRate: string; currency: any; receiveType: boolean, balance: any, converted: any, reserveAmount: any, withdrawThreshold: any }) {
-  const { clearAuth } = useAuthStore();
+interface AccountProps {
+  matchedRate: string;
+  currency: any;
+  receiveType: boolean;
+  balance: any;
+  converted: any;
+  reserveAmount: any;
+  withdrawThreshold: any;
+  isArk?: boolean;
+}
+
+export default function Account({ matchedRate, currency, receiveType, balance, converted, reserveAmount, withdrawThreshold, isArk = false }: AccountProps) {
+  const { clearAuth, clearArkAuth } = useAuthStore();
   const navigation = useNavigation();
 
   const handleCoinosLogout = () => {
@@ -21,7 +32,53 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
     }, 500);
   };
 
+  // Ark "logout" = remove the local Ark wallet handle. Real impl will also
+  // need to wipe the encrypted datadir + keychain seed; for the mockup we
+  // just clear the auth flag + descriptor (clearArkAuth already does that
+  // and removes 'ARK' from allBTCWallets).
+  const handleArkLogout = () => {
+    clearArkAuth();
+    setTimeout(() => {
+      navigation.goBack();
+    }, 500);
+  };
+
   console.log('balance: ', balance, 'converted: ', converted, 'currency: ', currency);
+
+  // Ark branch — non-custodial, no fiat sub-balance, no Strike box. Just the
+  // Ark-branded Card + a yellow logout CTA. (We deliberately route the same
+  // CheckingAccountNew screen for layout/parity with Strike+CoinOS, so users
+  // get a familiar tabs-and-card shape regardless of provider.)
+  if (isArk) {
+    return (
+      <ScrollView contentContainerStyle={styles.container2}>
+        <View style={{ marginTop: 20 }}>
+          <Card
+            wallet="ARK"
+            title="Ark Vault"
+            balance={Number(balance)}
+            currency={currency}
+            matchedRate={Number(matchedRate)}
+            convertedRate={Number(converted)}
+            reserveAmount={Number(reserveAmount)}
+            withdrawThreshold={Number(withdrawThreshold)}
+            receiveType={receiveType}
+          />
+        </View>
+        <GradientView
+          style={{ marginTop: 60, alignSelf: 'center', height: 38, width: widths * 0.32, shadowColor: '#040404', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.8, shadowRadius: 16, elevation: 8 }}
+          linearGradientStyle={{ shadowColor: '#27272C', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
+          topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowColor: colors.ark.shadowTopNew, borderRadius: 24, height: 38, width: widths * 0.32, justifyContent: 'center', alignItems: 'center' }}
+          bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 1, shadowColor: '#030303', borderRadius: 24, height: 38, width: widths * 0.32, justifyContent: 'center', position: 'absolute' }}
+          linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.32, justifyContent: 'center', alignItems: 'center' }}
+          onPress={handleArkLogout}
+        >
+          <Text h3 bold center style={{ color: colors.ark.light }}>Disconnect Second</Text>
+        </GradientView>
+      </ScrollView>
+    );
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container2}>
       <View style={{ marginTop: 20 }}>

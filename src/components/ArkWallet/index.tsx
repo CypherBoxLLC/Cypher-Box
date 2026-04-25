@@ -1,0 +1,232 @@
+import { Text } from "@Cypher/component-library";
+import { Card } from "@Cypher/components";
+import { dispatchNavigate } from "@Cypher/helpers";
+import { blocksToDays } from "@Cypher/services/ark";
+import useAuthStore from "@Cypher/stores/authStore";
+import { colors } from "@Cypher/style-guide";
+import React, { useMemo } from "react";
+import { Image, TouchableOpacity, View } from "react-native";
+import styles from "./styles";
+
+interface Props {
+    isLoading: boolean;
+    matchedRate: any;
+    currency: any;
+    convertedRate: any;
+    refRBSheet: any;
+    refSendRBSheet: any;
+    setReceiveType: any;
+    homeMessage?: string | null;
+}
+
+/**
+ * ArkWallet — experimental non-custodial Lightning provider (Second.tech / Ark protocol).
+ * UI parity with CoinosWallet / StrikeWallet. Backing SDK is wired later.
+ *
+ * ⚠️ Key differences from custodial providers:
+ *   - No login credentials. Wallet is created locally (own seed or hot-vault seed).
+ *   - VTXO state is NOT recoverable from seed alone (Bark limitation).
+ *   - Single ASP operator (Second.tech) sees payment graph.
+ * These caveats surface in CreateArkScreen + the "⚠ Experimental" banner below.
+ */
+export default function ArkWallet({
+    isLoading,
+    matchedRate,
+    currency,
+    convertedRate,
+    refRBSheet,
+    refSendRBSheet,
+    setReceiveType,
+    homeMessage,
+}: Props) {
+    const {
+        isArkAuth,
+        arkWallet,
+        arkBalance,
+        withdrawArkThreshold,
+        reserveArkAmount,
+        arkVtxos,
+        arkChainTipHeight,
+    } = useAuthStore();
+
+    // Non-zero means there's an in-flight round (refresh / send / board).
+    //
+    // We DERIVE this from the Locked VTXO amounts rather than using
+    // `arkBalanceDetail.pendingInRoundSats` directly, because the SDK's
+    // raw field sums both sides of the round (input + expected output ≈
+    // 2× the real amount). With the headline balance now including the
+    // Locked-VTXO amount, showing the raw 2× number in the subtitle
+    // confused users — they saw e.g. "9980 sats" on the card and
+    // "19911 sats pending" just below, and reasonably thought we were
+    // double-counting.
+    //
+    // Summing Locked VTXOs from `arkVtxos` gives the exact post-fee
+    // retained amount that's currently tied up in the round. When no
+    // round is pending, this is 0 and the subtitle is hidden.
+    const pendingRoundSats = useMemo(() => {
+        return arkVtxos.reduce(
+            (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
+            0,
+        );
+    }, [arkVtxos]);
+
+    // Surface a nudge when the soonest-expiring VTXO is under a week out, so
+    // users don't need to dig into the capsules tab to notice. VTXOs with
+    // expiryHeight === 0 (arkoor) inherit parent expiry — we can't compute a
+    // date for those, so they're skipped here.
+    const soonestDaysLeft = useMemo(() => {
+        if (arkChainTipHeight === null || arkVtxos.length === 0) return null;
+        let minBlocks = Infinity;
+        for (const v of arkVtxos) {
+            // Skip arkoor (no own expiry) and Locked (mid-round — expiry
+            // countdown is meaningless until the round finalises).
+            if (v.expiryHeight === 0) continue;
+            if (v.state.toLowerCase() === 'locked') continue;
+            const blocks = v.expiryHeight - arkChainTipHeight;
+            if (blocks < minBlocks) minBlocks = blocks;
+        }
+        if (!isFinite(minBlocks)) return null;
+        return Math.max(0, blocksToDays(minBlocks));
+    }, [arkVtxos, arkChainTipHeight]);
+
+    const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
+        ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d — refresh soon`
+        : null;
+
+    // IMPORTANT: the parent's `convertedRate` prop is globally computed from
+    // the CoinOS balance (HomeScreen/index.tsx:683 — `setConvertedRate(
+    // finalRate * response.balance)` where response is the CoinOS /user
+    // call). Passing it straight into the Ark card displayed CoinOS's fiat
+    // balance on the Ark tile — wrong number, misleading to users.
+    //
+    // Derive the Ark-scoped fiat locally: arkBalance (sats) × matchedRate
+    // (USD/sat). `matchedRate` is *already* USD-per-sat — HomeScreen does
+    // the `* btc(1)` conversion when it stores it (see `handleUser` at
+    // lines 671 + 676-677). So we just multiply sats × rate. An earlier
+    // version of this memo multiplied by `btc(1)` again, which made the
+    // fiat come out ~1e-8× too small (always displayed $0). Don't re-add.
+    const arkConvertedRate = useMemo(() => {
+        const rate = Number(matchedRate) || 0;
+        if (!arkBalance || rate === 0) return 0;
+        return arkBalance * rate;
+    }, [arkBalance, matchedRate]);
+
+    const receiveClickHandler = (type: boolean) => {
+        // Ark supports both Lightning IN and on-chain board. For mockup, route
+        // through the existing shared receive sheet (setReceiveType pipes into
+        // the caller's RBSheet).
+        if (type) {
+            setReceiveType(type);
+            refRBSheet.current.open();
+        } else {
+            dispatchNavigate("CheckingAccountNew", {
+                wallet: arkWallet,
+                matchedRate,
+                accountType: "ark",
+            });
+        }
+    };
+
+    const sendClickHandler = (_walletType: boolean) => {
+        refSendRBSheet.current.open();
+    };
+
+    const arkMenuClickHandler = () => {
+        dispatchNavigate("CheckingAccountNew", {
+            wallet: arkWallet,
+            matchedRate,
+            accountType: "ark",
+            balance: arkBalance,
+            // Forward the Ark-derived fiat, not the parent's `convertedRate`
+            // (which is CoinOS-scoped). Keeps the Account tab's balance
+            // header consistent with the home-screen card.
+            converted: arkConvertedRate,
+            currency,
+            reserveAmount: reserveArkAmount,
+            withdrawThreshold: withdrawArkThreshold,
+        });
+    };
+
+    const createArkWalletClickHandler = () => {
+        dispatchNavigate("CreateArkScreen");
+    };
+
+    return (
+        <>
+            {isArkAuth && (
+                <>
+                    <Card
+                        wallet="ARK"
+                        title="Ark Vault"
+                        balance={arkBalance}
+                        // See `arkConvertedRate` above — the parent's
+                        // `convertedRate` prop is the CoinOS figure, not ours.
+                        convertedRate={arkConvertedRate}
+                        reserveAmount={reserveArkAmount}
+                        withdrawThreshold={withdrawArkThreshold}
+                        onPress={arkMenuClickHandler}
+                        isShowButtons
+                        matchedRate={matchedRate}
+                        currency={currency}
+                        receiveClickHandler={receiveClickHandler}
+                        sendClickHandler={sendClickHandler}
+                    />
+                    <View style={{ minHeight: 40, justifyContent: "center" }}>
+                        {!isLoading && homeMessage && (
+                            <Text h4 style={styles.alert}>
+                                {homeMessage}
+                            </Text>
+                        )}
+                        {!isLoading && expiryWarning && (
+                            <Text h4 style={[styles.alert, { color: colors.redLight }]}>
+                                {expiryWarning}
+                            </Text>
+                        )}
+                        {!isLoading && pendingRoundSats > 0 && (
+                            <Text h4 style={[styles.alert, { color: colors.ark.light }]}>
+                                {`${pendingRoundSats.toLocaleString()} sats pending in a round (refresh/send in flight)`}
+                            </Text>
+                        )}
+                    </View>
+                </>
+            )}
+
+            {!isArkAuth && (
+                <View>
+                    {/*
+                      Yellow-outline-only CTA. Mirrors the visual language of the
+                      Hot Vault box (SavingVault), which uses a 1.5px coloured
+                      border on a transparent body — communicating "self-custody"
+                      vs. the gradient-filled custodial cards.
+                    */}
+                    <TouchableOpacity
+                        style={styles.createView}
+                        onPress={createArkWalletClickHandler}
+                        activeOpacity={0.8}
+                    >
+                        <View style={styles.middle}>
+                            <Image
+                                style={styles.arrow}
+                                resizeMode="contain"
+                                source={require("../../../img/arrow-right.png")}
+                            />
+                            <Text h2 style={styles.shadow} center>
+                                Create an Ark Wallet
+                            </Text>
+                        </View>
+                    </TouchableOpacity>
+                    <View style={styles.createAccount}>
+                        <Text bold style={styles.text}>
+                            Non-custodial Lightning via Ark
+                        </Text>
+                        <TouchableOpacity onPress={createArkWalletClickHandler}>
+                            <Text bold style={styles.login}>
+                                ⚠ Experimental — tap to learn more
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
+        </>
+    );
+}
