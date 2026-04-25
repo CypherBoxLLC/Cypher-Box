@@ -23,6 +23,10 @@ This file is the single source of truth for Ark integration state. Update it aft
 - Mainnet captaind at `ark.mainnet.2nd.dev` is not live yet. Any TestFlight build that pays with a real wallet remains impossible until then.
 - Watch [Second blog](https://blog.second.tech/) and [changelog](https://second.tech/docs/changelog) for the mainnet launch. Latest pre-mainnet signal was v0.1.0 dropping the "beta" tag on 2026-04-04.
 
+### Good news from Bark devs (2026-04-25)
+- **Backwards compat**: Bark maintains SQLite migration files and CI tests since 0.1.0-beta7/8. Our raw .cbark datadir backups are safer than we assumed — a Bark version bump won't silently break them.
+- **Recovery mailbox**: Since 0.1.0, received VTXOs are posted to an ASP-hosted mailbox. Client-side recovery not yet implemented, but the infrastructure is live. Seed-only recovery is coming; .cbark backup is still mandatory for now but will eventually become belt-and-suspenders.
+
 ### To flip to production
 1. Confirm `ark.mainnet.2nd.dev` resolves and responds (last checked DNS `000`).
 2. Flip `FEATURE_ARK_ENABLED = true` (unconditional, not `__DEV__`) in [config.ts](src/services/ark/config.ts).
@@ -162,8 +166,19 @@ class OnchainWallet {
 
 1. **Prod ASP URL is a guess** — `https://ark.mainnet.2nd.dev` is inferred from the signet pattern. Confirm via Second.tech docs before flipping the feature flag for mainnet.
 2. **`Wallet.create` vs `createWithOnchain`** — decide in Phase 1 whether the Ark wallet should own its own BDK onchain sub-wallet (via `createWithOnchain` + `OnchainWallet.default_`) or whether we'll pass a custom onchain wallet that reuses the existing Cypher Box hot-vault UTXOs. The RTF plan leans toward separate — Bark's BDK wallet is isolated, easier to reason about. Revisit if users complain about "why do I have two on-chain balances".
-3. **Schema stability** — Bark README: "Updating bark or captaind may corrupt your wallet." Before any version bump, run a backup→restore test against a fixture datadir. Phase 9 should add this to CI.
-4. **Recovery from seed alone is NOT supported** — Phase 2 (encrypted datadir backup) is mandatory before any mainnet rollout. Emergency exit (Phase 7) is a different thing — see RTF "1 vs 2" table.
+3. **Schema stability — UPDATED (2026-04-25, Bark dev response):**
+   - Second.tech confirmed backwards compatibility since `0.1.0-beta7/beta8`. Schema changes use SQLite migration files; server ↔ client compatibility tested in their CI.
+   - Our raw-datadir .cbark backup approach is therefore less fragile than originally feared. Still worth the CI backup→restore test on every version bump (Phase 9), but a bump is not a silently-breaking event.
+   - The `"Updating bark or captaind may corrupt your wallet"` README warning appears to be pre-migration-system legacy text.
+4. **Recovery from seed — PARTIAL (recovery mailbox infrastructure in place, client code coming):**
+   - Second.tech confirmed: since `0.1.0`, when you receive a VTXO it is posted to an ASP-hosted "recovery mailbox" so the future self can recover without the local database.
+   - The **client-side recovery code is not yet implemented** — `forceRescan: true` still produces an empty wallet today (confirmed by our testing).
+   - **Impact on us now:** No change. Phase 2 backup is still mandatory for mainnet because the recovery path isn't usable yet.
+   - **Impact in the future:** Once Second.tech ships the client recovery code, `recoverArkWalletFromKeychain()` with `forceRescan: true` will actually restore VTXOs from the mailbox. At that point:
+     - The "⚠ Back up to recover" label in `ArkCapsules` becomes misleading — VTXOs received after 0.1.0 will be mailbox-recoverable even without a .cbark backup.
+     - The `RecoverArkScreen` seed-input path becomes the primary non-destructive recovery flow.
+     - The .cbark backup demotes to "belt-and-suspenders" rather than "only path to funds".
+   - **TODO when recovery ships:** flip `recoverability` logic in ArkCapsules to check SDK version / mailbox feature flag. Likely a `hasRecoveryMailbox` field on `wallet.arkInfo()` — watch Bark changelog.
 5. **First real build** — iOS and Android builds have not been run since SDK install. Do a `npm run ios` and `npm run android` before Phase 1 so any native linker issue is caught in isolation, not mixed with wallet-creation bugs.
 6. **Cache-bust step** — if anything gets weird after pulling this branch on a fresh machine: `rm -rf ios/Pods ios/build && cd ios && LANG=en_US.UTF-8 RCT_NEW_ARCH_ENABLED=1 pod install && cd .. && cd android && ./gradlew clean && cd ..`.
 
