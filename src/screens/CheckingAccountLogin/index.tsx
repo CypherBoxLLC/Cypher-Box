@@ -3,6 +3,7 @@ import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import { authorize } from "react-native-app-auth";
@@ -50,6 +51,7 @@ export default function CheckingAccountLogin() {
   const {
     isAuth,
     isStrikeAuth,
+    isArkAuth,
     allBTCWallets,
     FirstTimeLightning,
     setStrikeMe,
@@ -96,6 +98,22 @@ export default function CheckingAccountLogin() {
 
   const handleCoinosLogin = () => {
     dispatchNavigate("LoginCoinOSScreen");
+  };
+
+  const handleArkCreate = () => {
+    dispatchNavigate("CreateArkScreen");
+  };
+
+  // Manual seed-entry recovery — surfaced as a sibling to the big "Create Ark"
+  // CTA so users with a written-down seed never have to dig into Settings or
+  // the DEV Capsules tab to find their way back into a wallet on a fresh
+  // install. Mirrors the hot-vault "Already have a hot vault? Recover" flow.
+  const handleArkRecover = () => {
+    dispatchNavigate("RecoverArkScreen");
+  };
+
+  const openArkInfo = () => {
+    Linking.openURL("https://second.tech");
   };
 
   const handleStrikeLogin = async () => {
@@ -189,9 +207,9 @@ export default function CheckingAccountLogin() {
   }
 
   return (
-    <ScreenLayout showToolbar>
+      <ScreenLayout showToolbar>
       <View style={styles.container}>
-        <HeaderWithLine title="Login to Lightning Account" />
+        <HeaderWithLine title="Connect to Lightning providor" />
         <View style={styles.content}>
           {!isStrikeAuth && (
             <>
@@ -216,6 +234,27 @@ export default function CheckingAccountLogin() {
                 text="Don't have a Coinos account?"
                 actionText="Register"
                 onPress={createCheckingAccountClickHandler}
+              />
+            </>
+          )}
+          {FEATURE_ARK_ENABLED && !isArkAuth && (
+            <>
+              {/* Ark (Second.tech) — gated behind FEATURE_ARK_ENABLED until
+                  mainnet ASP launches. Re-enable in services/ark/config.ts. */}
+              <LoginOption
+                logo={require("@Cypher/assets/images/second.png")}
+                borderColor={colors.ark.extralight}
+                onPress={handleArkCreate}
+              />
+              <RegisterPrompt
+                text="⚠ Experimental — non-custodial Ark via Second"
+                actionText="Learn more"
+                onPress={openArkInfo}
+              />
+              <RegisterPrompt
+                text="Already have an Ark seed phrase?"
+                actionText="Recover"
+                onPress={handleArkRecover}
               />
             </>
           )}

@@ -33,6 +33,7 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
+import { useArkSync, useArkRestoreOnBoot } from "@Cypher/custom-hooks";
 import { bitcoinRecommendedFee, createInvoice, getCurrencyRates, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
 import { btc, formatNumber, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
@@ -124,9 +125,19 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
+  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
+  // Ark boot restore: reopens the wallet from on-disk state (datadir +
+  // Keychain mnemonic) once per mount, and reconciles zustand so the
+  // carousel reflects reality. Handles Metro reload + zustand/disk drift.
+  useArkRestoreOnBoot();
+  // Ark sync: starts automatically when isArkAuth flips true. Runs an
+  // initial fetch + 30s interval + foreground-kick for balance / vtxos /
+  // chain tip. No-op when Ark isn't set up.
+  const arkSync = useArkSync();
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [carouselPage, setCarouselPage] = useState(0);
+  const [carouselTotal, setCarouselTotal] = useState(0);
   const [balance, setBalance] = useState(0);
   const [strikeBalance, setStrikeBalance] = useState(0);
   const [currency, setCurrency] = useState('USD');
@@ -634,29 +645,45 @@ export default function HomeScreen({ route }: Props) {
   );
 
   const handleUser = async () => {
+    // Ark-only users (no CoinOS auth) were hitting `getMe()` on every
+    // pull-to-refresh and tripping the catch block → "Failed to load
+    // balance" toast. The CoinOS-specific work (/user fetch, currency
+    // rates, balance/user state) is now gated behind `isAuth && token`;
+    // the BlueWallet fiat rate still runs for everyone because vault
+    // screens and the Ark card depend on it.
+    const coinosAuthed = !!(isAuth && token);
+    let coinosCallFailed = false;
     try {
-      // Always fetch exchange rates first — needed for vault USD conversion
       let coinosRate = 0;
       let blueWalletRate = 0;
       let blueWalletRateRaw = 0; // USD-per-BTC (for vaults)
 
-      // Try to get Coinos data if logged in (for Coinos-specific balance)
-      const response = await getMe();
-
-      if (response) {
-        // Get Coinos rate for Coinos balance display (PRIMARY source)
+      let response: any = null;
+      if (coinosAuthed) {
         try {
-          const responsetest = await getCurrencyRates();
-          const currency = btc(1);
-          const matched = matchKeyAndValue(responsetest, 'USD');
-          coinosRate = (matched || 0) * currency;
-          if (__DEV__) console.log('[Coinos] rate from API:', coinosRate);
-        } catch (rateError) {
-          if (__DEV__) console.log('[Coinos] rate API failed, trying BlueWallet fallback');
+          response = await getMe();
+          if (response) {
+            // Get Coinos rate for Coinos balance display (PRIMARY source)
+            try {
+              const responsetest = await getCurrencyRates();
+              const currency = btc(1);
+              const matched = matchKeyAndValue(responsetest, 'USD');
+              coinosRate = (matched || 0) * currency;
+              if (__DEV__) console.log('[Coinos] rate from API:', coinosRate);
+            } catch (rateError) {
+              if (__DEV__) console.log('[Coinos] rate API failed, trying BlueWallet fallback');
+            }
+          }
+        } catch (coinosErr) {
+          // getMe() threw for a user we believe IS CoinOS-authed — surface
+          // it. For not-authed users we never got here in the first place.
+          console.error('CoinOS /user fetch failed:', coinosErr);
+          coinosCallFailed = true;
         }
       }
 
-      // Use Coinos rate if available, fallback to BlueWallet
+      // Always-on: BlueWallet rate. Vaults / Ark card depend on this even
+      // when CoinOS is absent.
       try {
         blueWalletRateRaw = await getFiatRate('USD') || 0;
         blueWalletRate = blueWalletRateRaw * btc(1); // Convert USD-per-BTC to USD-per-sat
@@ -676,9 +703,17 @@ export default function HomeScreen({ route }: Props) {
         setBalance(response?.balance ?? 0);
         setUser(response?.username);
       }
+
+      if (coinosCallFailed) {
+        // Only toast when the user actually has a CoinOS balance we failed
+        // to load. Silent for Ark-only users (who have no CoinOS balance
+        // to speak of).
+        SimpleToast.show("Failed to load CoinOS balance. Pull to refresh.", SimpleToast.SHORT);
+      }
     } catch (error) {
-      console.error('error: ', error);
-      // Try BlueWallet's native rate as absolute fallback
+      console.error('handleUser unexpected error:', error);
+      // Absolute fallback — still try to get a rate so the UI isn't
+      // completely fiat-blind.
       try {
         const blueWalletRate = await getFiatRate('USD');
         setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
@@ -688,7 +723,9 @@ export default function HomeScreen({ route }: Props) {
         setMatchedRate(0);
         setMatchedRateBTC(0);
       }
-      SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
+      if (coinosAuthed) {
+        SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
+      }
     } finally {
       setIsLoading(false)
       setRefreshing(false);
@@ -751,6 +788,12 @@ export default function HomeScreen({ route }: Props) {
         if (__DEV__) console.log('Error refreshing Strike balance:', e);
         SimpleToast.show("Failed to refresh Strike balance.", SimpleToast.SHORT);
       }
+    }
+    // Pull-to-refresh also kicks an immediate Ark sync. Cheap (SQLite
+    // reads + one esplora call) and in-flight-guarded so repeated pulls
+    // don't stack.
+    if (isArkAuth) {
+      await arkSync.refresh();
     }
   };
 
@@ -862,13 +905,15 @@ export default function HomeScreen({ route }: Props) {
             <>
               <View style={{ height: 40 }} />
               <Header onBarScanned={onBarScanned} />
-              <View style={{ transform: [{ translateY: -20 }] }}>
+              <View style={{ transform: [{ translateY: -48 }] }}>
                 <BalanceView
                   // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                   balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
                   convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)))).toFixed(2)}`}
                   showAddAccount={allBTCWallets.length < 2 && !isLoading}
                   onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
+                  carouselPage={carouselPage}
+                  carouselTotal={carouselTotal}
                 />
               </View>
             </>
@@ -879,8 +924,21 @@ export default function HomeScreen({ route }: Props) {
                     {/* Add Account button moved into BalanceView */}
           {/* Lightning Accounts title moved into WalletsView carousel */}
 
-          <View style={{ transform: [{ translateY: -20 }] }}>
-            {!isAuth && !isLoading && !isStrikeAuth ? (
+          <View style={{ transform: [{ translateY: (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -70 : -58 }] }}>
+            {/*
+              Carousel-vs-CTA gate. Falls through to CreateLightningAccount only
+              when NO Lightning provider (CoinOS / Strike / Ark) is connected.
+              Adding isArkAuth here is what makes a freshly-created Ark wallet
+              actually appear in the carousel — without it, an Ark-only user
+              still sees the "Create Lightning Account" CTA on Home.
+              translateY is -80 for Ark-only (vs -58 for custodial wallets)
+              because the BalanceView's showAddAccount button (~40pt) adds more
+              top-weight to the black box than the page-indicator rows (~17pt)
+              that show when multiple wallet tabs exist, causing snap-carousel
+              to measure a slightly different Y for the active item. The extra
+              22pt compensates for that centroid shift.
+            */}
+            {!isAuth && !isLoading && !isStrikeAuth && !isArkAuth ? (
               <>
                 <CreateLightningAccount onPress={loginClickHandler} />
                 {(hasSavingVault || hasColdStorage) && (
@@ -924,6 +982,10 @@ export default function HomeScreen({ route }: Props) {
                 strikeConvertedBalance={Number(strikeConvertedBalance || 0)}
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
                 homeMessage={homeMessage}
+                onPageChange={(index, total) => {
+                  setCarouselPage(index);
+                  setCarouselTotal(total);
+                }}
               />
             )}
           </View>
@@ -931,12 +993,12 @@ export default function HomeScreen({ route }: Props) {
           {/* */}
 
           {!isLoading && (isWalletLoaded || isColdWalletLoaded) &&
-            <View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', transform: [{ translateY: (isAuth || isStrikeAuth) ? -20 : -60 }]}}>
+            <View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', transform: [{ translateY: (isAuth || isStrikeAuth || isArkAuth) ? -20 : -60 }]}}>
               <ActivityIndicator size="small" color="#23C47F" />
             </View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={{height: 205, marginBottom: 20, transform: [{ translateY: (isAuth || isStrikeAuth) ? -20 : -60 }]}}>
+            <View style={{height: 205, marginBottom: 20, transform: [{ translateY: (isAuth || isStrikeAuth || isArkAuth) ? -20 : -60 }]}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}

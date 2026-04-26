@@ -25,6 +25,7 @@ import {
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import Clipboard from "@react-native-clipboard/clipboard";
@@ -52,7 +53,7 @@ interface Props {
 
 
 export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency, vaultAddress = '', coldStorageAddress = '', initialVaultType = null }: Props) {
-  const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
+  const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
 
   const getInitialSelectedItem = () => {
     if (initialVaultType === 'hot') return 3;
@@ -148,6 +149,15 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       setTab(0);
       animateToSecondView();
       setReceivedListSecondTab(true);
+    } else if (item?.id == 5) {
+      // Ark has its own receive-method screen — three options (Ark address,
+      // Lightning invoice, on-chain board address) that don't map cleanly to
+      // CoinOS/Strike's "lightning-or-onchain" two-option picker.
+      refRBSheet?.current?.close();
+      setReceivedListSecondTab(false);
+      setTimeout(() => {
+        dispatchNavigate('ArkReceiveScreen', { matchedRate, currency });
+      }, 150);
     }
   };
 
@@ -249,6 +259,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     isEnabled: boolean,
     accentColor: string,
     shadowColor: string,
+    textLabel?: string, // For providers without a logo asset (e.g. Ark) — shown inline
   ) => {
     const isLogo = id === 1 || id === 2; // Strike/CoinOS use logo images
     return (
@@ -309,6 +320,10 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 style={{ width: 90, height: 32, marginBottom: 6 }}
                 resizeMode="contain"
               />
+            ) : textLabel ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Text bold style={{ fontSize: 22, color: accentColor, letterSpacing: 2 }}>{textLabel}</Text>
+              </View>
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                 <Image source={icon} style={iconStyle} resizeMode="contain" />
@@ -401,6 +416,27 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   colors.blueText,
                 )}
               </View>
+
+              {/* Ark row — hidden behind FEATURE_ARK_ENABLED until Second.tech's
+                  mainnet ASP launches (signet-only today, `lntbs` invoices can't
+                  be paid from mainnet wallets). Re-enable in services/ark/config.ts. */}
+              {FEATURE_ARK_ENABLED && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
+                  {renderGridTile(
+                    5,
+                    'Ark',
+                    'Non-custodial Lightning',
+                    null,
+                    {},
+                    isArkAuth,
+                    colors.ark.light,
+                    colors.ark.shadowTopNew,
+                    'Second',
+                  )}
+                  {/* Spacer to preserve grid alignment with the rows above. */}
+                  <View style={{ width: TILE_WIDTH }} />
+                </View>
+              )}
             </View>
           </Animated.View>
 

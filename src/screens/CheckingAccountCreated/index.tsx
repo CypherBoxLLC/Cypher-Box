@@ -25,18 +25,45 @@ export default function CheckingAccountCreated() {
     const {
         vaultTab, strikeMe, FirstTimeLightning, setFirstTimeLightning,
         FirstTimeCoinOS, setFirstTimeCoinOS,
+        setFirstTimeArk,
         withdrawThreshold, setWithdrawThreshold,
         withdrawStrikeThreshold, setWithdrawStrikeThreshold,
+        withdrawArkThreshold, setWithdrawArkThreshold,
     } = useAuthStore();
 
     const isStrike = accountType === 'strike';
-    const [selectedThreshold, setSelectedThreshold] = useState(
-        isStrike ? (Number(withdrawStrikeThreshold) || 1000000) : (Number(withdrawThreshold) || 500000)
-    );
+    const isArk = accountType === 'ark';
+
+    // Pick the right default threshold + title color per provider.
+    const accentColor = isArk
+        ? colors.ark.light
+        : colors.pink.light;
+    const titleText = isArk
+        ? 'Ark Vault Created!'
+        : 'Lightning Account Created!';
+
+    const initialThreshold = isArk
+        ? (Number(withdrawArkThreshold) || 500000)
+        : isStrike
+            ? (Number(withdrawStrikeThreshold) || 1000000)
+            : (Number(withdrawThreshold) || 500000);
+    const [selectedThreshold, setSelectedThreshold] = useState(initialThreshold);
+
+    const persistThreshold = (value: number) => {
+        if (isArk) {
+            setWithdrawArkThreshold(value);
+        } else if (isStrike) {
+            setWithdrawStrikeThreshold(value);
+        } else {
+            setWithdrawThreshold(value);
+        }
+    };
 
     const nextClickHandler = () => {
         console.log('next click');
-        if (isStrike) {
+        if (isArk) {
+            setFirstTimeArk(false);
+        } else if (isStrike) {
             setFirstTimeLightning(false);
         } else {
             setFirstTimeCoinOS(false);
@@ -56,15 +83,15 @@ export default function CheckingAccountCreated() {
 
     console.log('strikeMe: ', strikeMe)
     return (
-        <ScreenLayout disableScroll showToolbar progress={2} color={[colors.pink.light, colors.pink.light]} isBackButton={false} isClose onBackPress={nextClickHandler}>
+        <ScreenLayout disableScroll showToolbar progress={2} color={[accentColor, accentColor]} isBackButton={false} isClose onBackPress={nextClickHandler}>
             <View style={styles.container}>
-                <Text style={[styles.title, { color: colors.pink.light }]} center>{"Lightning Account Created!"}</Text>
+                <Text style={[styles.title, { color: accentColor }]} center>{titleText}</Text>
                 <View style={styles.inner}>
-                <LightningVaultCreate title="Lightning Account"></LightningVaultCreate>
+                    <LightningVaultCreate title={isArk ? "Ark Vault" : "Lightning Account"} />
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
                         <Text h4 style={[styles.descption, { fontSize: 16, marginTop: 16, fontWeight: 'bold', textAlign: 'center' }]}>Set Withdraw Threshold</Text>
-                        <TouchableOpacity 
-                            onPress={() => setPickerVisible(true)} 
+                        <TouchableOpacity
+                            onPress={() => setPickerVisible(true)}
                             activeOpacity={0.7}
                             style={{ backgroundColor: colors.gray.dark, borderRadius: 14, padding: 14, marginTop: 8, marginHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#3A3A3A' }}>
                             <Text bold style={{ fontSize: 16 }}>{formatNumber(selectedThreshold)} sats</Text>
@@ -75,20 +102,27 @@ export default function CheckingAccountCreated() {
                             <Text style={{ width: '100%', fontSize: 20, paddingTop: 16, fontWeight: 'bold', textAlign: 'center' }}>{strikeMe.username + '@strike.me'}</Text>
                         ) : null}
 
-                        <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 16 }]}>The interactive bar display helps you visualize your Lightning Account's balance, showing a threshold above which storing bitcoin in an exchange carries increased counter-party risk. This threshold will also determine the size of the withdrawn UTXO coin.</Text>
-                        <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 12 }]}>Note: You can deposit money beyond the threshold. It will just give you a reminder message if your balance reaches it. It won't withdraw automatically.</Text>
+                        {isArk ? (
+                            <>
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 16 }]}>Your Ark wallet is live. Ark is a non-custodial Bitcoin L2 — faster and cheaper than opening Lightning channels, but the server operator (Second.tech) coordinates rounds.</Text>
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 12, color: accentColor }]}>⚠ Experimental: wallet recovery from seed is not yet supported. Use small amounts only.</Text>
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 12 }]}>The withdraw threshold tells Cypher Box when to suggest moving funds on-chain (exit) to your hot or cold vault.</Text>
+                            </>
+                        ) : (
+                            <>
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 16 }]}>The interactive bar display helps you visualize your Lightning Account's balance, showing a threshold above which storing bitcoin in an exchange carries increased counter-party risk. This threshold will also determine the size of the withdrawn UTXO coin.</Text>
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 12 }]}>Note: You can deposit money beyond the threshold. It will just give you a reminder message if your balance reaches it. It won't withdraw automatically.</Text>
+                            </>
+                        )}
 
                         <Modal isVisible={pickerVisible} onBackdropPress={() => setPickerVisible(false)}>
                             <View style={{ backgroundColor: colors.gray.dark, borderRadius: 20, padding: 16 }}>
                                 <Picker
                                     selectedValue={selectedThreshold}
                                     onValueChange={(itemValue) => {
-                                        setSelectedThreshold(Number(itemValue));
-                                        if (isStrike) {
-                                            setWithdrawStrikeThreshold(Number(itemValue));
-                                        } else {
-                                            setWithdrawThreshold(Number(itemValue));
-                                        }
+                                        const next = Number(itemValue);
+                                        setSelectedThreshold(next);
+                                        persistThreshold(next);
                                     }}
                                     itemStyle={{ color: '#FFFFFF', fontSize: 20 }}
                                 >
@@ -107,7 +141,7 @@ export default function CheckingAccountCreated() {
             </View>
             <Button text="Home"
                 onPress={nextClickHandler}
-                style={{...styles.button, ...{ backgroundColor: colors.pink.light, marginTop: vaultTab ? 30 : 0 , marginBottom: 15} }}
+                style={{...styles.button, ...{ backgroundColor: accentColor, marginTop: vaultTab ? 30 : 0 , marginBottom: 15} }}
                 textStyle={styles.btnText}
             />
         </ScreenLayout>

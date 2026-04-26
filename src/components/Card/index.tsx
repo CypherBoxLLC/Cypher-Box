@@ -94,25 +94,46 @@ export default function Card({ onPress,
         <View>
             <TouchableOpacity style={styles.shadowView} onPress={onCardClickHandler}>
                 <View
-                    style={styles.shadowTop}
+                    style={[
+                        styles.shadowTop,
+                        // Ark cards carry a thin yellow outline to signal
+                        // the non-custodial provider at a glance — mirrors
+                        // the same 1.5px yellow edge used on the "Create an
+                        // Ark Wallet" CTA box (ArkWallet/styles.ts), and
+                        // parallels the green edge on the Hot Vault card.
+                        wallet === 'ARK' && {
+                            borderWidth: 1.5,
+                            borderColor: colors.ark.light,
+                        },
+                    ]}
                 >
                     <View style={styles.view}>
                         <Text h2 bold style={styles.check}>
                             {title}
                         </Text>
-                        {wallet==='STRIKE' ?
-                        <Image
-                        source={Strike2}
-                        style={styles.blink}
-                        resizeMode="contain"
-                    />
-                    :
-                    <Image
-                        source={CoinOSSmall}
-                        style={styles.blink}
-                        resizeMode="contain"
-                    />
-                        }
+                        {wallet === 'STRIKE' ? (
+                            <Image
+                                source={Strike2}
+                                style={styles.blink}
+                                resizeMode="contain"
+                            />
+                        ) : wallet === 'ARK' ? (
+                            // No Second logo asset yet — render a yellow "Second"
+                            // wordmark in the same slot the Strike/CoinOS icon
+                            // would occupy. Archivo-Bold (inherited from <Text bold>)
+                            // matches the Strike/CoinOS logo wordmarks visually.
+                            <View style={[styles.blink, { alignItems: 'flex-end', justifyContent: 'center' }]}>
+                                <Text bold style={{ fontSize: 18, color: colors.ark.light }}>
+                                    Second
+                                </Text>
+                            </View>
+                        ) : (
+                            <Image
+                                source={CoinOSSmall}
+                                style={styles.blink}
+                                resizeMode="contain"
+                            />
+                        )}
 
 
                     </View>
@@ -125,7 +146,9 @@ export default function Card({ onPress,
                         </Text>
                     </View>
                     <View style={thresholdMet ? {
-                        shadowColor: '#e84393',
+                        // Threshold-met glow tracks wallet branding so Ark glows
+                        // yellow rather than pink. Strike/CoinOS keep the pink glow.
+                        shadowColor: wallet === 'ARK' ? colors.ark.shadowTopNew : '#e84393',
                         shadowOffset: { width: 0, height: 0 },
                         shadowOpacity: 1,
                         shadowRadius: 16,
@@ -135,7 +158,11 @@ export default function Card({ onPress,
                         <View style={[styles.box, { left: getLineLeft() } as any]} />
                         <LinearGradient
                             start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-                            colors={[colors.white, colors.pink.dark]}
+                            colors={
+                                wallet === 'ARK'
+                                    ? [colors.white, colors.ark.dark]
+                                    : [colors.white, colors.pink.dark]
+                            }
                             style={[styles.linearGradient2, { width: getWidth() } as any]}>
                         </LinearGradient>
                     </View>

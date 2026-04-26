@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { Image, LayoutAnimation, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text } from "@Cypher/component-library";
-import { Bank, Settings, Threshold, Time } from "@Cypher/assets/images";
+import { Bank, CoinOs, Settings, Threshold, Time } from "@Cypher/assets/images";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
 import GradientCard from "../GradientCard";
@@ -13,15 +13,24 @@ interface Props {
     onChangeSelectedTab(id: number): void;
     selectedTab: number;
     vaultTab: boolean;
+    // When set to 'ark', the selected-tab gradient + label switch from the
+    // pink Lightning palette to the Ark yellow palette. Other account types
+    // keep the historical pink theming.
+    accountType?: string;
 }
 
-export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Props) {
+export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accountType }: Props) {
+    const isArk = accountType === 'ark';
+    // Ark swaps the "Threshold" tab (custodial-only concept) for "Capsules"
+    // (VTXO management). Icon switches to the CoinOs coin/capsule glyph that
+    // the Hot Vault already uses for its Capsules tab — keeps the visual
+    // language unified across UTXO/VTXO surfaces.
     const tabs = useMemo(() => [
         { id: 0, name: 'Account', icon: Bank },
-        { id: 1, name: 'Threshold', icon: Threshold },
+        { id: 1, name: isArk ? 'Capsules' : 'Threshold', icon: isArk ? CoinOs : Threshold },
         { id: 2, name: 'History', icon: Time },
         { id: 3, name: 'Settings', icon: Settings },
-    ], []);
+    ], [isArk]);
 
 
     const tabClickListener = useCallback((id: number) => {
@@ -43,7 +52,13 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
                 <View key={tab.id} style={styles.container}>
                     <GradientButton
                         style={styles.inner}
-                        colors_={selectedTab === tab.id ? [colors.pink.extralight, colors.pink.default] : [colors.primary, colors.primary]}
+                        colors_={
+                            selectedTab === tab.id
+                                ? (isArk
+                                    ? [colors.ark.extralight, colors.ark.main]
+                                    : [colors.pink.extralight, colors.pink.default])
+                                : [colors.primary, colors.primary]
+                        }
                         onPress={() => tabClickListener(tab.id)}
                     >
                         <Image
@@ -56,7 +71,10 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
                         />
                     </GradientButton>
                     {selectedTab === tab.id ?
-                        <GradientText style={styles.selectedtext}>{tab.name}</GradientText>
+                        <GradientText
+                            style={styles.selectedtext}
+                            colors_={isArk ? [colors.ark.light, colors.ark.main] : undefined}
+                        >{tab.name}</GradientText>
                         :
                         <Text bold style={styles.text}>{tab.name}</Text>
                     }

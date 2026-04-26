@@ -31,6 +31,7 @@ export { default as BlackBGView } from './BlackBGView';
 export { default as CircleTimer } from './CircleTimer';
 export { default as CoinosWallet } from './CoinosWallet';
 export { default as StrikeWallet } from './StrikeWallet';
+export { default as ArkWallet } from './ArkWallet';
 export { default as StrikeDollarWallet } from './StrikeDollarWallet';
 export { default as CircularView } from './CircularView';
 export { default as CustomTabView } from './CustomTabView';

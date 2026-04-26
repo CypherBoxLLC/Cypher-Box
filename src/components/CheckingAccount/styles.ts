@@ -9,8 +9,8 @@ export default StyleSheet.create({
     overflow: 'hidden',
   },
   loginOptionGradient: {
-    borderTopWidth: 2,
-    borderLeftWidth: 2,
+    padding: 2,
+    borderWidth: 2,
     borderColor: colors.pink.extralight,
     borderRadius: 20
   },
@@ -19,7 +19,7 @@ export default StyleSheet.create({
     height: 80,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 17,
+    borderRadius: 16,
     padding: 0
   },
   logo: {

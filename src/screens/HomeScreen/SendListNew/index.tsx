@@ -18,6 +18,7 @@ import {
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
@@ -40,7 +41,7 @@ interface Props {
 }
 
 export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, wallet, coldStorageWallet, matchedRate, matchedRateBTC = 0, currency }: Props) {
-  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
+  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
   const { sleep } = useContext(BlueStorageContext);
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -101,6 +102,15 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
         : { matchedRate, currency, receiveType: true };
       setTimeout(() => {
         dispatchNavigate('SendScreen', params);
+      }, 150);
+    } else if (id === 5) {
+      // Ark has its own send flow (`ArkSendScreen`) — the Strike `SendScreen`
+      // is hard-wired to custodial Lightning APIs and doesn't know how to
+      // pay through the Bark SDK. Classification (ln-invoice / ln-address /
+      // ark / onchain) and fee estimation happen inside ArkSendScreen.
+      refRBSheet?.current?.close();
+      setTimeout(() => {
+        dispatchNavigate('ArkSendScreen', { matchedRate, currency });
       }, 150);
     } else if (id === 3 || id === 4) {
       setSelectedItem(id);
@@ -165,26 +175,33 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
     }, 150);
   };
 
-  // Grid tile
+  // Grid tile. `width` defaults to TILE_WIDTH; pass a larger value (e.g. full-row)
+  // for providers like Ark that sit below the 2×2 grid.
   const renderGridTile = (
     id: number, label: string, subtitle: string, icon: any, iconStyle: any,
     isEnabled: boolean, accentColor: string, shadowColor: string,
+    width: number = TILE_WIDTH,
+    textLabel?: string, // For providers without a logo asset (e.g. Ark) — shown inline
   ) => {
     const isLogo = id === 1 || id === 2;
     return (
-      <View style={{ width: TILE_WIDTH, opacity: isEnabled ? 1 : 0.3 }} pointerEvents={isEnabled ? 'auto' : 'none'}>
+      <View style={{ width, opacity: isEnabled ? 1 : 0.3 }} pointerEvents={isEnabled ? 'auto' : 'none'}>
         <GradientView
           onPress={() => isEnabled && onTilePress(id)}
-          style={{ shadowColor: "#040404", shadowOffset: { width: 6, height: 6 }, shadowOpacity: 0.7, shadowRadius: 12, elevation: 6, height: 100, width: TILE_WIDTH }}
-          linearGradientStyle={{ shadowColor: "#27272C", shadowOffset: { width: -6, height: -6 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 6, height: 100, width: TILE_WIDTH }}
-          topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowColor, shadowRadius: 3, borderRadius: 20, width: TILE_WIDTH, height: 100, justifyContent: "center" }}
-          bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 0.5, shadowColor, borderRadius: 20, width: TILE_WIDTH, height: 100, justifyContent: "center", position: "absolute" }}
-          linearGradientStyleMain={{ borderRadius: 20, height: 100, justifyContent: "center", alignItems: "center", width: TILE_WIDTH }}
+          style={{ shadowColor: "#040404", shadowOffset: { width: 6, height: 6 }, shadowOpacity: 0.7, shadowRadius: 12, elevation: 6, height: 100, width }}
+          linearGradientStyle={{ shadowColor: "#27272C", shadowOffset: { width: -6, height: -6 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 6, height: 100, width }}
+          topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowColor, shadowRadius: 3, borderRadius: 20, width, height: 100, justifyContent: "center" }}
+          bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 0.5, shadowColor, borderRadius: 20, width, height: 100, justifyContent: "center", position: "absolute" }}
+          linearGradientStyleMain={{ borderRadius: 20, height: 100, justifyContent: "center", alignItems: "center", width }}
           gradiantColors={[colors.black.bg, colors.black.bg]}
         >
           <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
             {isLogo ? (
               <Image source={icon} style={{ width: 90, height: 32, marginBottom: 6 }} resizeMode="contain" />
+            ) : textLabel ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Text bold style={{ fontSize: 22, color: accentColor, letterSpacing: 2 }}>{textLabel}</Text>
+              </View>
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                 <Image source={icon} style={iconStyle} resizeMode="contain" />
@@ -285,6 +302,26 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                 {renderGridTile(3, 'Hot Vault', 'On-chain capsules', Hot, { width: 22, height: 30, marginEnd: 2 }, hasHotVault, colors.green, colors.greenShadow)}
                 {renderGridTile(4, 'Cold Vault', 'On-chain capsules', Cold1, { width: 30, height: 22, marginEnd: 2 }, hasColdVault, colors.coldGreen, colors.blueText)}
               </View>
+              {/* Ark row — hidden behind FEATURE_ARK_ENABLED until Second.tech's
+                  mainnet ASP launches. Re-enable in services/ark/config.ts. */}
+              {FEATURE_ARK_ENABLED && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
+                  {renderGridTile(
+                    5,
+                    'Ark',
+                    'Non-custodial Lightning',
+                    null,
+                    {},
+                    isArkAuth,
+                    colors.ark.light,
+                    colors.ark.shadowTopNew,
+                    TILE_WIDTH,
+                    'Second',
+                  )}
+                  {/* Spacer to preserve grid alignment with the rows above. */}
+                  <View style={{ width: TILE_WIDTH }} />
+                </View>
+              )}
             </View>
           </Animated.View>
 

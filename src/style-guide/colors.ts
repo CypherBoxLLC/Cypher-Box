@@ -49,6 +49,22 @@ const colors = {
   tundora: '#2D2D2D',
   yellow: '#FFF500',
   yellow2: '#FFD600',
+  // Ark (experimental non-custodial Lightning via Second.tech).
+  // Yellow palette to visually distinguish from pink custodial Lightning (Strike / CoinOS).
+  ark: {
+    default: 'rgba(255, 198, 0, 0.9)',
+    light: '#FFD93D',
+    extralight: '#FFE259',
+    main: '#F5B301',
+    shadowBottom: '#6B4A00',
+    shadowTop: '#FFD93D',
+    dark: '#E6A700',
+    shadowTopNew: '#FFCF2F',
+    gradient1: '#FFE259',
+    gradient2: '#F5B301',
+    progress: '#FFD93D',
+    stop: '#FFF5B8',
+  },
   white: '#FFFFFF',
   whiteText: '#F1F1F1',
   black: {

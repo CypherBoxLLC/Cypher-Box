@@ -6,31 +6,33 @@ import {
   Image,
   ImageSourcePropType,
 } from "react-native";
-import LinearGradient from "react-native-linear-gradient";
+import { colors } from "@Cypher/style-guide";
 import styles from "./styles";
 
 type LoginOptionProps = {
-  logo: ImageSourcePropType;
+  logo?: ImageSourcePropType;
   onPress: () => void;
+  borderColor?: string;
 };
 
-export default function LoginOption({ logo, onPress }: LoginOptionProps) {
+export default function LoginOption({
+  logo,
+  onPress,
+  borderColor = colors.pink.extralight,
+}: LoginOptionProps) {
   return (
     <TouchableOpacity
       style={styles.loginOptionContainer}
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <LinearGradient
-        colors={["#FF65D4", "rgba(214, 23, 161, 0.9)"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={styles.loginOptionGradient, {padding: 3}}
-      >
+      <View style={[styles.loginOptionGradient, { borderColor }]}>
         <View style={styles.loginOption}>
-          <Image source={logo} style={styles.logo} resizeMode="contain" />
+          {logo ? (
+            <Image source={logo} style={styles.logo} resizeMode="contain" />
+          ) : null}
         </View>
-      </LinearGradient>
+      </View>
     </TouchableOpacity>
   );
 }
