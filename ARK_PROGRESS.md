@@ -1,7 +1,7 @@
 # Ark / Bark SDK Integration — Progress Tracker
 
 **Branch:** `rn-upgrade` (preserved snapshot: `Bam-RN` on origin)
-**SDK:** `@secondts/bark-react-native@0.3.3` (Second.tech, UniFFI Rust-core binding)
+**SDK:** `@secondts/bark-react-native@0.4.1` (Second.tech, UniFFI Rust-core binding)
 **Plan source:** `/Users/kaliko/Documents/Ark implementaion.rtf` + plan in assistant-generated integration doc
 
 This file is the single source of truth for Ark integration state. Update it after every meaningful change so any other agent can pick up where the last left off.
@@ -320,6 +320,35 @@ npm run android
   - New [src/screens/Ark/ArkSendScreen](src/screens/Ark/ArkSendScreen/) — amount + destination entry, fee preview, confirm/send. Registered in [Navigation.js](Navigation.js).
   - New [src/screens/Ark/ArkTransactionDetailsScreen](src/screens/Ark/ArkTransactionDetailsScreen/) — movement detail view navigated from ArkHistory. Registered in [Navigation.js](Navigation.js).
   - **TODO for Phase 5**: end-to-end signet send test (Ark → Ark address, Ark → Lightning invoice). Fee estimation flow needs a real signet wallet with balance to validate amounts.
+- **2026-04-26** — Frontend wiring: Ark surfaced throughout the app shell.
+  Companion to commits `9676f59` / `9295673`, which landed the service layer + screens; this batch wires those into Home, login, onboarding, and the shared component library so Ark is a first-class wallet alongside Strike/CoinOS.
+  - **Yellow theme system** — new `colors.ark` palette in [src/style-guide/colors.ts](src/style-guide/colors.ts) (12 tokens) gives Ark its own visual identity, distinct from the pink Strike/CoinOS palette.
+  - **Component theming**:
+    - [Card](src/components/Card/index.tsx) — `wallet === 'ARK'` renders a yellow border + "Second" text wordmark (no logo asset yet) + yellow threshold-met glow + yellow gradient bar.
+    - [GradientText](src/components/GradientText/index.tsx) — new `colors_` prop lets callers override the default pink gradient (used for Ark-themed surfaces).
+    - [Tabs](src/components/Tabs/index.tsx) — `accountType='ark'` swaps "Threshold" → "Capsules" and switches the active-tab gradient to yellow.
+    - [LoginOption](src/components/CheckingAccount/LoginOption.tsx) — `logo` prop is now optional + new `borderColor` prop, so the Ark login tile can render a yellow-bordered Second logo without forcing a LinearGradient.
+    - [GradientButtonWithShadow](src/components/GradientButtonWithShadow/index.tsx) — fixed an iOS-only white halo bug where `shadow25`'s white background was bleeding ~1–2px past the LinearGradient child's rounded corners (most visible on the Ark dark canvas, but present on every tile).
+  - **Carousel + home** ([WalletsView](src/screens/HomeScreen/WalletsView/index.tsx), [HomeScreen](src/screens/HomeScreen/index.tsx), [BalanceView](src/screens/HomeScreen/BalanceView/index.tsx)):
+    - Carousel composition rewritten: custodial Lightning providers (Strike/CoinOS) collapse into a single `CircularView` page when both are present; ARK is structurally separate (different SDK, different balance) and ALWAYS gets its own carousel page — never collapsed into `CircularView` (which has no Ark support).
+    - Fixed a long-standing `firstItem` mismatch where the carousel mounted on index 0 but state claimed index 1 — caused the page indicator to point at the wrong slot on first login. Aligned default state to the carousel's actual first-mount slide.
+    - `onPageChange` callback added to feed `BalanceView`'s new page-indicator dots (only visible when >1 wallet page).
+    - `useArkRestoreOnBoot` + `useArkSync` wired in at the top of `HomeScreen` — boot reopens the wallet from datadir + Keychain; 30s sync keeps balance / vtxos / chain-tip fresh. Both barrel-exported from [src/custom-hooks/index.ts](src/custom-hooks/index.ts).
+    - Pull-to-refresh (`onRefresh`) now also kicks `arkSync.refresh()` for an immediate, in-flight-guarded sync.
+    - **Bug fix**: `handleUser()` was calling CoinOS `getMe()` for Ark-only users (no CoinOS auth) and tripping the catch block → "Failed to load balance" toast on every refresh. Gated the CoinOS-specific work behind `isAuth && token`; the BlueWallet fiat-rate fallback still runs for everyone (vault USD conversion + Ark card depend on it). Toast also gated so Ark-only users never see a misleading CoinOS error.
+    - Multiple `translateY` adjustments in HomeScreen layout to compensate for the page-indicator height (~17pt) and the Ark-only carousel centroid shift in `react-native-snap-carousel`.
+  - **Send/Receive grid tiles** ([ReceivedListNew](src/screens/HomeScreen/ReceivedListNew/index.tsx), [SendListNew](src/screens/HomeScreen/SendListNew/index.tsx)):
+    - Ark grid tile (id=5) added behind `FEATURE_ARK_ENABLED`, routes to `ArkReceiveScreen` / `ArkSendScreen` (which own their own destination classification + fee preview, since the Strike `SendScreen` is hard-wired to custodial Lightning APIs).
+    - `renderGridTile` now accepts a `textLabel` param so logo-less providers (Ark) can render an inline yellow "Second" wordmark in the icon slot. `width` is also configurable so Ark can sit below the 2×2 grid in its own row without affecting alignment.
+    - Receive screen routes to `ArkReceiveScreen` rather than the CoinOS/Strike `CreateInvoice` because Ark has three receive options (Ark address / Lightning invoice / on-chain board address) that don't map cleanly to the existing two-option picker.
+  - **Login flow** ([CheckingAccountLogin](src/screens/CheckingAccountLogin/index.tsx)):
+    - Added Ark CTA (Second logo + yellow border), "Recover Ark seed" deep-link to `RecoverArkScreen`, "Learn more" → second.tech.
+    - Surfaced the recover path as a sibling to the Create CTA so users with a written-down seed never have to dig into Settings on a fresh install — mirrors the hot-vault "Already have a hot vault? Recover" flow.
+    - All gated behind `FEATURE_ARK_ENABLED`.
+  - **Account-created flow** ([CheckingAccountCreated](src/screens/CheckingAccountCreated/index.tsx)):
+    - Branched on `accountType === 'ark'`: yellow accent color, "Ark Vault Created!" title, Ark-specific explainer text + experimental seed-recovery warning, `withdrawArkThreshold` wiring (defaults to 500k sats, persisted to zustand alongside the existing Strike + Lightning thresholds).
+  - **iOS build fix** ([ios/Podfile](ios/Podfile)):
+    - Added `HEADER_SEARCH_PATHS` for the `BarkReactNative` pod pointing at `${PODS_TARGET_SRCROOT}/ios/generated/build/generated/ios`. The SDK's Fabric codegen output (`ShadowNodes.cpp` / `States.cpp`) includes its sibling headers via angle-bracket paths like `<react/renderer/components/RNBarkReactNativeSpec/ShadowNodes.h>`, but CocoaPods flattens public headers into `Pods/Headers/Public/BarkReactNative/`, losing the `react/renderer/...` prefix. The SDK's podspec doesn't add the generated root on the modern `install_modules_dependencies` path (RN ≥ 0.71). This works around it for now; an upstream fix would be cleaner — worth flagging to Second.tech alongside the `Wallet.export()` request.
 
 ---
 
