@@ -21,6 +21,10 @@ DerivedData
 *.ipa
 *.xcuserstate
 ios/.xcode.env.local
+
+# Local secrets (copy from *.example.ts and fill in)
+src/services/ark/secrets.ts
+
 *.hprof
 .cxx/
 *.keystore

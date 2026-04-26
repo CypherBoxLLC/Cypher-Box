@@ -74,6 +74,25 @@ post_install do |installer|
         config.build_settings['CODE_SIGN_IDENTITY'] = "Apple Distribution: Bluewallet Services, S. R. L. (A7W54YZ4WU)"
         config.build_settings['DEVELOPMENT_TEAM'] = "A7W54YZ4WU"
       end
+
+      # @secondts/bark-react-native ships Fabric codegen output under
+      # ios/generated/build/generated/ios/react/renderer/components/
+      # RNBarkReactNativeSpec/ and the generated ShadowNodes.cpp /
+      # States.cpp include their sibling headers via the angle-bracket
+      # path <react/renderer/components/RNBarkReactNativeSpec/ShadowNodes.h>.
+      # CocoaPods flattens public headers into Pods/Headers/Public/
+      # BarkReactNative/ which loses that nested react/renderer/...
+      # prefix, so the includes fail. The SDK's podspec doesn't add the
+      # generated root to HEADER_SEARCH_PATHS on the modern
+      # install_modules_dependencies path (RN >= 0.71). Add it here so
+      # the angle-bracket include resolves against the in-place source.
+      if target.name == 'BarkReactNative'
+        existing = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+        added = '"${PODS_TARGET_SRCROOT}/ios/generated/build/generated/ios"'
+        unless existing.to_s.include?('ios/generated/build/generated/ios')
+          config.build_settings['HEADER_SEARCH_PATHS'] = [existing, added].join(' ')
+        end
+      end
     end
   end
 end

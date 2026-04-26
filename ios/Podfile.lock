@@ -5,6 +5,28 @@ PODS:
   - AppAuth/Core (2.0.0)
   - AppAuth/ExternalUserAgent (2.0.0):
     - AppAuth/Core
+  - BarkReactNative (0.4.1):
+    - DoubleConversion
+    - glog
+    - hermes-engine
+    - RCT-Folly (= 2024.10.14.00)
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - uniffi-bindgen-react-native (= 0.31.0-2)
+    - Yoga
   - BEMCheckBox (1.4.1)
   - boost (1.84.0)
   - BugsnagReactNative (8.9.0):
@@ -2328,9 +2350,12 @@ PODS:
     - React
   - SocketRocket (0.7.1)
   - Toast (4.1.1)
+  - uniffi-bindgen-react-native (0.31.0-2):
+    - React-Core
   - Yoga (0.0.0)
 
 DEPENDENCIES:
+  - "BarkReactNative (from `../node_modules/@secondts/bark-react-native`)"
   - boost (from `../node_modules/react-native/third-party-podspecs/boost.podspec`)
   - "BugsnagReactNative (from `../node_modules/@bugsnag/react-native`)"
   - BVLinearGradient (from `../node_modules/react-native-linear-gradient`)
@@ -2460,8 +2485,11 @@ SPEC REPOS:
     - React-Codegen
     - SocketRocket
     - Toast
+    - uniffi-bindgen-react-native
 
 EXTERNAL SOURCES:
+  BarkReactNative:
+    :path: "../node_modules/@secondts/bark-react-native"
   boost:
     :podspec: "../node_modules/react-native/third-party-podspecs/boost.podspec"
   BugsnagReactNative:
@@ -2698,6 +2726,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   AppAuth: 1c1a8afa7e12f2ec3a294d9882dfa5ab7d3cb063
+  BarkReactNative: 39e091c6da1e8b6c29c165ac9ae921fccab67d67
   BEMCheckBox: 5ba6e37ade3d3657b36caecc35c8b75c6c2b1a4e
   boost: 1dca942403ed9342f98334bf4c3621f011aa7946
   BugsnagReactNative: bb71fbfae639cf9b9ed93809e4b0e86f2c562596
@@ -2820,8 +2849,9 @@ SPEC CHECKSUMS:
   RNWatch: 28fe1f5e0c6410d45fd20925f4796fce05522e3f
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Toast: 1f5ea13423a1e6674c4abdac5be53587ae481c4e
+  uniffi-bindgen-react-native: 205a15613d97a49fe17d5bda57f7fa46a7bbafd0
   Yoga: feb4910aba9742cfedc059e2b2902e22ffe9954a
 
-PODFILE CHECKSUM: 591ab340082d1a6a3826c691d6d920496d2d9d15
+PODFILE CHECKSUM: 4001794c0aed2d3fef1cfb30d68923719faddfdb
 
 COCOAPODS: 1.16.2
