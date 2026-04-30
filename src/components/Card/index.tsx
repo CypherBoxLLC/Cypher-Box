@@ -21,6 +21,8 @@ interface Props {
     withdrawThreshold: any;
     reserveAmount: any;
     isShowButtons?: boolean;
+    /** Suppress in-card Receive/Send buttons. Used when a shared row outside the carousel takes over (matches the vault top-up/withdraw pattern). */
+    hideActionButtons?: boolean;
     receiveType?: boolean;
     receiveClickHandler?(value: boolean): void;
     sendClickHandler?(value: boolean): void;
@@ -36,6 +38,7 @@ export default function Card({ onPress,
     matchedRate,
     currency,
     isShowButtons = false,
+    hideActionButtons = false,
     receiveType = false,
     receiveClickHandler,
     sendClickHandler,
@@ -64,8 +67,6 @@ export default function Card({ onPress,
     const getWidth = () => {
         return `${calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount))}%`
     }
-    console.log('allBTCWallets: ', allBTCWallets)
-
     const onReceiveClickHandler = () => {
         if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
             dispatchNavigate('CreateInvoice', {
@@ -168,7 +169,7 @@ export default function Card({ onPress,
                     </View>
                 </View>
             </TouchableOpacity>
-            {isShowButtons &&
+            {isShowButtons && !hideActionButtons &&
                 <View style={styles.btnView}>
                     <GradientButtonWithShadow
                         title="Receive"

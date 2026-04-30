@@ -54,7 +54,7 @@ public class MainApplication extends Application implements ReactApplication {
 
   @Override
   public ReactHost getReactHost() {
-    return DefaultReactHost.getDefaultReactHost(getApplicationContext(), mReactNativeHost);
+    return null;
   }
 
   @Override
@@ -69,7 +69,7 @@ public class MainApplication extends Application implements ReactApplication {
       throw new RuntimeException(e);
     }
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
-      DefaultNewArchitectureEntryPoint.load();
+      DefaultNewArchitectureEntryPoint.load(true, true, false);
     }
   }
 }

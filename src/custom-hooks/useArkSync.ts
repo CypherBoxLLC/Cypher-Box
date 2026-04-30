@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, InteractionManager, Platform } from 'react-native';
 
 import {
     fetchArkBalance,
     fetchArkVtxos,
     fetchChainTipHeight,
+    getArkWalletHandle,
     getCachedArkMnemonic,
     syncArkWallet,
     tryClaimArkLightningReceives,
@@ -29,8 +30,31 @@ import useAuthStore from '@Cypher/stores/authStore';
  * Error policy: swallow errors into `lastError` and keep going. A one-off
  * esplora flake or ASP hiccup shouldn't spam the user — they'll see stale
  * data for up to one interval, which is fine for a balance view.
+ *
+ * PERFORMANCE NOTE: every cycle does ~5s of JS-thread-blocking UniFFI calls
+ * into Bark's Rust crate (`syncArkWallet` ~2.3s, `fetchBalance/Vtxos/Tip`
+ * ~2.6s on Galaxy A14). The Rust crate runs synchronously on the JS thread
+ * because that's how `bark-react-native`'s UniFFI bindings work today, so
+ * during those 5 seconds JS-driven UI updates stop. We can't make Rust
+ * faster, but we can make the freezes less frequent and less noticeable:
+ *   1. Longer interval on Android (slower phones, bigger relative cost)
+ *   2. `InteractionManager.runAfterInteractions` so a cycle never starts
+ *      mid-tap or mid-scroll — the work still runs, but only after the
+ *      user's gesture completes, so they don't feel the freeze.
+ *   3. Skip the slowest call (`syncArkWallet`) when there are no VTXOs
+ *      and the prior sync was recent — nothing to sync against the ASP.
  */
-const INTERVAL_MS = 30_000;
+const INTERVAL_MS_IOS = 30_000;
+// Android (Galaxy A14 in particular) feels every 5s freeze; halving the
+// freeze frequency to once a minute makes the wallet feel ~2x snappier
+// while balance staleness stays acceptable for a non-custodial Ark wallet.
+const INTERVAL_MS_ANDROID = 60_000;
+const INTERVAL_MS = Platform.OS === 'android' ? INTERVAL_MS_ANDROID : INTERVAL_MS_IOS;
+// If both balance and vtxo list have been zero/empty for at least N ticks,
+// assume the wallet is idle (no incoming Lightning, no in-flight rounds,
+// nothing to refresh). Skip the slow `syncArkWallet` call on those ticks
+// and just refresh balance/vtxos/tip — saving ~2s per cycle.
+const IDLE_SKIP_AFTER_EMPTY_TICKS = 3;
 
 export type UseArkSync = {
     isSyncing: boolean;
@@ -55,34 +79,76 @@ export default function useArkSync(): UseArkSync {
     // in-flight when the interval fires, skip the new one. This also means
     // a slow esplora round-trip doesn't stack up calls behind it.
     const inFlight = useRef(false);
+    // Counter used by the idle-skip heuristic. Increments every cycle that
+    // returns balance=0 and vtxos.all.length=0; resets the moment either
+    // turns non-zero. We use this to avoid the 2s Bark `syncArkWallet`
+    // call when the wallet has nothing to settle.
+    const consecutiveEmptyTicks = useRef(0);
+    // Signature of the wallet state captured by the last successful auto-backup.
+    // We skip the backup (which does pure-JS AES on the JS thread — see backup.ts)
+    // when the new signature matches the previous one, because re-encrypting the
+    // same plaintext to disk is pointless and stalls the UI for several seconds
+    // every cycle on slow Android phones (Galaxy A14: ~1min freeze on a fresh wallet).
+    const lastBackupSignature = useRef<string | null>(null);
 
     const sync = useCallback(async () => {
         if (inFlight.current) return;
+
+        // Hard gate on handle readiness. On cold boot, `restoreArkWalletFromDisk`
+        // takes 3-5s on a Galaxy A14 to reopen the Bark wallet. If the sync
+        // hook fires in that window (mount triggers it immediately), the
+        // UniFFI calls inside `fetchArkBalance` etc. block the JS thread
+        // waiting for the handle that's still being opened by the boot
+        // restore — an extra 4-5 seconds of JS-thread freeze on top of
+        // the already-slow boot. Skip until the handle is genuinely ready;
+        // the AppState 'active' listener and the next interval tick will
+        // pick up where we left off.
+        if (!getArkWalletHandle()) {
+            if (__DEV__) console.log('[ArkSync] skipped — wallet handle not ready yet');
+            return;
+        }
+
         inFlight.current = true;
         setIsSyncing(true);
-        console.log('[Ark sync] cycle start');
+        // Defer the heavy work until the JS thread is genuinely idle.
+        // RN's InteractionManager queues callbacks behind any in-flight
+        // gesture / animation / native module callback. If the user is
+        // currently tapping a button or scrolling, the sync waits up to
+        // a few hundred ms for that to finish — we trade slightly stale
+        // data for not pinning the JS thread mid-interaction.
+        await new Promise<void>((resolve) =>
+            InteractionManager.runAfterInteractions(() => resolve()),
+        );
+        // TEMPORARY: Bam reported a 20s freeze on cold launch when Ark exists.
+        // Per-call timing narrows the JS-thread block to a single SDK call.
+        const _t0 = Date.now();
+        const _stamp = (label: string) => __DEV__ && console.log(`[ArkSync] ${label} +${Date.now() - _t0}ms`);
+        _stamp('cycle start');
         try {
             // Drive forward any pending Lightning receives BEFORE reading
-            // VTXOs. Without this, a successful Lightning receive sits in
-            // `claimableLightningReceiveSats` on the balance but never
-            // materializes into a VTXO for the capsules tab — the SDK
-            // doesn't run the claim automatically from a background daemon
-            // on mobile. Fire-and-forget (wait=false): the claim finalizes
-            // asynchronously; this cycle's vtxo fetch may not yet see the
-            // new VTXO, but the next 30s tick will. Errors are swallowed
-            // inside the wrapper so a claim flake doesn't break sync.
+            // VTXOs. (See original comment.)
             await tryClaimArkLightningReceives();
+            _stamp('tryClaimArkLightningReceives done');
 
             // Pull round finalizations + server-side updates into the local
-            // datadir. MUST run before the SQLite reads below or they'll
-            // return stale state (old VTXOs lingering as Spendable after a
-            // refresh, new incoming VTXOs invisible, etc.). Swallow errors
-            // so a transient ASP/esplora flake doesn't nuke the whole cycle
-            // — we'd rather render slightly stale data than nothing.
-            try {
-                await syncArkWallet();
-            } catch (syncErr) {
-                console.warn('[Ark sync] wallet.sync() failed, continuing with cached state:', syncErr);
+            // datadir. SKIPPED when the wallet has been empty for
+            // IDLE_SKIP_AFTER_EMPTY_TICKS in a row — there's nothing on the
+            // ASP side to settle against an empty pubkey, and burning 2s of
+            // JS-thread time for nothing is the freeze users notice most.
+            // The first non-empty balance / vtxo result instantly resets
+            // the skip counter, so a Lightning receive or board doesn't
+            // get delayed.
+            const skipSync = consecutiveEmptyTicks.current >= IDLE_SKIP_AFTER_EMPTY_TICKS;
+            if (skipSync) {
+                _stamp(`syncArkWallet skipped (idle ${consecutiveEmptyTicks.current} ticks)`);
+            } else {
+                try {
+                    await syncArkWallet();
+                    _stamp('syncArkWallet done');
+                } catch (syncErr) {
+                    console.warn('[Ark sync] wallet.sync() failed, continuing with cached state:', syncErr);
+                    _stamp('syncArkWallet FAILED');
+                }
             }
 
             // Run balance + vtxos + tip concurrently. These are independent
@@ -92,41 +158,40 @@ export default function useArkSync(): UseArkSync {
                 fetchArkVtxos(),
                 fetchChainTipHeight(),
             ]);
+            _stamp('fetchBalance/Vtxos/Tip done');
 
-            // Compose balance + vtxos for the headline number.
+            // Headline = the SDK's `balance.totalSats` (Spendable VTXOs +
+            // pendingExit/Lightning/Board buckets). We deliberately do NOT
+            // mix in the VTXO list here.
             //
-            // `balance.totalSats` as returned by fetchArkBalance excludes
-            // `pendingInRoundSats` (SDK double-counts both sides of a
-            // pending round — see comments in balance.ts). That was correct
-            // for the 2× overshoot problem, but it meant that during a
-            // VTXO refresh — when the input VTXO becomes Locked — the
-            // headline dropped to 0 until the round finalised.
+            // History — why this used to be `Math.max(balance.totalSats,
+            // vtxoSum + claimableLn)`: during a VTXO refresh the SDK
+            // marks the input VTXO Locked and emits a Locked output VTXO,
+            // which would temporarily drop `spendableSats` to 0. The
+            // Math.max kept the headline stable mid-round by trusting the
+            // VTXO list instead. But that path has a worse failure: it
+            // ALSO counts Locked VTXOs that are mid-send (i.e. already
+            // spent, just waiting for the SDK to flip them to Spent),
+            // so post-withdrawal the balance stays artificially high
+            // until the spent VTXOs detach from the wallet's pubkey
+            // server-side — which can take many minutes. That was the
+            // bigger UX hit (users see "balance unchanged" after a tx
+            // confirmed in their hot vault), so we revert to trusting
+            // `balance.totalSats`.
             //
-            // The accurate in-round amount IS available though: the SDK's
-            // allVtxos() list contains the new output VTXO as Locked with
-            // its exact post-fee sat amount. Summing visible (non-Spent)
-            // VTXOs gives the user's true retained balance, input OR
-            // output, without the 2× overcount.
-            //
-            // We take max(balance.totalSats, vtxoSum + claimableLn). In
-            // steady state the two agree; mid-round the vtxo path wins
-            // and keeps the headline stable. `claimableLightningReceive`
-            // isn't in the VTXO list (it's arkd-side until the claim
-            // flow materialises it), so we add it back explicitly.
-            if (balance && vtxos) {
-                const vtxoSum = vtxos.spendable.reduce((s, v) => s + v.sats, 0);
-                const claimableLn = balance.claimableLightningReceiveSats;
-                const headline = Math.max(balance.totalSats, vtxoSum + claimableLn);
+            // For the refresh-mid-round case: `pendingInRoundSats` is now
+            // surfaced through `arkBalanceDetail` and the UI can render
+            // a "+ X sats refreshing" indicator beside the headline,
+            // rather than inflating the headline itself. That matches
+            // user expectation: balance = what you can actually spend
+            // right now, with in-flight movements shown separately.
+            if (balance) {
                 console.log(
-                    '[Ark sync] headline=', headline,
-                    '(balance.totalSats=', balance.totalSats,
-                    'vtxoSum=', vtxoSum,
-                    'claimableLn=', claimableLn, ')',
+                    '[Ark sync] headline=', balance.totalSats,
+                    '(spendable=', balance.spendableSats,
+                    'pendingInRound=', balance.pendingInRoundSats,
+                    'claimableLn=', balance.claimableLightningReceiveSats, ')',
                 );
-                setArkBalance(headline);
-                setArkBalanceDetail(balance);
-            } else if (balance) {
-                // vtxos fetch failed — trust the balance bucket as-is.
                 setArkBalance(balance.totalSats);
                 setArkBalanceDetail(balance);
             }
@@ -141,6 +206,19 @@ export default function useArkSync(): UseArkSync {
                 setArkVtxos(vtxos.spendable);
             } else {
                 console.log('[Ark sync] fetchArkVtxos returned null (no handle)');
+            }
+
+            // Update the idle-skip counter based on what this tick saw.
+            // Both balance and vtxo list have to be empty for us to count
+            // the tick as "idle"; non-zero in either resets the counter
+            // immediately so the next tick syncs against the ASP again.
+            const isEmpty =
+                (!balance || balance.totalSats === 0) &&
+                (!vtxos || vtxos.all.length === 0);
+            if (isEmpty) {
+                consecutiveEmptyTicks.current += 1;
+            } else {
+                consecutiveEmptyTicks.current = 0;
             }
             // tip is allowed to be null (esplora offline / network flake) —
             // leave the previous value in place rather than clearing.
@@ -164,10 +242,26 @@ export default function useArkSync(): UseArkSync {
             // We use getCachedArkMnemonic() rather than hitting Keychain so
             // there is no biometric prompt during a background tick. The seed
             // was cached in walletHandle when the wallet was opened.
+            // Skip auto-backup if nothing observable changed since the last
+            // backup. The encrypt step is pure-JS CryptoJS AES (see backup.ts)
+            // which blocks the JS thread; re-encrypting an unchanged datadir
+            // every 60s causes ~5-60s of UI freeze per cycle for no benefit.
+            // A simple signature on (balance, vtxo counts, tip) is enough —
+            // if any of those move, the datadir has changed and we re-back-up.
+            const signature = [
+                balance?.totalSats ?? 'n',
+                vtxos?.all.length ?? 'n',
+                vtxos?.spendable.length ?? 'n',
+                tip ?? 'n',
+            ].join('|');
+
             const mnemonic = getCachedArkMnemonic();
-            if (mnemonic) {
+            if (mnemonic && signature === lastBackupSignature.current) {
+                if (__DEV__) console.log('[Ark auto-backup] skipped — state unchanged');
+            } else if (mnemonic && signature !== lastBackupSignature.current) {
                 writeArkAutoBackup(mnemonic)
                     .then(({ sizeBytes, createdAt }) => {
+                        lastBackupSignature.current = signature;
                         setArkLastBackupAt(createdAt);
                         if (__DEV__) {
                             console.log(
@@ -206,13 +300,39 @@ export default function useArkSync(): UseArkSync {
 
     // Primary driver: mount + interval. Restarts whenever auth flips on,
     // so the moment a wallet is created the first fetch fires.
+    //
+    // The handle-readiness gate inside `sync()` may return early if the
+    // boot restore hasn't finished. Without a fast-retry the user would
+    // wait up to INTERVAL_MS (60s on Android) for their balance after
+    // first launch. So we also kick off a short polling loop on mount:
+    // probe every 600ms for up to 15s, fire the sync the moment the
+    // handle becomes ready, then stop polling. After the first
+    // successful sync the interval driver takes over.
     useEffect(() => {
         if (!isArkAuth) return;
         void sync();
+
+        // Fast retry: catch the wallet handle the moment boot finishes.
+        let pollTries = 0;
+        const POLL_INTERVAL_MS = 600;
+        const POLL_MAX_TRIES = 25; // 25 * 600ms = 15s ceiling
+        const fastPollId = setInterval(() => {
+            pollTries += 1;
+            if (getArkWalletHandle()) {
+                clearInterval(fastPollId);
+                void sync();
+            } else if (pollTries >= POLL_MAX_TRIES) {
+                clearInterval(fastPollId);
+            }
+        }, POLL_INTERVAL_MS);
+
         const id = setInterval(() => {
             void sync();
         }, INTERVAL_MS);
-        return () => clearInterval(id);
+        return () => {
+            clearInterval(id);
+            clearInterval(fastPollId);
+        };
     }, [isArkAuth, sync]);
 
     // Foreground kick — refresh the moment the user returns to the app,
