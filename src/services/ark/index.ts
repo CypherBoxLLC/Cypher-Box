@@ -10,7 +10,7 @@ export { ARK_DATADIR, ensureArkDatadir, deleteArkDatadir } from './datadir';
 
 export { resetArkWalletState } from './reset';
 
-export { recoverArkWalletFromKeychain } from './recover';
+export { recoverArkWalletFromKeychain, readArkSeedPhrase } from './recover';
 export type { ArkRecoveryResult } from './recover';
 
 export { restoreArkWalletFromDisk, hasArkDatadir } from './restore';
@@ -50,7 +50,9 @@ export { syncArkWallet } from './sync';
 
 export {
     AUTO_BACKUP_PATH,
+    LEGACY_AUTO_BACKUP_PATH,
     buildArkBackupBlob,
+    migrateLegacyBackupFile,
     restoreArkBackupBlob,
     writeArkAutoBackup,
     writeArkBackupToTempFile,
@@ -58,10 +60,34 @@ export {
 } from './backup';
 
 export {
+    configureGoogleDrive,
+    isGoogleDriveConnected,
+    connectGoogleDrive,
+    disconnectGoogleDrive,
+    uploadArkBackupToDrive,
+    downloadArkBackupFromDrive,
+} from './googleDrive';
+
+export {
+    cancelArkPendingRound,
     estimateArkRefreshFee,
+    fetchArkPendingRoundStates,
+    fetchArkRoundIntervalSecs,
+    progressArkPendingRounds,
     refreshArkVtxos,
     refreshArkVtxosAndSync,
 } from './refresh';
+
+export {
+    claimArkExitsToAddress,
+    fetchArkExitVtxos,
+    fetchClaimableExitVtxos,
+    fetchHasPendingExits,
+    fetchPendingExitsTotalSats,
+    progressArkExits,
+    startArkEmergencyExit,
+    syncArkExits,
+} from './exit';
 export type { ArkRefreshFeeView, ArkRefreshResult } from './refresh';
 
 export {

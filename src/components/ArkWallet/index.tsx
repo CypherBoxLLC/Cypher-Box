@@ -17,6 +17,7 @@ interface Props {
     refSendRBSheet: any;
     setReceiveType: any;
     homeMessage?: string | null;
+    hideActionButtons?: boolean;
 }
 
 /**
@@ -38,6 +39,7 @@ export default function ArkWallet({
     refSendRBSheet,
     setReceiveType,
     homeMessage,
+    hideActionButtons = false,
 }: Props) {
     const {
         isArkAuth,
@@ -166,28 +168,46 @@ export default function ArkWallet({
                         withdrawThreshold={withdrawArkThreshold}
                         onPress={arkMenuClickHandler}
                         isShowButtons
+                        hideActionButtons={hideActionButtons}
                         matchedRate={matchedRate}
                         currency={currency}
                         receiveClickHandler={receiveClickHandler}
                         sendClickHandler={sendClickHandler}
                     />
-                    <View style={{ minHeight: 40, justifyContent: "center" }}>
-                        {!isLoading && homeMessage && (
-                            <Text h4 style={styles.alert}>
-                                {homeMessage}
-                            </Text>
-                        )}
-                        {!isLoading && expiryWarning && (
-                            <Text h4 style={[styles.alert, { color: colors.redLight }]}>
-                                {expiryWarning}
-                            </Text>
-                        )}
-                        {!isLoading && pendingRoundSats > 0 && (
-                            <Text h4 style={[styles.alert, { color: colors.ark.light }]}>
-                                {`${pendingRoundSats.toLocaleString()} sats pending in a round (refresh/send in flight)`}
-                            </Text>
-                        )}
-                    </View>
+                    {/* When shared buttons are active (`hideActionButtons`),
+                        skip this minHeight-40 reserve so the shared row can
+                        sit flush below the card. Otherwise it left a 40px
+                        gap that Bam called "way below". The expiry warning
+                        and pending-round nudges are also suppressed in
+                        shared-mode — Bam can surface them elsewhere later. */}
+                    {!hideActionButtons && (
+                        <View style={{ minHeight: 40, justifyContent: "center" }}>
+                            {!isLoading && homeMessage && (
+                                <Text h4 style={styles.alert}>
+                                    {homeMessage}
+                                </Text>
+                            )}
+                            {!isLoading && expiryWarning && (
+                                <Text h4 style={[styles.alert, { color: colors.redLight }]}>
+                                    {expiryWarning}
+                                </Text>
+                            )}
+                            {!isLoading && pendingRoundSats > 0 && (
+                                // The headline `arkBalance` already excludes
+                                // these sats (Locked VTXO state, summed in
+                                // `pendingRoundSats`), so this subtitle is
+                                // purely informational — the user's spendable
+                                // figure stays accurate while a round is mid-
+                                // flight. Wording requested by Bam: "refreshing
+                                // - in flight" reads cleaner than the longer
+                                // "pending in a round (refresh/send in flight)"
+                                // we used before. Same data either way.
+                                <Text h4 style={[styles.alert, { color: colors.green }]}>
+                                    {`(refreshing - in flight): ${pendingRoundSats.toLocaleString()} sats`}
+                                </Text>
+                            )}
+                        </View>
+                    )}
                 </>
             )}
 

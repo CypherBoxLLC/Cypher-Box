@@ -12,6 +12,12 @@ interface Props {
     usd: string;
     isSats: boolean;
     walletInfo: any
+    /**
+     * Override the active border gradient (when sats is non-empty).
+     * Empty-state gray is the same regardless. Used by Ark surfaces to
+     * render the input border in yellow instead of pink.
+     */
+    colors_?: string[];
 }
 
 export default function GradientInput({
@@ -19,12 +25,14 @@ export default function GradientInput({
     setSats,
     usd,
     isSats,
-    walletInfo
+    walletInfo,
+    colors_,
 }: Props) {
+    const activeColors = colors_ ?? [colors.pink.extralight, colors.pink.default];
     return (
         <View>
             <View style={styles.priceView}>
-                <GradientCard style={styles.card} colors_={sats ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}
+                <GradientCard style={styles.card} colors_={sats ? activeColors : [colors.gray.thin, colors.gray.thin2]}
                     linearStyle={styles.lGradient}>
                     <Input onChange={setSats}
                         value={sats}

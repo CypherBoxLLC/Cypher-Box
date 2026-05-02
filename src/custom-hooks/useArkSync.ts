@@ -2,11 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus, InteractionManager, Platform } from 'react-native';
 
 import {
+    claimArkExitsToAddress,
     fetchArkBalance,
+    fetchArkPendingRoundStates,
+    fetchArkRoundIntervalSecs,
     fetchArkVtxos,
     fetchChainTipHeight,
+    fetchClaimableExitVtxos,
+    fetchPendingExitsTotalSats,
     getArkWalletHandle,
     getCachedArkMnemonic,
+    progressArkExits,
+    progressArkPendingRounds,
+    resetArkWalletState,
+    syncArkExits,
     syncArkWallet,
     tryClaimArkLightningReceives,
     writeArkAutoBackup,
@@ -71,6 +80,14 @@ export default function useArkSync(): UseArkSync {
     const setArkChainTipHeight = useAuthStore((s) => s.setArkChainTipHeight);
     const setArkLastSyncedAt = useAuthStore((s) => s.setArkLastSyncedAt);
     const setArkLastBackupAt = useAuthStore((s) => s.setArkLastBackupAt);
+    const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
+    const setArkRoundIntervalSecs = useAuthStore((s) => s.setArkRoundIntervalSecs);
+    const arkExitInProgress = useAuthStore((s) => s.arkExitInProgress);
+    const arkExitDestinationAddress = useAuthStore((s) => s.arkExitDestinationAddress);
+    const clearArkAuth = useAuthStore((s) => s.clearArkAuth);
+    const setArkExitInProgress = useAuthStore((s) => s.setArkExitInProgress);
+    const setArkExitDestinationAddress = useAuthStore((s) => s.setArkExitDestinationAddress);
+    const setArkExitStartedAt = useAuthStore((s) => s.setArkExitStartedAt);
 
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastError, setLastError] = useState<Error | null>(null);
@@ -125,10 +142,99 @@ export default function useArkSync(): UseArkSync {
         const _stamp = (label: string) => __DEV__ && console.log(`[ArkSync] ${label} +${Date.now() - _t0}ms`);
         _stamp('cycle start');
         try {
+            // ----- Emergency-exit path -----
+            //
+            // When the user has triggered unilateral exit, we DON'T run the
+            // normal sync (refresh / Lightning claim / VTXO fetch / round
+            // progression). Those would race the exit machinery and burn
+            // JS-thread time on Bark calls that no longer matter — every
+            // VTXO is now in exit state, not Spendable.
+            //
+            // Per Erik / Bark docs: progressExits() must be called repeatedly
+            // to advance broadcast txs as inputs ripen. syncExits() reconciles
+            // chain state. Once listClaimableExits() returns non-empty, we
+            // sweep to the saved destination address with drainExits().
+            //
+            // When pendingExitsTotalSats hits 0 AND there are no claimable
+            // exits left, the exit is complete. We auto-delete the vault
+            // (resetArkWalletState + clearArkAuth) so the user doesn't have
+            // to come back later — Bam's call: "yes auto delete ark vault".
+            if (arkExitInProgress) {
+                try {
+                    await progressArkExits();
+                    _stamp('progressArkExits done');
+                    await syncArkExits();
+                    _stamp('syncArkExits done');
+
+                    const claimable = await fetchClaimableExitVtxos();
+                    _stamp(`fetchClaimableExitVtxos: ${claimable.length} ready`);
+                    if (claimable.length > 0 && arkExitDestinationAddress) {
+                        const claim = await claimArkExitsToAddress(
+                            arkExitDestinationAddress,
+                        );
+                        _stamp(
+                            `drainExits done — fee=${Number(claim.feeSats)} sats`,
+                        );
+                    }
+
+                    // Did we finish? "Finished" = nothing pending AND nothing
+                    // claimable left. Use this conservative AND so we don't
+                    // delete the wallet while a second batch is mid-broadcast.
+                    const pendingTotal = await fetchPendingExitsTotalSats();
+                    const stillClaimable = await fetchClaimableExitVtxos();
+                    if (pendingTotal === 0 && stillClaimable.length === 0) {
+                        if (__DEV__) console.log('[Ark exit] complete — auto-deleting vault');
+                        await resetArkWalletState();
+                        clearArkAuth();
+                        setArkExitInProgress(false);
+                        setArkExitDestinationAddress(null);
+                        setArkExitStartedAt(null);
+                    }
+                } catch (exitErr: any) {
+                    console.warn('[Ark exit] cycle failed:', exitErr?.message ?? exitErr);
+                    setLastError(
+                        exitErr instanceof Error ? exitErr : new Error(String(exitErr)),
+                    );
+                }
+                // Skip the normal sync path — exit and refresh aren't a
+                // sensible mix, and the heavy UniFFI calls below are pure
+                // overhead while every VTXO is in exit state.
+                return;
+            }
+
             // Drive forward any pending Lightning receives BEFORE reading
             // VTXOs. (See original comment.)
             await tryClaimArkLightningReceives();
             _stamp('tryClaimArkLightningReceives done');
+
+            // Drive forward any pending refresh / send rounds. This is the
+            // recovery path for VTXOs left Locked after an interrupted
+            // refresh — app-killed mid-round, JS-thread stalled past ASP
+            // cutoff, network blip, etc. Per Bark dev (Erik): the SDK's
+            // round state machine only advances when we call
+            // `progressPendingRounds()`. Without this call, a Locked VTXO
+            // sits Locked in our SQLite forever even though the round
+            // succeeded (or failed) server-side. See
+            // `progressArkPendingRounds` for full rationale.
+            await progressArkPendingRounds();
+            _stamp('progressArkPendingRounds done');
+
+            // Observability: how many pending rounds is the SDK tracking?
+            // ongoing=true → ASP / SDK still working it; wait.
+            // ongoing=false → terminated server-side, awaiting local ingest
+            //                 (next syncArkWallet should clear it).
+            // If a Locked VTXO persists with ongoing=false across multiple
+            // cycles, that's the signal for the future "Cancel stuck
+            // refresh" UX (Layer 3). For now we just log the snapshot.
+            if (__DEV__) {
+                const rounds = await fetchArkPendingRoundStates();
+                if (rounds.length > 0) {
+                    console.log(
+                        '[Ark sync] pending rounds:',
+                        rounds.map((r) => `${r.id}(${r.ongoing ? 'ongoing' : 'finalising'})`).join(', '),
+                    );
+                }
+            }
 
             // Pull round finalizations + server-side updates into the local
             // datadir. SKIPPED when the wallet has been empty for
@@ -296,6 +402,12 @@ export default function useArkSync(): UseArkSync {
         setArkChainTipHeight,
         setArkLastSyncedAt,
         setArkLastBackupAt,
+        arkExitInProgress,
+        arkExitDestinationAddress,
+        clearArkAuth,
+        setArkExitInProgress,
+        setArkExitDestinationAddress,
+        setArkExitStartedAt,
     ]);
 
     // Primary driver: mount + interval. Restarts whenever auth flips on,
@@ -312,6 +424,19 @@ export default function useArkSync(): UseArkSync {
         if (!isArkAuth) return;
         void sync();
 
+        // One-shot: round-cadence (`wallet.arkInfo().roundIntervalSecs`) is
+        // server-side static config — fetch once per session as soon as the
+        // handle is ready, store in zustand. Drives the upper-bound ETA on
+        // "Refreshing… ≤Xm" labels in ArkCapsules. We can't show a real
+        // countdown because the SDK doesn't expose `nextRoundAt`.
+        const maybeFetchRoundInterval = () => {
+            if (arkRoundIntervalSecs != null) return;
+            void fetchArkRoundIntervalSecs().then((secs) => {
+                if (secs != null) setArkRoundIntervalSecs(secs);
+            });
+        };
+        maybeFetchRoundInterval();
+
         // Fast retry: catch the wallet handle the moment boot finishes.
         let pollTries = 0;
         const POLL_INTERVAL_MS = 600;
@@ -321,6 +446,7 @@ export default function useArkSync(): UseArkSync {
             if (getArkWalletHandle()) {
                 clearInterval(fastPollId);
                 void sync();
+                maybeFetchRoundInterval();
             } else if (pollTries >= POLL_MAX_TRIES) {
                 clearInterval(fastPollId);
             }
@@ -333,7 +459,7 @@ export default function useArkSync(): UseArkSync {
             clearInterval(id);
             clearInterval(fastPollId);
         };
-    }, [isArkAuth, sync]);
+    }, [isArkAuth, sync, arkRoundIntervalSecs, setArkRoundIntervalSecs]);
 
     // Foreground kick — refresh the moment the user returns to the app,
     // regardless of where the interval is in its cycle.

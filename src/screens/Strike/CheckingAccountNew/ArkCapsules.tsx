@@ -8,18 +8,12 @@ import { GradientView } from "@Cypher/components";
 import { Tag, Transaction, Yes } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
-import * as Keychain from "react-native-keychain";
-import Share from "react-native-share";
 
 import {
     AVG_BLOCK_MINUTES,
     blocksToDays,
-    clearArkWalletHandle,
-    createArkWallet,
     estimateArkRefreshFee,
-    recoverArkWalletFromKeychain,
     refreshArkVtxosAndSync,
-    writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -158,9 +152,8 @@ interface VtxoRowData {
      * The TRUTH about Ark/Bark recovery: VTXOs cannot be reconstructed
      * from the seed alone. The local datadir (VTXO commitments, presigned
      * forfeit txs, exit txs, round state) IS the wallet. The only path to
-     * non-destructive recovery is the encrypted .cbark backup file
-     * produced by the Capsules tab's "Back up wallet state" action +
-     * the original seed phrase.
+     * non-destructive recovery is the encrypted ark-backup file produced
+     * by `writeArkAutoBackup` (every sync tick) + the original seed phrase.
      *
      * That makes the classification depend on TWO orthogonal axes:
      *
@@ -189,6 +182,20 @@ interface VtxoRowProps {
     vtxo: VtxoRowData;
     selected: boolean;
     onPress: () => void;
+    /** Round cadence in seconds (from wallet.arkInfo()), null until fetched. */
+    roundIntervalSecs: number | null;
+}
+
+/**
+ * Format the round cadence as an upper-bound suffix for "Refreshing…".
+ * Mainnet (3600s) → "1h", signet (300s) → "5m", arbitrary intervals
+ * round to whole minutes. Per Erik (Bark team), the SDK doesn't expose
+ * `nextRoundAt`, so this is honestly the upper bound — the actual wait is
+ * anywhere from a few seconds to one full interval.
+ */
+function formatRoundUpperBound(secs: number): string {
+    if (secs >= 3600 && secs % 3600 === 0) return `${secs / 3600}h`;
+    return `${Math.max(1, Math.round(secs / 60))}m`;
 }
 
 /**
@@ -197,15 +204,18 @@ interface VtxoRowProps {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, roundIntervalSecs }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = btcHandle(vtxo.sats) + " BTC";
 
     // Pending-round VTXOs: flat yellow label, full ring (so the row doesn't
     // read as "almost expired" while it's actually sitting in a round).
     const labelColor = vtxo.pendingRound ? colors.ark.light : view.color;
+    const refreshingLabel = roundIntervalSecs != null
+        ? `Refreshing… ≤${formatRoundUpperBound(roundIntervalSecs)}`
+        : "Refreshing…";
     const labelText = vtxo.pendingRound
-        ? "Refreshing…"
+        ? refreshingLabel
         : vtxo.unknownExpiry
             ? vtxo.kind
             : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
@@ -281,16 +291,10 @@ interface ArkCapsulesProps {
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
-    const [recovering, setRecovering] = useState(false);
-    const [backingUp, setBackingUp] = useState(false);
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
-    const setArkVtxos = useAuthStore((s) => s.setArkVtxos);
-    const setArkBalance = useAuthStore((s) => s.setArkBalance);
-    const setArkBalanceDetail = useAuthStore((s) => s.setArkBalanceDetail);
-    const setArkChainTipHeight = useAuthStore((s) => s.setArkChainTipHeight);
-    const setArkLastBackupAt = useAuthStore((s) => s.setArkLastBackupAt);
+    const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
 
     // Project SDK VTXOs → row data with days-until-expiry computed from the
     // current chain tip. If tip is unknown (esplora offline) we render a
@@ -471,195 +475,27 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 );
             }
         } catch (err: any) {
+            // BarkError.Internal is the SDK's opaque catch-all when the ASP
+            // rejects the round submission. The most common cause we've
+            // observed is a VTXO below the ASP's (undocumented, server-side)
+            // minimum round-participant size — typically the smallest
+            // Pubkey/Spendable VTXO refusing to refresh while larger ones
+            // succeed. Translate it into something actionable instead of
+            // surfacing the raw enum name.
+            const msg: string = err?.message ?? '';
+            const totalSats = rows
+                .filter((r) => ids.includes(r.id))
+                .reduce((acc, r) => acc + r.sats, 0);
+            const isInternalLikelyDust =
+                /BarkError\.Internal/i.test(msg) && totalSats > 0 && totalSats < 500;
             SimpleToast.show(
-                `Refresh failed: ${err?.message ?? "unknown error"}`,
+                isInternalLikelyDust
+                    ? `Refresh rejected by Ark server. ${totalSats}-sat capsule is likely below the round's minimum size — consolidate it via a self-send before refreshing.`
+                    : `Refresh failed: ${msg || 'unknown error'}`,
                 SimpleToast.LONG,
             );
         } finally {
             setRefreshing(false);
-        }
-    };
-
-    /**
-     * Seed-only recovery. Use when the wallet's local datadir is stuck
-     * (unfinalised round, corrupted SQLite, test reset). Wipes the datadir
-     * but keeps the Keychain mnemonic, then re-creates a fresh wallet at
-     * the same keys.
-     *
-     * DESTRUCTIVE: Any Locked / pending-round VTXOs become unreachable from
-     * the client. The ASP still tracks them; recovery via Second.tech support
-     * is an open question. Gated __DEV__ only; prod needs Phase 2 backup
-     * before this is safe to expose.
-     */
-    const handleRecover = () => {
-        if (recovering || refreshing) return;
-        Alert.alert(
-            "Reset Ark wallet state?",
-            "Wipes the local Ark database but keeps your seed. Any capsules stuck in a pending round (including any mid-refresh) will become unreachable from this app. Use only if the wallet is stuck.",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Reset state",
-                    style: "destructive",
-                    onPress: async () => {
-                        setRecovering(true);
-                        try {
-                            const result = await recoverArkWalletFromKeychain();
-                            console.log('[Ark recover] result:', result);
-                            if (!result.ok) {
-                                const causeMsg =
-                                    (result.cause as any)?.message ??
-                                    (typeof result.cause === 'string' ? result.cause : '');
-                                console.log('[Ark recover] FAILED reason=', result.reason, 'cause=', result.cause);
-                                SimpleToast.show(
-                                    `Recovery failed: ${result.reason ?? "unknown"}${causeMsg ? ` — ${causeMsg}` : ''}`,
-                                    SimpleToast.LONG,
-                                );
-                                return;
-                            }
-                            // Scrub stale store fields so the UI doesn't
-                            // flash ghost VTXOs before the next sync tick
-                            // repopulates from the fresh datadir.
-                            setArkVtxos([]);
-                            setArkBalance(0);
-                            setArkBalanceDetail(null);
-                            setArkChainTipHeight(null);
-                            // Stale backup timestamp from the previous
-                            // wallet would lie to the user about the new
-                            // (empty) wallet's safety. Clear it.
-                            setArkLastBackupAt(null);
-                            setSelectedIds([]);
-                            SimpleToast.show(
-                                "Wallet state reset. Syncing fresh state…",
-                                SimpleToast.LONG,
-                            );
-                        } catch (err: any) {
-                            console.log('[Ark recover] handler threw:', err?.message ?? err, err);
-                            SimpleToast.show(
-                                `Recovery failed: ${err?.message ?? "unknown error"}`,
-                                SimpleToast.LONG,
-                            );
-                        } finally {
-                            setRecovering(false);
-                        }
-                    },
-                },
-            ],
-        );
-    };
-
-    /**
-     * Manual encrypted backup of the wallet datadir.
-     *
-     * Critical for non-destructive recovery. Bark VTXOs cannot be
-     * reconstructed from the seed alone (no `list_by_pubkey` endpoint on
-     * the ASP, and presigned forfeit / exit txs live in the local datadir).
-     * This export is the only thing that lets a user reset / lose their
-     * device / reinstall without losing funds.
-     *
-     * Sequence:
-     *   1. Read seed from Keychain (biometric prompt; fail-fast if absent)
-     *   2. Close the live wallet so SQLite checkpoints — the export reads
-     *      raw files; an open wallet would have un-flushed WAL pages that
-     *      don't replay on restore. We re-open with `createArkWallet` after.
-     *   3. Build encrypted blob, write to a temp .cbark file
-     *   4. Re-open the wallet so the user keeps using it (this UX path is
-     *      a backup, not a logout — they shouldn't lose their session)
-     *   5. Hand the file path to the iOS share sheet via `react-native-share`
-     *
-     * If anything between steps 2 and 4 throws, we MUST still re-open.
-     * Hence the wallet re-init lives in a finally block — the user must
-     * not be left handle-less because their backup failed.
-     */
-    const handleBackup = async () => {
-        if (backingUp || refreshing || recovering) return;
-
-        const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
-        if (!creds || !creds.password) {
-            SimpleToast.show(
-                "Can't back up — seed not in Keychain. Use the Recover screen to type it in first.",
-                SimpleToast.LONG,
-            );
-            return;
-        }
-        const mnemonic = creds.password;
-
-        setBackingUp(true);
-        let reopenError: unknown = null;
-        let backupResult: { path: string; sizeBytes: number; createdAt: number } | null = null;
-        try {
-            // Step 2: close wallet → SQLite WAL flushed via uniffiDestroy.
-            clearArkWalletHandle();
-            // Step 3: pack + encrypt + write temp file.
-            backupResult = await writeArkBackupToTempFile(mnemonic);
-        } catch (err: any) {
-            console.warn('[Ark backup] export threw:', err?.message ?? err);
-            SimpleToast.show(
-                `Backup failed: ${err?.message ?? "unknown error"}`,
-                SimpleToast.LONG,
-            );
-        } finally {
-            // Step 4: re-open wallet no matter what happened above. We
-            // pass forceRescan=false because the datadir on disk hasn't
-            // been touched by the export (it's read-only) and a fresh
-            // rescan would just delay the restored state.
-            try {
-                await createArkWallet(mnemonic, false);
-            } catch (err) {
-                reopenError = err;
-                console.warn('[Ark backup] wallet re-open threw after export:', err);
-            }
-            setBackingUp(false);
-        }
-
-        if (reopenError) {
-            // The backup file may have been created successfully even if the
-            // re-open path errored — but the user's wallet handle is now dead.
-            // Surface the more pressing issue (handle gone) rather than the
-            // backup outcome. Easy recovery: app reload triggers boot sync.
-            SimpleToast.show(
-                "Backup saved, but wallet handle didn't re-open — reload the app to restore your session.",
-                SimpleToast.LONG,
-            );
-        }
-
-        if (!backupResult) return;
-
-        // Step 5: share sheet. We let the user pick where the file goes —
-        // iCloud Drive, Files app, AirDrop, email-to-self, whatever they
-        // trust. Encrypted blob in user's hands; no plaintext seed leaves
-        // the device.
-        try {
-            await Share.open({
-                title: "Save your Ark wallet backup",
-                message:
-                    "Encrypted Ark wallet backup. Save this file somewhere safe (iCloud Drive recommended). To restore, you'll need both this file AND your 12-word seed phrase.",
-                url: `file://${backupResult.path}`,
-                type: "application/octet-stream",
-                filename: backupResult.path.split("/").pop() ?? "ark-backup.cbark",
-                failOnCancel: false,
-                saveToFiles: true,
-            });
-            // Stamp the success timestamp ONLY after the share sheet
-            // returned without error. iOS share sheets resolve only when
-            // the user finishes (saves, AirDrops, cancels-without-throw),
-            // so reaching here means the file went somewhere. We rely on
-            // the user actually keeping it — but absent that, our
-            // recoverability badges would be wildly optimistic anyway.
-            setArkLastBackupAt(Date.now());
-            SimpleToast.show(
-                `Backup ready (${(backupResult.sizeBytes / 1024).toFixed(1)} KB) — save it somewhere safe.`,
-                SimpleToast.LONG,
-            );
-        } catch (err: any) {
-            // Share-cancelled isn't really an error from the user's POV but
-            // we still produced the file — note the path so they can
-            // recover it from the share sheet retry.
-            console.warn('[Ark backup] share dialog threw:', err?.message ?? err);
-            SimpleToast.show(
-                `Backup saved at ${backupResult.path} — tap Back up again to retry sharing.`,
-                SimpleToast.LONG,
-            );
         }
     };
 
@@ -724,6 +560,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         vtxo={item}
                         selected={selectedIds.includes(item.id)}
                         onPress={() => toggle(item.id)}
+                        roundIntervalSecs={arkRoundIntervalSecs}
                     />
                 )}
                 ListEmptyComponent={() => (
@@ -779,50 +616,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         <ActivityIndicator color={colors.ark.light} />
                     </View>
                 )}
-                {/* Back up wallet state — the only path to non-destructive
-                    recovery, since Bark VTXOs cannot be re-derived from the
-                    seed alone. Always-visible (not __DEV__) because users
-                    NEED this to keep their funds safe before any reset. */}
-                <TouchableOpacity
-                    onPress={handleBackup}
-                    disabled={backingUp || refreshing || recovering}
-                    style={{ alignSelf: "center", marginTop: 8, paddingVertical: 6, paddingHorizontal: 14, flexDirection: "row", alignItems: "center" }}
+                {/* Pointer to the Emergency Exit path. Lives on the
+                    Capsules tab because that's where the user is when
+                    they're worrying about their Ark balance — the actual
+                    exit lives in Settings to keep this surface focused
+                    on per-capsule actions (refresh / send). */}
+                <Text
+                    style={{
+                        fontSize: 11,
+                        color: '#777',
+                        textAlign: 'center',
+                        marginTop: 8,
+                        paddingHorizontal: 24,
+                    }}
                 >
-                    {backingUp && (
-                        <ActivityIndicator
-                            color={colors.ark.light}
-                            style={{ marginRight: 8 }}
-                        />
-                    )}
-                    <Text
-                        bold
-                        style={{
-                            fontSize: 13,
-                            color: backingUp ? colors.gray.disable : colors.ark.light,
-                            textDecorationLine: "underline",
-                        }}
-                    >
-                        {backingUp ? "Building backup…" : "Back up wallet state"}
-                    </Text>
-                </TouchableOpacity>
-                {__DEV__ && (
-                    <TouchableOpacity
-                        onPress={handleRecover}
-                        disabled={recovering || refreshing}
-                        style={{ alignSelf: "center", marginTop: 4, paddingVertical: 6, paddingHorizontal: 14 }}
-                    >
-                        <Text
-                            bold
-                            style={{
-                                fontSize: 12,
-                                color: recovering ? colors.gray.disable : colors.redLight,
-                                textDecorationLine: "underline",
-                            }}
-                        >
-                            {recovering ? "Resetting state…" : "Reset wallet state (keep seed) — DEV"}
-                        </Text>
-                    </TouchableOpacity>
-                )}
+                    Don't trust the Ark server? Settings → Emergency Exit will
+                    sweep funds back on-chain without ASP cooperation.
+                </Text>
             </View>
         </View>
     );

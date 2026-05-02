@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
     FEATURE_ARK_ENABLED,
     hasArkDatadir,
+    migrateLegacyBackupFile,
     restoreArkWalletFromDisk,
 } from '@Cypher/services/ark';
 import useAuthStore from '@Cypher/stores/authStore';
@@ -60,7 +61,20 @@ export default function useArkRestoreOnBoot(): ArkRestoreBootStatus {
 
         (async () => {
             setStatus('running');
+            // Fire-and-forget rename of the legacy `cypher-box-ark-backup.cbark`
+            // to the new `ark-backup.cbark`. Idempotent; failure is benign
+            // (next auto-backup tick repopulates at the new path anyway).
+            void migrateLegacyBackupFile();
+            // TEMPORARY: Bam reported a 20s freeze on every cold launch when
+            // an Ark wallet exists. JS thread is blocked (queued taps fire
+            // after the freeze). Suspect either Wallet.open (SQLite + UniFFI
+            // init) inside restoreArkWalletFromDisk or handle.sync() inside
+            // useArkSync. These logs attribute the wait to the right call so
+            // we know which to optimize. Remove once root cause is known.
+            const _t0 = Date.now();
+            if (__DEV__) console.log('[ArkBoot] restoreArkWalletFromDisk START', _t0);
             const result = await restoreArkWalletFromDisk();
+            if (__DEV__) console.log('[ArkBoot] restoreArkWalletFromDisk DONE +', Date.now() - _t0, 'ms', { restored: result.restored, reason: 'reason' in result ? result.reason : undefined });
 
             if (result.restored) {
                 if (__DEV__) console.log('[Ark] Boot: restored wallet from disk');

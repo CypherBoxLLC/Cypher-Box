@@ -95,6 +95,35 @@ export type AuthStateType = {
      * the next one.
      */
     arkLastBackupAt: number | null;
+    /**
+     * Round-cadence in seconds, from the ASP's static config (wallet.arkInfo()).
+     * Mainnet ≈ 3600, signet ≈ 300. Used to surface an upper-bound ETA on
+     * "Refreshing…" labels — we can't show a real countdown because the SDK
+     * doesn't expose `nextRoundAt`. Null until first successful fetch.
+     */
+    arkRoundIntervalSecs: number | null;
+    /**
+     * Unilateral-exit state — set when user taps "Emergency Exit" in
+     * Settings. While true, `useArkSync` switches modes: it stops issuing
+     * normal sync/refresh calls (they'd race the exit machinery) and instead
+     * drives `progressArkExits` + `syncArkExits` per tick, then calls
+     * `claimArkExitsToAddress` once VTXOs ripen past the CSV timelock.
+     *
+     * Cleared after the auto-claim succeeds and `resetArkWalletState` runs.
+     */
+    arkExitInProgress: boolean;
+    /**
+     * Where the user wants the on-chain funds to land after the timelock.
+     * Captured at exit-start so the auto-claim loop has the address without
+     * reprompting the user. Bitcoin address (mainnet bech32 / legacy / etc).
+     */
+    arkExitDestinationAddress: string | null;
+    /**
+     * Timestamp (ms) of `startArkEmergencyExit` success. Drives the
+     * "started X hours ago" UI hint and the post-claim safety check
+     * (don't auto-claim on a stale exit-in-progress flag from a crash).
+     */
+    arkExitStartedAt: number | null;
     arkUseHotVaultSeed: boolean;
     withdrawArkThreshold: any | null;
     reserveArkAmount: number;
@@ -106,6 +135,10 @@ export type AuthStateType = {
     setArkChainTipHeight: (state: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
+    setArkRoundIntervalSecs: (state: number | null) => void;
+    setArkExitInProgress: (state: boolean) => void;
+    setArkExitDestinationAddress: (state: string | null) => void;
+    setArkExitStartedAt: (state: number | null) => void;
     setArkUseHotVaultSeed: (state: boolean) => void;
     setWithdrawArkThreshold: (state: any) => void;
     setReserveArkAmount: (state: number) => void;
@@ -148,6 +181,10 @@ const createAuthStore = (
     arkChainTipHeight: null,
     arkLastSyncedAt: null,
     arkLastBackupAt: null,
+    arkRoundIntervalSecs: null,
+    arkExitInProgress: false,
+    arkExitDestinationAddress: null,
+    arkExitStartedAt: null,
     arkUseHotVaultSeed: false,
     withdrawArkThreshold: 500000,
     reserveArkAmount: 100000,
@@ -187,6 +224,10 @@ const createAuthStore = (
     setArkChainTipHeight: (state: number | null) => set({ arkChainTipHeight: state }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
+    setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
+    setArkExitInProgress: (state: boolean) => set({ arkExitInProgress: state }),
+    setArkExitDestinationAddress: (state: string | null) => set({ arkExitDestinationAddress: state }),
+    setArkExitStartedAt: (state: number | null) => set({ arkExitStartedAt: state }),
     setArkUseHotVaultSeed: (state: boolean) => set({ arkUseHotVaultSeed: state }),
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
     setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),
@@ -200,6 +241,10 @@ const createAuthStore = (
             arkChainTipHeight: null,
             arkLastSyncedAt: null,
             arkLastBackupAt: null,
+            arkRoundIntervalSecs: null,
+            arkExitInProgress: false,
+            arkExitDestinationAddress: null,
+            arkExitStartedAt: null,
             arkUseHotVaultSeed: false,
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout

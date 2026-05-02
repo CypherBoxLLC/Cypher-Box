@@ -1,7 +1,7 @@
 import { getArkWalletHandle } from './walletHandle';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
-import type { FeeEstimate } from '@secondts/bark-react-native';
+import type { FeeEstimate, RoundState } from '@secondts/bark-react-native';
 
 export type ArkRefreshFeeView = {
     feeSats: number;
@@ -93,4 +93,120 @@ export async function refreshArkVtxosAndSync(
     await handle.sync();
     await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
     return result;
+}
+
+/**
+ * Drive any pending rounds forward.
+ *
+ * THIS IS THE STUCK-VTXO RECOVERY PATH. Per Bark dev (Erik) on 2026-04-30:
+ *
+ *   "If you close mid-app this process will try to recover.
+ *    - If you already signed everything and the round succeeds it will pick it up.
+ *    - If you were kicked from the round you will get a failed movement and your
+ *      vtxos will be unlocked."
+ *
+ * That recovery only happens when SOMETHING calls `progressPendingRounds()`
+ * (the SDK's "advance the state machine" entry point) on a regular cadence.
+ * Before this call existed in our codebase, a refresh round interrupted by
+ * an app-kill / network blip / JS-thread stall would leave the VTXO Locked
+ * in our local SQLite forever — even though the round had succeeded or
+ * failed server-side. The "fix" users reached for was Reset Ark wallet
+ * state, which nukes the datadir and erases the VTXO entirely (because
+ * Ark VTXO state is not seed-derivable).
+ *
+ * Calling this every sync cycle lets the SDK reconcile any orphaned
+ * pending rounds:
+ *   - Round completed server-side → SDK ingests the new VTXO, old one
+ *     flips to Spent, balance updates.
+ *   - Round failed / wallet kicked → SDK emits a failed movement,
+ *     unlocks the input VTXO so the user can retry.
+ *
+ * Errors are swallowed: this is advisory progress, not a critical operation.
+ * Failure to advance one cycle is fine; the next cycle retries.
+ */
+export async function progressArkPendingRounds(): Promise<void> {
+    const handle = getArkWalletHandle();
+    if (!handle) return;
+    try {
+        await handle.progressPendingRounds();
+    } catch (err: any) {
+        console.warn(
+            '[Ark refresh] progressPendingRounds threw (advisory, continuing):',
+            err?.message ?? err,
+        );
+    }
+}
+
+/**
+ * Snapshot of which rounds the SDK currently considers pending.
+ *
+ * `ongoing: true`  → the ASP / SDK is still working the round; wait.
+ * `ongoing: false` → the round has terminated server-side but our local DB
+ *                    hasn't yet ingested the result. Next sync should clear it;
+ *                    if it doesn't, this is a candidate for `cancelPendingRound`.
+ *
+ * Used today for observability (the [Ark sync] log line shows pending count).
+ * Will become the gate for the user-facing "Cancel stuck refresh" action
+ * once that UI lands.
+ *
+ * Returns [] on any error / no handle so callers don't have to check.
+ */
+export async function fetchArkPendingRoundStates(): Promise<RoundState[]> {
+    const handle = getArkWalletHandle();
+    if (!handle) return [];
+    try {
+        return await handle.pendingRoundStates();
+    } catch (err: any) {
+        console.warn(
+            '[Ark refresh] pendingRoundStates threw:',
+            err?.message ?? err,
+        );
+        return [];
+    }
+}
+
+/**
+ * Round cadence (seconds between rounds) from the ASP's static config.
+ *
+ * Per Erik (Bark team): mainnet runs a round every 1h, signet every 5m. The
+ * client locks the VTXO immediately on `refreshVtxos()` but the round
+ * itself only fires on the server's interval, so worst-case wait is one
+ * full `roundIntervalSecs` from the moment the user tapped Refresh.
+ *
+ * The SDK does NOT expose `nextRoundAt` / `lastRoundAt`, so we surface this
+ * as the upper-bound ETA ("Refreshing… ≤1h") in the UI rather than a
+ * spurious live countdown.
+ *
+ * Cached per session — round interval is server config and doesn't change
+ * between calls. Caller should fetch once after the wallet handle is open.
+ * Returns `null` on any error / no handle so callers don't have to branch.
+ */
+export async function fetchArkRoundIntervalSecs(): Promise<number | null> {
+    const handle = getArkWalletHandle();
+    if (!handle) return null;
+    try {
+        const info = await handle.arkInfo();
+        if (!info) return null;
+        return Number(info.roundIntervalSecs);
+    } catch (err: any) {
+        console.warn(
+            '[Ark refresh] arkInfo threw:',
+            err?.message ?? err,
+        );
+        return null;
+    }
+}
+
+/**
+ * Cancel a specific pending round. Wraps the SDK call to give callers a
+ * uniform error-shape and keep the import surface consistent with the
+ * other refresh helpers.
+ *
+ * Per Erik: cancelling unlocks the input VTXOs so the user can retry. The
+ * server may refuse if the round is already finalised (unilateral close),
+ * in which case `wallet.sync()` will pick up the result.
+ */
+export async function cancelArkPendingRound(roundId: number): Promise<void> {
+    const handle = requireHandle();
+    await handle.cancelPendingRound(roundId);
 }

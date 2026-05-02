@@ -69,7 +69,43 @@ const AES_IV_BYTES = 16;  // AES block size
  *   encrypted .cbark file in iCloud Drive is a net safety gain — it's fully
  *   opaque without the seed phrase.
  */
-export const AUTO_BACKUP_PATH = `${RNFS.DocumentDirectoryPath}/cypher-box-ark-backup.cbark`;
+export const AUTO_BACKUP_PATH = `${RNFS.DocumentDirectoryPath}/ark-backup.cbark`;
+
+/**
+ * Legacy auto-backup path from earlier dev builds. Kept as a constant so the
+ * boot-time migration in `migrateLegacyBackupFile()` can rename it to the
+ * new `AUTO_BACKUP_PATH` if it exists. Once all known devices have migrated
+ * (and backups since rotated past the original), this can be removed.
+ */
+export const LEGACY_AUTO_BACKUP_PATH = `${RNFS.DocumentDirectoryPath}/cypher-box-ark-backup.cbark`;
+
+/**
+ * One-shot migration: rename the legacy `cypher-box-ark-backup.cbark` to
+ * `ark-backup.cbark` if the legacy file exists and the new one doesn't yet.
+ * Idempotent and crash-safe — second/subsequent calls are no-ops.
+ *
+ * Call once at app boot, before the auto-backup loop has had a chance to
+ * write a fresh file at the new path. After this lands, an existing user
+ * sees the same single rolling file with the new name; no orphaned legacy
+ * file dangling in their Files app.
+ */
+export async function migrateLegacyBackupFile(): Promise<void> {
+    try {
+        const legacyExists = await RNFS.exists(LEGACY_AUTO_BACKUP_PATH);
+        if (!legacyExists) return;
+        const newExists = await RNFS.exists(AUTO_BACKUP_PATH);
+        if (newExists) {
+            // New path already populated by a fresh sync; legacy is stale.
+            await RNFS.unlink(LEGACY_AUTO_BACKUP_PATH);
+            return;
+        }
+        await RNFS.moveFile(LEGACY_AUTO_BACKUP_PATH, AUTO_BACKUP_PATH);
+    } catch (err: any) {
+        // Best-effort: a missing or unreadable legacy file shouldn't block boot.
+        // The next auto-backup tick will write a fresh `ark-backup.cbark` anyway.
+        console.warn('[Ark backup] legacy filename migration failed:', err?.message ?? err);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // In-memory AES key cache
@@ -469,7 +505,7 @@ export async function writeArkBackupToTempFile(
 ): Promise<{ path: string; sizeBytes: number; createdAt: number }> {
     const blob = await buildArkBackupBlob(mnemonic);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const path = `${RNFS.CachesDirectoryPath}/cypher-box-ark-backup-${stamp}.cbark`;
+    const path = `${RNFS.CachesDirectoryPath}/ark-backup-${stamp}.cbark`;
     await RNFS.writeFile(path, blob, 'utf8');
     return { path, sizeBytes: blob.length, createdAt: Date.now() };
 }

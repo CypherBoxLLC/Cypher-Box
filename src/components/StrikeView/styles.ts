@@ -68,7 +68,13 @@ export default StyleSheet.create<Style>({
         height: 94,
         margin: 20,
         marginBottom: 10,
-        alignSelf: 'flex-start',
+        // marginTop 40 → 30 per Bam: Fiat Balance text + amount up 10pt.
+        // alignSelf flex-start → center: horizontal-center the box within
+        // the right sideContainer so it visually centers between the
+        // capsule's right edge and the card's right edge (rather than
+        // hugging the left side of the right half).
+        marginTop: 30,
+        alignSelf: 'center',
         alignItems: 'center',
     },
     fiatBalanceBox2: {
@@ -76,7 +82,27 @@ export default StyleSheet.create<Style>({
         height: 94,
         margin: 20,
         marginBottom: 10,
-        alignSelf: 'center',
+        // The capsule now lives in the LEFT sideContainer (its position in
+        // the JSX was swapped with the Fiat Balance box), so this box's
+        // alignSelf mirrors `fiatBalanceBox` and pins to flex-start of its
+        // half. Was previously 'center' to fit the right half + plus/minus
+        // column layout pre-RN-0.76, but after the Yoga 2 migration that
+        // resolved to the wrong side and Bam saw it "stuck to the right
+        // corner."
+        alignSelf: 'flex-start',
+        // Per Bam: shift the whole UTXO-capsule square right 25pt and
+        // down 25pt from its post-swap position. marginLeft 20 → 45,
+        // marginTop 20 → 45 (each is base-margin 20 + 25pt offset). The
+        // box's outer width grows to 186pt as a result; that overflow
+        // sits within the LEFT sideContainer's slot so it doesn't
+        // collide with the right-side Fiat Balance text.
+        marginLeft: 45,
+        marginTop: 45,
+        // Round 2 — additional 15pt right + 15pt down requested by Bam.
+        // Using `transform: translate*` instead of margin so the BUY
+        // button below in the same flex-column doesn't move with the
+        // capsule (transform doesn't affect sibling layout).
+        transform: [{ translateX: 15 }, { translateY: 15 }],
         justifyContent: 'center',
         borderRadius: 20,
     },
@@ -103,10 +129,14 @@ export default StyleSheet.create<Style>({
         width: 121,
     },
     topShadow: {
+        // Green glow removed per Bam — was `colors.greenShadow` with full
+        // opacity, gave the BUY / SELL buttons a green halo. Switched to
+        // a neutral dark drop with reduced opacity so the buttons keep a
+        // subtle 3D pop without a colored tint.
         shadowOffset: { width: 2, height: 2 },
         shadowRadius: 2,
-        shadowOpacity: 2,
-        shadowColor: colors.greenShadow,
+        shadowOpacity: 0.6,
+        shadowColor: '#000000',
         borderRadius: 25,
         height: 33,
         width: 121,
@@ -269,7 +299,13 @@ export default StyleSheet.create<Style>({
         alignItems: 'center'
     },
     rowContainer: {
-        flexDirection: 'row'
+        flexDirection: 'row',
+        // -5 cropped the top edge of the gradient card on Strike+Ark
+        // (carousel slot clips at its top boundary). 5 keeps the top
+        // edge inside the slot while still ~25pt above the original 30
+        // anchor — the 35pt-up Bam asked for, minus 10pt to avoid the
+        // overflow.
+        marginTop: 5,
     },
     progressBarImage: {
         width: 62,
@@ -283,6 +319,7 @@ export default StyleSheet.create<Style>({
         marginTop: 15
     },
     bitcoinPriceContainer: {
+        // Net 0pt offset (was bumped 8→18, then lifted back -10).
         marginTop: 8,
     },
     bitcoinPriceText: {
