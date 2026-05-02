@@ -117,7 +117,10 @@ const TransactionsDetails = () => {
   };
 
   const handleOnOpenTransactionOnBlockExporerTapped = () => {
-    const url = `https://mempool.space/tx/${tx.hash}`;
+    // #details fragment auto-expands the inputs/outputs section on
+    // mempool.space so we land on the full transaction view rather
+    // than the mobile-collapsed summary.
+    const url = `https://mempool.space/tx/${tx.hash}#details`;
     Linking.canOpenURL(url)
       .then(supported => {
         if (supported) {
@@ -140,7 +143,7 @@ const TransactionsDetails = () => {
 
   const handleCopyPress = stringToCopy => {
     Clipboard.setString(
-      stringToCopy !== TransactionsDetails.actionKeys.CopyToClipboard ? stringToCopy : `https://mempool.space/tx/${tx.hash}`,
+      stringToCopy !== TransactionsDetails.actionKeys.CopyToClipboard ? stringToCopy : `https://mempool.space/tx/${tx.hash}#details`,
     );
   };
 
@@ -215,7 +218,7 @@ const TransactionsDetails = () => {
       <HandoffComponent
         title={loc.transactions.details_title}
         type={HandoffComponent.activityTypes.ViewInBlockExplorer}
-        url={`https://mempool.space/tx/${tx.hash}`}
+        url={`https://mempool.space/tx/${tx.hash}#details`}
       />
       <BlueCard>
         <View>

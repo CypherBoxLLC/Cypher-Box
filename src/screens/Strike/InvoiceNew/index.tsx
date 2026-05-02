@@ -52,7 +52,14 @@ export default function InvoiceNew({ route }: Props) {
     };
 
     const handleViewBtcNetExplorerClickHandler = () => {
-        const url = `https://www.blockchain.com/btc/tx/${historyDetail?.ref || historyDetail?.hash}`;
+        // mempool.space is the default explorer across the rest of the app
+        // (Ark tx details, BlueWallet 6.5.1's send/broadcast + transaction
+        // status screens). Standardising here so vault transaction history
+        // taps don't bounce between providers.
+        // #details fragment auto-expands the inputs/outputs section on
+        // mempool.space so we land on the full transaction view rather
+        // than the mobile-collapsed summary.
+        const url = `https://mempool.space/tx/${historyDetail?.ref || historyDetail?.hash}#details`;
         Linking.openURL(url).catch(err => console.error('An error occurred', err));
     }
 

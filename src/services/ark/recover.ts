@@ -9,6 +9,37 @@ import { clearArkWalletHandle, createArkWallet } from './walletHandle';
  */
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
+/**
+ * Read-only fetch of the stored Ark mnemonic. Triggers a biometric
+ * prompt (FaceID / passcode) on iOS due to the access-control flags
+ * `ArkSeedPhraseScreen` sets when writing.
+ *
+ * Returns null if the Keychain has no entry (e.g. a wallet that was
+ * never offered backup, or a backup the user explicitly removed) or
+ * if the user cancelled the biometric prompt — callers should treat
+ * the two states identically: don't surface the seed.
+ *
+ * Distinct from `recoverArkWalletFromKeychain` above, which is the
+ * destructive recovery flow. This helper is for the Settings "Show
+ * seed phrase" UI: we just want to show the 12 words, not touch any
+ * wallet state.
+ */
+export async function readArkSeedPhrase(): Promise<string | null> {
+    try {
+        const creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+        if (!creds || !creds.password) {
+            console.log('[Ark seed] keychain has no entry for', KEYCHAIN_SERVICE);
+            return null;
+        }
+        return creds.password;
+    } catch (err) {
+        // Most common cause: user cancelled the FaceID prompt. Don't
+        // log loudly — it's expected UX.
+        if (__DEV__) console.log('[Ark seed] keychain read declined / failed:', err);
+        return null;
+    }
+}
+
 export type ArkRecoveryResult = {
     /** True when the recovery completed and the wallet handle is live again. */
     ok: boolean;

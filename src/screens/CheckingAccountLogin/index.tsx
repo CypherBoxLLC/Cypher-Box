@@ -22,29 +22,28 @@ const config = {
     id: 'strike',
     name: 'Strike',
     type: 'oauth',
-    issuer: "https://auth.strike.me", // Strike Identity Server URL
     clientId: "cypherbox",
     // clientSecret removed — do not hardcode secrets
     clientSecret: "",
     redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
     scopes: ["offline_access", 'partner.currency-exchange-quote.create', 'partner.currency-exchange-quote.execute', 'partner.currency-exchange-quote.read', 'partner.receive-request.read', 'partner.deposit.manage', 'partner.payout-originator.read', 'partner.payment-quote.onchain.create', 'partner.payment-quote.lightning.create', 'partner.payment-quote.execute', 'partner.receive-request.create', "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
-    //clientAuthMethod: "post",
-    //wellKnown: `https://auth.strike.me/.well-known/openid-configuration`,
-    // authorization: {
-    //     params: {
-    //         scope: 'partner.invoice.read offline_access',
-    //         response_type: 'code',
-    //     }
-    // },
-    usePKCE: true, 
+    usePKCE: true,
     skipCodeExchange: true,
     idToken: false,
     checks: ['pkce', 'state'],
-    // serviceConfiguration: {
-    //   authorizationEndpoint: "https://auth.strike.me/oauth/authorize",
-    //   tokenEndpoint: "https://auth.strike.me/oauth/token",
-    //   revocationEndpoint: "https://auth.strike.me/oauth/revoke",
-    // },
+    // Hardcoded endpoints skip the OIDC discovery fetch
+    // (`/.well-known/openid-configuration`) that `issuer` would otherwise
+    // trigger before iOS can show the auth permission prompt — that round-
+    // trip was ~300-800ms of dead air between tapping "Login" and seeing
+    // anything happen. Endpoints verified against the live discovery doc
+    // (2026-04-27): Strike uses `/connect/*` paths, NOT `/oauth/*` (the
+    // earlier commented-out guesses had the wrong path). If Strike rotates
+    // these, re-derive from `https://auth.strike.me/.well-known/openid-configuration`.
+    serviceConfiguration: {
+      authorizationEndpoint: "https://auth.strike.me/connect/authorize",
+      tokenEndpoint: "https://auth.strike.me/connect/token",
+      revocationEndpoint: "https://auth.strike.me/connect/revocation",
+    },
 };
 
 export default function CheckingAccountLogin() {
@@ -65,6 +64,24 @@ export default function CheckingAccountLogin() {
   const [pageLoading, setPageLoading] = React.useState(true);
 
   useEffect(() => {
+    // Geo-gate temporarily disabled per Bam's intermediate phase: ship
+    // archive builds with CoinOS visible everywhere so the full
+    // custodial / non-custodial Lightning matrix is testable end-to-end.
+    // The IP round-trip + EU/GB/IN/CN block is kept below as the
+    // canonical reference for re-enabling alongside `isCoinosAllowed()`
+    // in services/featureFlags.ts when the production gate goes back on.
+    setPageLoading(false);
+    return;
+
+    // --- Original IP-based gate (preserved for re-enable) -----------
+    // Dev bypass + EU/GB/IN/CN block via ipapi.co. Pair with
+    // `isCoinosAllowed()` (locale-based) in featureFlags.ts when wiring
+    // CoinOS visibility back to a production gate.
+    //
+    // if (__DEV__) {
+    //   setPageLoading(false);
+    //   return;
+    // }
     async function fetchIPInfo() {
       try {
         setPageLoading(true);

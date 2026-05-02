@@ -60,7 +60,7 @@ export default function BottomBar({
     matchedRateStrike
 }: Props) {
     if (__DEV__) console.log("🚀 ~ hasSavingVault:", hasSavingVault)
-    const { isAuth, isStrikeAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, reserveAmount, reserveStrikeAmount, vaultTab, setVaultTab } = useAuthStore();
+    const { isAuth, isStrikeAuth, isArkAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, reserveAmount, reserveStrikeAmount, vaultTab, setVaultTab } = useAuthStore();
     const bothVaultsExist = !!(wallet && coldStorageWallet);
 
     const carouselRef = useRef<Carousel<any>>(null);
@@ -146,7 +146,7 @@ export default function BottomBar({
     }
 
     const topupClickHandler = () => {
-        if (!isAuth && !isStrikeAuth) {
+        if (!isAuth && !isStrikeAuth && !isArkAuth) {
             SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
             return;
         }
@@ -158,7 +158,7 @@ export default function BottomBar({
     };
 
     const withdrawClickHandler = () => {
-        if (!isAuth && !isStrikeAuth) {
+        if (!isAuth && !isStrikeAuth && !isArkAuth) {
             SimpleToast.show('You need to be logged in to wallet to withdraw', SimpleToast.SHORT);
             return
         }
@@ -170,7 +170,12 @@ export default function BottomBar({
         //     return
         // }
 
-        if ((wallet && coldStorageWallet) || (isAuth && isStrikeAuth)) {
+        // Open the popup when there's any ambiguity to resolve: multiple
+        // vaults to choose between, OR multiple sources (Strike/CoinOS/Ark)
+        // to withdraw from. For Ark we always go through the popup —
+        // selecting hot/cold vault at the destination step is part of the
+        // Ark flow, even if there's just one source.
+        if ((wallet && coldStorageWallet) || (isAuth && isStrikeAuth) || isArkAuth) {
             refWithdrawRBSheet.current?.open();
             // const amount = withdrawThreshold > balance ? balance : withdrawThreshold;
             // dispatchNavigate('ReviewPayment', {
@@ -356,7 +361,7 @@ export default function BottomBar({
         return (
             <>
             <View style={{ width: screenWidth * 0.905 }}>
-                {!bothVaultsExist && ((wallet && index == 0) || (coldStorageWallet && index == 1)) && (isAuth || isStrikeAuth) &&
+                {!bothVaultsExist && ((wallet && index == 0) || (coldStorageWallet && index == 1)) && (isAuth || isStrikeAuth || isArkAuth) &&
                     <TopUpWithdrawView isVault={index == 1 ? true : false} />
                 }
                 {item.component()}
@@ -368,7 +373,7 @@ export default function BottomBar({
     if (__DEV__) console.log('index: ', index, vaultTab)
     return (
         <>
-            {bothVaultsExist && (isAuth || isStrikeAuth) && (
+            {bothVaultsExist && (isAuth || isStrikeAuth || isArkAuth) && (
                 <TopUpWithdrawView isVault={index === 1} />
             )}
             <Carousel
@@ -379,6 +384,17 @@ export default function BottomBar({
                 vertical={false}
                 sliderWidth={screenWidth}
                 itemWidth={screenWidth}
+                // Easing config mirrors the wallet carousel in WalletsView so
+                // both swipe surfaces (top wallets row + bottom vaults row)
+                // feel identical. Covers the "locked card" placeholder shown
+                // when no vaults are created — same Carousel, same animation.
+                // See WalletsView's Carousel for per-prop rationale.
+                inactiveSlideOpacity={0.55}
+                inactiveSlideScale={0.94}
+                decelerationRate={0.9}
+                activeAnimationType="spring"
+                activeAnimationOptions={{ friction: 8, tension: 40 } as any}
+                enableMomentum={true}
                 onSnapToItem={(index) => {
                     if (__DEV__) console.log('onSnappppp')
                     setIndex(index)

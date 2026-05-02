@@ -15,9 +15,11 @@ import {
   CoinOS,
   Cold1,
   Hot,
+  Second,
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import withdrawStyles from "../WithdrawList/styles";
@@ -27,6 +29,7 @@ import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import { getArkOnchainAddress } from "@Cypher/services/ark/receive";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -39,7 +42,7 @@ interface Props {
 }
 
 export default function TopupList({ refRBSheet, wallet, coldStorageWallet, matchedRateBTC = 0, currency }: Props) {
-  const { vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
+  const { vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
   const { sleep } = useContext(BlueStorageContext);
 
   // Selection state
@@ -73,7 +76,9 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
   ];
 
   const accountData = [
-    ...(isAuth ? [{
+    // CoinOS gated by feature flag — see isCoinosAllowed() for the region
+    // / platform rules and the bypass in __DEV__ builds.
+    ...(isAuth && isCoinosAllowed() ? [{
       id: 3,
       name: "CoinOS",
       icon: CoinOS,
@@ -83,6 +88,18 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
       id: 4,
       name: "Strike",
       icon: StrikeFull,
+      isLogo: true,
+    }] : []),
+    // Ark topup destination — funds the Ark vault by sending the picked
+    // hot/cold-vault UTXOs to a fresh on-chain "boarding" address. The
+    // ASP boards the funds in the next round; the user's Ark balance
+    // updates after sync. Same EditAmount → ReviewPayment → broadcast
+    // flow as Strike/CoinOS — the only Ark-specific bit is the address
+    // generation in the address-fetch step below.
+    ...(isArkAuth ? [{
+      id: 5,
+      name: "Ark Vault",
+      icon: Second,
       isLogo: true,
     }] : []),
   ];
@@ -185,6 +202,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
     try {
       let toAddress: string | null = null;
       let toStrikeAddress: string | null = null;
+      let toArkAddress: string | null = null;
 
       if (selectedAccount === 3 && isAuth) {
         const response = await createInvoice({ type: 'bitcoin' });
@@ -195,6 +213,14 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
           targetCurrency: strikeUser?.[1]?.currency || "USD"
         });
         toStrikeAddress = responseStrike?.onchain?.address || null;
+      } else if (selectedAccount === 5 && isArkAuth) {
+        // Ark boarding address — a fresh on-chain Bitcoin address derived
+        // from the Ark wallet's onchain xpub. Sends to it become VTXOs
+        // in the Ark vault after the next ASP round confirms. Goes into
+        // its OWN slot (`toArk`) rather than `toAddress`, so the
+        // construct-tx screen's account-card picker can render Ark as
+        // its own selectable destination instead of impersonating CoinOS.
+        toArkAddress = (await getArkOnchainAddress()) || null;
       }
 
       const isVaultCold = selectedVault === 2;
@@ -222,6 +248,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
           capsulesData,
           to: toAddress,
           toStrike: toStrikeAddress,
+          toArk: toArkAddress,
           type: "TOPUP",
         });
       }, 150);
@@ -235,7 +262,11 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
 
   const isVaultCold = selectedVault === 2;
   const primaryColor = isVaultCold ? colors.coldGreen : colors.green;
-  const accountLabel = selectedAccount === 3 ? 'CoinOS' : 'Strike';
+  const accountLabel =
+    selectedAccount === 3 ? 'CoinOS'
+    : selectedAccount === 4 ? 'Strike'
+    : selectedAccount === 5 ? 'Ark Vault'
+    : 'Strike';
 
   // Get memo/label for a UTXO
   const getMemo = (item: any): string | null => {

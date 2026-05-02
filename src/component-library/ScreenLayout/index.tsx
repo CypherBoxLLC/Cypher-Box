@@ -100,10 +100,11 @@ function ScreenLayout({
             {isBackButton && (
               <TouchableOpacity
                 style={styles.icon}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 20 }}
                 onPress={handledBackPress}>
                 <ImageView
                   image={Back}
-                  imageStyle={{ width: 30, height: 28 }}
+                  imageStyle={{ width: 30, height: 28, tintColor: '#FFFFFF' }}
                   style={{ width: 30, height: 28 }}
                 />
               </TouchableOpacity>

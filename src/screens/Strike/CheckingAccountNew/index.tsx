@@ -54,7 +54,10 @@ export default function CheckingAccountNew({ navigation, route }: any) {
                     ? <ArkHistory currency={currency} matchedRate={matchedRate} />
                     : <History currency={currency} matchedRate={matchedRate} receiveType={receiveType} />;
             case 3:
-                return <Settings receiveType={receiveType} currency={currency} />;
+                // Forward `isArk` so Settings can render an Ark-specific
+                // panel (seed phrase reveal + non-custodial copy) instead
+                // of the Strike/CoinOS account-management surface.
+                return <Settings receiveType={receiveType} currency={currency} isArk={isArk} />;
             default:
                 return <Account isArk={isArk} currency={currency} matchedRate={matchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
         }

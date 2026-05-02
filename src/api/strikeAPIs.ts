@@ -111,9 +111,19 @@ if (__DEV__) console.log('>>> API response data:', JSON.stringify(data));
 export const sendStrikeLightningPayment = async (invoice: string, amount?: number): Promise<any> => {
   try {
     const idempotencyKey = uuidv4();
-    
+
     // Step 1: Create Lightning payment quote
-    const quoteData: any = { invoice };
+    //
+    // Strike's `/payment-quotes/lightning` endpoint REQUIRES the BOLT11
+    // to be passed as `lnInvoice` (not `invoice`). The previous shape
+    // here always 400'd with:
+    //   validationErrors.lnInvoice = "The field lnInvoice is required"
+    // The helper had this wrong field name from day one — the only
+    // pre-existing call site (ConfirmTransction) had never actually
+    // succeeded against the Strike API. Don't rename the *parameter*
+    // (callers still pass it as a positional arg called "invoice"); only
+    // the request body field needs to match Strike's contract.
+    const quoteData: any = { lnInvoice: invoice };
     if (amount) {
       quoteData.amount = amount;
     }
@@ -128,12 +138,28 @@ export const sendStrikeLightningPayment = async (invoice: string, amount?: numbe
     }));
     
     if (!quoteResponse.ok) {
-      throw new Error(`Strike quote error: ${quoteResponse.status}`);
+      // Surface Strike's error body so callers can show the user what
+      // actually went wrong (e.g. "INVALID_INVOICE" / "ROUTE_NOT_FOUND")
+      // instead of just an opaque HTTP status.
+      let body = '';
+      try { body = await quoteResponse.text(); } catch { /* ignore */ }
+      // 401 = Strike OAuth token expired. Strike's tokens are not
+      // auto-refreshed (unlike CoinOS) — the user has to re-login.
+      // Clear the stored auth so the next render redirects them to
+      // CheckingAccountLogin instead of leaving them stuck on a
+      // wallet card whose balance reads now-stale data.
+      if (quoteResponse.status === 401) {
+        useAuthStore.getState().clearStrikeAuth();
+        throw new Error('Strike session expired — please log into Strike again.');
+      }
+      throw new Error(
+        `Strike quote error: ${quoteResponse.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+      );
     }
-    
+
     const quoteDataResponse = await quoteResponse.json();
     const paymentQuoteId = quoteDataResponse.paymentQuoteId;
-if (__DEV__) console.log('Lightning payment quote ID:', paymentQuoteId);
+    if (__DEV__) console.log('Lightning payment quote ID:', paymentQuoteId, 'full response:', JSON.stringify(quoteDataResponse));
     
     // Step 2: Execute the Lightning payment
     const executeResponse = await fetch(`${BASE_URL}/payment-quotes/${paymentQuoteId}/execute`, await withAuthToken({
@@ -144,7 +170,15 @@ if (__DEV__) console.log('Lightning payment quote ID:', paymentQuoteId);
     }));
     
     if (!executeResponse.ok) {
-      throw new Error(`Strike execute error: ${executeResponse.status}`);
+      let body = '';
+      try { body = await executeResponse.text(); } catch { /* ignore */ }
+      if (executeResponse.status === 401) {
+        useAuthStore.getState().clearStrikeAuth();
+        throw new Error('Strike session expired — please log into Strike again.');
+      }
+      throw new Error(
+        `Strike execute error: ${executeResponse.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+      );
     }
     
     const executeData = await executeResponse.json();

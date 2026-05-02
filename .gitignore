@@ -91,3 +91,10 @@ artifacts/
 *.mx
 *.realm
 *.realm.lock
+
+# react-native-config — runtime env (OAuth client IDs etc). Per-developer
+# / per-CI; never committed. The .env.example template DOES live in git
+# as a self-documenting list of expected keys.
+.env
+.env.local
+.env.*.local

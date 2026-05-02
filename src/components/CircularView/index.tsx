@@ -21,8 +21,9 @@ interface Props {
     balance: any;
     convertedRate: any;
     homeMessage?: string | null;
+    hideActionButtons?: boolean;
 }
-export default function CircularView({ matchedRateStrike, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeMessage }: Props) {
+export default function CircularView({ matchedRateStrike, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeMessage, hideActionButtons = false }: Props) {
     const { strikeUser, withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
     const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
@@ -81,41 +82,39 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
                 <CircleTimer type={"COINOS"} progress={0} size={135} strokeWidth={7}{...checkingAccount.second} />
             </TouchableOpacity>
         </View>
-        <View style={styles.btnView}>
-            <GradientView
-                onPress={() => receiveClickHandler(true)}
-                topShadowStyle={styles.outerShadowStyle}
-                bottomShadowStyle={styles.innerShadowStyle}
-                style={styles.linearGradientStyle}
-                linearGradientStyle={styles.mainShadowStyle}
-            >
-                <Text h3 style={{ ...shadow.text25 }}>Receive</Text>
-            </GradientView>
-            {/* <GradientView
-                topShadowStyle={styles.shadowTop2}
-                bottomShadowStyle={styles.shadowBottom2}
-                style={styles.refresh}
-                linearGradientStyleMain={styles.refresh}
-                isShadow
-            >
-                <Image source={Refresh} />
-            </GradientView> */}
-            <GradientView
-                onPress={() => sendClickHandler(false)}
-                topShadowStyle={styles.outerShadowStyle}
-                bottomShadowStyle={styles.innerShadowStyle}
-                style={styles.linearGradientStyle}
-                linearGradientStyle={styles.mainShadowStyle}
-            >
-                <Text h3 style={{ ...shadow.text25 }}>Send</Text>
-            </GradientView>
-        </View>
-        <View style={{ minHeight: 40, justifyContent: 'center' }}>
-            {homeMessage &&
-                <Text h4 style={{ color: '#23C47F', paddingHorizontal: 20 }}>
-                    {homeMessage}
-                </Text>
-            }
-        </View>
+        {!hideActionButtons && (
+            <View style={styles.btnView}>
+                <GradientView
+                    onPress={() => receiveClickHandler(true)}
+                    topShadowStyle={styles.outerShadowStyle}
+                    bottomShadowStyle={styles.innerShadowStyle}
+                    style={styles.linearGradientStyle}
+                    linearGradientStyle={styles.mainShadowStyle}
+                >
+                    <Text h3 style={{ ...shadow.text25 }}>Receive</Text>
+                </GradientView>
+                <GradientView
+                    onPress={() => sendClickHandler(false)}
+                    topShadowStyle={styles.outerShadowStyle}
+                    bottomShadowStyle={styles.innerShadowStyle}
+                    style={styles.linearGradientStyle}
+                    linearGradientStyle={styles.mainShadowStyle}
+                >
+                    <Text h3 style={{ ...shadow.text25 }}>Send</Text>
+                </GradientView>
+            </View>
+        )}
+        {/* When shared buttons are active (`hideActionButtons`), skip this
+            minHeight-40 reserve so the shared row can sit flush below the
+            circles. Otherwise it left a 40px gap. */}
+        {!hideActionButtons && (
+            <View style={{ minHeight: 40, justifyContent: 'center' }}>
+                {homeMessage &&
+                    <Text h4 style={{ color: '#23C47F', paddingHorizontal: 20 }}>
+                        {homeMessage}
+                    </Text>
+                }
+            </View>
+        )}
     </View>
 }

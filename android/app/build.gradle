@@ -2,6 +2,19 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// react-native-config: bake .env values into BuildConfig + resources at compile
+// time so JS can read them via the bridged module. Without this `apply from`,
+// the JS side gets undefined for every key — see the [Ark/Drive bootstrap]
+// runtime warning that surfaced on the first Galaxy A14 install attempt. The
+// dotenv.gradle script reads `<project root>/.env` (gitignored, copied from
+// `.env.example`); per-environment files like `.env.staging` can be selected
+// at build time via `ENVFILE=.env.staging ./gradlew assembleDebug`.
+// Direct file path (not project(':react-native-config')) because RN 0.76
+// autolinking registers the lib under a dynamic project name, so the
+// classic `project(':react-native-config').projectDir` lookup fails with
+// "Project with path ':react-native-config' could not be found".
+apply from: "../../node_modules/react-native-config/android/dotenv.gradle"
+
 def keystorePropertiesFile = rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {

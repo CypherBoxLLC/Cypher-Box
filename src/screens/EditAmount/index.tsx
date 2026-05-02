@@ -18,7 +18,7 @@ interface Props {
 }
 
 export default function SendScreen({ route, navigation }: Props) {
-    const { isEdit, vaultTab, currency, wallet, utxo, ids, maxUSD, inUSD, total, toStrike, matchedRate, setSatsEdit, capsulesData = null, to = null, vaultSend, isBatch, capsuleTotal, title } = route?.params;
+    const { isEdit, vaultTab, currency, wallet, utxo, ids, maxUSD, inUSD, total, toStrike, toArk = null, matchedRate, setSatsEdit, capsulesData = null, to = null, vaultSend, isBatch, capsuleTotal, title } = route?.params;
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState('0');
     const [usd, setUSD] = useState('0');
@@ -36,12 +36,12 @@ export default function SendScreen({ route, navigation }: Props) {
 
     const nextClickHandler = () => {
         setSatsEdit && setSatsEdit();
-        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, toStrike, to, title, isBatch, capsuleTotal });
+        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, toStrike, toArk, to, title, isBatch, capsuleTotal });
     }
 
     const maxSendClickHandler = () => {
         setSatsEdit && setSatsEdit();
-        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, isMaxEdit: true, matchedRate, capsulesData, vaultSend, to, toStrike, title, isBatch, capsuleTotal });
+        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, isMaxEdit: true, matchedRate, capsulesData, vaultSend, to, toStrike, toArk, title, isBatch, capsuleTotal });
     }
 
     // Convert current typed amount to sats for the dynamic capsule

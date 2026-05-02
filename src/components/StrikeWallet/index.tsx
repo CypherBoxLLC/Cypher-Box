@@ -23,6 +23,7 @@ interface Props {
     setReceiveType: any;
     strikeBalance: any;
     homeMessage?: string | null;
+    hideActionButtons?: boolean;
 }
 
 const config = {
@@ -63,6 +64,7 @@ export default function StrikeWallet({
     setReceiveType,
     strikeBalance,
     homeMessage,
+    hideActionButtons = false,
 }: Props) {
     const { isStrikeAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
 
@@ -141,27 +143,35 @@ export default function StrikeWallet({
                             </View>
                         </View>
                     </TouchableOpacity>
-                    <View style={styles.btnView}>
-                        <GradientButtonWithShadow
-                            title="Receive"
-                            onPress={() => receiveClickHandler(true)}
-                            isShadow
-                            isTextShadow
-                        />
-                        <GradientButtonWithShadow
-                            title="Send"
-                            onPress={() => sendClickHandler(false)}
-                            isShadow
-                            isTextShadow
-                        />
-                    </View>
-                    <View style={{ minHeight: 40, justifyContent: 'center' }}>
-                        {!isLoading && homeMessage &&
-                            <Text h4 style={styles.alert}>
-                                {homeMessage}
-                            </Text>
-                        }
-                    </View>
+                    {!hideActionButtons && (
+                        <View style={styles.btnView}>
+                            <GradientButtonWithShadow
+                                title="Receive"
+                                onPress={() => receiveClickHandler(true)}
+                                isShadow
+                                isTextShadow
+                            />
+                            <GradientButtonWithShadow
+                                title="Send"
+                                onPress={() => sendClickHandler(false)}
+                                isShadow
+                                isTextShadow
+                            />
+                        </View>
+                    )}
+                    {/* When shared buttons are active (`hideActionButtons`),
+                        skip this minHeight-40 reserve so the shared row can
+                        sit flush below the card. Otherwise it left a 40px
+                        gap that Bam called "way below". */}
+                    {!hideActionButtons && (
+                        <View style={{ minHeight: 40, justifyContent: 'center' }}>
+                            {!isLoading && homeMessage &&
+                                <Text h4 style={styles.alert}>
+                                    {homeMessage}
+                                </Text>
+                            }
+                        </View>
+                    )}
                 </View>
             }
 

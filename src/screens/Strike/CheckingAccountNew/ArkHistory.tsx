@@ -131,7 +131,7 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
         <View style={styles.container}>
             <SectionList
                 sections={sections}
-                keyExtractor={(item) => String(item.id)}
+                keyExtractor={(item, index) => `${item.id}-${item.timestamp}-${index}`}
                 renderSectionHeader={({ section: { title } }) => (
                     <Header title={title} />
                 )}

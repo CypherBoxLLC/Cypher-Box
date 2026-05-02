@@ -361,7 +361,7 @@ const TransactionsStatus = () => {
       <HandoffComponent
         title={loc.transactions.details_title}
         type={HandoffComponent.activityTypes.ViewInBlockExplorer}
-        url={`https://mempool.space/tx/${tx.hash}`}
+        url={`https://mempool.space/tx/${tx.hash}#details`}
       />
 
       <View style={styles.container}>

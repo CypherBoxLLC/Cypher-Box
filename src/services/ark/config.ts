@@ -4,12 +4,20 @@ import { BARK_ACCESS_TOKEN } from './secrets';
 /**
  * Master kill-switch for the Ark feature.
  *
- * `__DEV__` = on in Metro/debug builds, off in release/TestFlight/App Store.
- * Flip to `true` unconditionally once Phase 2 (encrypted backup/restore) is
- * green — seed alone cannot recover balance per Bark docs, so a production
- * rollout without backup is a footgun.
+ * Was `__DEV__` (on only in Metro/debug builds). Flipped to `true`
+ * unconditionally per Bam: Ark is non-custodial and not subject to any
+ * geo-restriction (Second.tech / the ASP doesn't block EU), and the
+ * production plan is "Strike + Ark, no Coinos" — so Ark needs to be
+ * visible in archive/TestFlight builds for ongoing testing and for
+ * eventual production rollout.
+ *
+ * Note: the original comment flagged that seed-alone recovery cannot
+ * restore Ark balance per Bark's docs (encrypted backup/restore is the
+ * Phase 2 work). That's still a real footgun for end users — make sure
+ * the in-app UX surfaces the "back up your seed AND your VTXO state"
+ * warning before going live to non-tester users.
  */
-export const FEATURE_ARK_ENABLED = __DEV__;
+export const FEATURE_ARK_ENABLED = true;
 
 export const ARK_NETWORK: Network = Network.Bitcoin;
 

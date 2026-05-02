@@ -20,6 +20,8 @@ import { createInvoice } from "@Cypher/api/coinOSApis";
 import { AbstractWallet } from "../../../class";
 import useAuthStore from "@Cypher/stores/authStore";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import { getArkOnchainAddress } from "@Cypher/services/ark/receive";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import MaskedView from "@react-native-masked-view/masked-view";
 
 const whiteCapsule = require("@Cypher/assets/images/whitecapsule.png");
@@ -101,6 +103,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     const [output, setOutput] = useState();
     const [bitcoinHash, setBitcoinHash] = useState();
     const [bitcoinStrikeHash, setBitcoinStrikeHash] = useState();
+    const [bitcoinArkHash, setBitcoinArkHash] = useState<string | undefined>();
     console.log("🚀 ~ Capsules ~ ids:", ids)
     const [btc, setBtc] = useState('0.00');
     const [sendToAddress, setSendToAddress] = useState();
@@ -110,7 +113,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     const [frozen, setFrozen] = useState(
         utxo.filter(out => wallet.getUTXOMetadata(out.txid, out.vout).frozen).map(({ txid, vout }) => `${txid}:${vout}`),
     );
-    const { walletID, coldStorageWalletID, isAuth, isStrikeAuth, strikeUser } = useAuthStore();
+    const { walletID, coldStorageWalletID, isAuth, isStrikeAuth, isArkAuth, strikeUser } = useAuthStore();
     const { wallets, saveToDisk, sleep, isElectrumDisabled } = useContext(BlueStorageContext);
 
     const debouncedSaveFronen = useRef(
@@ -144,7 +147,12 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     // console.log("🚀 ~ Coins ~ offset:", offset);
 
     useEffect(() => {
-        if(isAuth){
+        // Skip the CoinOS address pre-fetch entirely when the feature flag
+        // hides the rail in this build — no point burning an API call to
+        // populate a tile that won't render. Already-authed users still
+        // hold their CoinOS balance; they just can't top it up from this
+        // surface.
+        if(isAuth && isCoinosAllowed()){
             (async () => {
                 try {
                     const response = await createInvoice({
@@ -176,6 +184,25 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             })();
         }
     }, [isStrikeAuth])
+
+    // Pre-generate the Ark on-chain "boarding" address as soon as the
+    // capsules tab opens (mirrors the eager fetch we do for CoinOS and
+    // Strike above). Funds sent to this address are picked up by the next
+    // ASP round and become VTXOs in the Ark vault. Ark wallets that have
+    // never received funds before need this — there's no point making the
+    // user wait at the top-up review screen for it.
+    useEffect(() => {
+        if (isArkAuth) {
+            (async () => {
+                try {
+                    const arkAddr = await getArkOnchainAddress();
+                    setBitcoinArkHash(arkAddr);
+                } catch (error) {
+                    console.error('Error generating Ark on-chain address:', error);
+                }
+            })();
+        }
+    }, [isArkAuth]);
 
     const obtainWalletAddress = async () => {
         let newAddress;
@@ -260,7 +287,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         //     SimpleToast.show('You need to be logged in to Coinos.io to top up', SimpleToast.SHORT);
         //     return;
         // }
-        if (!isAuth && !isStrikeAuth) {
+        if (!isAuth && !isStrikeAuth && !isArkAuth) {
             SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
             return
         }
@@ -274,7 +301,12 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             if (found) capsuleTotal += found.value
         });
         if (ids.length > 0) {
-            dispatchNavigate('EditAmount', { isEdit: false, currency, capsuleTotal, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP" });
+            // toArk is the Ark on-chain "boarding" address — same role as
+            // bitcoinHash (CoinOS) and bitcoinStrikeHash (Strike): the
+            // construct-top-up screen renders one selectable card per
+            // destination account that's both authed and has an address
+            // available.
+            dispatchNavigate('EditAmount', { isEdit: false, currency, capsuleTotal, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, toArk: bitcoinArkHash, type: "TOPUP" });
             // dispatchNavigate('ColdStorage', {wallet, currency, capsuleTotal, utxo, ids, vaultTab, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP"});
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)

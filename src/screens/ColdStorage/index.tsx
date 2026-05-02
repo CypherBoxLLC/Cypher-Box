@@ -8,6 +8,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import Clipboard from '@react-native-clipboard/clipboard'
 import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
 import { BitcoinUnit, Chain } from "../../../models/bitcoinUnits";
@@ -24,7 +25,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { scanQrHelper } from "../../../helpers/scan-qr";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
-import { Check, Edit, StrikeFull, CoinOS, Hot, Cold1 } from "@Cypher/assets/images";
+import { Check, Edit, StrikeFull, CoinOS, Hot, Cold1, Second } from "@Cypher/assets/images";
 import { getStrikeDepositAddress, createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import { createInvoice as createInvoiceCoinos } from "@Cypher/api/coinOSApis";
 
@@ -43,7 +44,7 @@ export const shortenAddress = (address: string) => {
 
 
 export default function ColdStorage({ route, navigation }: Props) {
-    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
+    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, toArk = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
     const [feePrecalc, setFeePrecalc] = useState({ current: null, slowFee: null, mediumFee: null, fastestFee: null });
     const [usd, setUSD] = useState(inUSD);
     const [sats, setSats] = useState('100K sats  ~$' + usd);
@@ -85,7 +86,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [changeDepositAddress, setChangeDepositAddress] = useState<string | null>(null);
     const [changeFetchLoading, setChangeFetchLoading] = useState(false);
     const { wallets, setSelectedWalletID, sleep, txMetadata, saveToDisk, isElectrumDisabled } = useContext(BlueStorageContext);
-    const { walletID, coldStorageWalletID, isStrikeAuth, isAuth } = useAuthStore();
+    const { walletID, coldStorageWalletID, isStrikeAuth, isAuth, isArkAuth } = useAuthStore();
     const { navigate } = useNavigation();
     console.log('inUSDinUSD: ', usd, inUSD)
 
@@ -99,14 +100,37 @@ export default function ColdStorage({ route, navigation }: Props) {
     const balanceWallet = !wallet?.hideBalance && formatBalance(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const balanceWithoutSuffix = !wallet?.hideBalance && formatBalanceWithoutSuffix(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const primaryColor = vaultTab ? colors.coldGreen : colors.green
-    const [selectedItem, setSelectedItem] = useState(isStrikeAuth ? 1 : 2);
+    // Default selection: prefer the rail the user actually has an address
+    // for. We pick the FIRST authed-and-addressed account in priority
+    // Strike → CoinOS → Ark, so existing Strike/CoinOS users see no
+    // behavior change. CoinOS is skipped entirely when the feature flag
+    // disables it (e.g. iOS in EU on production builds), so the default
+    // doesn't land on a hidden card.
+    const coinosOk = isCoinosAllowed();
+    const initialSelectedItem = (() => {
+      if (isStrikeAuth && toStrike) return 1;
+      if (isAuth && to && coinosOk) return 2;
+      if (isArkAuth && toArk) return 3;
+      // Fall back to whichever rail is authed even if address isn't
+      // ready yet — the existing useEffect will hook the address up
+      // when it arrives.
+      if (isStrikeAuth) return 1;
+      if (isAuth && coinosOk) return 2;
+      if (isArkAuth) return 3;
+      return 2;
+    })();
+    const [selectedItem, setSelectedItem] = useState(initialSelectedItem);
     const [data, setData] = useState([
       {
         id: 1,
         name: "Strike",
         type: 0,
         icon: StrikeFull,
-        enabled: isStrikeAuth,
+        // We disable the card when the user isn't authed for the rail OR
+        // when the address fetch hasn't returned yet. The latter prevents
+        // the user from selecting Strike, hitting Next, and then sending
+        // to `undefined`. Same gate now on Ark below.
+        enabled: isStrikeAuth && !!toStrike,
         navigation: {
           screen: "SendScreen",
           params: {
@@ -121,13 +145,37 @@ export default function ColdStorage({ route, navigation }: Props) {
         name: "CoinOS",
         type: 0,
         icon: CoinOS,
-        enabled: isAuth,
+        // Region/platform gate: same isCoinosAllowed() helper used by
+        // the home screen popups so the construct-tx card list stays in
+        // sync. Production iOS in EU never sees this card; dev / non-EU
+        // / Android always do.
+        enabled: isAuth && !!to && isCoinosAllowed(),
         navigation: {
           screen: "SendScreen",
           params: {
             matchedRate,
             currency: 'USD',
             receiveType: true
+          },
+        },
+      },
+      // Ark destination — funds the Ark vault by sending the picked
+      // hot/cold-vault UTXOs to its on-chain "boarding" address. The
+      // ASP boards the funds in the next round; the Ark balance updates
+      // after sync. Same construct-tx flow as Strike/CoinOS, just a
+      // different destination address.
+      {
+        id: 3,
+        name: "Ark Vault",
+        type: 0,
+        icon: Second,
+        enabled: isArkAuth && !!toArk,
+        navigation: {
+          screen: "SendScreen",
+          params: {
+            matchedRate,
+            currency: 'USD',
+            receiveType: false,
           },
         },
       },
@@ -164,14 +212,22 @@ export default function ColdStorage({ route, navigation }: Props) {
     }, [isBatch])
 
     useEffect(() => {
-      if(selectedItem == 1 && toStrike){
-        setDestinationAddress(toStrike)
-      } else if (selectedItem == 2 && to){
-        setDestinationAddress(to)
+      if (selectedItem == 1 && toStrike) {
+        setDestinationAddress(toStrike);
+      } else if (selectedItem == 2 && to) {
+        setDestinationAddress(to);
+      } else if (selectedItem == 3 && toArk) {
+        // Ark on-chain boarding address — the construct-tx send flow
+        // (same one used for Strike/CoinOS top-ups) treats it as a
+        // standard Bitcoin address; the ASP-side boarding is invisible
+        // to the broadcaster.
+        setDestinationAddress(toArk);
       } else if (to) {
-        setDestinationAddress(to)
+        setDestinationAddress(to);
+      } else if (toArk) {
+        setDestinationAddress(toArk);
       }
-    }, [to, selectedItem])
+    }, [to, toStrike, toArk, selectedItem])
 
     useEffect(() => {
         if (!wallet) return;
@@ -883,7 +939,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         <ScreenLayout showToolbar>
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
-                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : vaultSend ? (vaultTab ? "Move to Hot Vault" : "Move to Cold Vault") : "Construct transaction"}</Text>
+                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to || toStrike || toArk ? "Top-up Transaction" : vaultSend ? (vaultTab ? "Move to Hot Vault" : "Move to Cold Vault") : "Construct transaction"}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -913,7 +969,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 </Text>
                               </View>
                             ))}
-                            {(to || toStrike) && capsuleTotal > 0 && (
+                            {(to || toStrike || toArk) && capsuleTotal > 0 && (
                               <Text bold style={[styles.coinselected, { fontSize: 12, marginTop: 4 }]}>Total: {formatBalance(capsuleTotal, BitcoinUnit.BTC, true)}</Text>
                             )}
                           </View>
@@ -974,7 +1030,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                     :
                       <View style={styles.priceView}>
                           <View>
-                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : vaultSend ? "Amount moved" : "Recipient will get:"}</Text>
+                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike || toArk ? "Top-up amount" : vaultSend ? "Amount moved" : "Recipient will get:"}</Text>
                               <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
                               <View style={{flexDirection: 'row', marginTop: 8}}>
                                   <View style={styles.tabs}>
@@ -1084,7 +1140,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                                 {changeDestination === 'STRIKE' && <Icon name="check" type="font-awesome" color="#FF65D4" size={12} containerStyle={{marginLeft: 'auto'}} />}
                                                             </TouchableOpacity>
                                                         )}
-                                                        {isAuth && (
+                                                        {isAuth && coinosOk && (
                                                             <TouchableOpacity
                                                                 onPress={() => { handleChangeDestination('COINOS'); setShowChangeMenu(false); }}
                                                                 style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10}}
@@ -1104,7 +1160,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                         })()
                     }
                     {/* Send-from address removed — now shown per-capsule below */}
-                    {to || toStrike ?
+                    {to || toStrike || toArk ?
                         <View style={[styles.priceView, { marginTop: 0 }]}>
                           <View>
                               {!isBatch &&
@@ -1173,7 +1229,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     </TouchableOpacity>
                                   </View>
                                   :
-                                    <Text style={{fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888', marginTop: 4}}>{vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
+                                    <Text style={{fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888', marginTop: 4}}>{vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(selectedItem == 1 ? (toStrike || '') : selectedItem == 3 ? (toArk || '') : (to || ''))}</Text>
                               )}
                           </View>
                         </View>
@@ -1262,7 +1318,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                         <Text style={{ color: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#fff', fontSize: 14, fontWeight: '600' }}>Strike</Text>
                                                     </TouchableOpacity>
                                                 )}
-                                                {isAuth && (
+                                                {isAuth && coinosOk && (
                                                     <TouchableOpacity
                                                         style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'COINOS' ? '#FF65D4' : '#444', backgroundColor: bridgeProvider === 'COINOS' ? '#FF65D433' : '#1a1a1a', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }}
                                                         onPress={() => setBridgeProvider('COINOS')}

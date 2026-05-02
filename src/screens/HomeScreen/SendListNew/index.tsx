@@ -19,6 +19,7 @@ import {
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
@@ -296,7 +297,12 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
               <Text h2 bold style={{ alignSelf: 'center', marginBottom: 16 }}>SEND FROM</Text>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
                 {renderGridTile(1, 'Strike', 'Lightning Network', StrikeFull, {}, isStrikeAuth, '#FF65D4', colors.pink.shadowTopNew)}
-                {renderGridTile(2, 'CoinOS', 'Lightning Network', CoinOS, {}, isAuth, '#FF65D4', colors.pink.shadowTopNew)}
+                {/* CoinOS tile gated by feature flag (region/platform).
+                    Tile is rendered only when CoinOS is allowed in this
+                    build — auth state alone isn't enough since EU iOS
+                    users can still have a stored auth token from a
+                    pre-block session. */}
+                {isCoinosAllowed() && renderGridTile(2, 'CoinOS', 'Lightning Network', CoinOS, {}, isAuth, '#FF65D4', colors.pink.shadowTopNew)}
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 {renderGridTile(3, 'Hot Vault', 'On-chain capsules', Hot, { width: 22, height: 30, marginEnd: 2 }, hasHotVault, colors.green, colors.greenShadow)}

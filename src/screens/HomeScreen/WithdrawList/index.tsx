@@ -20,11 +20,13 @@ import {
   Copy,
   Electrik,
   Hot,
+  Second,
   Socked,
   Strike,
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import styles from "./styles";
@@ -50,7 +52,22 @@ interface Props {
 }
 
 export default function WithdrawList({ refRBSheet, balance, recommendedFee, coldStorageAddress, vaultAddress, receiveType, wallet, coldStorageWallet, matchedRate, currency, currencyStrike, matchedRateStrike }: Props) {
-  const { user, strikeMe, vaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, withdrawThreshold, withdrawStrikeThreshold, strikeUser } = useAuthStore();
+  const {
+    user,
+    strikeMe,
+    vaultTab,
+    isAuth,
+    isStrikeAuth,
+    isArkAuth,
+    walletID,
+    coldStorageWalletID,
+    withdrawThreshold,
+    withdrawStrikeThreshold,
+    withdrawArkThreshold,
+    reserveArkAmount,
+    arkBalance,
+    strikeUser,
+  } = useAuthStore();
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [selectedWallet, setSelectedWallet] = useState<number | null>(null);
   if (__DEV__) console.log("🚀 ~ WithdrawList ~ selectedItem:", selectedItem);
@@ -71,7 +88,13 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
         },
       },
     }] : []),
-    ...(isAuth ? [{
+    // CoinOS visibility is gated by both auth state AND the feature flag
+    // (region/platform check via isCoinosAllowed). Production iOS in the
+    // EU drops this entry; dev builds and all other regions see it as
+    // before. Same gate is applied across SendListNew, TopupList,
+    // ColdStorage, and HotStorageVault Capsules to keep the surface
+    // consistent.
+    ...(isAuth && isCoinosAllowed() ? [{
       id: 2,
       name: "CoinOS",
       type: 0,
@@ -86,7 +109,28 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
           receiveType: true
         },
       },
-    }] : [])
+    }] : []),
+    // Ark source — picked id=5 to leave headroom under the existing 1/2
+    // (Strike/CoinOS) and 3/4 (Hot/Cold vault) IDs in this popup. The
+    // navigation params are placeholder until ArkWithdrawReviewScreen
+    // (Phase 3) lands; for now `onNext` recognises selectedItem === 5
+    // and routes to the new review screen with hot/cold pre-picked from
+    // the chosen destination tile.
+    ...(isArkAuth ? [{
+      id: 5,
+      name: "Ark Vault",
+      type: 0,
+      icon: Second,
+      description:
+        "Withdraw from your non-custodial Ark vault to a hot or cold vault",
+      navigation: {
+        screen: "ArkWithdrawReviewScreen",
+        params: {
+          matchedRate,
+          currency,
+        },
+      },
+    }] : []),
   ]);
 
   const [wallets, setWallets] = useState([    
@@ -285,6 +329,45 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
   const onNext = () => {
     refRBSheet?.current?.close();
     setTimeout(() => {
+      // Ark source has its own review screen — non-custodial, the
+      // destination address is whichever vault the user picked in this
+      // popup, and the source-side state (Lightning routing fee + Ark
+      // service fee) doesn't fit ReviewPayment's Strike/CoinOS shape.
+      if (selectedItem === 5) {
+        // Auto-amount logic:
+        //   - If balance > reserve: spendable = balance − reserve.
+        //     The reserve is a floor we keep on Ark for everyday Lightning
+        //     sends; withdrawals shouldn't dip below it.
+        //   - If balance ≤ reserve: spendable = full balance. The reserve
+        //     concept only applies once you have enough to maintain it; a
+        //     user with 10K sats balance and 100K reserve isn't bound by
+        //     the reserve, they just have less than they aspire to keep.
+        // Then cap the prefill at the threshold (so we don't auto-suggest
+        // withdrawing 5M sats when the user set their threshold to 500K).
+        const arkBalSats = Number(arkBalance) || 0;
+        const reserveSats = Number(reserveArkAmount) || 0;
+        const thresholdSats = Number(withdrawArkThreshold) || 0;
+        const spendable =
+            arkBalSats > reserveSats ? arkBalSats - reserveSats : arkBalSats;
+        const prefillSats =
+            thresholdSats > 0 && spendable > thresholdSats
+                ? thresholdSats
+                : spendable;
+        dispatchNavigate('ArkWithdrawReviewScreen', {
+            // Destination tile id=4 → cold vault, otherwise hot vault.
+            destinationKind: selectedWallet === 4 ? 'cold' : 'hot',
+            destinationAddress:
+                selectedWallet === 4 ? coldStorageAddress : vaultAddress,
+            wallet: selectedWallet === 4 ? coldStorageWallet : wallet,
+            prefillSats,
+            arkBalanceSats: arkBalSats,
+            reserveSats,
+            thresholdSats,
+            matchedRate,
+            currency,
+        });
+        return;
+      }
       const strikeBalance = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
       const amount = selectedItem === 1 ? withdrawStrikeThreshold > strikeBalance ? strikeBalance : withdrawStrikeThreshold : withdrawThreshold > balance ? balance : withdrawThreshold;
       if (__DEV__) console.log('amount: ', amount)
@@ -305,7 +388,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
           wallet: selectedWallet === 4 ? coldStorageWallet : wallet,
           isWithdrawal: true,
       });
-      // dispatchNavigate('SendScreen', { matchedRate, currency, receiveType: selectedItem === 2 ? true : false });      
+      // dispatchNavigate('SendScreen', { matchedRate, currency, receiveType: selectedItem === 2 ? true : false });
     }, 500)
   }
 

@@ -69,6 +69,23 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported
+
+      # Force full dSYMs in Release for every pod target. Required so
+      # the archive includes hermes.framework.dSYM (and every other
+      # framework's dSYM) — App Store Connect's symbols-upload step
+      # rejects the build otherwise with:
+      #   "The archive did not include a dSYM for the hermes.framework
+      #    with the UUIDs [...]. Ensure that the archive's dSYM folder
+      #    includes a DWARF file for hermes.framework with the
+      #    expected UUIDs."
+      # Default Pod build setting is `dwarf` (debug info inside the
+      # binary, no separate dSYM file), which is fine for Debug but
+      # leaves Release archives without symbolicatable crash reports.
+      # Scoped to Release only so Debug builds stay snappy.
+      if config.name == 'Release'
+        config.build_settings['DEBUG_INFORMATION_FORMAT'] = 'dwarf-with-dsym'
+      end
+
       if ['React-Core-AccessibilityResources'].include? target.name
         config.build_settings['CODE_SIGN_STYLE'] = "Manual"
         config.build_settings['CODE_SIGN_IDENTITY'] = "Apple Distribution: Bluewallet Services, S. R. L. (A7W54YZ4WU)"
