@@ -54,7 +54,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     homeMessage = null,
     onPageChange,
 }, ref) {
-    const { allBTCWallets, setWalletTab } = useAuthStore();
+    const { allBTCWallets, setWalletTab, isArkAuth } = useAuthStore();
 
     const [indexStrike, setIndexStrike] = useState(0);
     const [wTabs, setWTabs] = useState([]);
@@ -82,7 +82,16 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // Ark is feature-flagged off until Second.tech's mainnet ASP launches.
         // Even if zustand still has 'ARK' in allBTCWallets from a previous
         // session, we never render the carousel card while the flag is false.
-        const hasArk = FEATURE_ARK_ENABLED && (allBTCWallets as WalletName[]).includes('ARK');
+        // Also gate on `isArkAuth`: if the user logged out of Ark but
+        // allBTCWallets still has 'ARK' from a stale store entry, the
+        // ArkWallet component would render its "Create an Ark Wallet"
+        // CTA card on Home — Bam's request is to remove the Ark slot
+        // entirely in that state and surface re-creation only via the
+        // BalanceView's "+ Add wallet" affordance.
+        const hasArk =
+            FEATURE_ARK_ENABLED &&
+            (allBTCWallets as WalletName[]).includes('ARK') &&
+            isArkAuth;
 
         const tabs: any = [];
         // The carousel's `firstItem` prop is only respected on the Carousel
@@ -176,8 +185,25 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // `bothVaultsExist` check). When only one is connected, that wallet's
     // own in-card buttons render — no shared row.
     const hasLightningWallet = (allBTCWallets as string[]).includes('STRIKE') || (allBTCWallets as string[]).includes('COINOS');
-    const hasArkWallet = FEATURE_ARK_ENABLED && (allBTCWallets as string[]).includes('ARK');
+    // Same `isArkAuth` gate as the carousel `hasArk` above — without
+    // it, a logged-out Ark with stale `allBTCWallets` would still flip
+    // `useSharedButtons` true and route the BottomBar / shared row
+    // logic as if Ark were live, breaking the layout.
+    const hasArkWallet = FEATURE_ARK_ENABLED && (allBTCWallets as string[]).includes('ARK') && isArkAuth;
     const useSharedButtons = hasLightningWallet && hasArkWallet;
+    // Strike + CoinOS + Ark all connected. The CircularView slide already
+    // exposes a Strike↔CoinOS swap between its two circles, and hopping
+    // between Lightning and Ark from the Ark slide is what the swap
+    // affordance was offering — but Bam's spec is to drop the shared-row
+    // swap entirely in this combo (both on the CircularView slide and the
+    // Ark slide). Single-Lightning-rail combos (Strike+Ark or CoinOS+Ark)
+    // still get the shared-row swap because they have no in-card swap.
+    // Gated through `hasArkWallet` (which already requires isArkAuth)
+    // so a logged-out Ark doesn't suppress the shared-row swap.
+    const allThreeLightningRails =
+        (allBTCWallets as string[]).includes('STRIKE') &&
+        (allBTCWallets as string[]).includes('COINOS') &&
+        hasArkWallet;
 
     const walletTabsMap = {
         COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
@@ -412,17 +438,21 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         isShadow
                         isTextShadow
                     />
-                    {/* Swap icon between Receive and Send. Mirrors the
-                        Strike↔CoinOS swap affordance from CircularView, but
-                        for the Lightning↔Ark pair (and any future rail) —
-                        the SwapSheet provider registry handles arbitrary
-                        source/destination combinations on its own. */}
-                    <TouchableOpacity
-                        onPress={() => refSwapRBSheet?.current?.open()}
-                        style={{ alignItems: 'center', justifyContent: 'center', width: 40, height: 40 }}
-                    >
-                        <Image source={Refresh} style={{ width: 18, height: 29 }} />
-                    </TouchableOpacity>
+                    {/* Swap icon between Receive and Send (Lightning↔Ark).
+                        Suppressed entirely when all three Lightning rails
+                        (Strike + CoinOS + Ark) are connected — Bam asked
+                        for it gone on both the CircularView slide AND the
+                        Ark slide in that combo. For Strike+Ark-only and
+                        CoinOS+Ark-only configs the swap stays here, since
+                        those slides have no internal swap of their own. */}
+                    {!allThreeLightningRails && (
+                        <TouchableOpacity
+                            onPress={() => refSwapRBSheet?.current?.open()}
+                            style={{ alignItems: 'center', justifyContent: 'center', width: 40, height: 40 }}
+                        >
+                            <Image source={Refresh} style={{ width: 18, height: 29 }} />
+                        </TouchableOpacity>
+                    )}
                     <GradientButtonWithShadow
                         title="Send"
                         onPress={sharedSend}

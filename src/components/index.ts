@@ -2,7 +2,7 @@ export { default as GradientText } from './GradientText';
 export { default as GradientButton } from './GradientButton';
 export { default as HeaderWithLine } from './HeaderWithLine';
 export { default as HeaderBackButton } from './HeaderBackButton';
-export { LoginOption, RegisterPrompt } from './CheckingAccount';
+export { LoginOption, RegisterPrompt, CreateButton } from './CheckingAccount';
 export { default as Progress } from './Progress';
 export { default as GradientCard } from './GradientCard';
 export { default as GradientButtonWithShadow } from './GradientButtonWithShadow';

@@ -4,10 +4,18 @@ import SimpleToast from "react-native-simple-toast";
 
 import { ScreenLayout } from "@Cypher/component-library";
 import { CustomKeyboard, GradientInput } from "@Cypher/components";
-import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
+import { getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import { createArkLightningInvoice } from "@Cypher/services/ark";
+import { colors } from "@Cypher/style-guide";
 
 import styles from "./styles";
+
+// Ark yellow palette for the input border, sats/fiat tab strip, MAX
+// button, and Create-invoice CTA — replaces the pink defaults inherited
+// from the CoinOS/Strike `CreateInvoice` flow. Both GradientInput and
+// CustomKeyboard already accept a `colors_` override, so this is purely
+// a presentation swap.
+const ARK_GRADIENT = [colors.ark.gradient1, colors.ark.gradient2];
 
 /**
  * Amount entry for an Ark BOLT11 invoice.
@@ -57,11 +65,13 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
             // the row simply collapses rather than showing "$0.00" next to
             // a non-zero sat amount.
             //
-            // `matchedRate` is already USD-per-sat (HomeScreen stores it
-            // that way — see `handleUser` line 671), so sats × rate = USD
-            // directly. Don't multiply by btc(1) — that bug made the fiat
-            // come out ~1e-8× too small and always display $0.
-            const fiat = rate > 0 ? satsAmount * rate : 0;
+            // `matchedRate` is now currency-per-BTC (matches the convention
+            // CustomKeyboard + Strike's matchedRateStrike use), so convert
+            // sats → BTC first, then multiply by rate to get fiat. The
+            // earlier per-sat formula (sats × rate) silently broke when
+            // ArkReceiveScreen started supplying a per-BTC rate from
+            // BlueWallet's getFiatRate.
+            const fiat = rate > 0 ? (satsAmount / SATS) * rate : 0;
             const formattedFiat = fiat > 0
                 ? `${getStrikeCurrency(currency || "USD")}${fiat.toFixed(2)}`
                 : "";
@@ -92,6 +102,7 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
                     sats={sats}
                     setSats={setSats}
                     usd={usd}
+                    colors_={ARK_GRADIENT}
                 />
             </View>
             <CustomKeyboard
@@ -104,6 +115,7 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
                 setIsSATS={setIsSats}
                 matchedRate={matchedRate}
                 currency={currency}
+                colors_={ARK_GRADIENT}
             />
         </ScreenLayout>
     );

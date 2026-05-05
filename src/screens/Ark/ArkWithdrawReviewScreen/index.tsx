@@ -318,9 +318,16 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
 
     const amountFiat = (amountSats * matchedRate).toFixed(2);
     const feeFiat = fee ? (fee.feeSats * matchedRate).toFixed(2) : null;
+    // Express the fee as a percentage of the amount being sent — not of
+    // the gross (amount + fee). With 20 sats sent and 400 sats fee, the
+    // gross-based math came out to 95% (400/420), which read as "almost
+    // free" when the fee is actually 20× the send amount. The send-based
+    // ratio gives 2000%, so users can see the fee is dwarfing the
+    // payment. Capped at 9999% so the row doesn't blow out the UI for
+    // pathological dust amounts.
     const feePct =
-        fee && fee.grossAmountSats > 0
-            ? Math.min(999, (fee.feeSats / fee.grossAmountSats) * 100)
+        fee && amountSats > 0
+            ? Math.min(9999, (fee.feeSats / amountSats) * 100)
             : null;
 
     // ---- Success state ---------------------------------------------------
@@ -617,11 +624,12 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                         </>
                     )}
 
-                    {/* Fee block — TextViewV2 rows in the same style as
-                        ReviewPayment's "Coinos Fee" / "Total Fee" lines.
-                        Bark SDK only returns a single combined `feeSats`,
-                        so we label what's bundled in (on-chain network +
-                        Ark service) instead of pretending we can split. */}
+                    {/* Fee block — single row showing the fee Bark SDK
+                        gives us (network + Ark service rolled together),
+                        with both fiat amount and percentage of the send
+                        amount. Previous version had three rows (Network
+                        + Ark Fee / Total Fee / Total debited) which was
+                        confusing — Bam asked to collapse to one line. */}
                     {isEstimating ? (
                         <View
                             style={{
@@ -656,22 +664,16 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                     ) : fee ? (
                         <>
                             <TextViewV2
-                                keytext="Network + Ark Fee:  "
-                                text={` ~   ${formatNumber(fee.feeSats)} sats (~${getStrikeCurrency(currency)}${feeFiat})`}
-                            />
-                            {feePct !== null && (
-                                <TextViewV2
-                                    keytext="Total Fee:  "
-                                    text={` ~   ${formatNumber(fee.feeSats)} sats (~${
-                                        feePct < 0.01
-                                            ? '<0.01'
-                                            : feePct.toFixed(feePct < 1 ? 2 : 1)
-                                    }%)`}
-                                />
-                            )}
-                            <TextViewV2
-                                keytext="Total debited:  "
-                                text={` ~   ${formatNumber(fee.grossAmountSats)} sats`}
+                                keytext="Ark withdraw fee:  "
+                                text={` ~   ${getStrikeCurrency(currency)}${feeFiat}${
+                                    feePct !== null
+                                        ? ` (${
+                                              feePct < 0.01
+                                                  ? '<0.01'
+                                                  : feePct.toFixed(feePct < 1 ? 2 : 1)
+                                          }%)`
+                                        : ''
+                                }`}
                             />
                             {fee.vtxosSpent.length > 0 && (
                                 <TextViewV2

@@ -3,7 +3,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, shadow, widths } from "@Cypher/style-guide";
 import React from "react";
-import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { Pressable, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Icon } from "react-native-elements";
 import styles from "../styles";
 import { GradientView } from "@Cypher/components";
@@ -45,47 +45,51 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
                 </Text>
 
                 {showAddAccount && onAddAccount && (
-                    // Compact pill — fully opaque solid pink fill, black
-                    // label + Feather "plus" icon (thinner / cleaner than
-                    // the bare "+" character we used before). Drop shadow
-                    // gives a restrained 3D pop without any glow or tint.
-                    // activeOpacity stays at 1 so the pill never dims on
-                    // press — the tap feedback is the slight depress
-                    // implied by the shadow.
+                    // White pill (was pink) with a real pressed state —
+                    // Pressable lets us swap styles per-press, so the
+                    // button visibly depresses (slight scale-down + dim
+                    // bg + shrunk shadow) while the user's thumb is on
+                    // it, then springs back on release. Tactile feel.
                     <View style={{ alignItems: 'flex-end', paddingRight: 15, paddingTop: 6, zIndex: 10 }}>
-                        <TouchableOpacity
+                        <Pressable
                             onPress={onAddAccount}
-                            activeOpacity={1}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            style={{
+                            style={({ pressed }) => ({
                                 flexDirection: 'row',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 paddingHorizontal: 12,
                                 paddingVertical: 6,
                                 borderRadius: 16,
-                                backgroundColor: colors.pink.light,
+                                borderWidth: 1,
+                                borderColor: pressed ? '#000000' : '#D4D4D4',
+                                // Full inversion on press: white→black bg
+                                // gives a clear "I'm being touched" cue
+                                // (text/icon flip to white below).
+                                backgroundColor: pressed ? '#000000' : '#FFFFFF',
+                                transform: [{ scale: pressed ? 0.94 : 1 }],
                                 shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: 0.5,
-                                shadowRadius: 3,
-                                elevation: 4,
-                            }}
+                                shadowOffset: { width: 0, height: pressed ? 1 : 3 },
+                                shadowOpacity: pressed ? 0.2 : 0.5,
+                                shadowRadius: pressed ? 1.5 : 4,
+                                elevation: pressed ? 2 : 5,
+                            })}
                         >
-                            {/* Feather icon set — thin, modern stroke.
-                                Black on the pink fill keeps contrast high
-                                without introducing a third colour. */}
-                            <Icon
-                                name="plus"
-                                type="feather"
-                                color="#000"
-                                size={14}
-                                containerStyle={{ marginRight: 4 }}
-                            />
-                            <Text bold style={{ color: '#000', fontSize: 12, letterSpacing: 0.3 }}>
-                                Add wallet
-                            </Text>
-                        </TouchableOpacity>
+                            {({ pressed }) => (
+                                <>
+                                    <Icon
+                                        name="plus"
+                                        type="feather"
+                                        color={pressed ? '#FFFFFF' : '#000000'}
+                                        size={14}
+                                        containerStyle={{ marginRight: 4 }}
+                                    />
+                                    <Text bold style={{ color: pressed ? '#FFFFFF' : '#000000', fontSize: 12, letterSpacing: 0.3 }}>
+                                        Add wallet
+                                    </Text>
+                                </>
+                            )}
+                        </Pressable>
                     </View>
                 )}
 

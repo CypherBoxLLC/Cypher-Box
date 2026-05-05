@@ -42,7 +42,10 @@ interface Style {
 
 export default StyleSheet.create<Style>({
     container: {
-        // marginTop: 14,
+        // Drop the entire Strike fiat-balance section (capsule + BUY/SELL
+        // buttons + bitcoin exchange-rate box) 15pt lower so it doesn't
+        // crowd the BalanceView above it.
+        marginTop: 15,
     },
     gradientBorder: {
         borderRadius: 12,
@@ -76,6 +79,11 @@ export default StyleSheet.create<Style>({
         marginTop: 30,
         alignSelf: 'center',
         alignItems: 'center',
+        // Round 5 — Fiat Balance text up another 10pt. Using `transform`
+        // (paint-only) instead of dropping marginTop further so SELL
+        // below stays put — modifying marginTop drags SELL with it
+        // (see the SELL marginTop:-5 comment in index.tsx).
+        transform: [{ translateY: -10 }],
     },
     fiatBalanceBox2: {
         width: 121,
@@ -98,11 +106,12 @@ export default StyleSheet.create<Style>({
         // collide with the right-side Fiat Balance text.
         marginLeft: 45,
         marginTop: 45,
-        // Round 2 — additional 15pt right + 15pt down requested by Bam.
-        // Using `transform: translate*` instead of margin so the BUY
-        // button below in the same flex-column doesn't move with the
-        // capsule (transform doesn't affect sibling layout).
-        transform: [{ translateX: 15 }, { translateY: 15 }],
+        // Round 4 final — Round 4's full (−45, −45) was too much; backed
+        // off 15pt on each axis to land at (−30, −30). Net effect: capsule
+        // sits at (15, 15) inside the LEFT sideContainer (marginLeft/Top
+        // 45 + −30 paint offset). Still using `transform` (not margin)
+        // so the BUY button below stays put.
+        transform: [{ translateX: -30 }, { translateY: -30 }],
         justifyContent: 'center',
         borderRadius: 20,
     },
@@ -319,8 +328,7 @@ export default StyleSheet.create<Style>({
         marginTop: 15
     },
     bitcoinPriceContainer: {
-        // Net 0pt offset (was bumped 8→18, then lifted back -10).
-        marginTop: 8,
+        marginTop: 13,
     },
     bitcoinPriceText: {
         fontSize: 30,

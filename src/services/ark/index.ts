@@ -66,6 +66,7 @@ export {
     disconnectGoogleDrive,
     uploadArkBackupToDrive,
     downloadArkBackupFromDrive,
+    getDriveBackupInfo,
 } from './googleDrive';
 
 export {

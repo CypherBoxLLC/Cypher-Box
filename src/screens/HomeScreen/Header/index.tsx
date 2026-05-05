@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
+import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -247,11 +248,11 @@ export default React.memo(function Header({
                         style={styles.imageView}
                         onPress={navigateToSettings}
                     >
-                        <Image
-                            style={styles.image}
-                            resizeMode="contain"
-                            source={require("../../../../img/settings.png")}
-                        />
+                        {/* Modern thin-stroke gear (Ionicons
+                            settings-outline) — keeps the classic gear
+                            silhouette but with cleaner strokes than the
+                            old PNG. */}
+                        <Ionicons name="settings-outline" size={28} color="#FFFFFF" />
                     </TouchableOpacity>
                     <TouchableOpacity
                         activeOpacity={0.7}

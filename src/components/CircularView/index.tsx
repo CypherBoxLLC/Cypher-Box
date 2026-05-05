@@ -8,7 +8,7 @@ import { CoinOSSmall, Refresh, Strike2 } from "@Cypher/assets/images";
 import CircleTimer from "../CircleTimer";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
-import { SATS, getStrikeCurrency, btc } from "@Cypher/helpers/coinosHelper";
+import { SATS, formatSats, getStrikeCurrency, btc } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
     wallet: any;
@@ -32,14 +32,16 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
     const strikeBtcFiatEquivalent = Number(strikeUser?.[0]?.available || 0) * safeMatchedRate;
     const checkingAccount = {
         first: {
-            value: `${strikeBtcSats} sats`,
+            value: `${formatSats(strikeBtcSats)} sats`,
             convertedValue: `~ ${strikeCurrencySymbol}${strikeBtcFiatEquivalent.toFixed(2)}`,
             image: Strike2,
+            balanceSats: strikeBtcSats,
         },
         second: {
-            value: `${balance || 0} sats`,
+            value: `${formatSats(Number(balance) || 0)} sats`,
             convertedValue: `~  $${Number(convertedRate || 0).toFixed(2)}`,
             image: CoinOSSmall,
+            balanceSats: Number(balance) || 0,
         }
     };
 

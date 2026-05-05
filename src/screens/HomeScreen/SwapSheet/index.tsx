@@ -21,6 +21,7 @@ import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { StyleSheet } from "react-native";
 
+import { Electricity } from "@Cypher/assets/images";
 import {
     listLightningSwapProviders,
     type LightningSwapProvider,
@@ -139,7 +140,17 @@ export default function SwapSheet({
                     styles.cardInnerShadow,
                     !selected && { shadowColor: colors.gray.disable },
                 ]}
-                linearGradientStyleMain={styles.cardGradientMainStyle}
+                // Real 2px pink border when selected — RN 0.76 dropped
+                // the native ART module so the GradientView shadow-glow
+                // is a no-op on Android. A border on the inner gradient
+                // gives a visible selection cue cross-platform.
+                linearGradientStyleMain={[
+                    styles.cardGradientMainStyle,
+                    selected && {
+                        borderWidth: 2,
+                        borderColor: colors.pink.shadowTopNew,
+                    },
+                ]}
                 gradiantColors={[colors.black.bg, colors.black.bg]}
             >
                 <View style={[styles.optionContent, disabled && { opacity: 0.4 }]}>
@@ -150,12 +161,21 @@ export default function SwapSheet({
                             resizeMode="contain"
                         />
                     ) : (
-                        // Text fallback for icon-less providers (Ark).
-                        // Same height region as logoImage so tiles stay
-                        // visually consistent in the row.
-                        <Text bold style={styles.textBadge}>
-                            {provider.displayName}
-                        </Text>
+                        // Lightning-bolt + displayName fallback for
+                        // icon-less providers (Ark) — matches the same
+                        // pattern used across the receive / send /
+                        // withdraw / top-up sheets so the Ark identity
+                        // reads consistently throughout the app.
+                        <View style={styles.iconLabelRow}>
+                            <Image
+                                source={Electricity}
+                                style={styles.iconLabelBolt}
+                                resizeMode="contain"
+                            />
+                            <Text bold style={styles.iconLabelText}>
+                                {provider.displayName}
+                            </Text>
+                        </View>
                     )}
                 </View>
             </GradientView>
@@ -308,6 +328,23 @@ const styles = StyleSheet.create({
         textAlign: "center",
         fontSize: 18,
         color: colors.white,
+    },
+    iconLabelRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        // 35pt matches `logoImage` height so the tile contents stay
+        // vertically aligned with the icon-bearing providers.
+        height: 35,
+    },
+    iconLabelBolt: {
+        width: 14,
+        height: 18,
+        marginRight: 6,
+        tintColor: "#FFFFFF",
+    },
+    iconLabelText: {
+        fontSize: 16,
+        color: "#FFFFFF",
     },
     nextBtn: {
         backgroundColor: colors.pink.light,

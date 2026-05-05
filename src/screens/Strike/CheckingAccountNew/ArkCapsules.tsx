@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Image, ImageBackground, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, TouchableOpacity, View } from "react-native";
+import LinearGradient from "react-native-linear-gradient";
+import { Icon } from "react-native-elements";
 import Svg, { Circle } from "react-native-svg";
 import SimpleToast from "react-native-simple-toast";
 
 import { Text } from "@Cypher/component-library";
 import { GradientView } from "@Cypher/components";
-import { Tag, Transaction, Yes } from "@Cypher/assets/images";
+import { Refresh, Tag, Yes } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
 
@@ -182,6 +184,8 @@ interface VtxoRowProps {
     vtxo: VtxoRowData;
     selected: boolean;
     onPress: () => void;
+    /** Tap on the per-row refresh icon — refresh just this one VTXO. */
+    onRefreshIcon: () => void;
     /** Round cadence in seconds (from wallet.arkInfo()), null until fetched. */
     roundIntervalSecs: number | null;
 }
@@ -204,9 +208,74 @@ function formatRoundUpperBound(secs: number): string {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress, roundIntervalSecs }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = btcHandle(vtxo.sats) + " BTC";
+
+    // Transient-state animation: while vtxo.pendingRound is true, the
+    // refresh icon spins and the gradient card pulses opacity. Both
+    // loops start when pendingRound flips on and stop the moment it
+    // flips off — the underlying SDK marks pendingRound during a
+    // refresh round and clears it on round-completion sync.
+    const spinAnim = useRef(new Animated.Value(0)).current;
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    // Animate when EITHER pendingRound (refresh round in-flight) OR the
+    // VTXO is in 'in-flight' recoverability state (mid-send / mid-board /
+    // mid-exit). Same pulse + spin so the user sees identical transient
+    // visuals regardless of which kind of round produced the lock.
+    const isTransient = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
+    useEffect(() => {
+        if (!isTransient) {
+            spinAnim.setValue(0);
+            pulseAnim.setValue(1);
+            return;
+        }
+        const spin = Animated.loop(
+            Animated.timing(spinAnim, {
+                toValue: 1,
+                // Linear easing for the rotation — eased curves on a
+                // looping spinner produce a visible "stop-start" at each
+                // cycle boundary which reads as jerky. Linear gives the
+                // smooth continuous turn users expect from a spinner.
+                // Duration kept at the pulse cycle (1.6s) so a full turn
+                // still completes per breath.
+                duration: 1600,
+                easing: Easing.linear,
+                useNativeDriver: true,
+            }),
+        );
+        const pulse = Animated.loop(
+            Animated.sequence([
+                // Deeper fade (1 → 0.2) for a more obvious breathing
+                // pulse — the previous 0.45 was too subtle.
+                Animated.timing(pulseAnim, {
+                    toValue: 0.2,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pulseAnim, {
+                    toValue: 1,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+            ]),
+        );
+        spin.start();
+        pulse.start();
+        return () => {
+            spin.stop();
+            pulse.stop();
+        };
+    }, [isTransient, spinAnim, pulseAnim]);
+
+    const spinDeg = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+    // Scale pulse on the icon, derived from the same pulseAnim driving the
+    // card opacity so the icon "breathes" in sync. Tightened range from
+    // 0.75 → 1.15 (40%) to 0.92 → 1.08 (16%) so the pulse reads as
+    // breathing rather than zooming.
+    const iconScale = pulseAnim.interpolate({ inputRange: [0.2, 1], outputRange: [0.92, 1.08] });
 
     // Pending-round VTXOs: flat yellow label, full ring (so the row doesn't
     // read as "almost expired" while it's actually sitting in a round).
@@ -248,30 +317,121 @@ function VtxoRow({ vtxo, selected, onPress, roundIntervalSecs }: VtxoRowProps) {
     }
 
     return (
-        <ImageBackground source={Transaction} style={rowStyles.main}>
+        // Fresh capsule shape — deep-grey → black diagonal gradient with
+        // a real drop shadow so the row "sticks out" off the dark page.
+        // No always-on border; the yellow borderview lights up only on
+        // selection.
+        // Inline overrides:
+        //   - height bumped 124 → 100 (smaller than the original Hot
+        //     Vault row, just slightly taller than the previous 88)
+        //   - paddingTop reset to 0 + justifyContent center → vertically
+        //     centers the inner TouchableOpacity content within the card
+        // Whole row wrapped in Animated.View so the pulse opacity affects
+        // the gradient AND the content (text, icon, checkbox) together —
+        // before, opacity was only on the gradient sibling so the text
+        // stayed fully opaque while the bg breathed, which read as nothing
+        // changing.
+        <Animated.View style={[
+            rowStyles.main,
+            { height: 100, paddingTop: 0, justifyContent: 'center', opacity: pulseAnim },
+        ]}>
+            <LinearGradient
+                colors={['#3A3A3A', '#1C1C1C']}
+                // Down-right at 30° from vertical — direction vector
+                // (sin 30°, cos 30°) ≈ (0.5, 0.866).
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.5, y: 0.866 }}
+                style={{
+                    position: 'absolute',
+                    top: 6,
+                    bottom: 6,
+                    left: 6,
+                    right: 18,
+                    borderRadius: 16,
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 5, height: 9 },
+                    shadowOpacity: 0.7,
+                    shadowRadius: 10,
+                    elevation: 10,
+                }}
+            />
+            {/* Selection outline — sits 2pt OUTSIDE the gradient card on
+                each side. Gradient inset is 6/6/6/18 → outline inset
+                4/4/4/16 places its border 2pt beyond the gradient edge.
+                18pt borderRadius matches the gradient's 16 + 2pt offset. */}
             {selected && (
-                <View style={[rowStyles.borderview, { borderColor: colors.ark.light }]} />
+                <View
+                    style={{
+                        position: 'absolute',
+                        top: 4,
+                        bottom: 4,
+                        left: 4,
+                        right: 16,
+                        borderRadius: 18,
+                        borderWidth: 2,
+                        borderColor: colors.ark.light,
+                    }}
+                />
             )}
             <TouchableOpacity activeOpacity={0.7} style={rowStyles.container} onPress={onPress}>
-                <View style={rowStyles.coin}>
+                {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
+                    bump the size column from 1.8 → 2.8 so the time-left +
+                    status row has room to fit on a single line. flexWrap
+                    flipped to 'nowrap' + numberOfLines=1 on each Text so
+                    they elide rather than wrap if anything overflows. */}
+                <View style={[rowStyles.coin, { flex: 1.5 }]}>
                     <VtxoRing daysLeft={ringDaysLeft} />
                 </View>
-                <View style={rowStyles.size}>
+                <View style={[rowStyles.size, { flex: 2.8 }]}>
                     <Text bold style={rowStyles.value}>{BTCAmount}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <Text bold style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
-                            {labelText}
-                        </Text>
-                        <Text style={{ color: colors.gray.light, fontSize: 12 }}>
-                            {" - "}
-                        </Text>
-                        <Text bold style={{ color: recoverabilityColor, fontSize: 12 }}>
-                            {recoverabilityText}
-                        </Text>
-                    </View>
+                    {/* When the VTXO is in-flight, stack the recoverability
+                        label on its own row below — the "⚠ In-flight"
+                        message is too important to compete with the days-
+                        left text on the same line. Other recoverability
+                        states keep the inline " - <text>" layout. */}
+                    {vtxo.recoverability === 'in-flight' ? (
+                        <>
+                            <Text bold numberOfLines={1} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
+                                {labelText}
+                            </Text>
+                            <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
+                                {recoverabilityText}
+                            </Text>
+                        </>
+                    ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
+                            <Text bold numberOfLines={1} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
+                                {labelText}
+                            </Text>
+                            <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
+                                {" - "}
+                            </Text>
+                            <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
+                                {recoverabilityText}
+                            </Text>
+                        </View>
+                    )}
                 </View>
-                <TouchableOpacity style={rowStyles.label} onPress={onPress}>
-                    <Image source={Tag} />
+                {/* Refresh icon Touchable — independent of the row's
+                    select-toggle Touchable wrapping the rest of the row.
+                    delayPressIn=0 + hitSlop guarantee the inner press
+                    registers BEFORE the outer (otherwise nested
+                    TouchableOpacities can let the outer capture first
+                    on Android). Generous hit area so users don't need
+                    pixel-perfect aim. */}
+                <TouchableOpacity
+                    style={[rowStyles.label, { alignItems: 'flex-start' }]}
+                    onPress={onRefreshIcon}
+                    delayPressIn={0}
+                    hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
+                    activeOpacity={0.6}
+                >
+                    {/* Feather refresh-cw — circular two-arrow icon. While
+                        pendingRound is true, the spinAnim drives a 360°
+                        rotate to telegraph the in-flight refresh. */}
+                    <Animated.View style={{ transform: [{ rotate: spinDeg }, { scale: iconScale }] }}>
+                        <Icon name="refresh-cw" type="feather" color="#FFFFFF" size={22} />
+                    </Animated.View>
                 </TouchableOpacity>
                 <View style={rowStyles.select}>
                     <View style={rowStyles.checkbox}>
@@ -279,7 +439,7 @@ function VtxoRow({ vtxo, selected, onPress, roundIntervalSecs }: VtxoRowProps) {
                     </View>
                 </View>
             </TouchableOpacity>
-        </ImageBackground>
+        </Animated.View>
     );
 }
 
@@ -382,19 +542,22 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         });
     };
 
-    const handleRefresh = async () => {
-        if (selectedIds.length === 0) {
-            SimpleToast.show("Select capsules to refresh", SimpleToast.SHORT);
-            return;
-        }
+    /**
+     * Refresh a specific set of VTXO ids. Reused by the bottom Refresh
+     * button (passes selectedIds) and the per-row icon (passes a single
+     * vtxo.id). Same fee preview + watchdog + selection-clear semantics
+     * either way.
+     */
+    const refreshIds = async (ids: string[]) => {
         if (refreshing) return;
+        if (ids.length === 0) return;
 
         // Refusing to refresh a VTXO that's already Locked in a pending
         // round — the SDK will just block waiting on the same round, and
         // stacking calls makes it harder to reason about. The user should
         // wait for the existing round to finalise (or time out) first.
         const lockedSelected = rows.filter(
-            (r) => selectedIds.includes(r.id) && r.pendingRound,
+            (r) => ids.includes(r.id) && r.pendingRound,
         );
         if (lockedSelected.length > 0) {
             SimpleToast.show(
@@ -404,7 +567,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             return;
         }
 
-        const ids = [...selectedIds];
         setRefreshing(true);
         try {
             const fee = await estimateArkRefreshFee(ids);
@@ -499,6 +661,21 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         }
     };
 
+    const handleRefresh = () => {
+        if (selectedIds.length === 0) {
+            SimpleToast.show("Select capsules to refresh", SimpleToast.SHORT);
+            return;
+        }
+        void refreshIds([...selectedIds]);
+    };
+
+    /** Per-row icon — refresh just this single VTXO. The fee preview +
+     *  confirmation dialog live inside `refreshIds` so the user still
+     *  has to opt in before the round commits. */
+    const handleRowRefresh = (vtxoId: string) => {
+        void refreshIds([vtxoId]);
+    };
+
     const renderActionButton = (label: string, onPress: () => void) => (
         <GradientView
             onPress={onPress}
@@ -546,7 +723,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             <View style={vaultStyles.titleStyle}>
                 <Text bold style={vaultStyles.coin}>Capsules</Text>
                 <Text bold style={vaultStyles.size}>Size</Text>
-                <Text bold style={vaultStyles.label}>Label</Text>
+                <Text bold style={[vaultStyles.label, { fontSize: 14, textAlign: 'left' }]}>Refresh</Text>
                 <Text bold style={vaultStyles.select}>Select</Text>
             </View>
             <View style={vaultStyles.border} />
@@ -560,6 +737,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         vtxo={item}
                         selected={selectedIds.includes(item.id)}
                         onPress={() => toggle(item.id)}
+                        onRefreshIcon={() => handleRowRefresh(item.id)}
                         roundIntervalSecs={arkRoundIntervalSecs}
                     />
                 )}

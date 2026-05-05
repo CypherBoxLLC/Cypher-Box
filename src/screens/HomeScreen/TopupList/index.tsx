@@ -14,6 +14,7 @@ import {
   Back,
   CoinOS,
   Cold1,
+  Electricity,
   Hot,
   Second,
   StrikeFull,
@@ -335,8 +336,12 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
               TOP-UP FROM
             </Text>
 
-            {/* Vault cards (source) */}
-            <View style={[withdrawStyles.cardListContainer, vaultData.length === 1 && { justifyContent: 'center' }]}>
+            {/* Vault cards (source) — single row (max 2 vaults).
+                Per-id border outline when selected: green for Hot,
+                blueish for Cold. Border is the visible cue since
+                neomorph-shadows is a no-op shim on Android (RN 0.76
+                dropped the native ART module). */}
+            <View style={[withdrawStyles.cardListContainer, { marginTop: 0 }, vaultData.length === 1 && { justifyContent: 'center' }]}>
               {vaultData.map((item) => (
                 <GradientView
                   key={item.id}
@@ -353,7 +358,15 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                     { shadowColor: item.shadowColor },
                     (selectedVault == null || selectedVault !== item.id) && { shadowColor: colors.gray.disable },
                   ]}
-                  linearGradientStyleMain={withdrawStyles.cardGradientMainStyle}
+                  linearGradientStyleMain={[
+                    withdrawStyles.cardGradientMainStyle,
+                    selectedVault === item.id && {
+                      borderWidth: 2,
+                      borderColor: item.id === 1 ? colors.green   // Hot
+                                 : item.id === 2 ? colors.blueText // Cold
+                                 : 'transparent',
+                    },
+                  ]}
                   gradiantColors={[colors.black.bg, colors.black.bg]}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
@@ -372,9 +385,19 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
               TOP-UP TO
             </Text>
 
-            {/* Account cards (destination) */}
-            <View style={[withdrawStyles.cardListContainer, accountData.length === 1 && { justifyContent: 'center' }]}>
-              {accountData.map((item) => (
+            {/* Account cards (Lightning destinations) — 2-col × 2-row
+                grid, paginated horizontally if more than 4 connected
+                rails. Mirrors WithdrawList's WITHDRAW FROM grid. Ark
+                tile (id 5) renders lightning + "Ark Vault" text instead
+                of the Second wordmark. Per-id selection outline: pink
+                for CoinOS/Strike, yellow for Ark. */}
+            {(() => {
+              const accountOutline = (id: number): string => {
+                if (id === 3 || id === 4) return colors.pink.shadowTopNew; // CoinOS / Strike
+                if (id === 5) return colors.ark.shadowTopNew;              // Ark
+                return 'transparent';
+              };
+              const renderAccountTile = (item: any) => (
                 <GradientView
                   key={item.id}
                   onPress={() => onAccountPress(item.id)}
@@ -382,25 +405,102 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   linearGradientStyle={withdrawStyles.cardOuterShadow}
                   topShadowStyle={[
                     withdrawStyles.cardTopShadow,
+                    item.id === 5 && { shadowColor: colors.ark.shadowTopNew },
                     (selectedAccount == null || selectedAccount !== item.id) && { shadowColor: colors.gray.disable },
                   ]}
                   bottomShadowStyle={[
                     withdrawStyles.cardInnerShadow,
+                    item.id === 5 && { shadowColor: colors.ark.shadowBottom },
                     (selectedAccount == null || selectedAccount !== item.id) && { shadowColor: colors.gray.disable },
                   ]}
-                  linearGradientStyleMain={withdrawStyles.cardGradientMainStyle}
+                  linearGradientStyleMain={[
+                    withdrawStyles.cardGradientMainStyle,
+                    selectedAccount === item.id && {
+                      borderWidth: 2,
+                      borderColor: accountOutline(item.id),
+                    },
+                  ]}
                   gradiantColors={[colors.black.bg, colors.black.bg]}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
-                    <Image
-                      source={item.icon}
-                      style={withdrawStyles.logoImage}
-                      resizeMode="contain"
-                    />
+                    {item.id === 5 ? (
+                      // Ark tile — lightning bolt + "Ark Vault" text,
+                      // matching the Receive/Send/Withdraw sheets.
+                      <>
+                        <Image
+                          source={Electricity}
+                          style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
+                          resizeMode="contain"
+                        />
+                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>Ark Vault</Text>
+                      </>
+                    ) : (
+                      <Image
+                        source={item.icon}
+                        style={withdrawStyles.logoImage}
+                        resizeMode="contain"
+                      />
+                    )}
                   </View>
                 </GradientView>
-              ))}
-            </View>
+              );
+
+              const PAGE_SIZE = 4; // 2 cols × 2 rows
+              const pages: any[][] = [];
+              for (let i = 0; i < accountData.length; i += PAGE_SIZE) {
+                pages.push(accountData.slice(i, i + PAGE_SIZE));
+              }
+              const isPageable = pages.length > 1;
+              const renderPage = (page: any[], pageIdx: number) => (
+                <View
+                  key={pageIdx}
+                  style={{
+                    width: SCREEN_WIDTH,
+                    paddingHorizontal: 30,
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    justifyContent:
+                      page.length === 1 ? 'center' : 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  {page.map(renderAccountTile)}
+                </View>
+              );
+
+              if (!isPageable) {
+                // marginTop: 20 — pushes the Lightning grid 20pt lower
+                // beneath the TOP-UP TO label, opening up breathing room
+                // between the section title and the tiles.
+                return (
+                  <View
+                    style={{
+                      paddingHorizontal: 30,
+                      marginTop: 20,
+                      flexDirection: 'row',
+                      flexWrap: 'wrap',
+                      justifyContent:
+                        accountData.length === 1 ? 'center' : 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {accountData.map(renderAccountTile)}
+                  </View>
+                );
+              }
+
+              return (
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 20 }}
+                  contentContainerStyle={{ alignItems: 'center' }}
+                >
+                  {pages.map(renderPage)}
+                </ScrollView>
+              );
+            })()}
           </Animated.View>
 
           {/* ======= SECOND VIEW: Capsule Submenu (same as SendListNew) ======= */}

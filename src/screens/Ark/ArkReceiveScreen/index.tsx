@@ -9,8 +9,11 @@ import {
     getArkAddress,
     getArkOnchainAddress,
 } from "@Cypher/services/ark";
+import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import { useRoute } from "@react-navigation/native";
 
+import { getFiatRate } from "../../../../models/fiatUnit";
 import styles from "./styles";
 
 /**
@@ -28,6 +31,21 @@ import styles from "./styles";
  * `CopyInvoice` screen (which is already generic over value/converted/hash).
  */
 export default function ArkReceiveScreen() {
+    // ReceivedListNew passes `{ matchedRate, currency }` here when routing
+    // to the Ark receive sub-menu — but those values come from
+    // `matchedRateStrike` + Strike's account currency, which means an Ark
+    // user with a Strike-EUR account would see the Ark invoice priced in
+    // EUR using Strike's exchange rate. Bam asked for two corrections:
+    //   1. Currency: EUR only if a Strike account is connected AND its
+    //      profile currency is EUR; otherwise USD. (No Strike connected →
+    //      always USD, regardless of what was passed in.)
+    //   2. Rate: pulled fresh from BlueWallet's `getFiatRate` for the
+    //      target currency rather than reusing Strike's API rate or the
+    //      CoinOS-derived `matchedRate` from upstream.
+    // We resolve both at navigation time so the values are current and the
+    // logic stays out of ArkInvoiceScreen (which is keyboard-only).
+    useRoute<any>(); // route params are intentionally ignored — see above
+    const { isStrikeAuth, strikeUser } = useAuthStore();
     const [loading, setLoading] = useState<null | "ark" | "onchain">(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -67,8 +85,32 @@ export default function ArkReceiveScreen() {
         }
     };
 
-    const handleLightning = () => {
-        dispatchNavigate("ArkInvoiceScreen", {});
+    const handleLightning = async () => {
+        // EUR only when Strike is connected and its profile currency is
+        // EUR — otherwise default to USD.
+        const strikeCurrency = strikeUser?.[1]?.currency;
+        const targetCurrency =
+            isStrikeAuth && strikeCurrency === "EUR" ? "EUR" : "USD";
+
+        // CustomKeyboard's conversion formula uses `sats / SATS *
+        // matchedRate`, which only resolves to fiat correctly when
+        // matchedRate is currency-per-BTC. Strike's `matchedRateStrike`
+        // (used by every other invoice flow) is also stored per-BTC, so
+        // we match that convention here. Earlier I converted to per-sat
+        // by `* btc(1)` — that gave a fiat output 1e-8× too small, which
+        // showed as 0.00. Pass the raw `getFiatRate` value (per-BTC).
+        let rate = 0;
+        try {
+            const perBtc = await getFiatRate(targetCurrency);
+            rate = Number(perBtc) || 0;
+        } catch (_) {
+            rate = 0;
+        }
+
+        dispatchNavigate("ArkInvoiceScreen", {
+            matchedRate: rate,
+            currency: targetCurrency,
+        });
     };
 
     const busy = loading !== null;

@@ -1,7 +1,7 @@
 import { Text } from "@Cypher/component-library";
 import { CustomTabView, GradientCard, GradientView } from "@Cypher/components";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Dimensions, Image, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import Animated, {
   runOnJS,
@@ -18,6 +18,7 @@ import {
   CoinOS,
   Cold1,
   Copy,
+  Electricity,
   Electrik,
   Hot,
   Second,
@@ -419,29 +420,55 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
               WITHDRAW FROM
             </Text>
             
-            <View style={[styles.cardListContainer, data?.length == 1 && { justifyContent: 'center' }]}>
-              {data?.map((item) => (
+            {/* Lightning sources (`data`) — 2-col × 2-row grid (max 4
+                tiles per page). When more than 4 are connected, the
+                container becomes a horizontal pager so additional
+                Lightning rails slide in from the right. Vaults below
+                stay as one row (capped at 2). */}
+            {(() => {
+              // Per-wallet selection outline. RN 0.76 dropped the
+              // native ART module, so the shadow-based "glow" used by
+              // GradientView is now a no-op on Android (and very subtle
+              // on iOS via the neomorph-shadows shim). A real
+              // borderWidth/borderColor on the inner LinearGradient
+              // gives a visible outline on both platforms.
+              const outlineColor = (id: number): string => {
+                if (id === 1 || id === 2) return colors.pink.shadowTopNew; // Strike / CoinOS
+                if (id === 5) return colors.ark.shadowTopNew;              // Ark
+                if (id === 3) return colors.green;                          // Hot Vault
+                if (id === 4) return colors.blueText;                       // Cold Vault
+                return 'transparent';
+              };
+              const renderTile = (item: any) => (
                 <GradientView
+                  key={item?.id}
                   onPress={() => onPress(item)}
                   style={styles.cardGradientStyle}
                   linearGradientStyle={styles.cardOuterShadow}
                   topShadowStyle={[
                     styles.cardTopShadow,
+                    item?.id === 5 && { shadowColor: colors.ark.shadowTopNew },
                     (selectedItem == null || selectedItem != item?.id) && { shadowColor : colors.gray.disable }
                   ]}
                   bottomShadowStyle={[
                     styles.cardInnerShadow,
+                    item?.id === 5 && { shadowColor: colors.ark.shadowBottom },
                     (selectedItem == null || selectedItem != item?.id) && { shadowColor : colors.gray.disable }
                   ]}
-                  linearGradientStyleMain={styles.cardGradientMainStyle}
+                  linearGradientStyleMain={[
+                    styles.cardGradientMainStyle,
+                    selectedItem === item?.id && {
+                      borderWidth: 2,
+                      borderColor: outlineColor(item?.id),
+                    },
+                  ]}
                   gradiantColors={[colors.black.bg, colors.black.bg]}
                 >
                   <View
                     style={{
                       flexDirection: item?.type !== 0 ? "column" : "row",
-                      justifyContent:
-                        item?.type !== 0 ? "center" : "center",
-                      alignItems: item?.type !== 0 ? "center" : "center",
+                      justifyContent: "center",
+                      alignItems: "center",
                     }}
                   >
                     {item?.type !== 0 && (
@@ -455,7 +482,21 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                         resizeMode="contain"
                       />
                     )}
-                    {item?.type === 0 ? (
+                    {item?.id === 5 ? (
+                      // Ark tile uses the lightning-bolt + "Ark Vault"
+                      // text pattern (matches the Receive/Send sheets)
+                      // instead of the Second wordmark logo, per Bam.
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Image
+                          source={Electricity}
+                          style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
+                          resizeMode="contain"
+                        />
+                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>
+                          Ark Vault
+                        </Text>
+                      </View>
+                    ) : item?.type === 0 ? (
                       <Image
                         source={item?.icon}
                         style={styles.logoImage}
@@ -468,12 +509,73 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                     )}
                   </View>
                 </GradientView>
-              ))}
-            </View>
-            <Text h2 bold style={[styles.receiveToLabel, { marginTop: 30 }]}>
+              );
+
+              const PAGE_SIZE = 4; // 2 cols × 2 rows
+              const pages: any[][] = [];
+              for (let i = 0; i < (data?.length || 0); i += PAGE_SIZE) {
+                pages.push(data.slice(i, i + PAGE_SIZE));
+              }
+              const isPageable = pages.length > 1;
+              const renderPage = (page: any[], pageIdx: number) => (
+                <View
+                  key={pageIdx}
+                  style={{
+                    width: SCREEN_WIDTH,
+                    paddingHorizontal: 30,
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    justifyContent:
+                      page.length === 1 ? "center" : "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  {page.map(renderTile)}
+                </View>
+              );
+
+              if (!isPageable) {
+                // Single page (1–4 wallets). Use the same wrapping grid
+                // so 3 wallets lay out as 2 + 1 instead of squeezing
+                // into a single row. cardListContainer is replaced with
+                // an inline equivalent that supports flexWrap.
+                // marginTop: 0 (was 20) — Bam asked for the lightning
+                // rows lifted up 20pt below the WITHDRAW FROM label.
+                return (
+                  <View
+                    style={{
+                      paddingHorizontal: 30,
+                      marginTop: 0,
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      justifyContent:
+                        (data?.length || 0) === 1 ? "center" : "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    {data?.map(renderTile)}
+                  </View>
+                );
+              }
+
+              return (
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 0 }}
+                  contentContainerStyle={{ alignItems: "center" }}
+                >
+                  {pages.map(renderPage)}
+                </ScrollView>
+              );
+            })()}
+            <Text h2 bold style={[styles.receiveToLabel, { marginTop: 10 }]}>
               SEND TO
             </Text>
-            <View style={[styles.cardListContainer, wallets?.length == 1 && { justifyContent: 'center' }]}>
+            {/* Vault row lifted 20pt up from the SEND TO label by
+                overriding cardListContainer's marginTop (20 → 0). */}
+            <View style={[styles.cardListContainer, { marginTop: 0 }, wallets?.length == 1 && { justifyContent: 'center' }]}>
               {wallets?.map((item) => (
                 <GradientView
                   onPress={() => onPressWallet(item)}
@@ -493,7 +595,15 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                       : item?.id == 3 && { shadowColor: colors.greenShadow },
                     (selectedWallet == null || selectedWallet != item?.id) && { shadowColor : colors.gray.disable }
                   ]}
-                  linearGradientStyleMain={styles.cardGradientMainStyle}
+                  linearGradientStyleMain={[
+                    styles.cardGradientMainStyle,
+                    selectedWallet === item?.id && {
+                      borderWidth: 2,
+                      borderColor: item?.id === 3 ? colors.green
+                                 : item?.id === 4 ? colors.blueText
+                                 : 'transparent',
+                    },
+                  ]}
                   gradiantColors={[colors.black.bg, colors.black.bg]}
                 >
                   <View
@@ -531,7 +641,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
               ))}
             </View>
           </Animated.View>
-          <TouchableOpacity activeOpacity={0.7} onPress={onNext} disabled={selectedItem === null || selectedWallet === null} style={[styles.nextBtn, (selectedItem == null || selectedWallet == null) && {backgroundColor: colors.gray.disable}]}>
+          <TouchableOpacity activeOpacity={0.7} onPress={onNext} disabled={selectedItem === null || selectedWallet === null} style={[styles.nextBtn, { marginTop: 20 }, (selectedItem == null || selectedWallet == null) && {backgroundColor: colors.gray.disable}]}>
               <Text h3>Next</Text>
           </TouchableOpacity>
         </LinearGradient>

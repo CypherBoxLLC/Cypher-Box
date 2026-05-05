@@ -5,6 +5,8 @@ import { PERMISSIONS, request } from "react-native-permissions";
 import QRCodeScanner from 'react-native-qrcode-scanner';
 import { RNCamera } from 'react-native-camera';
 
+import bolt11 from "bolt11";
+
 import styles from "./styles";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { CustomKeyboard, GradientCard, GradientInput, GradientInputNew } from "@Cypher/components";
@@ -15,6 +17,40 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
 import { emailRegex } from "@Cypher/helpers/regex";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
+
+/**
+ * Local BOLT11 decode — extracts the satoshi amount from a pasted
+ * Lightning invoice without hitting CoinOS's `/lightning/invoice` API.
+ * Returns null when the invoice can't be parsed or has no amount
+ * (amount-less invoices are valid but require user-entered amount).
+ *
+ * Why local: Strike, Ark, and any non-CoinOS-authed user previously
+ * couldn't auto-extract the invoice amount because the existing
+ * `handleLighteningInvoice` path goes through CoinOS. That left the
+ * sats field empty, so the Strike payment-quote API received
+ * `amount: 0` and silently rejected the invoice.
+ */
+function decodeBolt11Sats(invoice: string): number | null {
+    try {
+        const decoded = bolt11.decode(invoice);
+        // bolt11 lib exposes `satoshis` for amount-bearing invoices and
+        // `millisatoshis` as a fallback string. Prefer satoshis when set;
+        // fall back to msat / 1000 (rounded down) when only msat is present.
+        if (decoded?.satoshis && decoded.satoshis > 0) {
+            return decoded.satoshis;
+        }
+        if (decoded?.millisatoshis) {
+            const msat = Number(decoded.millisatoshis);
+            if (Number.isFinite(msat) && msat > 0) {
+                return Math.floor(msat / 1000);
+            }
+        }
+        return null;
+    } catch (err) {
+        if (__DEV__) console.log('[Send] bolt11 decode failed:', err);
+        return null;
+    }
+}
 
 
 export function startsWithLn(str: string) {
@@ -116,10 +152,62 @@ export default function SendScreen({ navigation, route }: any) {
             }
             init();
         } else if (sender.startsWith('ln') && isPaste){
-            if(info.destination){
-                setTimeout(() => handleLighteningInvoice(), 500)
+            // Two paths for a pasted Lightning invoice:
+            //   1. Screen was opened with a pre-filled `info.destination`
+            //      (e.g. deep-link / share-extension flow): the existing
+            //      CoinOS-API decode runs and dispatches to ReviewPayment.
+            //   2. User pasted manually via the paste button: decode
+            //      locally with bolt11 so we work for Strike-only and
+            //      Ark-only users (no CoinOS auth required). Populate
+            //      the amount field so Strike's payment-quote API gets
+            //      the right `amount.amount` instead of 0 — that's why
+            //      pasting an Ark invoice into Strike Send was rejected.
+            if (info?.destination) {
+                setTimeout(() => handleLighteningInvoice(), 500);
+            } else {
+                const trimmed = sender.trim();
+                const decodedSats = decodeBolt11Sats(trimmed);
+                if (decodedSats !== null && decodedSats > 0) {
+                    // Compute fiat now so we can both populate the field
+                    // (in case the user backs out of Review) and pass a
+                    // ready value into the Review screen below.
+                    const rate = Number(info?.matchedRate) || 0;
+                    // SendScreen's matchedRate convention is
+                    // currency-per-BTC (mirrors handleLighteningInvoice:
+                    //   `sats * matchedRate * btc(1)` → fiat). sats × btc(1)
+                    // = BTC, × rate = fiat.
+                    const fiatNum = rate > 0 ? decodedSats * rate * btc(1) : 0;
+                    const fiatStr = fiatNum > 0 ? fiatNum.toFixed(2) : '';
+                    setSats(String(decodedSats));
+                    setIsSats(true);
+                    if (fiatStr) setUSD(fiatStr);
+
+                    // Auto-jump to Review for non-zero amount invoices —
+                    // Bam's UX request: "if its an invoice with [an
+                    // amount], it should just take the user to the
+                    // review screen [without] clicking next". The Next
+                    // button is still wired up if the user hits it
+                    // before the navigation lands.
+                    setIsPaste(false); // prevent re-entry on focus return
+                    dispatchNavigate('ReviewPayment', {
+                        ...info,
+                        value: String(decodedSats),
+                        converted: fiatStr,
+                        isSats: true,
+                        to: info?.isWithdrawal ? info?.to : trimmed,
+                        fees: 0,
+                        type: 'lightening',
+                        matchedRate: info?.matchedRate,
+                        currency: info?.currency,
+                        recommendedFee: recommendedFee || 0,
+                        receiveType: info?.receiveType,
+                    });
+                }
+                // Amount-less invoices: leave sats empty so the user
+                // enters a value via the keyboard. The Strike API still
+                // accepts that path because amount-less invoices require
+                // an explicit amount in the payload.
             }
-            // handleLighteningInvoice()
         }
     }, [sender, isPaste, info?.destination])
 

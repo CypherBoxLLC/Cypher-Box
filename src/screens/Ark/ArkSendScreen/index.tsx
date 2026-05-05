@@ -331,7 +331,21 @@ export default function ArkSendScreen({ route }: Props) {
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
-                {/* --- Destination --- */}
+                {/* --- Amount display first per Bam (above destination so
+                       the keyboard's primary affordance lines up with the
+                       value the user is editing). CustomKeyboard owns the
+                       underlying state; GradientInput just mirrors it.
+                       Yellow `colors_` instead of the default pink. */}
+                <GradientInput
+                    isSats={isSats}
+                    walletInfo={{ matchedRate, currency }}
+                    sats={sats}
+                    setSats={setSats}
+                    usd={usd}
+                    colors_={[colors.ark.extralight, colors.ark.main]}
+                />
+
+                {/* --- Destination (now below the amount). --- */}
                 <Text bold style={styles.destLabel}>
                     Destination
                 </Text>
@@ -365,16 +379,6 @@ export default function ArkSendScreen({ route }: Props) {
                         {pillLabel}
                     </Text>
                 </View>
-
-                {/* --- Amount display. CustomKeyboard owns the underlying
-                       state; GradientInput just mirrors it for the user. */}
-                <GradientInput
-                    isSats={isSats}
-                    walletInfo={{ matchedRate, currency }}
-                    sats={sats}
-                    setSats={setSats}
-                    usd={usd}
-                />
 
                 {/* --- Fee preview (only after estimate) --- */}
                 {fee && (
@@ -467,6 +471,7 @@ export default function ArkSendScreen({ route }: Props) {
                 matchedRate={matchedRate}
                 currency={currency}
                 prevSats={sats}
+                colors_={[colors.ark.extralight, colors.ark.main]}
             />
         </ScreenLayout>
     );

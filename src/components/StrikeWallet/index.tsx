@@ -1,7 +1,7 @@
 import { Text } from "@Cypher/component-library";
 import { GradientButtonWithShadow, GradientCardWithShadow } from "@Cypher/components";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
-import { formatNumber, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
+import { formatNumber, formatSats, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import React from "react";
@@ -66,7 +66,14 @@ export default function StrikeWallet({
     homeMessage,
     hideActionButtons = false,
 }: Props) {
-    const { isStrikeAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
+    const { isStrikeAuth, isArkAuth, isAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
+
+    // Strike + Ark (no CoinOS): the Strike Lightning card sits a bit
+    // too high in the carousel slot for this combination. Bump it down
+    // 10pt to realign — 18pt was overshoot ("too much down" per Bam).
+    // Other combos (Strike-only, Strike+CoinOS, Strike+CoinOS+Ark) keep
+    // their original position.
+    const strikeAndArkOnly = isStrikeAuth && isArkAuth && !isAuth;
 
     const receiveClickHandler = (type: boolean) => {
         setReceiveType(type);
@@ -109,39 +116,69 @@ export default function StrikeWallet({
     return (
         <>
             {isStrikeAuth &&
-                <View>
+                <View style={strikeAndArkOnly ? { transform: [{ translateY: 10 }] } : undefined}>
                     <TouchableOpacity style={styles.shadowView} onPress={() => checkingAccountClickHandler(false)}>
-                        <View
-                            style={StyleSheet.flatten([styles.shadowTop, { shadowColor: colors.pink.shadowTop, padding: 0 }])}
+                        {/* Pink-gradient ring (1.5px) wraps the Strike card —
+                            same treatment applied to CoinOS in Card/index.tsx
+                            so both custodial Lightning rails share visual
+                            identity. The inner View paints the card surface
+                            (colors.primary) inside the ring. */}
+                        <LinearGradient
+                            colors={[colors.pink.gradient1, colors.pink.gradient2]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.shadowTopGradientOutline}
                         >
-                            <View style={styles.view}>
-                                <Text h2 bold style={styles.check}>
-                                    Lightning Account
-                                </Text>
+                            <View style={styles.shadowTopInner}>
+                                {/* Translucent lightning watermark — same
+                                    treatment as the Card component (CoinOS,
+                                    Ark) and the home Unlock Lightning Wallet
+                                    CTA, so all Lightning surfaces share one
+                                    visual motif. */}
                                 <Image
-                                    source={require("../../../img/Strike.png")}
-                                    style={styles.blink}
+                                    source={require("@Cypher/assets/images/electricity.png")}
+                                    style={{
+                                        position: 'absolute',
+                                        alignSelf: 'center',
+                                        top: '50%',
+                                        marginTop: -42,
+                                        width: 60,
+                                        height: 84,
+                                        tintColor: '#FFFFFF',
+                                        opacity: 0.10,
+                                    }}
                                     resizeMode="contain"
+                                    pointerEvents="none"
                                 />
+                                <View style={styles.view}>
+                                    <Text h2 bold style={[styles.check, { fontSize: 16 }]}>
+                                        Lightning Account
+                                    </Text>
+                                    <Image
+                                        source={require("@Cypher/assets/images/strike.png")}
+                                        style={[styles.blink, { width: 100, height: 28, marginTop: 0, marginBottom: 10 }]}
+                                        resizeMode="contain"
+                                    />
+                                </View>
+                                <View style={styles.view}>
+                                    <Text h2 bold style={styles.sats}>
+                                        {`${formatSats(Math.round(Number(strikeUser?.[0]?.available || 0) * SATS))} sats ~ ${getStrikeCurrency(currency || strikeUser?.[1]?.currency || 'USD')}${(Number(strikeConvertedBalance) || (Number(strikeUser?.[0]?.available || 0) * (Number(matchedRateStrike) || 0))).toFixed(2)}`}
+                                    </Text>
+                                    <Text bold style={styles.totalsats}>
+                                        {formatNumber(Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount))} sats
+                                    </Text>
+                                </View>
+                                <View>
+                                    <View style={styles.showLine} />
+                                    <View style={[styles.box, { left: `${calculatePercentage(Number(withdrawStrikeThreshold), (Number(reserveStrikeAmount)))}%` }]} />
+                                    <LinearGradient
+                                        start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
+                                        colors={[colors.white, colors.pink.dark]}
+                                        style={[styles.linearGradient2, { width: `${calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount))}%` }]}>
+                                    </LinearGradient>
+                                </View>
                             </View>
-                            <View style={styles.view}>
-                                <Text h2 bold style={styles.sats}>
-                                    {`${Math.round(Number(strikeUser?.[0]?.available || 0) * SATS)} sats ~ ${getStrikeCurrency(currency || strikeUser?.[1]?.currency || 'USD')}${(Number(strikeConvertedBalance) || (Number(strikeUser?.[0]?.available || 0) * (Number(matchedRateStrike) || 0))).toFixed(2)}`}
-                                </Text>
-                                <Text bold style={styles.totalsats}>
-                                    {formatNumber(Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount))} sats
-                                </Text>
-                            </View>
-                            <View>
-                                <View style={styles.showLine} />
-                                <View style={[styles.box, { left: `${calculatePercentage(Number(withdrawStrikeThreshold), (Number(reserveStrikeAmount)))}%` }]} />
-                                <LinearGradient
-                                    start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-                                    colors={[colors.white, colors.pink.dark]}
-                                    style={[styles.linearGradient2, { width: `${calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount))}%` }]}>
-                                </LinearGradient>
-                            </View>
-                        </View>
+                        </LinearGradient>
                     </TouchableOpacity>
                     {!hideActionButtons && (
                         <View style={styles.btnView}>

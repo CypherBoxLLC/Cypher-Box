@@ -128,9 +128,13 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
     }
 
     return (
-        <View style={styles.container}>
+        // overflow: 'hidden' clips transaction rows that scroll above the
+        // SectionList's top edge — without it, rows were visible above
+        // the sticky date header bounds while scrolling.
+        <View style={[styles.container, { overflow: 'hidden' }]}>
             <SectionList
                 sections={sections}
+                stickySectionHeadersEnabled
                 keyExtractor={(item, index) => `${item.id}-${item.timestamp}-${index}`}
                 renderSectionHeader={({ section: { title } }) => (
                     <Header title={title} />
@@ -216,7 +220,10 @@ function kindLabel(kind: ArkMovementKind): string {
         case 'board':     return 'Board';
         case 'exit':      return 'Exit';
         case 'refresh':   return 'Refresh';
-        default:          return 'Movement';
+        // Was "Movement" — Bam: drop it. Empty string + the pill is
+        // hidden below when the label is empty so unknown-kind rows
+        // don't render an empty pill outline.
+        default:          return '';
     }
 }
 
@@ -262,21 +269,23 @@ function ArkHistoryRow({ movement, matchedRate, currency }: ArkHistoryRowProps) 
                                 {description}
                             </Text>
                             <View style={rowStyles.subRow}>
-                                <View
-                                    style={[
-                                        rowStyles.pill,
-                                        { borderColor: pillColor },
-                                    ]}
-                                >
-                                    <Text
+                                {kindLabel(kind) !== '' && (
+                                    <View
                                         style={[
-                                            rowStyles.pillText,
-                                            { color: pillColor },
+                                            rowStyles.pill,
+                                            { borderColor: pillColor },
                                         ]}
                                     >
-                                        {kindLabel(kind)}
-                                    </Text>
-                                </View>
+                                        <Text
+                                            style={[
+                                                rowStyles.pillText,
+                                                { color: pillColor },
+                                            ]}
+                                        >
+                                            {kindLabel(kind)}
+                                        </Text>
+                                    </View>
+                                )}
                                 {feeSats > 0 && status === 'successful' && (
                                     <Text style={rowStyles.feeText}>
                                         fee {feeSats} sats

@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Easing, Image, Linking, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Animated, Easing, Image, Linking, Platform, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import {
@@ -125,7 +125,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
+  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning, arkBalance } = useAuthStore();
   // Ark boot restore: reopens the wallet from on-disk state (datadir +
   // Keychain mnemonic) once per mount, and reconciles zustand so the
   // carousel reflects reality. Handles Metro reload + zustand/disk drift.
@@ -943,7 +943,7 @@ export default function HomeScreen({ route }: Props) {
           :
           (
             <>
-              <View style={{ height: 40 }} />
+              <View style={{ height: 50 }} />
               {/*
                 Header now hosts the "Scan with" picker — left-side scan
                 icon → modal → camera → routes to the chosen wallet's send
@@ -959,11 +959,23 @@ export default function HomeScreen({ route }: Props) {
                 wallet={wallet}
                 coldStorageWallet={coldStorageWallet}
               />
-              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -23 : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -28 : -48 }, { translateY: enterTranslate }] }}>
+              {/* Android-only nudge: when all three Lightning wallets
+                  (CoinOS + Strike + Ark) are connected, the BalanceView
+                  is pulled up too far on Android (iOS lays out fine
+                  with the same -48). Bump it down 35pt for that
+                  combination on Android only. */}
+              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -33 : (Platform.OS === 'android' && !isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -33 : -53 }, { translateY: enterTranslate }] }}>
                 <BalanceView
                   // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
-                  balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
-                  convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)))).toFixed(2)}`}
+                  // Ark balance is stored in zustand as plain sats (see
+                  // setArkBalance in useArkSync). Multiply by btc(1) (=1e-8)
+                  // to fold it into the BTC total, and by matchedRate (USD
+                  // per sat) for the fiat total. Gated on isArkAuth so an
+                  // orphaned `arkBalance` state from a previous wallet
+                  // doesn't pollute the headline before the boot-restore
+                  // hook clears it.
+                  balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0) + (isArkAuth ? (Number(arkBalance) || 0) * btc(1) : 0)).toFixed(8)} BTC`}
+                  convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0))) + (isArkAuth ? (Number(arkBalance) || 0) * Number(matchedRate || 0) : 0)).toFixed(2)}`}
                   // Show "+ Add Account" until the user has all three
                   // distinct rails connected. The previous `length < 2`
                   // gate hid the button as soon as any two were added,
@@ -987,7 +999,7 @@ export default function HomeScreen({ route }: Props) {
                     {/* Add Account button moved into BalanceView */}
           {/* Lightning Accounts title moved into WalletsView carousel */}
 
-          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -18 : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -30 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -43 : (!isLoading && isStrikeAuth && isArkAuth) ? -20 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -33 : -58 }, { translateY: enterTranslate }] }}>
+          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -65 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -33 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -25 : (!isLoading && isStrikeAuth && isArkAuth) ? -30 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -13 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 2 : -68 }, { translateY: enterTranslate }] }}>
             {/*
               Carousel-vs-CTA gate. Falls through to CreateLightningAccount only
               when NO Lightning provider (CoinOS / Strike / Ark) is connected.
@@ -1057,13 +1069,18 @@ export default function HomeScreen({ route }: Props) {
 
           {/* */}
 
+          {/* Android-only nudge (+20pt): the vaults + withdraw/top-up
+              section sits 20pt too high on Android vs iOS. iOS layout
+              is correct — only Android needs the bump. Applied to both
+              the loading-spinner placeholder and the BottomBar so they
+              stay aligned across the loading transition. */}
           {!isLoading && (isWalletLoaded || isColdWalletLoaded) &&
-            <Animated.View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', opacity: enterAnim, transform: [{ translateY: (isAuth || isStrikeAuth || isArkAuth) ? -20 : -60 }, { translateY: enterTranslate }]}}>
+            <Animated.View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', opacity: enterAnim, transform: [{ translateY: ((isAuth || isStrikeAuth || isArkAuth) ? -30 : -70) + (Platform.OS === 'android' ? 20 : 0) }, { translateY: enterTranslate }]}}>
               <ActivityIndicator size="small" color="#23C47F" />
             </Animated.View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <Animated.View style={{height: 205, marginBottom: 20, opacity: enterAnim, transform: [{ translateY: (isAuth || isStrikeAuth || isArkAuth) ? -20 : -60 }, { translateY: enterTranslate }]}}>
+            <Animated.View style={{height: 205, marginBottom: 20, opacity: enterAnim, transform: [{ translateY: ((isAuth || isStrikeAuth || isArkAuth) ? -30 : -70) + (Platform.OS === 'android' ? 20 : 0) }, { translateY: enterTranslate }]}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}

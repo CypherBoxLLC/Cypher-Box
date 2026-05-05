@@ -112,38 +112,57 @@ export function configureGoogleDrive(opts: {
  * Drive scopes are granted. Doesn't trigger a sign-in prompt — purely
  * a state probe. Used by the UI to decide whether to render "Connect
  * Google Drive" or "Disconnect Google Drive".
+ *
+ * v13 API note: `isSignedIn()` was removed in @react-native-google-signin
+ * v13. Use `hasPreviousSignIn()` (sync) or `getCurrentUser() !== null` —
+ * both are gated only on local credential cache, no network.
  */
 export async function isGoogleDriveConnected(): Promise<boolean> {
     const GoogleSignin = loadGoogleSignin();
     if (!GoogleSignin) return false;
     try {
-        const isSignedIn = await GoogleSignin.isSignedIn?.();
-        return !!isSignedIn;
+        // v13: hasPreviousSignIn is synchronous boolean
+        if (typeof GoogleSignin.hasPreviousSignIn === 'function') {
+            return !!GoogleSignin.hasPreviousSignIn();
+        }
+        // v13 fallback: getCurrentUser returns User | null
+        if (typeof GoogleSignin.getCurrentUser === 'function') {
+            return GoogleSignin.getCurrentUser() !== null;
+        }
+        // Legacy v8/v10 API
+        if (typeof GoogleSignin.isSignedIn === 'function') {
+            return !!(await GoogleSignin.isSignedIn());
+        }
+        return false;
     } catch (err) {
-        if (__DEV__) console.log('[Ark/Drive] isSignedIn probe failed:', err);
+        if (__DEV__) console.log('[Ark/Drive] sign-in probe failed:', err);
         return false;
     }
 }
 
 /**
  * Trigger the Google Sign-In flow. Resolves true on success, false on
- * user-dismissed / failed. Failure cases are non-fatal at the wallet
- * level — Drive is an optional rail; the local encrypted backup still
- * runs regardless.
+ * user-cancelled. THROWS on real failures (Play Services missing,
+ * config error, network) so the caller can surface a real error
+ * message — silent-fail makes "Connect" look broken when it's actually
+ * a fixable env issue.
+ *
+ * v13 API note: `signIn()` returns `{type: 'success' | 'cancelled', data}`
+ * instead of throwing on user cancellation. We translate the discriminated
+ * union into the boolean the UI expects.
  */
 export async function connectGoogleDrive(): Promise<boolean> {
     const GoogleSignin = loadGoogleSignin();
-    if (!GoogleSignin) return false;
-    try {
-        await GoogleSignin.hasPlayServices?.();
-        await GoogleSignin.signIn();
-        return true;
-    } catch (err: any) {
-        if (__DEV__) {
-            console.log('[Ark/Drive] sign-in failed:', err?.code ?? err?.message ?? err);
-        }
-        return false;
+    if (!GoogleSignin) {
+        throw new Error('Google Sign-In native module not available on this build');
     }
+    await GoogleSignin.hasPlayServices?.({ showPlayServicesUpdateDialog: true });
+    const result = await GoogleSignin.signIn();
+    // v13: discriminated union response. v8/v10: direct user object.
+    if (result && typeof result === 'object' && 'type' in result) {
+        return result.type === 'success';
+    }
+    return !!result;
 }
 
 /**
@@ -191,6 +210,14 @@ async function getAccessToken(): Promise<string> {
  * we have to do the lookup ourselves.
  */
 async function findExistingBackupId(): Promise<string | null> {
+    const meta = await findExistingBackupMeta();
+    return meta?.id ?? null;
+}
+
+/** Internal: list metadata for the existing backup file. Used both for
+ *  the upload-or-update lookup (id only) and the Settings status panel
+ *  (id + modifiedTime + size). */
+async function findExistingBackupMeta(): Promise<{ id: string; name: string; modifiedTime?: string; size?: string } | null> {
     const token = await getAccessToken();
     // Match either the new or legacy filename so a user who uploaded a
     // backup before the rename still has it discoverable. The next upload
@@ -200,7 +227,7 @@ async function findExistingBackupId(): Promise<string | null> {
     const url =
         'https://www.googleapis.com/drive/v3/files' +
         `?spaces=appDataFolder` +
-        `&fields=files(id,name,modifiedTime)` +
+        `&fields=files(id,name,modifiedTime,size)` +
         `&q=${encodeURIComponent(query)}`;
     const resp = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -210,11 +237,29 @@ async function findExistingBackupId(): Promise<string | null> {
         throw new Error(`Drive list failed: ${resp.status} ${body}`);
     }
     const json = await resp.json();
-    const files = (json?.files as Array<{ id: string; name: string; modifiedTime?: string }>) ?? [];
+    const files = (json?.files as Array<{ id: string; name: string; modifiedTime?: string; size?: string }>) ?? [];
     if (files.length === 0) return null;
     // Prefer the new-name entry if both exist; otherwise return the one we got.
     const newName = files.find(f => f.name === DRIVE_FILE_NAME);
-    return (newName ?? files[0]).id;
+    return newName ?? files[0];
+}
+
+/**
+ * Public: fetch Drive backup status for the Settings panel — last-modified
+ * timestamp + size, or `null` if no backup exists yet (or Drive isn't
+ * connected). Caller should pre-check `isGoogleDriveConnected()` and
+ * suppress UI loading state when disconnected. Errors propagate so the
+ * caller can show "Couldn't fetch status" rather than silently lying.
+ */
+export async function getDriveBackupInfo(): Promise<{ modifiedAt: number; sizeBytes: number } | null> {
+    const meta = await findExistingBackupMeta();
+    if (!meta) return null;
+    const modifiedAt = meta.modifiedTime ? Date.parse(meta.modifiedTime) : NaN;
+    const sizeBytes = meta.size ? Number(meta.size) : NaN;
+    return {
+        modifiedAt: Number.isFinite(modifiedAt) ? modifiedAt : 0,
+        sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : 0,
+    };
 }
 
 /**

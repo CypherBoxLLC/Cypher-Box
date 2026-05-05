@@ -43,3 +43,20 @@ export function formatNumber(num: number) {
         return num.toString();
     }
 }
+
+// Lightning-wallet sat balance display. ≤999 → raw, ≥1000 → "1K" or
+// "1.03K" (two decimals), ≥1M → "1M" or "1.03M". Whole units strip
+// the trailing ".00" so the typical small balance ("1K sats") stays
+// short and readable.
+export function formatSats(num: number): string {
+    const n = Math.round(Number(num) || 0);
+    if (n <= 999) return `${n}`;
+    if (n >= 1_000_000) {
+        const m = n / 1_000_000;
+        const fixed = m.toFixed(2);
+        return fixed.endsWith('.00') ? `${parseInt(fixed, 10)}M` : `${fixed}M`;
+    }
+    const k = n / 1000;
+    const fixed = k.toFixed(2);
+    return fixed.endsWith('.00') ? `${parseInt(fixed, 10)}K` : `${fixed}K`;
+}

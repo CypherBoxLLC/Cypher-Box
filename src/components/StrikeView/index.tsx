@@ -239,8 +239,11 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                         {/* Right sideContainer: Fiat Balance + SELL. */}
                         <View style={styles.sideContainer}>
                             <View style={styles.fiatBalanceBox}>
-                                <Text h2 bold>Fiat Balance</Text>
-                                <Text h2 bold>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
+                                {/* Slightly smaller than h2 (20pt) — 17pt
+                                    matches the trimmed visual weight Bam
+                                    asked for after the 10pt up nudge. */}
+                                <Text h2 bold style={{ fontSize: 17 }}>Fiat Balance</Text>
+                                <Text h2 bold style={{ fontSize: 17 }}>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
                             </View>
                             {/* fiatBalanceBox.marginTop went 40 → 30 (Fiat
                                 Balance up 10pt), which dragged SELL up 10pt
