@@ -1,6 +1,7 @@
 import { Text } from "@Cypher/component-library";
 import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { blocksToDays } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -17,6 +18,7 @@ interface Props {
     refSendRBSheet: any;
     setReceiveType: any;
     homeMessage?: string | null;
+    hideActionButtons?: boolean;
 }
 
 /**
@@ -38,16 +40,28 @@ export default function ArkWallet({
     refSendRBSheet,
     setReceiveType,
     homeMessage,
+    hideActionButtons = false,
 }: Props) {
     const {
         isArkAuth,
+        isAuth,
+        isStrikeAuth,
         arkWallet,
         arkBalance,
         withdrawArkThreshold,
         reserveArkAmount,
         arkVtxos,
         arkChainTipHeight,
+        arkBgRefreshEnabled,
+        arkBgRefreshLastSuccessAt,
+        arkBgRefreshLastAttempt,
     } = useAuthStore();
+
+    // Strike + CoinOS + Ark: this combination pulls the Ark card up out
+    // of position. Bump it down 10pt for this specific 3-Lightning combo
+    // (was 18pt — overshoot per Bam, matches the Strike+Ark adjustment in
+    // StrikeWallet). Other combos are untouched.
+    const allThreeLightning = isAuth && isStrikeAuth && isArkAuth;
 
     // Non-zero means there's an in-flight round (refresh / send / board).
     //
@@ -92,6 +106,43 @@ export default function ArkWallet({
     const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
         ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d — refresh soon`
         : null;
+
+    /**
+     * Status line shown when the user has opted into background refresh.
+     *
+     * Replaces — does not append to — the expiryWarning text, since the
+     * whole point of opting in is to take that worry off the user. We
+     * still surface a clear failure state if the last attempt errored,
+     * because at that point the user IS back on the hook and needs to
+     * know.
+     *
+     * Returns null when the toggle is off so the regular expiryWarning
+     * path runs unchanged.
+     */
+    const bgRefreshStatus = useMemo(() => {
+        if (!arkBgRefreshEnabled) return null;
+
+        if (arkBgRefreshLastAttempt?.outcome === 'error') {
+            const d = new Date(arkBgRefreshLastAttempt.at);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return {
+                text: `Auto-refresh failed at ${hh}:${mm} — tap to retry`,
+                error: true,
+            };
+        }
+
+        if (arkBgRefreshLastSuccessAt === null) {
+            return { text: 'Auto-refresh on — waiting for first run', error: false };
+        }
+
+        const ageMs = Date.now() - arkBgRefreshLastSuccessAt;
+        const ageHrs = ageMs / (60 * 60 * 1000);
+        const ageStr = ageHrs < 1
+            ? `${Math.max(1, Math.round(ageMs / 60_000))}m ago`
+            : `${Math.round(ageHrs)}h ago`;
+        return { text: `Auto-refresh on, last refresh ${ageStr}`, error: false };
+    }, [arkBgRefreshEnabled, arkBgRefreshLastSuccessAt, arkBgRefreshLastAttempt]);
 
     // IMPORTANT: the parent's `convertedRate` prop is globally computed from
     // the CoinOS balance (HomeScreen/index.tsx:683 — `setConvertedRate(
@@ -148,13 +199,15 @@ export default function ArkWallet({
     };
 
     const createArkWalletClickHandler = () => {
-        dispatchNavigate("CreateArkScreen");
+        // Skip the CreateArkScreen intro and go straight to the seed reveal.
+        const mnemonic = barkGenerateMnemonic();
+        dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });
     };
 
     return (
         <>
             {isArkAuth && (
-                <>
+                <View style={allThreeLightning ? { transform: [{ translateY: 10 }] } : undefined}>
                     <Card
                         wallet="ARK"
                         title="Ark Vault"
@@ -166,29 +219,74 @@ export default function ArkWallet({
                         withdrawThreshold={withdrawArkThreshold}
                         onPress={arkMenuClickHandler}
                         isShowButtons
+                        hideActionButtons={hideActionButtons}
                         matchedRate={matchedRate}
                         currency={currency}
                         receiveClickHandler={receiveClickHandler}
                         sendClickHandler={sendClickHandler}
                     />
-                    <View style={{ minHeight: 40, justifyContent: "center" }}>
-                        {!isLoading && homeMessage && (
-                            <Text h4 style={styles.alert}>
-                                {homeMessage}
-                            </Text>
-                        )}
-                        {!isLoading && expiryWarning && (
-                            <Text h4 style={[styles.alert, { color: colors.redLight }]}>
-                                {expiryWarning}
-                            </Text>
-                        )}
-                        {!isLoading && pendingRoundSats > 0 && (
-                            <Text h4 style={[styles.alert, { color: colors.ark.light }]}>
-                                {`${pendingRoundSats.toLocaleString()} sats pending in a round (refresh/send in flight)`}
-                            </Text>
-                        )}
-                    </View>
-                </>
+                    {/* When shared buttons are active (`hideActionButtons`),
+                        skip this minHeight-40 reserve so the shared row can
+                        sit flush below the card. Otherwise it left a 40px
+                        gap that Bam called "way below". The expiry warning
+                        and pending-round nudges are also suppressed in
+                        shared-mode — Bam can surface them elsewhere later. */}
+                    {!hideActionButtons && (
+                        <View style={{ minHeight: 40, justifyContent: "center" }}>
+                            {!isLoading && homeMessage && (
+                                <Text h4 style={styles.alert}>
+                                    {homeMessage}
+                                </Text>
+                            )}
+                            {!isLoading && bgRefreshStatus && (
+                                <TouchableOpacity onPress={arkMenuClickHandler} activeOpacity={0.7}>
+                                    <Text
+                                        h4
+                                        style={[
+                                            styles.alert,
+                                            {
+                                                color: bgRefreshStatus.error
+                                                    ? colors.redLight
+                                                    : colors.ark.light,
+                                            },
+                                        ]}
+                                    >
+                                        {bgRefreshStatus.text}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+                            {/* Plain expiry warning suppressed when the bg-
+                                refresh banner is up — the banner above
+                                already covers expiry context (next-run ETA /
+                                last-run failure). */}
+                            {!isLoading && !bgRefreshStatus && expiryWarning && (
+                                <Text h4 style={[styles.alert, { color: colors.redLight }]}>
+                                    {expiryWarning}
+                                </Text>
+                            )}
+                            {!isLoading && pendingRoundSats > 0 && (
+                                // The headline `arkBalance` already excludes
+                                // these sats (Locked VTXO state, summed in
+                                // `pendingRoundSats`), so this subtitle is
+                                // purely informational — the user's spendable
+                                // figure stays accurate while a round is mid-
+                                // flight. Wording requested by Bam: "refreshing
+                                // - in flight" reads cleaner than the longer
+                                // "pending in a round (refresh/send in flight)"
+                                // we used before. Same data either way.
+                                <Text h4 style={[styles.alert, { color: colors.green }]}>
+                                    {`(refreshing - in flight): ${pendingRoundSats.toLocaleString()} sats`}
+                                </Text>
+                            )}
+                        </View>
+                    )}
+                    {/*
+                      When `hideActionButtons` is true (HomeScreen with shared
+                      Receive/Send row), the bg-refresh banner is rendered by
+                      WalletsView instead — positioned BELOW the absolutely-
+                      anchored shared row instead of behind it.
+                    */}
+                </View>
             )}
 
             {!isArkAuth && (

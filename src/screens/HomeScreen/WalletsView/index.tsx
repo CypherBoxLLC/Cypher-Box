@@ -1,10 +1,13 @@
-import { ArkWallet, CircularView, CoinosWallet, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
+import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
+import { Refresh } from "@Cypher/assets/images";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
-import React, { useEffect, useState } from "react";
-import { View } from "react-native";
+import { colors } from "@Cypher/style-guide";
+import { dispatchNavigate } from "@Cypher/helpers";
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Animated, Image, TouchableOpacity, View } from "react-native";
 import Carousel from "react-native-snap-carousel";
 
 interface Props {
@@ -24,11 +27,18 @@ interface Props {
     strikeConvertedBalance?: number;
     currencyStrike?: string;
     homeMessage?: string | null;
-    /** Fires when the active carousel page changes. Used by BalanceView to render the page indicator. */
-    onPageChange?: (index: number, total: number) => void;
+    /** Fires when the active carousel page changes. Used by BalanceView to render the page indicator (dots colored per wallet kind). */
+    onPageChange?: (index: number, total: number, kinds: Array<'fiat' | 'lightning' | 'ark'>) => void;
 }
 
-export default function WalletsView({
+// Imperative handle exposed to HomeScreen so the page-indicator dots in
+// BalanceView can drive the carousel (tap dot 0 → fiat, dot 1 → lightning,
+// etc.) without us hoisting the entire snap-carousel ref tree upward.
+export type WalletsViewHandle = {
+    snapTo: (index: number) => void;
+};
+
+const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     balance,
     wallet,
     coldStorageWallet,
@@ -46,11 +56,57 @@ export default function WalletsView({
     currencyStrike = 'USD',
     homeMessage = null,
     onPageChange,
-}: Props) {
-    const { allBTCWallets, setWalletTab } = useAuthStore();
+}, ref) {
+    const {
+        allBTCWallets,
+        setWalletTab,
+        isArkAuth,
+        arkWallet,
+        arkBgRefreshEnabled,
+        arkBgRefreshLastSuccessAt,
+        arkBgRefreshLastAttempt,
+    } = useAuthStore();
+
+    /**
+     * Status line shown below the shared Send/Receive row when the user has
+     * opted into background refresh. Lives here (rather than only in
+     * ArkWallet) because the shared row is absolutely positioned over
+     * ArkWallet's natural alert area, and a banner inside the card would
+     * sit BEHIND the buttons. Mirrors ArkWallet's bgRefreshStatus shape so
+     * the two surfaces speak the same UX language.
+     */
+    const bgRefreshStatus = useMemo(() => {
+        if (!arkBgRefreshEnabled) return null;
+
+        if (arkBgRefreshLastAttempt?.outcome === 'error') {
+            const d = new Date(arkBgRefreshLastAttempt.at);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return {
+                text: `Auto-refresh failed at ${hh}:${mm} — tap to retry`,
+                error: true,
+            };
+        }
+
+        if (arkBgRefreshLastSuccessAt === null) {
+            return { text: 'Auto-refresh on — waiting for first run', error: false };
+        }
+
+        const ageMs = Date.now() - arkBgRefreshLastSuccessAt;
+        const ageHrs = ageMs / (60 * 60 * 1000);
+        const ageStr = ageHrs < 1
+            ? `${Math.max(1, Math.round(ageMs / 60_000))}m ago`
+            : `${Math.round(ageHrs)}h ago`;
+        return { text: `Auto-refresh on, last refresh ${ageStr}`, error: false };
+    }, [arkBgRefreshEnabled, arkBgRefreshLastSuccessAt, arkBgRefreshLastAttempt]);
 
     const [indexStrike, setIndexStrike] = useState(0);
     const [wTabs, setWTabs] = useState([]);
+    const carouselRef = useRef<any>(null);
+
+    useImperativeHandle(ref, () => ({
+        snapTo: (i: number) => carouselRef.current?.snapToItem?.(i),
+    }), []);
 
     useEffect(() => {
         if (!allBTCWallets || isLoading) return;
@@ -70,7 +126,16 @@ export default function WalletsView({
         // Ark is feature-flagged off until Second.tech's mainnet ASP launches.
         // Even if zustand still has 'ARK' in allBTCWallets from a previous
         // session, we never render the carousel card while the flag is false.
-        const hasArk = FEATURE_ARK_ENABLED && (allBTCWallets as WalletName[]).includes('ARK');
+        // Also gate on `isArkAuth`: if the user logged out of Ark but
+        // allBTCWallets still has 'ARK' from a stale store entry, the
+        // ArkWallet component would render its "Create an Ark Wallet"
+        // CTA card on Home — Bam's request is to remove the Ark slot
+        // entirely in that state and surface re-creation only via the
+        // BalanceView's "+ Add wallet" affordance.
+        const hasArk =
+            FEATURE_ARK_ENABLED &&
+            (allBTCWallets as WalletName[]).includes('ARK') &&
+            isArkAuth;
 
         const tabs: any = [];
         // The carousel's `firstItem` prop is only respected on the Carousel
@@ -107,21 +172,19 @@ export default function WalletsView({
                 key: "lightning-circular",
                 showTitle: true,
                 component: () => (
-                    <>
-                        <Text bold h2 style={{ height: 32, marginTop: 10 }}>Lightning Accounts</Text>
-                        <CircularView
-                            balance={balance}
-                            convertedRate={convertedRate}
-                            currency={currency}
-                            wallet={walletTabsMap[custodialLightning[0]].key}
-                            matchedRateStrike={matchedRateStrike}
-                            refRBSheet={refRBSheet}
-                            refSendRBSheet={refSendRBSheet}
-                            refSwapRBSheet={refSwapRBSheet}
-                            setReceiveType={setReceiveType}
-                            homeMessage={homeMessage}
-                        />
-                    </>
+                    <CircularView
+                        balance={balance}
+                        convertedRate={convertedRate}
+                        currency={currency}
+                        wallet={walletTabsMap[custodialLightning[0]].key}
+                        matchedRateStrike={matchedRateStrike}
+                        refRBSheet={refRBSheet}
+                        refSendRBSheet={refSendRBSheet}
+                        refSwapRBSheet={refSwapRBSheet}
+                        setReceiveType={setReceiveType}
+                        homeMessage={homeMessage}
+                        hideActionButtons={useSharedButtons}
+                    />
                 )
             });
         } else if (custodialLightning.length === 1) {
@@ -143,45 +206,346 @@ export default function WalletsView({
 
         setIndexStrike(defaultIndex);
         setWTabs(tabs);
-        onPageChange?.(defaultIndex, tabs.length);
+        onPageChange?.(defaultIndex, tabs.length, tabs.map(kindFromTab));
     }, [allBTCWallets, isLoading, matchedRateStrike, strikeBalance, convertedRate]);
+
+    // Maps a tab's `key` to the wallet "kind" used to color the page-indicator
+    // line in BalanceView. Centralized here so the carousel and the indicator
+    // can never disagree on what each slide represents.
+    const kindFromTab = (tab: { key?: string }): 'fiat' | 'lightning' | 'ark' => {
+        switch (tab?.key) {
+            case 'strike-dollar': return 'fiat';
+            case 'ark': return 'ark';
+            // 'strike', 'coinos', 'lightning-circular' all read as a single
+            // Lightning Account from the user's POV (custodial L2).
+            default: return 'lightning';
+        }
+    };
 
     type WalletName = keyof typeof walletTabsMap;
 
+    // Mirror the vault pattern: shared Receive/Send pair only kicks in
+    // when BOTH a Lightning provider AND Ark exist (analogous to the vault
+    // `bothVaultsExist` check). When only one is connected, that wallet's
+    // own in-card buttons render — no shared row.
+    const hasLightningWallet = (allBTCWallets as string[]).includes('STRIKE') || (allBTCWallets as string[]).includes('COINOS');
+    // Same `isArkAuth` gate as the carousel `hasArk` above — without
+    // it, a logged-out Ark with stale `allBTCWallets` would still flip
+    // `useSharedButtons` true and route the BottomBar / shared row
+    // logic as if Ark were live, breaking the layout.
+    const hasArkWallet = FEATURE_ARK_ENABLED && (allBTCWallets as string[]).includes('ARK') && isArkAuth;
+    const useSharedButtons = hasLightningWallet && hasArkWallet;
+    // Strike + CoinOS + Ark all connected. The CircularView slide already
+    // exposes a Strike↔CoinOS swap between its two circles, and hopping
+    // between Lightning and Ark from the Ark slide is what the swap
+    // affordance was offering — but Bam's spec is to drop the shared-row
+    // swap entirely in this combo (both on the CircularView slide and the
+    // Ark slide). Single-Lightning-rail combos (Strike+Ark or CoinOS+Ark)
+    // still get the shared-row swap because they have no in-card swap.
+    // Gated through `hasArkWallet` (which already requires isArkAuth)
+    // so a logged-out Ark doesn't suppress the shared-row swap.
+    const allThreeLightningRails =
+        (allBTCWallets as string[]).includes('STRIKE') &&
+        (allBTCWallets as string[]).includes('COINOS') &&
+        hasArkWallet;
+
     const walletTabsMap = {
-        COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet} homeMessage={homeMessage}/> },
-        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currencyStrike} isLoading={isLoading} matchedRateStrike={matchedRateStrike} strikeConvertedBalance={strikeConvertedBalance} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} homeMessage={homeMessage}/> },
-        // Ark (experimental non-custodial Lightning via Second.tech) — yellow-branded.
-        ARK: { key: 'ark', component: () => <ArkWallet convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} homeMessage={homeMessage}/> },
+        COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
+        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currencyStrike} isLoading={isLoading} matchedRateStrike={matchedRateStrike} strikeConvertedBalance={strikeConvertedBalance} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
+        // Ark-only users (no Lightning) keep the in-card Receive/Send pair
+        // because `useSharedButtons` is false in that case. When Lightning
+        // and Ark are both connected, all internal pairs are suppressed and
+        // a single shared pair rendered outside the carousel takes over —
+        // see the Animated.View below the <Carousel>.
+        ARK: { key: 'ark', component: () => <ArkWallet convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
     };
 
 
-    const renderWalletItem = ({ item }: any) => {
-        return (
-            <View style={{
-                width: screenWidth * 0.905,
-            }}>
-                {item.component()}
-            </View>
+    // Shared Receive/Send handlers — used by the single shared pair when
+    // both Lightning and Ark are connected. Both kinds route through the
+    // same RBSheets the inner wallet cards used pre-shared-row, so existing
+    // send/receive flows are unchanged regardless of whether the active
+    // slide is lightning or ark.
+    const sharedReceive = () => {
+        setReceiveType?.(true);
+        refRBSheet?.current?.open();
+    };
+    const sharedSend = () => {
+        refSendRBSheet?.current?.open();
+    };
+
+    // Slide template — pure passthrough. We deliberately do NOT lock the
+    // slide height here. Earlier I tried `height: SHARED_SLIDE_HEIGHT` to
+    // make the fiat slide fit within a 133-tall slot (so the carousel
+    // wouldn't stretch and pull the shared buttons down with it), but
+    // iOS's native ScrollView clips children to its frame — so the fiat
+    // card got chopped in half. Instead the carousel auto-sizes to fiat's
+    // natural height and the shared button row is positioned absolutely
+    // at the lightning/ark card bottom (see the Animated.View further
+    // down). The empty space inside the lightning/ark slides above the
+    // buttons is invisible (just card + transparent area).
+    const SHARED_SLIDE_HEIGHT = 133;
+    const renderWalletItem = ({ item }: any) => (
+        <View style={{
+            width: screenWidth * 0.905,
+        }}>
+            {item.component()}
+        </View>
+    );
+
+    // Scroll-position-driven animation for the shared button row.
+    //
+    // Why scroll position and not snap events: snap-carousel only updates
+    // `indexStrike` at the moment it commits to a snap (release moment),
+    // not while the user is dragging. An effect keyed off `indexStrike`
+    // therefore starts its animation AFTER the user lifts their finger,
+    // by which point the cards have already moved. Bam saw the row pop in
+    // ~220ms after the swipe finished.
+    //
+    // The fix is to bind the row's translateX/opacity directly to the
+    // carousel's continuous scroll offset, so the row tracks the cards
+    // frame-for-frame during the drag itself.
+    //
+    // snap-carousel v4 cooperates: when we pass an Animated.event whose
+    // `_argMapping` writes into a shared `scrollX`, its `_setScrollHandler`
+    // (Carousel.tsx ~L304) detects our argMapping and reuses our value as
+    // its internal `_scrollPos`. Both the carousel's own animations and
+    // our row read from the same native-driven value — no JS-thread hops,
+    // no lag.
+    const scrollX = useRef(new Animated.Value(0)).current;
+    const scrollHandler = useRef(
+        Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: true }
         )
-    };
+    ).current;
+
+    // Find the fiat slide and the lightning slide in `wTabs`. The
+    // interpolation is anchored on the fiat → lightning transition; ark is
+    // intentionally outside the inputRange so once scrollX passes the
+    // lightning offset, the row stays clamped at `translateX:0, opacity:1`
+    // (i.e. fixed for lightning ↔ ark swipes).
+    //
+    // For Coinos+Ark configs (no Strike → no fiat slide), there's no
+    // transition at all — the row is always visible. We still build a
+    // valid interpolation (degenerate ranges throw) by feeding sentinel
+    // values and constant outputRanges.
+    const fiatIdx = wTabs.findIndex((t: any) => kindFromTab(t) === 'fiat');
+    const lightningIdx = wTabs.findIndex((t: any) => kindFromTab(t) === 'lightning');
+    const hasFiatTransition = fiatIdx >= 0 && lightningIdx >= 0 && lightningIdx > fiatIdx;
+    const fiatOffset = hasFiatTransition ? fiatIdx * screenWidth : 0;
+    const lightningOffset = hasFiatTransition ? lightningIdx * screenWidth : screenWidth;
+
+    const buttonsTranslateX = scrollX.interpolate({
+        inputRange: [fiatOffset, lightningOffset],
+        // When fiat is centered (scrollX = fiatOffset): row sits at
+        // +screenWidth, off the right edge — same place the lightning
+        // card sits at that moment. As scrollX grows toward
+        // lightningOffset, both card and row glide leftward to 0 in
+        // lockstep. Past lightning (toward ark), `extrapolate:'clamp'`
+        // pins the row at 0.
+        outputRange: hasFiatTransition ? [screenWidth, 0] : [0, 0],
+        extrapolate: 'clamp',
+    });
+    const buttonsOpacity = scrollX.interpolate({
+        inputRange: [fiatOffset, lightningOffset],
+        outputRange: hasFiatTransition ? [0, 1] : [1, 1],
+        extrapolate: 'clamp',
+    });
 
     if (__DEV__) console.log('allBTCWallets: ', allBTCWallets, wTabs)
+    // BUTTON_ROW_HEIGHT ≈ GradientButtonWithShadow's rendered height (47).
+    // Used both to position the row vertically and to reserve layout space
+    // beneath the carousel for configs without a fiat slide (Coinos+Ark)
+    // where the carousel auto-sizes to the short lightning/ark card.
+    const BUTTON_ROW_HEIGHT = 47;
+    const BUTTONS_TOP = SHARED_SLIDE_HEIGHT + 20; // gap below card — bumped from 10pt to 20pt to drop the row 10pt lower
     return (
-        <View style={{ width: screenWidth }}>
+        <View style={{
+            width: screenWidth,
+            // When shared buttons are on, ensure the WalletsView container
+            // is at least tall enough to hold the absolutely-positioned
+            // button row below the carousel. For configs with the fiat
+            // slide (Strike+Ark), the carousel auto-sizes to fiat (~230pt)
+            // which is already taller than this minHeight, so this is a
+            // no-op there. For Coinos+Ark (no fiat slide), the carousel
+            // is only 133pt and without this minHeight the buttons would
+            // render outside WalletsView's measured bounds, overlapping
+            // BottomBar. minHeight = card + gap + buttons = 133+10+47=190.
+            // When the bg-refresh banner is showing, reserve another ~32pt
+            // below the button row for it. Don't gate on which slide is
+            // active — keeping the container size stable across swipes
+            // avoids layout jitter when the user pages between Ark and
+            // Lightning.
+            ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT + (bgRefreshStatus ? 32 : 0) } : {}),
+        }}>
             <Carousel
+                ref={carouselRef}
                 data={wTabs}
                 renderItem={renderWalletItem}
                 firstItem={indexStrike}
                 vertical={false}
                 sliderWidth={screenWidth}
                 itemWidth={screenWidth}
+                // --- Slide easing (mirrored on the BottomBar vault carousel) ---
+                // `inactive*` props animate neighbor cards as you drag — they fade
+                // and shrink slightly so the active card "lifts" forward instead
+                // of hard-cutting between pages.
+                inactiveSlideOpacity={0.55}
+                inactiveSlideScale={0.94}
+                // `decelerationRate` between 0 and 1 — lower = longer, smoother
+                // glide after a swipe. Default 'fast' (~0.99 iOS) feels abrupt
+                // for full-width pages; 0.9 lands closer to a native page-view.
+                decelerationRate={0.9}
+                // Spring snap on release feels more natural than the default
+                // timing curve. tension lower = softer settle, friction higher
+                // = less overshoot. These values don't bounce visibly but take
+                // the edge off the snap.
+                activeAnimationType="spring"
+                activeAnimationOptions={{ friction: 8, tension: 40 } as any}
+                enableMomentum={true}
+                // Bind the carousel's scroll offset to our `scrollX` so the
+                // shared button row's translateX/opacity track the cards
+                // frame-for-frame during the drag (see `scrollHandler`
+                // above). snap-carousel detects the shared argMapping and
+                // reuses our value as its internal `_scrollPos`, so this
+                // doesn't double-up scroll events.
+                onScroll={scrollHandler}
+                scrollEventThrottle={16}
+                // Update on snap commit (mid-swipe), not just on completion,
+                // so the indicator dots redraw in step with the user's
+                // gesture rather than waiting for the snap to settle.
+                onBeforeSnapToItem={(index) => {
+                    setIndexStrike(index);
+                    onPageChange?.(index, wTabs.length, wTabs.map(kindFromTab));
+                }}
                 onSnapToItem={(index) => {
                     setIndexStrike(index);
                     setWalletTab(index === 1);
-                    onPageChange?.(index, wTabs.length);
+                    onPageChange?.(index, wTabs.length, wTabs.map(kindFromTab));
                 }}
             />
+            {/* Shared Receive/Send pair. Lives outside the carousel so it
+                doesn't translate with the cards during lightning ↔ ark
+                swipes (Bam: "fixed below stike or coinos and not slidable
+                to the right"). When swiping toward the fiat balance the
+                row animates out via translateX/opacity (Bam: "they should
+                also be dynamic if user wants to go left to the fiat
+                balance").
+                Only renders when both Lightning and Ark are connected —
+                single-wallet users still see the in-card pair via each
+                wallet component's own button row. */}
+            {useSharedButtons && (
+                <Animated.View
+                    // pointerEvents follows the resting active slide. While
+                    // the user is dragging from fiat → lightning, the row
+                    // is still mostly invisible/off-screen and shouldn't
+                    // intercept taps; `indexStrike` is updated on
+                    // `onBeforeSnapToItem` (release moment), which is the
+                    // earliest a tap could land anyway, so this stays in
+                    // sync with what's visually tappable.
+                    pointerEvents={kindFromTab(wTabs[indexStrike]) === 'fiat' ? 'none' : 'auto'}
+                    style={{
+                        // Absolute positioning so the row sits at the
+                        // lightning/ark card bottom (y = 143) regardless of
+                        // the carousel's actual height — which is fiat-tall
+                        // (~230pt) when the fiat slide is in the carousel.
+                        // Without absolute positioning the row landed at the
+                        // carousel's bottom (= fiat-bottom), which Bam saw
+                        // as "50pt below the lightning/ark cards." Fiat
+                        // content fills the carousel's tall area; when it's
+                        // active the row is animated off-screen so they
+                        // don't visually collide. When lightning/ark is
+                        // active their card occupies the top 128–133pt and
+                        // the rest of the slide is empty space — this row
+                        // sits in that empty space, just below the card.
+                        position: 'absolute',
+                        top: BUTTONS_TOP,
+                        left: 0,
+                        // `right: 40` rather than `0` because WalletsView's
+                        // outer container has an explicit `width: screenWidth`
+                        // while HomeScreen's parent container has
+                        // `paddingHorizontal: 20`. That makes WalletsView
+                        // overflow the padded content area by 20pt on the
+                        // right. With `right: 0` the row inherited that
+                        // overflow and the Send button extended past the
+                        // screen edge. The BottomBar's TopUpWithdraw row
+                        // (rendered without explicit width) naturally fits
+                        // inside the padded `screenWidth - 40` content area,
+                        // so we mirror that here: width = screenWidth - 40,
+                        // anchored to the same left/right pixel positions.
+                        right: 40,
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        opacity: buttonsOpacity,
+                        transform: [{ translateX: buttonsTranslateX }],
+                    }}>
+                    <GradientButtonWithShadow
+                        title="Receive"
+                        onPress={sharedReceive}
+                        isShadow
+                        isTextShadow
+                    />
+                    {/* Swap icon between Receive and Send (Lightning↔Ark).
+                        Suppressed entirely when all three Lightning rails
+                        (Strike + CoinOS + Ark) are connected — Bam asked
+                        for it gone on both the CircularView slide AND the
+                        Ark slide in that combo. For Strike+Ark-only and
+                        CoinOS+Ark-only configs the swap stays here, since
+                        those slides have no internal swap of their own. */}
+                    {!allThreeLightningRails && (
+                        <TouchableOpacity
+                            onPress={() => refSwapRBSheet?.current?.open()}
+                            style={{ alignItems: 'center', justifyContent: 'center', width: 40, height: 40 }}
+                        >
+                            <Image source={Refresh} style={{ width: 18, height: 29 }} />
+                        </TouchableOpacity>
+                    )}
+                    <GradientButtonWithShadow
+                        title="Send"
+                        onPress={sharedSend}
+                        isShadow
+                        isTextShadow
+                    />
+                </Animated.View>
+            )}
+            {/* Background-refresh status banner — sits BELOW the absolutely-
+                positioned shared Send/Receive row. Only shown when:
+                  - shared buttons are active (the banner-in-card path
+                    doesn't apply — see ArkWallet/index.tsx)
+                  - the user has opted into bg refresh (bgRefreshStatus
+                    non-null)
+                  - the active carousel slide is Ark (banner is Ark-
+                    specific status; suppress on Lightning / fiat slides)
+                Tap → opens the Ark Capsules screen so the user can drill
+                into the bg-refresh settings or manually retry. */}
+            {useSharedButtons && bgRefreshStatus && kindFromTab(wTabs[indexStrike]) === 'ark' && (
+                <View
+                    style={{
+                        position: 'absolute',
+                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
+                        left: 0,
+                        right: 40,
+                        alignItems: 'center',
+                    }}
+                >
+                    <TouchableOpacity onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: 1 })} activeOpacity={0.7}>
+                        <Text
+                            h4
+                            style={{
+                                color: bgRefreshStatus.error ? colors.redLight : colors.ark.light,
+                                textAlign: 'center',
+                                paddingHorizontal: 12,
+                            }}
+                        >
+                            {bgRefreshStatus.text}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            )}
         </View>
     );
-}
+});
+
+export default WalletsView;

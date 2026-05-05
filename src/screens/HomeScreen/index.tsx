@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Animated, Easing, Image, Linking, Platform, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import {
@@ -56,7 +56,7 @@ import BalanceView from "./BalanceView";
 import BottomBar from "./BottomBar";
 const A = require('../../../blue_modules/analytics');
 import CreateLightningAccount from "./CreateLightningAccount";
-import WalletsView from "./WalletsView";
+import WalletsView, { WalletsViewHandle } from "./WalletsView";
 import SendListNew from "./SendListNew";
 import TopupList from "./TopupList";
 import WithdrawList from "./WithdrawList";
@@ -125,7 +125,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
+  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning, arkBalance } = useAuthStore();
   // Ark boot restore: reopens the wallet from on-disk state (datadir +
   // Keychain mnemonic) once per mount, and reconciles zustand so the
   // carousel reflects reality. Handles Metro reload + zustand/disk drift.
@@ -138,6 +138,34 @@ export default function HomeScreen({ route }: Props) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [carouselPage, setCarouselPage] = useState(0);
   const [carouselTotal, setCarouselTotal] = useState(0);
+  const [carouselKinds, setCarouselKinds] = useState<Array<'fiat' | 'lightning' | 'ark'>>([]);
+  const walletsViewRef = useRef<WalletsViewHandle>(null);
+  // Smooth entrance animation — fires every time HomeScreen gains focus,
+  // not just on first mount. Without this, navigating back from another
+  // screen pops the wallet/vault carousels in instantly which reads as
+  // choppy. Opacity 0→1 + a small upward drift gives an iOS-style fade-in
+  // that takes the edge off the layout settle.
+  //
+  // Uses native driver — opacity + transform are both supported on the
+  // native side, so the animation runs off the JS thread and stays smooth
+  // even while the snap-carousels mount their internal animated values.
+  const enterAnim = useRef(new Animated.Value(0)).current;
+  const enterTranslate = enterAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [12, 0], // 12pt drift up — subtle, matches iOS push transition
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      enterAnim.setValue(0);
+      Animated.timing(enterAnim, {
+        toValue: 1,
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }, [enterAnim])
+  );
   const [balance, setBalance] = useState(0);
   const [strikeBalance, setStrikeBalance] = useState(0);
   const [currency, setCurrency] = useState('USD');
@@ -461,9 +489,21 @@ export default function HomeScreen({ route }: Props) {
     // if(!coldStorageWalletID){
     //   setIsColdWalletLoaded(false)
     // }
-    getWallet();
-    coldStorageWalletID ? getColdStorageWallet() : setIsColdWalletLoaded(false);
-    handleToken();
+    // TEMPORARY: timing telemetry for the cold-load freeze. Bam reported a
+    // 20–30s blank/spinner state on every reload + rebuild. These logs
+    // attribute the wait time to specific awaits in the on-mount chain so
+    // we know which one to optimize (Electrum fetchBalance, GroundControl
+    // subscribe, CoinOS token refresh, etc.). Remove once the slow path
+    // is identified and addressed.
+    if (__DEV__) console.log('[HomeMount] effect fire', Date.now(), { isAuth: !!isAuth, hasToken: !!token, hasWallet: !!walletID, hasCold: !!coldStorageWalletID });
+    const _t0 = Date.now();
+    Promise.resolve(getWallet()).finally(() => __DEV__ && console.log('[HomeMount] getWallet done +', Date.now() - _t0, 'ms'));
+    if (coldStorageWalletID) {
+      Promise.resolve(getColdStorageWallet()).finally(() => __DEV__ && console.log('[HomeMount] getColdStorageWallet done +', Date.now() - _t0, 'ms'));
+    } else {
+      setIsColdWalletLoaded(false);
+    }
+    Promise.resolve(handleToken()).finally(() => __DEV__ && console.log('[HomeMount] handleToken done +', Date.now() - _t0, 'ms'));
   }, [isAuth, token, wallets, walletID, coldStorageWalletID]);
 
   // CoinOS WebSocket for real-time payment notifications
@@ -903,19 +943,54 @@ export default function HomeScreen({ route }: Props) {
           :
           (
             <>
-              <View style={{ height: 40 }} />
-              <Header onBarScanned={onBarScanned} />
-              <View style={{ transform: [{ translateY: -48 }] }}>
+              <View style={{ height: 50 }} />
+              {/*
+                Header now hosts the "Scan with" picker — left-side scan
+                icon → modal → camera → routes to the chosen wallet's send
+                screen with the scanned destination pre-filled. The legacy
+                `onBarScanned` prop is kept as a fallback for the default
+                branch in handleWalletPicked.
+              */}
+              <Header
+                onBarScanned={onBarScanned}
+                matchedRate={matchedRate}
+                matchedRateBTC={matchedRateBTC}
+                currency={currency}
+                wallet={wallet}
+                coldStorageWallet={coldStorageWallet}
+              />
+              {/* Android-only nudge: when all three Lightning wallets
+                  (CoinOS + Strike + Ark) are connected, the BalanceView
+                  is pulled up too far on Android (iOS lays out fine
+                  with the same -48). Bump it down 35pt for that
+                  combination on Android only. */}
+              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -33 : (Platform.OS === 'android' && !isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -33 : -53 }, { translateY: enterTranslate }] }}>
                 <BalanceView
                   // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
-                  balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
-                  convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)))).toFixed(2)}`}
-                  showAddAccount={allBTCWallets.length < 2 && !isLoading}
+                  // Ark balance is stored in zustand as plain sats (see
+                  // setArkBalance in useArkSync). Multiply by btc(1) (=1e-8)
+                  // to fold it into the BTC total, and by matchedRate (USD
+                  // per sat) for the fiat total. Gated on isArkAuth so an
+                  // orphaned `arkBalance` state from a previous wallet
+                  // doesn't pollute the headline before the boot-restore
+                  // hook clears it.
+                  balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0) + (isArkAuth ? (Number(arkBalance) || 0) * btc(1) : 0)).toFixed(8)} BTC`}
+                  convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0))) + (isArkAuth ? (Number(arkBalance) || 0) * Number(matchedRate || 0) : 0)).toFixed(2)}`}
+                  // Show "+ Add Account" until the user has all three
+                  // distinct rails connected. The previous `length < 2`
+                  // gate hid the button as soon as any two were added,
+                  // which meant a user who connected CoinOS + Ark
+                  // couldn't reach the Lightning-account menu to add
+                  // Strike. We gate per-rail instead of by raw count
+                  // because the same wallet shouldn't be addable twice.
+                  showAddAccount={(!isAuth || !isStrikeAuth || !isArkAuth) && !isLoading}
                   onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
                   carouselPage={carouselPage}
                   carouselTotal={carouselTotal}
+                  carouselKinds={carouselKinds}
+                  onDotPress={(i) => walletsViewRef.current?.snapTo(i)}
                 />
-              </View>
+              </Animated.View>
             </>
           )}
 
@@ -924,7 +999,7 @@ export default function HomeScreen({ route }: Props) {
                     {/* Add Account button moved into BalanceView */}
           {/* Lightning Accounts title moved into WalletsView carousel */}
 
-          <View style={{ transform: [{ translateY: (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -70 : -58 }] }}>
+          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -65 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -33 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -25 : (!isLoading && isStrikeAuth && isArkAuth) ? -30 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -13 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 2 : -68 }, { translateY: enterTranslate }] }}>
             {/*
               Carousel-vs-CTA gate. Falls through to CreateLightningAccount only
               when NO Lightning provider (CoinOS / Strike / Ark) is connected.
@@ -966,6 +1041,7 @@ export default function HomeScreen({ route }: Props) {
               </>
             ) : !isLoading && (
               <WalletsView
+                ref={walletsViewRef}
                 balance={balance}
                 convertedRate={convertedRate}
                 currency={currency}
@@ -982,23 +1058,29 @@ export default function HomeScreen({ route }: Props) {
                 strikeConvertedBalance={Number(strikeConvertedBalance || 0)}
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
                 homeMessage={homeMessage}
-                onPageChange={(index, total) => {
+                onPageChange={(index, total, kinds) => {
                   setCarouselPage(index);
                   setCarouselTotal(total);
+                  setCarouselKinds(kinds);
                 }}
               />
             )}
-          </View>
+          </Animated.View>
 
           {/* */}
 
+          {/* Android-only nudge (+20pt): the vaults + withdraw/top-up
+              section sits 20pt too high on Android vs iOS. iOS layout
+              is correct — only Android needs the bump. Applied to both
+              the loading-spinner placeholder and the BottomBar so they
+              stay aligned across the loading transition. */}
           {!isLoading && (isWalletLoaded || isColdWalletLoaded) &&
-            <View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', transform: [{ translateY: (isAuth || isStrikeAuth || isArkAuth) ? -20 : -60 }]}}>
+            <Animated.View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', opacity: enterAnim, transform: [{ translateY: ((isAuth || isStrikeAuth || isArkAuth) ? -30 : -70) + (Platform.OS === 'android' ? 20 : 0) }, { translateY: enterTranslate }]}}>
               <ActivityIndicator size="small" color="#23C47F" />
-            </View>
+            </Animated.View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={{height: 205, marginBottom: 20, transform: [{ translateY: (isAuth || isStrikeAuth || isArkAuth) ? -20 : -60 }]}}>
+            <Animated.View style={{height: 205, marginBottom: 20, opacity: enterAnim, transform: [{ translateY: ((isAuth || isStrikeAuth || isArkAuth) ? -30 : -70) + (Platform.OS === 'android' ? 20 : 0) }, { translateY: enterTranslate }]}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}
@@ -1021,7 +1103,7 @@ export default function HomeScreen({ route }: Props) {
                 wallet={wallet}
                 refTopupRBSheet={refTopupRBSheet}
               />
-            </View>
+            </Animated.View>
           }
         </View>
       <RBSheet
@@ -1218,14 +1300,21 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <SwapSheet 
+        <SwapSheet
           refSwapRBSheet={refSwapRBSheet}
           user={user}
           strikeMe={strikeMe}
-          isAuth={isAuth}
-          isStrikeAuth={isStrikeAuth}
-          coinosBalance={balance}
-          strikeBalance={strikeBalance}
+          // Per-rail balances (sats) — keyed by lightningSwap provider id.
+          // SwapSheet forwards the source-rail's value as `sourceBalance`
+          // to SwapAmount so the keyboard's max-button works regardless
+          // of which provider is selected. Reads `arkBalance` directly
+          // from zustand via getState() since it's not a HomeScreen
+          // useState-owned value like coinos/strike are.
+          balanceByProvider={{
+            coinos: Number(balance) || 0,
+            strike: Number(strikeBalance) || 0,
+            ark: Number(useAuthStore.getState().arkBalance || 0),
+          }}
         />
       </RBSheet>
       

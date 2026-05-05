@@ -361,6 +361,22 @@ export default StyleSheet.create<Style>({
         padding: 15,
         paddingHorizontal: 30,
     },
+    // 1.5px-padding wrapper for the Strike Lightning card. Mirrors the
+    // CoinOS Card's pink-gradient outline (Card/styles.ts) so Strike's
+    // custodial Lightning rail has the same pink-ringed identity.
+    shadowTopGradientOutline: {
+        borderRadius: 24,
+        width: widths - 40,
+        height: 128,
+        padding: 1.5,
+    },
+    shadowTopInner: {
+        flex: 1,
+        borderRadius: 22.5,
+        backgroundColor: colors.primary,
+        paddingHorizontal: 30,
+        padding: 0,
+    },
     shadow10: {
         // shadowOffset: { width: 3, height: 4 },
         // shadowOpacity: 0.25,

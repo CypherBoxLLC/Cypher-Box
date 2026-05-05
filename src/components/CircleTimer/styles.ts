@@ -15,10 +15,12 @@ export default StyleSheet.create({
   textContainer: {
     position: 'absolute',
     alignItems: 'center',
-    top: 45,
+    top: 48,
   },
   mainText: {
     fontSize: 20,
+    lineHeight: 26,
+    includeFontPadding: false,
   },
   image: {
     width: 68,

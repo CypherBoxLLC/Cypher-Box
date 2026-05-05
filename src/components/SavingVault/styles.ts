@@ -36,6 +36,15 @@ export default StyleSheet.create<Style>({
         paddingEnd: 10,
         borderWidth: 1.5,
         borderColor: colors.greenShadow,
+        // Angular bottom-right drop shadow at 8/8 — matches the app-wide
+        // shadow convention (HotStorageVault / ColdStorage / CreateVault /
+        // Card all use 8/8) so the Hot/Cold vault boxes are visually
+        // consistent with neighbouring elevated surfaces.
+        shadowOffset: { width: 8, height: 8 },
+        shadowOpacity: 0.7,
+        shadowColor: '#000000',
+        shadowRadius: 16,
+        elevation: 14,
     },
     shadowBottomBottom: {
         shadowOffset: { width: -2, height: -2 },
@@ -52,6 +61,7 @@ export default StyleSheet.create<Style>({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginTop: -3,
     },
     bitcointext: {
         marginEnd: 5,
@@ -65,6 +75,7 @@ export default StyleSheet.create<Style>({
     row: {
         flexDirection: 'row',
         alignItems: 'center',
+        marginTop: 4,
     },
     tabs: {
         flexDirection: 'row',

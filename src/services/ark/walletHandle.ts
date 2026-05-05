@@ -109,6 +109,26 @@ export async function openArkWallet(mnemonic: string): Promise<WalletInterface> 
 }
 
 /**
+ * Hydrate the wallet handle from a seed obtained outside any foreground
+ * UI flow — e.g. a background-refresh wake on a force-quit app where the
+ * JS module was just freshly imported and `cachedMnemonic` is null.
+ *
+ * No-op if a handle is already open. Otherwise delegates to
+ * `createArkWallet(mnemonic, false)` which is open-or-create + populates
+ * the in-memory mnemonic cache, so subsequent reads of
+ * `getCachedArkMnemonic()` work normally for the rest of this process.
+ *
+ * Pulled out as a separate symbol so the import surface for background
+ * callers is narrow and easy to audit.
+ */
+export async function hydrateArkWalletFromBackgroundSeed(
+    mnemonic: string,
+): Promise<WalletInterface> {
+    if (handle) return handle;
+    return createArkWallet(mnemonic, false);
+}
+
+/**
  * Synchronously shut down the live Rust handles before nulling our JS refs.
  *
  * Why this matters: setting `handle = null` only drops the JS reference. The

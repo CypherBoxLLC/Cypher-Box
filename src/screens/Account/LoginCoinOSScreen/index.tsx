@@ -205,7 +205,7 @@ export default function LoginCoinOSScreen() {
         setCaptchaToken("");
     };
 
-    console.log('captchaToken: ', captchaToken)
+    if (__DEV__) console.log('captchaToken set:', !!captchaToken, 'len:', captchaToken?.length ?? 0)
     return (
         <ScreenLayout keyboardAware showToolbar>
             <View style={styles.container}>

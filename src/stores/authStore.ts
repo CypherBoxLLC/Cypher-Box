@@ -95,6 +95,35 @@ export type AuthStateType = {
      * the next one.
      */
     arkLastBackupAt: number | null;
+    /**
+     * Round-cadence in seconds, from the ASP's static config (wallet.arkInfo()).
+     * Mainnet ≈ 3600, signet ≈ 300. Used to surface an upper-bound ETA on
+     * "Refreshing…" labels — we can't show a real countdown because the SDK
+     * doesn't expose `nextRoundAt`. Null until first successful fetch.
+     */
+    arkRoundIntervalSecs: number | null;
+    /**
+     * Unilateral-exit state — set when user taps "Emergency Exit" in
+     * Settings. While true, `useArkSync` switches modes: it stops issuing
+     * normal sync/refresh calls (they'd race the exit machinery) and instead
+     * drives `progressArkExits` + `syncArkExits` per tick, then calls
+     * `claimArkExitsToAddress` once VTXOs ripen past the CSV timelock.
+     *
+     * Cleared after the auto-claim succeeds and `resetArkWalletState` runs.
+     */
+    arkExitInProgress: boolean;
+    /**
+     * Where the user wants the on-chain funds to land after the timelock.
+     * Captured at exit-start so the auto-claim loop has the address without
+     * reprompting the user. Bitcoin address (mainnet bech32 / legacy / etc).
+     */
+    arkExitDestinationAddress: string | null;
+    /**
+     * Timestamp (ms) of `startArkEmergencyExit` success. Drives the
+     * "started X hours ago" UI hint and the post-claim safety check
+     * (don't auto-claim on a stale exit-in-progress flag from a crash).
+     */
+    arkExitStartedAt: number | null;
     arkUseHotVaultSeed: boolean;
     withdrawArkThreshold: any | null;
     reserveArkAmount: number;
@@ -106,9 +135,54 @@ export type AuthStateType = {
     setArkChainTipHeight: (state: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
+    setArkRoundIntervalSecs: (state: number | null) => void;
+    setArkExitInProgress: (state: boolean) => void;
+    setArkExitDestinationAddress: (state: string | null) => void;
+    setArkExitStartedAt: (state: number | null) => void;
     setArkUseHotVaultSeed: (state: boolean) => void;
     setWithdrawArkThreshold: (state: any) => void;
     setReserveArkAmount: (state: number) => void;
+
+    // Background VTXO refresh (opt-in). Default off — see
+    // src/services/ark/backgroundRefresh.ts for the policy and
+    // src/services/ark/backgroundKeychain.ts for the keychain trade-off
+    // the toggle gates.
+    arkBgRefreshEnabled: boolean;
+    /** Timestamp (ms) of the last successful background round. Drives 12h rate limit + UI status copy. */
+    arkBgRefreshLastSuccessAt: number | null;
+    /** Outcome of the most recent attempt (success OR otherwise). UI surfaces failures only. */
+    arkBgRefreshLastAttempt: {
+        at: number;
+        outcome: string;
+        elapsedMs: number;
+        errorMsg: string | null;
+    } | null;
+    /** Counts only `error` outcomes. Resets to 0 on success. Drives the "couldn't auto-refresh" notification at 2. */
+    arkBgRefreshConsecutiveFailures: number;
+    /** Set when a post-refresh cloud-backup upload deferred (Phase 4). Surfaces a banner on next foreground. */
+    arkBgRefreshDeferredBackup: boolean;
+    /** Last fire time of the <24h-to-expiry notification. Used to suppress repeat fires within a 12h window. */
+    arkBgRefreshLastWarn24hAt: number | null;
+    /** Last fire time of the <2h-to-expiry notification. Used to suppress repeat fires within a 1h window. */
+    arkBgRefreshLastWarn2hAt: number | null;
+    /** User-configurable upper bound on the fee a background refresh round can auto-pay (sats). Default 5000. */
+    arkBgRefreshMaxFeeSats: number;
+    setArkBgRefreshEnabled: (state: boolean) => void;
+    setArkBgRefreshLastSuccessAt: (state: number | null) => void;
+    setArkBgRefreshLastAttempt: (
+        state: {
+            at: number;
+            outcome: string;
+            elapsedMs: number;
+            errorMsg: string | null;
+        } | null,
+    ) => void;
+    setArkBgRefreshConsecutiveFailures: (state: number) => void;
+    setArkBgRefreshDeferredBackup: (state: boolean) => void;
+    setArkBgRefreshLastWarn24hAt: (state: number | null) => void;
+    setArkBgRefreshLastWarn2hAt: (state: number | null) => void;
+    setArkBgRefreshMaxFeeSats: (state: number) => void;
+
     clearArkAuth: () => void;
 
     // 2FA state
@@ -148,9 +222,21 @@ const createAuthStore = (
     arkChainTipHeight: null,
     arkLastSyncedAt: null,
     arkLastBackupAt: null,
+    arkRoundIntervalSecs: null,
+    arkExitInProgress: false,
+    arkExitDestinationAddress: null,
+    arkExitStartedAt: null,
     arkUseHotVaultSeed: false,
     withdrawArkThreshold: 500000,
     reserveArkAmount: 100000,
+    arkBgRefreshEnabled: false,
+    arkBgRefreshLastSuccessAt: null,
+    arkBgRefreshLastAttempt: null,
+    arkBgRefreshConsecutiveFailures: 0,
+    arkBgRefreshDeferredBackup: false,
+    arkBgRefreshLastWarn24hAt: null,
+    arkBgRefreshLastWarn2hAt: null,
+    arkBgRefreshMaxFeeSats: 5000,
     // 2FA state
     twoFARequired: false,
     twoFAVerified: false,
@@ -187,9 +273,21 @@ const createAuthStore = (
     setArkChainTipHeight: (state: number | null) => set({ arkChainTipHeight: state }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
+    setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
+    setArkExitInProgress: (state: boolean) => set({ arkExitInProgress: state }),
+    setArkExitDestinationAddress: (state: string | null) => set({ arkExitDestinationAddress: state }),
+    setArkExitStartedAt: (state: number | null) => set({ arkExitStartedAt: state }),
     setArkUseHotVaultSeed: (state: boolean) => set({ arkUseHotVaultSeed: state }),
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
     setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),
+    setArkBgRefreshEnabled: (state: boolean) => set({ arkBgRefreshEnabled: state }),
+    setArkBgRefreshLastSuccessAt: (state: number | null) => set({ arkBgRefreshLastSuccessAt: state }),
+    setArkBgRefreshLastAttempt: (state) => set({ arkBgRefreshLastAttempt: state }),
+    setArkBgRefreshConsecutiveFailures: (state: number) => set({ arkBgRefreshConsecutiveFailures: state }),
+    setArkBgRefreshDeferredBackup: (state: boolean) => set({ arkBgRefreshDeferredBackup: state }),
+    setArkBgRefreshLastWarn24hAt: (state: number | null) => set({ arkBgRefreshLastWarn24hAt: state }),
+    setArkBgRefreshLastWarn2hAt: (state: number | null) => set({ arkBgRefreshLastWarn2hAt: state }),
+    setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
     clearArkAuth: () =>
         set({
             isArkAuth: false,
@@ -200,9 +298,27 @@ const createAuthStore = (
             arkChainTipHeight: null,
             arkLastSyncedAt: null,
             arkLastBackupAt: null,
+            arkRoundIntervalSecs: null,
+            arkExitInProgress: false,
+            arkExitDestinationAddress: null,
+            arkExitStartedAt: null,
             arkUseHotVaultSeed: false,
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout
+
+            // Background-refresh state is wallet-scoped: clear on
+            // disconnect so the next wallet doesn't inherit a previous
+            // wallet's success timestamp / failure count. The keychain
+            // entry itself is cleared by setArkBackgroundRefreshEnabled
+            // (off path) which we call separately from the disconnect
+            // flow.
+            arkBgRefreshEnabled: false,
+            arkBgRefreshLastSuccessAt: null,
+            arkBgRefreshLastAttempt: null,
+            arkBgRefreshConsecutiveFailures: 0,
+            arkBgRefreshDeferredBackup: false,
+            arkBgRefreshLastWarn24hAt: null,
+            arkBgRefreshLastWarn2hAt: null,
         }),
     // 2FA setters
     setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),

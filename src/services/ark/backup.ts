@@ -1,5 +1,5 @@
 import RNFS from 'react-native-fs';
-import CryptoJS from 'crypto-js';
+import Aes from 'react-native-aes-crypto';
 
 import { ARK_DATADIR, ensureArkDatadir } from './datadir';
 import { clearArkWalletHandle, openArkWallet } from './walletHandle';
@@ -54,7 +54,8 @@ import { clearArkWalletHandle, openArkWallet } from './walletHandle';
 const FORMAT_VERSION = 1;
 const PBKDF2_SALT = 'cypher-box-ark-datadir-v1';
 const PBKDF2_ITERATIONS = 100_000;
-const PBKDF2_KEYSIZE_WORDS = 8; // 8 * 32-bit = 256-bit AES key
+const AES_KEY_BITS = 256; // AES-256-CBC
+const AES_IV_BYTES = 16;  // AES block size
 
 /**
  * Stable path for the auto-backup file in the user's Documents directory.
@@ -68,7 +69,43 @@ const PBKDF2_KEYSIZE_WORDS = 8; // 8 * 32-bit = 256-bit AES key
  *   encrypted .cbark file in iCloud Drive is a net safety gain — it's fully
  *   opaque without the seed phrase.
  */
-export const AUTO_BACKUP_PATH = `${RNFS.DocumentDirectoryPath}/cypher-box-ark-backup.cbark`;
+export const AUTO_BACKUP_PATH = `${RNFS.DocumentDirectoryPath}/ark-backup.cbark`;
+
+/**
+ * Legacy auto-backup path from earlier dev builds. Kept as a constant so the
+ * boot-time migration in `migrateLegacyBackupFile()` can rename it to the
+ * new `AUTO_BACKUP_PATH` if it exists. Once all known devices have migrated
+ * (and backups since rotated past the original), this can be removed.
+ */
+export const LEGACY_AUTO_BACKUP_PATH = `${RNFS.DocumentDirectoryPath}/cypher-box-ark-backup.cbark`;
+
+/**
+ * One-shot migration: rename the legacy `cypher-box-ark-backup.cbark` to
+ * `ark-backup.cbark` if the legacy file exists and the new one doesn't yet.
+ * Idempotent and crash-safe — second/subsequent calls are no-ops.
+ *
+ * Call once at app boot, before the auto-backup loop has had a chance to
+ * write a fresh file at the new path. After this lands, an existing user
+ * sees the same single rolling file with the new name; no orphaned legacy
+ * file dangling in their Files app.
+ */
+export async function migrateLegacyBackupFile(): Promise<void> {
+    try {
+        const legacyExists = await RNFS.exists(LEGACY_AUTO_BACKUP_PATH);
+        if (!legacyExists) return;
+        const newExists = await RNFS.exists(AUTO_BACKUP_PATH);
+        if (newExists) {
+            // New path already populated by a fresh sync; legacy is stale.
+            await RNFS.unlink(LEGACY_AUTO_BACKUP_PATH);
+            return;
+        }
+        await RNFS.moveFile(LEGACY_AUTO_BACKUP_PATH, AUTO_BACKUP_PATH);
+    } catch (err: any) {
+        // Best-effort: a missing or unreadable legacy file shouldn't block boot.
+        // The next auto-backup tick will write a fresh `ark-backup.cbark` anyway.
+        console.warn('[Ark backup] legacy filename migration failed:', err?.message ?? err);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // In-memory AES key cache
@@ -86,13 +123,13 @@ export const AUTO_BACKUP_PATH = `${RNFS.DocumentDirectoryPath}/cypher-box-ark-ba
 // — clearing the key between those two steps would force a redundant 400ms
 // derive on re-open). Caller code that fully disconnects a wallet (reset.ts,
 // clearArkAuth) should call clearArkKeyCache() explicitly to scrub the key.
-let _keyCache: { mnemonic: string; key: CryptoJS.lib.WordArray } | null = null;
+let _keyCache: { mnemonic: string; keyHex: string } | null = null;
 
-function getCachedAesKey(mnemonic: string): CryptoJS.lib.WordArray {
-    if (_keyCache?.mnemonic === mnemonic) return _keyCache.key;
-    const key = deriveAesKey(mnemonic);
-    _keyCache = { mnemonic, key };
-    return key;
+async function getCachedAesKey(mnemonic: string): Promise<string> {
+    if (_keyCache?.mnemonic === mnemonic) return _keyCache.keyHex;
+    const keyHex = await deriveAesKey(mnemonic);
+    _keyCache = { mnemonic, keyHex };
+    return keyHex;
 }
 
 /**
@@ -141,12 +178,12 @@ async function listFilesRelative(dir: string, prefix = ''): Promise<string[]> {
     return out;
 }
 
-function deriveAesKey(mnemonic: string): CryptoJS.lib.WordArray {
-    return CryptoJS.PBKDF2(mnemonic, CryptoJS.enc.Utf8.parse(PBKDF2_SALT), {
-        keySize: PBKDF2_KEYSIZE_WORDS,
-        iterations: PBKDF2_ITERATIONS,
-        hasher: CryptoJS.algo.SHA256,
-    });
+async function deriveAesKey(mnemonic: string): Promise<string> {
+    // react-native-aes-crypto pbkdf2 length is in BITS; returns hex.
+    // Functionally equivalent to the previous CryptoJS.PBKDF2 call —
+    // PBKDF2-SHA256 with the same password/salt/iter produces byte-identical
+    // output, so existing CryptoJS-encrypted .cbark files still decrypt.
+    return Aes.pbkdf2(mnemonic, PBKDF2_SALT, PBKDF2_ITERATIONS, AES_KEY_BITS, 'sha256');
 }
 
 /**
@@ -187,29 +224,25 @@ export async function buildArkBackupBlob(mnemonic: string): Promise<string> {
     };
 
     const plaintext = JSON.stringify(manifest);
-    // Use cached key — PBKDF2 is expensive (100k iter, ~400ms). The manual
-    // export path is the first time the key is derived; subsequent calls
-    // (auto-backup) reuse the cached WordArray.
-    const key = getCachedAesKey(mnemonic);
-    // CryptoJS.AES.encrypt with a WordArray key uses raw 256-bit AES-CBC
-    // with random IV; the resulting CipherParams.toString() gives the
-    // OpenSSL-format string ("U2FsdGVkX1…") that decrypt() can round-trip.
-    const ciphertext = CryptoJS.AES.encrypt(plaintext, key, {
-        mode: CryptoJS.mode.CBC,
-        padding: CryptoJS.pad.Pkcs7,
-        // Provide an explicit IV so we don't fall through to an empty/zero IV.
-        iv: CryptoJS.lib.WordArray.random(16),
-    });
+    // Use cached key — PBKDF2 is expensive (100k iter, ~400ms native vs ~2s pure-JS).
+    // The manual export path may be the first time the key is derived; subsequent
+    // calls (auto-backup) reuse the cached hex.
+    const keyHex = await getCachedAesKey(mnemonic);
+    const ivHex = await Aes.randomKey(AES_IV_BYTES);
+    // Aes.encrypt runs on the native thread (off the JS main thread), so
+    // the AES pass no longer freezes the UI even on slow Android phones.
+    // Returns base64-encoded ciphertext directly — same field as before.
+    const ctBase64 = await Aes.encrypt(plaintext, keyHex, ivHex, 'aes-256-cbc');
 
     // Wrap in our envelope so future format versions can be detected without
-    // attempting decryption. The body field is the raw cipher payload + IV;
-    // we serialize it as a base64 of {iv, ct} pair.
+    // attempting decryption. iv is hex, ct is base64 — same shape as v1
+    // CryptoJS-produced files, so existing backups round-trip transparently.
     const envelope = {
         v: FORMAT_VERSION,
         // PBKDF2 params surfaced so a future format change is recognisable.
         kdf: { algo: 'pbkdf2-sha256', salt: PBKDF2_SALT, iter: PBKDF2_ITERATIONS },
-        iv: ciphertext.iv?.toString(CryptoJS.enc.Hex) ?? '',
-        ct: ciphertext.ciphertext?.toString(CryptoJS.enc.Base64) ?? '',
+        iv: ivHex,
+        ct: ctBase64,
     };
     return JSON.stringify(envelope);
 }
@@ -225,7 +258,7 @@ export async function buildArkBackupBlob(mnemonic: string): Promise<string> {
  * Returns the parsed manifest; caller is responsible for validating that
  * `manifest.files` looks plausible before writing them to disk.
  */
-function decryptBackupBlob(blob: string, mnemonic: string): BackupManifest {
+async function decryptBackupBlob(blob: string, mnemonic: string): Promise<BackupManifest> {
     let envelope: any;
     try {
         envelope = JSON.parse(blob);
@@ -244,26 +277,21 @@ function decryptBackupBlob(blob: string, mnemonic: string): BackupManifest {
         throw new Error('Backup envelope missing iv/ct');
     }
 
-    const key = deriveAesKey(mnemonic);
-    const iv = CryptoJS.enc.Hex.parse(envelope.iv);
-    const ct = CryptoJS.enc.Base64.parse(envelope.ct);
-    const params = CryptoJS.lib.CipherParams.create({ ciphertext: ct });
+    // Using deriveAesKey directly (not the cache) so a restore-from-file
+    // flow can verify a seed against a specific backup without polluting the
+    // cache for an in-flight wallet session.
+    const keyHex = await deriveAesKey(mnemonic);
 
     let plaintext: string;
     try {
-        const decrypted = CryptoJS.AES.decrypt(params, key, {
-            mode: CryptoJS.mode.CBC,
-            padding: CryptoJS.pad.Pkcs7,
-            iv,
-        });
-        plaintext = decrypted.toString(CryptoJS.enc.Utf8);
+        plaintext = await Aes.decrypt(envelope.ct, keyHex, envelope.iv, 'aes-256-cbc');
     } catch (err) {
         throw new Error('Decryption failed — seed may not match this backup');
     }
 
     if (!plaintext) {
-        // CryptoJS returns empty string on padding/key mismatch rather than
-        // throwing — guard the most common "wrong seed" failure mode.
+        // Aes.decrypt typically throws on key/padding mismatch, but defend
+        // against an empty-output edge case the same way the prior code did.
         throw new Error('Decryption produced empty output — seed does not match this backup');
     }
 
@@ -309,7 +337,7 @@ export async function restoreArkBackupBlob(
     blob: string,
     mnemonic: string,
 ): Promise<void> {
-    const manifest = decryptBackupBlob(blob, mnemonic);
+    const manifest = await decryptBackupBlob(blob, mnemonic);
 
     // Defense-in-depth: refuse paths that escape the datadir. RNFS would
     // happily write to `../../private/var/…` if a malicious backup told it to.
@@ -416,22 +444,47 @@ export async function writeArkAutoBackup(
     const plaintext = JSON.stringify(manifest);
 
     // Cached key — PBKDF2 only runs once per wallet session.
-    const key = getCachedAesKey(mnemonic);
-    const ciphertext = CryptoJS.AES.encrypt(plaintext, key, {
-        mode: CryptoJS.mode.CBC,
-        padding: CryptoJS.pad.Pkcs7,
-        iv: CryptoJS.lib.WordArray.random(16),
-    });
+    const keyHex = await getCachedAesKey(mnemonic);
+    const ivHex = await Aes.randomKey(AES_IV_BYTES);
+    // Native AES — runs off the JS thread, so even with a 348 KB plaintext
+    // the UI doesn't freeze during the encrypt step.
+    const ctBase64 = await Aes.encrypt(plaintext, keyHex, ivHex, 'aes-256-cbc');
 
     const envelope = {
         v: FORMAT_VERSION,
         kdf: { algo: 'pbkdf2-sha256', salt: PBKDF2_SALT, iter: PBKDF2_ITERATIONS },
-        iv: ciphertext.iv?.toString(CryptoJS.enc.Hex) ?? '',
-        ct: ciphertext.ciphertext?.toString(CryptoJS.enc.Base64) ?? '',
+        iv: ivHex,
+        ct: ctBase64,
     };
     const blob = JSON.stringify(envelope);
 
     await RNFS.writeFile(AUTO_BACKUP_PATH, blob, 'utf8');
+
+    // Android-only off-device sibling upload. iOS gets free off-device
+    // backup via Apple's transparent iCloud Drive sync of Documents
+    // (when the user has it enabled for Cypher Box). Android has no
+    // equivalent — the local file stays on this device unless we push
+    // it to Drive ourselves. Best-effort: fail silently so a Drive
+    // outage / disconnected-account never breaks the local backup
+    // path that the caller actually awaits on. The Drive helper itself
+    // bails out cleanly on iOS via `Platform.OS === 'android'` guard.
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { uploadArkBackupToDrive, isGoogleDriveConnected } = require('./googleDrive');
+        if (await isGoogleDriveConnected()) {
+            await uploadArkBackupToDrive(blob);
+            if (__DEV__) console.log('[Ark auto-backup] Drive upload OK');
+        }
+    } catch (err: any) {
+        // Drive failure mode separate from local — log only, don't
+        // promote to throw. Common causes: token expired, no network,
+        // user signed out of Google. UI can probe `isGoogleDriveConnected`
+        // separately to nudge the user when this happens repeatedly.
+        if (__DEV__) {
+            console.log('[Ark auto-backup] Drive upload failed (non-fatal):', err?.message ?? err);
+        }
+    }
+
     return { path: AUTO_BACKUP_PATH, sizeBytes: blob.length, createdAt };
 }
 
@@ -452,7 +505,7 @@ export async function writeArkBackupToTempFile(
 ): Promise<{ path: string; sizeBytes: number; createdAt: number }> {
     const blob = await buildArkBackupBlob(mnemonic);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const path = `${RNFS.CachesDirectoryPath}/cypher-box-ark-backup-${stamp}.cbark`;
+    const path = `${RNFS.CachesDirectoryPath}/ark-backup-${stamp}.cbark`;
     await RNFS.writeFile(path, blob, 'utf8');
     return { path, sizeBytes: blob.length, createdAt: Date.now() };
 }

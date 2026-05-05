@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import SimpleToast from 'react-native-simple-toast';
 
+import { useNavigation } from '@react-navigation/native';
+
 import { ScreenLayout, Text } from '@Cypher/component-library';
 import { GradientInput, CustomKeyboard } from '@Cypher/components';
 import { dispatchNavigate } from '@Cypher/helpers';
@@ -24,6 +26,10 @@ import {
 } from '@Cypher/services/ark';
 import { colors } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
+// Repo-level helper (not under src/) — owns the iOS camera permission
+// dance + the navigate-to-ScanQRCode callback contract used by every
+// scan flow in the app (HotVault, ConnectColdStorage, …).
+import { requestCameraAuthorization } from '../../../../helpers/scan-qr';
 
 import styles from './styles';
 
@@ -118,6 +124,56 @@ export default function ArkSendScreen({ route }: Props) {
         }
     }, [onChangeDestination]);
 
+    const navigation = useNavigation<any>();
+
+    /**
+     * Open the shared QR scanner, drop whatever it returns into the
+     * destination input. We don't pre-filter scheme prefixes here — the
+     * already-mounted `classifyArkDestination` handles every rail the
+     * SDK accepts (`bc1…`, `bitcoin:…`, `lnbc…`, `lightning:…`,
+     * `ark1…`, `lnurl…`, plain LN addresses). Anything unrecognised
+     * lands as "Unrecognised" in the kind-pill, which keeps the submit
+     * button disabled — same UX as a paste of garbage.
+     *
+     * `ret` shape comes from the BlueWallet ScanQRCode screen and can
+     * be either a string or `{ data: string }` depending on the
+     * camera path; the `ret.data ?? ret` shim mirrors the convention
+     * used in HotStorageVault/Settings.tsx etc.
+     */
+    const handleScan = useCallback(() => {
+        requestCameraAuthorization().then(() => {
+            navigation.navigate('ScanQRCodeRoot', {
+                screen: 'ScanQRCode',
+                params: {
+                    showFileImportButton: false,
+                    onBarScanned: (ret: any) => {
+                        // ScanQRCode is mounted as a modal stack — pop the
+                        // root so we land back on this screen, not on
+                        // ScanQRCode + this screen stacked.
+                        navigation.getParent()?.pop();
+                        const raw = typeof ret === 'string'
+                            ? ret
+                            : (ret?.data ?? '');
+                        if (!raw) {
+                            SimpleToast.show('No data in QR code', SimpleToast.SHORT);
+                            return;
+                        }
+                        // Strip common URI-scheme prefixes the classifier
+                        // also accepts, but trim whitespace + newlines that
+                        // some QR encoders attach. Lower-casing is left to
+                        // the classifier (Lightning is case-insensitive,
+                        // Ark / on-chain bech32 must NOT be lower-cased
+                        // until validation — let the SDK decide).
+                        onChangeDestination(raw.trim());
+                    },
+                },
+            });
+        }).catch((err: any) => {
+            console.warn('[ArkSend] camera authorization failed:', err?.message ?? err);
+            SimpleToast.show('Camera permission needed to scan', SimpleToast.SHORT);
+        });
+    }, [navigation, onChangeDestination]);
+
     // CustomKeyboard owns the sats string state internally and pushes it up
     // through setSATS. When the amount changes after we've already estimated,
     // clear the stale fee — same reason as the destination reset above.
@@ -134,9 +190,15 @@ export default function ArkSendScreen({ route }: Props) {
     // can't fund. The SDK would fail with `BarkError.Internal` and we'd have
     // no structured way to surface "0 sats available" to the user.
     const amountWithinBalance = satsNumber <= spendableSats;
+    // Once a fee is known, the binding constraint is gross (amount + fee) ≤ balance.
+    // Without this, a user with exactly 1000 sats can "confirm" a 1000-sat send
+    // that needs 1020 gross — the SDK then fails with an opaque BarkError.Internal.
+    const grossWithinBalance = fee
+        ? fee.grossAmountSats <= spendableSats
+        : amountWithinBalance;
     const canEstimate =
         destinationValid && amountValid && amountWithinBalance && !isEstimating && !isSending;
-    const canSend = canEstimate && !!fee;
+    const canSend = canEstimate && !!fee && grossWithinBalance;
 
     const handleEstimate = useCallback(async () => {
         if (!canEstimate) return;
@@ -235,6 +297,31 @@ export default function ArkSendScreen({ route }: Props) {
     // hydration), so sats × rate = USD. Matches ArkHistoryRow.
     const netFiat = fee ? (fee.netAmountSats * matchedRate).toFixed(2) : null;
     const feeFiat = fee ? (fee.feeSats * matchedRate).toFixed(2) : null;
+    const grossFiat = fee ? (fee.grossAmountSats * matchedRate).toFixed(2) : null;
+    // Fee % is computed against the gross (total debited) so users see what
+    // share of their outgoing funds the fee consumes. Toy amounts can spike
+    // to >100% on Ark (server fee is ~flat) — capped display at 999% so the
+    // line never breaks layout but still flags "this is a lot".
+    const feePct =
+        fee && fee.grossAmountSats > 0
+            ? Math.min(999, (fee.feeSats / fee.grossAmountSats) * 100)
+            : null;
+    // The Bark SDK returns a single combined `feeSats`. There's no breakdown
+    // of network (LN routing / on-chain miner) vs Ark server fee in the FFI,
+    // so the most honest thing is to label what's bundled in based on the
+    // destination kind. If the SDK ever exposes a breakdown, swap this for
+    // two rows.
+    const feeBreakdownLabel = fee
+        ? destination.kind === 'ln-invoice' ||
+          destination.kind === 'ln-offer' ||
+          destination.kind === 'ln-address'
+            ? 'Fee (Lightning routing + Ark)'
+            : destination.kind === 'onchain'
+                ? 'Fee (on-chain network + Ark)'
+                : destination.kind === 'ark'
+                    ? 'Fee (Ark server)'
+                    : 'Fee'
+        : 'Fee';
 
     return (
         <ScreenLayout disableScroll showToolbar isBackButton title="Send from Ark">
@@ -244,7 +331,21 @@ export default function ArkSendScreen({ route }: Props) {
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
-                {/* --- Destination --- */}
+                {/* --- Amount display first per Bam (above destination so
+                       the keyboard's primary affordance lines up with the
+                       value the user is editing). CustomKeyboard owns the
+                       underlying state; GradientInput just mirrors it.
+                       Yellow `colors_` instead of the default pink. */}
+                <GradientInput
+                    isSats={isSats}
+                    walletInfo={{ matchedRate, currency }}
+                    sats={sats}
+                    setSats={setSats}
+                    usd={usd}
+                    colors_={[colors.ark.extralight, colors.ark.main]}
+                />
+
+                {/* --- Destination (now below the amount). --- */}
                 <Text bold style={styles.destLabel}>
                     Destination
                 </Text>
@@ -263,22 +364,21 @@ export default function ArkSendScreen({ route }: Props) {
                     <TouchableOpacity style={styles.pasteBtn} onPress={handlePaste}>
                         <Text style={styles.pasteBtnText}>PASTE</Text>
                     </TouchableOpacity>
+                    {/* Scan button — sits flush with PASTE so users have
+                        both clipboard and camera entry without leaving
+                        the row. Whatever the camera reads goes through
+                        the same `onChangeDestination` path, so the
+                        kind-pill and validation behave identically to
+                        a paste. */}
+                    <TouchableOpacity style={styles.scanBtn} onPress={handleScan}>
+                        <Text style={styles.scanBtnText}>SCAN</Text>
+                    </TouchableOpacity>
                 </View>
                 <View style={[styles.kindPill, { borderColor: pillBorderColor }]}>
                     <Text style={[styles.kindPillText, { color: pillTextColor }]}>
                         {pillLabel}
                     </Text>
                 </View>
-
-                {/* --- Amount display. CustomKeyboard owns the underlying
-                       state; GradientInput just mirrors it for the user. */}
-                <GradientInput
-                    isSats={isSats}
-                    walletInfo={{ matchedRate, currency }}
-                    sats={sats}
-                    setSats={setSats}
-                    usd={usd}
-                />
 
                 {/* --- Fee preview (only after estimate) --- */}
                 {fee && (
@@ -291,16 +391,27 @@ export default function ArkSendScreen({ route }: Props) {
                             </Text>
                         </View>
                         <View style={styles.feeRow}>
-                            <Text style={styles.feeLabel}>Fee</Text>
+                            <Text style={styles.feeLabel}>{feeBreakdownLabel}</Text>
                             <Text style={styles.feeValue}>
                                 {fee.feeSats.toLocaleString()} sats
                                 {feeFiat ? `  ·  ${getStrikeCurrency(currency)}${feeFiat}` : ''}
                             </Text>
                         </View>
+                        {feePct !== null && (
+                            <View style={styles.feeRow}>
+                                <Text style={styles.feeLabel}>Fee % of total</Text>
+                                <Text style={styles.feeValue}>
+                                    {feePct < 0.01
+                                        ? '< 0.01%'
+                                        : `${feePct.toFixed(feePct < 1 ? 2 : 1)}%`}
+                                </Text>
+                            </View>
+                        )}
                         <View style={styles.feeRow}>
                             <Text style={styles.feeLabel}>Total debited</Text>
                             <Text style={styles.feeValue}>
                                 {fee.grossAmountSats.toLocaleString()} sats
+                                {grossFiat ? `  ·  ${getStrikeCurrency(currency)}${grossFiat}` : ''}
                             </Text>
                         </View>
                         {fee.vtxosSpent.length > 0 && (
@@ -332,6 +443,12 @@ export default function ArkSendScreen({ route }: Props) {
                     more actionable — usually it means a VTXO is stuck in
                     Locked (mid-round) and needs a recovery / wait, not that
                     the amount is wrong. */}
+                {fee && !grossWithinBalance && (
+                    <Text style={styles.error}>
+                        Not enough balance to cover fees. Need {fee.grossAmountSats.toLocaleString()} sats total ({fee.feeSats.toLocaleString()} sats fee), but only {spendableSats.toLocaleString()} sats available. Try a smaller amount.
+                    </Text>
+                )}
+
                 {amountValid && !amountWithinBalance && (
                     <Text style={styles.error}>
                         Insufficient spendable balance: {spendableSats.toLocaleString()} sats available.
@@ -354,6 +471,7 @@ export default function ArkSendScreen({ route }: Props) {
                 matchedRate={matchedRate}
                 currency={currency}
                 prevSats={sats}
+                colors_={[colors.ark.extralight, colors.ark.main]}
             />
         </ScreenLayout>
     );

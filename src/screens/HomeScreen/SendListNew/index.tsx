@@ -14,11 +14,13 @@ import {
   Back,
   CoinOS,
   Cold1,
+  Electricity,
   Hot,
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
@@ -184,8 +186,14 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
     textLabel?: string, // For providers without a logo asset (e.g. Ark) — shown inline
   ) => {
     const isLogo = id === 1 || id === 2;
+    // Hide tiles for wallets that aren't created / aren't logged in. An
+    // invisible spacer keeps the grid aligned when the surviving sibling
+    // in a row is the only visible tile.
+    if (!isEnabled) {
+      return <View style={{ width }} />;
+    }
     return (
-      <View style={{ width, opacity: isEnabled ? 1 : 0.3 }} pointerEvents={isEnabled ? 'auto' : 'none'}>
+      <View style={{ width }} pointerEvents={'auto'}>
         <GradientView
           onPress={() => isEnabled && onTilePress(id)}
           style={{ shadowColor: "#040404", shadowOffset: { width: 6, height: 6 }, shadowOpacity: 0.7, shadowRadius: 12, elevation: 6, height: 100, width }}
@@ -199,8 +207,18 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
             {isLogo ? (
               <Image source={icon} style={{ width: 90, height: 32, marginBottom: 6 }} resizeMode="contain" />
             ) : textLabel ? (
+              // White at 16pt — matches the other tile labels' visual
+              // weight. Was 22pt + accentColor (yellow for Ark) which
+              // read as a brand wordmark instead of a label. Lightning
+              // bolt (white) on the left mirrors the Vault tiles' icon
+              // layout below.
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                <Text bold style={{ fontSize: 22, color: accentColor, letterSpacing: 2 }}>{textLabel}</Text>
+                <Image
+                  source={Electricity}
+                  style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
+                  resizeMode="contain"
+                />
+                <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>{textLabel}</Text>
               </View>
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -294,34 +312,60 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
           <Animated.View style={[{}, view1Style]}>
             <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
               <Text h2 bold style={{ alignSelf: 'center', marginBottom: 16 }}>SEND FROM</Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-                {renderGridTile(1, 'Strike', 'Lightning Network', StrikeFull, {}, isStrikeAuth, '#FF65D4', colors.pink.shadowTopNew)}
-                {renderGridTile(2, 'CoinOS', 'Lightning Network', CoinOS, {}, isAuth, '#FF65D4', colors.pink.shadowTopNew)}
+              {/* Modular 2-column adaptive grid (mirrors ReceivedListNew).
+                  Only tiles for connected wallets render; the grid wraps
+                  so empty slots aren't reserved. Order: Strike → CoinOS →
+                  Ark → Hot Vault → Cold Vault. */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                {(() => {
+                  type TileDef = {
+                    id: number;
+                    label: string;
+                    subtitle: string;
+                    icon: any;
+                    iconStyle: any;
+                    isEnabled: boolean;
+                    accent: string;
+                    shadowColor: string;
+                    textLabel?: string;
+                  };
+                  const tiles: TileDef[] = [];
+                  if (isStrikeAuth) tiles.push({
+                    id: 1, label: 'Strike', subtitle: 'Lightning Network',
+                    icon: StrikeFull, iconStyle: {}, isEnabled: true,
+                    accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
+                  });
+                  // CoinOS still gated by isCoinosAllowed() — feature flag
+                  // (region/platform) overrides auth state.
+                  if (isCoinosAllowed() && !!isAuth) tiles.push({
+                    id: 2, label: 'CoinOS', subtitle: 'Lightning Network',
+                    icon: CoinOS, iconStyle: {}, isEnabled: true,
+                    accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
+                  });
+                  if (FEATURE_ARK_ENABLED && isArkAuth) tiles.push({
+                    id: 5, label: 'Ark', subtitle: 'Small–medium amounts',
+                    icon: null, iconStyle: {}, isEnabled: true,
+                    accent: colors.ark.light, shadowColor: colors.ark.shadowTopNew,
+                    textLabel: 'Ark Vault',
+                  });
+                  if (hasHotVault) tiles.push({
+                    id: 3, label: 'Hot Vault', subtitle: 'On-chain capsules',
+                    icon: Hot, iconStyle: { width: 22, height: 30, marginEnd: 2 },
+                    isEnabled: true, accent: colors.green, shadowColor: colors.greenShadow,
+                  });
+                  if (hasColdVault) tiles.push({
+                    id: 4, label: 'Cold Vault', subtitle: 'On-chain capsules',
+                    icon: Cold1, iconStyle: { width: 30, height: 22, marginEnd: 2 },
+                    isEnabled: true, accent: colors.coldGreen, shadowColor: colors.blueText,
+                  });
+
+                  return tiles.map(t => (
+                    <View key={t.id} style={{ marginBottom: 12 }}>
+                      {renderGridTile(t.id, t.label, t.subtitle, t.icon, t.iconStyle, t.isEnabled, t.accent, t.shadowColor, TILE_WIDTH, t.textLabel)}
+                    </View>
+                  ));
+                })()}
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                {renderGridTile(3, 'Hot Vault', 'On-chain capsules', Hot, { width: 22, height: 30, marginEnd: 2 }, hasHotVault, colors.green, colors.greenShadow)}
-                {renderGridTile(4, 'Cold Vault', 'On-chain capsules', Cold1, { width: 30, height: 22, marginEnd: 2 }, hasColdVault, colors.coldGreen, colors.blueText)}
-              </View>
-              {/* Ark row — hidden behind FEATURE_ARK_ENABLED until Second.tech's
-                  mainnet ASP launches. Re-enable in services/ark/config.ts. */}
-              {FEATURE_ARK_ENABLED && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
-                  {renderGridTile(
-                    5,
-                    'Ark',
-                    'Non-custodial Lightning',
-                    null,
-                    {},
-                    isArkAuth,
-                    colors.ark.light,
-                    colors.ark.shadowTopNew,
-                    TILE_WIDTH,
-                    'Second',
-                  )}
-                  {/* Spacer to preserve grid alignment with the rows above. */}
-                  <View style={{ width: TILE_WIDTH }} />
-                </View>
-              )}
             </View>
           </Animated.View>
 

@@ -201,12 +201,25 @@ export async function executeArkSend(
     console.log('[Ark send]', dest.kind, 'resolved id=', id.slice(0, 16) + '…');
 
     // Re-read local state so the UI reflects the send before the 30s poll.
-    // Failures here are non-fatal — the send itself already succeeded; a
-    // flaky sync just means the user sees slightly stale data for ≤30s.
+    //
+    // CRITICAL: `handle.sync()` MUST run before the balance/vtxo refetch.
+    // The SDK call (sendOnchain / sendArkoorPayment / payLightning*)
+    // returns once the request is accepted server-side — it does NOT
+    // ingest the resulting state change into the local datadir. Without
+    // sync, `allVtxos()` still reports the spent VTXOs as `Locked` (the
+    // UI labels these "in-flight refreshing"), the balance stays at its
+    // pre-send value, and the user sees a phantom "stuck" wallet even
+    // though the on-chain tx has already confirmed. Same gotcha drove
+    // the wallet.sync() call in `refreshArkVtxosAndSync`.
+    //
+    // Failures here are non-fatal — the send itself already succeeded;
+    // a flaky sync just means the user sees slightly stale data for
+    // ≤30s until the periodic poll catches up.
     try {
+        await handle.sync();
         await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
     } catch (err) {
-        console.warn('[Ark send] post-send refresh failed:', err);
+        console.warn('[Ark send] post-send sync/refresh failed:', err);
     }
 
     return {

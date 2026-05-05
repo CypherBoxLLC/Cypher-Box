@@ -46,7 +46,7 @@ This file is the single source of truth for Ark integration state. Update it aft
 |-------|--------|-------|
 | 0. Foundations | **DONE** | SDK installed, pods linked, Android prechecks pass, config + datadir services scaffolded |
 | 1. Seed create + keychain | **DONE (for signet)** | Real `Wallet.create` + `Wallet.open` wired; Keychain persistence + boot-time auto-restore + dev-only Reset escape hatch. Hot-vault reuse + lazy uniffi + transient mnemonic are `__DEV__` leftovers, fine for signet. |
-| 2. Encrypted backup/restore | **PARTIAL (Phase 2A done)** | Manual encrypted `.cbark` export service done (`backup.ts`). Auto-backup and iCloud sync deferred. Seed-alone recovery confirmed NOT possible — datadir backup is mandatory. |
+| 2. Encrypted backup/restore | **PARTIAL (Phase 2A + auto-backup done)** | Manual encrypted `.cbark` export + auto-backup-on-change both wired. Native AES (off-thread) replaces CryptoJS. iCloud / Drive sync still deferred to Phase 2B. Seed-alone recovery confirmed NOT possible — datadir backup is mandatory. |
 | 3. Balance + VTXOs + History | **DONE** | `wallet.balance()` + `wallet.allVtxos()` + 30s sync + chain tip + `wallet.movements()` all wired. ArkCapsules + ArkHistory tabs live. |
 | 4. Receive | **DONE (for signet)** | Ark address / bolt11 / on-chain board address — three-option `ArkReceiveScreen` + sats-only `ArkInvoiceScreen`. Lazy `OnchainWallet` spawn alongside the Ark wallet. |
 | 5. Send | **PARTIAL** | Service (`send.ts`) + `ArkSendScreen` scaffolded. Destination classification + fee estimation + execute wired in service layer. UI fee-confirm flow needs end-to-end signet test. |
@@ -352,11 +352,26 @@ npm run android
 
 ---
 
+- **2026-04-30** — Android perf pass (Galaxy A14, RN 0.76 / New Arch debug build):
+  - **Got CB-Ark running on Android for the first time on Galaxy A14.** Two pre-existing issues blocked launch entirely:
+    - `network_security_config.xml` enumerated all 65,536 IPs in `192.168.0.0/16` individually (Android's network-security-config doesn't support CIDR), causing a `bindApplication` ANR on slow phones during XML parse. Trimmed to `192.168.0.0/24` + `192.168.1.0/24` (the two common home subnets) + named entries (10.0.2.2, localhost, onion, tailscale.net, ts.net) — 522 lines instead of 65,546. Drops cleartext support for unusual subnets like `192.168.50.x`; document this if a user reports it.
+    - RN 0.76 Bridgeless mode tripped a Hermes "Could not enqueue microtask because they are disabled in this runtime" exception inside `setImmediate`, which then caused `RealmReactModule.invalidateCaches()` JNI symbol miss during teardown → fatal `UnsatisfiedLinkError`. Fix in [MainApplication.java](android/app/src/main/java/io/bluewallet/bluewallet/MainApplication.java): `getReactHost()` returns `null` and `DefaultNewArchitectureEntryPoint.load(true, true, false)` to disable Bridgeless while keeping Fabric + TurboModules. Net: full New Arch on Android, minus the experimental Bridgeless reactor. Revisit when bark-react-native + the broader native module ecosystem catches up to Bridgeless.
+  - **`useArkSync` auto-backup throttle** ([src/custom-hooks/useArkSync.ts](src/custom-hooks/useArkSync.ts)): `writeArkAutoBackup` was running on every 60s sync cycle even when nothing had changed, costing several seconds of JS-thread block per cycle on Galaxy A14. Added a `lastBackupSignature` ref keyed on `(balance.totalSats, vtxos.all.length, vtxos.spendable.length, tip)`; when the new tick's signature matches the previous backup, the backup is skipped with a `[Ark auto-backup] skipped — state unchanged` log. Idle wallet now only writes the backup once per session instead of every cycle.
+  - **CryptoJS → react-native-aes-crypto** ([src/services/ark/backup.ts](src/services/ark/backup.ts), `package.json`): `CryptoJS.AES.encrypt` / `decrypt` / `PBKDF2` are pure-JS and ran synchronously on the JS thread; on Galaxy A14 a 348 KB plaintext encrypt held the thread for ~5+ seconds per call. Swapped to `react-native-aes-crypto`, which dispatches to native (BouncyCastle on Android, CommonCrypto on iOS) off the JS thread. PBKDF2-SHA256 with the same params produces byte-identical output, and AES-CBC with the same key/IV/plaintext is deterministic, so existing CryptoJS-encrypted `.cbark` files round-trip transparently — backups taken before this change still decrypt with the new code path. `decryptBackupBlob` is now `async`; only call site is `restoreArkBackupBlob` which was already async. `crypto-js` left in `package.json` as a safety net; can be removed once we've shipped a build of the new path.
+  - **Render-loop `console.log` cleanup**:
+    - [src/components/Card/index.tsx](src/components/Card/index.tsx): removed unguarded `console.log('allBTCWallets: ', ...)` from the function body — fired on every render, polluted dev logs.
+    - [src/screens/Account/LoginCoinOSScreen/index.tsx](src/screens/Account/LoginCoinOSScreen/index.tsx): captcha-token log was unguarded and emitted the full ~3.5 KB hCaptcha token to the bridge on every render. Replaced with a `__DEV__`-guarded `!!token, len:` summary so we can still debug "did the captcha resolve?" without the bridge spam.
+  - **Repo-level guardrails**: new top-level [CLAUDE.md](CLAUDE.md) documents the per-branch native toolchain (`main` = Gradle 7.6 + RN 0.72, `CB-Ark` = Gradle 8.10.2 + RN 0.76), the Android build hygiene checklist (arm64-only debug, codegen-first on cold builds), the Galaxy A14 freeze gotchas, and a "do not delete" list for future LLMs working in this repo.
+  - **Remaining freeze on Android** is `[ArkSync] fetchBalance/Vtxos/Tip` — the bark-react-native UniFFI bindings call into Rust synchronously on the JS thread, costing 2–9s per cycle on Galaxy A14. Documented in the existing comment block at the top of [useArkSync.ts](src/custom-hooks/useArkSync.ts). Fix needs to come from upstream (Second.tech) — either async UniFFI bindings or a worker-thread wrapper. Add to the next message to Second.tech alongside the `Wallet.export()` / `Wallet.import()` ask and the iOS Podfile header-search-paths quirk.
+
+---
+
 ## Open items / next session pickup
 
 1. **Wire the backup UI** — `writeArkBackupToTempFile` + `react-native-share` export button on Capsules tab or Settings. One-tap "Back up wallet state" CTA.
-2. **Auto-backup** — trigger `buildArkBackupBlob` after every successful VTXO state change (post-receive, post-send, post-refresh) and write to `DocumentDirectoryPath` so the file survives app restarts. Eliminates the manual-backup UX problem.
-3. **End-to-end send test on signet** — fund a signet wallet, do an Ark→Ark send, verify fee estimation + execute + history update.
-4. **Hot-vault seed reuse** (Phase 1 TODO) — real keychain read + `createArkWallet(hotVaultMnemonic)` + warn modal.
-5. **Phase 7 emergency exit** — expose `wallet.exitAll()` / `wallet.claimExits()` behind a destructive-action modal.
-6. **Contact Second.tech** — request stable `Wallet.export()` / `Wallet.import()` API (draft message prepared).
+2. **End-to-end send test on signet** — fund a signet wallet, do an Ark→Ark send, verify fee estimation + execute + history update.
+3. **Hot-vault seed reuse** (Phase 1 TODO) — real keychain read + `createArkWallet(hotVaultMnemonic)` + warn modal.
+4. **Phase 7 emergency exit** — expose `wallet.exitAll()` / `wallet.claimExits()` behind a destructive-action modal.
+5. **Contact Second.tech** — request stable `Wallet.export()` / `Wallet.import()` API (draft message prepared) **AND** flag the synchronous-on-JS-thread UniFFI behavior of `wallet.sync()` / `wallet.balance()` / `wallet.allVtxos()` — the biggest remaining UX issue on Android.
+6. **Tighten auto-backup signature** — current signature includes `tip` which can flap on parallel-cycle esplora calls and trigger an unnecessary backup. Either de-dupe parallel cycles via the `inFlight` guard (which currently races) or drop `tip` from the signature (balance/vtxo changes already imply state churn).
+7. **Drop `crypto-js`** — once a CB-Ark build with the new AES path has been validated end-to-end on both platforms, remove `crypto-js` from `package.json`.

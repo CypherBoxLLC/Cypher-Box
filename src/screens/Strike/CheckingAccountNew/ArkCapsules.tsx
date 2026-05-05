@@ -1,25 +1,26 @@
-import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Image, ImageBackground, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, Switch, TextInput, TouchableOpacity, View } from "react-native";
+import LinearGradient from "react-native-linear-gradient";
+import { Icon } from "react-native-elements";
 import Svg, { Circle } from "react-native-svg";
 import SimpleToast from "react-native-simple-toast";
+import * as Keychain from "react-native-keychain";
 
 import { Text } from "@Cypher/component-library";
 import { GradientView } from "@Cypher/components";
-import { Tag, Transaction, Yes } from "@Cypher/assets/images";
+import { Refresh, Tag, Yes } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
-import * as Keychain from "react-native-keychain";
-import Share from "react-native-share";
 
 import {
     AVG_BLOCK_MINUTES,
     blocksToDays,
-    clearArkWalletHandle,
-    createArkWallet,
+    clearArkBgRefreshTelemetry,
     estimateArkRefreshFee,
-    recoverArkWalletFromKeychain,
+    readArkBgRefreshTelemetry,
     refreshArkVtxosAndSync,
-    writeArkBackupToTempFile,
+    runBackgroundRefresh,
+    setArkBackgroundRefreshEnabled,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -158,9 +159,8 @@ interface VtxoRowData {
      * The TRUTH about Ark/Bark recovery: VTXOs cannot be reconstructed
      * from the seed alone. The local datadir (VTXO commitments, presigned
      * forfeit txs, exit txs, round state) IS the wallet. The only path to
-     * non-destructive recovery is the encrypted .cbark backup file
-     * produced by the Capsules tab's "Back up wallet state" action +
-     * the original seed phrase.
+     * non-destructive recovery is the encrypted ark-backup file produced
+     * by `writeArkAutoBackup` (every sync tick) + the original seed phrase.
      *
      * That makes the classification depend on TWO orthogonal axes:
      *
@@ -189,6 +189,22 @@ interface VtxoRowProps {
     vtxo: VtxoRowData;
     selected: boolean;
     onPress: () => void;
+    /** Tap on the per-row refresh icon — refresh just this one VTXO. */
+    onRefreshIcon: () => void;
+    /** Round cadence in seconds (from wallet.arkInfo()), null until fetched. */
+    roundIntervalSecs: number | null;
+}
+
+/**
+ * Format the round cadence as an upper-bound suffix for "Refreshing…".
+ * Mainnet (3600s) → "1h", signet (300s) → "5m", arbitrary intervals
+ * round to whole minutes. Per Erik (Bark team), the SDK doesn't expose
+ * `nextRoundAt`, so this is honestly the upper bound — the actual wait is
+ * anywhere from a few seconds to one full interval.
+ */
+function formatRoundUpperBound(secs: number): string {
+    if (secs >= 3600 && secs % 3600 === 0) return `${secs / 3600}h`;
+    return `${Math.max(1, Math.round(secs / 60))}m`;
 }
 
 /**
@@ -197,15 +213,83 @@ interface VtxoRowProps {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = btcHandle(vtxo.sats) + " BTC";
+
+    // Transient-state animation: while vtxo.pendingRound is true, the
+    // refresh icon spins and the gradient card pulses opacity. Both
+    // loops start when pendingRound flips on and stop the moment it
+    // flips off — the underlying SDK marks pendingRound during a
+    // refresh round and clears it on round-completion sync.
+    const spinAnim = useRef(new Animated.Value(0)).current;
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    // Animate when EITHER pendingRound (refresh round in-flight) OR the
+    // VTXO is in 'in-flight' recoverability state (mid-send / mid-board /
+    // mid-exit). Same pulse + spin so the user sees identical transient
+    // visuals regardless of which kind of round produced the lock.
+    const isTransient = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
+    useEffect(() => {
+        if (!isTransient) {
+            spinAnim.setValue(0);
+            pulseAnim.setValue(1);
+            return;
+        }
+        const spin = Animated.loop(
+            Animated.timing(spinAnim, {
+                toValue: 1,
+                // Linear easing for the rotation — eased curves on a
+                // looping spinner produce a visible "stop-start" at each
+                // cycle boundary which reads as jerky. Linear gives the
+                // smooth continuous turn users expect from a spinner.
+                // Duration kept at the pulse cycle (1.6s) so a full turn
+                // still completes per breath.
+                duration: 1600,
+                easing: Easing.linear,
+                useNativeDriver: true,
+            }),
+        );
+        const pulse = Animated.loop(
+            Animated.sequence([
+                // Deeper fade (1 → 0.2) for a more obvious breathing
+                // pulse — the previous 0.45 was too subtle.
+                Animated.timing(pulseAnim, {
+                    toValue: 0.2,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pulseAnim, {
+                    toValue: 1,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+            ]),
+        );
+        spin.start();
+        pulse.start();
+        return () => {
+            spin.stop();
+            pulse.stop();
+        };
+    }, [isTransient, spinAnim, pulseAnim]);
+
+    const spinDeg = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+    // Scale pulse on the icon, derived from the same pulseAnim driving the
+    // card opacity so the icon "breathes" in sync. Tightened range from
+    // 0.75 → 1.15 (40%) to 0.92 → 1.08 (16%) so the pulse reads as
+    // breathing rather than zooming.
+    const iconScale = pulseAnim.interpolate({ inputRange: [0.2, 1], outputRange: [0.92, 1.08] });
 
     // Pending-round VTXOs: flat yellow label, full ring (so the row doesn't
     // read as "almost expired" while it's actually sitting in a round).
     const labelColor = vtxo.pendingRound ? colors.ark.light : view.color;
+    const refreshingLabel = roundIntervalSecs != null
+        ? `Refreshing… ≤${formatRoundUpperBound(roundIntervalSecs)}`
+        : "Refreshing…";
     const labelText = vtxo.pendingRound
-        ? "Refreshing…"
+        ? refreshingLabel
         : vtxo.unknownExpiry
             ? vtxo.kind
             : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
@@ -238,30 +322,121 @@ function VtxoRow({ vtxo, selected, onPress }: VtxoRowProps) {
     }
 
     return (
-        <ImageBackground source={Transaction} style={rowStyles.main}>
+        // Fresh capsule shape — deep-grey → black diagonal gradient with
+        // a real drop shadow so the row "sticks out" off the dark page.
+        // No always-on border; the yellow borderview lights up only on
+        // selection.
+        // Inline overrides:
+        //   - height bumped 124 → 100 (smaller than the original Hot
+        //     Vault row, just slightly taller than the previous 88)
+        //   - paddingTop reset to 0 + justifyContent center → vertically
+        //     centers the inner TouchableOpacity content within the card
+        // Whole row wrapped in Animated.View so the pulse opacity affects
+        // the gradient AND the content (text, icon, checkbox) together —
+        // before, opacity was only on the gradient sibling so the text
+        // stayed fully opaque while the bg breathed, which read as nothing
+        // changing.
+        <Animated.View style={[
+            rowStyles.main,
+            { height: 100, paddingTop: 0, justifyContent: 'center', opacity: pulseAnim },
+        ]}>
+            <LinearGradient
+                colors={['#3A3A3A', '#1C1C1C']}
+                // Down-right at 30° from vertical — direction vector
+                // (sin 30°, cos 30°) ≈ (0.5, 0.866).
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.5, y: 0.866 }}
+                style={{
+                    position: 'absolute',
+                    top: 6,
+                    bottom: 6,
+                    left: 6,
+                    right: 18,
+                    borderRadius: 16,
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 5, height: 9 },
+                    shadowOpacity: 0.7,
+                    shadowRadius: 10,
+                    elevation: 10,
+                }}
+            />
+            {/* Selection outline — sits 2pt OUTSIDE the gradient card on
+                each side. Gradient inset is 6/6/6/18 → outline inset
+                4/4/4/16 places its border 2pt beyond the gradient edge.
+                18pt borderRadius matches the gradient's 16 + 2pt offset. */}
             {selected && (
-                <View style={[rowStyles.borderview, { borderColor: colors.ark.light }]} />
+                <View
+                    style={{
+                        position: 'absolute',
+                        top: 4,
+                        bottom: 4,
+                        left: 4,
+                        right: 16,
+                        borderRadius: 18,
+                        borderWidth: 2,
+                        borderColor: colors.ark.light,
+                    }}
+                />
             )}
             <TouchableOpacity activeOpacity={0.7} style={rowStyles.container} onPress={onPress}>
-                <View style={rowStyles.coin}>
+                {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
+                    bump the size column from 1.8 → 2.8 so the time-left +
+                    status row has room to fit on a single line. flexWrap
+                    flipped to 'nowrap' + numberOfLines=1 on each Text so
+                    they elide rather than wrap if anything overflows. */}
+                <View style={[rowStyles.coin, { flex: 1.5 }]}>
                     <VtxoRing daysLeft={ringDaysLeft} />
                 </View>
-                <View style={rowStyles.size}>
+                <View style={[rowStyles.size, { flex: 2.8 }]}>
                     <Text bold style={rowStyles.value}>{BTCAmount}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <Text bold style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
-                            {labelText}
-                        </Text>
-                        <Text style={{ color: colors.gray.light, fontSize: 12 }}>
-                            {" - "}
-                        </Text>
-                        <Text bold style={{ color: recoverabilityColor, fontSize: 12 }}>
-                            {recoverabilityText}
-                        </Text>
-                    </View>
+                    {/* When the VTXO is in-flight, stack the recoverability
+                        label on its own row below — the "⚠ In-flight"
+                        message is too important to compete with the days-
+                        left text on the same line. Other recoverability
+                        states keep the inline " - <text>" layout. */}
+                    {vtxo.recoverability === 'in-flight' ? (
+                        <>
+                            <Text bold numberOfLines={1} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
+                                {labelText}
+                            </Text>
+                            <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
+                                {recoverabilityText}
+                            </Text>
+                        </>
+                    ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
+                            <Text bold numberOfLines={1} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
+                                {labelText}
+                            </Text>
+                            <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
+                                {" - "}
+                            </Text>
+                            <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
+                                {recoverabilityText}
+                            </Text>
+                        </View>
+                    )}
                 </View>
-                <TouchableOpacity style={rowStyles.label} onPress={onPress}>
-                    <Image source={Tag} />
+                {/* Refresh icon Touchable — independent of the row's
+                    select-toggle Touchable wrapping the rest of the row.
+                    delayPressIn=0 + hitSlop guarantee the inner press
+                    registers BEFORE the outer (otherwise nested
+                    TouchableOpacities can let the outer capture first
+                    on Android). Generous hit area so users don't need
+                    pixel-perfect aim. */}
+                <TouchableOpacity
+                    style={[rowStyles.label, { alignItems: 'flex-start' }]}
+                    onPress={onRefreshIcon}
+                    delayPressIn={0}
+                    hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
+                    activeOpacity={0.6}
+                >
+                    {/* Feather refresh-cw — circular two-arrow icon. While
+                        pendingRound is true, the spinAnim drives a 360°
+                        rotate to telegraph the in-flight refresh. */}
+                    <Animated.View style={{ transform: [{ rotate: spinDeg }, { scale: iconScale }] }}>
+                        <Icon name="refresh-cw" type="feather" color="#FFFFFF" size={22} />
+                    </Animated.View>
                 </TouchableOpacity>
                 <View style={rowStyles.select}>
                     <View style={rowStyles.checkbox}>
@@ -269,7 +444,7 @@ function VtxoRow({ vtxo, selected, onPress }: VtxoRowProps) {
                     </View>
                 </View>
             </TouchableOpacity>
-        </ImageBackground>
+        </Animated.View>
     );
 }
 
@@ -281,16 +456,50 @@ interface ArkCapsulesProps {
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
-    const [recovering, setRecovering] = useState(false);
-    const [backingUp, setBackingUp] = useState(false);
+    const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
+    const [runningBgRefresh, setRunningBgRefresh] = useState(false);
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
-    const setArkVtxos = useAuthStore((s) => s.setArkVtxos);
-    const setArkBalance = useAuthStore((s) => s.setArkBalance);
-    const setArkBalanceDetail = useAuthStore((s) => s.setArkBalanceDetail);
-    const setArkChainTipHeight = useAuthStore((s) => s.setArkChainTipHeight);
-    const setArkLastBackupAt = useAuthStore((s) => s.setArkLastBackupAt);
+    const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
+    const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
+    const arkBgRefreshMaxFeeSats = useAuthStore((s) => s.arkBgRefreshMaxFeeSats);
+    const setArkBgRefreshMaxFeeSats = useAuthStore((s) => s.setArkBgRefreshMaxFeeSats);
+    // Buffered local string so the user can clear / partially type without
+    // the store committing intermediate values like "" or "5". Reconciled
+    // with the store value on blur (commitFeeInput).
+    const [feeInput, setFeeInput] = useState<string>(String(arkBgRefreshMaxFeeSats));
+
+    // Sum of sats currently locked in pending refresh rounds. Same derivation
+    // as ArkWallet/index.tsx (Locked-state VTXO sats), to avoid the SDK's
+    // `arkBalanceDetail.pendingInRoundSats` over-counting bug where each
+    // queued round contributes its expected output, so re-tapping refresh
+    // 5 times against the same VTXO inflates the figure 5×.
+    //
+    // Used to disable the Refresh action button when a round is in flight,
+    // so users don't accidentally queue duplicate rounds at the ASP and
+    // think it speeds completion.
+    const pendingRoundSats = useMemo(() => {
+        return arkVtxos.reduce(
+            (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
+            0,
+        );
+    }, [arkVtxos]);
+
+    // Track refresh attempts that have queued a round but haven't visibly
+    // resolved yet. Each successful `refreshIds` call bumps this; it resets
+    // once `pendingRoundSats` returns to 0 (round committed or timed out
+    // server-side). Surfaces as the "(N rounds queued)" suffix in the
+    // warning text below — gives the user visibility into "did my last tap
+    // do anything?" so they don't spam-tap waiting for action.
+    const queuedRoundsCountRef = useRef(0);
+    const [queuedRoundsCount, setQueuedRoundsCount] = useState(0);
+    useEffect(() => {
+        if (pendingRoundSats === 0 && queuedRoundsCountRef.current !== 0) {
+            queuedRoundsCountRef.current = 0;
+            setQueuedRoundsCount(0);
+        }
+    }, [pendingRoundSats]);
 
     // Project SDK VTXOs → row data with days-until-expiry computed from the
     // current chain tip. If tip is unknown (esplora offline) we render a
@@ -378,19 +587,22 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         });
     };
 
-    const handleRefresh = async () => {
-        if (selectedIds.length === 0) {
-            SimpleToast.show("Select capsules to refresh", SimpleToast.SHORT);
-            return;
-        }
+    /**
+     * Refresh a specific set of VTXO ids. Reused by the bottom Refresh
+     * button (passes selectedIds) and the per-row icon (passes a single
+     * vtxo.id). Same fee preview + watchdog + selection-clear semantics
+     * either way.
+     */
+    const refreshIds = async (ids: string[]) => {
         if (refreshing) return;
+        if (ids.length === 0) return;
 
         // Refusing to refresh a VTXO that's already Locked in a pending
         // round — the SDK will just block waiting on the same round, and
         // stacking calls makes it harder to reason about. The user should
         // wait for the existing round to finalise (or time out) first.
         const lockedSelected = rows.filter(
-            (r) => selectedIds.includes(r.id) && r.pendingRound,
+            (r) => ids.includes(r.id) && r.pendingRound,
         );
         if (lockedSelected.length > 0) {
             SimpleToast.show(
@@ -400,7 +612,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             return;
         }
 
-        const ids = [...selectedIds];
         setRefreshing(true);
         try {
             const fee = await estimateArkRefreshFee(ids);
@@ -436,6 +647,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // rerenders on its own. We attach a passive `.catch` so an
             // eventual rejection from the detached promise doesn't become
             // an unhandled rejection.
+            // Bump the queued-rounds counter as we hand off to the SDK.
+            // The counter resets to 0 in the pendingRoundSats === 0 effect
+            // above when the round either commits or times out server-side.
+            queuedRoundsCountRef.current += 1;
+            setQueuedRoundsCount(queuedRoundsCountRef.current);
+
             const WATCHDOG_MS = 90_000;
             type RefreshResult = Awaited<ReturnType<typeof refreshArkVtxosAndSync>>;
             const refreshPromise: Promise<RefreshResult> = refreshArkVtxosAndSync(ids);
@@ -471,8 +688,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 );
             }
         } catch (err: any) {
+            // BarkError.Internal is the SDK's opaque catch-all when the ASP
+            // rejects the round submission. The most common cause we've
+            // observed is a VTXO below the ASP's (undocumented, server-side)
+            // minimum round-participant size — typically the smallest
+            // Pubkey/Spendable VTXO refusing to refresh while larger ones
+            // succeed. Translate it into something actionable instead of
+            // surfacing the raw enum name.
+            const msg: string = err?.message ?? '';
+            const totalSats = rows
+                .filter((r) => ids.includes(r.id))
+                .reduce((acc, r) => acc + r.sats, 0);
+            const isInternalLikelyDust =
+                /BarkError\.Internal/i.test(msg) && totalSats > 0 && totalSats < 500;
             SimpleToast.show(
-                `Refresh failed: ${err?.message ?? "unknown error"}`,
+                isInternalLikelyDust
+                    ? `Refresh rejected by Ark server. ${totalSats}-sat capsule is likely below the round's minimum size — consolidate it via a self-send before refreshing.`
+                    : `Refresh failed: ${msg || 'unknown error'}`,
                 SimpleToast.LONG,
             );
         } finally {
@@ -480,68 +712,52 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         }
     };
 
+    const handleRefresh = () => {
+        if (selectedIds.length === 0) {
+            SimpleToast.show("Select capsules to refresh", SimpleToast.SHORT);
+            return;
+        }
+        void refreshIds([...selectedIds]);
+    };
+
+    /** Per-row icon — refresh just this single VTXO. The fee preview +
+     *  confirmation dialog live inside `refreshIds` so the user still
+     *  has to opt in before the round commits. */
+    const handleRowRefresh = (vtxoId: string) => {
+        void refreshIds([vtxoId]);
+    };
+
     /**
-     * Seed-only recovery. Use when the wallet's local datadir is stuck
-     * (unfinalised round, corrupted SQLite, test reset). Wipes the datadir
-     * but keeps the Keychain mnemonic, then re-creates a fresh wallet at
-     * the same keys.
+     * DEV-only telemetry surface. Logs the rolling buffer to the JS console
+     * (full detail) and shows an Alert with an outcome-by-outcome summary.
      *
-     * DESTRUCTIVE: Any Locked / pending-round VTXOs become unreachable from
-     * the client. The ASP still tracks them; recovery via Second.tech support
-     * is an open question. Gated __DEV__ only; prod needs Phase 2 backup
-     * before this is safe to expose.
+     * A more polished in-app screen is straightforward to add when the
+     * background-refresh feature ships beyond DEV — for now this keeps the
+     * diagnostic surface tight while still making field debugging feasible.
      */
-    const handleRecover = () => {
-        if (recovering || refreshing) return;
+    const handleDumpBgRefreshLog = async () => {
+        const entries = await readArkBgRefreshTelemetry();
+        if (entries.length === 0) {
+            Alert.alert("Bg refresh log", "Empty — no attempts recorded yet.");
+            return;
+        }
+        const counts: Record<string, number> = {};
+        for (const e of entries) counts[e.outcome] = (counts[e.outcome] ?? 0) + 1;
+        const summary = Object.entries(counts)
+            .map(([outcome, count]) => `${outcome}: ${count}`)
+            .join("\n");
+        console.log("[Ark bg refresh] full telemetry buffer:", entries);
         Alert.alert(
-            "Reset Ark wallet state?",
-            "Wipes the local Ark database but keeps your seed. Any capsules stuck in a pending round (including any mid-refresh) will become unreachable from this app. Use only if the wallet is stuck.",
+            `Bg refresh log (${entries.length} entries)`,
+            `${summary}\n\nFull buffer dumped to JS console.`,
             [
-                { text: "Cancel", style: "cancel" },
+                { text: "OK", style: "cancel" },
                 {
-                    text: "Reset state",
+                    text: "Clear log",
                     style: "destructive",
                     onPress: async () => {
-                        setRecovering(true);
-                        try {
-                            const result = await recoverArkWalletFromKeychain();
-                            console.log('[Ark recover] result:', result);
-                            if (!result.ok) {
-                                const causeMsg =
-                                    (result.cause as any)?.message ??
-                                    (typeof result.cause === 'string' ? result.cause : '');
-                                console.log('[Ark recover] FAILED reason=', result.reason, 'cause=', result.cause);
-                                SimpleToast.show(
-                                    `Recovery failed: ${result.reason ?? "unknown"}${causeMsg ? ` — ${causeMsg}` : ''}`,
-                                    SimpleToast.LONG,
-                                );
-                                return;
-                            }
-                            // Scrub stale store fields so the UI doesn't
-                            // flash ghost VTXOs before the next sync tick
-                            // repopulates from the fresh datadir.
-                            setArkVtxos([]);
-                            setArkBalance(0);
-                            setArkBalanceDetail(null);
-                            setArkChainTipHeight(null);
-                            // Stale backup timestamp from the previous
-                            // wallet would lie to the user about the new
-                            // (empty) wallet's safety. Clear it.
-                            setArkLastBackupAt(null);
-                            setSelectedIds([]);
-                            SimpleToast.show(
-                                "Wallet state reset. Syncing fresh state…",
-                                SimpleToast.LONG,
-                            );
-                        } catch (err: any) {
-                            console.log('[Ark recover] handler threw:', err?.message ?? err, err);
-                            SimpleToast.show(
-                                `Recovery failed: ${err?.message ?? "unknown error"}`,
-                                SimpleToast.LONG,
-                            );
-                        } finally {
-                            setRecovering(false);
-                        }
+                        await clearArkBgRefreshTelemetry();
+                        SimpleToast.show("Telemetry cleared", SimpleToast.SHORT);
                     },
                 },
             ],
@@ -549,117 +765,93 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     };
 
     /**
-     * Manual encrypted backup of the wallet datadir.
-     *
-     * Critical for non-destructive recovery. Bark VTXOs cannot be
-     * reconstructed from the seed alone (no `list_by_pubkey` endpoint on
-     * the ASP, and presigned forfeit / exit txs live in the local datadir).
-     * This export is the only thing that lets a user reset / lose their
-     * device / reinstall without losing funds.
-     *
-     * Sequence:
-     *   1. Read seed from Keychain (biometric prompt; fail-fast if absent)
-     *   2. Close the live wallet so SQLite checkpoints — the export reads
-     *      raw files; an open wallet would have un-flushed WAL pages that
-     *      don't replay on restore. We re-open with `createArkWallet` after.
-     *   3. Build encrypted blob, write to a temp .cbark file
-     *   4. Re-open the wallet so the user keeps using it (this UX path is
-     *      a backup, not a logout — they shouldn't lose their session)
-     *   5. Hand the file path to the iOS share sheet via `react-native-share`
-     *
-     * If anything between steps 2 and 4 throws, we MUST still re-open.
-     * Hence the wallet re-init lives in a finally block — the user must
-     * not be left handle-less because their backup failed.
+     * DEV-only manual trigger. Runs the full background-refresh policy on
+     * the foreground thread so you can verify the orchestrator end-to-end
+     * (rate-limit gate, eligibility filter, fee gate, refresh round,
+     * telemetry record, store state update) without waiting for native
+     * scheduling to land in Phase 2.
      */
-    const handleBackup = async () => {
-        if (backingUp || refreshing || recovering) return;
-
-        const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
-        if (!creds || !creds.password) {
+    const handleRunBgRefreshNow = async () => {
+        if (runningBgRefresh) return;
+        setRunningBgRefresh(true);
+        try {
+            const result = await runBackgroundRefresh('manual-test');
+            const fee = result.feeSats === null ? '—' : `${result.feeSats}s`;
             SimpleToast.show(
-                "Can't back up — seed not in Keychain. Use the Recover screen to type it in first.",
+                `${result.outcome} • ${result.vtxoCount} vtxo • fee ${fee} • ${result.elapsedMs}ms`,
                 SimpleToast.LONG,
             );
-            return;
-        }
-        const mnemonic = creds.password;
-
-        setBackingUp(true);
-        let reopenError: unknown = null;
-        let backupResult: { path: string; sizeBytes: number; createdAt: number } | null = null;
-        try {
-            // Step 2: close wallet → SQLite WAL flushed via uniffiDestroy.
-            clearArkWalletHandle();
-            // Step 3: pack + encrypt + write temp file.
-            backupResult = await writeArkBackupToTempFile(mnemonic);
+            if (result.errorMsg) {
+                console.warn('[Ark bg refresh manual] error:', result.errorMsg);
+            }
         } catch (err: any) {
-            console.warn('[Ark backup] export threw:', err?.message ?? err);
+            // runBackgroundRefresh swallows everything internally — if we
+            // land here it's a bug worth surfacing.
+            console.warn('[Ark bg refresh manual] unexpected throw:', err);
             SimpleToast.show(
-                `Backup failed: ${err?.message ?? "unknown error"}`,
+                `Unexpected error: ${err?.message ?? "unknown"}`,
                 SimpleToast.LONG,
             );
         } finally {
-            // Step 4: re-open wallet no matter what happened above. We
-            // pass forceRescan=false because the datadir on disk hasn't
-            // been touched by the export (it's read-only) and a fresh
-            // rescan would just delay the restored state.
-            try {
-                await createArkWallet(mnemonic, false);
-            } catch (err) {
-                reopenError = err;
-                console.warn('[Ark backup] wallet re-open threw after export:', err);
-            }
-            setBackingUp(false);
+            setRunningBgRefresh(false);
         }
+    };
 
-        if (reopenError) {
-            // The backup file may have been created successfully even if the
-            // re-open path errored — but the user's wallet handle is now dead.
-            // Surface the more pressing issue (handle gone) rather than the
-            // backup outcome. Easy recovery: app reload triggers boot sync.
-            SimpleToast.show(
-                "Backup saved, but wallet handle didn't re-open — reload the app to restore your session.",
-                SimpleToast.LONG,
-            );
+    /**
+     * Commit the fee-gate input on blur. Discards any non-positive value
+     * (resets the input to the last-committed store value) — a 0-or-negative
+     * ceiling would mean "never auto-pay anything," which is functionally
+     * equivalent to disabling the feature, and is more confusingly expressed
+     * via the toggle. The minimum sane ceiling is 1 sat.
+     */
+    const commitFeeInput = () => {
+        const parsed = parseInt(feeInput.replace(/[^\d]/g, ''), 10);
+        if (!Number.isFinite(parsed) || parsed < 1) {
+            setFeeInput(String(arkBgRefreshMaxFeeSats));
+            return;
         }
+        setArkBgRefreshMaxFeeSats(parsed);
+        setFeeInput(String(parsed));
+    };
 
-        if (!backupResult) return;
-
-        // Step 5: share sheet. We let the user pick where the file goes —
-        // iCloud Drive, Files app, AirDrop, email-to-self, whatever they
-        // trust. Encrypted blob in user's hands; no plaintext seed leaves
-        // the device.
+    /**
+     * Toggle the opt-in background VTXO refresh feature.
+     *
+     * Enable path: read the seed from the biometry-locked primary keychain
+     * entry (one prompt), then hand it to the service which writes a
+     * background-readable copy under a separate keychain service. Subsequent
+     * background wakes can read that copy without user presence.
+     *
+     * Disable path: deletes the background-readable copy and clears all
+     * derived state. The primary biometric entry is untouched.
+     */
+    const handleToggleBgRefresh = async (next: boolean) => {
+        if (togglingBgRefresh) return;
+        setTogglingBgRefresh(true);
         try {
-            await Share.open({
-                title: "Save your Ark wallet backup",
-                message:
-                    "Encrypted Ark wallet backup. Save this file somewhere safe (iCloud Drive recommended). To restore, you'll need both this file AND your 12-word seed phrase.",
-                url: `file://${backupResult.path}`,
-                type: "application/octet-stream",
-                filename: backupResult.path.split("/").pop() ?? "ark-backup.cbark",
-                failOnCancel: false,
-                saveToFiles: true,
-            });
-            // Stamp the success timestamp ONLY after the share sheet
-            // returned without error. iOS share sheets resolve only when
-            // the user finishes (saves, AirDrops, cancels-without-throw),
-            // so reaching here means the file went somewhere. We rely on
-            // the user actually keeping it — but absent that, our
-            // recoverability badges would be wildly optimistic anyway.
-            setArkLastBackupAt(Date.now());
-            SimpleToast.show(
-                `Backup ready (${(backupResult.sizeBytes / 1024).toFixed(1)} KB) — save it somewhere safe.`,
-                SimpleToast.LONG,
-            );
+            if (next) {
+                const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
+                if (!creds || !creds.password) {
+                    SimpleToast.show(
+                        "Can't enable — seed not in Keychain. Use Recover to type it in first.",
+                        SimpleToast.LONG,
+                    );
+                    return;
+                }
+                await setArkBackgroundRefreshEnabled(true, creds.password);
+                SimpleToast.show("Background refresh enabled", SimpleToast.SHORT);
+            } else {
+                await setArkBackgroundRefreshEnabled(false);
+                SimpleToast.show("Background refresh disabled", SimpleToast.SHORT);
+            }
         } catch (err: any) {
-            // Share-cancelled isn't really an error from the user's POV but
-            // we still produced the file — note the path so they can
-            // recover it from the share sheet retry.
-            console.warn('[Ark backup] share dialog threw:', err?.message ?? err);
+            console.warn("[Ark bg refresh toggle] failed:", err);
             SimpleToast.show(
-                `Backup saved at ${backupResult.path} — tap Back up again to retry sharing.`,
+                `Toggle failed: ${err?.message ?? "unknown error"}`,
                 SimpleToast.LONG,
             );
+        } finally {
+            setTogglingBgRefresh(false);
         }
     };
 
@@ -710,7 +902,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             <View style={vaultStyles.titleStyle}>
                 <Text bold style={vaultStyles.coin}>Capsules</Text>
                 <Text bold style={vaultStyles.size}>Size</Text>
-                <Text bold style={vaultStyles.label}>Label</Text>
+                <Text bold style={[vaultStyles.label, { fontSize: 14, textAlign: 'left' }]}>Refresh</Text>
                 <Text bold style={vaultStyles.select}>Select</Text>
             </View>
             <View style={vaultStyles.border} />
@@ -724,6 +916,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         vtxo={item}
                         selected={selectedIds.includes(item.id)}
                         onPress={() => toggle(item.id)}
+                        onRefreshIcon={() => handleRowRefresh(item.id)}
+                        roundIntervalSecs={arkRoundIntervalSecs}
                     />
                 )}
                 ListEmptyComponent={() => (
@@ -732,6 +926,152 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                             No VTXOs yet. Receive Bitcoin via Ark to populate.
                         </Text>
                     </View>
+                )}
+                ListFooterComponent={() => (
+                    <>
+                        {/* Background-refresh opt-in.
+                            Off by default. Copy and behaviour fixed by the spec —
+                            flipping on writes a non-biometric copy of the seed to
+                            a separate keychain entry; flipping off deletes it.
+                            See src/services/ark/backgroundKeychain.ts for the
+                            full posture trade-off.
+
+                            Lives inside ListFooterComponent so it scrolls with the
+                            capsule list — keeps the list area uncompressed when
+                            VTXO count is high and lets users page down to settings. */}
+                        <View
+                            style={{
+                                marginHorizontal: 24,
+                                marginTop: 16,
+                                paddingVertical: 10,
+                                paddingHorizontal: 14,
+                                borderRadius: 10,
+                                backgroundColor: "#1a1a1a",
+                            }}
+                        >
+                            <View
+                                style={{
+                                    flexDirection: "row",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                }}
+                            >
+                                <Text
+                                    bold
+                                    style={{ fontSize: 14, color: colors.white, flex: 1, marginRight: 12 }}
+                                >
+                                    Refresh Ark capsules in background
+                                </Text>
+                                <Switch
+                                    value={arkBgRefreshEnabled}
+                                    onValueChange={handleToggleBgRefresh}
+                                    disabled={togglingBgRefresh}
+                                    trackColor={{ false: "#3a3a3a", true: colors.ark.light }}
+                                    thumbColor={colors.white}
+                                />
+                            </View>
+                            <Text style={{ fontSize: 12, color: "#888", marginTop: 6, lineHeight: 16 }}>
+                                Cypher Box will refresh capsules approaching expiry without
+                                opening the app. Requires keeping the wallet seed accessible
+                                while your phone is unlocked. Off by default for safety.
+                            </Text>
+                            {arkBgRefreshEnabled && (
+                                <View
+                                    style={{
+                                        flexDirection: "row",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        marginTop: 12,
+                                        paddingTop: 10,
+                                        borderTopWidth: 0.5,
+                                        borderTopColor: "#333",
+                                    }}
+                                >
+                                    <View style={{ flex: 1, marginRight: 12 }}>
+                                        <Text bold style={{ fontSize: 13, color: colors.white }}>
+                                            Auto-pay fee ceiling
+                                        </Text>
+                                        <Text style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                                            Round skipped if estimated fee exceeds this.
+                                        </Text>
+                                    </View>
+                                    <View
+                                        style={{
+                                            flexDirection: "row",
+                                            alignItems: "center",
+                                            backgroundColor: "#0f0f0f",
+                                            borderRadius: 6,
+                                            paddingHorizontal: 8,
+                                            minWidth: 90,
+                                        }}
+                                    >
+                                        <TextInput
+                                            value={feeInput}
+                                            onChangeText={setFeeInput}
+                                            onBlur={commitFeeInput}
+                                            onEndEditing={commitFeeInput}
+                                            keyboardType="number-pad"
+                                            returnKeyType="done"
+                                            maxLength={9}
+                                            style={{
+                                                color: colors.white,
+                                                fontSize: 13,
+                                                paddingVertical: 6,
+                                                textAlign: "right",
+                                                flex: 1,
+                                            }}
+                                        />
+                                        <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>
+                                            sats
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                        {/* DEV-only diagnostic buttons. Co-located with the bg-refresh
+                            toggle since they're meaningless without it. */}
+                        {__DEV__ && (
+                            <TouchableOpacity
+                                onPress={handleRunBgRefreshNow}
+                                disabled={runningBgRefresh}
+                                style={{ alignSelf: "center", marginTop: 4, paddingVertical: 6, paddingHorizontal: 14, flexDirection: "row", alignItems: "center" }}
+                            >
+                                {runningBgRefresh && (
+                                    <ActivityIndicator
+                                        color={colors.ark.light}
+                                        style={{ marginRight: 8 }}
+                                    />
+                                )}
+                                <Text
+                                    bold
+                                    style={{
+                                        fontSize: 12,
+                                        color: runningBgRefresh ? colors.gray.disable : colors.ark.light,
+                                        textDecorationLine: "underline",
+                                    }}
+                                >
+                                    {runningBgRefresh ? "Running bg refresh…" : "Run background refresh now — DEV"}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+                        {__DEV__ && (
+                            <TouchableOpacity
+                                onPress={handleDumpBgRefreshLog}
+                                style={{ alignSelf: "center", marginTop: 4, paddingVertical: 6, paddingHorizontal: 14 }}
+                            >
+                                <Text
+                                    bold
+                                    style={{
+                                        fontSize: 12,
+                                        color: colors.ark.light,
+                                        textDecorationLine: "underline",
+                                    }}
+                                >
+                                    Dump bg refresh log — DEV
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+                    </>
                 )}
                 style={{ marginTop: 10 }}
             />
@@ -779,50 +1119,63 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         <ActivityIndicator color={colors.ark.light} />
                     </View>
                 )}
-                {/* Back up wallet state — the only path to non-destructive
-                    recovery, since Bark VTXOs cannot be re-derived from the
-                    seed alone. Always-visible (not __DEV__) because users
-                    NEED this to keep their funds safe before any reset. */}
-                <TouchableOpacity
-                    onPress={handleBackup}
-                    disabled={backingUp || refreshing || recovering}
-                    style={{ alignSelf: "center", marginTop: 8, paddingVertical: 6, paddingHorizontal: 14, flexDirection: "row", alignItems: "center" }}
-                >
-                    {backingUp && (
-                        <ActivityIndicator
-                            color={colors.ark.light}
-                            style={{ marginRight: 8 }}
-                        />
-                    )}
-                    <Text
-                        bold
+                {/* In-flight indicator. Each refresh attempt queues a fresh
+                    round at the ASP — they're independent submissions, not
+                    a retry of the prior one. The user pressing Refresh
+                    repeatedly while waiting doesn't speed anything up; it
+                    just stacks duplicate rounds (each consuming a fee on
+                    completion) and inflates the SDK's pending sats count
+                    via its expected-output summing bug. Surface the
+                    counter + a clear "tapping again won't speed it up"
+                    nudge to discourage spam taps. */}
+                {queuedRoundsCount > 0 && (
+                    <View
                         style={{
-                            fontSize: 13,
-                            color: backingUp ? colors.gray.disable : colors.ark.light,
-                            textDecorationLine: "underline",
+                            marginHorizontal: 24,
+                            marginBottom: 8,
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                            borderRadius: 8,
+                            backgroundColor: '#1a1a1a',
+                            borderLeftWidth: 3,
+                            borderLeftColor: colors.ark.light,
                         }}
                     >
-                        {backingUp ? "Building backup…" : "Back up wallet state"}
-                    </Text>
-                </TouchableOpacity>
-                {__DEV__ && (
-                    <TouchableOpacity
-                        onPress={handleRecover}
-                        disabled={recovering || refreshing}
-                        style={{ alignSelf: "center", marginTop: 4, paddingVertical: 6, paddingHorizontal: 14 }}
-                    >
-                        <Text
-                            bold
-                            style={{
-                                fontSize: 12,
-                                color: recovering ? colors.gray.disable : colors.redLight,
-                                textDecorationLine: "underline",
-                            }}
-                        >
-                            {recovering ? "Resetting state…" : "Reset wallet state (keep seed) — DEV"}
+                        <Text bold style={{ fontSize: 12, color: colors.ark.light }}>
+                            {queuedRoundsCount === 1
+                                ? '1 refresh round queued at Ark server'
+                                : `${queuedRoundsCount} refresh rounds queued at Ark server`}
                         </Text>
-                    </TouchableOpacity>
+                        <Text style={{ fontSize: 11, color: '#999', marginTop: 4, lineHeight: 15 }}>
+                            Tapping Refresh again won't speed it up — each tap
+                            submits a new round and burns another fee on
+                            completion. Wait for the round to finalise (typically
+                            under a minute) or time out (~few hours) before
+                            retrying.
+                        </Text>
+                    </View>
                 )}
+                {/* Pointer to the Emergency Exit path. Lives on the
+                    Capsules tab because that's where the user is when
+                    they're worrying about their Ark balance — the actual
+                    exit lives in Settings to keep this surface focused
+                    on per-capsule actions (refresh / send). */}
+                <Text
+                    style={{
+                        fontSize: 11,
+                        color: '#777',
+                        textAlign: 'center',
+                        marginTop: 8,
+                        paddingHorizontal: 24,
+                    }}
+                >
+                    Don't trust the Ark server? Settings → Emergency Exit will
+                    sweep funds back on-chain without ASP cooperation.
+                </Text>
+                {/* Background-refresh opt-in card + DEV buttons moved to
+                    FlatList ListFooterComponent so they scroll with the
+                    capsule list — keeps the list area uncompressed when
+                    VTXO count is high. */}
             </View>
         </View>
     );

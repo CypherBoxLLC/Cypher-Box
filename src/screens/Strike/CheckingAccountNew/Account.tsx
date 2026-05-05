@@ -7,6 +7,7 @@ import { Text } from "@Cypher/component-library";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
 import useAuthStore from "@Cypher/stores/authStore";
+import ArkThreshold from "./ArkThreshold";
 
 import { btc } from "@Cypher/helpers/coinosHelper";
 
@@ -22,22 +23,15 @@ interface AccountProps {
 }
 
 export default function Account({ matchedRate, currency, receiveType, balance, converted, reserveAmount, withdrawThreshold, isArk = false }: AccountProps) {
-  const { clearAuth, clearArkAuth } = useAuthStore();
+  const {
+    clearAuth,
+    withdrawArkThreshold,
+    reserveArkAmount,
+  } = useAuthStore();
   const navigation = useNavigation();
 
   const handleCoinosLogout = () => {
     clearAuth();
-    setTimeout(() => {
-      navigation.goBack();
-    }, 500);
-  };
-
-  // Ark "logout" = remove the local Ark wallet handle. Real impl will also
-  // need to wipe the encrypted datadir + keychain seed; for the mockup we
-  // just clear the auth flag + descriptor (clearArkAuth already does that
-  // and removes 'ARK' from allBTCWallets).
-  const handleArkLogout = () => {
-    clearArkAuth();
     setTimeout(() => {
       navigation.goBack();
     }, 500);
@@ -50,6 +44,13 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
   // CheckingAccountNew screen for layout/parity with Strike+CoinOS, so users
   // get a familiar tabs-and-card shape regardless of provider.)
   if (isArk) {
+    // Ark Card mirrors the Strike one for layout parity, but its threshold
+    // and reserve come from dedicated Ark slots in the auth store rather
+    // than the shared withdrawThreshold/reserveAmount props passed in
+    // (those are CoinOS-rail specific). The ArkThreshold component below
+    // owns the dual-picker UI for editing both values.
+    const arkThresholdSats = Number(withdrawArkThreshold) || 500_000;
+    const arkReserveSats = Number(reserveArkAmount) || 100_000;
     return (
       <ScrollView contentContainerStyle={styles.container2}>
         <View style={{ marginTop: 20 }}>
@@ -60,21 +61,17 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
             currency={currency}
             matchedRate={Number(matchedRate)}
             convertedRate={Number(converted)}
-            reserveAmount={Number(reserveAmount)}
-            withdrawThreshold={Number(withdrawThreshold)}
+            reserveAmount={arkReserveSats}
+            withdrawThreshold={arkThresholdSats}
             receiveType={receiveType}
           />
         </View>
-        <GradientView
-          style={{ marginTop: 60, alignSelf: 'center', height: 38, width: widths * 0.32, shadowColor: '#040404', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.8, shadowRadius: 16, elevation: 8 }}
-          linearGradientStyle={{ shadowColor: '#27272C', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
-          topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowColor: colors.ark.shadowTopNew, borderRadius: 24, height: 38, width: widths * 0.32, justifyContent: 'center', alignItems: 'center' }}
-          bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 1, shadowColor: '#030303', borderRadius: 24, height: 38, width: widths * 0.32, justifyContent: 'center', position: 'absolute' }}
-          linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.32, justifyContent: 'center', alignItems: 'center' }}
-          onPress={handleArkLogout}
-        >
-          <Text h3 bold center style={{ color: colors.ark.light }}>Disconnect Second</Text>
-        </GradientView>
+
+        {/* Threshold + reserve picker UI. Strike-style chevron-down
+            dropdowns for both, with a "Customize" link to the keypad
+            screen for free entry. Wired to withdrawArkThreshold and
+            reserveArkAmount in the store. */}
+        <ArkThreshold matchedRate={matchedRate} currency={currency} />
       </ScrollView>
     );
   }

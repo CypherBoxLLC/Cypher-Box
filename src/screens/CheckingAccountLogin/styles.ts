@@ -43,6 +43,43 @@ export default StyleSheet.create({
     fontSize: 16,
     color: colors.white,
   },
+  intro: {
+    color: '#AAA',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  sectionTitle: {
+    color: colors.white,
+    fontSize: 12,
+    letterSpacing: 1.2,
+  },
+  sectionTitleAccent: {
+    color: colors.ark.light,
+  },
+  sectionDivider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#2A2A2A',
+    marginLeft: 12,
+  },
+  sectionDividerArk: {
+    backgroundColor: '#3A2D0F',
+  },
+  sectionSubtitle: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
 });
 
 // import { colors } from "@Cypher/style-guide";

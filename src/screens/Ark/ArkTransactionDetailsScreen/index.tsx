@@ -97,18 +97,41 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
     // USD-per-BTC with `* btc(1)` before storing — see handleUser line 671
     // + 676-677). Don't multiply by btc(1) again here.
     const fiatAmount = absSats * matchedRate;
+    const feeFiat = feeSats > 0 ? (feeSats * matchedRate).toFixed(2) : null;
+    // Fee % of total debited. `effectiveBalanceSats` (== amountSats here)
+    // already bakes the fee into the signed delta, so for sends |amountSats|
+    // is the gross amount. Capped at 999% to keep tiny-amount edge cases
+    // from breaking layout. Only meaningful when fee > 0 — receives have
+    // no fee column anyway.
+    const feePct =
+        feeSats > 0 && absSats > 0
+            ? Math.min(999, (feeSats / absSats) * 100)
+            : null;
 
     // Try to extract an on-chain txid for the explorer button. Kept lenient
     // so we don't have to track every SDK metadata shape — any 64-hex string
     // in a plausible field will do. If nothing matches, no button.
+    //
+    // We *don't* gate on `kind` — the Bark SDK's `subsystemKind` /
+    // `subsystemName` strings vary (and right now most movements come back
+    // classified as `'other'` because the SDK's casing doesn't match our
+    // heuristics in classifyKind). Presence of a 64-hex string in metadata
+    // is a strong-enough signal on its own; false positives would require
+    // the SDK to deliberately stash a 64-char hex non-txid somewhere, which
+    // it doesn't. Lightning movements have a `paymentHash` that *is* 64 hex
+    // — we accept that the explorer link will 404 for those rare cases
+    // rather than hide the button for the common on-chain case.
     const onchainTxid = findOnchainTxid(movement);
-    const canLinkExplorer =
-        (kind === 'onchain' || kind === 'board' || kind === 'exit') &&
-        !!onchainTxid;
+    const canLinkExplorer = !!onchainTxid;
 
     const handleOpenExplorer = () => {
         if (!onchainTxid) return;
-        const url = `${explorerBase}/tx/${onchainTxid}`;
+        // Append #details so mempool.space auto-expands the inputs/outputs
+        // section and we land on the full transaction view rather than the
+        // mobile-collapsed summary that hides everything behind a "see more
+        // details" tap. On non-mempool.space explorers the fragment is
+        // ignored, so this is safe as a default.
+        const url = `${explorerBase}/tx/${onchainTxid}#details`;
         Linking.openURL(url).catch((err) =>
             console.warn('[Ark tx details] open explorer failed:', err),
         );
@@ -163,7 +186,20 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                     />
                 )}
                 {feeSats > 0 && (
-                    <TextView keytext="Fee: " text={`${feeSats} sats`} />
+                    <TextView
+                        keytext="Fee: "
+                        text={`${feeSats} sats${feeFiat ? `  ·  $${feeFiat}` : ''}`}
+                    />
+                )}
+                {feePct !== null && (
+                    <TextView
+                        keytext="Fee % of total: "
+                        text={
+                            feePct < 0.01
+                                ? '< 0.01%'
+                                : `${feePct.toFixed(feePct < 1 ? 2 : 1)}%`
+                        }
+                    />
                 )}
 
                 {sentTo.length > 0 && (
@@ -192,13 +228,29 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                     />
                 )}
 
+                {/* Bitcoin txid — visible to the user so they can verify the
+                    on-chain anchor matches what their counterparty / explorer
+                    shows. Tapping the row jumps to mempool.space (the default
+                    explorer; can be overridden via route params for signet /
+                    alternative providers). The button below is kept for
+                    discoverability — not everyone will think to tap a
+                    truncated hex string. */}
+                {canLinkExplorer && onchainTxid && (
+                    <TouchableOpacity onPress={handleOpenExplorer}>
+                        <TextView
+                            keytext="Bitcoin TX ID: "
+                            text={truncateMiddle(onchainTxid, 40)}
+                        />
+                    </TouchableOpacity>
+                )}
+
                 {canLinkExplorer && (
                     <TouchableOpacity
                         style={styles.button}
                         onPress={handleOpenExplorer}
                     >
                         <Text bold h4 style={styles.buttonText}>
-                            View in Bitcoin Network Explorer
+                            View on mempool.space
                         </Text>
                     </TouchableOpacity>
                 )}

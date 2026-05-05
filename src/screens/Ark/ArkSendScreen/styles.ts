@@ -9,6 +9,8 @@ interface Style {
     destInput: TextStyle;
     pasteBtn: ViewStyle;
     pasteBtnText: TextStyle;
+    scanBtn: ViewStyle;
+    scanBtnText: TextStyle;
     kindPill: ViewStyle;
     kindPillText: TextStyle;
     feePreviewBox: ViewStyle;
@@ -60,6 +62,22 @@ export default StyleSheet.create<Style>({
         marginLeft: 8,
     },
     pasteBtnText: {
+        color: colors.ark.light,
+        fontSize: 12,
+        fontFamily: 'Lato-Bold',
+    },
+    // Same outline-pill look as PASTE so the two buttons read as a
+    // matched pair — Bam wanted SCAN immediately adjacent to PASTE in
+    // the destination row, not buried in a different surface.
+    scanBtn: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: colors.ark.light,
+        marginLeft: 6,
+    },
+    scanBtnText: {
         color: colors.ark.light,
         fontSize: 12,
         fontFamily: 'Lato-Bold',

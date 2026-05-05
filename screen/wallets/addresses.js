@@ -65,6 +65,7 @@ const WalletAddresses = () => {
     walletID,
     isTouchable,
     selectForReceive,
+    selectForBuyDeposit,
     value,
     converted,
     isSats,
@@ -79,11 +80,11 @@ const WalletAddresses = () => {
     ids,
     maxUSD,
     inUSD,
-    total, 
-    matchedRate, 
-    capsulesData, 
-    vaultSend, 
-    title, 
+    total,
+    matchedRate,
+    capsulesData,
+    vaultSend,
+    title,
     currency,
     isBatch,
     capsuleTotal,
@@ -167,6 +168,18 @@ const WalletAddresses = () => {
       dispatchNavigate('HomeScreen', {
         selectedVaultAddress: item.address,
         selectedVaultType: vaultTab ? 'cold' : 'hot',
+      });
+      return;
+    }
+    // BUY-flow deposit picker: navigate back to the ReviewPayment
+    // screen we came from. CommonActions.navigate merges params into
+    // the existing instance, so ReviewPayment's `purchaseDest` and
+    // related state are preserved — the receiving useEffect picks up
+    // the new `selectedDepositAddress` and refreshes the inline UI.
+    if(selectForBuyDeposit){
+      dispatchNavigate('ReviewPayment', {
+        selectedDepositAddress: item.address,
+        selectedDepositVaultType: vaultTab ? 'cold' : 'hot',
       });
       return;
     }

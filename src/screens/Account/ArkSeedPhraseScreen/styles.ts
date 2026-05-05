@@ -36,6 +36,9 @@ interface Style {
     backupTagRecommended: TextStyle;
     backupTagOptIn: TextStyle;
     backupTagWarn: TextStyle;
+    warnPanel: ViewStyle;
+    warnPanelTitle: TextStyle;
+    warnPanelBody: TextStyle;
     button: ViewStyle;
     btnText: TextStyle;
     cancelText: TextStyle;
@@ -49,7 +52,7 @@ interface Style {
 // width/height for absolute-positioned overlays to render reliably on iOS.
 // 320×260 fits 12 word boxes at ~30% width × 4 rows comfortably.
 const GRID_W = 320;
-const GRID_H = 260;
+const GRID_H = 320;
 
 export default StyleSheet.create<Style>({
     container: {
@@ -272,6 +275,26 @@ export default StyleSheet.create<Style>({
         color: colors.redLight,
         fontSize: 11,
         fontStyle: "italic",
+        marginTop: 4,
+    },
+    // Lost-device footgun panel — bordered red so it visually outranks the
+    // two normal "always on" / "recommended" rows above it.
+    warnPanel: {
+        marginTop: 14,
+        borderWidth: 1,
+        borderColor: colors.redLight,
+        backgroundColor: "rgba(255, 80, 80, 0.06)",
+        borderRadius: 12,
+        padding: 12,
+    },
+    warnPanelTitle: {
+        color: colors.redLight,
+        fontSize: 13,
+    },
+    warnPanelBody: {
+        color: "#cdd",
+        fontSize: 12,
+        lineHeight: 17,
         marginTop: 4,
     },
     button: {

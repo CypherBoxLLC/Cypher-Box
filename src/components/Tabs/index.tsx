@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { Image, LayoutAnimation, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text } from "@Cypher/component-library";
-import { Bank, CoinOs, Settings, Threshold, Time } from "@Cypher/assets/images";
+import { Bank, CoinOs, Electricity, Settings, Threshold, Time } from "@Cypher/assets/images";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
 import GradientCard from "../GradientCard";
@@ -25,8 +25,11 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accou
     // (VTXO management). Icon switches to the CoinOs coin/capsule glyph that
     // the Hot Vault already uses for its Capsules tab — keeps the visual
     // language unified across UTXO/VTXO surfaces.
+    // Ark renames "Account" → "Vault" + swaps the bank icon for a white
+    // lightning bolt (Electricity asset, already white-tinted via styles.key)
+    // to signal "Lightning-native non-custodial vault" at a glance.
     const tabs = useMemo(() => [
-        { id: 0, name: 'Account', icon: Bank },
+        { id: 0, name: isArk ? 'Vault' : 'Account', icon: isArk ? Electricity : Bank },
         { id: 1, name: isArk ? 'Capsules' : 'Threshold', icon: isArk ? CoinOs : Threshold },
         { id: 2, name: 'History', icon: Time },
         { id: 3, name: 'Settings', icon: Settings },

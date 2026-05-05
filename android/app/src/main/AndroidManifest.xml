@@ -18,6 +18,14 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- WorkManager runs the Ark background-refresh worker as a foreground
+         service so its process boots at IMPORTANCE_FOREGROUND_SERVICE. RN
+         0.76 New Arch's DefaultNewArchitectureEntryPoint.load() init does
+         not complete in a no-Activity service-only process — the worker's
+         brief foreground status (~10-30s while a refresh round is in flight)
+         lets that init complete and the headless JS task start. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.ACTION_OPEN_DOCUMENT" />
     <uses-permission android:name="android.permission.ACTION_GET_CONTENT" />
@@ -75,6 +83,59 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Headless JS task host for the Ark background-refresh.
+             Started from ArkRefreshAlarmReceiver via startForegroundService
+             and promoted to FGS in onStartCommand. dataSync
+             foregroundServiceType pairs with the FOREGROUND_SERVICE_DATA_SYNC
+             permission and is required on Android 14+ to call
+             startForeground. Not exported — only our own receiver triggers
+             it. -->
+        <service
+            android:name=".ArkRefreshHeadlessTaskService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Alarm-fired receiver that hosts the actual cold-process wake.
+             AlarmManager-fired receivers get a brief allowlist exemption
+             that lets them call startForegroundService(). See receiver
+             class doc + ArkBackgroundSchedulerModule for the full
+             rationale (Android 14 FGS-from-background restrictions). -->
+        <receiver
+            android:name=".ArkRefreshAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="io.cypherbox.btc.ARK_REFRESH_ALARM" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Declare foregroundServiceType on WM's SystemForegroundService
+             so ArkRefreshWorker.setForegroundAsync() can elevate the
+             worker to a foreground service. Without this Android 14+
+             throws IllegalArgumentException ("foregroundServiceType
+             0x00000001 is not a subset of foregroundServiceType
+             attribute 0x00000000") because WM's library manifest
+             declares the service with no type. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
+        <!-- Disable WorkManager's eager auto-initialization via
+             androidx.startup. Pairs with MainApplication implementing
+             Configuration.Provider for on-demand init. Without this,
+             cold-process wakes spawned for SystemJobService have WM's
+             reconciliation cancel the very dispatch that woke us. See
+             MainApplication.getWorkManagerConfiguration() comment. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
 
 <!--        <activity-->
 <!--            android:name=".SplashActivity"-->

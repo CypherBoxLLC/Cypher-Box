@@ -3,6 +3,7 @@ import { StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 interface Style {
     shadowView: ViewStyle;
+    shadowViewArk: ViewStyle;
     shadowTop: any;
     view: ViewStyle;
     check: TextStyle;
@@ -16,11 +17,32 @@ interface Style {
 }
 export default StyleSheet.create({
     shadowView: {
+        // Original Strike/CoinOS card shadow: a soft top-left rim highlight
+        // (#27272C @ -8/-8 / opacity .48 / radius 12). Kept as-is so the
+        // Lightning cards retain their established look.
         shadowOffset: { width: -8, height: -8 },
         shadowOpacity: 0.48,
         shadowColor: '#27272C',
         shadowRadius: 12,
         elevation: 24,
+        borderRadius: 25,
+        width: widths - 40,
+        height: 128,
+        marginTop: 5,
+        borderColor: "transparent",
+        backgroundColor: colors.white,
+    },
+    shadowViewArk: {
+        // Ark card adopts the vault-style drop shadow used across Hot
+        // Vault, Cold Storage, Create Vault, etc — bottom-right black
+        // drop at 8/8 / opacity .7 / radius 16 — to feel like it belongs
+        // to the same visual system as the vaults. Strike/CoinOS keep
+        // their original `shadowView` rim highlight (above).
+        shadowOffset: { width: 8, height: 8 },
+        shadowOpacity: 0.7,
+        shadowColor: '#000000',
+        shadowRadius: 16,
+        elevation: 14,
         borderRadius: 25,
         width: widths - 40,
         height: 128,
@@ -35,6 +57,23 @@ export default StyleSheet.create({
         backgroundColor: colors.primary,
         paddingHorizontal: 30,
         padding: 0
+    },
+    // 1.5px-padding wrapper for Strike/CoinOS Lightning cards. The wrapping
+    // <LinearGradient> gets the pink gradient and acts as the visible
+    // outline; `shadowTopInner` sits inside and paints the actual card
+    // surface, leaving a 1.5px ring of gradient around the perimeter.
+    shadowTopGradientOutline: {
+        borderRadius: 24,
+        width: widths - 40,
+        height: 128,
+        padding: 1.5,
+    },
+    shadowTopInner: {
+        flex: 1,
+        borderRadius: 22.5,
+        backgroundColor: colors.primary,
+        paddingHorizontal: 30,
+        padding: 0,
     },
     view: {
         flexDirection: 'row',
