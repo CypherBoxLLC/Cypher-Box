@@ -255,9 +255,10 @@ export default function ArkWallet({
                                     </Text>
                                 </TouchableOpacity>
                             )}
-                            {/* Suppress the plain expiry warning when the bg-
-                                refresh banner is up — that banner already covers
-                                expiry context (next-run ETA / last-run failure). */}
+                            {/* Plain expiry warning suppressed when the bg-
+                                refresh banner is up — the banner above
+                                already covers expiry context (next-run ETA /
+                                last-run failure). */}
                             {!isLoading && !bgRefreshStatus && expiryWarning && (
                                 <Text h4 style={[styles.alert, { color: colors.redLight }]}>
                                     {expiryWarning}
@@ -279,6 +280,12 @@ export default function ArkWallet({
                             )}
                         </View>
                     )}
+                    {/*
+                      When `hideActionButtons` is true (HomeScreen with shared
+                      Receive/Send row), the bg-refresh banner is rendered by
+                      WalletsView instead — positioned BELOW the absolutely-
+                      anchored shared row instead of behind it.
+                    */}
                 </View>
             )}
 

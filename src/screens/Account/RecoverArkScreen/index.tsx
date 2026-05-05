@@ -232,7 +232,10 @@ export default function RecoverArkScreen() {
         dispatchReset("HomeScreen", { isComplete: true });
     };
 
-    const handleRestoreFromFile = async () => {
+    // forcePicker bypasses the local-first read so the user can restore from
+    // some other .cbark — e.g. an older manually-exported snapshot. Wired to
+    // the "Pick a different file…" escape hatch in both view variants.
+    const handleRestoreFromFile = async (forcePicker = false) => {
         if (submitting || restoring) return;
         const resolved = await resolveMnemonicForRestore();
         if (!resolved) return;
@@ -240,29 +243,55 @@ export default function RecoverArkScreen() {
 
         if (!(await confirmReplaceDatadir("from this backup file"))) return;
 
-        let pickedUri: string | null = null;
-        try {
-            const result = await DocumentPicker.pickSingle({
-                type: [DocTypes.allFiles],
-                copyTo: "cachesDirectory",
-            });
-            pickedUri = result.fileCopyUri ?? result.uri;
-        } catch (err: any) {
-            if (DocumentPicker.isCancel(err)) return;
-            console.warn('[Ark restore] picker threw:', err);
-            setErrorMsg(`Couldn't open file picker: ${err?.message ?? "unknown error"}`);
-            return;
-        }
-        if (!pickedUri) {
-            setErrorMsg("Couldn't read picked file (no path returned)");
-            return;
-        }
-
         setRestoring(true);
         setErrorMsg(null);
+
+        // Local-first: writeArkAutoBackup keeps an always-current encrypted
+        // .cbark at AUTO_BACKUP_PATH so recovery doesn't depend on cloud
+        // availability. On Android the local file lives in app-private
+        // storage that the system file picker can't browse to anyway, so
+        // reading it directly is the only path that actually reaches it.
+        // Picker stays as the fallback for when the local copy is gone
+        // (fresh reinstall on a different device, manually-shared .cbark)
+        // or when the user explicitly opts out via forcePicker.
+        let blob: string | null = null;
+        if (!forcePicker) {
+            try {
+                if (await RNFS.exists(AUTO_BACKUP_PATH)) {
+                    blob = await RNFS.readFile(AUTO_BACKUP_PATH, 'utf8');
+                }
+            } catch (err) {
+                console.warn('[Ark restore] local AUTO_BACKUP_PATH read failed:', err);
+            }
+        }
+
+        if (!blob) {
+            try {
+                const result = await DocumentPicker.pickSingle({
+                    type: [DocTypes.allFiles],
+                    copyTo: "cachesDirectory",
+                });
+                const pickedUri = result.fileCopyUri ?? result.uri;
+                if (!pickedUri) {
+                    setRestoring(false);
+                    setErrorMsg("Couldn't read picked file (no path returned)");
+                    return;
+                }
+                const cleanPath = pickedUri.replace(/^file:\/\//, "");
+                blob = await RNFS.readFile(cleanPath, "utf8");
+            } catch (err: any) {
+                if (DocumentPicker.isCancel(err)) {
+                    setRestoring(false);
+                    return;
+                }
+                console.warn('[Ark restore] picker threw:', err);
+                setRestoring(false);
+                setErrorMsg(`Couldn't open file picker: ${err?.message ?? "unknown error"}`);
+                return;
+            }
+        }
+
         try {
-            const cleanPath = pickedUri.replace(/^file:\/\//, "");
-            const blob = await RNFS.readFile(cleanPath, "utf8");
             await restoreArkBackupBlob(blob, mnemonic);
         } catch (err: any) {
             console.warn('[Ark restore] failed:', err);
@@ -504,7 +533,8 @@ export default function RecoverArkScreen() {
                         onWordChange={handleSecretWordChange}
                         onKeyPress={handleKeyPress}
                         onRecover={handleRecoverSeedOnly}
-                        onRestoreFile={handleRestoreFromFile}
+                        onRestoreFile={() => handleRestoreFromFile(false)}
+                        onPickDifferentFile={() => handleRestoreFromFile(true)}
                         onRestoreCloud={cloudHandler}
                         onBack={() => {
                             setErrorMsg(null);
@@ -522,7 +552,8 @@ export default function RecoverArkScreen() {
                             setErrorMsg(null);
                             setMode('type');
                         }}
-                        onRestoreFile={handleRestoreFromFile}
+                        onRestoreFile={() => handleRestoreFromFile(false)}
+                        onPickDifferentFile={() => handleRestoreFromFile(true)}
                         onRestoreCloud={cloudHandler}
                     />
                 )}
@@ -539,6 +570,7 @@ interface ChooseViewProps {
     onUnlockFaceId(): void;
     onTypeSeed(): void;
     onRestoreFile(): void;
+    onPickDifferentFile(): void;
     onRestoreCloud(): void;
 }
 
@@ -553,6 +585,7 @@ function ChooseView({
     onUnlockFaceId,
     onTypeSeed,
     onRestoreFile,
+    onPickDifferentFile,
     onRestoreCloud,
 }: ChooseViewProps) {
     return (
@@ -624,6 +657,25 @@ function ChooseView({
                 </TouchableOpacity>
             )}
 
+            {/* Tertiary escape hatch: skip the always-fresh local copy and
+                pick some other .cbark (e.g. an older manually-exported one). */}
+            {unlockedMnemonic && (
+                <TouchableOpacity
+                    onPress={onPickDifferentFile}
+                    style={{ alignSelf: "center", marginTop: 12, paddingVertical: 8 }}
+                >
+                    <Text
+                        style={{
+                            color: colors.gray.light,
+                            fontSize: 12,
+                            textDecorationLine: "underline",
+                        }}
+                    >
+                        Pick a different .cbark file instead
+                    </Text>
+                </TouchableOpacity>
+            )}
+
             {errorMsg && <Text style={styles.error}>{errorMsg}</Text>}
 
             {/* Once the seed is unlocked from Keychain, typing it would just
@@ -659,6 +711,7 @@ interface TypeSeedViewProps {
     onKeyPress(event: any, index: number): void;
     onRecover(): void;
     onRestoreFile(): void;
+    onPickDifferentFile(): void;
     onRestoreCloud(): void;
     onBack(): void;
 }
@@ -673,6 +726,7 @@ function TypeSeedView({
     onKeyPress,
     onRecover,
     onRestoreFile,
+    onPickDifferentFile,
     onRestoreCloud,
     onBack,
 }: TypeSeedViewProps) {
@@ -755,6 +809,21 @@ function TypeSeedView({
             >
                 <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 14 }}>
                     Restore from {cloudLabel}
+                </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                onPress={onPickDifferentFile}
+                style={{ alignSelf: "center", marginTop: 10, paddingVertical: 8 }}
+            >
+                <Text
+                    style={{
+                        color: colors.gray.light,
+                        fontSize: 12,
+                        textDecorationLine: "underline",
+                    }}
+                >
+                    Pick a different .cbark file instead
                 </Text>
             </TouchableOpacity>
 

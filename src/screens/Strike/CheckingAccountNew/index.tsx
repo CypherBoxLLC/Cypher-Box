@@ -13,7 +13,7 @@ import styles from "./styles";
 import Threshold from "./Threshold";
 
 export default function CheckingAccountNew({ navigation, route }: any) {
-    const { wallet, matchedRate, receiveType, accountType, balance, converted, currency, reserveAmount, withdrawThreshold } = useRoute().params as {
+    const { wallet, matchedRate, receiveType, accountType, balance, converted, currency, reserveAmount, withdrawThreshold, initialTab } = useRoute().params as {
         wallet: any,
         matchedRate: string,
         to: null | string,
@@ -24,8 +24,13 @@ export default function CheckingAccountNew({ navigation, route }: any) {
         currency: any,
         reserveAmount: any,
         withdrawThreshold: any,
+        // Optional deep-link target so callers can land directly on a
+        // specific tab (e.g. Capsules = 1, Settings = 3) instead of the
+        // default Account tab. Used by the home-screen bg-refresh banner
+        // tap which should drop the user straight into the Capsules tab.
+        initialTab?: number,
     };
-    const [selectedTab, setSelectedTab] = useState(0);
+    const [selectedTab, setSelectedTab] = useState(initialTab ?? 0);
     const { vaultTab, matchedRateStrike, strikeUser } = useAuthStore();
     const isArk = accountType === 'ark';
     // Strike branch (not Ark, not CoinOS-receive): rate + currency must

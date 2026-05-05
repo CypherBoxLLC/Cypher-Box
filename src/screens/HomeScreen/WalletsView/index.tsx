@@ -1,9 +1,12 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
+import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
-import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { colors } from "@Cypher/style-guide";
+import { dispatchNavigate } from "@Cypher/helpers";
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Animated, Image, TouchableOpacity, View } from "react-native";
 import Carousel from "react-native-snap-carousel";
 
@@ -54,7 +57,48 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     homeMessage = null,
     onPageChange,
 }, ref) {
-    const { allBTCWallets, setWalletTab, isArkAuth } = useAuthStore();
+    const {
+        allBTCWallets,
+        setWalletTab,
+        isArkAuth,
+        arkWallet,
+        arkBgRefreshEnabled,
+        arkBgRefreshLastSuccessAt,
+        arkBgRefreshLastAttempt,
+    } = useAuthStore();
+
+    /**
+     * Status line shown below the shared Send/Receive row when the user has
+     * opted into background refresh. Lives here (rather than only in
+     * ArkWallet) because the shared row is absolutely positioned over
+     * ArkWallet's natural alert area, and a banner inside the card would
+     * sit BEHIND the buttons. Mirrors ArkWallet's bgRefreshStatus shape so
+     * the two surfaces speak the same UX language.
+     */
+    const bgRefreshStatus = useMemo(() => {
+        if (!arkBgRefreshEnabled) return null;
+
+        if (arkBgRefreshLastAttempt?.outcome === 'error') {
+            const d = new Date(arkBgRefreshLastAttempt.at);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return {
+                text: `Auto-refresh failed at ${hh}:${mm} — tap to retry`,
+                error: true,
+            };
+        }
+
+        if (arkBgRefreshLastSuccessAt === null) {
+            return { text: 'Auto-refresh on — waiting for first run', error: false };
+        }
+
+        const ageMs = Date.now() - arkBgRefreshLastSuccessAt;
+        const ageHrs = ageMs / (60 * 60 * 1000);
+        const ageStr = ageHrs < 1
+            ? `${Math.max(1, Math.round(ageMs / 60_000))}m ago`
+            : `${Math.round(ageHrs)}h ago`;
+        return { text: `Auto-refresh on, last refresh ${ageStr}`, error: false };
+    }, [arkBgRefreshEnabled, arkBgRefreshLastSuccessAt, arkBgRefreshLastAttempt]);
 
     const [indexStrike, setIndexStrike] = useState(0);
     const [wTabs, setWTabs] = useState([]);
@@ -328,7 +372,12 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // is only 133pt and without this minHeight the buttons would
             // render outside WalletsView's measured bounds, overlapping
             // BottomBar. minHeight = card + gap + buttons = 133+10+47=190.
-            ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT } : {}),
+            // When the bg-refresh banner is showing, reserve another ~32pt
+            // below the button row for it. Don't gate on which slide is
+            // active — keeping the container size stable across swipes
+            // avoids layout jitter when the user pages between Ark and
+            // Lightning.
+            ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT + (bgRefreshStatus ? 32 : 0) } : {}),
         }}>
             <Carousel
                 ref={carouselRef}
@@ -460,6 +509,40 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         isTextShadow
                     />
                 </Animated.View>
+            )}
+            {/* Background-refresh status banner — sits BELOW the absolutely-
+                positioned shared Send/Receive row. Only shown when:
+                  - shared buttons are active (the banner-in-card path
+                    doesn't apply — see ArkWallet/index.tsx)
+                  - the user has opted into bg refresh (bgRefreshStatus
+                    non-null)
+                  - the active carousel slide is Ark (banner is Ark-
+                    specific status; suppress on Lightning / fiat slides)
+                Tap → opens the Ark Capsules screen so the user can drill
+                into the bg-refresh settings or manually retry. */}
+            {useSharedButtons && bgRefreshStatus && kindFromTab(wTabs[indexStrike]) === 'ark' && (
+                <View
+                    style={{
+                        position: 'absolute',
+                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
+                        left: 0,
+                        right: 40,
+                        alignItems: 'center',
+                    }}
+                >
+                    <TouchableOpacity onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: 1 })} activeOpacity={0.7}>
+                        <Text
+                            h4
+                            style={{
+                                color: bgRefreshStatus.error ? colors.redLight : colors.ark.light,
+                                textAlign: 'center',
+                                paddingHorizontal: 12,
+                            }}
+                        >
+                            {bgRefreshStatus.text}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             )}
         </View>
     );

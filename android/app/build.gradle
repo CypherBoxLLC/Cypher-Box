@@ -162,7 +162,8 @@ dependencies {
     // WorkManager backs the Ark background-refresh worker. 2.9.0 matches the
     // androidx baseline used elsewhere in the project (compileSdk 35) and
     // supports the periodic-work APIs we use.
-    implementation 'androidx.work:work-runtime:2.9.0'
+    implementation 'androidx.work:work-runtime:2.11.2'
+    implementation 'androidx.concurrent:concurrent-futures:1.2.0'
     implementation fileTree(dir: "libs", include: ["*.jar"])
 }
 apply plugin: 'com.google.gms.google-services'  // Google Services plugin
