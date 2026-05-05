@@ -52,7 +52,7 @@ interface Style {
 // width/height for absolute-positioned overlays to render reliably on iOS.
 // 320×260 fits 12 word boxes at ~30% width × 4 rows comfortably.
 const GRID_W = 320;
-const GRID_H = 260;
+const GRID_H = 320;
 
 export default StyleSheet.create<Style>({
     container: {

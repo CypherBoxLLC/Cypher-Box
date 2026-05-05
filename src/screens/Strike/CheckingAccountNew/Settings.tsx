@@ -11,7 +11,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Modal,
+  Platform,
   Animated as RNAnimated,
   ScrollView,
   TextInput,
@@ -23,11 +25,17 @@ import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods } from "@Cypher/api/strikeAPIs";
 import {
+  AUTO_BACKUP_PATH,
+  connectGoogleDrive,
+  disconnectGoogleDrive,
   fetchPendingExitsTotalSats,
+  getDriveBackupInfo,
+  isGoogleDriveConnected,
   readArkSeedPhrase,
   resetArkWalletState,
   startArkEmergencyExit,
 } from "@Cypher/services/ark";
+import RNFS from "react-native-fs";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 
 interface Props {
@@ -274,6 +282,175 @@ function ArkSettingsBody() {
   const navigation = useNavigation();
   const [words, setWords] = useState<string[] | null>(null);
   const [revealing, setRevealing] = useState(false);
+
+  // Backup status — surfaced in the Settings panel so users can verify
+  // both rails (local on-device file + Google Drive copy) are healthy
+  // without opening a file manager. `null` = unknown, `undefined` = no
+  // backup. Errors are swallowed; UI shows "—" for unreachable values.
+  type BackupInfo = { modifiedAt: number; sizeBytes: number };
+  const [localBackup, setLocalBackup] = useState<BackupInfo | null | undefined>(null);
+  const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
+  const [driveBackup, setDriveBackup] = useState<BackupInfo | null | undefined>(null);
+  const [driveError, setDriveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // Local — RNFS.stat throws if the file doesn't exist; treat as
+      // "no backup yet" rather than an error.
+      try {
+        const exists = await RNFS.exists(AUTO_BACKUP_PATH);
+        if (cancelled) return;
+        if (!exists) {
+          setLocalBackup(undefined);
+        } else {
+          const stat = await RNFS.stat(AUTO_BACKUP_PATH);
+          if (cancelled) return;
+          setLocalBackup({
+            modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
+            sizeBytes: Number(stat.size) || 0,
+          });
+        }
+      } catch (_) {
+        if (!cancelled) setLocalBackup(undefined);
+      }
+
+      // Drive — connection check is cheap; metadata fetch is gated on it.
+      try {
+        const connected = await isGoogleDriveConnected();
+        if (cancelled) return;
+        setDriveConnected(connected);
+        if (connected) {
+          const info = await getDriveBackupInfo();
+          if (cancelled) return;
+          setDriveBackup(info ?? undefined);
+        } else {
+          setDriveBackup(undefined);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setDriveConnected(false);
+          setDriveError(e?.message || 'Drive unreachable');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Compact relative-time formatter for the status panel —
+  // "2 min ago", "3 hr ago", "5 days ago" — keeps the row width tight.
+  const formatAgo = (ms: number): string => {
+    if (!ms) return '—';
+    const diff = Date.now() - ms;
+    if (diff < 0) return 'just now';
+    const mins = Math.floor(diff / 60_000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hr ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+    return new Date(ms).toLocaleDateString();
+  };
+
+  const formatSize = (bytes: number): string => {
+    if (!bytes || bytes < 0) return '—';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1_048_576).toFixed(2)} MB`;
+  };
+
+  const [driveBusy, setDriveBusy] = useState(false);
+
+  // Refresh Drive status after connect/disconnect — keeps the panel
+  // honest without forcing the user to reopen the screen.
+  const refreshDriveStatus = async () => {
+    setDriveBackup(null);
+    setDriveError(null);
+    try {
+      const connected = await isGoogleDriveConnected();
+      setDriveConnected(connected);
+      if (connected) {
+        const info = await getDriveBackupInfo();
+        setDriveBackup(info ?? undefined);
+      } else {
+        setDriveBackup(undefined);
+      }
+    } catch (e: any) {
+      setDriveConnected(false);
+      setDriveError(e?.message || 'Drive unreachable');
+    }
+  };
+
+  const handleDriveConnect = async () => {
+    if (driveBusy) return;
+    setDriveBusy(true);
+    setDriveError(null);
+    try {
+      const ok = await connectGoogleDrive();
+      if (!ok) {
+        SimpleToast.show('Drive sign-in cancelled.', SimpleToast.SHORT);
+      } else {
+        SimpleToast.show('Google Drive connected.', SimpleToast.SHORT);
+      }
+    } catch (e: any) {
+      // Surface the real Google Sign-In error code so a misconfigured
+      // OAuth client / missing Play Services / SHA-1 mismatch shows
+      // up as a usable message instead of silent failure. Common codes:
+      //   DEVELOPER_ERROR — wrong webClientId or SHA-1 not registered
+      //   PLAY_SERVICES_NOT_AVAILABLE — emulator without GMS
+      //   SIGN_IN_REQUIRED — user signed out mid-flow
+      const code = e?.code ? ` [${e.code}]` : '';
+      const msg = e?.message || 'Drive connect failed';
+      setDriveError(`${msg}${code}`);
+      SimpleToast.show(`Drive connect failed${code}: ${msg}`, SimpleToast.LONG);
+    } finally {
+      setDriveBusy(false);
+      await refreshDriveStatus();
+    }
+  };
+
+  const handleDriveDisconnect = async () => {
+    if (driveBusy) return;
+    Alert.alert(
+      'Disconnect Google Drive?',
+      'Your existing backup file will stay in Drive — disconnecting only stops future uploads. You can reconnect any time.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            setDriveBusy(true);
+            try {
+              await disconnectGoogleDrive();
+            } catch (e: any) {
+              SimpleToast.show(`Disconnect failed: ${e?.message || 'unknown error'}`, SimpleToast.SHORT);
+            } finally {
+              setDriveBusy(false);
+              await refreshDriveStatus();
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // iOS hint — opens iOS Settings so the user can enable iCloud Drive
+  // for Cypher Box. There's no in-app "connect" because the local
+  // Documents file IS the iCloud-synced copy when Drive sync is on.
+  const handleICloudHint = () => {
+    Alert.alert(
+      'Enable iCloud Drive',
+      'Cypher Box stores its backup in your Documents folder. To sync it to iCloud, open iOS Settings → [your name] → iCloud → iCloud Drive, then enable Cypher Box in the app list.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
+      ],
+    );
+  };
 
   const handleReveal = async () => {
     if (revealing) return;
@@ -526,77 +703,60 @@ function ArkSettingsBody() {
   };
 
   /**
-   * Destructive: nukes the Ark vault entirely from this device.
+   * Destructive: nukes the Ark vault from this device.
    *
    *   - Wipes the local datadir (VTXOs, presigned exit txs, round state)
-   *   - Wipes the seed from Keychain
+   *   - Optionally wipes the seed from Keychain (controlled by the
+   *     "keep seedphrase on device" checkbox in the confirm modal)
    *   - Clears the in-memory wallet handle
    *   - Clears zustand auth state
    *
-   * Recovery from this point requires BOTH the 12-word seed AND the
-   * `ark-backup` file the user kept off-device — without both, VTXOs are
-   * unrecoverable per Bark's docs (no `list_by_pubkey` endpoint, presigned
-   * forfeit/exit txs only live in the local datadir).
-   *
-   * Two-step confirm: native Alert with explicit warning copy. The
-   * destructive button label spells out exactly what gets wiped so the
-   * user can't sleepwalk through it.
+   * If the seed is kept, a future Recover flow can surface the biometric
+   * (Face/Touch ID) fast path so the user doesn't have to type 12 words
+   * to come back. If unchecked, the user MUST have their 12-word phrase
+   * to recover (and a `.cbark` backup file to restore funds — VTXOs are
+   * never seed-derivable).
    */
   const [deleting, setDeleting] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [keepSeedOnDevice, setKeepSeedOnDevice] = useState(true);
+
+  const biometricLabel = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
+
   const handleDeleteVault = () => {
     if (deleting) return;
-    Alert.alert(
-      "Delete Ark vault?",
-      "This wipes your Ark wallet from this device — the local database AND your seed in Keychain. " +
-        "To recover, you'll need BOTH your 12-word seed phrase AND your ark-backup file. " +
-        "Without both, your funds become unrecoverable. Make sure you have both saved before continuing.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete vault",
-          style: "destructive",
-          onPress: async () => {
-            setDeleting(true);
-            try {
-              await resetArkWalletState();
-              if (typeof clearArkAuth === 'function') {
-                clearArkAuth();
-              }
-              SimpleToast.show("Ark vault deleted from this device.", SimpleToast.LONG);
-              setTimeout(() => navigation.goBack(), 300);
-            } catch (err: any) {
-              console.warn('[Ark] Delete vault failed:', err);
-              SimpleToast.show(
-                `Delete failed: ${err?.message ?? "unknown error"}`,
-                SimpleToast.LONG,
-              );
-              setDeleting(false);
-            }
-          },
-        },
-      ],
-    );
+    setKeepSeedOnDevice(true);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDeleteVault = async () => {
+    setDeleteModalVisible(false);
+    setDeleting(true);
+    try {
+      await resetArkWalletState({ keepSeedInKeychain: keepSeedOnDevice });
+      if (typeof clearArkAuth === 'function') {
+        clearArkAuth();
+      }
+      SimpleToast.show(
+        keepSeedOnDevice
+          ? "Ark vault deleted. Seed kept on device for biometric recovery."
+          : "Ark vault deleted from this device.",
+        SimpleToast.LONG,
+      );
+      setTimeout(() => navigation.goBack(), 300);
+    } catch (err: any) {
+      console.warn('[Ark] Delete vault failed:', err);
+      SimpleToast.show(
+        `Delete failed: ${err?.message ?? "unknown error"}`,
+        SimpleToast.LONG,
+      );
+      setDeleting(false);
+    }
   };
 
   return (
     <ScrollView style={styles.flex} contentContainerStyle={{ paddingBottom: 40 }}>
       <RNAnimated.View style={[styles.main, { paddingHorizontal: 24 }]}>
-        <View style={{ marginTop: 24 }}>
-          <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Wallet
-          </Text>
-          <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: '#333' }}>
-              <Text style={{ fontSize: 15, color: '#AAA' }}>Network</Text>
-              <Text bold style={{ fontSize: 15, color: '#FFF' }}>Ark · Second.tech</Text>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 }}>
-              <Text style={{ fontSize: 15, color: '#AAA' }}>Custody</Text>
-              <Text bold style={{ fontSize: 15, color: '#FFF' }}>Non-custodial</Text>
-            </View>
-          </View>
-        </View>
-
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
             Seed Phrase
@@ -657,6 +817,119 @@ function ArkSettingsBody() {
           </View>
         </View>
 
+        {/* Backup status — shows whether the on-device auto-backup
+            (.cbark in Documents) and the optional Google Drive copy are
+            both up to date. The user can verify both rails without
+            digging into a file manager or the Drive web UI. */}
+        <View style={{ marginTop: 24 }}>
+          <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
+            Ark Backup
+          </Text>
+          <Text style={{ fontSize: 12, color: '#888', marginBottom: 10, lineHeight: 17 }}>
+            If you lose this phone, you'll need BOTH your 12-word seed phrase AND your Ark backup file to recover your wallet.
+          </Text>
+          <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
+            {/* Local file row */}
+            <View style={{ paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: '#333' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, color: '#AAA' }}>Local (on-device)</Text>
+                {localBackup === null ? (
+                  <ActivityIndicator size="small" color="#888" />
+                ) : localBackup === undefined ? (
+                  <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>Not yet</Text>
+                ) : (
+                  <Text bold style={{ fontSize: 13, color: colors.green }}>{formatAgo(localBackup.modifiedAt)}</Text>
+                )}
+              </View>
+              {localBackup && (
+                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                  {`${formatSize(localBackup.sizeBytes)} · ark-backup.cbark`}
+                </Text>
+              )}
+            </View>
+
+            {/* Cloud row — Google Drive on Android, iCloud Drive on iOS.
+                On iOS the local Documents file IS the iCloud copy when
+                the user enables iCloud Drive sync for Cypher Box, so
+                "connect" opens iOS Settings rather than calling an
+                in-app SDK. */}
+            <View style={{ paddingVertical: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, color: '#AAA' }}>{Platform.OS === 'ios' ? 'iCloud Drive' : 'Google Drive'}</Text>
+                {Platform.OS === 'ios' ? (
+                  <Text bold style={{ fontSize: 13, color: '#888' }}>System-managed</Text>
+                ) : driveConnected === null ? (
+                  <ActivityIndicator size="small" color="#888" />
+                ) : !driveConnected ? (
+                  <Text bold style={{ fontSize: 13, color: '#888' }}>Not connected</Text>
+                ) : driveBackup === null ? (
+                  <ActivityIndicator size="small" color="#888" />
+                ) : driveBackup === undefined ? (
+                  <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>No copy yet</Text>
+                ) : (
+                  <Text bold style={{ fontSize: 13, color: colors.green }}>{formatAgo(driveBackup.modifiedAt)}</Text>
+                )}
+              </View>
+              {driveBackup && (
+                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                  {`${formatSize(driveBackup.sizeBytes)} · appDataFolder`}
+                </Text>
+              )}
+              {driveError && (
+                <Text style={{ fontSize: 11, color: '#E85C5A', marginTop: 2 }}>
+                  {driveError}
+                </Text>
+              )}
+              {/* Connect / Disconnect / iCloud-hint CTA. Inline pill so
+                  the action is one tap away — backup status is the kind
+                  of thing you only check when something feels off, and
+                  bouncing through a separate screen would defeat the
+                  point. */}
+              <TouchableOpacity
+                onPress={
+                  Platform.OS === 'ios'
+                    ? handleICloudHint
+                    : driveConnected
+                      ? handleDriveDisconnect
+                      : handleDriveConnect
+                }
+                disabled={driveBusy}
+                activeOpacity={0.7}
+                style={{
+                  marginTop: 10,
+                  alignSelf: 'flex-start',
+                  paddingVertical: 8,
+                  paddingHorizontal: 14,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: Platform.OS === 'ios'
+                    ? '#444'
+                    : driveConnected ? '#E85C5A' : (colors.ark?.light ?? colors.green),
+                  backgroundColor: '#0F0F0F',
+                  opacity: driveBusy ? 0.5 : 1,
+                }}
+              >
+                {driveBusy ? (
+                  <ActivityIndicator size="small" color="#888" />
+                ) : (
+                  <Text bold style={{
+                    fontSize: 13,
+                    color: Platform.OS === 'ios'
+                      ? '#AAA'
+                      : driveConnected ? '#E85C5A' : (colors.ark?.light ?? colors.green),
+                  }}>
+                    {Platform.OS === 'ios'
+                      ? 'How to enable iCloud Drive'
+                      : driveConnected
+                        ? 'Disconnect'
+                        : 'Connect Google Drive'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
         {/* Exit-in-progress status panel replaces both action buttons.
             Shows a single source of truth for what's happening + the
             destination the user picked. Auto-claim + auto-delete run from
@@ -697,12 +970,12 @@ function ArkSettingsBody() {
               onPress={exitStarting ? undefined : () => setExitPickerOpen(true)}
             >
               <Text h3 bold center style={{ color: colors.ark?.light ?? colors.pink.default }}>
-                {exitStarting ? 'Starting exit…' : 'Emergency Exit (Eject from Ark)'}
+                {exitStarting ? 'Starting exit…' : 'Emergency Exit'}
               </Text>
             </GradientView>
 
             <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 8, paddingHorizontal: 24 }}>
-              Sweeps your Ark balance back on-chain without ASP cooperation. Use only if you no longer trust the Ark server.
+              Eject from Ark: sweep your Ark balance back on-chain without ASP cooperation. Use only if you no longer trust the Ark server.
             </Text>
 
             {/* Delete Ark vault — last-ditch destructive action. Below
@@ -1017,6 +1290,98 @@ function ArkSettingsBody() {
               >
                 <Text bold style={{ fontSize: 14, color: '#AAA' }}>Cancel</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Delete-vault confirm modal. Replaces the legacy native Alert
+            because Alert can't host the "keep seedphrase on device" toggle.
+            Tapping the toggle off shows a red warning under it; the user
+            has to acknowledge they hold the seed before deleting. */}
+        <Modal
+          transparent
+          visible={deleteModalVisible}
+          animationType="fade"
+          onRequestClose={() => setDeleteModalVisible(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
+            <View style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 20 }}>
+              <Text bold style={{ fontSize: 18, color: '#FFF', marginBottom: 10 }}>
+                Delete Ark vault?
+              </Text>
+              <Text style={{ fontSize: 13, color: '#CCC', lineHeight: 19, marginBottom: 16 }}>
+                This wipes your Ark wallet from this device — the local database
+                with VTXO state. To restore funds you'll still need your{' '}
+                <Text bold style={{ color: '#FFF' }}>ark-backup file</Text>.
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => setKeepSeedOnDevice(v => !v)}
+                activeOpacity={0.8}
+                style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 6 }}
+              >
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 5,
+                    borderWidth: 1.5,
+                    borderColor: keepSeedOnDevice ? (colors.ark?.light ?? colors.pink.default) : '#888',
+                    backgroundColor: keepSeedOnDevice ? (colors.ark?.light ?? colors.pink.default) : 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 10,
+                    marginTop: 1,
+                  }}
+                >
+                  {keepSeedOnDevice && (
+                    <Text style={{ color: '#000', fontSize: 14, lineHeight: 16 }}>✓</Text>
+                  )}
+                </View>
+                <Text style={{ flex: 1, fontSize: 13, color: '#EEE', lineHeight: 18 }}>
+                  Keep seedphrase stored on device for future {biometricLabel} recovery
+                </Text>
+              </TouchableOpacity>
+
+              {!keepSeedOnDevice && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#FF5A5A',
+                    backgroundColor: 'rgba(255, 90, 90, 0.08)',
+                  }}
+                >
+                  <Text bold style={{ color: '#FF7A7A', fontSize: 12, marginBottom: 4 }}>
+                    ⚠ Make sure you have your 12-word seed phrase
+                  </Text>
+                  <Text style={{ color: '#FF9A9A', fontSize: 12, lineHeight: 16 }}>
+                    Without the seed AND your ark-backup file, this wallet's funds become unrecoverable.
+                  </Text>
+                </View>
+              )}
+
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 18, gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setDeleteModalVisible(false)}
+                  style={{ paddingVertical: 10, paddingHorizontal: 16 }}
+                >
+                  <Text bold style={{ fontSize: 14, color: '#AAA' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={confirmDeleteVault}
+                  style={{
+                    paddingVertical: 10,
+                    paddingHorizontal: 16,
+                    borderRadius: 8,
+                    backgroundColor: '#7A1A1A',
+                  }}
+                >
+                  <Text bold style={{ fontSize: 14, color: '#FFB0B0' }}>Delete vault</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>

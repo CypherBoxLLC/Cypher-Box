@@ -189,7 +189,22 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="CreateCoinOSScreen" component={CreateCoinOSScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CreateArkScreen" component={CreateArkScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkSeedPhraseScreen" component={ArkSeedPhraseScreen} options={{ headerShown: false }} />
-      <WalletsStack.Screen name="RecoverArkScreen" component={RecoverArkScreen} options={{ headerShown: false }} />
+      {/* Use platform-default animation (forFadeFromBottomAndroid on
+          Android) so the transition doesn't depend on the JS thread.
+          The previous `cardStyleInterpolator: forHorizontalIOS` was a
+          JS-driven horizontal slide that stalled mid-flight on slower
+          Android devices because the destination's first render +
+          effect chain stole the same frames the interpolator needed
+          to compute its translateX values. The destination is now
+          progressive-disclosed (a tiny ChooseView mounts first), so
+          we don't need detachPreviousScreen workarounds either. */}
+      <WalletsStack.Screen
+        name="RecoverArkScreen"
+        component={RecoverArkScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
       <WalletsStack.Screen name="ArkReceiveScreen" component={ArkReceiveScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkInvoiceScreen" component={ArkInvoiceScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkTransactionDetailsScreen" component={ArkTransactionDetailsScreen} options={{ headerShown: false }} />

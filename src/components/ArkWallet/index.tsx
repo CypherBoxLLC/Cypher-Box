@@ -1,6 +1,7 @@
 import { Text } from "@Cypher/component-library";
 import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { blocksToDays } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -43,6 +44,8 @@ export default function ArkWallet({
 }: Props) {
     const {
         isArkAuth,
+        isAuth,
+        isStrikeAuth,
         arkWallet,
         arkBalance,
         withdrawArkThreshold,
@@ -50,6 +53,12 @@ export default function ArkWallet({
         arkVtxos,
         arkChainTipHeight,
     } = useAuthStore();
+
+    // Strike + CoinOS + Ark: this combination pulls the Ark card up out
+    // of position. Bump it down 10pt for this specific 3-Lightning combo
+    // (was 18pt — overshoot per Bam, matches the Strike+Ark adjustment in
+    // StrikeWallet). Other combos are untouched.
+    const allThreeLightning = isAuth && isStrikeAuth && isArkAuth;
 
     // Non-zero means there's an in-flight round (refresh / send / board).
     //
@@ -150,13 +159,15 @@ export default function ArkWallet({
     };
 
     const createArkWalletClickHandler = () => {
-        dispatchNavigate("CreateArkScreen");
+        // Skip the CreateArkScreen intro and go straight to the seed reveal.
+        const mnemonic = barkGenerateMnemonic();
+        dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });
     };
 
     return (
         <>
             {isArkAuth && (
-                <>
+                <View style={allThreeLightning ? { transform: [{ translateY: 10 }] } : undefined}>
                     <Card
                         wallet="ARK"
                         title="Ark Vault"
@@ -208,7 +219,7 @@ export default function ArkWallet({
                             )}
                         </View>
                     )}
-                </>
+                </View>
             )}
 
             {!isArkAuth && (

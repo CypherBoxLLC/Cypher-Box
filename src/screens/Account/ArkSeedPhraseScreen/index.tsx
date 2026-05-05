@@ -358,22 +358,28 @@ export default function ArkSeedPhraseScreen() {
     return (
         <ScreenLayout showToolbar>
             <View style={styles.container}>
-                <HeaderWithLine title="Your Ark Seed Phrase" />
+                <HeaderWithLine title="Your Ark Seed Phrase" titleColor={colors.yellow} />
 
                 <ScrollView
                     contentContainerStyle={styles.scroll}
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={styles.content}>
+                        <Text style={styles.sectionTitle}>1/2 — Seed phrase</Text>
                         <Text style={styles.warnTitle}>⚠ Write these 12 words down</Text>
                         <Text style={styles.warnBody}>
                             This phrase is the master key to your Ark wallet. Keep it offline,
                             somewhere only you can find it. Anyone with these words can spend
                             your funds.
                         </Text>
+                        <Text style={styles.sectionSub}>
+                            Can be saved in Keychain behind {isIOS ? 'Face ID' : 'Touch ID'}.
+                        </Text>
                         <Text style={styles.headerNote}>
                             Note: even with the seed, full balance recovery on a new device
-                            also requires your wallet backup — set the destination below.
+                            also requires your{' '}
+                            <Text style={{ color: '#FF5A5A' }}>Ark backup file</Text>
+                            {' '}— set the destination below.
                         </Text>
 
                         <View style={styles.gridWrap}>
@@ -408,9 +414,6 @@ export default function ArkSeedPhraseScreen() {
                                                     <Text style={styles.revealTitle}>
                                                         Tap to reveal your seed phrase
                                                     </Text>
-                                                    <Text style={styles.revealDetail}>
-                                                        Make sure no one is watching your screen.
-                                                    </Text>
                                                     <TouchableOpacity
                                                         style={styles.revealBtn}
                                                         onPress={handleReveal}
@@ -428,12 +431,6 @@ export default function ArkSeedPhraseScreen() {
                         </View>
 
                         <View style={styles.divider} />
-
-                        {/* Section 1 — Mnemonic convenience storage */}
-                        <Text style={styles.sectionTitle}>Save seed to device</Text>
-                        <Text style={styles.sectionSub}>
-                            Convenience copy of the 12 words on this device only.
-                        </Text>
 
                         <View style={styles.keychainRow}>
                             <View style={{ flex: 1 }}>
@@ -474,11 +471,11 @@ export default function ArkSeedPhraseScreen() {
                             The cloud option below is the opt-in for device-loss
                             protection — without it, losing the phone loses the
                             local file too, and seed alone can't restore VTXOs. */}
-                        <Text style={styles.sectionTitle}>Wallet backup</Text>
+                        <Text style={styles.sectionTitle}>2/2 — Ark backup file</Text>
                         <Text style={styles.sectionSub}>
-                            Your wallet is backed up to this device automatically.
-                            Each time you send or receive, an encrypted snapshot
-                            updates in {isIOS
+                            Can be stored and auto-updated on this device and on your cloud.
+                            Each time you send or receive, an encrypted snapshot updates in{' '}
+                            {isIOS
                                 ? "Files → On My iPhone → Cypher Box"
                                 : "the app's local storage"}.
                             That covers app reinstalls and data corruption.
@@ -579,7 +576,7 @@ export default function ArkSeedPhraseScreen() {
                 </ScrollView>
 
                 <Button
-                    text={revealed ? "I've backed it up — Continue" : "Reveal seed phrase first"}
+                    text={revealed ? "I've backed it up - Create" : "Reveal seed phrase first"}
                     onPress={handleContinue}
                     style={styles.button}
                     textStyle={styles.btnText}

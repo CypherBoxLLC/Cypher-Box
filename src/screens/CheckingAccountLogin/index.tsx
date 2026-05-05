@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
+import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -14,9 +15,12 @@ import {
   LoginOption,
   RegisterPrompt,
   HeaderWithLine,
+  CreateButton,
 } from "@Cypher/components";
+import accountStyles from "@Cypher/components/CheckingAccount/styles";
 import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
+import Ionicons from "react-native-vector-icons/Ionicons";
 
 const config = {
     id: 'strike',
@@ -118,7 +122,11 @@ export default function CheckingAccountLogin() {
   };
 
   const handleArkCreate = () => {
-    dispatchNavigate("CreateArkScreen");
+    // Skip the CreateArkScreen intro (experimental warning + hot-vault
+    // seed-source toggle) and go straight to the seed-phrase reveal.
+    // Mirrors the fresh-seed branch of the old CreateArkScreen.handleCreate.
+    const mnemonic = barkGenerateMnemonic();
+    dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });
   };
 
   // Manual seed-entry recovery — surfaced as a sibling to the big "Create Ark"
@@ -223,69 +231,115 @@ export default function CheckingAccountLogin() {
     );
   }
 
+  // Visibility flags for the two category sections — used to suppress
+  // empty headers when every provider in a section is already connected.
+  const showCustodial = !isStrikeAuth || (!isAuth && !CoinosException);
+  const showArk = FEATURE_ARK_ENABLED && !isArkAuth;
+
   return (
       <ScreenLayout showToolbar>
       <View style={styles.container}>
-        <HeaderWithLine title="Connect to Lightning providor" />
+        <HeaderWithLine title="Add a Lightning Wallet" titleColor="#FFFFFF" />
         <View style={styles.content}>
-          {!isStrikeAuth && (
+          <Text style={styles.intro}>
+            Pick a provider to power Lightning send/receive. Custodial accounts
+            hold your bitcoin with a third party, while non-custodial wallets
+            let you have full control over your keys and funds.
+          </Text>
+
+          {showArk && (
             <>
-              <LoginOption
-                logo={require("@Cypher/assets/images/strike.png")}
-                onPress={handleStrikeLogin}
-              />
-              <RegisterPrompt
-                text="Don't have a Strike account?"
-                actionText="Download and register"
-                onPress={createStrikeAccountClickHandler}
-              />
-            </>
-          )}
-          {!isAuth && !CoinosException && (
-            <>
-              <LoginOption
-                logo={require("@Cypher/assets/images/coinos.png")}
-                onPress={handleCoinosLogin}
-              />
-              <RegisterPrompt
-                text="Don't have a Coinos account?"
-                actionText="Register"
-                onPress={createCheckingAccountClickHandler}
-              />
-            </>
-          )}
-          {FEATURE_ARK_ENABLED && !isArkAuth && (
-            <>
+              <View style={styles.sectionHeader}>
+                <Text bold style={[styles.sectionTitle, styles.sectionTitleAccent]}>
+                  NON-CUSTODIAL  ·  LIGHTNING
+                </Text>
+                <View style={[styles.sectionDivider, styles.sectionDividerArk]} />
+              </View>
+              <Text style={styles.sectionSubtitle}>
+                Create a self-custodial wallet — keys under your full control.
+              </Text>
+
               {/* Ark (Second.tech) — gated behind FEATURE_ARK_ENABLED until
-                  mainnet ASP launches. Re-enable in services/ark/config.ts. */}
-              <LoginOption
-                logo={require("@Cypher/assets/images/second.png")}
-                borderColor={colors.ark.extralight}
-                onPress={handleArkCreate}
-              />
-              <RegisterPrompt
-                text="⚠ Experimental — non-custodial Ark via Second"
-                actionText="Learn more"
-                onPress={openArkInfo}
-              />
-              <RegisterPrompt
-                text="Already have an Ark seed phrase?"
-                actionText="Recover"
-                onPress={handleArkRecover}
-              />
+                  mainnet ASP launches. Re-enable in services/ark/config.ts.
+                  Row layout mirrors Strike/CoinOS: [Ark Vault ⚡ + Second]
+                  on the left, [Recover] on the right (yellow-accented to
+                  signal the non-custodial provider). */}
+              <View style={accountStyles.providerRow}>
+                <LoginOption
+                  label="Create Ark Vault"
+                  labelColor={colors.white}
+                  iconPrefix={require("@Cypher/assets/images/electricity.png")}
+                  iconPrefixTint={colors.white}
+                  borderColor={colors.ark.extralight}
+                  onPress={handleArkCreate}
+                  containerStyle={accountStyles.loginOptionContainerInRow}
+                />
+                <CreateButton
+                  label="Recover"
+                  accentColor={colors.ark.light}
+                  onPress={handleArkRecover}
+                />
+              </View>
+              {/* Ark experimental disclaimer — replaces the prior
+                  RegisterPrompt with a tighter, more professional
+                  inline note. Yellow "Learn more" matches the wallet's
+                  accent so the affordance reads as Ark-specific. */}
+              <View style={accountStyles.experimentalNotice}>
+                <Ionicons
+                  name="warning-outline"
+                  size={13}
+                  color={colors.ark.light}
+                  style={accountStyles.experimentalIcon}
+                />
+                <Text style={accountStyles.experimentalText}>
+                  Experimental technology. Use at your own risk.{' '}
+                </Text>
+                <TouchableOpacity onPress={openArkInfo} activeOpacity={0.7}>
+                  <Text bold style={accountStyles.experimentalLink}>Learn more</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
-        </View>
-        <View style={styles.footer}>
-          <LinearGradient
-            colors={["#333333", "rgba(48, 48, 51, 0.6)"]}
-            style={styles.line}
-          />
-          <Image
-            source={require("@Cypher/assets/images/electricity.png")}
-            style={styles.lightningIcon}
-            resizeMode="contain"
-          />
+
+          {showCustodial && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text bold style={styles.sectionTitle}>CUSTODIAL  ·  LIGHTNING</Text>
+                <View style={styles.sectionDivider} />
+              </View>
+              <Text style={styles.sectionSubtitle}>
+                Sign in to an existing Lightning account. Or create an account
+                on provider's website and come back again to Cypher Box and login!
+              </Text>
+
+              {!isStrikeAuth && (
+                /* Side-by-side row: [Login to + Strike logo] + [Create].
+                   The wider login pill stays on the LEFT; the narrower
+                   pink-bordered Create button takes the remaining space
+                   and links to Strike's signup page. */
+                <View style={accountStyles.providerRow}>
+                  <LoginOption
+                    label="Login to"
+                    logo={require("@Cypher/assets/images/strike.png")}
+                    onPress={handleStrikeLogin}
+                    containerStyle={accountStyles.loginOptionContainerInRow}
+                  />
+                  <CreateButton onPress={createStrikeAccountClickHandler} />
+                </View>
+              )}
+              {!isAuth && !CoinosException && (
+                <View style={accountStyles.providerRow}>
+                  <LoginOption
+                    label="Login to"
+                    logo={require("@Cypher/assets/images/coinos.png")}
+                    onPress={handleCoinosLogin}
+                    containerStyle={accountStyles.loginOptionContainerInRow}
+                  />
+                  <CreateButton onPress={createCheckingAccountClickHandler} />
+                </View>
+              )}
+            </>
+          )}
         </View>
       </View>
     </ScreenLayout>
