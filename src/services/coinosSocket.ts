@@ -201,3 +201,63 @@ if (__DEV__) console.log('[CoinOS Relay] Push unregistered');
     console.warn('[CoinOS Relay] Push unregister failed:', e);
   }
 };
+
+/**
+ * Toggle the per-device Ark refresh opt-in on the relay. Called from
+ * setArkBackgroundRefreshEnabled when the user flips the toggle.
+ *
+ * The relay's silent-push scanner only targets devices with
+ * ark_refresh_opt_in = 1, so this call is the gating signal — without
+ * it, the client may have written its background-readable seed locally
+ * but the relay won't ever wake the device via push.
+ *
+ * Failure does not block the toggle from succeeding. Scheduled wakes
+ * (BGProcessingTask / WorkManager) still fire either way; the silent
+ * push is the safety-net path.
+ */
+export const setArkRefreshSubscription = async (
+  username: string,
+  pushToken: string,
+  optIn: boolean,
+): Promise<boolean> => {
+  if (!username || !pushToken || !coinosRelayUri) return false;
+  try {
+    const response = await fetch(`${coinosRelayUri}/ark-refresh/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': RELAY_API_KEY },
+      body: JSON.stringify({ username, pushToken, optIn }),
+    });
+    if (__DEV__) console.log('[CoinOS Relay] ark-refresh/subscribe', { optIn, status: response.status });
+    return response.ok;
+  } catch (e) {
+    console.warn('[CoinOS Relay] ark-refresh/subscribe failed:', e);
+    return false;
+  }
+};
+
+/**
+ * Fire-and-forget. Tells the relay the unix-seconds at which the
+ * soonest-expiring spendable VTXO will become unrecoverable, so its
+ * scanner can decide when to fire a silent push wake. `null` means
+ * the wallet currently has no spendable VTXOs whose expiry is
+ * computable (or no spendable VTXOs at all) — the relay should
+ * suppress pushes for the device until a non-null value lands.
+ *
+ * Called from useArkSync after each successful foreground sync.
+ * Errors are swallowed; the next sync (30s later) retries.
+ */
+export const postArkRefreshExpiry = async (
+  username: string,
+  soonestExpiryAt: number | null,
+): Promise<void> => {
+  if (!username || !coinosRelayUri) return;
+  try {
+    await fetch(`${coinosRelayUri}/ark-refresh/expiry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': RELAY_API_KEY },
+      body: JSON.stringify({ username, soonestExpiryAt }),
+    });
+  } catch (e) {
+    if (__DEV__) console.log('[CoinOS Relay] ark-refresh/expiry failed (will retry next sync):', (e as Error)?.message);
+  }
+};

@@ -52,6 +52,9 @@ export default function ArkWallet({
         reserveArkAmount,
         arkVtxos,
         arkChainTipHeight,
+        arkBgRefreshEnabled,
+        arkBgRefreshLastSuccessAt,
+        arkBgRefreshLastAttempt,
     } = useAuthStore();
 
     // Strike + CoinOS + Ark: this combination pulls the Ark card up out
@@ -103,6 +106,43 @@ export default function ArkWallet({
     const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
         ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d — refresh soon`
         : null;
+
+    /**
+     * Status line shown when the user has opted into background refresh.
+     *
+     * Replaces — does not append to — the expiryWarning text, since the
+     * whole point of opting in is to take that worry off the user. We
+     * still surface a clear failure state if the last attempt errored,
+     * because at that point the user IS back on the hook and needs to
+     * know.
+     *
+     * Returns null when the toggle is off so the regular expiryWarning
+     * path runs unchanged.
+     */
+    const bgRefreshStatus = useMemo(() => {
+        if (!arkBgRefreshEnabled) return null;
+
+        if (arkBgRefreshLastAttempt?.outcome === 'error') {
+            const d = new Date(arkBgRefreshLastAttempt.at);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return {
+                text: `Auto-refresh failed at ${hh}:${mm} — tap to retry`,
+                error: true,
+            };
+        }
+
+        if (arkBgRefreshLastSuccessAt === null) {
+            return { text: 'Auto-refresh on — waiting for first run', error: false };
+        }
+
+        const ageMs = Date.now() - arkBgRefreshLastSuccessAt;
+        const ageHrs = ageMs / (60 * 60 * 1000);
+        const ageStr = ageHrs < 1
+            ? `${Math.max(1, Math.round(ageMs / 60_000))}m ago`
+            : `${Math.round(ageHrs)}h ago`;
+        return { text: `Auto-refresh on, last refresh ${ageStr}`, error: false };
+    }, [arkBgRefreshEnabled, arkBgRefreshLastSuccessAt, arkBgRefreshLastAttempt]);
 
     // IMPORTANT: the parent's `convertedRate` prop is globally computed from
     // the CoinOS balance (HomeScreen/index.tsx:683 — `setConvertedRate(
@@ -198,7 +238,27 @@ export default function ArkWallet({
                                     {homeMessage}
                                 </Text>
                             )}
-                            {!isLoading && expiryWarning && (
+                            {!isLoading && bgRefreshStatus && (
+                                <TouchableOpacity onPress={arkMenuClickHandler} activeOpacity={0.7}>
+                                    <Text
+                                        h4
+                                        style={[
+                                            styles.alert,
+                                            {
+                                                color: bgRefreshStatus.error
+                                                    ? colors.redLight
+                                                    : colors.ark.light,
+                                            },
+                                        ]}
+                                    >
+                                        {bgRefreshStatus.text}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+                            {/* Suppress the plain expiry warning when the bg-
+                                refresh banner is up — that banner already covers
+                                expiry context (next-run ETA / last-run failure). */}
+                            {!isLoading && !bgRefreshStatus && expiryWarning && (
                                 <Text h4 style={[styles.alert, { color: colors.redLight }]}>
                                     {expiryWarning}
                                 </Text>

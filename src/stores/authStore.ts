@@ -142,6 +142,47 @@ export type AuthStateType = {
     setArkUseHotVaultSeed: (state: boolean) => void;
     setWithdrawArkThreshold: (state: any) => void;
     setReserveArkAmount: (state: number) => void;
+
+    // Background VTXO refresh (opt-in). Default off — see
+    // src/services/ark/backgroundRefresh.ts for the policy and
+    // src/services/ark/backgroundKeychain.ts for the keychain trade-off
+    // the toggle gates.
+    arkBgRefreshEnabled: boolean;
+    /** Timestamp (ms) of the last successful background round. Drives 12h rate limit + UI status copy. */
+    arkBgRefreshLastSuccessAt: number | null;
+    /** Outcome of the most recent attempt (success OR otherwise). UI surfaces failures only. */
+    arkBgRefreshLastAttempt: {
+        at: number;
+        outcome: string;
+        elapsedMs: number;
+        errorMsg: string | null;
+    } | null;
+    /** Counts only `error` outcomes. Resets to 0 on success. Drives the "couldn't auto-refresh" notification at 2. */
+    arkBgRefreshConsecutiveFailures: number;
+    /** Set when a post-refresh cloud-backup upload deferred (Phase 4). Surfaces a banner on next foreground. */
+    arkBgRefreshDeferredBackup: boolean;
+    /** Last fire time of the <24h-to-expiry notification. Used to suppress repeat fires within a 12h window. */
+    arkBgRefreshLastWarn24hAt: number | null;
+    /** Last fire time of the <2h-to-expiry notification. Used to suppress repeat fires within a 1h window. */
+    arkBgRefreshLastWarn2hAt: number | null;
+    /** User-configurable upper bound on the fee a background refresh round can auto-pay (sats). Default 5000. */
+    arkBgRefreshMaxFeeSats: number;
+    setArkBgRefreshEnabled: (state: boolean) => void;
+    setArkBgRefreshLastSuccessAt: (state: number | null) => void;
+    setArkBgRefreshLastAttempt: (
+        state: {
+            at: number;
+            outcome: string;
+            elapsedMs: number;
+            errorMsg: string | null;
+        } | null,
+    ) => void;
+    setArkBgRefreshConsecutiveFailures: (state: number) => void;
+    setArkBgRefreshDeferredBackup: (state: boolean) => void;
+    setArkBgRefreshLastWarn24hAt: (state: number | null) => void;
+    setArkBgRefreshLastWarn2hAt: (state: number | null) => void;
+    setArkBgRefreshMaxFeeSats: (state: number) => void;
+
     clearArkAuth: () => void;
 
     // 2FA state
@@ -188,6 +229,14 @@ const createAuthStore = (
     arkUseHotVaultSeed: false,
     withdrawArkThreshold: 500000,
     reserveArkAmount: 100000,
+    arkBgRefreshEnabled: false,
+    arkBgRefreshLastSuccessAt: null,
+    arkBgRefreshLastAttempt: null,
+    arkBgRefreshConsecutiveFailures: 0,
+    arkBgRefreshDeferredBackup: false,
+    arkBgRefreshLastWarn24hAt: null,
+    arkBgRefreshLastWarn2hAt: null,
+    arkBgRefreshMaxFeeSats: 5000,
     // 2FA state
     twoFARequired: false,
     twoFAVerified: false,
@@ -231,6 +280,14 @@ const createAuthStore = (
     setArkUseHotVaultSeed: (state: boolean) => set({ arkUseHotVaultSeed: state }),
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
     setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),
+    setArkBgRefreshEnabled: (state: boolean) => set({ arkBgRefreshEnabled: state }),
+    setArkBgRefreshLastSuccessAt: (state: number | null) => set({ arkBgRefreshLastSuccessAt: state }),
+    setArkBgRefreshLastAttempt: (state) => set({ arkBgRefreshLastAttempt: state }),
+    setArkBgRefreshConsecutiveFailures: (state: number) => set({ arkBgRefreshConsecutiveFailures: state }),
+    setArkBgRefreshDeferredBackup: (state: boolean) => set({ arkBgRefreshDeferredBackup: state }),
+    setArkBgRefreshLastWarn24hAt: (state: number | null) => set({ arkBgRefreshLastWarn24hAt: state }),
+    setArkBgRefreshLastWarn2hAt: (state: number | null) => set({ arkBgRefreshLastWarn2hAt: state }),
+    setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
     clearArkAuth: () =>
         set({
             isArkAuth: false,
@@ -248,6 +305,20 @@ const createAuthStore = (
             arkUseHotVaultSeed: false,
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout
+
+            // Background-refresh state is wallet-scoped: clear on
+            // disconnect so the next wallet doesn't inherit a previous
+            // wallet's success timestamp / failure count. The keychain
+            // entry itself is cleared by setArkBackgroundRefreshEnabled
+            // (off path) which we call separately from the disconnect
+            // flow.
+            arkBgRefreshEnabled: false,
+            arkBgRefreshLastSuccessAt: null,
+            arkBgRefreshLastAttempt: null,
+            arkBgRefreshConsecutiveFailures: 0,
+            arkBgRefreshDeferredBackup: false,
+            arkBgRefreshLastWarn24hAt: null,
+            arkBgRefreshLastWarn2hAt: null,
         }),
     // 2FA setters
     setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),

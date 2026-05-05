@@ -92,6 +92,39 @@ export {
 export type { ArkRefreshFeeView, ArkRefreshResult } from './refresh';
 
 export {
+    runBackgroundRefresh,
+    setArkBackgroundRefreshEnabled,
+    BG_REFRESH_TUNABLES,
+} from './backgroundRefresh';
+export type { ArkBgRefreshResult } from './backgroundRefresh';
+
+export {
+    readTelemetry as readArkBgRefreshTelemetry,
+    clearTelemetry as clearArkBgRefreshTelemetry,
+} from './backgroundTelemetry';
+export type {
+    ArkBgRefreshTrigger,
+    ArkBgRefreshOutcome,
+    ArkBgRefreshTelemetryEntry,
+} from './backgroundTelemetry';
+
+export {
+    hasBackgroundArkSeed,
+} from './backgroundKeychain';
+
+export {
+    ensureBgNotificationPermission,
+} from './backgroundNotifications';
+
+export {
+    registerArkBackgroundRefreshHandlers,
+    scheduleArkBackgroundRefresh,
+    cancelArkBackgroundRefresh,
+} from './scheduler';
+
+export { hydrateArkWalletFromBackgroundSeed } from './walletHandle';
+
+export {
     classifyArkDestination,
     estimateArkSendFee,
     executeArkSend,

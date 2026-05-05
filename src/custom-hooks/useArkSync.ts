@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus, InteractionManager, Platform } from 'react-native';
 
 import {
+    AVG_BLOCK_MINUTES,
     claimArkExitsToAddress,
     fetchArkBalance,
     fetchArkPendingRoundStates,
@@ -20,6 +21,7 @@ import {
     tryClaimArkLightningReceives,
     writeArkAutoBackup,
 } from '@Cypher/services/ark';
+import { postArkRefreshExpiry } from '@Cypher/services/coinosSocket';
 import useAuthStore from '@Cypher/stores/authStore';
 
 /**
@@ -333,6 +335,41 @@ export default function useArkSync(): UseArkSync {
             }
             setArkLastSyncedAt(Date.now());
             setLastError(null);
+
+            // --- Push soonest-expiry to the relay (fire-and-forget) ---
+            //
+            // The relay's silent-push scanner uses this to decide when
+            // to fire ark.refresh.due wakes. We POST only when the user
+            // has opted into background refresh — non-opted-in users
+            // shouldn't generate relay traffic from this code path.
+            //
+            // Compute the soonest expiry locally rather than asking the
+            // SDK because the same math (skip arkoor, skip Locked) is
+            // already used in ArkWallet/index.tsx for the in-app banner;
+            // duplicating it inline is cheaper than introducing a
+            // dependency cycle.
+            const state = useAuthStore.getState();
+            if (state.arkBgRefreshEnabled && tip !== null && vtxos) {
+                const user = state.user;
+                const username =
+                    (user && (user.username ?? (typeof user === 'string' ? user : null))) || null;
+                if (username) {
+                    let minBlocks = Infinity;
+                    for (const v of vtxos.spendable) {
+                        if (v.expiryHeight === 0) continue;
+                        if (v.state.toLowerCase() === 'locked') continue;
+                        const blocks = v.expiryHeight - tip;
+                        if (blocks < minBlocks) minBlocks = blocks;
+                    }
+                    const soonestExpiryAt = isFinite(minBlocks)
+                        ? Math.floor(
+                              Date.now() / 1000 +
+                                  Math.max(0, minBlocks) * AVG_BLOCK_MINUTES * 60,
+                          )
+                        : null;
+                    void postArkRefreshExpiry(username, soonestExpiryAt);
+                }
+            }
 
             // --- Auto-backup (fire-and-forget, off the critical path) ---
             //

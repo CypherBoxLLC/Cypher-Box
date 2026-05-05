@@ -76,6 +76,13 @@
             </intent-filter>
         </service>
 
+        <!-- Headless JS task host for the Ark background-refresh worker.
+             Started from ArkRefreshWorker (WorkManager). Not exported —
+             only our app's worker needs to trigger it. -->
+        <service
+            android:name=".ArkRefreshHeadlessTaskService"
+            android:exported="false" />
+
 <!--        <activity-->
 <!--            android:name=".SplashActivity"-->
 <!--            android:exported="true">-->

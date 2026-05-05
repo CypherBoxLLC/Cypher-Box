@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, Switch, TextInput, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Icon } from "react-native-elements";
 import Svg, { Circle } from "react-native-svg";
@@ -14,8 +14,12 @@ import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
 import {
     AVG_BLOCK_MINUTES,
     blocksToDays,
+    clearArkBgRefreshTelemetry,
     estimateArkRefreshFee,
+    readArkBgRefreshTelemetry,
     refreshArkVtxosAndSync,
+    runBackgroundRefresh,
+    setArkBackgroundRefreshEnabled,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -451,10 +455,19 @@ interface ArkCapsulesProps {
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
+    const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
+    const [runningBgRefresh, setRunningBgRefresh] = useState(false);
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
+    const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
+    const arkBgRefreshMaxFeeSats = useAuthStore((s) => s.arkBgRefreshMaxFeeSats);
+    const setArkBgRefreshMaxFeeSats = useAuthStore((s) => s.setArkBgRefreshMaxFeeSats);
+    // Buffered local string so the user can clear / partially type without
+    // the store committing intermediate values like "" or "5". Reconciled
+    // with the store value on blur (commitFeeInput).
+    const [feeInput, setFeeInput] = useState<string>(String(arkBgRefreshMaxFeeSats));
 
     // Project SDK VTXOs → row data with days-until-expiry computed from the
     // current chain tip. If tip is unknown (esplora offline) we render a
@@ -676,6 +689,134 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         void refreshIds([vtxoId]);
     };
 
+    /**
+     * DEV-only telemetry surface. Logs the rolling buffer to the JS console
+     * (full detail) and shows an Alert with an outcome-by-outcome summary.
+     *
+     * A more polished in-app screen is straightforward to add when the
+     * background-refresh feature ships beyond DEV — for now this keeps the
+     * diagnostic surface tight while still making field debugging feasible.
+     */
+    const handleDumpBgRefreshLog = async () => {
+        const entries = await readArkBgRefreshTelemetry();
+        if (entries.length === 0) {
+            Alert.alert("Bg refresh log", "Empty — no attempts recorded yet.");
+            return;
+        }
+        const counts: Record<string, number> = {};
+        for (const e of entries) counts[e.outcome] = (counts[e.outcome] ?? 0) + 1;
+        const summary = Object.entries(counts)
+            .map(([outcome, count]) => `${outcome}: ${count}`)
+            .join("\n");
+        console.log("[Ark bg refresh] full telemetry buffer:", entries);
+        Alert.alert(
+            `Bg refresh log (${entries.length} entries)`,
+            `${summary}\n\nFull buffer dumped to JS console.`,
+            [
+                { text: "OK", style: "cancel" },
+                {
+                    text: "Clear log",
+                    style: "destructive",
+                    onPress: async () => {
+                        await clearArkBgRefreshTelemetry();
+                        SimpleToast.show("Telemetry cleared", SimpleToast.SHORT);
+                    },
+                },
+            ],
+        );
+    };
+
+    /**
+     * DEV-only manual trigger. Runs the full background-refresh policy on
+     * the foreground thread so you can verify the orchestrator end-to-end
+     * (rate-limit gate, eligibility filter, fee gate, refresh round,
+     * telemetry record, store state update) without waiting for native
+     * scheduling to land in Phase 2.
+     */
+    const handleRunBgRefreshNow = async () => {
+        if (runningBgRefresh) return;
+        setRunningBgRefresh(true);
+        try {
+            const result = await runBackgroundRefresh('manual-test');
+            const fee = result.feeSats === null ? '—' : `${result.feeSats}s`;
+            SimpleToast.show(
+                `${result.outcome} • ${result.vtxoCount} vtxo • fee ${fee} • ${result.elapsedMs}ms`,
+                SimpleToast.LONG,
+            );
+            if (result.errorMsg) {
+                console.warn('[Ark bg refresh manual] error:', result.errorMsg);
+            }
+        } catch (err: any) {
+            // runBackgroundRefresh swallows everything internally — if we
+            // land here it's a bug worth surfacing.
+            console.warn('[Ark bg refresh manual] unexpected throw:', err);
+            SimpleToast.show(
+                `Unexpected error: ${err?.message ?? "unknown"}`,
+                SimpleToast.LONG,
+            );
+        } finally {
+            setRunningBgRefresh(false);
+        }
+    };
+
+    /**
+     * Commit the fee-gate input on blur. Discards any non-positive value
+     * (resets the input to the last-committed store value) — a 0-or-negative
+     * ceiling would mean "never auto-pay anything," which is functionally
+     * equivalent to disabling the feature, and is more confusingly expressed
+     * via the toggle. The minimum sane ceiling is 1 sat.
+     */
+    const commitFeeInput = () => {
+        const parsed = parseInt(feeInput.replace(/[^\d]/g, ''), 10);
+        if (!Number.isFinite(parsed) || parsed < 1) {
+            setFeeInput(String(arkBgRefreshMaxFeeSats));
+            return;
+        }
+        setArkBgRefreshMaxFeeSats(parsed);
+        setFeeInput(String(parsed));
+    };
+
+    /**
+     * Toggle the opt-in background VTXO refresh feature.
+     *
+     * Enable path: read the seed from the biometry-locked primary keychain
+     * entry (one prompt), then hand it to the service which writes a
+     * background-readable copy under a separate keychain service. Subsequent
+     * background wakes can read that copy without user presence.
+     *
+     * Disable path: deletes the background-readable copy and clears all
+     * derived state. The primary biometric entry is untouched.
+     */
+    const handleToggleBgRefresh = async (next: boolean) => {
+        if (togglingBgRefresh) return;
+        setTogglingBgRefresh(true);
+        try {
+            if (next) {
+                const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
+                if (!creds || !creds.password) {
+                    SimpleToast.show(
+                        "Can't enable — seed not in Keychain. Use Recover to type it in first.",
+                        SimpleToast.LONG,
+                    );
+                    return;
+                }
+                await setArkBackgroundRefreshEnabled(true, creds.password);
+                SimpleToast.show("Background refresh enabled", SimpleToast.SHORT);
+            } else {
+                await setArkBackgroundRefreshEnabled(false);
+                SimpleToast.show("Background refresh disabled", SimpleToast.SHORT);
+            }
+        } catch (err: any) {
+            console.warn("[Ark bg refresh toggle] failed:", err);
+            SimpleToast.show(
+                `Toggle failed: ${err?.message ?? "unknown error"}`,
+                SimpleToast.LONG,
+            );
+        } finally {
+            setTogglingBgRefresh(false);
+        }
+    };
+
     const renderActionButton = (label: string, onPress: () => void) => (
         <GradientView
             onPress={onPress}
@@ -811,6 +952,147 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     Don't trust the Ark server? Settings → Emergency Exit will
                     sweep funds back on-chain without ASP cooperation.
                 </Text>
+                {/* Background-refresh opt-in.
+                    Off by default. Copy and behaviour fixed by the spec —
+                    flipping on writes a non-biometric copy of the seed to
+                    a separate keychain entry; flipping off deletes it.
+                    See src/services/ark/backgroundKeychain.ts for the
+                    full posture trade-off. */}
+                <View
+                    style={{
+                        marginHorizontal: 24,
+                        marginTop: 8,
+                        paddingVertical: 10,
+                        paddingHorizontal: 14,
+                        borderRadius: 10,
+                        backgroundColor: "#1a1a1a",
+                    }}
+                >
+                    <View
+                        style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                        }}
+                    >
+                        <Text
+                            bold
+                            style={{ fontSize: 14, color: colors.white, flex: 1, marginRight: 12 }}
+                        >
+                            Refresh Ark capsules in background
+                        </Text>
+                        <Switch
+                            value={arkBgRefreshEnabled}
+                            onValueChange={handleToggleBgRefresh}
+                            disabled={togglingBgRefresh}
+                            trackColor={{ false: "#3a3a3a", true: colors.ark.light }}
+                            thumbColor={colors.white}
+                        />
+                    </View>
+                    <Text style={{ fontSize: 12, color: "#888", marginTop: 6, lineHeight: 16 }}>
+                        Cypher Box will refresh capsules approaching expiry without
+                        opening the app. Requires keeping the wallet seed accessible
+                        while your phone is unlocked. Off by default for safety.
+                    </Text>
+                    {arkBgRefreshEnabled && (
+                        <View
+                            style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                marginTop: 12,
+                                paddingTop: 10,
+                                borderTopWidth: 0.5,
+                                borderTopColor: "#333",
+                            }}
+                        >
+                            <View style={{ flex: 1, marginRight: 12 }}>
+                                <Text bold style={{ fontSize: 13, color: colors.white }}>
+                                    Auto-pay fee ceiling
+                                </Text>
+                                <Text style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                                    Round skipped if estimated fee exceeds this.
+                                </Text>
+                            </View>
+                            <View
+                                style={{
+                                    flexDirection: "row",
+                                    alignItems: "center",
+                                    backgroundColor: "#0f0f0f",
+                                    borderRadius: 6,
+                                    paddingHorizontal: 8,
+                                    minWidth: 90,
+                                }}
+                            >
+                                <TextInput
+                                    value={feeInput}
+                                    onChangeText={setFeeInput}
+                                    onBlur={commitFeeInput}
+                                    onEndEditing={commitFeeInput}
+                                    keyboardType="number-pad"
+                                    returnKeyType="done"
+                                    maxLength={9}
+                                    style={{
+                                        color: colors.white,
+                                        fontSize: 13,
+                                        paddingVertical: 6,
+                                        textAlign: "right",
+                                        flex: 1,
+                                    }}
+                                />
+                                <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>
+                                    sats
+                                </Text>
+                            </View>
+                        </View>
+                    )}
+                </View>
+                {/* Backup + reset wallet state moved to Settings.tsx (CB-Ark
+                    commit 860e134). The DEV bg-refresh-related buttons below
+                    stay here — capsule expiry is the user's mental model for
+                    "is bg refresh actually firing", so the diagnostic surface
+                    co-locates with the data being refreshed. */}
+                {__DEV__ && (
+                    <TouchableOpacity
+                        onPress={handleRunBgRefreshNow}
+                        disabled={runningBgRefresh}
+                        style={{ alignSelf: "center", marginTop: 4, paddingVertical: 6, paddingHorizontal: 14, flexDirection: "row", alignItems: "center" }}
+                    >
+                        {runningBgRefresh && (
+                            <ActivityIndicator
+                                color={colors.ark.light}
+                                style={{ marginRight: 8 }}
+                            />
+                        )}
+                        <Text
+                            bold
+                            style={{
+                                fontSize: 12,
+                                color: runningBgRefresh ? colors.gray.disable : colors.ark.light,
+                                textDecorationLine: "underline",
+                            }}
+                        >
+                            {runningBgRefresh ? "Running bg refresh…" : "Run background refresh now — DEV"}
+                        </Text>
+                    </TouchableOpacity>
+                )}
+                {__DEV__ && (
+                    <TouchableOpacity
+                        onPress={handleDumpBgRefreshLog}
+                        style={{ alignSelf: "center", marginTop: 4, paddingVertical: 6, paddingHorizontal: 14 }}
+                    >
+                        <Text
+                            bold
+                            style={{
+                                fontSize: 12,
+                                color: colors.ark.light,
+                                textDecorationLine: "underline",
+                            }}
+                        >
+                            Dump bg refresh log — DEV
+                        </Text>
+                    </TouchableOpacity>
+                )}
             </View>
         </View>
     );
