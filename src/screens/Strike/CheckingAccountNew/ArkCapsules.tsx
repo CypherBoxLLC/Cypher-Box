@@ -15,14 +15,11 @@ import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
 import {
     AVG_BLOCK_MINUTES,
     blocksToDays,
-    clearArkBgRefreshTelemetry,
     estimateArkRefreshFee,
     getDeviceManufacturer,
     isIgnoringBatteryOptimizations,
     openBatteryOptimizationSettings,
-    readArkBgRefreshTelemetry,
     refreshArkVtxosAndSync,
-    runBackgroundRefresh,
     setArkBackgroundRefreshEnabled,
     vendorGuidance,
 } from "@Cypher/services/ark";
@@ -614,7 +611,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
-    const [runningBgRefresh, setRunningBgRefresh] = useState(false);
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
@@ -718,15 +714,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
         );
     };
-
-    const { totalBTC, totalUSD } = useMemo(() => {
-        const totalSats = rows
-            .filter((v) => selectedIds.includes(v.id))
-            .reduce((acc, v) => acc + v.sats, 0);
-        const totalBTC = btcHandle(totalSats);
-        const totalUSD = Number(totalBTC) * Number(matchedRate || 0);
-        return { totalBTC, totalUSD };
-    }, [rows, selectedIds, matchedRate]);
 
     // --- Action handlers ---
     //
@@ -886,76 +873,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     };
 
     /**
-     * DEV-only telemetry surface. Logs the rolling buffer to the JS console
-     * (full detail) and shows an Alert with an outcome-by-outcome summary.
-     *
-     * A more polished in-app screen is straightforward to add when the
-     * background-refresh feature ships beyond DEV — for now this keeps the
-     * diagnostic surface tight while still making field debugging feasible.
-     */
-    const handleDumpBgRefreshLog = async () => {
-        const entries = await readArkBgRefreshTelemetry();
-        if (entries.length === 0) {
-            Alert.alert("Bg refresh log", "Empty — no attempts recorded yet.");
-            return;
-        }
-        const counts: Record<string, number> = {};
-        for (const e of entries) counts[e.outcome] = (counts[e.outcome] ?? 0) + 1;
-        const summary = Object.entries(counts)
-            .map(([outcome, count]) => `${outcome}: ${count}`)
-            .join("\n");
-        console.log("[Ark bg refresh] full telemetry buffer:", entries);
-        Alert.alert(
-            `Bg refresh log (${entries.length} entries)`,
-            `${summary}\n\nFull buffer dumped to JS console.`,
-            [
-                { text: "OK", style: "cancel" },
-                {
-                    text: "Clear log",
-                    style: "destructive",
-                    onPress: async () => {
-                        await clearArkBgRefreshTelemetry();
-                        SimpleToast.show("Telemetry cleared", SimpleToast.SHORT);
-                    },
-                },
-            ],
-        );
-    };
-
-    /**
-     * DEV-only manual trigger. Runs the full background-refresh policy on
-     * the foreground thread so you can verify the orchestrator end-to-end
-     * (rate-limit gate, eligibility filter, fee gate, refresh round,
-     * telemetry record, store state update) without waiting for native
-     * scheduling to land in Phase 2.
-     */
-    const handleRunBgRefreshNow = async () => {
-        if (runningBgRefresh) return;
-        setRunningBgRefresh(true);
-        try {
-            const result = await runBackgroundRefresh('manual-test');
-            const fee = result.feeSats === null ? '—' : `${result.feeSats}s`;
-            SimpleToast.show(
-                `${result.outcome} • ${result.vtxoCount} vtxo • fee ${fee} • ${result.elapsedMs}ms`,
-                SimpleToast.LONG,
-            );
-            if (result.errorMsg) {
-                console.warn('[Ark bg refresh manual] error:', result.errorMsg);
-            }
-        } catch (err: any) {
-            // runBackgroundRefresh swallows everything internally — if we
-            // land here it's a bug worth surfacing.
-            console.warn('[Ark bg refresh manual] unexpected throw:', err);
-            SimpleToast.show(
-                `Unexpected error: ${err?.message ?? "unknown"}`,
-                SimpleToast.LONG,
-            );
-        } finally {
-            setRunningBgRefresh(false);
-        }
-    };
-
-    /**
      * Commit the fee-gate input on blur. Discards any non-positive value
      * (resets the input to the last-committed store value) — a 0-or-negative
      * ceiling would mean "never auto-pay anything," which is functionally
@@ -1072,6 +989,100 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     return (
         <View style={vaultStyles.flex}>
+            {/* Background-refresh toggle — first thing the user sees on the
+                Capsules tab. Lives at the top because it's the single most
+                consequential setting on this screen (decides whether the
+                wallet keeps itself alive in the background). Moved up from
+                the previous ListFooterComponent slot per UX feedback —
+                hidden below the capsule list it was easy to miss. ON by
+                default for new wallets (zustand initial state); the actual
+                scheduler is armed at wallet-create time. */}
+            <View
+                style={{
+                    marginHorizontal: 20,
+                    marginTop: 4,
+                    marginBottom: 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 14,
+                    borderRadius: 10,
+                    backgroundColor: "#1a1a1a",
+                }}
+            >
+                <View
+                    style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                    }}
+                >
+                    <Text bold style={{ fontSize: 14, color: colors.white, flex: 1, marginRight: 12 }}>
+                        Refresh Ark capsules in background
+                    </Text>
+                    <Switch
+                        value={arkBgRefreshEnabled}
+                        onValueChange={handleToggleBgRefresh}
+                        disabled={togglingBgRefresh}
+                        trackColor={{ false: "#3a3a3a", true: colors.ark.light }}
+                        thumbColor={colors.white}
+                    />
+                </View>
+                <Text style={{ fontSize: 12, color: "#888", marginTop: 6, lineHeight: 16 }}>
+                    Cypher Box refreshes capsules approaching expiry without you opening the app. Toggle off if you'd rather refresh manually.
+                </Text>
+                {arkBgRefreshEnabled && (
+                    <View
+                        style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            marginTop: 12,
+                            paddingTop: 10,
+                            borderTopWidth: 0.5,
+                            borderTopColor: "#333",
+                        }}
+                    >
+                        <View style={{ flex: 1, marginRight: 12 }}>
+                            <Text bold style={{ fontSize: 13, color: colors.white }}>
+                                Auto-pay fee ceiling
+                            </Text>
+                            <Text style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                                Round skipped if estimated fee exceeds this.
+                            </Text>
+                        </View>
+                        <View
+                            style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                backgroundColor: "#0f0f0f",
+                                borderRadius: 6,
+                                paddingHorizontal: 8,
+                                minWidth: 90,
+                            }}
+                        >
+                            <TextInput
+                                value={feeInput}
+                                onChangeText={setFeeInput}
+                                onBlur={commitFeeInput}
+                                onEndEditing={commitFeeInput}
+                                keyboardType="number-pad"
+                                returnKeyType="done"
+                                maxLength={9}
+                                style={{
+                                    color: colors.white,
+                                    fontSize: 13,
+                                    paddingVertical: 6,
+                                    textAlign: "right",
+                                    flex: 1,
+                                }}
+                            />
+                            <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>
+                                sats
+                            </Text>
+                        </View>
+                    </View>
+                )}
+            </View>
+
             {/* Explainer header — VTXO vocabulary + behavior in one short paragraph.
                 Uses the same desc style Hot Vault uses for its "Select your UTXO
                 capsules to send..." line, so the tab feels consistent. */}
@@ -1156,183 +1167,19 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         </View>
                     )
                 }
-                ListFooterComponent={() => (
-                    <>
-                        {/* Background-refresh opt-in.
-                            Off by default. Copy and behaviour fixed by the spec —
-                            flipping on writes a non-biometric copy of the seed to
-                            a separate keychain entry; flipping off deletes it.
-                            See src/services/ark/backgroundKeychain.ts for the
-                            full posture trade-off.
-
-                            Lives inside ListFooterComponent so it scrolls with the
-                            capsule list — keeps the list area uncompressed when
-                            VTXO count is high and lets users page down to settings. */}
-                        <View
-                            style={{
-                                marginHorizontal: 24,
-                                marginTop: 16,
-                                paddingVertical: 10,
-                                paddingHorizontal: 14,
-                                borderRadius: 10,
-                                backgroundColor: "#1a1a1a",
-                            }}
-                        >
-                            <View
-                                style={{
-                                    flexDirection: "row",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                }}
-                            >
-                                <Text
-                                    bold
-                                    style={{ fontSize: 14, color: colors.white, flex: 1, marginRight: 12 }}
-                                >
-                                    Refresh Ark capsules in background
-                                </Text>
-                                <Switch
-                                    value={arkBgRefreshEnabled}
-                                    onValueChange={handleToggleBgRefresh}
-                                    disabled={togglingBgRefresh}
-                                    trackColor={{ false: "#3a3a3a", true: colors.ark.light }}
-                                    thumbColor={colors.white}
-                                />
-                            </View>
-                            <Text style={{ fontSize: 12, color: "#888", marginTop: 6, lineHeight: 16 }}>
-                                Cypher Box will refresh capsules approaching expiry without
-                                opening the app. Requires keeping the wallet seed accessible
-                                while your phone is unlocked. Off by default for safety.
-                            </Text>
-                            {arkBgRefreshEnabled && (
-                                <View
-                                    style={{
-                                        flexDirection: "row",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                        marginTop: 12,
-                                        paddingTop: 10,
-                                        borderTopWidth: 0.5,
-                                        borderTopColor: "#333",
-                                    }}
-                                >
-                                    <View style={{ flex: 1, marginRight: 12 }}>
-                                        <Text bold style={{ fontSize: 13, color: colors.white }}>
-                                            Auto-pay fee ceiling
-                                        </Text>
-                                        <Text style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-                                            Round skipped if estimated fee exceeds this.
-                                        </Text>
-                                    </View>
-                                    <View
-                                        style={{
-                                            flexDirection: "row",
-                                            alignItems: "center",
-                                            backgroundColor: "#0f0f0f",
-                                            borderRadius: 6,
-                                            paddingHorizontal: 8,
-                                            minWidth: 90,
-                                        }}
-                                    >
-                                        <TextInput
-                                            value={feeInput}
-                                            onChangeText={setFeeInput}
-                                            onBlur={commitFeeInput}
-                                            onEndEditing={commitFeeInput}
-                                            keyboardType="number-pad"
-                                            returnKeyType="done"
-                                            maxLength={9}
-                                            style={{
-                                                color: colors.white,
-                                                fontSize: 13,
-                                                paddingVertical: 6,
-                                                textAlign: "right",
-                                                flex: 1,
-                                            }}
-                                        />
-                                        <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>
-                                            sats
-                                        </Text>
-                                    </View>
-                                </View>
-                            )}
-                        </View>
-                        {/* DEV-only diagnostic buttons. Co-located with the bg-refresh
-                            toggle since they're meaningless without it. */}
-                        {__DEV__ && (
-                            <TouchableOpacity
-                                onPress={handleRunBgRefreshNow}
-                                disabled={runningBgRefresh}
-                                style={{ alignSelf: "center", marginTop: 4, paddingVertical: 6, paddingHorizontal: 14, flexDirection: "row", alignItems: "center" }}
-                            >
-                                {runningBgRefresh && (
-                                    <ActivityIndicator
-                                        color={colors.ark.light}
-                                        style={{ marginRight: 8 }}
-                                    />
-                                )}
-                                <Text
-                                    bold
-                                    style={{
-                                        fontSize: 12,
-                                        color: runningBgRefresh ? colors.gray.disable : colors.ark.light,
-                                        textDecorationLine: "underline",
-                                    }}
-                                >
-                                    {runningBgRefresh ? "Running bg refresh…" : "Run background refresh now — DEV"}
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-                        {__DEV__ && (
-                            <TouchableOpacity
-                                onPress={handleDumpBgRefreshLog}
-                                style={{ alignSelf: "center", marginTop: 4, paddingVertical: 6, paddingHorizontal: 14 }}
-                            >
-                                <Text
-                                    bold
-                                    style={{
-                                        fontSize: 12,
-                                        color: colors.ark.light,
-                                        textDecorationLine: "underline",
-                                    }}
-                                >
-                                    Dump bg refresh log — DEV
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-                    </>
-                )}
                 style={{ marginTop: 10 }}
             />
 
-            {/* Selection summary + action row. Two actions only: Send (consume
-                selected VTXOs as a payment) and Refresh (re-board to extend
-                expiry). No Emergency Exit here — that's the global Withdraw
-                button's job, see the file docblock. */}
+            {/* Action row — Send (consume selected capsules as a payment)
+                and Refresh (re-board to extend expiry). The previous
+                "Size of selected capsules: X BTC / $Y" summary above the
+                buttons was removed per UX feedback — the BTC/USD
+                rollup wasn't decisional (Send routes to ArkSendScreen
+                which has its own amount field; Refresh acts on the
+                selected set regardless of total), and dropping it
+                de-clutters the screen. No Emergency Exit here — that's
+                the global Withdraw button's job, see the file docblock. */}
             <View style={vaultStyles.bottomViewNew}>
-                <Text h2 center>Size of selected capsules:</Text>
-                <View style={vaultStyles.priceView}>
-                    <View
-                        style={{
-                            backgroundColor: colors.black.bg,
-                            borderRadius: 21,
-                            borderWidth: 1,
-                            borderColor: selectedIds.length > 0 ? colors.ark.light : colors.gray.disable,
-                            paddingHorizontal: 14,
-                            height: 38,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            minWidth: 162,
-                        }}
-                    >
-                        <Text bold style={{ fontSize: 14, color: colors.white }}>
-                            {totalBTC} BTC
-                        </Text>
-                    </View>
-                    <Text h2 bold numberOfLines={1} style={{ marginStart: 10, width: 100 }}>
-                        ~$ {totalUSD.toFixed(2)}
-                    </Text>
-                </View>
                 <Text bold center style={vaultStyles.tips}>
                     Tip: Refresh capsules nearing expiry to keep your unilateral exit valid.
                 </Text>

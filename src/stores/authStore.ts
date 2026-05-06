@@ -246,7 +246,14 @@ const createAuthStore = (
     arkUseHotVaultSeed: false,
     withdrawArkThreshold: 500000,
     reserveArkAmount: 100000,
-    arkBgRefreshEnabled: false,
+    // Default ON so newly-created wallets get the auto-refresh
+    // safety net without an extra opt-in step. The actual scheduler
+    // is armed at wallet-create time (ArkSeedPhraseScreen.handleContinue
+    // calls setArkBackgroundRefreshEnabled), and the user can flip
+    // this off via the Capsules tab toggle. Existing wallets created
+    // before this default flipped retain whatever value persisted to
+    // disk under their previous preference.
+    arkBgRefreshEnabled: true,
     arkBgRefreshLastSuccessAt: null,
     arkBgRefreshLastAttempt: null,
     arkBgRefreshConsecutiveFailures: 0,
