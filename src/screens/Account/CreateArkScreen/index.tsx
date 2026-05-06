@@ -101,7 +101,7 @@ export default function CreateArkScreen() {
     const handleResetExisting = () => {
         Alert.alert(
             "Reset Ark wallet?",
-            "Deletes the local Ark datadir and removes the seed from Keychain. Any VTXOs not backed up externally will be unrecoverable.",
+            "This wipes your Ark wallet on this device. Without a backup file saved somewhere off-device, your VTXO capsules can't be recovered.",
             [
                 { text: "Cancel", style: "cancel" },
                 {
@@ -184,8 +184,8 @@ export default function CreateArkScreen() {
                     <View style={styles.content}>
                         <Text style={styles.warnTitle}>An Ark wallet already exists</Text>
                         <Text style={styles.warnBody}>
-                            Wallet state (VTXOs, round data) was found on this device. Open it
-                            to resume using the seed in your Keychain.
+                            An Ark wallet was found on this device. Open it to resume
+                            using the seed in your Keychain.
                         </Text>
                         <Text style={styles.warnBody}>
                             If this wallet isn't yours, or the seed no longer matches, tap

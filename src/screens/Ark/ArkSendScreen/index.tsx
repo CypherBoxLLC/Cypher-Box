@@ -453,7 +453,7 @@ export default function ArkSendScreen({ route }: Props) {
                     <Text style={styles.error}>
                         Insufficient spendable balance: {spendableSats.toLocaleString()} sats available.
                         {spendableSats === 0
-                            ? ' Your only VTXOs may be Locked in a pending round — try again once the round finalises, or recover the wallet from the Capsules tab.'
+                            ? ' Your VTXO capsules may be locked in a pending round — try again once the round finalises, or recover from the Capsules tab.'
                             : ''}
                     </Text>
                 )}

@@ -192,7 +192,7 @@ export default function RecoverArkScreen() {
         return new Promise<boolean>((resolve) => {
             Alert.alert(
                 "Replace existing Ark wallet?",
-                `Restoring ${sourceLabel} will wipe the current wallet and replace it with the encrypted backup. Anything in flight (mid-round, unsettled HTLC) that isn't in the backup will be lost.`,
+                `Restoring ${sourceLabel} replaces the current Ark wallet with the backup file. Any incoming Lightning payments still being settled won't carry over.`,
                 [
                     { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
                     { text: "Replace", style: "destructive", onPress: () => resolve(true) },
@@ -479,7 +479,7 @@ export default function RecoverArkScreen() {
         if (datadirExists) {
             Alert.alert(
                 "An Ark wallet already exists",
-                "There's already wallet data on this device. Open the existing setup screen to either reopen it (if the seed matches) or reset before recovering with a new seed.",
+                "There's already an Ark wallet set up on this device. Open it first to reset before restoring from backup — otherwise the existing wallet stays.",
                 [
                     { text: "Cancel", style: "cancel" },
                     { text: "Open setup", onPress: () => dispatchNavigate("CreateArkScreen") },
@@ -623,7 +623,7 @@ function ChooseView({
                 Restore your Ark wallet
             </Text>
             <Text style={styles.introBody}>
-                {`Your Ark seed phrase is in this device's Keychain — you don't need to type it. Tap unlock below to load the seed via ${BIOMETRIC_LABEL} / passcode.\n\nArk VTXOs aren't seed-derivable, so you'll also need your ark-backup file — from ${cloudLabel} (if you connected it earlier) or a manual export.`}
+                {`Your Ark seed phrase is in this device's Keychain — you don't need to type it. Tap unlock below to load the seed via ${BIOMETRIC_LABEL} / passcode.\n\nVTXO capsules can't be re-derived from the seed alone, so you'll also need your ark-backup file — from ${cloudLabel} (if you connected it earlier) or a manual export.`}
             </Text>
 
             {!unlockedMnemonic && (
@@ -767,7 +767,7 @@ function TypeSeedView({
             <Text style={styles.introBody}>
                 Enter the words exactly as you wrote them down — order matters. Tap space or return to jump to the next box.
                 {"\n\n"}
-                Note: Ark VTXOs cannot be recovered from the seed alone. To restore your funds, also restore from your ark-backup file (the buttons below).
+                Note: VTXO capsules cannot be recovered from the seed alone. To restore your funds, also restore from your ark-backup file (the buttons below).
             </Text>
 
             <View style={styles.inputsContainer}>

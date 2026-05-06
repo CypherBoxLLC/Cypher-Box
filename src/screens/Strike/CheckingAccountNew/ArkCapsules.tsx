@@ -1021,7 +1021,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     // tradeoff: auto-refresh becomes unreliable;
                     // manual still works.
                     const body = [
-                        "Android sleeps apps to save battery. Without this, auto-refresh becomes unreliable — you'll need to open Cypher Box manually to keep VTXOs current.",
+                        "Android sleeps apps to save battery. Without this, auto-refresh becomes unreliable — you'll need to open Cypher Box manually to keep your VTXO capsules current.",
                         "",
                         ...guidance.steps,
                     ].join("\n");

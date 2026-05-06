@@ -771,8 +771,8 @@ export default function ArkSeedPhraseScreen() {
                                 </Text>
                                 <Text style={styles.backupOptionDetail}>
                                     {isIOS
-                                        ? "If iCloud Drive is on for Cypher Box (iOS Settings → Apple ID → iCloud → Cypher Box), your ark-backup file syncs off-device and updates whenever your VTXOs change. Apple sees only ciphertext."
-                                        : "Connects your Google account and uploads your ark-backup file to Drive's appDataFolder — hidden from the main Drive UI, only Cypher Box can read it. Updates upload automatically as your VTXOs change. Google sees only ciphertext."}
+                                        ? "If iCloud Drive is on for Cypher Box (iOS Settings → Apple ID → iCloud → Cypher Box), your ark-backup file syncs off-device and updates whenever your VTXO capsules change. Apple sees only ciphertext."
+                                        : "Connects your Google account and uploads your ark-backup file to Drive's appDataFolder — hidden from the main Drive UI, only Cypher Box can read it. Updates upload automatically as your VTXO capsules change. Google sees only ciphertext."}
                                 </Text>
                                 <TouchableOpacity
                                     onPress={handleConnectAndBackupCloud}

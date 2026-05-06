@@ -132,8 +132,8 @@ export default function ArkReceiveScreen() {
                                 <View style={styles.container2}>
                                     <Text subHeader bold style={styles.title}>Ark address</Text>
                                     <Text h4 bold style={styles.desc}>
-                                        Instant VTXO transfer from another Ark user. No fees,
-                                        no confirmations.
+                                        Instant VTXO capsule transfer from another Ark user.
+                                        No fees, no confirmations.
                                     </Text>
                                 </View>
                                 <Image source={LeftArrow} style={styles.image} resizeMode="contain" />

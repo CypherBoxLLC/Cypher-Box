@@ -218,13 +218,13 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                 {inputVtxoIds.length > 0 && (
                     <TextView
                         keytext="Input capsules: "
-                        text={`${inputVtxoIds.length} VTXO${inputVtxoIds.length === 1 ? '' : 's'} consumed`}
+                        text={`${inputVtxoIds.length} consumed`}
                     />
                 )}
                 {outputVtxoIds.length > 0 && (
                     <TextView
                         keytext="Output capsules: "
-                        text={`${outputVtxoIds.length} VTXO${outputVtxoIds.length === 1 ? '' : 's'} produced`}
+                        text={`${outputVtxoIds.length} produced`}
                     />
                 )}
 
@@ -285,7 +285,7 @@ function prettyStatus(status: ArkMovementStatus): string {
 function prettyKind(kind: ArkMovementKind): string {
     switch (kind) {
         case 'lightning': return 'Lightning';
-        case 'ark':       return 'Ark (VTXO send)';
+        case 'ark':       return 'Ark (capsule send)';
         case 'onchain':   return 'Bitcoin on-chain';
         case 'board':     return 'Board to Ark';
         case 'exit':      return 'Exit from Ark';

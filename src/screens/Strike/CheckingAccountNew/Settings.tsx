@@ -658,9 +658,8 @@ function ArkSettingsBody() {
     try {
       Alert.alert(
         'Emergency Exit',
-        `This broadcasts your Ark VTXOs unilaterally to Bitcoin and sweeps them to your ${destLabel} after a ~24-hour CSV timelock. ` +
-          `Once started, it cannot be cancelled — funds will land at:\n\n${address}\n\n` +
-          'Cypher Box will keep the exit running in the background and auto-delete this Ark vault when the funds land.',
+        `Forces your VTXO capsules onto the Bitcoin chain. Funds arrive at your ${destLabel} after a ~24-hour wait set by Bitcoin. Once you start, this can't be cancelled.\n\n${address}\n\n` +
+          'Cypher Box keeps the exit running in the background and removes this Ark wallet when the funds arrive.',
         [
           {
             text: 'Cancel',
@@ -1403,8 +1402,9 @@ function ArkSettingsBody() {
                 Delete Ark vault?
               </Text>
               <Text style={{ fontSize: 13, color: '#CCC', lineHeight: 19, marginBottom: 16 }}>
-                This wipes your Ark wallet from this device — the local database
-                with VTXO state. To restore funds you'll still need your{' '}
+                This wipes your Ark wallet from this device — the local
+                database with your VTXO capsules. To restore funds you'll
+                still need your{' '}
                 <Text bold style={{ color: '#FFF' }}>ark-backup file</Text>.
               </Text>
 
