@@ -15,6 +15,7 @@ import {
     connectGoogleDrive,
     isGoogleDriveConnected,
     downloadArkBackupFromDrive,
+    readArkBackupFromSaf,
 } from "@Cypher/services/ark";
 import { validateMnemonic } from "@secondts/bark-react-native";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -246,14 +247,29 @@ export default function RecoverArkScreen() {
         setRestoring(true);
         setErrorMsg(null);
 
-        // Local-first: writeArkAutoBackup keeps an always-current encrypted
-        // .cbark at AUTO_BACKUP_PATH so recovery doesn't depend on cloud
-        // availability. On Android the local file lives in app-private
-        // storage that the system file picker can't browse to anyway, so
-        // reading it directly is the only path that actually reaches it.
-        // Picker stays as the fallback for when the local copy is gone
-        // (fresh reinstall on a different device, manually-shared .cbark)
-        // or when the user explicitly opts out via forcePicker.
+        // Local-first auto-discovery, in order of preference:
+        //   1. AUTO_BACKUP_PATH — Documents/ark-backup.cbark, the
+        //      always-on local file. Wiped on `pm uninstall` and
+        //      `pm clear`, so this only hits on `install -r` or app-data
+        //      preserved scenarios.
+        //   2. SAF folder — the user-chosen Storage Access Framework
+        //      folder, populated by writeArkAutoBackup via
+        //      writeArkBackupToSaf when configured. The persisted URI
+        //      (in AsyncStorage) is wiped on uninstall/pm-clear too,
+        //      but during `install -r` recovery the URI survives, so
+        //      the SAF auto-find covers update reinstalls when
+        //      Documents was wiped but the SAF URI persisted.
+        //   3. DocumentPicker — the explicit picker. Default landing on
+        //      Android is "Recent files"; the user navigates from
+        //      there to wherever they kept the .cbark (Drive folder,
+        //      manual export they emailed themselves, etc.). This is
+        //      the only path that works after a fresh reinstall on a
+        //      different device.
+        //
+        // Each step skipped when forcePicker is true — that bypasses
+        // the local-first reads so the user can pick an OLDER
+        // manually-exported .cbark even when the always-current one
+        // is on disk.
         let blob: string | null = null;
         if (!forcePicker) {
             try {
@@ -262,6 +278,19 @@ export default function RecoverArkScreen() {
                 }
             } catch (err) {
                 console.warn('[Ark restore] local AUTO_BACKUP_PATH read failed:', err);
+            }
+        }
+
+        if (!blob && !forcePicker) {
+            // SAF folder fallback — Android only (no-op on iOS via the
+            // service-side guard). Survives `install -r` even when the
+            // app-private Documents file is gone, because the SAF
+            // folder lives outside the app sandbox.
+            try {
+                const safBlob = await readArkBackupFromSaf();
+                if (safBlob) blob = safBlob;
+            } catch (err) {
+                console.warn('[Ark restore] SAF folder read failed:', err);
             }
         }
 
