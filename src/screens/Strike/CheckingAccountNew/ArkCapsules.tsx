@@ -1011,15 +1011,17 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 if (!ignoring) {
                     const manufacturer = await getDeviceManufacturer();
                     const guidance = vendorGuidance(manufacturer);
-                    // Compact native-Alert copy: short stake-driven
-                    // explainer + minimal vendor-specific steps.
-                    // VTXO-expiry framing earns the user's attention
-                    // here (concrete consequence) better than a generic
-                    // "the app may stall" — they just turned on the
-                    // very feature that prevents that expiry, and we're
-                    // explaining why the OS can override it.
+                    // Compact native-Alert copy: short, honest framing
+                    // of the consequence + minimal vendor-specific
+                    // steps. Earlier draft warned about VTXO expiry,
+                    // which overstates the stakes — manual refresh in
+                    // foreground always works, so the actual loss case
+                    // is "user forgot to open the app for weeks AND
+                    // skipped this exemption". Toned down to the real
+                    // tradeoff: auto-refresh becomes unreliable;
+                    // manual still works.
                     const body = [
-                        "Android puts apps to sleep to save battery. Without this exemption, your VTXOs may not refresh in time and can expire on-chain — losing the funds.",
+                        "Android sleeps apps to save battery. Without this, auto-refresh becomes unreliable — you'll need to open Cypher Box manually to keep VTXOs current.",
                         "",
                         ...guidance.steps,
                     ].join("\n");
