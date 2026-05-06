@@ -83,3 +83,44 @@ export async function tryClaimArkLightningReceives(): Promise<ArkLightningReceiv
         return [];
     }
 }
+
+/**
+ * Read-only enumeration of pending Lightning receives, without driving them
+ * forward.
+ *
+ * Why this exists separately from `tryClaimArkLightningReceives`: that call
+ * has a side-effect — it asks the ASP to reveal the preimage and commit the
+ * receive into the next round. We need a pure read for the UI's "claiming
+ * via round…" indicator: between the moment the counterparty pays the
+ * invoice and the moment the resulting VTXO materialises in `allVtxos()`,
+ * the SDK's `pendingLightningReceives()` is the one signal that says "the
+ * money is here, the VTXO just hasn't arrived yet".
+ *
+ * Filtering: callers typically only care about entries with `hasHtlcVtxos
+ * === true` — an unpaid invoice (both flags false) is just a generated
+ * invoice the user is still waiting on, not an in-flight claim, and should
+ * not render as a pending capsule. We return everything here and let
+ * callers filter, so e.g. a debug screen can still see unpaid invoices.
+ *
+ * Returns [] on any error (handle missing, ASP flake) — the next sync tick
+ * retries automatically and a transient failure shouldn't blank the UI's
+ * pending indicator if it was already populated from a prior cycle.
+ */
+export async function fetchArkPendingLightningReceives(): Promise<ArkLightningReceiveView[]> {
+    const handle = getArkWalletHandle();
+    if (!handle) return [];
+
+    try {
+        const raw = await handle.pendingLightningReceives();
+        return raw.map((r) => ({
+            paymentHash: r.paymentHash,
+            invoice: r.invoice,
+            amountSats: Number(r.amountSats),
+            hasHtlcVtxos: r.hasHtlcVtxos,
+            preimageRevealed: r.preimageRevealed,
+        }));
+    } catch (err) {
+        console.warn('[Ark claim] pendingLightningReceives failed:', err);
+        return [];
+    }
+}

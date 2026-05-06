@@ -448,6 +448,159 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: 
     );
 }
 
+/**
+ * PendingLnReceiveRow — ghost capsule for a Lightning receive whose payment
+ * has landed at the ASP but whose VTXO hasn't materialised yet.
+ *
+ * Why this exists: between counterparty-paid-the-invoice and
+ * VTXO-appears-in-allVtxos there's a multi-minute gap (the claim has to ride
+ * the next Ark round). The history row already flips to "successful" once
+ * the preimage is revealed, but the spendable balance stays at 0 and the
+ * Capsules tab is empty. Users assume nothing is happening. This row is
+ * the visual reassurance: yes, the money is here, the VTXO is just a few
+ * minutes away.
+ *
+ * Visually distinct from real capsules:
+ *   - same gradient card shape so it slots into the list cleanly
+ *   - ring is a yellow indeterminate spinner (no depletion fraction —
+ *     there's nothing to deplete; this isn't a VTXO yet)
+ *   - label is "Claiming via round… (~1–3 min)" — italic, yellow
+ *   - no per-row refresh icon (nothing to refresh — the ASP is doing the
+ *     work)
+ *   - no selection checkbox (can't act on it; it'll resolve on its own)
+ *   - the entire card pulses opacity, like in-flight VTXOs do, so the
+ *     transient state reads at a glance
+ *
+ * Resolves automatically: when the next sync tick fetches an updated
+ * `pendingLightningReceives()` and the entry is gone, the parent's
+ * arkPendingLnReceives list shrinks and this row disappears. The
+ * accompanying VTXO row should appear on the same tick.
+ */
+interface PendingLnReceiveRowProps {
+    sats: number;
+    paymentHash: string;
+}
+
+function PendingLnReceiveRow({ sats }: PendingLnReceiveRowProps) {
+    const BTCAmount = btcHandle(sats) + " BTC";
+
+    const spinAnim = useRef(new Animated.Value(0)).current;
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        const spin = Animated.loop(
+            Animated.timing(spinAnim, {
+                toValue: 1,
+                duration: 1600,
+                easing: Easing.linear,
+                useNativeDriver: true,
+            }),
+        );
+        const pulse = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulseAnim, {
+                    toValue: 0.4,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pulseAnim, {
+                    toValue: 1,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+            ]),
+        );
+        spin.start();
+        pulse.start();
+        return () => {
+            spin.stop();
+            pulse.stop();
+        };
+    }, [spinAnim, pulseAnim]);
+
+    const spinDeg = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+    return (
+        <Animated.View style={[
+            rowStyles.main,
+            { height: 100, paddingTop: 0, justifyContent: 'center', opacity: pulseAnim },
+        ]}>
+            <LinearGradient
+                colors={['#3A3A3A', '#1C1C1C']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0.5, y: 0.866 }}
+                style={{
+                    position: 'absolute',
+                    top: 6,
+                    bottom: 6,
+                    left: 6,
+                    right: 18,
+                    borderRadius: 16,
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 5, height: 9 },
+                    shadowOpacity: 0.7,
+                    shadowRadius: 10,
+                    elevation: 10,
+                }}
+            />
+            <View style={rowStyles.container}>
+                <View style={[rowStyles.coin, { flex: 1.5 }]}>
+                    {/* Indeterminate spinner — a single yellow arc rotating
+                        forever. Reusing the VtxoRing geometry (38pt circle,
+                        4pt stroke) so the pending row aligns with real
+                        capsule rows visually. We draw a 25%-arc by setting
+                        dashOffset to 75% of the circumference, then rotate
+                        the whole SVG via Animated. */}
+                    <Animated.View style={{ transform: [{ rotate: spinDeg }] }}>
+                        <Svg width={RING_SIZE} height={RING_SIZE}>
+                            <Circle
+                                cx={RING_SIZE / 2}
+                                cy={RING_SIZE / 2}
+                                r={RING_RADIUS}
+                                stroke={colors.gray.disable}
+                                strokeWidth={RING_STROKE}
+                                fill="transparent"
+                                opacity={0.4}
+                            />
+                            <Circle
+                                cx={RING_SIZE / 2}
+                                cy={RING_SIZE / 2}
+                                r={RING_RADIUS}
+                                stroke={colors.ark.light}
+                                strokeWidth={RING_STROKE}
+                                fill="transparent"
+                                strokeDasharray={`${RING_CIRC * 0.25} ${RING_CIRC}`}
+                                strokeLinecap="round"
+                            />
+                        </Svg>
+                    </Animated.View>
+                </View>
+                <View style={[rowStyles.size, { flex: 2.8 }]}>
+                    <Text bold style={rowStyles.value}>{BTCAmount}</Text>
+                    <Text bold numberOfLines={1} style={{ color: colors.ark.light, fontSize: 12, fontStyle: "italic" }}>
+                        Claiming via round…
+                    </Text>
+                    <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 11 }}>
+                        Lightning ~1–3 min
+                    </Text>
+                </View>
+                {/* Bolt icon in the refresh column — visually distinguishes
+                    a pending Lightning receive from a real capsule. No tap
+                    handler: there's nothing the user can do here, the ASP
+                    is committing the claim into the next round. */}
+                <View style={[rowStyles.label, { alignItems: 'flex-start' }]}>
+                    <Icon name="zap" type="feather" color={colors.ark.light} size={22} />
+                </View>
+                {/* Empty select slot — no checkbox, can't be selected for
+                    Send/Refresh actions. We still reserve the column so the
+                    row width matches the real capsule rows below. */}
+                <View style={rowStyles.select} />
+            </View>
+        </Animated.View>
+    );
+}
+
 interface ArkCapsulesProps {
     matchedRate: string;
     currency: any;
@@ -459,6 +612,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
     const [runningBgRefresh, setRunningBgRefresh] = useState(false);
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
+    const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
@@ -920,13 +1074,40 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         roundIntervalSecs={arkRoundIntervalSecs}
                     />
                 )}
-                ListEmptyComponent={() => (
-                    <View style={{ alignItems: "center", marginTop: 40 }}>
-                        <Text style={{ color: colors.gray.light, fontSize: 13 }}>
-                            No VTXOs yet. Receive Bitcoin via Ark to populate.
-                        </Text>
-                    </View>
-                )}
+                // Pending LN receives render ABOVE the VTXO list. They're
+                // not real capsules (no VTXO yet, can't be selected, can't
+                // be refreshed), so they don't belong in the FlatList data
+                // array — that would mix two row shapes through one
+                // renderItem. Header keeps them visually attached to the
+                // capsule list (so users see them in the same place they'd
+                // expect their balance) without polluting the row contract.
+                ListHeaderComponent={
+                    arkPendingLnReceives.length > 0 ? (
+                        <>
+                            {arkPendingLnReceives.map((r) => (
+                                <PendingLnReceiveRow
+                                    key={`pending-ln-${r.paymentHash}`}
+                                    sats={r.amountSats}
+                                    paymentHash={r.paymentHash}
+                                />
+                            ))}
+                        </>
+                    ) : null
+                }
+                ListEmptyComponent={() =>
+                    // When there are no real VTXOs but there's a pending
+                    // LN receive, suppress the "No VTXOs yet" message —
+                    // the ghost capsule above is the right thing to show,
+                    // and the empty-state copy would read as a bug ("history
+                    // says I received it but the wallet says I have nothing").
+                    arkPendingLnReceives.length > 0 ? null : (
+                        <View style={{ alignItems: "center", marginTop: 40 }}>
+                            <Text style={{ color: colors.gray.light, fontSize: 13 }}>
+                                No VTXOs yet. Receive Bitcoin via Ark to populate.
+                            </Text>
+                        </View>
+                    )
+                }
                 ListFooterComponent={() => (
                     <>
                         {/* Background-refresh opt-in.

@@ -68,6 +68,16 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
     // (every 30s or after a manual refresh), arkLastSyncedAt changes and we
     // re-pull history. Keeps the tab fresh without needing our own interval.
     const lastSyncedAt = useAuthStore((s) => s.arkLastSyncedAt);
+    // Pending LN receives — entries here are payments that have landed at
+    // the ASP but whose VTXO hasn't materialised yet. We use the invoice
+    // string as the join key with movement.receivedOn to tag the matching
+    // history row as "still claiming" rather than letting the SDK's
+    // "successful" status read as fully done.
+    const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
+    const pendingLnInvoices = React.useMemo(
+        () => new Set(arkPendingLnReceives.map((r) => r.invoice)),
+        [arkPendingLnReceives],
+    );
 
     const load = useCallback(async (showSpinner = true) => {
         if (showSpinner) setIsLoading(true);
@@ -144,6 +154,16 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
                         movement={item}
                         matchedRate={Number(matchedRate) || 0}
                         currency={currency}
+                        // True when this is a Lightning receive whose
+                        // payment has landed but whose VTXO hasn't
+                        // materialised yet. Drives a "Claiming via round"
+                        // badge that overrides the SDK's "successful"
+                        // pill so users don't think it's fully done.
+                        isClaimingLn={
+                            item.kind === 'lightning' &&
+                            item.amountSats > 0 &&
+                            item.receivedOn.some((addr) => pendingLnInvoices.has(addr))
+                        }
                     />
                 )}
                 refreshControl={
@@ -186,6 +206,17 @@ interface ArkHistoryRowProps {
     movement: ArkMovementView;
     matchedRate: number;
     currency: any;
+    /**
+     * True when this Lightning-receive row is mid-claim: the payment has
+     * landed at the ASP but the resulting VTXO hasn't appeared in the
+     * wallet's spendable list yet. The SDK reports the movement status as
+     * "successful" the moment the preimage is revealed, several minutes
+     * before the round commits the receive into a VTXO — without this
+     * flag the row reads as fully done while the balance still sits at 0.
+     * Drives a yellow "Claiming via round…" pill that visually overrides
+     * the success state until the VTXO materialises.
+     */
+    isClaimingLn?: boolean;
 }
 
 /**
@@ -227,9 +258,17 @@ function kindLabel(kind: ArkMovementKind): string {
     }
 }
 
-function ArkHistoryRow({ movement, matchedRate, currency }: ArkHistoryRowProps) {
+function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHistoryRowProps) {
     const { amountSats, feeSats, status, kind, description } = movement;
-    const { amountColor, pillColor } = rowPalette(kind, status, amountSats);
+    // While a LN receive is mid-claim, render the row with the same yellow
+    // palette a "pending" movement would get — even though the SDK already
+    // moved it to "successful". The amount stays a coloured number rather
+    // than a green inflow so the user reads it as in-flight value, not
+    // settled value.
+    const palette = isClaimingLn
+        ? { amountColor: colors.ark.light, pillColor: colors.ark.light }
+        : rowPalette(kind, status, amountSats);
+    const { amountColor, pillColor } = palette;
 
     const absSats = Math.abs(amountSats);
     const sign = amountSats >= 0 ? '+' : '-';
@@ -266,7 +305,11 @@ function ArkHistoryRow({ movement, matchedRate, currency }: ArkHistoryRowProps) 
                         </View>
                         <View style={[itemStyles.des, rowStyles.descCol]}>
                             <Text bold h4 numberOfLines={1}>
-                                {description}
+                                {/* Override the description while in-flight
+                                    so the row doesn't read as "Received via
+                                    Lightning" (i.e. done) when the VTXO is
+                                    still being condensed at the ASP. */}
+                                {isClaimingLn ? 'Claiming via round…' : description}
                             </Text>
                             <View style={rowStyles.subRow}>
                                 {kindLabel(kind) !== '' && (
@@ -286,7 +329,28 @@ function ArkHistoryRow({ movement, matchedRate, currency }: ArkHistoryRowProps) 
                                         </Text>
                                     </View>
                                 )}
-                                {feeSats > 0 && status === 'successful' && (
+                                {/* Second pill — "~1–3 min" ETA — only on
+                                    rows that are mid-claim. Sits next to
+                                    the Lightning kind pill so the row reads
+                                    "Lightning · ~1–3 min" at a glance. */}
+                                {isClaimingLn && (
+                                    <View
+                                        style={[
+                                            rowStyles.pill,
+                                            { borderColor: colors.ark.light, marginLeft: 0 },
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                rowStyles.pillText,
+                                                { color: colors.ark.light },
+                                            ]}
+                                        >
+                                            ~1–3 min
+                                        </Text>
+                                    </View>
+                                )}
+                                {feeSats > 0 && status === 'successful' && !isClaimingLn && (
                                     <Text style={rowStyles.feeText}>
                                         fee {feeSats} sats
                                     </Text>

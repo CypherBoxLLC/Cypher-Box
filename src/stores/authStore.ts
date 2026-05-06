@@ -1,7 +1,7 @@
 import { create, GetState, SetState } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { zustandStorage } from "./index";
-import type { ArkBalanceSummary, ArkVtxoView } from "@Cypher/services/ark";
+import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
 
 export type AuthStateType = {
     user: null | any;
@@ -78,6 +78,21 @@ export type AuthStateType = {
     // Live VTXO list from wallet.allVtxos(), projected to a plain-number
     // view. Spendable-only subset drives the capsule UI.
     arkVtxos: ArkVtxoView[];
+    /**
+     * Pending Lightning receives from `wallet.pendingLightningReceives()`.
+     *
+     * Why this is separate from arkVtxos: between the moment a counterparty
+     * pays a Lightning invoice and the moment the resulting VTXO materialises
+     * in `allVtxos()` there's a multi-minute gap (the claim has to ride the
+     * next Ark round). During that gap the SDK reports the movement as
+     * "successful" in history but the spendable balance stays at 0 — users
+     * see the receive confirmed yet no capsule and no balance change. This
+     * list is the bridge: anything in here with `hasHtlcVtxos === true`
+     * is money that has arrived but hasn't yet condensed into a VTXO. The UI
+     * renders these as ghost capsules ("Claiming via round…") so the user
+     * has a visual signal that something is in flight.
+     */
+    arkPendingLnReceives: ArkLightningReceiveView[];
     // Current chain tip height (from esplora). Needed to convert VTXO
     // expiryHeight → blocks-until-expiry for the depletion ring.
     arkChainTipHeight: number | null;
@@ -132,6 +147,7 @@ export type AuthStateType = {
     setArkBalance: (state: number) => void;
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => void;
     setArkVtxos: (state: ArkVtxoView[]) => void;
+    setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setArkChainTipHeight: (state: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
@@ -219,6 +235,7 @@ const createAuthStore = (
     arkBalance: 0,
     arkBalanceDetail: null,
     arkVtxos: [],
+    arkPendingLnReceives: [],
     arkChainTipHeight: null,
     arkLastSyncedAt: null,
     arkLastBackupAt: null,
@@ -270,6 +287,7 @@ const createAuthStore = (
     setArkBalance: (state: number) => set({ arkBalance: state }),
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
+    setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => set({ arkPendingLnReceives: state }),
     setArkChainTipHeight: (state: number | null) => set({ arkChainTipHeight: state }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
@@ -295,6 +313,7 @@ const createAuthStore = (
             arkBalance: 0,
             arkBalanceDetail: null,
             arkVtxos: [],
+            arkPendingLnReceives: [],
             arkChainTipHeight: null,
             arkLastSyncedAt: null,
             arkLastBackupAt: null,

@@ -5,6 +5,7 @@ import {
     AVG_BLOCK_MINUTES,
     claimArkExitsToAddress,
     fetchArkBalance,
+    fetchArkPendingLightningReceives,
     fetchArkPendingRoundStates,
     fetchArkRoundIntervalSecs,
     fetchArkVtxos,
@@ -79,6 +80,7 @@ export default function useArkSync(): UseArkSync {
     const setArkBalance = useAuthStore((s) => s.setArkBalance);
     const setArkBalanceDetail = useAuthStore((s) => s.setArkBalanceDetail);
     const setArkVtxos = useAuthStore((s) => s.setArkVtxos);
+    const setArkPendingLnReceives = useAuthStore((s) => s.setArkPendingLnReceives);
     const setArkChainTipHeight = useAuthStore((s) => s.setArkChainTipHeight);
     const setArkLastSyncedAt = useAuthStore((s) => s.setArkLastSyncedAt);
     const setArkLastBackupAt = useAuthStore((s) => s.setArkLastBackupAt);
@@ -259,14 +261,18 @@ export default function useArkSync(): UseArkSync {
                 }
             }
 
-            // Run balance + vtxos + tip concurrently. These are independent
-            // — balance reads SQLite, vtxos reads SQLite, tip hits esplora.
-            const [balance, vtxos, tip] = await Promise.all([
+            // Run balance + vtxos + tip + pending-LN-receives concurrently.
+            // Balance / vtxos / pending-LN-receives all read local SQLite
+            // (no ASP round-trip), tip hits esplora — Promise.all collapses
+            // them into a single JS-thread block with overlapping native
+            // bridge time.
+            const [balance, vtxos, tip, pendingLnReceives] = await Promise.all([
                 fetchArkBalance(),
                 fetchArkVtxos(),
                 fetchChainTipHeight(),
+                fetchArkPendingLightningReceives(),
             ]);
-            _stamp('fetchBalance/Vtxos/Tip done');
+            _stamp('fetchBalance/Vtxos/Tip/PendingLn done');
 
             // Headline = the SDK's `balance.totalSats` (Spendable VTXOs +
             // pendingExit/Lightning/Board buckets). We deliberately do NOT
@@ -315,6 +321,26 @@ export default function useArkSync(): UseArkSync {
             } else {
                 console.log('[Ark sync] fetchArkVtxos returned null (no handle)');
             }
+
+            // In-flight LN receives: pay-only entries (hasHtlcVtxos === true)
+            // are the gap state — money landed at the ASP, but the round
+            // that condenses it into a VTXO hasn't run yet. Surface to
+            // zustand so ArkCapsules can render a ghost capsule and
+            // ArkHistory can flag the corresponding "successful" row as
+            // still claiming. Drop unpaid invoices (both flags false) so
+            // a stale invoice the user generated days ago doesn't masquerade
+            // as an in-flight claim.
+            const inFlight = pendingLnReceives.filter((r) => r.hasHtlcVtxos);
+            if (inFlight.length > 0) {
+                console.log(
+                    '[Ark sync] pending LN receives in-flight:',
+                    inFlight.map(
+                        (r) =>
+                            `${r.amountSats}sats preimage=${r.preimageRevealed} hash=${r.paymentHash.slice(0, 12)}…`,
+                    ),
+                );
+            }
+            setArkPendingLnReceives(inFlight);
 
             // Update the idle-skip counter based on what this tick saw.
             // Both balance and vtxo list have to be empty for us to count
@@ -436,6 +462,7 @@ export default function useArkSync(): UseArkSync {
         setArkBalance,
         setArkBalanceDetail,
         setArkVtxos,
+        setArkPendingLnReceives,
         setArkChainTipHeight,
         setArkLastSyncedAt,
         setArkLastBackupAt,

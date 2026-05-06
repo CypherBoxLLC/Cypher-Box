@@ -34,7 +34,7 @@ export type { ArkBalanceSummary } from './balance';
 export { fetchArkVtxos } from './vtxos';
 export type { ArkVtxoView, ArkVtxoList } from './vtxos';
 
-export { tryClaimArkLightningReceives } from './lightning';
+export { tryClaimArkLightningReceives, fetchArkPendingLightningReceives } from './lightning';
 export type { ArkLightningReceiveView } from './lightning';
 
 export { fetchArkHistory } from './history';
