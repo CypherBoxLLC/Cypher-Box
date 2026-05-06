@@ -8,10 +8,9 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Image, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Animated, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
-import Carousel from "react-native-snap-carousel";
 import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
 import TabBar from "../TabBar";
@@ -64,7 +63,7 @@ export default function BottomBar({
     const { isAuth, isStrikeAuth, isArkAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, reserveAmount, reserveStrikeAmount, vaultTab, setVaultTab } = useAuthStore();
     const bothVaultsExist = !!(wallet && coldStorageWallet);
 
-    const carouselRef = useRef<Carousel<any>>(null);
+    const flatListRef = useRef<FlatList<any>>(null);
     const glowAnim = useRef(new Animated.Value(0)).current;
 
     // Check if either account has reached its threshold
@@ -127,11 +126,11 @@ export default function BottomBar({
 
     const coldStorageClickHandler = () => {
         setVaultTab(true);
-        carouselRef.current?.snapToItem(1, true);
+        flatListRef.current?.scrollToIndex({ index: 1, animated: true });
     };
     const hotStorageClickHandler = () => {
         setVaultTab(false);
-        carouselRef.current?.snapToItem(0, true);
+        flatListRef.current?.scrollToIndex({ index: 0, animated: true });
     };
 
     const handleCreateVault = () => {
@@ -441,17 +440,24 @@ export default function BottomBar({
         </View>
     );
 
-    const renderItem = ({ item, index }: any) => {
+    const renderItem = ({ item, index: itemIndex }: any) => {
         return (
-            <>
-            <View style={{ width: screenWidth * 0.905 }}>
-                {!bothVaultsExist && ((wallet && index == 0) || (coldStorageWallet && index == 1)) && (isAuth || isStrikeAuth || isArkAuth) &&
-                    <TopUpWithdrawView isVault={index == 1 ? true : false} />
-                }
-                {item.component()}
+            <View style={{ width: screenWidth }}>
+                <View style={{ width: screenWidth * 0.905 }}>
+                    {!bothVaultsExist && ((wallet && itemIndex == 0) || (coldStorageWallet && itemIndex == 1)) && (isAuth || isStrikeAuth || isArkAuth) &&
+                        <TopUpWithdrawView isVault={itemIndex == 1 ? true : false} />
+                    }
+                    {item.component()}
+                </View>
             </View>
-            </>
         )
+    };
+
+    const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+        if (next === index) return;
+        setIndex(next);
+        setVaultTab(next === 1 && coldStorageWallet ? true : wallet && false);
     };
 
     if (__DEV__) console.log('index: ', index, vaultTab)
@@ -460,30 +466,20 @@ export default function BottomBar({
             {bothVaultsExist && (isAuth || isStrikeAuth || isArkAuth) && (
                 <TopUpWithdrawView isVault={index === 1} />
             )}
-            <Carousel
+            <FlatList
+                ref={flatListRef}
                 data={tabs}
-                ref={carouselRef}
+                keyExtractor={(item) => item.key}
                 renderItem={renderItem}
-                firstItem={index}
-                vertical={false}
-                sliderWidth={screenWidth}
-                itemWidth={screenWidth}
-                // Easing config mirrors the wallet carousel in WalletsView so
-                // both swipe surfaces (top wallets row + bottom vaults row)
-                // feel identical. Covers the "locked card" placeholder shown
-                // when no vaults are created — same Carousel, same animation.
-                // See WalletsView's Carousel for per-prop rationale.
-                inactiveSlideOpacity={0.55}
-                inactiveSlideScale={0.94}
-                decelerationRate={0.9}
-                activeAnimationType="spring"
-                activeAnimationOptions={{ friction: 8, tension: 40 } as any}
-                enableMomentum={true}
-                onSnapToItem={(index) => {
-                    if (__DEV__) console.log('onSnappppp')
-                    setIndex(index)
-                    setVaultTab(index === 1 && coldStorageWallet ? true : wallet && false);
-                }}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={screenWidth}
+                decelerationRate="fast"
+                disableIntervalMomentum
+                initialScrollIndex={index}
+                getItemLayout={(_, i) => ({ length: screenWidth, offset: screenWidth * i, index: i })}
+                onMomentumScrollEnd={onMomentumScrollEnd}
             />
             <TabBar isVault={index == 1 ? true : false} coldStorageClickHandler={coldStorageClickHandler} hotStorageClickHandler={hotStorageClickHandler} />
         </>

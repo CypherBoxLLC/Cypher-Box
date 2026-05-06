@@ -7,8 +7,7 @@ import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Animated, Image, TouchableOpacity, View } from "react-native";
-import Carousel from "react-native-snap-carousel";
+import { Animated, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, TouchableOpacity, View } from "react-native";
 
 interface Props {
     balance: any;
@@ -102,10 +101,17 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
 
     const [indexStrike, setIndexStrike] = useState(0);
     const [wTabs, setWTabs] = useState([]);
-    const carouselRef = useRef<any>(null);
+    const flatListRef = useRef<FlatList<any>>(null);
 
     useImperativeHandle(ref, () => ({
-        snapTo: (i: number) => carouselRef.current?.snapToItem?.(i),
+        // Implement snapTo via FlatList.scrollToIndex — same external API
+        // as before (HomeScreen calls walletsViewRef.current?.snapTo(i)),
+        // routed through FlatList's animated scroll. Migrated from
+        // react-native-snap-carousel's snapToItem during the Fabric/New
+        // Arch carousel-bleed fix; snap-carousel v4-beta hasn't supported
+        // Fabric layout since 2020 and the slides were rendering with
+        // wrong offsets, leaking the next slide past the right edge.
+        snapTo: (i: number) => flatListRef.current?.scrollToIndex?.({ index: i, animated: true }),
     }), []);
 
     useEffect(() => {
@@ -284,12 +290,19 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // at the lightning/ark card bottom (see the Animated.View further
     // down). The empty space inside the lightning/ark slides above the
     // buttons is invisible (just card + transparent area).
+    //
+    // Two-View nesting (FlatList migration): the outer View is exactly
+    // screenWidth so FlatList's `snapToInterval={screenWidth}` snaps each
+    // slide to the page boundary. The inner 0.905 wrapper preserves the
+    // visual sizing the snap-carousel `itemWidth=screenWidth` +
+    // inactiveSlideScale=0.94 used to produce. Mirrors BottomBar's
+    // FlatList renderItem after the same migration.
     const SHARED_SLIDE_HEIGHT = 133;
     const renderWalletItem = ({ item }: any) => (
-        <View style={{
-            width: screenWidth * 0.905,
-        }}>
-            {item.component()}
+        <View style={{ width: screenWidth }}>
+            <View style={{ width: screenWidth * 0.905 }}>
+                {item.component()}
+            </View>
         </View>
     );
 
@@ -353,6 +366,14 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         extrapolate: 'clamp',
     });
 
+    const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+        if (next !== indexStrike) {
+            setIndexStrike(next);
+            setWalletTab(next === 1);
+        }
+    };
+
     if (__DEV__) console.log('allBTCWallets: ', allBTCWallets, wTabs)
     // BUTTON_ROW_HEIGHT ≈ GradientButtonWithShadow's rendered height (47).
     // Used both to position the row vertically and to reserve layout space
@@ -379,50 +400,45 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // Lightning.
             ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT + (bgRefreshStatus ? 32 : 0) } : {}),
         }}>
-            <Carousel
-                ref={carouselRef}
+            <Animated.FlatList
+                ref={flatListRef}
                 data={wTabs}
+                keyExtractor={(_: any, i: number) => `wallet-tab-${i}`}
                 renderItem={renderWalletItem}
-                firstItem={indexStrike}
-                vertical={false}
-                sliderWidth={screenWidth}
-                itemWidth={screenWidth}
-                // --- Slide easing (mirrored on the BottomBar vault carousel) ---
-                // `inactive*` props animate neighbor cards as you drag — they fade
-                // and shrink slightly so the active card "lifts" forward instead
-                // of hard-cutting between pages.
-                inactiveSlideOpacity={0.55}
-                inactiveSlideScale={0.94}
-                // `decelerationRate` between 0 and 1 — lower = longer, smoother
-                // glide after a swipe. Default 'fast' (~0.99 iOS) feels abrupt
-                // for full-width pages; 0.9 lands closer to a native page-view.
-                decelerationRate={0.9}
-                // Spring snap on release feels more natural than the default
-                // timing curve. tension lower = softer settle, friction higher
-                // = less overshoot. These values don't bounce visibly but take
-                // the edge off the snap.
-                activeAnimationType="spring"
-                activeAnimationOptions={{ friction: 8, tension: 40 } as any}
-                enableMomentum={true}
-                // Bind the carousel's scroll offset to our `scrollX` so the
-                // shared button row's translateX/opacity track the cards
-                // frame-for-frame during the drag (see `scrollHandler`
-                // above). snap-carousel detects the shared argMapping and
-                // reuses our value as its internal `_scrollPos`, so this
-                // doesn't double-up scroll events.
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                // FlatList equivalent of snap-carousel's slot sizing. Each
+                // page is exactly screenWidth (set in renderWalletItem's
+                // outer wrapper); snapToInterval makes the scroller commit
+                // to that boundary. disableIntervalMomentum prevents the
+                // user from skipping a page on a fast flick, matching the
+                // page-by-page semantics of the old Carousel.
+                snapToInterval={screenWidth}
+                decelerationRate="fast"
+                disableIntervalMomentum
+                initialScrollIndex={indexStrike}
+                getItemLayout={(_: any, i: number) => ({
+                    length: screenWidth,
+                    offset: screenWidth * i,
+                    index: i,
+                })}
+                // Drive scrollX from the native-driven Animated.event so
+                // the shared button row's translateX/opacity track the
+                // cards frame-for-frame during the drag — the same
+                // continuous-scroll trick we relied on with snap-carousel,
+                // now expressed in vanilla FlatList terms.
                 onScroll={scrollHandler}
                 scrollEventThrottle={16}
-                // Update on snap commit (mid-swipe), not just on completion,
-                // so the indicator dots redraw in step with the user's
-                // gesture rather than waiting for the snap to settle.
-                onBeforeSnapToItem={(index) => {
-                    setIndexStrike(index);
-                    onPageChange?.(index, wTabs.length, wTabs.map(kindFromTab));
-                }}
-                onSnapToItem={(index) => {
-                    setIndexStrike(index);
-                    setWalletTab(index === 1);
-                    onPageChange?.(index, wTabs.length, wTabs.map(kindFromTab));
+                // FlatList lacks the snap-carousel `onBeforeSnapToItem`
+                // mid-gesture commit hook; onMomentumScrollEnd is the
+                // closest equivalent and fires once per page commit.
+                onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+                    const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+                    if (next === indexStrike) return;
+                    setIndexStrike(next);
+                    setWalletTab(next === 1);
+                    onPageChange?.(next, wTabs.length, wTabs.map(kindFromTab));
                 }}
             />
             {/* Shared Receive/Send pair. Lives outside the carousel so it

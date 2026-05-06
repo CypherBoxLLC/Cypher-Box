@@ -44,7 +44,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { startsWithLn } from "../Send";
 import screenHeight from "@Cypher/style-guide/screenHeight";
 import { getFiatRate } from "../../../models/fiatUnit";
-import Carousel from "react-native-snap-carousel";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../blue_modules/currency";
 import { authorize } from "react-native-app-auth";
@@ -202,7 +201,6 @@ export default function HomeScreen({ route }: Props) {
   const refSwapRBSheet = useRef<any>(null);
   const [receivedListSecondTab, setReceivedListSecondTab] = useState(false);
   const [initialVaultType, setInitialVaultType] = useState<'hot' | 'cold' | null>(null);
-  const carouselRef = useRef<Carousel<any>>(null);
 
   // Sync local currency state with store's strikeCurrency
   useEffect(() => {
