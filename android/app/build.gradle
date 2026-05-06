@@ -164,6 +164,11 @@ dependencies {
     // supports the periodic-work APIs we use.
     implementation 'androidx.work:work-runtime:2.11.2'
     implementation 'androidx.concurrent:concurrent-futures:1.2.0'
+    // DocumentFile backs the Storage Access Framework (SAF) bridge for the
+    // user-chosen local backup folder (ArkSafBackupModule). Used to resolve
+    // the persisted tree URI into a writable DocumentFile and create / read
+    // the ark-backup.cbark inside it without needing READ/WRITE_EXTERNAL_STORAGE.
+    implementation 'androidx.documentfile:documentfile:1.0.1'
     implementation fileTree(dir: "libs", include: ["*.jar"])
 }
 apply plugin: 'com.google.gms.google-services'  // Google Services plugin

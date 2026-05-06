@@ -32,6 +32,7 @@ public class MainApplication extends Application implements ReactApplication, Co
           // Hand-registered: not auto-linked because the package lives in
           // app/src/main/java rather than a published RN module.
           packages.add(new ArkBackgroundSchedulerPackage());
+          packages.add(new ArkSafBackupPackage());
           return packages;
         }
 

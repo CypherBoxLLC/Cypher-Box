@@ -14,12 +14,15 @@ import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
     connectGoogleDrive,
     createArkWallet,
+    getSavedSafBackupFolder,
     isGoogleDriveConnected,
     messageForDriveError,
+    messageForSafError,
+    pickSafBackupFolder,
     writeAndVerifyArkBackup,
     writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
-import type { DriveErrorClass } from "@Cypher/services/ark";
+import type { DriveErrorClass, SafErrorClass } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 
@@ -128,12 +131,16 @@ export default function ArkSeedPhraseScreen() {
     const [submitting, setSubmitting] = useState(false);
     const [keychainStatus, setKeychainStatus] = useState<null | "ok" | "err">(null);
 
-    // Backup state. Two independent paths can satisfy the Continue gate:
+    // Backup state. THREE independent paths can satisfy the Continue gate:
     //   - cloudBackupDone: Drive upload + read-back-decrypt verified (Android)
     //                      OR local-write completed on iOS (iCloud Drive sync
     //                      handled transparently by Apple if user has it on).
     //   - manualBackupConfirmed: user opened the share sheet, saved the
     //                            .cbark somewhere, and tapped "Yes, I saved it".
+    //   - safBackupConfirmed: user picked a Storage Access Framework folder
+    //                         (Android only), the .cbark was written there
+    //                         and round-trip verified. This is the only
+    //                         channel that survives `pm uninstall` on Android.
     //
     // Continue requires AT LEAST ONE — funds must never enter a wallet
     // without a backup the user has somewhere off this device.
@@ -145,6 +152,25 @@ export default function ArkSeedPhraseScreen() {
     const [driveError, setDriveError] = useState<{ cls: DriveErrorClass; message: string } | null>(null);
     const [manualBackupBusy, setManualBackupBusy] = useState(false);
     const [manualBackupConfirmed, setManualBackupConfirmed] = useState(false);
+    const [safBackupBusy, setSafBackupBusy] = useState(false);
+    const [safBackupConfirmed, setSafBackupConfirmed] = useState(false);
+    const [safError, setSafError] = useState<{ cls: SafErrorClass | 'cancelled'; message: string } | null>(null);
+    const [safFolderConfigured, setSafFolderConfigured] = useState(false);
+
+    // Pick up an already-configured SAF folder from a previous session
+    // (e.g. user re-installed the dev build but kept the AsyncStorage
+    // entry). Doesn't probe whether it's still reachable — the actual
+    // write attempt does that.
+    React.useEffect(() => {
+        if (isIOS) return;
+        let cancelled = false;
+        getSavedSafBackupFolder().then((uri) => {
+            if (!cancelled) setSafFolderConfigured(!!uri);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     // Track whether `createArkWallet` has been called yet on this screen.
     // The original flow created the wallet on Continue; once we let backup
     // buttons run before Continue, we have to materialise the datadir
@@ -257,6 +283,14 @@ export default function ArkSeedPhraseScreen() {
                     SimpleToast.LONG,
                 );
                 return;
+            }
+
+            // SAF cross-flip: if a SAF folder was already configured, the
+            // verified path wrote there too. Reflect that in state silently
+            // so the gate knows about it without forcing a separate tap.
+            if (result.saf.kind === 'written-and-verified') {
+                setSafBackupConfirmed(true);
+                setSafError(null);
             }
 
             // Android: branch on the structured Drive outcome.
@@ -416,6 +450,124 @@ export default function ArkSeedPhraseScreen() {
         }
     };
 
+    /**
+     * Pick a phone-storage folder via Storage Access Framework and write
+     * the encrypted backup there. Android-only — iOS users have Files +
+     * iCloud Drive transparency, no equivalent need.
+     *
+     * What this earns: a backup file in a user-controlled folder that
+     * SURVIVES `pm uninstall`, unlike Documents/ark-backup.cbark and
+     * unlike the Android Keystore seed entry. The single channel that
+     * would have prevented the 2026-05-05 loss-event without depending
+     * on Drive.
+     *
+     * Picking the folder also persists the URI to AsyncStorage so
+     * subsequent sync ticks (writeArkAutoBackup → writeArkBackupToSaf)
+     * keep the same folder updated as VTXOs change. Same auto-update
+     * cadence as Drive and the local Documents file.
+     */
+    const handlePickAndBackupSafFolder = async () => {
+        if (safBackupBusy) return;
+        if (isIOS) return;
+        if (!revealed) {
+            SimpleToast.show("Reveal your seed first.", SimpleToast.SHORT);
+            return;
+        }
+        setSafBackupBusy(true);
+        setSafError(null);
+        try {
+            // pickSafBackupFolder opens the system folder chooser, takes a
+            // persistable grant on the chosen URI, persists it to AsyncStorage.
+            // Returns null on user cancel.
+            let pickedUri: string | null = null;
+            try {
+                pickedUri = await pickSafBackupFolder();
+            } catch (pickErr: any) {
+                console.warn("[Ark/SAF] pick failed:", pickErr);
+                setSafError({
+                    cls: 'unknown',
+                    message: messageForSafError('unknown'),
+                });
+                return;
+            }
+            if (!pickedUri) {
+                // User cancelled — don't surface as a hard error, they can
+                // tap again. Mark a soft "cancelled" state distinct from
+                // 'native-not-loaded' / 'unknown' so the panel copy reads
+                // "tap to pick again" rather than "something failed".
+                setSafError({
+                    cls: 'cancelled',
+                    message: 'No folder picked. Tap "Pick folder" to try again.',
+                });
+                return;
+            }
+            setSafFolderConfigured(true);
+
+            const ready = await ensureWalletCreated();
+            if (!ready) return;
+            const m: string = mnemonic as string;
+
+            const result = await writeAndVerifyArkBackup(m);
+
+            if (!result.local.ok) {
+                Alert.alert(
+                    "Backup write failed",
+                    `Couldn't write the encrypted backup file on this device: ${result.local.error}. Free up storage and try again.`,
+                );
+                return;
+            }
+
+            // Drive cross-flip: same logic as the inverse path. If Drive
+            // happened to be already-connected and verified, reflect it.
+            if (result.drive.kind === 'uploaded-and-verified') {
+                setCloudBackupDone(true);
+                setDriveError(null);
+            }
+
+            switch (result.saf.kind) {
+                case 'written-and-verified':
+                    setSafBackupConfirmed(true);
+                    SimpleToast.show(
+                        "Backup saved to your folder and verified — it will keep updating automatically.",
+                        SimpleToast.LONG,
+                    );
+                    break;
+                case 'write-failed':
+                    setSafError({
+                        cls: result.saf.classification,
+                        message: messageForSafError(result.saf.classification),
+                    });
+                    if (__DEV__) {
+                        console.warn("[Ark/SAF] write failed:", result.saf.classification, result.saf.error);
+                    }
+                    break;
+                case 'verify-failed':
+                    setSafError({
+                        cls: 'unknown',
+                        message:
+                            "The backup was written to your folder but reading it back didn't return a valid file. Try picking a different folder.",
+                    });
+                    if (__DEV__) {
+                        console.warn("[Ark/SAF] verify failed:", result.saf.error);
+                    }
+                    break;
+                case 'skipped-platform':
+                case 'skipped-not-configured':
+                    // Unreachable here (we just configured the folder), but
+                    // kept exhaustive so the switch satisfies TS.
+                    break;
+            }
+        } catch (err: any) {
+            console.warn("[Ark/SAF] unexpected:", err);
+            SimpleToast.show(
+                `Couldn't save the backup to that folder: ${err?.message ?? "unknown error"}.`,
+                SimpleToast.LONG,
+            );
+        } finally {
+            setSafBackupBusy(false);
+        }
+    };
+
     const handleContinue = async () => {
         if (!revealed) {
             SimpleToast.show("Please reveal and back up your seed phrase first", SimpleToast.SHORT);
@@ -435,13 +587,13 @@ export default function ArkSeedPhraseScreen() {
         // silently failed, the wallet showed "created", and uninstall
         // wiped the local copy. If you change this gate, re-read
         // memory/project_play_signing_oauth.md first.
-        const hasVerifiedBackup = cloudBackupDone || manualBackupConfirmed;
+        const hasVerifiedBackup = cloudBackupDone || manualBackupConfirmed || safBackupConfirmed;
         if (!hasVerifiedBackup) {
             Alert.alert(
                 "Save your backup first",
                 isIOS
                     ? "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Save it to iCloud Drive, or use 'Save backup file' to share it somewhere safe."
-                    : "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Connect Google Drive, or use 'Save backup file' to share it somewhere safe.",
+                    : "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Pick any one: Google Drive, a phone-storage folder, or 'Save backup file' (share sheet).",
                 [{ text: "OK" }],
                 { cancelable: true },
             );
@@ -465,17 +617,19 @@ export default function ArkSeedPhraseScreen() {
             return;
         }
 
-        // backupDestination is an audit string. The "manual" branch
-        // covers users who skipped the cloud path entirely, the
-        // "auto+manual" branch covers Android users who got both Drive
-        // and a manual share, and we keep "icloud" / "local" for
-        // backwards-compat with older state values.
+        // backupDestination is an audit string. We keep the legacy
+        // values ("local" / "icloud" / "manual" / "auto+manual") for
+        // backwards-compat with older wallet records and pick the most
+        // descriptive label for the active backup channels.
         let backupDestination: BackupDestination;
-        if (cloudBackupDone && manualBackupConfirmed) {
+        if (cloudBackupDone && (manualBackupConfirmed || safBackupConfirmed)) {
             backupDestination = "auto+manual";
         } else if (cloudBackupDone) {
             backupDestination = isIOS ? "icloud" : "auto+manual";
         } else {
+            // SAF and manual both fall under "manual" in the legacy
+            // string set. Both are user-driven; SAF auto-updates
+            // afterwards but the initial decision was manual.
             backupDestination = "manual";
         }
 
@@ -740,6 +894,96 @@ export default function ArkSeedPhraseScreen() {
                             </View>
                         </View>
 
+                        {/* Phone-storage folder backup (Android only). The
+                            only Android channel that survives `pm uninstall`
+                            because the file lives in a user-chosen folder
+                            outside the app sandbox. SAF write happens on
+                            every sync tick after this initial pick, so the
+                            file stays current as VTXOs change — same
+                            cadence as Drive and the local Documents file. */}
+                        {!isIOS && (
+                            <View style={[
+                                styles.backupOption,
+                                safBackupConfirmed && styles.backupOptionSelected,
+                                { marginTop: 14 },
+                            ]}>
+                                <View style={[
+                                    styles.backupRadioOuter,
+                                    safBackupConfirmed && styles.backupRadioOuterSelected,
+                                ]}>
+                                    <View style={styles.backupRadioInner} />
+                                </View>
+                                <View style={styles.backupOptionTextWrap}>
+                                    <Text style={styles.backupOptionLabel}>
+                                        Save to a folder on this phone (auto-updates)
+                                        {safBackupConfirmed ? "  ✓" : ""}
+                                    </Text>
+                                    <Text style={styles.backupOptionDetail}>
+                                        Pick a folder you control — for example
+                                        Internal Storage → Documents → Backups.
+                                        The encrypted file is written there
+                                        whenever your wallet changes, and unlike
+                                        the app's private storage it{' '}
+                                        <Text bold>survives uninstalling Cypher Box</Text>.
+                                        Whatever stores it sees ciphertext only.
+                                    </Text>
+                                    <TouchableOpacity
+                                        onPress={handlePickAndBackupSafFolder}
+                                        disabled={!revealed || safBackupBusy}
+                                        style={{
+                                            marginTop: 10,
+                                            paddingVertical: 11,
+                                            paddingHorizontal: 16,
+                                            borderRadius: 10,
+                                            alignSelf: 'flex-start',
+                                            backgroundColor: safBackupConfirmed
+                                                ? 'rgba(40, 200, 110, 0.12)'
+                                                : (colors.ark?.light ?? colors.pink.default),
+                                            borderWidth: safBackupConfirmed ? 1 : 0,
+                                            borderColor: safBackupConfirmed ? colors.green : 'transparent',
+                                            opacity: !revealed ? 0.45 : 1,
+                                        }}
+                                    >
+                                        {safBackupBusy ? (
+                                            <ActivityIndicator color={colors.black.default} />
+                                        ) : (
+                                            <Text bold style={{
+                                                color: safBackupConfirmed ? colors.green : colors.black.default,
+                                                fontSize: 13,
+                                            }}>
+                                                {safBackupConfirmed
+                                                    ? "✓ Folder linked · backup verified"
+                                                    : safFolderConfigured
+                                                        ? "Re-pick folder & save"
+                                                        : "Pick folder & save backup"}
+                                            </Text>
+                                        )}
+                                    </TouchableOpacity>
+
+                                    {/* Inline SAF failure with classified copy.
+                                        Same shape as the Drive error panel. */}
+                                    {safError && (
+                                        <View style={{
+                                            marginTop: 10,
+                                            paddingVertical: 10,
+                                            paddingHorizontal: 12,
+                                            borderRadius: 8,
+                                            backgroundColor: 'rgba(255, 90, 90, 0.10)',
+                                            borderWidth: 1,
+                                            borderColor: 'rgba(255, 90, 90, 0.35)',
+                                        }}>
+                                            <Text bold style={{ color: '#FF5A5A', fontSize: 13, marginBottom: 4 }}>
+                                                Phone-folder backup didn't complete
+                                            </Text>
+                                            <Text style={{ color: colors.white, fontSize: 12, lineHeight: 17 }}>
+                                                {safError.message}
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                            </View>
+                        )}
+
                         {/* Universal manual fallback — always visible. Satisfies
                             the Continue gate independently of the cloud path so
                             users on builds with the wrong SHA-1 (or who prefer
@@ -805,7 +1049,7 @@ export default function ArkSeedPhraseScreen() {
                             least one backup destination is verified. Replaces
                             the prior soft-warn that allowed override (cause of
                             the 5000-sat loss on 2026-05-05). */}
-                        {revealed && !cloudBackupDone && !manualBackupConfirmed && (
+                        {revealed && !cloudBackupDone && !manualBackupConfirmed && !safBackupConfirmed && (
                             <View style={styles.warnPanel}>
                                 <Text bold style={styles.warnPanelTitle}>
                                     ⚠ Save your backup before continuing
@@ -814,9 +1058,8 @@ export default function ArkSeedPhraseScreen() {
                                     Your seed phrase alone can't restore Ark
                                     funds — Bark stores per-VTXO state in an
                                     encrypted backup file we can't re-derive
-                                    from the seed. Use the cloud option above
-                                    or save the backup file manually before
-                                    creating the wallet.
+                                    from the seed. Pick any one option above
+                                    before creating the wallet.
                                 </Text>
                             </View>
                         )}
@@ -827,7 +1070,7 @@ export default function ArkSeedPhraseScreen() {
                     text={
                         !revealed
                             ? "Reveal seed phrase first"
-                            : (cloudBackupDone || manualBackupConfirmed)
+                            : (cloudBackupDone || manualBackupConfirmed || safBackupConfirmed)
                                 ? "I've backed it up - Create"
                                 : "Save a backup first"
                     }

@@ -75,6 +75,17 @@ export {
 export type { DriveErrorClass } from './googleDrive';
 
 export {
+    pickSafBackupFolder,
+    getSavedSafBackupFolder,
+    clearSavedSafBackupFolder,
+    probeSafBackupFolder,
+    writeArkBackupToSaf,
+    readArkBackupFromSaf,
+    messageForSafError,
+} from './safFolderBackup';
+export type { SafBackupOutcome, SafErrorClass, SafFolderStatus } from './safFolderBackup';
+
+export {
     cancelArkPendingRound,
     estimateArkRefreshFee,
     fetchArkPendingRoundStates,

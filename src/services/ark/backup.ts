@@ -11,6 +11,12 @@ import {
     uploadArkBackupToDrive,
 } from './googleDrive';
 import type { DriveErrorClass } from './googleDrive';
+import {
+    getSavedSafBackupFolder,
+    writeAndReadbackSafBackup,
+    writeArkBackupToSaf,
+} from './safFolderBackup';
+import type { SafBackupOutcome } from './safFolderBackup';
 import { clearArkWalletHandle, openArkWallet } from './walletHandle';
 
 /**
@@ -471,6 +477,26 @@ export async function writeArkAutoBackup(
         }
     }
 
+    // Android SAF folder mirror — same silent-fail policy as Drive. The
+    // user-chosen folder (if configured) gets the same blob written
+    // every sync tick so a wallet recovered from this folder after an
+    // uninstall picks up the latest VTXOs, not whatever state was
+    // captured at first-create. If the URI was revoked or the folder
+    // is gone, log only — the verified-create path surfaces the same
+    // failures with structured errors and re-pick UI; the auto-tick
+    // mustn't throw.
+    try {
+        const saved = await getSavedSafBackupFolder();
+        if (saved) {
+            await writeArkBackupToSaf(blob);
+            if (__DEV__) console.log('[Ark auto-backup] SAF folder write OK');
+        }
+    } catch (err: any) {
+        if (__DEV__) {
+            console.log('[Ark auto-backup] SAF folder write failed (non-fatal):', err?.message ?? err);
+        }
+    }
+
     return { path: AUTO_BACKUP_PATH, sizeBytes: blob.length, createdAt };
 }
 
@@ -493,6 +519,8 @@ export type VerifiedBackupDriveOutcome =
  *   - Hard-fail on Drive failure (the loss-event scenario)
  *   - Distinguish a Drive outage from a build-misconfig from a network blip
  *   - Hand a useful error string back to the user, not a stack trace
+ *   - Distinguish "user hasn't picked a SAF folder yet" from "folder is
+ *     unreachable" from "folder permission revoked"
  */
 export type VerifiedBackupResult = {
     blob: string;
@@ -500,6 +528,7 @@ export type VerifiedBackupResult = {
     createdAt: number;
     local: { ok: true; path: string } | { ok: false; error: string };
     drive: VerifiedBackupDriveOutcome;
+    saf: SafBackupOutcome;
 };
 
 /**
@@ -549,7 +578,14 @@ export async function writeAndVerifyArkBackup(
     // hasn't gone through the OAuth flow yet (callers should treat both
     // skip variants as "no Drive backup, ask for manual confirmation").
     if (Platform.OS !== 'android') {
-        return { blob, sizeBytes, createdAt, local, drive: { kind: 'skipped-platform' } };
+        return {
+            blob,
+            sizeBytes,
+            createdAt,
+            local,
+            drive: { kind: 'skipped-platform' },
+            saf: { kind: 'skipped-platform' },
+        };
     }
 
     let connected = false;
@@ -559,8 +595,20 @@ export async function writeAndVerifyArkBackup(
         // Probe failure → treat as not connected (rather than failing the
         // whole verify path on a sign-in lib hiccup).
     }
+    // SAF folder mirror (Android only). We compute the SAF outcome here
+    // independently of Drive — they're sibling channels, neither one
+    // depends on the other. Both run; both surface their own outcome.
+    const saf = await runSafVerify(blob, mnemonic);
+
     if (!connected) {
-        return { blob, sizeBytes, createdAt, local, drive: { kind: 'skipped-not-connected' } };
+        return {
+            blob,
+            sizeBytes,
+            createdAt,
+            local,
+            drive: { kind: 'skipped-not-connected' },
+            saf,
+        };
     }
 
     let fileId: string;
@@ -577,6 +625,7 @@ export async function writeAndVerifyArkBackup(
                 classification: classifyDriveError(err),
                 error: err?.message ?? String(err),
             },
+            saf,
         };
     }
 
@@ -599,6 +648,7 @@ export async function writeAndVerifyArkBackup(
                     fileId,
                     error: 'Drive returned no file when reading back the upload',
                 },
+                saf,
             };
         }
         const manifest = await decryptBackupBlob(remote, mnemonic);
@@ -613,6 +663,7 @@ export async function writeAndVerifyArkBackup(
                     fileId,
                     error: 'Decrypted manifest had no files',
                 },
+                saf,
             };
         }
     } catch (err: any) {
@@ -626,6 +677,7 @@ export async function writeAndVerifyArkBackup(
                 fileId,
                 error: err?.message ?? String(err),
             },
+            saf,
         };
     }
 
@@ -635,7 +687,62 @@ export async function writeAndVerifyArkBackup(
         createdAt,
         local,
         drive: { kind: 'uploaded-and-verified', fileId },
+        saf,
     };
+}
+
+/**
+ * Run the SAF folder write-and-verify in the same shape as the Drive
+ * step: write blob to user-chosen folder, read back, decrypt with the
+ * same mnemonic, sanity-check manifest non-empty. Returns a
+ * `SafBackupOutcome` for the structured result.
+ *
+ * Skipped variants ('skipped-platform' on iOS, 'skipped-not-configured'
+ * when no folder URI is saved) resolve fast without touching native.
+ *
+ * Never throws — all error paths translate into discriminated outcomes.
+ */
+async function runSafVerify(blob: string, mnemonic: string): Promise<SafBackupOutcome> {
+    if (Platform.OS !== 'android') return { kind: 'skipped-platform' };
+
+    const saved = await getSavedSafBackupFolder();
+    if (!saved) return { kind: 'skipped-not-configured' };
+
+    const result = await writeAndReadbackSafBackup(blob);
+    if (!result.written.ok) {
+        return {
+            kind: 'write-failed',
+            classification: result.written.classification,
+            error: result.written.error,
+        };
+    }
+
+    if (!result.readback) {
+        return {
+            kind: 'verify-failed',
+            uri: result.written.uri,
+            error: 'Read-back returned no file from the SAF folder.',
+        };
+    }
+
+    try {
+        const manifest = await decryptBackupBlob(result.readback, mnemonic);
+        if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
+            return {
+                kind: 'verify-failed',
+                uri: result.written.uri,
+                error: 'Decrypted manifest had no files.',
+            };
+        }
+    } catch (err: any) {
+        return {
+            kind: 'verify-failed',
+            uri: result.written.uri,
+            error: err?.message ?? String(err),
+        };
+    }
+
+    return { kind: 'written-and-verified', uri: result.written.uri };
 }
 
 /**
