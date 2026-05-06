@@ -42,8 +42,7 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
             vendor: 'Samsung',
             headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. In the page that opens: tap Cypher Box → Don't optimise.",
-                "2. Then Settings → Apps → Cypher Box → Battery → Unrestricted.",
+                "In Settings, tap Cypher Box and choose Unrestricted.",
             ],
         };
     }
@@ -53,9 +52,8 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
             vendor: 'Xiaomi',
             headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. In the page that opens: Cypher Box → No restrictions.",
-                "2. Security app → Autostart → enable Cypher Box.",
-                "3. Recent apps → swipe Cypher Box card down → tap the lock icon.",
+                "In Settings, tap Cypher Box and choose No restrictions.",
+                "Then open the Security app → Autostart and enable Cypher Box.",
             ],
         };
     }
@@ -65,8 +63,7 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
             vendor: 'Huawei',
             headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. Settings → Battery → App launch → Cypher Box → switch to Manual, enable Auto-launch, Secondary launch, Run in background.",
-                "2. Recent apps → drag Cypher Box card down → padlock icon.",
+                "Settings → Battery → App launch → Cypher Box → set Manual, then enable all three: Auto-launch, Secondary launch, Run in background.",
             ],
         };
     }
@@ -76,8 +73,7 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
             vendor: 'OPPO / Realme',
             headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. In the page that opens: Cypher Box → Allow background activity.",
-                "2. Recent apps → padlock the Cypher Box card.",
+                "In Settings, tap Cypher Box and allow background activity.",
             ],
         };
     }
@@ -87,8 +83,8 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
             vendor: 'Vivo',
             headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. Settings → Battery → Background power → Cypher Box → High.",
-                "2. Settings → Apps → Cypher Box → enable Auto-start.",
+                "Settings → Battery → Background power → Cypher Box → High.",
+                "Settings → Apps → Cypher Box → enable Auto-start.",
             ],
         };
     }
@@ -98,8 +94,7 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
             vendor: 'OnePlus',
             headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. In the page that opens: Cypher Box → Don't optimise.",
-                "2. Settings → Apps → Cypher Box → Battery → Unrestricted.",
+                "In Settings, tap Cypher Box and choose Unrestricted.",
             ],
         };
     }
@@ -110,7 +105,7 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
         vendor: 'Android',
         headline: 'Allow Cypher Box to run in the background',
         steps: [
-            "1. In the page that opens: Cypher Box → Don't optimise / Unrestricted.",
+            "In Settings, tap Cypher Box and choose Don't optimise (or Unrestricted).",
         ],
     };
 }
