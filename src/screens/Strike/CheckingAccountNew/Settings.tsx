@@ -34,8 +34,10 @@ import {
   readArkSeedPhrase,
   resetArkWalletState,
   startArkEmergencyExit,
+  writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
+import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 
 interface Props {
@@ -363,6 +365,7 @@ function ArkSettingsBody() {
   };
 
   const [driveBusy, setDriveBusy] = useState(false);
+  const [manualExportBusy, setManualExportBusy] = useState(false);
 
   // Refresh Drive status after connect/disconnect — keeps the panel
   // honest without forcing the user to reopen the screen.
@@ -450,6 +453,55 @@ function ArkSettingsBody() {
         { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
       ],
     );
+  };
+
+  /**
+   * One-shot manual export of the encrypted .cbark to the system share
+   * sheet. Used to:
+   *   - Send a snapshot to a different cloud (different Google account,
+   *     OneDrive, email-to-self) for users who want a redundant copy
+   *     beyond the auto-updating Drive + SAF channels.
+   *   - On iOS, hand the file to "Save to Files" → user-chosen iCloud
+   *     Drive subfolder when they want a non-app-Documents location.
+   *
+   * Lives in Settings rather than the create flow because it's
+   * inherently a snapshot — doesn't auto-update with VTXO changes —
+   * and shouldn't satisfy the wallet-create gate. The Continue gate
+   * only counts auto-updating channels (Drive, SAF folder, iOS
+   * Documents-via-iCloud). The previous version exposed this in the
+   * create flow as a third gate-satisfying option; removed because it
+   * encouraged users to save a stale snapshot and proceed thinking
+   * they had recoverable backup, when in fact subsequent receives
+   * wouldn't be in the file.
+   */
+  const handleManualExport = async () => {
+    if (manualExportBusy) return;
+    setManualExportBusy(true);
+    try {
+      const mnemonic = await readArkSeedPhrase();
+      if (!mnemonic) {
+        SimpleToast.show('No seed available, or authentication declined.', SimpleToast.SHORT);
+        return;
+      }
+      const file = await writeArkBackupToTempFile(mnemonic);
+      try {
+        await Share.open({
+          url: Platform.OS === 'android' ? `file://${file.path}` : file.path,
+          type: 'application/octet-stream',
+          filename: 'ark-backup.cbark',
+          failOnCancel: false,
+        });
+      } catch (shareErr: any) {
+        // react-native-share throws on cancel even with failOnCancel:false
+        // on some platforms — silent.
+        if (__DEV__) console.log('[Ark/manual-export] share returned:', shareErr?.message ?? shareErr);
+      }
+    } catch (err: any) {
+      console.warn('[Ark/manual-export] failed:', err);
+      SimpleToast.show(`Couldn't prepare backup file: ${err?.message ?? 'unknown error'}.`, SimpleToast.LONG);
+    } finally {
+      setManualExportBusy(false);
+    }
   };
 
   const handleReveal = async () => {
@@ -923,6 +975,47 @@ function ArkSettingsBody() {
                       : driveConnected
                         ? 'Disconnect'
                         : 'Connect Google Drive'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Manual export — one-shot snapshot to share sheet. Lives
+                here rather than in the create flow because it's a
+                snapshot, not a backup channel: the file you export now
+                doesn't update on later VTXO changes. Useful for users
+                who want a redundant copy in a different cloud (different
+                Google account, OneDrive, email-to-self) or a manual
+                "Save to Files" target on iOS that's outside Documents. */}
+            <View style={{ paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: '#333', marginTop: 4 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, color: '#AAA' }}>Manual export</Text>
+                <Text style={{ fontSize: 11, color: '#666' }}>snapshot</Text>
+              </View>
+              <Text style={{ fontSize: 11, color: '#666', marginTop: 2, lineHeight: 16 }}>
+                Save the current encrypted backup file anywhere via the share sheet — email, another Drive account, OneDrive, etc. Doesn't auto-update; export again after big changes.
+              </Text>
+              <TouchableOpacity
+                onPress={handleManualExport}
+                disabled={manualExportBusy}
+                activeOpacity={0.7}
+                style={{
+                  marginTop: 10,
+                  alignSelf: 'flex-start',
+                  paddingVertical: 8,
+                  paddingHorizontal: 14,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: '#444',
+                  backgroundColor: '#0F0F0F',
+                  opacity: manualExportBusy ? 0.5 : 1,
+                }}
+              >
+                {manualExportBusy ? (
+                  <ActivityIndicator size="small" color="#888" />
+                ) : (
+                  <Text bold style={{ fontSize: 13, color: '#AAA' }}>
+                    Save backup file
                   </Text>
                 )}
               </TouchableOpacity>

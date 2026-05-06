@@ -3,7 +3,6 @@ import { ActivityIndicator, Alert, Image, Platform, ScrollView, Switch, Touchabl
 import { BlurView } from "@react-native-community/blur";
 import { useRoute } from "@react-navigation/native";
 import * as Keychain from "react-native-keychain";
-import Share from "react-native-share";
 import SimpleToast from "react-native-simple-toast";
 
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
@@ -20,7 +19,6 @@ import {
     messageForSafError,
     pickSafBackupFolder,
     writeAndVerifyArkBackup,
-    writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
 import type { DriveErrorClass, SafErrorClass } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -131,27 +129,35 @@ export default function ArkSeedPhraseScreen() {
     const [submitting, setSubmitting] = useState(false);
     const [keychainStatus, setKeychainStatus] = useState<null | "ok" | "err">(null);
 
-    // Backup state. THREE independent paths can satisfy the Continue gate:
-    //   - cloudBackupDone: Drive upload + read-back-decrypt verified (Android)
-    //                      OR local-write completed on iOS (iCloud Drive sync
-    //                      handled transparently by Apple if user has it on).
-    //   - manualBackupConfirmed: user opened the share sheet, saved the
-    //                            .cbark somewhere, and tapped "Yes, I saved it".
-    //   - safBackupConfirmed: user picked a Storage Access Framework folder
-    //                         (Android only), the .cbark was written there
-    //                         and round-trip verified. This is the only
-    //                         channel that survives `pm uninstall` on Android.
+    // Backup state. Two independent channels satisfy the Continue gate
+    // — one cloud, one local — chosen per platform:
     //
-    // Continue requires AT LEAST ONE — funds must never enter a wallet
+    //   Android:
+    //     - cloudBackupDone (Drive)        — off-device, survives device loss
+    //     - safBackupConfirmed (SAF folder) — local but out-of-sandbox,
+    //       survives `pm uninstall`
+    //
+    //   iOS:
+    //     - cloudBackupDone (Documents → iCloud) — local file in Documents
+    //       which Apple transparently mirrors to iCloud Drive when the user
+    //       enables iCloud Drive for Cypher Box. No SAF equivalent on iOS
+    //       (Documents already plays both roles).
+    //
+    // Continue requires AT LEAST ONE channel verified. The previous version
+    // also accepted a one-shot "Save backup file" share-sheet confirmation
+    // as a third gate-satisfying path; that's been moved to Settings →
+    // Ark Backup as a manual export action since it doesn't auto-update
+    // and isn't a real backup channel — just a snapshot save. Continue
+    // gate only counts auto-updating channels now.
+    //
+    // The strict-no-override gate stays: funds must never enter a wallet
     // without a backup the user has somewhere off this device.
     // (Loss-event 2026-05-05: Drive upload silently failed during create;
     // user got a "wallet created" toast and lost 5000 sats when uninstall
-    // wiped the local copy. The override path is removed deliberately.)
+    // wiped the local copy.)
     const [cloudBackupBusy, setCloudBackupBusy] = useState(false);
     const [cloudBackupDone, setCloudBackupDone] = useState(false);
     const [driveError, setDriveError] = useState<{ cls: DriveErrorClass; message: string } | null>(null);
-    const [manualBackupBusy, setManualBackupBusy] = useState(false);
-    const [manualBackupConfirmed, setManualBackupConfirmed] = useState(false);
     const [safBackupBusy, setSafBackupBusy] = useState(false);
     const [safBackupConfirmed, setSafBackupConfirmed] = useState(false);
     const [safError, setSafError] = useState<{ cls: SafErrorClass | 'cancelled'; message: string } | null>(null);
@@ -352,79 +358,6 @@ export default function ArkSeedPhraseScreen() {
         }
     };
 
-    /**
-     * Universal manual-save fallback — write the encrypted backup to a
-     * timestamped temp file and hand it to the system share sheet. After
-     * the share sheet dismisses, ask the user to confirm they actually
-     * saved it somewhere they trust. Only the explicit confirmation
-     * flips `manualBackupConfirmed` true; cancelling the share sheet or
-     * dismissing the confirm prompt does not.
-     *
-     * This path satisfies the Continue gate independently of the cloud
-     * path — works on both platforms, doesn't depend on Drive auth, and
-     * is the recommended fallback whenever the user hits a Drive
-     * configuration error (`driveError.cls === 'auth-not-configured'`)
-     * which is permanent for the build they're on.
-     */
-    const handleSaveManualBackup = async () => {
-        if (manualBackupBusy) return;
-        if (!revealed) {
-            SimpleToast.show("Reveal your seed first.", SimpleToast.SHORT);
-            return;
-        }
-        setManualBackupBusy(true);
-        try {
-            const ready = await ensureWalletCreated();
-            if (!ready) return;
-            const m: string = mnemonic as string;
-
-            const file = await writeArkBackupToTempFile(m);
-
-            try {
-                await Share.open({
-                    url: Platform.OS === 'android' ? `file://${file.path}` : file.path,
-                    type: 'application/octet-stream',
-                    filename: 'ark-backup.cbark',
-                    failOnCancel: false,
-                });
-            } catch (shareErr: any) {
-                // react-native-share throws on user-cancel even with
-                // failOnCancel:false on some platforms. Surface only
-                // genuine errors; cancel just falls through to the
-                // confirm prompt where the user can say "no, didn't save".
-                if (__DEV__) console.log("[Ark] Share open returned:", shareErr?.message ?? shareErr);
-            }
-
-            // Explicit confirmation. The save sheet dismisses for many
-            // reasons (cancel, send-to-self, save-to-files); we cannot
-            // tell which from the Share API. Asking the user is the
-            // only honest way to know whether to flip the gate.
-            const saved = await new Promise<boolean>((resolve) => {
-                Alert.alert(
-                    "Did you save the backup file?",
-                    "The .cbark file is encrypted with your seed phrase — it's safe to keep in iCloud Drive, Google Drive, email to yourself, or any cloud storage. Without this file plus your seed, your Ark balance can't be fully recovered.",
-                    [
-                        { text: "Not yet", style: "cancel", onPress: () => resolve(false) },
-                        { text: "Yes, I saved it", onPress: () => resolve(true) },
-                    ],
-                    { cancelable: true, onDismiss: () => resolve(false) },
-                );
-            });
-
-            if (saved) {
-                setManualBackupConfirmed(true);
-                SimpleToast.show("Manual backup confirmed.", SimpleToast.SHORT);
-            }
-        } catch (err: any) {
-            console.warn("[Ark] Manual backup failed:", err);
-            SimpleToast.show(
-                `Couldn't prepare the backup file: ${err?.message ?? "unknown error"}.`,
-                SimpleToast.LONG,
-            );
-        } finally {
-            setManualBackupBusy(false);
-        }
-    };
 
     const handleReveal = () => {
         setRevealing(true);
@@ -575,25 +508,28 @@ export default function ArkSeedPhraseScreen() {
         }
 
         // STRICT GATE: at least one verified backup destination must
-        // exist before this wallet is allowed to receive funds.
+        // exist before this wallet is allowed to receive funds. Two
+        // channels (one cloud, one local) and the gate accepts either:
         //   - cloudBackupDone: Drive upload+verified (Android) OR local
-        //     write succeeded (iOS — counts as the cloud path because
-        //     iCloud Drive sync, when enabled, is transparent).
-        //   - manualBackupConfirmed: user opened the share sheet, saved
-        //     the file somewhere, and confirmed with "Yes, I saved it".
+        //     Documents write succeeded (iOS — Apple transparently
+        //     mirrors Documents to iCloud Drive when the user has
+        //     iCloud Drive on for Cypher Box).
+        //   - safBackupConfirmed (Android only): user picked a Storage
+        //     Access Framework folder, .cbark write+roundtrip-verified.
+        //     Survives `pm uninstall`.
         //
         // No "Continue anyway" override. The previous version allowed
         // it and the user lost 5000 sats on 2026-05-05 when Drive
         // silently failed, the wallet showed "created", and uninstall
         // wiped the local copy. If you change this gate, re-read
         // memory/project_play_signing_oauth.md first.
-        const hasVerifiedBackup = cloudBackupDone || manualBackupConfirmed || safBackupConfirmed;
+        const hasVerifiedBackup = cloudBackupDone || safBackupConfirmed;
         if (!hasVerifiedBackup) {
             Alert.alert(
                 "Save your backup first",
                 isIOS
-                    ? "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Save it to iCloud Drive, or use 'Save backup file' to share it somewhere safe."
-                    : "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Pick any one: Google Drive, a phone-storage folder, or 'Save backup file' (share sheet).",
+                    ? "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Tap 'Save backup now' above so it's stored in Files (and synced to iCloud Drive if iCloud Drive is on for Cypher Box)."
+                    : "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Pick at least one: Google Drive (off-device), or a folder on this phone (survives uninstall).",
                 [{ text: "OK" }],
                 { cancelable: true },
             );
@@ -622,14 +558,14 @@ export default function ArkSeedPhraseScreen() {
         // backwards-compat with older wallet records and pick the most
         // descriptive label for the active backup channels.
         let backupDestination: BackupDestination;
-        if (cloudBackupDone && (manualBackupConfirmed || safBackupConfirmed)) {
+        if (cloudBackupDone && safBackupConfirmed) {
             backupDestination = "auto+manual";
         } else if (cloudBackupDone) {
             backupDestination = isIOS ? "icloud" : "auto+manual";
         } else {
-            // SAF and manual both fall under "manual" in the legacy
-            // string set. Both are user-driven; SAF auto-updates
-            // afterwards but the initial decision was manual.
+            // SAF-only path. Tagged "manual" in the legacy string set —
+            // initial decision was a manual folder pick, even though
+            // subsequent updates are automatic.
             backupDestination = "manual";
         }
 
@@ -984,72 +920,15 @@ export default function ArkSeedPhraseScreen() {
                             </View>
                         )}
 
-                        {/* Universal manual fallback — always visible. Satisfies
-                            the Continue gate independently of the cloud path so
-                            users on builds with the wrong SHA-1 (or who prefer
-                            to manage their own backup destination) can still
-                            create an Ark wallet without the cloud round-trip. */}
-                        <View style={[
-                            styles.backupOption,
-                            manualBackupConfirmed && styles.backupOptionSelected,
-                            { marginTop: 14 },
-                        ]}>
-                            <View style={[
-                                styles.backupRadioOuter,
-                                manualBackupConfirmed && styles.backupRadioOuterSelected,
-                            ]}>
-                                <View style={styles.backupRadioInner} />
-                            </View>
-                            <View style={styles.backupOptionTextWrap}>
-                                <Text style={styles.backupOptionLabel}>
-                                    Save backup file
-                                    {manualBackupConfirmed ? "  ✓" : ""}
-                                </Text>
-                                <Text style={styles.backupOptionDetail}>
-                                    Opens the share sheet so you can save the encrypted
-                                    .cbark file anywhere — iCloud Drive, Google Drive,
-                                    email, password manager. The file is encrypted with
-                                    your seed phrase, so wherever you store it sees
-                                    ciphertext only.
-                                </Text>
-                                <TouchableOpacity
-                                    onPress={handleSaveManualBackup}
-                                    disabled={!revealed || manualBackupBusy}
-                                    style={{
-                                        marginTop: 10,
-                                        paddingVertical: 11,
-                                        paddingHorizontal: 16,
-                                        borderRadius: 10,
-                                        alignSelf: 'flex-start',
-                                        backgroundColor: manualBackupConfirmed
-                                            ? 'rgba(40, 200, 110, 0.12)'
-                                            : (colors.ark?.light ?? colors.pink.default),
-                                        borderWidth: manualBackupConfirmed ? 1 : 0,
-                                        borderColor: manualBackupConfirmed ? colors.green : 'transparent',
-                                        opacity: !revealed ? 0.45 : 1,
-                                    }}
-                                >
-                                    {manualBackupBusy ? (
-                                        <ActivityIndicator color={colors.black.default} />
-                                    ) : (
-                                        <Text bold style={{
-                                            color: manualBackupConfirmed ? colors.green : colors.black.default,
-                                            fontSize: 13,
-                                        }}>
-                                            {manualBackupConfirmed
-                                                ? "✓ Backup saved manually"
-                                                : "Save backup file"}
-                                        </Text>
-                                    )}
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-
                         {/* Hard-gate warning — Continue is blocked until at
                             least one backup destination is verified. Replaces
                             the prior soft-warn that allowed override (cause of
-                            the 5000-sat loss on 2026-05-05). */}
-                        {revealed && !cloudBackupDone && !manualBackupConfirmed && !safBackupConfirmed && (
+                            the 5000-sat loss on 2026-05-05).
+                            One-shot manual export to share sheet was moved
+                            to Settings → Ark Backup as a manual export
+                            action — it doesn't auto-update so it's not a
+                            real channel, just a snapshot save. */}
+                        {revealed && !cloudBackupDone && !safBackupConfirmed && (
                             <View style={styles.warnPanel}>
                                 <Text bold style={styles.warnPanelTitle}>
                                     ⚠ Save your backup before continuing
@@ -1070,7 +949,7 @@ export default function ArkSeedPhraseScreen() {
                     text={
                         !revealed
                             ? "Reveal seed phrase first"
-                            : (cloudBackupDone || manualBackupConfirmed || safBackupConfirmed)
+                            : (cloudBackupDone || safBackupConfirmed)
                                 ? "I've backed it up - Create"
                                 : "Save a backup first"
                     }
