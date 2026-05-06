@@ -35,9 +35,24 @@ import styles from "./styles";
  *
  * Access control: BIOMETRY_ANY_OR_DEVICE_PASSCODE — FaceID/TouchID OR passcode.
  * Accessibility: WHEN_PASSCODE_SET_THIS_DEVICE_ONLY — never synced anywhere,
- *   readable only when device is unlocked. Survives app reinstall on iOS
- *   (Keychain is OS-level), which is the recovery property we want vs.
- *   RNSecureKeyStore (cleared on uninstall).
+ *   readable only when device is unlocked.
+ *
+ * SURVIVAL ON UNINSTALL — platform diverges:
+ *   - iOS: entries are OS-level Keychain items, scoped to bundle ID +
+ *     accessGroup (default = bundle ID). They survive app delete-and-
+ *     reinstall by the same bundle ID. This is the recovery property
+ *     we depend on for iOS — user can uninstall, reinstall, and the
+ *     seed is still in Keychain when they open the app again.
+ *   - Android: react-native-keychain stores via Android KeyStore +
+ *     EncryptedSharedPreferences (or DataStore on newer builds), all
+ *     of which live inside the app's UID-scoped sandbox. When the
+ *     user uninstalls, the package manager assigns a fresh UID on the
+ *     next install and the OS wipes everything keyed to the old UID,
+ *     including the Keystore entry. NO recovery property. The
+ *     onboarding copy in the keychain row says so explicitly so users
+ *     don't think the toggle gives them more than it actually does.
+ *     This is the gap that contributed to the 2026-05-05 loss-event
+ *     scenario — see project_play_signing_oauth.md memory.
  *
  * TODO (v2 / opt-in): iCloud Keychain sync via `synchronizable: true` and
  * `accessGroup`. Brings cross-device auto-restore but extends trust to Apple's
@@ -684,11 +699,12 @@ export default function ArkSeedPhraseScreen() {
                         <View style={styles.keychainRow}>
                             <View style={{ flex: 1 }}>
                                 <Text bold style={styles.keychainLabel}>
-                                    iPhone Keychain
+                                    {isIOS ? "iPhone Keychain" : "Android Keystore"}
                                 </Text>
                                 <Text style={styles.keychainSub}>
-                                    Encrypted on this device, unlocked by FaceID / passcode.
-                                    Survives app reinstall. Does not sync to iCloud or any other device.
+                                    {isIOS
+                                        ? "Encrypted on this device, unlocked by FaceID / passcode. Survives app reinstall. Does not sync to iCloud or any other device."
+                                        : "Encrypted on this device, unlocked by your screen lock / fingerprint. ⚠ Wiped if you uninstall Cypher Box (Android removes the Keystore entry when the app's UID changes), so write the 12 words down somewhere safe even with this on."}
                                 </Text>
                             </View>
                             <Switch
