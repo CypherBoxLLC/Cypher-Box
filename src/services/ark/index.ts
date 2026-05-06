@@ -55,9 +55,11 @@ export {
     migrateLegacyBackupFile,
     restoreArkBackupBlob,
     writeArkAutoBackup,
+    writeAndVerifyArkBackup,
     writeArkBackupToTempFile,
     clearArkKeyCache,
 } from './backup';
+export type { VerifiedBackupResult, VerifiedBackupDriveOutcome } from './backup';
 
 export {
     configureGoogleDrive,
@@ -67,7 +69,10 @@ export {
     uploadArkBackupToDrive,
     downloadArkBackupFromDrive,
     getDriveBackupInfo,
+    classifyDriveError,
+    messageForDriveError,
 } from './googleDrive';
+export type { DriveErrorClass } from './googleDrive';
 
 export {
     cancelArkPendingRound,

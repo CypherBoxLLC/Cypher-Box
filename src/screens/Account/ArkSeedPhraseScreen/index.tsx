@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Image, Platform, ScrollView, Switch, Touchabl
 import { BlurView } from "@react-native-community/blur";
 import { useRoute } from "@react-navigation/native";
 import * as Keychain from "react-native-keychain";
+import Share from "react-native-share";
 import SimpleToast from "react-native-simple-toast";
 
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
@@ -14,8 +15,11 @@ import {
     connectGoogleDrive,
     createArkWallet,
     isGoogleDriveConnected,
-    writeArkAutoBackup,
+    messageForDriveError,
+    writeAndVerifyArkBackup,
+    writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
+import type { DriveErrorClass } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 
@@ -124,15 +128,27 @@ export default function ArkSeedPhraseScreen() {
     const [submitting, setSubmitting] = useState(false);
     const [keychainStatus, setKeychainStatus] = useState<null | "ok" | "err">(null);
 
-    // Off-device backup state. Local auto-backup is always-on; the cloud
-    // path is the optional opt-in for device-loss protection. Continue gate
-    // soft-warns once if the user skipped it but still allows override.
+    // Backup state. Two independent paths can satisfy the Continue gate:
+    //   - cloudBackupDone: Drive upload + read-back-decrypt verified (Android)
+    //                      OR local-write completed on iOS (iCloud Drive sync
+    //                      handled transparently by Apple if user has it on).
+    //   - manualBackupConfirmed: user opened the share sheet, saved the
+    //                            .cbark somewhere, and tapped "Yes, I saved it".
+    //
+    // Continue requires AT LEAST ONE — funds must never enter a wallet
+    // without a backup the user has somewhere off this device.
+    // (Loss-event 2026-05-05: Drive upload silently failed during create;
+    // user got a "wallet created" toast and lost 5000 sats when uninstall
+    // wiped the local copy. The override path is removed deliberately.)
     const [cloudBackupBusy, setCloudBackupBusy] = useState(false);
     const [cloudBackupDone, setCloudBackupDone] = useState(false);
+    const [driveError, setDriveError] = useState<{ cls: DriveErrorClass; message: string } | null>(null);
+    const [manualBackupBusy, setManualBackupBusy] = useState(false);
+    const [manualBackupConfirmed, setManualBackupConfirmed] = useState(false);
     // Track whether `createArkWallet` has been called yet on this screen.
     // The original flow created the wallet on Continue; once we let backup
     // buttons run before Continue, we have to materialise the datadir
-    // earlier (otherwise writeArkAutoBackup throws "datadir is empty").
+    // earlier (otherwise the backup pipeline throws "datadir is empty").
     // Either backup button or Continue itself triggers ensureWalletCreated,
     // and the wallet-create cost is paid at most once.
     const [walletReady, setWalletReady] = useState(false);
@@ -172,25 +188,25 @@ export default function ArkSeedPhraseScreen() {
     };
 
     /**
-     * Primary "set up auto-syncing backup" path.
+     * Primary cloud-backup path — strict, structured result.
      *
-     * Android: Connect Google Drive (OAuth) → write+upload encrypted backup.
-     *          Subsequent auto-backup ticks will keep the same Drive file
-     *          updated as wallet state changes (handled inside writeArkAutoBackup).
+     * Android: Connect Drive (OAuth) → write local + upload to Drive →
+     *          read back from Drive + decrypt + sanity-check manifest.
+     *          ALL THREE must succeed before we treat the cloud backup
+     *          as done. The previous version showed a success toast on
+     *          local-write success even when the Drive upload silently
+     *          failed (loss-event 2026-05-05).
      *
-     * iOS:     Write the encrypted backup to Documents (transparent iCloud
-     *          Drive sync if the user has it on for Cypher Box) AND offer
-     *          a Files-app save sheet so they have an explicit iCloud Drive
-     *          copy regardless of the transparent-sync toggle. Auto-update
-     *          only happens when iCloud Drive sync is enabled — copy in the
-     *          UI is honest about that.
+     * iOS:     Write to Documents (transparent iCloud Drive sync if the
+     *          user has it on for Cypher Box). We can't probe iCloud
+     *          state in-app, so the "done" semantics here are
+     *          best-effort: local write succeeded. Users who want a
+     *          guaranteed off-device copy on iOS use the manual
+     *          share-sheet path below.
      *
-     * Edge cases:
-     *   - Drive OAuth cancelled → silent return, button stays unconnected.
-     *   - Drive upload 5xx / network down → toast, leave cloudBackupDone
-     *     false so the user can retry.
-     *   - Wallet creation fails (stale datadir) → toast routes to Reset.
-     *   - Tapped twice while busy → busy guard blocks the second.
+     * On Drive failure: surface the classified error inline (driveError
+     * state) with actionable copy, leave cloudBackupDone === false so
+     * the user must either retry or take the manual path.
      */
     const handleConnectAndBackupCloud = async () => {
         if (cloudBackupBusy || cloudBackupDone) return;
@@ -199,13 +215,13 @@ export default function ArkSeedPhraseScreen() {
             return;
         }
         setCloudBackupBusy(true);
+        setDriveError(null);
         try {
             if (!isIOS && !driveConnected) {
                 const ok = await connectGoogleDrive();
                 if (!ok) {
-                    // Most common cause: user dismissed the Google account
-                    // picker. Don't shout — they'll try again or pick the
-                    // manual snapshot path.
+                    // User dismissed the Google account picker — don't
+                    // promote to a hard error, they can tap again.
                     SimpleToast.show(
                         "Couldn't connect Google Drive. Make sure Play Services is up to date and try again.",
                         SimpleToast.LONG,
@@ -217,32 +233,162 @@ export default function ArkSeedPhraseScreen() {
 
             const ready = await ensureWalletCreated();
             if (!ready) return;
-            // ensureWalletCreated guarantees mnemonic is a non-empty string
-            // when it returns true; narrow for TS.
             const m: string = mnemonic as string;
 
-            // writeArkAutoBackup writes to Documents (auto-syncs via iCloud
-            // Drive on iOS if enabled) AND uploads to Drive's appDataFolder
-            // on Android (when isGoogleDriveConnected returns true). Same
-            // function we run on every sync tick — picking the same path
-            // here keeps the "first backup" byte-identical to "subsequent
-            // backups" in failure-mode terms.
-            await writeArkAutoBackup(m);
-            setCloudBackupDone(true);
-            SimpleToast.show(
-                isIOS
-                    ? "Backup saved. It will sync to iCloud Drive automatically if iCloud Drive is on for Cypher Box."
-                    : "Backup uploaded to Google Drive — it will keep updating automatically.",
-                SimpleToast.LONG,
-            );
+            const result = await writeAndVerifyArkBackup(m);
+
+            if (!result.local.ok) {
+                // Local write failure is rare (disk full, sandbox glitch).
+                // Treat as hard error — neither path completed.
+                Alert.alert(
+                    "Backup write failed",
+                    `Couldn't write the encrypted backup file on this device: ${result.local.error}. Free up storage and try again.`,
+                );
+                return;
+            }
+
+            if (isIOS) {
+                // iOS: local write into Documents is the cloud path.
+                // iCloud Drive sync (if enabled for Cypher Box) handles
+                // off-device replication transparently.
+                setCloudBackupDone(true);
+                SimpleToast.show(
+                    "Backup saved. It will sync to iCloud Drive automatically if iCloud Drive is on for Cypher Box.",
+                    SimpleToast.LONG,
+                );
+                return;
+            }
+
+            // Android: branch on the structured Drive outcome.
+            switch (result.drive.kind) {
+                case 'uploaded-and-verified':
+                    setCloudBackupDone(true);
+                    SimpleToast.show(
+                        "Backup uploaded to Google Drive and verified — it will keep updating automatically.",
+                        SimpleToast.LONG,
+                    );
+                    break;
+                case 'skipped-not-connected':
+                    // Probe said connected, but at upload time we weren't.
+                    // Token was likely revoked between checks. Treat as
+                    // auth-token-missing.
+                    setDriveError({
+                        cls: 'auth-token-missing',
+                        message: messageForDriveError('auth-token-missing'),
+                    });
+                    setDriveConnected(false);
+                    break;
+                case 'upload-failed':
+                    setDriveError({
+                        cls: result.drive.classification,
+                        message: messageForDriveError(result.drive.classification),
+                    });
+                    if (__DEV__) {
+                        console.warn("[Ark] Drive upload failed:", result.drive.classification, result.drive.error);
+                    }
+                    break;
+                case 'verify-failed':
+                    // Upload reported success but the round-trip didn't
+                    // produce a decryptable manifest. Could be a Drive
+                    // server issue or (worst case) the upload didn't
+                    // actually persist. Treat as a verification failure
+                    // and force manual fallback — refusing to call this
+                    // backup "verified" is the whole point.
+                    setDriveError({
+                        cls: 'unknown',
+                        message:
+                            "Google Drive accepted the upload, but reading it back didn't return a valid backup. Save the backup file manually below to be safe.",
+                    });
+                    if (__DEV__) {
+                        console.warn("[Ark] Drive verify failed:", result.drive.error);
+                    }
+                    break;
+                case 'skipped-platform':
+                    // Unreachable on Android, but kept exhaustive.
+                    break;
+            }
         } catch (err: any) {
             console.warn("[Ark] Cloud backup failed:", err);
             SimpleToast.show(
-                `Backup failed: ${err?.message ?? "unknown error"} — try again, or skip and continue with local-only backup.`,
+                `Backup failed: ${err?.message ?? "unknown error"}. Try again, or save the backup file manually below.`,
                 SimpleToast.LONG,
             );
         } finally {
             setCloudBackupBusy(false);
+        }
+    };
+
+    /**
+     * Universal manual-save fallback — write the encrypted backup to a
+     * timestamped temp file and hand it to the system share sheet. After
+     * the share sheet dismisses, ask the user to confirm they actually
+     * saved it somewhere they trust. Only the explicit confirmation
+     * flips `manualBackupConfirmed` true; cancelling the share sheet or
+     * dismissing the confirm prompt does not.
+     *
+     * This path satisfies the Continue gate independently of the cloud
+     * path — works on both platforms, doesn't depend on Drive auth, and
+     * is the recommended fallback whenever the user hits a Drive
+     * configuration error (`driveError.cls === 'auth-not-configured'`)
+     * which is permanent for the build they're on.
+     */
+    const handleSaveManualBackup = async () => {
+        if (manualBackupBusy) return;
+        if (!revealed) {
+            SimpleToast.show("Reveal your seed first.", SimpleToast.SHORT);
+            return;
+        }
+        setManualBackupBusy(true);
+        try {
+            const ready = await ensureWalletCreated();
+            if (!ready) return;
+            const m: string = mnemonic as string;
+
+            const file = await writeArkBackupToTempFile(m);
+
+            try {
+                await Share.open({
+                    url: Platform.OS === 'android' ? `file://${file.path}` : file.path,
+                    type: 'application/octet-stream',
+                    filename: 'ark-backup.cbark',
+                    failOnCancel: false,
+                });
+            } catch (shareErr: any) {
+                // react-native-share throws on user-cancel even with
+                // failOnCancel:false on some platforms. Surface only
+                // genuine errors; cancel just falls through to the
+                // confirm prompt where the user can say "no, didn't save".
+                if (__DEV__) console.log("[Ark] Share open returned:", shareErr?.message ?? shareErr);
+            }
+
+            // Explicit confirmation. The save sheet dismisses for many
+            // reasons (cancel, send-to-self, save-to-files); we cannot
+            // tell which from the Share API. Asking the user is the
+            // only honest way to know whether to flip the gate.
+            const saved = await new Promise<boolean>((resolve) => {
+                Alert.alert(
+                    "Did you save the backup file?",
+                    "The .cbark file is encrypted with your seed phrase — it's safe to keep in iCloud Drive, Google Drive, email to yourself, or any cloud storage. Without this file plus your seed, your Ark balance can't be fully recovered.",
+                    [
+                        { text: "Not yet", style: "cancel", onPress: () => resolve(false) },
+                        { text: "Yes, I saved it", onPress: () => resolve(true) },
+                    ],
+                    { cancelable: true, onDismiss: () => resolve(false) },
+                );
+            });
+
+            if (saved) {
+                setManualBackupConfirmed(true);
+                SimpleToast.show("Manual backup confirmed.", SimpleToast.SHORT);
+            }
+        } catch (err: any) {
+            console.warn("[Ark] Manual backup failed:", err);
+            SimpleToast.show(
+                `Couldn't prepare the backup file: ${err?.message ?? "unknown error"}.`,
+                SimpleToast.LONG,
+            );
+        } finally {
+            setManualBackupBusy(false);
         }
     };
 
@@ -276,28 +422,30 @@ export default function ArkSeedPhraseScreen() {
             return;
         }
 
-        // Local auto-backup is always-on (writeArkAutoBackup runs every sync
-        // cycle). It protects against app reinstall / data corruption but NOT
-        // against device loss — if the phone is lost or broken, the local
-        // .cbark goes with it. The cloud option is the only protection
-        // against device loss. Soft-warn (single nudge, override allowed)
-        // when the user skipped it; the seed-only recovery path can't
-        // restore VTXOs.
-        if (!cloudBackupDone) {
-            const proceed = await new Promise<boolean>((resolve) => {
-                Alert.alert(
-                    "No off-device backup",
-                    isIOS
-                        ? "Your wallet is backed up on this device automatically, but if you lose this phone the encrypted file goes with it — your seed alone can't restore Ark funds. Want to add iCloud Drive sync first?"
-                        : "Your wallet is backed up on this device automatically, but if you lose this phone the encrypted file goes with it — your seed alone can't restore Ark funds. Want to connect Google Drive first?",
-                    [
-                        { text: "Add cloud backup", onPress: () => resolve(false), style: "cancel" },
-                        { text: "Continue anyway", onPress: () => resolve(true), style: "destructive" },
-                    ],
-                    { cancelable: true, onDismiss: () => resolve(false) },
-                );
-            });
-            if (!proceed) return;
+        // STRICT GATE: at least one verified backup destination must
+        // exist before this wallet is allowed to receive funds.
+        //   - cloudBackupDone: Drive upload+verified (Android) OR local
+        //     write succeeded (iOS — counts as the cloud path because
+        //     iCloud Drive sync, when enabled, is transparent).
+        //   - manualBackupConfirmed: user opened the share sheet, saved
+        //     the file somewhere, and confirmed with "Yes, I saved it".
+        //
+        // No "Continue anyway" override. The previous version allowed
+        // it and the user lost 5000 sats on 2026-05-05 when Drive
+        // silently failed, the wallet showed "created", and uninstall
+        // wiped the local copy. If you change this gate, re-read
+        // memory/project_play_signing_oauth.md first.
+        const hasVerifiedBackup = cloudBackupDone || manualBackupConfirmed;
+        if (!hasVerifiedBackup) {
+            Alert.alert(
+                "Save your backup first",
+                isIOS
+                    ? "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Save it to iCloud Drive, or use 'Save backup file' to share it somewhere safe."
+                    : "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Connect Google Drive, or use 'Save backup file' to share it somewhere safe.",
+                [{ text: "OK" }],
+                { cancelable: true },
+            );
+            return;
         }
 
         setSubmitting(true);
@@ -309,13 +457,26 @@ export default function ArkSeedPhraseScreen() {
             }
         }
 
-        // Wallet may already exist from a backup-button tap; ensureWalletCreated
-        // is idempotent. If neither button was tapped (continued through the
-        // soft-warn), we create the wallet here for the first time.
+        // Wallet may already exist from a backup-button tap;
+        // ensureWalletCreated is idempotent.
         const created = await ensureWalletCreated();
         if (!created) {
             setSubmitting(false);
             return;
+        }
+
+        // backupDestination is an audit string. The "manual" branch
+        // covers users who skipped the cloud path entirely, the
+        // "auto+manual" branch covers Android users who got both Drive
+        // and a manual share, and we keep "icloud" / "local" for
+        // backwards-compat with older state values.
+        let backupDestination: BackupDestination;
+        if (cloudBackupDone && manualBackupConfirmed) {
+            backupDestination = "auto+manual";
+        } else if (cloudBackupDone) {
+            backupDestination = isIOS ? "icloud" : "auto+manual";
+        } else {
+            backupDestination = "manual";
         }
 
         const wallet = {
@@ -323,9 +484,7 @@ export default function ArkSeedPhraseScreen() {
             createdAt: new Date().toISOString(),
             useHotVaultSeed: arkUseHotVaultSeed,
             keychainSaved: saveToKeychain && keychainStatus !== "err",
-            backupDestination: cloudBackupDone
-                ? (isIOS ? "icloud" : "auto+manual")
-                : "local",
+            backupDestination,
         };
         setArkWallet(wallet);
         setArkAuth(true);
@@ -536,13 +695,39 @@ export default function ArkSeedPhraseScreen() {
                                             {cloudBackupDone
                                                 ? (isIOS
                                                     ? "✓ Saved · syncs via iCloud Drive"
-                                                    : "✓ Connected · backup saved")
+                                                    : "✓ Connected · backup verified")
                                                 : (isIOS
                                                     ? "Save backup now"
-                                                    : "Connect & save backup")}
+                                                    : driveError
+                                                        ? "Retry connect & save"
+                                                        : "Connect & save backup")}
                                         </Text>
                                     )}
                                 </TouchableOpacity>
+
+                                {/* Inline Drive failure with classified, actionable
+                                    copy. Replaces the previous bare toast that
+                                    confused build-config bugs (auth-not-configured)
+                                    with transient hiccups. Disappears on retry. */}
+                                {driveError && (
+                                    <View style={{
+                                        marginTop: 10,
+                                        paddingVertical: 10,
+                                        paddingHorizontal: 12,
+                                        borderRadius: 8,
+                                        backgroundColor: 'rgba(255, 90, 90, 0.10)',
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(255, 90, 90, 0.35)',
+                                    }}>
+                                        <Text bold style={{ color: '#FF5A5A', fontSize: 13, marginBottom: 4 }}>
+                                            Google Drive backup didn't complete
+                                        </Text>
+                                        <Text style={{ color: colors.white, fontSize: 12, lineHeight: 17 }}>
+                                            {driveError.message}
+                                        </Text>
+                                    </View>
+                                )}
+
                                 {!revealed && (
                                     <Text style={{
                                         marginTop: 6,
@@ -555,20 +740,83 @@ export default function ArkSeedPhraseScreen() {
                             </View>
                         </View>
 
-                        {/* Soft warning — local backup is fine for most failures
-                            but device loss kills it. Single nudge; Continue still
-                            allows override via the alert in handleContinue. */}
-                        {revealed && !cloudBackupDone && (
+                        {/* Universal manual fallback — always visible. Satisfies
+                            the Continue gate independently of the cloud path so
+                            users on builds with the wrong SHA-1 (or who prefer
+                            to manage their own backup destination) can still
+                            create an Ark wallet without the cloud round-trip. */}
+                        <View style={[
+                            styles.backupOption,
+                            manualBackupConfirmed && styles.backupOptionSelected,
+                            { marginTop: 14 },
+                        ]}>
+                            <View style={[
+                                styles.backupRadioOuter,
+                                manualBackupConfirmed && styles.backupRadioOuterSelected,
+                            ]}>
+                                <View style={styles.backupRadioInner} />
+                            </View>
+                            <View style={styles.backupOptionTextWrap}>
+                                <Text style={styles.backupOptionLabel}>
+                                    Save backup file
+                                    {manualBackupConfirmed ? "  ✓" : ""}
+                                </Text>
+                                <Text style={styles.backupOptionDetail}>
+                                    Opens the share sheet so you can save the encrypted
+                                    .cbark file anywhere — iCloud Drive, Google Drive,
+                                    email, password manager. The file is encrypted with
+                                    your seed phrase, so wherever you store it sees
+                                    ciphertext only.
+                                </Text>
+                                <TouchableOpacity
+                                    onPress={handleSaveManualBackup}
+                                    disabled={!revealed || manualBackupBusy}
+                                    style={{
+                                        marginTop: 10,
+                                        paddingVertical: 11,
+                                        paddingHorizontal: 16,
+                                        borderRadius: 10,
+                                        alignSelf: 'flex-start',
+                                        backgroundColor: manualBackupConfirmed
+                                            ? 'rgba(40, 200, 110, 0.12)'
+                                            : (colors.ark?.light ?? colors.pink.default),
+                                        borderWidth: manualBackupConfirmed ? 1 : 0,
+                                        borderColor: manualBackupConfirmed ? colors.green : 'transparent',
+                                        opacity: !revealed ? 0.45 : 1,
+                                    }}
+                                >
+                                    {manualBackupBusy ? (
+                                        <ActivityIndicator color={colors.black.default} />
+                                    ) : (
+                                        <Text bold style={{
+                                            color: manualBackupConfirmed ? colors.green : colors.black.default,
+                                            fontSize: 13,
+                                        }}>
+                                            {manualBackupConfirmed
+                                                ? "✓ Backup saved manually"
+                                                : "Save backup file"}
+                                        </Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+
+                        {/* Hard-gate warning — Continue is blocked until at
+                            least one backup destination is verified. Replaces
+                            the prior soft-warn that allowed override (cause of
+                            the 5000-sat loss on 2026-05-05). */}
+                        {revealed && !cloudBackupDone && !manualBackupConfirmed && (
                             <View style={styles.warnPanel}>
                                 <Text bold style={styles.warnPanelTitle}>
-                                    ⚠ No off-device backup
+                                    ⚠ Save your backup before continuing
                                 </Text>
                                 <Text style={styles.warnPanelBody}>
-                                    Local auto-backup protects against reinstalls and
-                                    corruption, but not device loss. Without an
-                                    off-device copy, losing this phone means your
-                                    seed alone can't recover your Ark balance —
-                                    Bark stores per-VTXO state we can't re-derive.
+                                    Your seed phrase alone can't restore Ark
+                                    funds — Bark stores per-VTXO state in an
+                                    encrypted backup file we can't re-derive
+                                    from the seed. Use the cloud option above
+                                    or save the backup file manually before
+                                    creating the wallet.
                                 </Text>
                             </View>
                         )}
@@ -576,7 +824,13 @@ export default function ArkSeedPhraseScreen() {
                 </ScrollView>
 
                 <Button
-                    text={revealed ? "I've backed it up - Create" : "Reveal seed phrase first"}
+                    text={
+                        !revealed
+                            ? "Reveal seed phrase first"
+                            : (cloudBackupDone || manualBackupConfirmed)
+                                ? "I've backed it up - Create"
+                                : "Save a backup first"
+                    }
                     onPress={handleContinue}
                     style={styles.button}
                     textStyle={styles.btnText}

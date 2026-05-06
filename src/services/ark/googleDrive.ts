@@ -61,6 +61,96 @@ const LEGACY_DRIVE_FILE_NAME = 'cypher-box-ark-backup.cbark';
 const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.appdata'];
 
 /**
+ * Discrete classes of Drive failure that the wallet-create UI can react to
+ * with actionable copy. The fallback `unknown` covers anything the
+ * classifier doesn't recognise — UI should still show the backup as failed
+ * and offer the manual-share fallback.
+ *
+ * Why classify at all: the loss-event on 2026-05-05 traced to a bare
+ * `developer_error` that propagated as a generic toast, leading the user to
+ * think Drive was just being flaky. The actual condition (SHA-1 not
+ * registered with this Cloud project) is permanent for that build and
+ * needs different copy than "retry later." Same applies to other failure
+ * modes — the user can act on a token-expired prompt but not on a quota
+ * error, etc.
+ */
+export type DriveErrorClass =
+    | 'auth-not-configured'
+    | 'auth-cancelled'
+    | 'auth-token-missing'
+    | 'network'
+    | 'quota'
+    | 'server'
+    | 'unknown';
+
+/**
+ * Map an arbitrary thrown value from a Drive helper into one of the
+ * discrete error classes. Inspects:
+ *   - `.code` (set by @react-native-google-signin for sign-in errors)
+ *   - `.message` substring matches for the bare strings we throw
+ *     (e.g. `Drive upload failed: 503 …`)
+ *   - HTTP status digits parsed out of those messages
+ *
+ * Conservative: anything that doesn't match a known shape returns
+ * `'unknown'` so the UI defaults to the safe "save manually" copy.
+ */
+export function classifyDriveError(err: unknown): DriveErrorClass {
+    const msg = String((err as any)?.message ?? err ?? '').toLowerCase();
+    const code = String((err as any)?.code ?? '');
+
+    if (code === 'DEVELOPER_ERROR' || msg.includes('developer_error') || msg.includes('developer error')) {
+        return 'auth-not-configured';
+    }
+    if (code === 'SIGN_IN_CANCELLED' || msg.includes('sign_in_cancelled') || msg.includes('cancelled') || msg.includes('canceled')) {
+        return 'auth-cancelled';
+    }
+    if (
+        msg.includes('access token not available') ||
+        msg.includes('re-connect google drive') ||
+        msg.includes('sign_in_required') ||
+        msg.includes('googlesignin module not loaded')
+    ) {
+        return 'auth-token-missing';
+    }
+    if (msg.includes('network request failed') || msg.includes('failed to fetch') || msg.includes('typeerror: network')) {
+        return 'network';
+    }
+    const httpMatch = msg.match(/(?:upload|list|download) failed:\s*(\d{3})/);
+    if (httpMatch) {
+        const status = parseInt(httpMatch[1], 10);
+        if (status === 401 || status === 403 || status === 429) return 'quota';
+        if (status >= 500 && status < 600) return 'server';
+    }
+    return 'unknown';
+}
+
+/**
+ * Actionable user-facing copy for each Drive error class. Phrasing assumes
+ * the user is at the wallet-create / first-backup screen and has both a
+ * retry button and a manual-share fallback available, so each message
+ * points at the right next step.
+ */
+export function messageForDriveError(cls: DriveErrorClass): string {
+    switch (cls) {
+        case 'auth-not-configured':
+            return "Google Drive isn't authorized for this build (the app's signing certificate isn't registered with Google). Save the backup file manually below, then continue.";
+        case 'auth-cancelled':
+            return 'Google Drive sign-in was cancelled. Tap Connect again to retry, or save the backup file manually.';
+        case 'auth-token-missing':
+            return 'Google Drive session expired. Tap Connect again to sign in.';
+        case 'network':
+            return "Couldn't reach Google Drive. Check your internet connection and retry, or save the backup file manually.";
+        case 'quota':
+            return 'Google Drive rejected the upload (quota or permission). Save the backup file manually instead.';
+        case 'server':
+            return 'Google Drive is having issues right now. Retry in a moment, or save the backup file manually.';
+        case 'unknown':
+        default:
+            return 'Google Drive backup failed. Save the backup file manually below.';
+    }
+}
+
+/**
  * Lazy-load the GoogleSignin module. Returns null on iOS (we never
  * use it there) or if the dep isn't installed. Callers must handle
  * null and skip silently — no Drive backup is the documented

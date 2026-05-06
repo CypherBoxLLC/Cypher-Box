@@ -1,7 +1,16 @@
+import { Platform } from 'react-native';
+
 import RNFS from 'react-native-fs';
 import Aes from 'react-native-aes-crypto';
 
 import { ARK_DATADIR, ensureArkDatadir } from './datadir';
+import {
+    classifyDriveError,
+    downloadArkBackupFromDrive,
+    isGoogleDriveConnected,
+    uploadArkBackupToDrive,
+} from './googleDrive';
+import type { DriveErrorClass } from './googleDrive';
 import { clearArkWalletHandle, openArkWallet } from './walletHandle';
 
 /**
@@ -187,20 +196,22 @@ async function deriveAesKey(mnemonic: string): Promise<string> {
 }
 
 /**
- * Pack the current Ark datadir into an encrypted backup string.
+ * Internal: pack the current datadir into an encrypted envelope.
  *
- * Returns the OpenSSL-format ciphertext (CryptoJS default) as a UTF-8
- * string ready to write to a file.
+ * Single source of truth for the datadir → ciphertext path. Both the
+ * manual export (`buildArkBackupBlob`) and the auto-backup tick
+ * (`writeArkAutoBackup`) call through here so they're guaranteed
+ * byte-identical in produced output and failure modes.
  *
- * MUST be called after `clearArkWalletHandle()` so SQLite has been closed
- * cleanly. The function does NOT call clearArkWalletHandle itself — that
- * decision belongs to the caller, who may want to keep the wallet open
- * (e.g. opportunistic backup that doesn't disrupt the user's session).
+ * Returns the JSON envelope as a UTF-8 string and the createdAt
+ * stamp embedded inside it (callers that want to log a manifest
+ * timestamp can read it out without re-parsing).
  *
- * Throws if the datadir is empty (no wallet to back up) or any file read
- * fails. Both indicate caller-side bugs, not user errors.
+ * Throws if the datadir is empty.
  */
-export async function buildArkBackupBlob(mnemonic: string): Promise<string> {
+async function _packDatadirIntoBlob(
+    mnemonic: string,
+): Promise<{ blob: string; createdAt: number; fileCount: number }> {
     const datadir = await ensureArkDatadir();
 
     const relPaths = await listFilesRelative(datadir);
@@ -217,34 +228,42 @@ export async function buildArkBackupBlob(mnemonic: string): Promise<string> {
         files.push({ path: rel, b64 });
     }
 
-    const manifest: BackupManifest = {
-        version: FORMAT_VERSION,
-        createdAt: Date.now(),
-        files,
-    };
-
+    const createdAt = Date.now();
+    const manifest: BackupManifest = { version: FORMAT_VERSION, createdAt, files };
     const plaintext = JSON.stringify(manifest);
-    // Use cached key — PBKDF2 is expensive (100k iter, ~400ms native vs ~2s pure-JS).
-    // The manual export path may be the first time the key is derived; subsequent
-    // calls (auto-backup) reuse the cached hex.
+
+    // Cached key — PBKDF2 only runs once per wallet session.
     const keyHex = await getCachedAesKey(mnemonic);
     const ivHex = await Aes.randomKey(AES_IV_BYTES);
     // Aes.encrypt runs on the native thread (off the JS main thread), so
-    // the AES pass no longer freezes the UI even on slow Android phones.
-    // Returns base64-encoded ciphertext directly — same field as before.
+    // the AES pass doesn't freeze the UI on slow Android phones.
     const ctBase64 = await Aes.encrypt(plaintext, keyHex, ivHex, 'aes-256-cbc');
 
-    // Wrap in our envelope so future format versions can be detected without
-    // attempting decryption. iv is hex, ct is base64 — same shape as v1
-    // CryptoJS-produced files, so existing backups round-trip transparently.
     const envelope = {
         v: FORMAT_VERSION,
-        // PBKDF2 params surfaced so a future format change is recognisable.
         kdf: { algo: 'pbkdf2-sha256', salt: PBKDF2_SALT, iter: PBKDF2_ITERATIONS },
         iv: ivHex,
         ct: ctBase64,
     };
-    return JSON.stringify(envelope);
+    return { blob: JSON.stringify(envelope), createdAt, fileCount: files.length };
+}
+
+/**
+ * Pack the current Ark datadir into an encrypted backup string.
+ *
+ * Returns the JSON envelope as a UTF-8 string ready to write to a file.
+ *
+ * MUST be called after `clearArkWalletHandle()` so SQLite has been closed
+ * cleanly. The function does NOT call clearArkWalletHandle itself — that
+ * decision belongs to the caller, who may want to keep the wallet open
+ * (e.g. opportunistic backup that doesn't disrupt the user's session).
+ *
+ * Throws if the datadir is empty (no wallet to back up) or any file read
+ * fails. Both indicate caller-side bugs, not user errors.
+ */
+export async function buildArkBackupBlob(mnemonic: string): Promise<string> {
+    const { blob } = await _packDatadirIntoBlob(mnemonic);
+    return blob;
 }
 
 /**
@@ -425,38 +444,7 @@ export async function restoreArkBackupBlob(
 export async function writeArkAutoBackup(
     mnemonic: string,
 ): Promise<{ path: string; sizeBytes: number; createdAt: number }> {
-    const datadir = await ensureArkDatadir();
-
-    const relPaths = await listFilesRelative(datadir);
-    if (relPaths.length === 0) {
-        throw new Error('Ark datadir is empty — nothing to auto-backup');
-    }
-
-    const files: BackupFileEntry[] = [];
-    for (const rel of relPaths) {
-        const full = `${datadir}/${rel}`;
-        const b64 = await RNFS.readFile(full, 'base64');
-        files.push({ path: rel, b64 });
-    }
-
-    const createdAt = Date.now();
-    const manifest: BackupManifest = { version: FORMAT_VERSION, createdAt, files };
-    const plaintext = JSON.stringify(manifest);
-
-    // Cached key — PBKDF2 only runs once per wallet session.
-    const keyHex = await getCachedAesKey(mnemonic);
-    const ivHex = await Aes.randomKey(AES_IV_BYTES);
-    // Native AES — runs off the JS thread, so even with a 348 KB plaintext
-    // the UI doesn't freeze during the encrypt step.
-    const ctBase64 = await Aes.encrypt(plaintext, keyHex, ivHex, 'aes-256-cbc');
-
-    const envelope = {
-        v: FORMAT_VERSION,
-        kdf: { algo: 'pbkdf2-sha256', salt: PBKDF2_SALT, iter: PBKDF2_ITERATIONS },
-        iv: ivHex,
-        ct: ctBase64,
-    };
-    const blob = JSON.stringify(envelope);
+    const { blob, createdAt } = await _packDatadirIntoBlob(mnemonic);
 
     await RNFS.writeFile(AUTO_BACKUP_PATH, blob, 'utf8');
 
@@ -464,28 +452,190 @@ export async function writeArkAutoBackup(
     // backup via Apple's transparent iCloud Drive sync of Documents
     // (when the user has it enabled for Cypher Box). Android has no
     // equivalent — the local file stays on this device unless we push
-    // it to Drive ourselves. Best-effort: fail silently so a Drive
-    // outage / disconnected-account never breaks the local backup
-    // path that the caller actually awaits on. The Drive helper itself
-    // bails out cleanly on iOS via `Platform.OS === 'android'` guard.
+    // it to Drive ourselves.
+    //
+    // INTENTIONALLY SILENT-FAILS HERE: this function is called every
+    // sync tick from useArkSync. A Drive outage mid-session must not
+    // throw, or the local backup path breaks too. The wallet-CREATE
+    // flow uses `writeAndVerifyArkBackup` instead, which surfaces Drive
+    // failures explicitly so funds never enter a wallet without a
+    // verified off-device copy (loss-event 2026-05-05).
     try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { uploadArkBackupToDrive, isGoogleDriveConnected } = require('./googleDrive');
         if (await isGoogleDriveConnected()) {
             await uploadArkBackupToDrive(blob);
             if (__DEV__) console.log('[Ark auto-backup] Drive upload OK');
         }
     } catch (err: any) {
-        // Drive failure mode separate from local — log only, don't
-        // promote to throw. Common causes: token expired, no network,
-        // user signed out of Google. UI can probe `isGoogleDriveConnected`
-        // separately to nudge the user when this happens repeatedly.
         if (__DEV__) {
             console.log('[Ark auto-backup] Drive upload failed (non-fatal):', err?.message ?? err);
         }
     }
 
     return { path: AUTO_BACKUP_PATH, sizeBytes: blob.length, createdAt };
+}
+
+/**
+ * Drive-status branch of a verified backup attempt. Discriminated union so
+ * the UI can render distinct copy / next-actions per outcome rather than a
+ * single "backup failed" toast that hides the actionable difference between
+ * a build-config bug (`auth-not-configured`) and a transient hiccup.
+ */
+export type VerifiedBackupDriveOutcome =
+    | { kind: 'skipped-platform' }
+    | { kind: 'skipped-not-connected' }
+    | { kind: 'uploaded-and-verified'; fileId: string }
+    | { kind: 'upload-failed'; classification: DriveErrorClass; error: string }
+    | { kind: 'verify-failed'; fileId: string; error: string };
+
+/**
+ * Structured outcome of a wallet-create backup attempt. Each step reports
+ * its own ok/failure independently so the create flow can:
+ *   - Hard-fail on Drive failure (the loss-event scenario)
+ *   - Distinguish a Drive outage from a build-misconfig from a network blip
+ *   - Hand a useful error string back to the user, not a stack trace
+ */
+export type VerifiedBackupResult = {
+    blob: string;
+    sizeBytes: number;
+    createdAt: number;
+    local: { ok: true; path: string } | { ok: false; error: string };
+    drive: VerifiedBackupDriveOutcome;
+};
+
+/**
+ * Strict, structured-result counterpart to `writeArkAutoBackup` — used by
+ * the wallet-create flow where every backup destination's success/failure
+ * must be visible to the UI.
+ *
+ * Pipeline:
+ *   1. Pack datadir into encrypted envelope (same blob as auto-backup —
+ *      one byte stream goes both to local disk and Drive)
+ *   2. Write to AUTO_BACKUP_PATH; capture failure into result.local
+ *   3. If Android + Drive connected: upload, then read back, decrypt,
+ *      sanity-check manifest non-empty. Capture failure into result.drive.
+ *      Read-back-decrypt is the integrity check — Drive returning 200
+ *      doesn't guarantee the bytes persisted correctly.
+ *
+ * NEVER throws on Drive sub-failures (those go into the structured
+ * result). Throws ONLY on programmer errors (datadir empty, unhandled
+ * exception in the pack step) — caller can let those propagate.
+ *
+ * Why a separate function rather than a flag on `writeArkAutoBackup`:
+ * the call sites have opposite policies. Auto-backup ticks must swallow
+ * Drive errors so the local-file write keeps working; create-flow must
+ * surface them so the user can't proceed without a verified backup.
+ * Keeping them as distinct functions makes the policy difference
+ * impossible to confuse at the call site.
+ */
+export async function writeAndVerifyArkBackup(
+    mnemonic: string,
+): Promise<VerifiedBackupResult> {
+    const { blob, createdAt } = await _packDatadirIntoBlob(mnemonic);
+    const sizeBytes = blob.length;
+
+    // Local write — try first because it's the only path we can rely on
+    // when the device is offline. iOS users with iCloud Drive on for the
+    // app get free off-device sync from this same write.
+    let local: VerifiedBackupResult['local'];
+    try {
+        await RNFS.writeFile(AUTO_BACKUP_PATH, blob, 'utf8');
+        local = { ok: true, path: AUTO_BACKUP_PATH };
+    } catch (err: any) {
+        local = { ok: false, error: err?.message ?? String(err) };
+    }
+
+    // Drive — Android-only. iOS short-circuits with `skipped-platform`;
+    // Android short-circuits with `skipped-not-connected` when the user
+    // hasn't gone through the OAuth flow yet (callers should treat both
+    // skip variants as "no Drive backup, ask for manual confirmation").
+    if (Platform.OS !== 'android') {
+        return { blob, sizeBytes, createdAt, local, drive: { kind: 'skipped-platform' } };
+    }
+
+    let connected = false;
+    try {
+        connected = await isGoogleDriveConnected();
+    } catch {
+        // Probe failure → treat as not connected (rather than failing the
+        // whole verify path on a sign-in lib hiccup).
+    }
+    if (!connected) {
+        return { blob, sizeBytes, createdAt, local, drive: { kind: 'skipped-not-connected' } };
+    }
+
+    let fileId: string;
+    try {
+        fileId = await uploadArkBackupToDrive(blob);
+    } catch (err: any) {
+        return {
+            blob,
+            sizeBytes,
+            createdAt,
+            local,
+            drive: {
+                kind: 'upload-failed',
+                classification: classifyDriveError(err),
+                error: err?.message ?? String(err),
+            },
+        };
+    }
+
+    // Read-back integrity check. Trusting Drive's 200 isn't enough — a
+    // mid-flight network truncation, a Drive-side scrubber rewriting the
+    // blob, or (worst case) the wrong account ending up with the file
+    // would all pass the upload step. Decrypting with the same mnemonic
+    // we just used to encrypt is the cheapest end-to-end witness that
+    // the round-trip works.
+    try {
+        const remote = await downloadArkBackupFromDrive();
+        if (!remote) {
+            return {
+                blob,
+                sizeBytes,
+                createdAt,
+                local,
+                drive: {
+                    kind: 'verify-failed',
+                    fileId,
+                    error: 'Drive returned no file when reading back the upload',
+                },
+            };
+        }
+        const manifest = await decryptBackupBlob(remote, mnemonic);
+        if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
+            return {
+                blob,
+                sizeBytes,
+                createdAt,
+                local,
+                drive: {
+                    kind: 'verify-failed',
+                    fileId,
+                    error: 'Decrypted manifest had no files',
+                },
+            };
+        }
+    } catch (err: any) {
+        return {
+            blob,
+            sizeBytes,
+            createdAt,
+            local,
+            drive: {
+                kind: 'verify-failed',
+                fileId,
+                error: err?.message ?? String(err),
+            },
+        };
+    }
+
+    return {
+        blob,
+        sizeBytes,
+        createdAt,
+        local,
+        drive: { kind: 'uploaded-and-verified', fileId },
+    };
 }
 
 /**
