@@ -105,12 +105,6 @@ export default function useArkSync(): UseArkSync {
     // turns non-zero. We use this to avoid the 2s Bark `syncArkWallet`
     // call when the wallet has nothing to settle.
     const consecutiveEmptyTicks = useRef(0);
-    // Signature of the wallet state captured by the last successful auto-backup.
-    // We skip the backup (which does pure-JS AES on the JS thread — see backup.ts)
-    // when the new signature matches the previous one, because re-encrypting the
-    // same plaintext to disk is pointless and stalls the UI for several seconds
-    // every cycle on slow Android phones (Galaxy A14: ~1min freeze on a fresh wallet).
-    const lastBackupSignature = useRef<string | null>(null);
 
     const sync = useCallback(async () => {
         if (inFlight.current) return;
@@ -401,8 +395,9 @@ export default function useArkSync(): UseArkSync {
             //
             // After every successful sync the datadir reflects current wallet
             // state. We write an encrypted snapshot to AUTO_BACKUP_PATH in
-            // Documents so the user's funds are recoverable even if they never
-            // tap "Back up wallet state" manually.
+            // Documents (mirrored to Drive + SAF folder when configured) so
+            // the user's funds are recoverable even if they never tap "Back
+            // up wallet state" manually.
             //
             // We do NOT await this — backup takes ~0.5-1s (file reads + AES)
             // and must not stall the sync cycle or block the UI. The backup
@@ -411,26 +406,27 @@ export default function useArkSync(): UseArkSync {
             // We use getCachedArkMnemonic() rather than hitting Keychain so
             // there is no biometric prompt during a background tick. The seed
             // was cached in walletHandle when the wallet was opened.
-            // Skip auto-backup if nothing observable changed since the last
-            // backup. The encrypt step is pure-JS CryptoJS AES (see backup.ts)
-            // which blocks the JS thread; re-encrypting an unchanged datadir
-            // every 60s causes ~5-60s of UI freeze per cycle for no benefit.
-            // A simple signature on (balance, vtxo counts, tip) is enough —
-            // if any of those move, the datadir has changed and we re-back-up.
-            const signature = [
-                balance?.totalSats ?? 'n',
-                vtxos?.all.length ?? 'n',
-                vtxos?.spendable.length ?? 'n',
-                tip ?? 'n',
-            ].join('|');
-
+            //
+            // We deliberately do NOT skip on a "state unchanged" hash. The
+            // earlier guard compared (balance.totalSats, vtxo counts, tip)
+            // and skipped when those matched the previous backup — but the
+            // SDK has SQLite mutations (notably `bolt11Invoice()` storing a
+            // preimage into the pending-receives table) that don't move any
+            // of those fields. The result was a backup file on disk + Drive +
+            // SAF that didn't contain a freshly-created invoice's preimage,
+            // and an uninstall/recover in that window left the in-flight HTLC
+            // unclaimable until ASP timeout-refund. See receive.ts for the
+            // explicit immediate-trigger that closes the bolt11Invoice race;
+            // this unconditional per-tick write is the safety net for any
+            // other SDK mutation that bypasses our user-visible state model.
+            //
+            // Cost is acceptable: AES is now native off the JS thread (see
+            // backup.ts), the local Documents write is fast, and the Drive +
+            // SAF channels are silent-fail and best-effort already.
             const mnemonic = getCachedArkMnemonic();
-            if (mnemonic && signature === lastBackupSignature.current) {
-                if (__DEV__) console.log('[Ark auto-backup] skipped — state unchanged');
-            } else if (mnemonic && signature !== lastBackupSignature.current) {
+            if (mnemonic) {
                 writeArkAutoBackup(mnemonic)
                     .then(({ sizeBytes, createdAt }) => {
-                        lastBackupSignature.current = signature;
                         setArkLastBackupAt(createdAt);
                         if (__DEV__) {
                             console.log(
