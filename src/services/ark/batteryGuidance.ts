@@ -40,12 +40,10 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
     if (m.includes('samsung')) {
         return {
             vendor: 'Samsung',
-            headline: 'Samsung One UI — battery + sleeping apps',
+            headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. The Settings page that opens lets you toggle Cypher Box off the optimisation list. Tap 'Cypher Box' → 'Don't optimise' (or 'Unrestricted' on newer One UI).",
-                "2. Then go back to Settings → Battery → Background usage limits → Sleeping apps. If Cypher Box is in the list, remove it.",
-                "3. Settings → Apps → Cypher Box → Battery → set to Unrestricted.",
-                "Without all three, Samsung will defer the refresh alarm during sleep regardless of what AOSP says.",
+                "1. In the page that opens: tap Cypher Box → Don't optimise.",
+                "2. Then Settings → Apps → Cypher Box → Battery → Unrestricted.",
             ],
         };
     }
@@ -53,12 +51,11 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
     if (m.includes('xiaomi') || m.includes('redmi') || m.includes('poco')) {
         return {
             vendor: 'Xiaomi',
-            headline: 'Xiaomi MIUI / HyperOS — autostart + battery saver',
+            headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. The Settings page that opens lets you mark Cypher Box as 'No restrictions'.",
-                "2. Then open Security app → Permissions → Autostart → enable Cypher Box. MIUI blocks all background work for apps not on the autostart list.",
-                "3. Recent apps screen → swipe Cypher Box card down → tap the lock icon so MIUI doesn't kill it on memory pressure.",
-                "4. Settings → Battery → Battery saver → exclude Cypher Box.",
+                "1. In the page that opens: Cypher Box → No restrictions.",
+                "2. Security app → Autostart → enable Cypher Box.",
+                "3. Recent apps → swipe Cypher Box card down → tap the lock icon.",
             ],
         };
     }
@@ -66,11 +63,10 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
     if (m.includes('huawei') || m.includes('honor')) {
         return {
             vendor: 'Huawei',
-            headline: 'Huawei EMUI / Magic UI — app lock + manual launch',
+            headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. Settings → Battery → App launch → Cypher Box → switch from Auto-manage to Manual, then enable all three: Auto-launch, Secondary launch, Run in background.",
-                "2. Settings → Apps → Cypher Box → Battery → keep running in background.",
-                "3. Recent apps → drag Cypher Box card down → padlock icon.",
+                "1. Settings → Battery → App launch → Cypher Box → switch to Manual, enable Auto-launch, Secondary launch, Run in background.",
+                "2. Recent apps → drag Cypher Box card down → padlock icon.",
             ],
         };
     }
@@ -78,11 +74,10 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
     if (m.includes('oppo') || m.includes('realme')) {
         return {
             vendor: 'OPPO / Realme',
-            headline: 'OPPO ColorOS / Realme UI — auto-start + background',
+            headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. Settings → Battery → Cypher Box → set to 'No restrictions' / 'Allow background activity'.",
-                "2. Settings → Apps → App management → Cypher Box → permissions → Allow auto-start + background activity.",
-                "3. Recent apps → padlock the Cypher Box card.",
+                "1. In the page that opens: Cypher Box → Allow background activity.",
+                "2. Recent apps → padlock the Cypher Box card.",
             ],
         };
     }
@@ -90,11 +85,10 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
     if (m.includes('vivo')) {
         return {
             vendor: 'Vivo',
-            headline: 'Vivo FunTouch OS / OriginOS — background + auto-start',
+            headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. Settings → Battery → Background power consumption → Cypher Box → 'High background power consumption'.",
-                "2. iManager / Settings → Apps → Cypher Box → enable Auto-start.",
-                "3. Recent apps → padlock the Cypher Box card.",
+                "1. Settings → Battery → Background power → Cypher Box → High.",
+                "2. Settings → Apps → Cypher Box → enable Auto-start.",
             ],
         };
     }
@@ -102,11 +96,10 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
     if (m.includes('oneplus')) {
         return {
             vendor: 'OnePlus',
-            headline: 'OnePlus OxygenOS — battery + advanced optimisation',
+            headline: 'Allow Cypher Box to run in the background',
             steps: [
-                "1. The Settings page that opens lets you mark Cypher Box as 'Don't optimise' / 'Unrestricted'.",
-                "2. Settings → Battery → Battery optimisation → Cypher Box → 'Don't optimise'.",
-                "3. Settings → Apps → Cypher Box → Battery → 'Unrestricted'.",
+                "1. In the page that opens: Cypher Box → Don't optimise.",
+                "2. Settings → Apps → Cypher Box → Battery → Unrestricted.",
             ],
         };
     }
@@ -115,11 +108,9 @@ export function vendorGuidance(manufacturer: string): VendorGuidance {
     // is needed. No vendor battery-management layer to wrestle with.
     return {
         vendor: 'Android',
-        headline: "Add Cypher Box to the battery-optimisation allowlist",
+        headline: 'Allow Cypher Box to run in the background',
         steps: [
-            "1. The Settings page that opens shows a list of all apps and their battery-optimisation state.",
-            "2. Find Cypher Box and switch it to 'Don't optimise' / 'Allow' / 'Unrestricted' (the exact label varies by Android version).",
-            "Without this, the OS may defer the refresh alarm during deep sleep, especially after the phone has been idle for several hours.",
+            "1. In the page that opens: Cypher Box → Don't optimise / Unrestricted.",
         ],
     };
 }

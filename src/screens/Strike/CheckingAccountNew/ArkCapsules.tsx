@@ -1011,13 +1011,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 if (!ignoring) {
                     const manufacturer = await getDeviceManufacturer();
                     const guidance = vendorGuidance(manufacturer);
+                    // Compact native-Alert copy — full themed explainer
+                    // lives outside this surface (would need a custom
+                    // Modal to escape Android's stock Alert chrome).
+                    // Kept short so the steps fit on one screen without
+                    // scrolling on small phones.
                     Alert.alert(
                         guidance.headline,
-                        [
-                            "Background refresh works best when Cypher Box is exempt from battery optimisation. The system tries to put apps to sleep aggressively — without this exemption, the refresh schedule can stall for hours or days.",
-                            "",
-                            ...guidance.steps,
-                        ].join("\n"),
+                        guidance.steps.join("\n"),
                         [
                             { text: "Skip for now", style: "cancel" },
                             {
