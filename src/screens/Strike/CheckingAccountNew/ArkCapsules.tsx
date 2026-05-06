@@ -1011,14 +1011,21 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 if (!ignoring) {
                     const manufacturer = await getDeviceManufacturer();
                     const guidance = vendorGuidance(manufacturer);
-                    // Compact native-Alert copy — full themed explainer
-                    // lives outside this surface (would need a custom
-                    // Modal to escape Android's stock Alert chrome).
-                    // Kept short so the steps fit on one screen without
-                    // scrolling on small phones.
+                    // Compact native-Alert copy: short stake-driven
+                    // explainer + minimal vendor-specific steps.
+                    // VTXO-expiry framing earns the user's attention
+                    // here (concrete consequence) better than a generic
+                    // "the app may stall" — they just turned on the
+                    // very feature that prevents that expiry, and we're
+                    // explaining why the OS can override it.
+                    const body = [
+                        "Android puts apps to sleep to save battery. Without this exemption, your VTXOs may not refresh in time and can expire on-chain — losing the funds.",
+                        "",
+                        ...guidance.steps,
+                    ].join("\n");
                     Alert.alert(
                         guidance.headline,
-                        guidance.steps.join("\n"),
+                        body,
                         [
                             { text: "Skip for now", style: "cancel" },
                             {
