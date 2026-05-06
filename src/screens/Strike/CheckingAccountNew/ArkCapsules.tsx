@@ -17,10 +17,14 @@ import {
     blocksToDays,
     clearArkBgRefreshTelemetry,
     estimateArkRefreshFee,
+    getDeviceManufacturer,
+    isIgnoringBatteryOptimizations,
+    openBatteryOptimizationSettings,
     readArkBgRefreshTelemetry,
     refreshArkVtxosAndSync,
     runBackgroundRefresh,
     setArkBackgroundRefreshEnabled,
+    vendorGuidance,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -994,6 +998,40 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 }
                 await setArkBackgroundRefreshEnabled(true, creds.password);
                 SimpleToast.show("Background refresh enabled", SimpleToast.SHORT);
+
+                // Battery onboarding nudge. AlarmManager fires can be
+                // deferred indefinitely under Doze + vendor battery
+                // managers (Samsung One UI is the worst offender; see
+                // commit ee6f24f's "User-side requirement on Samsung"
+                // note). Probing here, on toggle-on, is the right
+                // moment — the user just opted into the feature, so a
+                // one-time setup walkthrough is expected. iOS resolves
+                // true and skips this entirely.
+                const ignoring = await isIgnoringBatteryOptimizations();
+                if (!ignoring) {
+                    const manufacturer = await getDeviceManufacturer();
+                    const guidance = vendorGuidance(manufacturer);
+                    Alert.alert(
+                        guidance.headline,
+                        [
+                            "Background refresh works best when Cypher Box is exempt from battery optimisation. The system tries to put apps to sleep aggressively — without this exemption, the refresh schedule can stall for hours or days.",
+                            "",
+                            ...guidance.steps,
+                        ].join("\n"),
+                        [
+                            { text: "Skip for now", style: "cancel" },
+                            {
+                                text: "Open Settings",
+                                onPress: () => {
+                                    openBatteryOptimizationSettings().catch((err) => {
+                                        console.warn("[Ark bg refresh toggle] open settings failed:", err);
+                                    });
+                                },
+                            },
+                        ],
+                        { cancelable: true },
+                    );
+                }
             } else {
                 await setArkBackgroundRefreshEnabled(false);
                 SimpleToast.show("Background refresh disabled", SimpleToast.SHORT);

@@ -18,6 +18,10 @@ type SchedulerNative = {
     schedule: () => Promise<void>;
     cancel: () => Promise<void>;
     markTaskCompleted: (taskId: string, success: boolean) => void;
+    // Android-only — return false on iOS via the missing-method guard.
+    isIgnoringBatteryOptimizations?: () => Promise<boolean>;
+    openBatteryOptimizationSettings?: () => Promise<void>;
+    getDeviceManufacturer?: () => Promise<string>;
 };
 
 function getNative(): SchedulerNative | null {
@@ -37,6 +41,78 @@ export async function cancelArkBackgroundRefresh(): Promise<void> {
     const native = getNative();
     if (!native) return;
     await native.cancel();
+}
+
+/**
+ * Android-only probe: is the OS treating Cypher Box as exempt from
+ * battery-optimisation throttling?
+ *
+ * Returns true on iOS (no equivalent constraint — iOS background tasks
+ * are managed by BGTaskScheduler with budget per app, not by a per-app
+ * allowlist) and on Android <23 (pre-Doze).
+ *
+ * On Android 6+ (Doze era) returns the actual OS allowlist state. False
+ * is the bad case: AlarmManager fires can be deferred indefinitely
+ * during deep Doze, especially on Samsung One UI / Xiaomi MIUI / similar
+ * vendor-specific battery managers.
+ */
+export async function isIgnoringBatteryOptimizations(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+    const native = getNative();
+    if (!native?.isIgnoringBatteryOptimizations) return true;
+    try {
+        return await native.isIgnoringBatteryOptimizations();
+    } catch (err: any) {
+        if (__DEV__) {
+            console.log('[Ark scheduler] battery probe failed:', err?.message ?? err);
+        }
+        // Conservative: if we can't tell, assume worst-case (not ignoring)
+        // so the onboarding nudge fires instead of being silently
+        // suppressed.
+        return false;
+    }
+}
+
+/**
+ * Android-only: open the system Settings page where the user can move
+ * Cypher Box onto the battery-optimisation allowlist. Resolves once the
+ * Settings activity has been launched (not when the user has finished
+ * tapping through it — the result has to be re-probed via
+ * `isIgnoringBatteryOptimizations` after the user returns).
+ *
+ * Falls back to generic Settings.ACTION_SETTINGS if the device's stock
+ * battery-allowlist activity isn't recognised. Custom ROMs occasionally
+ * route the action elsewhere; the fallback is so the tap doesn't
+ * become a no-op.
+ *
+ * No-op on iOS.
+ */
+export async function openBatteryOptimizationSettings(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    const native = getNative();
+    if (!native?.openBatteryOptimizationSettings) return;
+    await native.openBatteryOptimizationSettings();
+}
+
+/**
+ * Android-only: returns the lower-cased device manufacturer string
+ * (e.g. "samsung", "xiaomi", "huawei", "oneplus"). Used to pick
+ * vendor-specific guidance copy in the battery onboarding modal —
+ * Samsung's "Battery → Unrestricted" flow has different button labels
+ * than Xiaomi's "Auto-start" toggle, etc.
+ *
+ * Returns empty string on iOS or on probe failure (caller treats empty
+ * as "generic Android" guidance).
+ */
+export async function getDeviceManufacturer(): Promise<string> {
+    if (Platform.OS !== 'android') return '';
+    const native = getNative();
+    if (!native?.getDeviceManufacturer) return '';
+    try {
+        return await native.getDeviceManufacturer();
+    } catch {
+        return '';
+    }
 }
 
 /**

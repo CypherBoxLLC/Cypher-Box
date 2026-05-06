@@ -1,10 +1,16 @@
 package io.cypherbox.btc;
 
+import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.Build;
+import android.os.PowerManager;
 import android.os.SystemClock;
+import android.provider.Settings;
 
 import androidx.annotation.NonNull;
 import androidx.work.WorkManager;
@@ -69,6 +75,11 @@ public class ArkBackgroundSchedulerModule extends ReactContextBaseJavaModule {
             // implementations so stale workspecs don't try to fire.
             cancelLegacyWorkManagerJobs(ctx);
             armAlarm(ctx);
+            // Persist enable-state for the boot receiver to read.
+            // AlarmManager alarms vanish on reboot; this is the single
+            // source of truth that survives reboot + app upgrade.
+            // See ArkRefreshBootCompletedReceiver.
+            setEnabledFlag(ctx, true);
             promise.resolve(null);
         } catch (Exception e) {
             promise.reject("schedule_failed", e);
@@ -81,6 +92,9 @@ public class ArkBackgroundSchedulerModule extends ReactContextBaseJavaModule {
             Context ctx = getReactApplicationContext();
             cancelAlarm(ctx);
             cancelLegacyWorkManagerJobs(ctx);
+            // Mirror of the schedule() write — boot receiver reads this
+            // and won't re-arm if it's false. See receiver class doc.
+            setEnabledFlag(ctx, false);
             promise.resolve(null);
         } catch (Exception e) {
             promise.reject("cancel_failed", e);
@@ -96,6 +110,123 @@ public class ArkBackgroundSchedulerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void markTaskCompleted(String taskId, boolean success) {
         // intentionally empty — see method comment
+    }
+
+    /**
+     * Returns true when this app is on the OS battery-optimisation
+     * allowlist for its package. False means the OS may aggressively
+     * defer or suppress our AlarmManager fires under Doze, especially
+     * after multi-hour idle stretches — which is exactly the scenario
+     * cold-process refresh has to survive.
+     *
+     * Used by the JS-side onboarding to detect the bad state on
+     * toggle-ON and walk the user to Settings to flip it. Probe-only,
+     * no side effects.
+     *
+     * Pre-Marshmallow (API 23) had no Doze mode → no allowlist concept
+     * → resolves true (we have no reason to think we're throttled).
+     * That codepath effectively never runs since this app's minSdk is
+     * higher, but defensive.
+     */
+    @ReactMethod
+    public void isIgnoringBatteryOptimizations(Promise promise) {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                promise.resolve(true);
+                return;
+            }
+            Context ctx = getReactApplicationContext();
+            PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+            if (pm == null) {
+                promise.resolve(false);
+                return;
+            }
+            promise.resolve(pm.isIgnoringBatteryOptimizations(ctx.getPackageName()));
+        } catch (Exception e) {
+            promise.reject("battery_probe_failed", e);
+        }
+    }
+
+    /**
+     * Open the system "Add this app to the battery-optimisation
+     * allowlist?" prompt for our package.
+     *
+     * Two intent actions are involved:
+     *   - ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: shows a small
+     *     "yes/no" dialog asking the user to confirm. Requires the
+     *     REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission, which
+     *     Google Play has restricted heavily — apps using it can be
+     *     rejected from Play Store unless they justify the use. We
+     *     deliberately do NOT use it; the rejection-risk isn't worth
+     *     the marginally smoother UX.
+     *   - ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS: opens the
+     *     full system Settings list of all apps' allowlist state.
+     *     The user finds Cypher Box and toggles it. Slightly less
+     *     direct but doesn't require the restricted permission.
+     *
+     * We use the latter. If the user is on a vendor with a non-
+     * standard battery-management UI (Samsung One UI, Xiaomi MIUI,
+     * Huawei EMUI), the system Settings still routes through it,
+     * just inside vendor chrome.
+     *
+     * Not all OEMs honour the standard intent — we fall through to
+     * the generic Settings.ACTION_SETTINGS as a last resort so the
+     * user doesn't get a no-op tap.
+     */
+    @ReactMethod
+    public void openBatteryOptimizationSettings(Promise promise) {
+        try {
+            Context ctx = getReactApplicationContext();
+            Activity activity = getCurrentActivity();
+            // Try the dedicated Settings page first.
+            Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+            // Hint at our package so OEM Settings UIs can scroll-to /
+            // highlight us in their per-app list. Honoured on stock
+            // Android; vendors may ignore it but no harm done.
+            intent.setData(Uri.parse("package:" + ctx.getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                if (activity != null) {
+                    activity.startActivity(intent);
+                } else {
+                    ctx.startActivity(intent);
+                }
+                promise.resolve(null);
+                return;
+            } catch (Exception openErr) {
+                // Fall through to generic Settings if the device doesn't
+                // recognise the action (rare, mostly in custom ROMs).
+            }
+
+            Intent fallback = new Intent(Settings.ACTION_SETTINGS);
+            fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (activity != null) {
+                activity.startActivity(fallback);
+            } else {
+                ctx.startActivity(fallback);
+            }
+            promise.resolve(null);
+        } catch (Exception e) {
+            promise.reject("battery_settings_open_failed", e);
+        }
+    }
+
+    /**
+     * Returns the device manufacturer string (Build.MANUFACTURER —
+     * e.g. "samsung", "Xiaomi", "HUAWEI"). Lower-cased for
+     * normalisation. JS uses this to pick vendor-specific battery /
+     * background-restriction guidance copy without having to embed
+     * a JNI getter or use a third-party device-info package on this
+     * narrow code path.
+     */
+    @ReactMethod
+    public void getDeviceManufacturer(Promise promise) {
+        try {
+            String m = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase();
+            promise.resolve(m);
+        } catch (Exception e) {
+            promise.reject("manufacturer_probe_failed", e);
+        }
     }
 
     /**
@@ -135,6 +266,23 @@ public class ArkBackgroundSchedulerModule extends ReactContextBaseJavaModule {
         int flags = PendingIntent.FLAG_IMMUTABLE
             | (noCreate ? PendingIntent.FLAG_NO_CREATE : PendingIntent.FLAG_UPDATE_CURRENT);
         return PendingIntent.getBroadcast(ctx, REQ_CODE, intent, flags);
+    }
+
+    /**
+     * Persist the enable flag to SharedPreferences. Used by both
+     * schedule() (write true) and cancel() (write false). The
+     * BOOT_COMPLETED / MY_PACKAGE_REPLACED receiver reads this same
+     * file + key to decide whether to re-arm the alarm after the
+     * system clears it. SharedPreferences is the right primitive
+     * because it's the only persistent store accessible from a
+     * BroadcastReceiver before any JS bridge is up.
+     */
+    private static void setEnabledFlag(Context ctx, boolean enabled) {
+        SharedPreferences prefs = ctx.getSharedPreferences(
+                ArkRefreshBootCompletedReceiver.PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit()
+                .putBoolean(ArkRefreshBootCompletedReceiver.PREF_KEY_ENABLED, enabled)
+                .apply();
     }
 
     /**

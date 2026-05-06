@@ -26,6 +26,12 @@
          lets that init complete and the headless JS task start. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- BOOT_COMPLETED + MY_PACKAGE_REPLACED are sent by the system so the
+         Ark background-refresh AlarmManager alarm can be re-armed after
+         a reboot or app update. Without this permission the receiver
+         won't fire and the cadence dies on the first reboot. See
+         ArkRefreshBootCompletedReceiver. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.ACTION_OPEN_DOCUMENT" />
     <uses-permission android:name="android.permission.ACTION_GET_CONTENT" />
@@ -106,6 +112,23 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="io.cypherbox.btc.ARK_REFRESH_ALARM" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Re-arm the Ark refresh alarm after device boot or app
+             upgrade. AlarmManager state lives only in RAM, so a reboot
+             would otherwise silently kill the cadence. exported="true"
+             is required: BOOT_COMPLETED + MY_PACKAGE_REPLACED are
+             system-broadcast and the system delivers them only to
+             receivers visible across the package boundary. The receiver
+             is a no-op when the SharedPreferences flag says the user
+             hasn't enabled auto-refresh. See receiver class doc. -->
+        <receiver
+            android:name=".ArkRefreshBootCompletedReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

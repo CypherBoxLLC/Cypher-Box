@@ -136,7 +136,13 @@ export {
     registerArkBackgroundRefreshHandlers,
     scheduleArkBackgroundRefresh,
     cancelArkBackgroundRefresh,
+    isIgnoringBatteryOptimizations,
+    openBatteryOptimizationSettings,
+    getDeviceManufacturer,
 } from './scheduler';
+
+export { vendorGuidance } from './batteryGuidance';
+export type { VendorGuidance } from './batteryGuidance';
 
 export { hydrateArkWalletFromBackgroundSeed } from './walletHandle';
 
