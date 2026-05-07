@@ -14,6 +14,7 @@ import {
     fetchPendingExitsTotalSats,
     getArkWalletHandle,
     getCachedArkMnemonic,
+    isICloudBackupAvailable,
     progressArkExits,
     progressArkPendingRounds,
     resetArkWalletState,
@@ -105,12 +106,6 @@ export default function useArkSync(): UseArkSync {
     // turns non-zero. We use this to avoid the 2s Bark `syncArkWallet`
     // call when the wallet has nothing to settle.
     const consecutiveEmptyTicks = useRef(0);
-    // Signature of the wallet state captured by the last successful auto-backup.
-    // We skip the backup (which does pure-JS AES on the JS thread — see backup.ts)
-    // when the new signature matches the previous one, because re-encrypting the
-    // same plaintext to disk is pointless and stalls the UI for several seconds
-    // every cycle on slow Android phones (Galaxy A14: ~1min freeze on a fresh wallet).
-    const lastBackupSignature = useRef<string | null>(null);
 
     const sync = useCallback(async () => {
         if (inFlight.current) return;
@@ -411,26 +406,24 @@ export default function useArkSync(): UseArkSync {
             // We use getCachedArkMnemonic() rather than hitting Keychain so
             // there is no biometric prompt during a background tick. The seed
             // was cached in walletHandle when the wallet was opened.
-            // Skip auto-backup if nothing observable changed since the last
-            // backup. The encrypt step is pure-JS CryptoJS AES (see backup.ts)
-            // which blocks the JS thread; re-encrypting an unchanged datadir
-            // every 60s causes ~5-60s of UI freeze per cycle for no benefit.
-            // A simple signature on (balance, vtxo counts, tip) is enough —
-            // if any of those move, the datadir has changed and we re-back-up.
-            const signature = [
-                balance?.totalSats ?? 'n',
-                vtxos?.all.length ?? 'n',
-                vtxos?.spendable.length ?? 'n',
-                tip ?? 'n',
-            ].join('|');
-
+            // Run the auto-backup on every successful sync tick. We used to
+            // guard this with a (balance, vtxo count, tip) signature
+            // comparison to skip "no-op" writes, but that comparison can't
+            // see SDK-internal mutations — most importantly the Lightning
+            // preimage that `bolt11Invoice()` writes to Bark's SQLite without
+            // moving any user-visible field. On 2026-05-06 a 100-sat in-flight
+            // HTLC was lost when the user uninstalled between invoice
+            // creation and the next user-visible state change; the .cbark
+            // on disk and on Drive/SAF didn't have the preimage because the
+            // signature said "unchanged" and the backup never ran.
+            //
+            // The encrypt step now runs on the native thread (see backup.ts)
+            // and the Drive + SAF mirrors are best-effort fire-and-forget,
+            // so unconditional re-backup is cheap on every interval.
             const mnemonic = getCachedArkMnemonic();
-            if (mnemonic && signature === lastBackupSignature.current) {
-                if (__DEV__) console.log('[Ark auto-backup] skipped — state unchanged');
-            } else if (mnemonic && signature !== lastBackupSignature.current) {
+            if (mnemonic) {
                 writeArkAutoBackup(mnemonic)
                     .then(({ sizeBytes, createdAt }) => {
-                        lastBackupSignature.current = signature;
                         setArkLastBackupAt(createdAt);
                         if (__DEV__) {
                             console.log(
@@ -535,6 +528,47 @@ export default function useArkSync(): UseArkSync {
         const sub = AppState.addEventListener('change', onChange);
         return () => sub.remove();
     }, [isArkAuth, sync]);
+
+    // Auto-clear the iOS backup-snapshot reminder when iCloud Drive
+    // becomes available for Cypher Box. The flag is set at create time
+    // when the user satisfied the gate via manual share+confirm; it
+    // stays on while iCloud isn't reachable. As soon as the user enables
+    // iCloud Drive for the app in iOS Settings (or signs back into iCloud,
+    // or comes back online), the auto-tick has a verifiable off-device
+    // channel and the reminder no longer applies — flipping it off lets
+    // the persistent banners disappear without the user having to dig
+    // into Settings → Ark Backup to dismiss manually.
+    //
+    // Probes on mount, on every AppState→active, and once per sync tick.
+    // The native call is cheap (no mkdir, just URLForUbiquityContainerIdentifier
+    // → Bool). Skipped on Android and on iOS when the flag is already
+    // false. One-way: the flag never re-arms here (only the create flow
+    // sets it true).
+    useEffect(() => {
+        if (Platform.OS !== 'ios' || !isArkAuth) return;
+        let cancelled = false;
+        const probe = async () => {
+            const flagOn = useAuthStore.getState().arkIosBackupReminderActive;
+            if (!flagOn) return;
+            try {
+                const ok = await isICloudBackupAvailable();
+                if (!cancelled && ok) {
+                    useAuthStore.getState().setArkIosBackupReminderActive(false);
+                    if (__DEV__) console.log('[Ark backup] iCloud verified — reminder auto-cleared');
+                }
+            } catch {
+                // Probe failure → leave the flag alone, banner stays up.
+            }
+        };
+        void probe();
+        const sub = AppState.addEventListener('change', (status: AppStateStatus) => {
+            if (status === 'active') void probe();
+        });
+        return () => {
+            cancelled = true;
+            sub.remove();
+        };
+    }, [isArkAuth]);
 
     return { isSyncing, lastError, refresh: sync };
 }
