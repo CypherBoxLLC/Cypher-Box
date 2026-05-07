@@ -1,5 +1,9 @@
 import useAuthStore from '@Cypher/stores/authStore';
 import SimpleToast from "react-native-simple-toast";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { updateExchangeRate, EXCHANGE_RATES_STORAGE_KEY } from "../../blue_modules/currency";
+import { getFiatRate } from "../../models/fiatUnit";
 
 const BASE_URL = 'https://coinos.io/api';
 
@@ -403,18 +407,76 @@ if (__DEV__) console.log('result: ', result)
   }
 };
 
+/**
+ * Currency rates — historically pulled from CoinOS's `/rates` endpoint,
+ * but that source proved unreliable: intermittent 5xx, stale figures
+ * during quoting flows, and outright broken responses that surfaced
+ * as zero-rate displays in the send keyboard, transaction history,
+ * invoice-creation USD preview, and the swap screen.
+ *
+ * Per Bam (May 2026): rates now come from BlueWallet's built-in
+ * currency daemon (`blue_modules/currency`), the same machinery
+ * the vault screens, Ark card, and HomeScreen's `matchedRate` use.
+ * Going through `updateExchangeRate()` means we get:
+ *   - The user's selected fiat source (CoinDesk / Coinbase /
+ *     CoinGecko / Bitstamp / etc., per `FiatUnit[ticker].source`)
+ *   - The 30-minute TTL the daemon enforces — repeated calls don't
+ *     spam any single rate provider
+ *   - Persistence to AsyncStorage so the cache survives app restarts
+ *     and works offline after the first successful fetch
+ *
+ * Flow:
+ *   1. `updateExchangeRate()` — refreshes the cache if stale, no-op
+ *      otherwise. This is BlueWallet's own entrypoint; we never call
+ *      a rate extractor directly. Errors here are non-fatal; the
+ *      daemon stamps `LAST_UPDATED_ERROR: true` and we still try to
+ *      read whatever cached value is left.
+ *   2. Read the cache from AsyncStorage and return the BTC_USD entry.
+ *
+ * Return shape preserved as `{ USD: <USD-per-BTC> }` so existing call
+ * sites that do `matchKeyAndValue(response, 'USD')` keep working
+ * without per-site changes. Auth no longer required (BlueWallet rate
+ * is local) — that's a deliberate side benefit: the rate is now
+ * available even when the CoinOS token has expired.
+ *
+ * EUR / GBP etc. are NOT included in the returned object because
+ * every current call site only matches 'USD'; if a screen ever needs
+ * a different fiat, add it via the same daemon path.
+ */
 export const getCurrencyRates = async () => {
   try {
-    const response = await fetch(`${BASE_URL}/rates`, await withAuthToken({
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    }));
-    return await response.json();
+    // 1) Refresh BlueWallet's daemon cache (no-op if it's been
+    //    called within 10s OR the cache is < 30 min old).
+    await updateExchangeRate();
+
+    // 2) Cache hit path — only works when the user's preferred
+    //    currency is USD. The daemon stores ONE entry, keyed by
+    //    `BTC_<preferredCurrency>`. For USD users this is BTC_USD
+    //    and we get a fast read. For users on EUR / GBP / etc.,
+    //    BTC_USD never lands in the cache so we fall through.
+    const raw = await AsyncStorage.getItem(EXCHANGE_RATES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const cached = parsed?.['BTC_USD'];
+      if (typeof cached === 'number' && cached > 0) {
+        return { USD: cached };
+      }
+    }
+
+    // 3) Fallback: call getFiatRate('USD') — BlueWallet's own
+    //    rate-source dispatcher in models/fiatUnit.ts. It picks
+    //    the extractor configured for the USD FiatUnit (CoinDesk
+    //    by default, configurable via fiatUnits.json) and returns
+    //    USD-per-BTC. Same machinery the daemon uses internally;
+    //    we just skip the daemon's preferred-currency-only cache
+    //    layer because non-USD users would otherwise see $0.00
+    //    on every CoinOS-paid screen (send keyboard, tx history,
+    //    invoice creation, swap).
+    const live = await getFiatRate('USD');
+    return { USD: Number(live) || 0 };
   } catch (error) {
-    console.error('Error getting Rates:', error);
-    throw error;
+    console.error('Error getting BlueWallet rate:', error);
+    return { USD: 0 };
   }
 };
 
