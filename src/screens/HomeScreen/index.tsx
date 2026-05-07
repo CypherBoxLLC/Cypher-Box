@@ -34,8 +34,8 @@ import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
 import { useArkSync, useArkRestoreOnBoot } from "@Cypher/custom-hooks";
-import { bitcoinRecommendedFee, createInvoice, getCurrencyRates, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
-import { btc, formatNumber, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
+import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
+import { btc, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
 import loc, { formatBalance, formatBalanceWithoutSuffix } from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
@@ -462,10 +462,9 @@ export default function HomeScreen({ route }: Props) {
         loadPayments();
       } else {
         // Not logged into Coinos - use BlueWallet's native rate for vaults
-        // Convert from USD-per-BTC to USD-per-sat (matchedRate format used by keyboard)
         try {
           const blueWalletRate = await getFiatRate('USD');
-          setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
+          setMatchedRate(blueWalletRate || 0);
           setMatchedRateBTC(blueWalletRate || 0);
         } catch (err) {
           if (__DEV__) console.log('BlueWallet rate error:', err);
@@ -692,75 +691,53 @@ export default function HomeScreen({ route }: Props) {
     const coinosAuthed = !!(isAuth && token);
     let coinosCallFailed = false;
     try {
-      let coinosRate = 0;
-      let blueWalletRate = 0;
-      let blueWalletRateRaw = 0; // USD-per-BTC (for vaults)
+      // Single source of truth for CoinOS-side rate: BlueWallet's USD/BTC rate.
+      // Stored as USD-per-BTC. Do not use the CoinOS rate API or Strike rate
+      // here — both produced wrong-currency or zero values in past iterations.
+      let finalRate = 0;
+      try {
+        finalRate = (await getFiatRate('USD')) || 0;
+      } catch (rateErr) {
+        if (__DEV__) console.log('BlueWallet rate error:', rateErr);
+      }
+      setMatchedRate(finalRate);
+      setMatchedRateBTC(finalRate);
+      if (__DEV__) console.log('[Coinos] matchedRate set to (USD/BTC):', finalRate);
 
+      // CoinOS user/balance fetch is gated on auth so Ark-only users don't
+      // hit a 401 and pollute the error log. The coinosCallFailed flag
+      // distinguishes between "CoinOS-authed user lost their balance fetch"
+      // (toast — they had something to load) and "Ark-only user, no balance
+      // to fetch in the first place" (silent).
       let response: any = null;
       if (coinosAuthed) {
         try {
           response = await getMe();
-          if (response) {
-            // Get Coinos rate for Coinos balance display (PRIMARY source)
-            try {
-              const responsetest = await getCurrencyRates();
-              const currency = btc(1);
-              const matched = matchKeyAndValue(responsetest, 'USD');
-              coinosRate = (matched || 0) * currency;
-              if (__DEV__) console.log('[Coinos] rate from API:', coinosRate);
-            } catch (rateError) {
-              if (__DEV__) console.log('[Coinos] rate API failed, trying BlueWallet fallback');
-            }
-          }
         } catch (coinosErr) {
-          // getMe() threw for a user we believe IS CoinOS-authed — surface
-          // it. For not-authed users we never got here in the first place.
           console.error('CoinOS /user fetch failed:', coinosErr);
           coinosCallFailed = true;
         }
       }
-
-      // Always-on: BlueWallet rate. Vaults / Ark card depend on this even
-      // when CoinOS is absent.
-      try {
-        blueWalletRateRaw = await getFiatRate('USD') || 0;
-        blueWalletRate = blueWalletRateRaw * btc(1); // Convert USD-per-BTC to USD-per-sat
-      } catch (rateErr) {
-        if (__DEV__) console.log('BlueWallet rate error:', rateErr);
-      }
-
-      const finalRate = coinosRate || blueWalletRate;
-      setMatchedRate(finalRate);
-      setMatchedRateBTC(blueWalletRateRaw || (coinosRate ? coinosRate / btc(1) : 0));
-      if (__DEV__) console.log('[Coinos] matchedRate set to:', finalRate, '(coinos:', coinosRate, ', bluewallet:', blueWalletRate, ')');
-
       if (response) {
-        // Calculate converted rate using the same rate
-        setConvertedRate(finalRate * response.balance);
+        // convertedRate is the USD value of the CoinOS balance. balance is in sats,
+        // finalRate is USD-per-BTC, so multiply by btc(1) (= 1 / SATS) to get USD.
+        setConvertedRate(finalRate * response.balance * btc(1));
         setCurrency("USD")
         setBalance(response?.balance ?? 0);
         setUser(response?.username);
       }
 
       if (coinosCallFailed) {
-        // Only toast when the user actually has a CoinOS balance we failed
-        // to load. Silent for Ark-only users (who have no CoinOS balance
-        // to speak of).
         SimpleToast.show("Failed to load CoinOS balance. Pull to refresh.", SimpleToast.SHORT);
       }
     } catch (error) {
       console.error('handleUser unexpected error:', error);
-      // Absolute fallback — still try to get a rate so the UI isn't
-      // completely fiat-blind.
-      try {
-        const blueWalletRate = await getFiatRate('USD');
-        setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
-        setMatchedRateBTC(blueWalletRate || 0);
-      } catch (bwError) {
-        console.error('BlueWallet rate failed:', bwError);
-        setMatchedRate(0);
-        setMatchedRateBTC(0);
-      }
+      // No rate-refetch fallback — finalRate is already set in the try
+      // block above (or 0 on its inner catch). Reaching this catch
+      // means a non-rate error fired AFTER setMatchedRate*, so the
+      // rate state is already valid. Toast is gated on coinosAuthed
+      // so Ark-only users don't see a "Failed to load balance" alert
+      // for a balance they don't have.
       if (coinosAuthed) {
         SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
       }
@@ -1185,7 +1162,7 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <SendListNew refRBSheet={refSendRBSheet} reopenSendSheet={reopenSendSheet} receiveType={receiveType} matchedRate={matchedRateStrike || matchedRate} matchedRateBTC={matchedRateBTC} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
+        <SendListNew refRBSheet={refSendRBSheet} reopenSendSheet={reopenSendSheet} receiveType={receiveType} matchedRate={matchedRateBTC} matchedRateBTC={matchedRateBTC} currency="USD" wallet={wallet} coldStorageWallet={coldStorageWallet} />
       </RBSheet>
 
       <RBSheet
