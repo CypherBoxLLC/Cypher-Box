@@ -510,7 +510,21 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
                     <ActivityIndicator color={'white'} />
                 </View>
             :
-                <RNAnimated.View style={[styles.main, { right: right }]}>
+                // Animation target: slide the row container left to
+                // expose the second panel (settingView2). Originally
+                // used `style={{ right: <Animated.Value> }}`, which
+                // iOS honored as a layout offset on a non-positioned
+                // View but Android (and especially Fabric under RN
+                // 0.76 New Arch) silently ignored — the seed-reveal
+                // button appeared to do nothing. translateX is the
+                // portable equivalent: `right` increasing by N is the
+                // same as `translateX` of -N.
+                <RNAnimated.View
+                    style={[
+                        styles.main,
+                        { transform: [{ translateX: RNAnimated.multiply(right, -1) }] },
+                    ]}
+                >
                     <View style={styles.settingView}>
                         {/* <View style={styles.rowview}>
                             <Text bold style={styles.text}>Name Your Vault</Text>
