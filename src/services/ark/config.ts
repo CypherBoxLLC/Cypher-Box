@@ -19,6 +19,34 @@ import { BARK_ACCESS_TOKEN } from './secrets';
  */
 export const FEATURE_ARK_ENABLED = true;
 
+/**
+ * Bitcoin standard dust limit (~330 sats at 3 sat/vB). Bark inherits
+ * this as the per-VTXO floor: capsules at or below this size are
+ * essentially unrecoverable on-chain (the unilateral exit tx would
+ * cost more in fees than the VTXO is worth) and the ASP rejects them
+ * as round outputs. Used to flag dust capsules in the UI and to
+ * pre-block sends that would create sub-dust change.
+ *
+ * Bark doesn't expose its server-side params via the SDK, so this is
+ * a hardcoded constant rather than something we can query at runtime.
+ * If Second.tech ever changes their dust policy, update here.
+ */
+export const ARK_VTXO_DUST_SATS = 330;
+
+/**
+ * Empirical minimum size for a VTXO to participate in a refresh round.
+ * The ASP rejects refresh requests below this with `BarkError.Internal`
+ * (no structured error code) — likely because the round's per-input
+ * overhead would exceed the value being refreshed, making the round
+ * uneconomic. The threshold lives somewhere on the server and isn't
+ * advertised, so this is observed-behavior, not spec.
+ *
+ * Used as a pre-flight gate on manual + background refreshes so the
+ * user gets an actionable message ("combine into a larger capsule
+ * first") instead of an opaque round failure.
+ */
+export const ARK_REFRESH_MIN_SATS = 500;
+
 export const ARK_NETWORK: Network = Network.Bitcoin;
 
 export const ARK_SERVER_URL = 'https://ark.second.tech';

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, Switch, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, AppState, AppStateStatus, Easing, FlatList, Image, ImageBackground, Platform, Switch, Text as RNText, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Icon } from "react-native-elements";
 import Svg, { Circle } from "react-native-svg";
@@ -10,9 +10,11 @@ import { Text } from "@Cypher/component-library";
 import { GradientView } from "@Cypher/components";
 import { Refresh, Tag, Yes } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
+import { formatCapsuleAmount } from "@Cypher/helpers/bitcoinUnits";
 
 import {
+    ARK_REFRESH_MIN_SATS,
+    ARK_VTXO_DUST_SATS,
     AVG_BLOCK_MINUTES,
     blocksToDays,
     estimateArkRefreshFee,
@@ -216,7 +218,7 @@ function formatRoundUpperBound(secs: number): string {
  */
 function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
-    const BTCAmount = btcHandle(vtxo.sats) + " BTC";
+    const BTCAmount = formatCapsuleAmount(vtxo.sats);
 
     // Transient-state animation: while vtxo.pendingRound is true, the
     // refresh icon spins and the gradient card pulses opacity. Both
@@ -379,7 +381,16 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: 
                     }}
                 />
             )}
-            <TouchableOpacity activeOpacity={0.7} style={rowStyles.container} onPress={onPress}>
+            {/* Outer row tap toggles selection. For expired-dust
+                capsules the checkbox is suppressed (no refresh, no
+                send), so the tap has nothing useful to toggle —
+                disable it to avoid an invisible "selected" state
+                that the user can't see or act on. */}
+            <TouchableOpacity
+                activeOpacity={vtxo.sats <= ARK_VTXO_DUST_SATS && vtxo.daysLeft <= 0 ? 1 : 0.7}
+                style={rowStyles.container}
+                onPress={vtxo.sats <= ARK_VTXO_DUST_SATS && vtxo.daysLeft <= 0 ? undefined : onPress}
+            >
                 {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
                     bump the size column from 1.8 → 2.8 so the time-left +
                     status row has room to fit on a single line. flexWrap
@@ -389,7 +400,48 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: 
                     <VtxoRing daysLeft={ringDaysLeft} />
                 </View>
                 <View style={[rowStyles.size, { flex: 2.8 }]}>
-                    <Text bold style={rowStyles.value}>{BTCAmount}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
+                        <Text bold style={rowStyles.value}>{BTCAmount}</Text>
+                        {/* Dust badge: capsules at or below the on-chain
+                            dust limit can't be refreshed (ASP rejects)
+                            and create stranded change if used in a send
+                            (both outputs would also be dust). The pill
+                            is the only persistent visual signal a user
+                            has that this capsule is functionally dead;
+                            no other affordance in the app warns them.
+                            Pre-flight gates in handleRefresh + ArkSend
+                            reject attempts that would touch these. */}
+                        {/* Inline DUST pill only for LIVE dust — for
+                            expired dust the pill lives in the action
+                            column instead (replacing the refresh icon
+                            + checkbox, since neither is reachable
+                            anymore). Keeps the row's right edge
+                            telling the user "this is dead" instead of
+                            duplicating the badge in two places. */}
+                        {vtxo.sats <= ARK_VTXO_DUST_SATS && vtxo.daysLeft > 0 && (
+                            <View
+                                style={{
+                                    marginLeft: 6,
+                                    paddingHorizontal: 5,
+                                    paddingVertical: 1,
+                                    borderRadius: 4,
+                                    borderWidth: 1,
+                                    borderColor: '#FF7A68',
+                                }}
+                            >
+                                {/* RNText (not the @Cypher Text wrapper):
+                                    the wrapper's styles.default sets
+                                    color: white and our inline color
+                                    loses the cascade under Fabric, so
+                                    the pill rendered as white text on
+                                    a red border. Going direct keeps
+                                    the red. */}
+                                <RNText style={{ fontSize: 9, color: '#FF7A68', fontWeight: '700' }}>
+                                    DUST
+                                </RNText>
+                            </View>
+                        )}
+                    </View>
                     {/* When the VTXO is in-flight, stack the recoverability
                         label on its own row below — the "⚠ In-flight"
                         message is too important to compete with the days-
@@ -418,32 +470,63 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: 
                         </View>
                     )}
                 </View>
-                {/* Refresh icon Touchable — independent of the row's
-                    select-toggle Touchable wrapping the rest of the row.
-                    delayPressIn=0 + hitSlop guarantee the inner press
-                    registers BEFORE the outer (otherwise nested
-                    TouchableOpacities can let the outer capture first
-                    on Android). Generous hit area so users don't need
-                    pixel-perfect aim. */}
-                <TouchableOpacity
-                    style={[rowStyles.label, { alignItems: 'flex-start' }]}
-                    onPress={onRefreshIcon}
-                    delayPressIn={0}
-                    hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
-                    activeOpacity={0.6}
-                >
-                    {/* Feather refresh-cw — circular two-arrow icon. While
-                        pendingRound is true, the spinAnim drives a 360°
-                        rotate to telegraph the in-flight refresh. */}
-                    <Animated.View style={{ transform: [{ rotate: spinDeg }, { scale: iconScale }] }}>
-                        <Icon name="refresh-cw" type="feather" color="#FFFFFF" size={22} />
-                    </Animated.View>
-                </TouchableOpacity>
-                <View style={rowStyles.select}>
-                    <View style={rowStyles.checkbox}>
-                        {selected && <Image source={Yes} />}
+                {vtxo.sats <= ARK_VTXO_DUST_SATS && vtxo.daysLeft <= 0 ? (
+                    // Expired-dust action area: no refresh icon, no
+                    // checkbox — neither operation is reachable. The
+                    // EXPIRED DUST badge expands to take the combined
+                    // width of the icon + select columns (flex 2),
+                    // so the entire right side of the row reads as a
+                    // single inert "this is dead" indicator instead
+                    // of two empty boxes where affordances used to
+                    // live. Outer row tap is also disabled below.
+                    <View
+                        style={{
+                            flex: 2,
+                            marginRight: 8,
+                            marginVertical: 6,
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: '#888',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingVertical: 6,
+                            paddingHorizontal: 4,
+                        }}
+                    >
+                        <RNText style={{ fontSize: 10, color: '#888', fontWeight: '700', textAlign: 'center' }}>
+                            EXPIRED DUST
+                        </RNText>
                     </View>
-                </View>
+                ) : (
+                    <>
+                        {/* Refresh icon Touchable — independent of the row's
+                            select-toggle Touchable wrapping the rest of the row.
+                            delayPressIn=0 + hitSlop guarantee the inner press
+                            registers BEFORE the outer (otherwise nested
+                            TouchableOpacities can let the outer capture first
+                            on Android). Generous hit area so users don't need
+                            pixel-perfect aim. */}
+                        <TouchableOpacity
+                            style={[rowStyles.label, { alignItems: 'flex-start' }]}
+                            onPress={onRefreshIcon}
+                            delayPressIn={0}
+                            hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
+                            activeOpacity={0.6}
+                        >
+                            {/* Feather refresh-cw — circular two-arrow icon. While
+                                pendingRound is true, the spinAnim drives a 360°
+                                rotate to telegraph the in-flight refresh. */}
+                            <Animated.View style={{ transform: [{ rotate: spinDeg }, { scale: iconScale }] }}>
+                                <Icon name="refresh-cw" type="feather" color="#FFFFFF" size={22} />
+                            </Animated.View>
+                        </TouchableOpacity>
+                        <View style={rowStyles.select}>
+                            <View style={rowStyles.checkbox}>
+                                {selected && <Image source={Yes} />}
+                            </View>
+                        </View>
+                    </>
+                )}
             </TouchableOpacity>
         </Animated.View>
     );
@@ -483,7 +566,7 @@ interface PendingLnReceiveRowProps {
 }
 
 function PendingLnReceiveRow({ sats }: PendingLnReceiveRowProps) {
-    const BTCAmount = btcHandle(sats) + " BTC";
+    const BTCAmount = formatCapsuleAmount(sats);
 
     const spinAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -617,12 +700,22 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
     const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
-    const arkBgRefreshMaxFeeSats = useAuthStore((s) => s.arkBgRefreshMaxFeeSats);
-    const setArkBgRefreshMaxFeeSats = useAuthStore((s) => s.setArkBgRefreshMaxFeeSats);
-    // Buffered local string so the user can clear / partially type without
-    // the store committing intermediate values like "" or "5". Reconciled
-    // with the store value on blur (commitFeeInput).
-    const [feeInput, setFeeInput] = useState<string>(String(arkBgRefreshMaxFeeSats));
+
+    // Battery-optimisation drift probe. The toggle-ON handler nudges the
+    // user to grant the exemption when they first enable bg-refresh, but
+    // nothing prevents Android from reverting Cypher Box to "Optimised"
+    // later — vendor battery managers (Samsung One UI, MIUI, EMUI, ColorOS)
+    // routinely demote apps the user hasn't opened in days. Without a
+    // re-probe, the toggle reads ON in our UI but the OS silently kills
+    // the AlarmManager fires, and the user only finds out when their VTXOs
+    // expire. So we probe on mount + on every AppState→active transition,
+    // and surface an inline banner when the exemption has drifted.
+    //
+    // null = unprobed (don't render the banner yet — avoids a flash on
+    // mount before the native call returns). true = drifted, banner shows.
+    // false = exempt, banner hidden. iOS short-circuits to false because
+    // `isIgnoringBatteryOptimizations` always returns true there.
+    const [batteryNotExempt, setBatteryNotExempt] = useState<boolean | null>(null);
 
     // Sum of sats currently locked in pending refresh rounds. Same derivation
     // as ArkWallet/index.tsx (Locked-state VTXO sats), to avoid the SDK's
@@ -655,12 +748,45 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         }
     }, [pendingRoundSats]);
 
+    // Battery-exemption probe. Fires on mount (Capsules tab opened) and on
+    // every AppState→active transition (user came back from Settings). We
+    // only probe when bg-refresh is enabled; if the user has the toggle
+    // off we don't care whether they're exempt, and probing would just
+    // hit the native module for nothing. Toggling off resets to null so
+    // a stale "drifted" reading doesn't linger after the user disables.
+    useEffect(() => {
+        if (Platform.OS !== 'android') return;
+        if (!arkBgRefreshEnabled) {
+            setBatteryNotExempt(null);
+            return;
+        }
+        let cancelled = false;
+        const probe = async () => {
+            try {
+                const ignoring = await isIgnoringBatteryOptimizations();
+                if (!cancelled) setBatteryNotExempt(!ignoring);
+            } catch (err) {
+                // Native bridge hiccup — leave the previous value alone
+                // rather than flipping the banner state on a transient.
+                if (__DEV__) console.warn('[ArkCapsules] battery probe failed:', err);
+            }
+        };
+        void probe();
+        const sub = AppState.addEventListener('change', (status: AppStateStatus) => {
+            if (status === 'active') void probe();
+        });
+        return () => {
+            cancelled = true;
+            sub.remove();
+        };
+    }, [arkBgRefreshEnabled]);
+
     // Project SDK VTXOs → row data with days-until-expiry computed from the
     // current chain tip. If tip is unknown (esplora offline) we render a
     // full green ring and hide the "Xd left" line — still visible, but with
     // no misleading time estimate.
     const rows: VtxoRowData[] = useMemo(() => {
-        return arkVtxos.map((v) => {
+        const mapped = arkVtxos.map((v) => {
             const stateLower = v.state.toLowerCase();
             const kindLower = v.kind.toLowerCase();
             const pendingRound = stateLower === "locked";
@@ -707,6 +833,18 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 recoverability,
             };
         });
+        // Sort: expired-dust capsules to the bottom of the list. They're
+        // functionally logs — past expiry, below the dust limit, no
+        // refresh path, no economic exit path. Above-the-fold prominence
+        // is wasted on them; users should see live capsules first and
+        // scroll past the carcasses. Everything else preserves the
+        // SDK's natural order.
+        return mapped.sort((a, b) => {
+            const aDead = a.sats <= ARK_VTXO_DUST_SATS && a.daysLeft <= 0;
+            const bDead = b.sats <= ARK_VTXO_DUST_SATS && b.daysLeft <= 0;
+            if (aDead !== bDead) return aDead ? 1 : -1;
+            return 0;
+        });
     }, [arkVtxos, chainTipHeight, arkLastBackupAt]);
 
     const toggle = (id: string) => {
@@ -752,6 +890,26 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         if (lockedSelected.length > 0) {
             SimpleToast.show(
                 `${lockedSelected.length} capsule(s) already in a pending round — wait for it to finalise before refreshing again`,
+                SimpleToast.LONG,
+            );
+            return;
+        }
+
+        // Pre-flight dust check: the ASP rejects refresh rounds for
+        // inputs below `ARK_REFRESH_MIN_SATS` (empirically ~500). Catch
+        // this client-side instead of letting the user wait through a
+        // round attempt that's predestined to fail with an opaque
+        // BarkError.Internal. The reactive error path below still
+        // exists as a safety net for above-threshold rounds that fail
+        // for other reasons.
+        const totalIn = rows
+            .filter((r) => ids.includes(r.id))
+            .reduce((acc, r) => acc + r.sats, 0);
+        if (totalIn > 0 && totalIn < ARK_REFRESH_MIN_SATS) {
+            SimpleToast.show(
+                `${totalIn}-sat capsule${ids.length === 1 ? '' : 's'} too small to refresh ` +
+                `(server minimum ~${ARK_REFRESH_MIN_SATS}). ` +
+                `Combine into a larger capsule first via a self-send.`,
                 SimpleToast.LONG,
             );
             return;
@@ -873,20 +1031,77 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     };
 
     /**
-     * Commit the fee-gate input on blur. Discards any non-positive value
-     * (resets the input to the last-committed store value) — a 0-or-negative
-     * ceiling would mean "never auto-pay anything," which is functionally
-     * equivalent to disabling the feature, and is more confusingly expressed
-     * via the toggle. The minimum sane ceiling is 1 sat.
+     * Dust-aware consolidation set.
+     *
+     * Surfaces a one-tap path out of the dust trap: gather every dust
+     * capsule (≤ ARK_VTXO_DUST_SATS) and, if their sum alone is below
+     * the refresh minimum, top up with the smallest non-dust capsule(s)
+     * needed to clear it. The result is a refresh that absorbs every
+     * dust capsule into a single consolidated output above the dust
+     * line — turning stranded "100 + 100 + 50" into one usable
+     * "≈250 sats" capsule (when topped up enough to clear the round
+     * threshold).
+     *
+     * Viability:
+     *   - dust exists, dust ≥ refresh minimum    → consolidate dust only
+     *   - dust exists, dust < refresh minimum,
+     *     non-dust capsules can fill the gap    → consolidate dust + fillers
+     *   - dust exists, no way to reach minimum  → not viable, banner explains
+     *   - no dust                                → no banner
+     *
+     * `pendingRound` capsules are excluded from both sets — refreshing
+     * a Locked VTXO is a no-op at best, double-submission at worst.
      */
-    const commitFeeInput = () => {
-        const parsed = parseInt(feeInput.replace(/[^\d]/g, ''), 10);
-        if (!Number.isFinite(parsed) || parsed < 1) {
-            setFeeInput(String(arkBgRefreshMaxFeeSats));
-            return;
+    const dustConsolidate = React.useMemo(() => {
+        // Only LIVE dust counts toward consolidation. Expired dust
+        // (daysLeft ≤ 0) can't participate in a refresh round — the
+        // ASP rejects it for being past its lifetime — so trying to
+        // include it would just nuke the whole consolidation attempt.
+        // Also exclude pendingRound capsules (already in flight, double-
+        // submission would confuse the SDK).
+        const dust = rows.filter(
+            (r) => r.sats <= ARK_VTXO_DUST_SATS && !r.pendingRound && r.daysLeft > 0,
+        );
+        if (dust.length === 0) {
+            return { dust, ids: [] as string[], total: 0, viable: false, shortfall: 0 };
         }
-        setArkBgRefreshMaxFeeSats(parsed);
-        setFeeInput(String(parsed));
+        const dustTotal = dust.reduce((a, r) => a + r.sats, 0);
+        if (dustTotal >= ARK_REFRESH_MIN_SATS) {
+            return {
+                dust,
+                ids: dust.map((r) => r.id),
+                total: dustTotal,
+                viable: true,
+                shortfall: 0,
+            };
+        }
+        const nonDust = rows
+            .filter((r) => r.sats > ARK_VTXO_DUST_SATS && !r.pendingRound)
+            .sort((a, b) => a.sats - b.sats);
+        const fillers: typeof rows = [];
+        let total = dustTotal;
+        for (const v of nonDust) {
+            fillers.push(v);
+            total += v.sats;
+            if (total >= ARK_REFRESH_MIN_SATS) break;
+        }
+        const viable = total >= ARK_REFRESH_MIN_SATS;
+        return {
+            dust,
+            ids: viable ? [...dust.map((r) => r.id), ...fillers.map((r) => r.id)] : [],
+            total,
+            viable,
+            shortfall: viable ? 0 : ARK_REFRESH_MIN_SATS - total,
+        };
+    }, [rows]);
+
+    const handleConsolidateDust = () => {
+        if (!dustConsolidate.viable || dustConsolidate.ids.length < 2) return;
+        // Surface the selection so the user sees which capsules will
+        // get rolled in (the row halos will light up). The refreshIds
+        // call clears `selectedIds` on completion regardless.
+        setSelectedIds(dustConsolidate.ids);
+        void refreshIds(dustConsolidate.ids);
     };
 
     /**
@@ -1000,7 +1215,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             <View
                 style={{
                     marginHorizontal: 20,
-                    marginTop: 4,
+                    marginTop: 14,
                     marginBottom: 8,
                     paddingVertical: 10,
                     paddingHorizontal: 14,
@@ -1015,84 +1230,145 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         justifyContent: "space-between",
                     }}
                 >
-                    <Text bold style={{ fontSize: 14, color: colors.white, flex: 1, marginRight: 12 }}>
+                    {/* Built-in RNText here, not the @Cypher Text wrapper:
+                        the wrapper hardcodes adjustsFontSizeToFit, which
+                        under Fabric (New Arch in RN 0.76) shrinks the
+                        title aggressively to fit the flex:1 column next
+                        to the Switch. Bypassing the wrapper keeps the
+                        declared 14pt size honored. fontWeight inline so
+                        we don't depend on the Lato-Bold family being
+                        registered for system Text. */}
+                    <RNText
+                        style={{
+                            fontSize: 14,
+                            fontWeight: '700',
+                            color: colors.white,
+                            flex: 1,
+                            marginRight: 12,
+                        }}
+                    >
                         Refresh Ark capsules in background
-                    </Text>
+                    </RNText>
                     <Switch
                         value={arkBgRefreshEnabled}
                         onValueChange={handleToggleBgRefresh}
                         disabled={togglingBgRefresh}
-                        trackColor={{ false: "#3a3a3a", true: colors.ark.light }}
+                        trackColor={{ false: "#3a3a3a", true: colors.green }}
                         thumbColor={colors.white}
                     />
                 </View>
-                <Text style={{ fontSize: 12, color: "#888", marginTop: 6, lineHeight: 16 }}>
-                    Cypher Box refreshes capsules approaching expiry without you opening the app. Toggle off if you'd rather refresh manually.
+                <Text
+                    style={{
+                        fontSize: 12,
+                        color: arkBgRefreshEnabled ? '#888' : colors.redLight,
+                        marginTop: 6,
+                        lineHeight: 16,
+                    }}
+                >
+                    {arkBgRefreshEnabled
+                        ? 'Cypher Box refreshes capsules approaching expiry without you opening the app.'
+                        : '⚠ Auto-refresh is OFF — open Cypher Box once in a while and refresh Ark capsules before they expire. After expiry, the ASP can sweep them.'}
                 </Text>
-                {arkBgRefreshEnabled && (
-                    <View
+
+                {/* Battery-exemption drift banner. Only shows on Android,
+                    only when bg-refresh is on, and only after the probe
+                    has actually returned a "not exempt" reading. The
+                    toggle-on handler nudges the user once at first
+                    enable; this banner is the persistent surface that
+                    catches the case where Android (or a vendor manager)
+                    has demoted Cypher Box back to "Optimised" later —
+                    silent until you re-open the app, by which point
+                    auto-refresh has already been failing for hours. */}
+                {arkBgRefreshEnabled && batteryNotExempt === true && (
+                    <TouchableOpacity
+                        onPress={() => {
+                            openBatteryOptimizationSettings().catch((err) => {
+                                console.warn('[Ark bg refresh banner] open settings failed:', err);
+                            });
+                        }}
                         style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            marginTop: 12,
-                            paddingTop: 10,
-                            borderTopWidth: 0.5,
-                            borderTopColor: "#333",
+                            marginTop: 10,
+                            paddingVertical: 10,
+                            paddingHorizontal: 12,
+                            borderRadius: 8,
+                            backgroundColor: 'rgba(251, 146, 60, 0.12)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(251, 146, 60, 0.45)',
                         }}
                     >
-                        <View style={{ flex: 1, marginRight: 12 }}>
-                            <Text bold style={{ fontSize: 13, color: colors.white }}>
-                                Auto-pay fee ceiling
-                            </Text>
-                            <Text style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-                                Round skipped if estimated fee exceeds this.
-                            </Text>
-                        </View>
-                        <View
-                            style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                backgroundColor: "#0f0f0f",
-                                borderRadius: 6,
-                                paddingHorizontal: 8,
-                                minWidth: 90,
-                            }}
-                        >
-                            <TextInput
-                                value={feeInput}
-                                onChangeText={setFeeInput}
-                                onBlur={commitFeeInput}
-                                onEndEditing={commitFeeInput}
-                                keyboardType="number-pad"
-                                returnKeyType="done"
-                                maxLength={9}
-                                style={{
-                                    color: colors.white,
-                                    fontSize: 13,
-                                    paddingVertical: 6,
-                                    textAlign: "right",
-                                    flex: 1,
-                                }}
-                            />
-                            <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>
-                                sats
-                            </Text>
-                        </View>
-                    </View>
+                        <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
+                            ⚠ Battery optimisation is on for Cypher Box
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
+                            Auto-refresh may not run reliably until you exempt Cypher Box from battery optimisation. Tap to open Settings.
+                        </Text>
+                    </TouchableOpacity>
                 )}
+
             </View>
 
-            {/* Explainer header — VTXO vocabulary + behavior in one short paragraph.
-                Uses the same desc style Hot Vault uses for its "Select your UTXO
-                capsules to send..." line, so the tab feels consistent. */}
+            {/* Explainer header — single line describing the depletion ring. */}
             <Text bold style={[vaultStyles.desc, { marginRight: 20 }]}>
-                Select your VTXO capsules to send or refresh. The ring around
-                each capsule depletes as it ages (green → yellow → orange →
-                red). Refresh before it runs out to keep your funds in Ark.
-                To withdraw from Ark entirely, use the Withdraw button on
-                the home screen.
+                The ring around each Ark capsule depletes as it ages (green → yellow → orange → red).
             </Text>
+
+            {/* Dust-consolidate banner. Surfaces only when there's at
+                least one dust capsule on the wallet. Two states:
+                  - viable (we can build a refresh set above the
+                    threshold): tappable button merges them in one
+                    refresh round
+                  - non-viable (not enough non-dust capsules to top up):
+                    informational, explains how much more they need
+                    to receive before consolidation works. The banner
+                    is the only place users learn that dust is a
+                    one-way trap unless they top up. */}
+            {dustConsolidate.dust.length > 0 && (
+                <View
+                    style={{
+                        marginHorizontal: 20,
+                        marginTop: 6,
+                        marginBottom: 6,
+                        paddingVertical: 10,
+                        paddingHorizontal: 14,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: '#FF7A68',
+                        backgroundColor: '#1a0f0d',
+                    }}
+                >
+                    <RNText style={{ fontSize: 13, color: '#FF7A68', fontWeight: '700', marginBottom: 4 }}>
+                        {dustConsolidate.dust.length} dust capsule{dustConsolidate.dust.length === 1 ? '' : 's'} stranded
+                    </RNText>
+                    {dustConsolidate.viable ? (
+                        <>
+                            <RNText style={{ fontSize: 12, color: '#ddd', marginBottom: 8 }}>
+                                Combine {dustConsolidate.ids.length} capsule{dustConsolidate.ids.length === 1 ? '' : 's'}
+                                {' '}({dustConsolidate.total.toLocaleString()} sats) into one refresh round to absorb the dust.
+                            </RNText>
+                            <TouchableOpacity
+                                onPress={handleConsolidateDust}
+                                disabled={refreshing}
+                                activeOpacity={0.7}
+                                style={{
+                                    paddingVertical: 8,
+                                    paddingHorizontal: 12,
+                                    borderRadius: 6,
+                                    backgroundColor: refreshing ? '#444' : '#FF7A68',
+                                    alignItems: 'center',
+                                }}
+                            >
+                                <RNText style={{ fontSize: 12, color: '#1a0f0d', fontWeight: '700' }}>
+                                    {refreshing ? 'Refreshing…' : 'Combine dust into one capsule'}
+                                </RNText>
+                            </TouchableOpacity>
+                        </>
+                    ) : (
+                        <RNText style={{ fontSize: 12, color: '#ddd' }}>
+                            Total available is {dustConsolidate.total.toLocaleString()} sats — {dustConsolidate.shortfall.toLocaleString()} sats short of the {ARK_REFRESH_MIN_SATS}-sat refresh minimum. Receive at least that much more before the dust expires, or it will be lost to the ASP.
+                        </RNText>
+                    )}
+                </View>
+            )}
 
             {/* Recoverability legend — three colour-coded states matching
                 the per-row suffix below. Bark VTXOs aren't seed-derivable,
@@ -1180,9 +1456,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 de-clutters the screen. No Emergency Exit here — that's
                 the global Withdraw button's job, see the file docblock. */}
             <View style={vaultStyles.bottomViewNew}>
-                <Text bold center style={vaultStyles.tips}>
-                    Tip: Refresh capsules nearing expiry to keep your unilateral exit valid.
-                </Text>
                 <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 12 }}>
                     {renderActionButton("Send", handleSend)}
                     {renderActionButton(
@@ -1204,7 +1477,15 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     via its expected-output summing bug. Surface the
                     counter + a clear "tapping again won't speed it up"
                     nudge to discourage spam taps. */}
-                {queuedRoundsCount > 0 && (
+                {/* Only show the "tapping again won't speed it up" banner
+                    once the user has actually tapped Refresh more than
+                    once. The first tap is normal usage — surfacing the
+                    scolding text immediately reads as the app yelling
+                    at the user for a perfectly reasonable action. From
+                    the second concurrent tap onward, the warning is
+                    earned: they're stacking rounds and burning extra
+                    fees, and the banner explains why that's bad. */}
+                {queuedRoundsCount > 1 && (
                     <View
                         style={{
                             marginHorizontal: 24,
@@ -1218,9 +1499,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         }}
                     >
                         <Text bold style={{ fontSize: 12, color: colors.ark.light }}>
-                            {queuedRoundsCount === 1
-                                ? '1 refresh round queued at Ark server'
-                                : `${queuedRoundsCount} refresh rounds queued at Ark server`}
+                            {queuedRoundsCount} refresh rounds queued at Ark server
                         </Text>
                         <Text style={{ fontSize: 11, color: '#999', marginTop: 4, lineHeight: 15 }}>
                             Tapping Refresh again won't speed it up — each tap
@@ -1236,7 +1515,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     they're worrying about their Ark balance — the actual
                     exit lives in Settings to keep this surface focused
                     on per-capsule actions (refresh / send). */}
-                <Text
+                {/* RNText (built-in) here, not the @Cypher Text wrapper:
+                    the wrapper hardcodes adjustsFontSizeToFit, which
+                    under Fabric shrinks this two-line pointer down to
+                    near-illegible when the surrounding container is
+                    tight. Built-in Text honors the declared 11pt. */}
+                <RNText
                     style={{
                         fontSize: 11,
                         color: '#777',
@@ -1247,7 +1531,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 >
                     Don't trust the Ark server? Settings → Emergency Exit will
                     sweep funds back on-chain without ASP cooperation.
-                </Text>
+                </RNText>
                 {/* Background-refresh opt-in card + DEV buttons moved to
                     FlatList ListFooterComponent so they scroll with the
                     capsule list — keeps the list area uncompressed when

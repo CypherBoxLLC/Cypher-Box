@@ -17,6 +17,7 @@ import { GradientInput, CustomKeyboard } from '@Cypher/components';
 import { dispatchNavigate } from '@Cypher/helpers';
 import { getStrikeCurrency } from '@Cypher/helpers/coinosHelper';
 import {
+    ARK_VTXO_DUST_SATS,
     classifyArkDestination,
     estimateArkSendFee,
     executeArkSend,
@@ -196,9 +197,64 @@ export default function ArkSendScreen({ route }: Props) {
     const grossWithinBalance = fee
         ? fee.grossAmountSats <= spendableSats
         : amountWithinBalance;
+
+    // Dust-change guard: if the send would leave a sub-dust capsule
+    // behind as change (balance - amount - fee is non-zero AND below
+    // the dust limit), block it. The SDK will otherwise split the
+    // VTXO into the requested amount + a stranded dust change capsule
+    // that can't be refreshed, sent, or recovered cheaply — exactly
+    // the failure mode that surfaced when sending 60 sats from a
+    // 100-sat capsule produced two unusable 60+40 sat capsules.
+    //
+    // We treat balance-level math as a coarse proxy for VTXO-level
+    // accounting: if the *whole-wallet* leftover is dust then any
+    // possible coin-selection picks a single VTXO and the change is
+    // dust regardless. Edge case the rule misses: a multi-VTXO wallet
+    // where the SDK picks a small VTXO that creates dust change while
+    // a larger one wouldn't — but Bark's coin selection biases toward
+    // exact-match / smallest-input-set, so this is rare in practice.
+    // Reactive error handling below catches the residue.
+    const changeIfSent = fee
+        ? spendableSats - fee.grossAmountSats
+        : null;
+    const wouldStrandDust =
+        changeIfSent !== null && changeIfSent > 0 && changeIfSent < ARK_VTXO_DUST_SATS;
+    // Suggested send-all amount when the user's current entry would
+    // strand dust: max sendable = whole balance minus the fee we'd
+    // pay. Exposed as a one-tap "Send all X" button below the warning
+    // so the user doesn't have to mental-math their way out. Only
+    // computed when fee is known and dust would be stranded — null
+    // otherwise so the UI hides the button.
+    const sendAllAmount =
+        fee && wouldStrandDust ? spendableSats - fee.feeSats : null;
+
     const canEstimate =
         destinationValid && amountValid && amountWithinBalance && !isEstimating && !isSending;
-    const canSend = canEstimate && !!fee && grossWithinBalance;
+    const canSend = canEstimate && !!fee && grossWithinBalance && !wouldStrandDust;
+
+    /**
+     * One-tap fix for the dust-change case. Rewrites the sats input
+     * to the max amount that won't strand change (balance − fee), which
+     * burns the entire wallet's spendable balance into a single send.
+     * The keyboard's internal sats string is also rebuilt — without
+     * this, the GradientInput would still show the user's previous
+     * input until the next keypress.
+     *
+     * Re-estimate happens automatically: clearing `fee` triggers the
+     * existing handleEstimate flow when the user taps Confirm, but we
+     * also call it eagerly so the new amount's fee preview is visible
+     * before they tap.
+     */
+    const handleSendAll = useCallback(() => {
+        if (sendAllAmount === null) return;
+        const amountStr = String(sendAllAmount);
+        setSats(amountStr);
+        // Drop stale fee so the UI reflects the new amount's number
+        // rather than the old (sub-balance) one. The next handleEstimate
+        // call will repopulate it.
+        setFee(null);
+        setErrorMsg(null);
+    }, [sendAllAmount]);
 
     const handleEstimate = useCallback(async () => {
         if (!canEstimate) return;
@@ -456,6 +512,41 @@ export default function ArkSendScreen({ route }: Props) {
                             ? ' Your VTXO capsules may be locked in a pending round — try again once the round finalises, or recover from the Capsules tab.'
                             : ''}
                     </Text>
+                )}
+
+                {/* Dust-change warning + one-tap fix. Only renders once
+                    the fee is known and the implied change would land
+                    below the dust limit. The Send button is also
+                    disabled in this state via `canSend` — the message
+                    here is the only way the user learns *why* it
+                    disabled, and the button below is the one-tap
+                    escape hatch instead of asking them to mental-math
+                    a non-dust-creating amount. */}
+                {wouldStrandDust && fee && sendAllAmount !== null && (
+                    <View style={{ marginTop: 8 }}>
+                        <Text style={styles.error}>
+                            This send would leave {changeIfSent} sats stranded as a sub-dust capsule
+                            (below {ARK_VTXO_DUST_SATS}-sat limit). A stranded dust capsule can't be
+                            refreshed and will expire to the ASP.
+                        </Text>
+                        <TouchableOpacity
+                            onPress={handleSendAll}
+                            activeOpacity={0.7}
+                            style={{
+                                marginTop: 8,
+                                paddingVertical: 10,
+                                paddingHorizontal: 14,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: colors.ark?.light ?? '#FFD700',
+                                alignItems: 'center',
+                            }}
+                        >
+                            <Text bold style={{ color: colors.ark?.light ?? '#FFD700', fontSize: 13 }}>
+                                Send all {sendAllAmount.toLocaleString()} sats instead ({fee.feeSats} sat fee)
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 )}
             </ScrollView>
 

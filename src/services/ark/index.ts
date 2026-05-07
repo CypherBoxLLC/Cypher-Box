@@ -2,6 +2,8 @@ export {
     FEATURE_ARK_ENABLED,
     ARK_NETWORK,
     ARK_SERVER_URL,
+    ARK_VTXO_DUST_SATS,
+    ARK_REFRESH_MIN_SATS,
     ESPLORA_URL,
     createArkConfig,
 } from './config';
