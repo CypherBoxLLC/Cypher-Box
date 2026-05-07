@@ -456,7 +456,15 @@ export default StyleSheet.create<Style>({
         height: 128,
         marginTop: 0,
         borderColor: "transparent",
-        backgroundColor: colors.white,
+        // colors.primary (dark) instead of colors.white — under
+        // Fabric the 1pt borderRadius mismatch between this wrapper
+        // (25) and the pink-gradient outline inside it (24) leaks
+        // the wrapper's background as a faint ring at the corners.
+        // White was visible as a "white border" reading; primary
+        // matches the inner card surface so any leak is invisible.
+        // Can't use transparent — Android needs a non-transparent
+        // backgroundColor for elevation shadows to paint.
+        backgroundColor: colors.primary,
     },
     shadowViewBottom: {
         shadowOffset: { width: 8, height: 8 },

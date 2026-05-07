@@ -36,6 +36,7 @@ interface Style {
     minusButton: ViewStyle;
     bottomButtonsContainer: ViewStyle;
     bitcoinPriceContainer: ViewStyle;
+    bitcoinPriceContainerInner: ViewStyle;
     bitcoinPriceText: TextStyle;
     strikeLogo: ImageStyle;
 }
@@ -329,10 +330,34 @@ export default StyleSheet.create<Style>({
     },
     bitcoinPriceContainer: {
         marginTop: 13,
+        // Override BlackBGView's default 85pt outer / 80pt inner box.
+        // Bam: shrink box height, keep text width. Text remains
+        // 30pt fontSize so the price string still spans the same
+        // horizontal length; only the vertical padding around it
+        // shrinks. linearSecondStyle below mirrors with 52pt for the
+        // inner gradient so both layers stay flush.
+        height: 56,
+        // Lift the box 5pt via paint-only transform. Tried marginTop
+        // first (13 → 3) but it didn't visibly move — the parent
+        // column flex absorbed the change because the next sibling
+        // (`isShowButtons` GradientView with marginTop:60, only on
+        // the Account screen) consumes free vertical space. translateY
+        // is layout-independent: it shifts the rendered position
+        // without affecting flex math, so it lifts cleanly on home.
+        // Was -10pt initially; backed off to -5 per Bam after the
+        // shorter box freed enough vertical breathing room that the
+        // -10 lift left a visible gap below the BUY/SELL buttons.
+        transform: [{ translateY: -5 }],
+    },
+    bitcoinPriceContainerInner: {
+        height: 52,
     },
     bitcoinPriceText: {
         fontSize: 30,
-        lineHeight: 40
+        // Tighter line-height to match the shorter box without
+        // clipping descenders on the price string. 40 → 34 still
+        // clears the tallest BTC-symbol glyph at 30pt.
+        lineHeight: 34
     },
     strikeLogo: {
         width: 160,

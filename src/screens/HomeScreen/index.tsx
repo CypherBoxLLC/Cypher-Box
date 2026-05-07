@@ -957,12 +957,18 @@ export default function HomeScreen({ route }: Props) {
                 wallet={wallet}
                 coldStorageWallet={coldStorageWallet}
               />
-              {/* Android-only nudge: when all three Lightning wallets
-                  (CoinOS + Strike + Ark) are connected, the BalanceView
-                  is pulled up too far on Android (iOS lays out fine
-                  with the same -48). Bump it down 35pt for that
-                  combination on Android only. */}
-              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -33 : (Platform.OS === 'android' && !isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -33 : -53 }, { translateY: enterTranslate }] }}>
+              {/* All-three nudge: when CoinOS + Strike + Ark are all
+                  connected, the BalanceView grows taller (extra
+                  carousel content + ark-balance line). The catch-all
+                  -53 below was authored for ≤2 wallets and over-pulls
+                  the black box above the "Total Assets" header on iOS,
+                  while also stretching the inner Strike fiat / rate
+                  text down into the Withdraw/Top-up buttons because
+                  the snap-carousel has to fit a 3-dot indicator row
+                  underneath. The previous code had this case Android-
+                  only with -18; iOS fell through to -53 and broke.
+                  Single all-three branch now, platform-agnostic. */}
+              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -33 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -33 : -53 }, { translateY: enterTranslate }] }}>
                 <BalanceView
                   // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                   // Ark balance is stored in zustand as plain sats (see

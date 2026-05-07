@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { Image, TouchableOpacity, View } from "react-native";
+import { Image, Text as RNText, TouchableOpacity, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -230,9 +230,19 @@ export default React.memo(function Header({
     return (
         <>
             <View style={[styles.title, { transform: [{ translateY: -34 }] }]}>
-                <Text subHeader bold>
+                {/* RNText (built-in) here, not the @Cypher Text wrapper:
+                    the wrapper hardcodes adjustsFontSizeToFit, which
+                    under Fabric (RN 0.76 New Arch) shrinks the
+                    "Total Assets" header to fit the row's available
+                    width when the right-side action icons (settings
+                    + scan) are present. Built-in Text honors the
+                    declared subHeader fontSize literally. The
+                    `subHeader` prop on @Cypher Text resolves to
+                    fontSize 22 / lineHeight ~28 / Lato-Bold; we
+                    replicate inline so visual weight is preserved. */}
+                <RNText style={{ fontSize: 22, fontFamily: 'Lato-Bold', color: '#FFF' }}>
                     Total Assets
-                </Text>
+                </RNText>
                 {/*
                   Right-side action row — scan first, then settings. Bam's
                   call: scan icon belongs in the right corner, immediately

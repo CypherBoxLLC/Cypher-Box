@@ -526,6 +526,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
             )}
             <BlackBGView
                 linearFirstStyle={styles.bitcoinPriceContainer}
+                linearSecondStyle={styles.bitcoinPriceContainerInner}
                 linearFirstColors={[colors.black.default, colors.black.default]}
             >
                 <Text bold style={[styles.bitcoinPriceText, { color: rateColor }]}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>

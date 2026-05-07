@@ -30,7 +30,12 @@ export default StyleSheet.create({
         height: 128,
         marginTop: 5,
         borderColor: "transparent",
-        backgroundColor: colors.white,
+        // colors.primary (dark) instead of colors.white — see same
+        // comment in StrikeWallet/styles.ts shadowView. The 1pt
+        // borderRadius gap between this wrapper (25) and the pink
+        // gradient ring inside (24) leaked white at the corners
+        // under Fabric and read as an unwanted white border.
+        backgroundColor: colors.primary,
     },
     shadowViewArk: {
         // Ark card adopts the vault-style drop shadow used across Hot
@@ -48,7 +53,8 @@ export default StyleSheet.create({
         height: 128,
         marginTop: 5,
         borderColor: "transparent",
-        backgroundColor: colors.white,
+        // Same fix as shadowView above — primary instead of white.
+        backgroundColor: colors.primary,
     },
     shadowTop: {
         borderRadius: 24,
