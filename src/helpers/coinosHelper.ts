@@ -1,7 +1,18 @@
-export let SATS = 100000000;
-export let sats = (n: number) => Math.round(n * SATS);
-export let btc = (n: number) => parseFloat((n / SATS).toFixed(8));
-export let fiat = (n: number, r: number) => (n * r) / SATS;
+// Backwards-compat shim. The Bitcoin unit-conversion + display helpers
+// (SATS, sats, btc, fiat, formatSats, formatCapsuleAmount) used to live
+// in this file but are universal across every wallet kind in Cypher Box,
+// so they moved to `./bitcoinUnits`. Existing imports keep working
+// through this re-export; new code should import directly from
+// `@Cypher/helpers/bitcoinUnits`.
+//
+// The Strike-currency helpers (getStrikeCurrency, SUPPORTED_STRIKE_CURRENCIES,
+// DEFAULT_STRIKE_CURRENCY) and the generic format/lookup utilities
+// (formatNumber, matchKeyAndValue) stay here for now — the former are
+// Strike-specific and could move to a Strike helper, the latter could move
+// to a generic format helper. Out of scope for the bitcoin-units split.
+
+export { SATS, sats, btc, fiat, formatSats, formatCapsuleAmount } from './bitcoinUnits';
+
 export let getStrikeCurrency = (currency: string) => {
     switch (currency) {
             case 'USD':
@@ -42,21 +53,4 @@ export function formatNumber(num: number) {
     } else {
         return num.toString();
     }
-}
-
-// Lightning-wallet sat balance display. ≤999 → raw, ≥1000 → "1K" or
-// "1.03K" (two decimals), ≥1M → "1M" or "1.03M". Whole units strip
-// the trailing ".00" so the typical small balance ("1K sats") stays
-// short and readable.
-export function formatSats(num: number): string {
-    const n = Math.round(Number(num) || 0);
-    if (n <= 999) return `${n}`;
-    if (n >= 1_000_000) {
-        const m = n / 1_000_000;
-        const fixed = m.toFixed(2);
-        return fixed.endsWith('.00') ? `${parseInt(fixed, 10)}M` : `${fixed}M`;
-    }
-    const k = n / 1000;
-    const fixed = k.toFixed(2);
-    return fixed.endsWith('.00') ? `${parseInt(fixed, 10)}K` : `${fixed}K`;
 }
