@@ -3,6 +3,7 @@ import { CustomTabView, GradientCard, GradientView } from "@Cypher/components";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -22,11 +23,12 @@ import {
   Electrik,
   Hot,
   Socked,
+  Second,
   Strike,
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
+import { FEATURE_ARK_ENABLED, getArkAddress, getArkOnchainAddress } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import Clipboard from "@react-native-clipboard/clipboard";
@@ -71,6 +73,12 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   const [showSecondView, setShowSecondView] = useState(initialVaultType !== null || allBTCWallets.length == 1 ? true : false);
   const [hashLiquid, setHashLiquid] = useState('');
   const [hashBitcoin, setHashBitcoin] = useState('');
+  // Ark sub-menu addresses. Generated when the Ark tile is opened
+  // (selectedItem === 5) so they're ready for the corresponding tab
+  // without an extra round-trip when the user switches tabs. Both come
+  // from the local Bark wallet handle — instant, no network.
+  const [arkAddress, setArkAddress] = useState('');
+  const [arkOnchainAddress, setArkOnchainAddress] = useState('');
   const qrCode = useRef();
   const base64QrCodeRef = useRef('');
 
@@ -81,6 +89,40 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   const hasColdVault = !!coldStorageWalletID;
 
   useEffect(() => {
+    // Ark uses the local Bark wallet handle — fetch Ark + on-chain
+    // addresses up front so both the Bitcoin and Ark-address tabs
+    // render instantly when the user switches. CoinOS / Strike still
+    // hit the network per-tab below; Ark is local-only so no need to
+    // gate by tab.
+    //
+    // Mounted-ref guard: the Bark SDK calls below complete on the
+    // native thread and bounce back to JS to set state. Under Fabric
+    // (RN 0.76 New Arch), a `setState` that lands after the surface
+    // is torn down triggers `react_native_assert(uiManager.get() !=
+    // nil)` on the JS thread → SIGABRT. The cleanup flag below is
+    // flipped synchronously when the effect re-runs or the component
+    // unmounts, so trailing setState calls become no-ops.
+    if (selectedItem === 5) {
+      let mounted = true;
+      void (async () => {
+        try {
+          const [arkAddr, onchainAddr] = await Promise.all([
+            getArkAddress(),
+            getArkOnchainAddress(),
+          ]);
+          if (!mounted) return;
+          setArkAddress(arkAddr);
+          setArkOnchainAddress(onchainAddr);
+        } catch (err) {
+          if (!mounted) return;
+          console.warn('[Receive] Ark address fetch failed:', err);
+          SimpleToast.show('Failed to fetch Ark addresses', SimpleToast.SHORT);
+        }
+      })();
+      return () => {
+        mounted = false;
+      };
+    }
     if (tab == 1) {
       handleCreateInvoice('bitcoin');
     } else if (tab == 2) {
@@ -145,20 +187,18 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   }));
 
   const onPress = (item: any) => {
-    if (item?.id == 1 || item?.id == 2 || item?.id == 3 || item?.id == 4) {
+    // All wallet tiles (Strike, CoinOS, Hot Vault, Cold Vault, Ark)
+    // now route to the in-sheet second view. Ark used to break out
+    // to its own ArkReceiveScreen, but the three options it exposed
+    // (Lightning / Bitcoin / Ark address) map cleanly onto a tabbed
+    // sub-menu — same shape CoinOS uses for Lightning/Bitcoin/Liquid —
+    // so the cross-rail receive UX stays consistent and the user
+    // never leaves the sheet.
+    if (item?.id == 1 || item?.id == 2 || item?.id == 3 || item?.id == 4 || item?.id == 5) {
       setSelectedItem(item.id);
       setTab(0);
       animateToSecondView();
       setReceivedListSecondTab(true);
-    } else if (item?.id == 5) {
-      // Ark has its own receive-method screen — three options (Ark address,
-      // Lightning invoice, on-chain board address) that don't map cleanly to
-      // CoinOS/Strike's "lightning-or-onchain" two-option picker.
-      refRBSheet?.current?.close();
-      setReceivedListSecondTab(false);
-      setTimeout(() => {
-        dispatchNavigate('ArkReceiveScreen', { matchedRate, currency });
-      }, 150);
     }
   };
 
@@ -233,6 +273,39 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
           id: 2,
           name: "Liquid",
           icon: Socked,
+        },
+      ];
+    } else if (selectedItem === 5) {
+      // Ark: same three-tab shape as CoinOS, with the Liquid slot
+      // replaced by "Ark" (the user's VTXO recipient address). Order
+      // matches CoinOS — Lightning / Bitcoin / specialist-rail — so
+      // muscle memory carries between the two cards. The Ark tab
+      // uses an Ionicons boat glyph rather than a PNG asset because
+      // the project ships no ark/ship icon today; a vector icon is
+      // crisper, scales freely with tab size, and avoids adding a
+      // new image asset for a single use site.
+      return [
+        {
+          id: 0,
+          name: "Lightning",
+          icon: Electrik,
+        },
+        {
+          id: 1,
+          name: "Bitcoin",
+          icon: Bitcoin,
+        },
+        {
+          id: 2,
+          name: "Ark",
+          iconElement: (
+            <Ionicons
+              name="boat-outline"
+              size={20}
+              color="#FFFFFF"
+              style={{ marginRight: 6 }}
+            />
+          ),
         },
       ];
     }
@@ -466,20 +539,41 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 </TouchableOpacity>
               )}
               <View style={{ flex: 1, alignItems: 'center', marginRight: showBackButton ? 30 : 0 }}>
-                <Image
-                  source={
-                    selectedItem === 1 ? StrikeFull
-                    : selectedItem === 2 ? CoinOS
-                    : selectedItem === 3 ? Hot
-                    : Cold1
-                  }
-                  style={
-                    (selectedItem === 1 || selectedItem === 2)
-                      ? { width: 100, height: 32 }
-                      : { width: 28, height: 28 }
-                  }
-                  resizeMode="contain"
-                />
+                {selectedItem === 5 ? (
+                  // Second.tech ASP identifier — rendered as Text
+                  // rather than an Image because the bundled
+                  // `second.png` is an 8-bit colormap PNG without
+                  // a clean alpha channel; tintColor whitening
+                  // didn't take effect across iOS's image loader.
+                  // A text label is the more reliable cross-platform
+                  // path, and is always white regardless of how the
+                  // sheet's dark gradient background is rendered.
+                  <Text
+                    bold
+                    style={{
+                      fontSize: 22,
+                      color: '#FFFFFF',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    second.tech
+                  </Text>
+                ) : (
+                  <Image
+                    source={
+                      selectedItem === 1 ? StrikeFull
+                      : selectedItem === 2 ? CoinOS
+                      : selectedItem === 3 ? Hot
+                      : Cold1
+                    }
+                    style={
+                      (selectedItem === 1 || selectedItem === 2)
+                        ? { width: 100, height: 32 }
+                        : { width: 28, height: 28 }
+                    }
+                    resizeMode="contain"
+                  />
+                )}
                 {(selectedItem === 3 || selectedItem === 4) && (
                   <Text bold style={{ fontSize: 14, marginTop: 2 }}>
                     {selectedItem === 3 ? 'Hot Vault' : 'Cold Vault'}
@@ -572,7 +666,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             )}
 
             {/* ---- Strike/CoinOS Lightning Tab ---- */}
-            {selectedItem !== 3 && selectedItem !== 4 && tab === 0 ? (
+            {selectedItem !== 3 && selectedItem !== 4 && selectedItem !== 5 && tab === 0 ? (
               <View style={styles.lightningTabContent}>
                 <View style={styles.addressRow}>
                   <Text bold h2 style={styles.addressText} numberOfLines={1}>
@@ -611,7 +705,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   </View>
                 </GradientCard>
               </View>
-            ) : selectedItem !== 3 && selectedItem !== 4 && tab === 1 ? (
+            ) : selectedItem !== 3 && selectedItem !== 4 && selectedItem !== 5 && tab === 1 ? (
               <View style={styles.bitcoinTabContent}>
                 <Text h2 bold>
                   Bitcoin Network Address
@@ -643,7 +737,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   </>
                 }
               </View>
-            ) : selectedItem !== 3 && selectedItem !== 4 && (
+            ) : selectedItem !== 3 && selectedItem !== 4 && selectedItem !== 5 && (
               <View style={styles.liquidTabContent}>
                 <Text h2 bold>
                   Liquid Federation Address
@@ -678,6 +772,148 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 <Text semibold style={styles.bitcoinAddressText}>
                   Receive from wallets and exchanges that support the Liquid Federation
                 </Text>
+              </View>
+            )}
+
+            {/* ---- Ark sub-menu (Lightning / Bitcoin / Ark address) ----
+                Mirrors CoinOS's three-tab shape so muscle memory carries
+                between the two custodial-Lightning-ish cards. The
+                differences from CoinOS:
+                  - Lightning → no static @-address (Ark has no Lightning
+                    address concept), just a card-button into
+                    ArkInvoiceScreen for amount entry
+                  - Bitcoin → on-chain board address (deposit funds that
+                    later board into Ark via the next round)
+                  - Ark    → user's VTXO recipient identifier; for
+                    instant off-chain transfers from another Ark user
+                Lives inline so the user never leaves the receive
+                bottom sheet — used to navigate to ArkReceiveScreen,
+                which broke the consistent in-sheet UX. */}
+            {selectedItem === 5 && tab === 0 && (
+              <View style={styles.lightningTabContent}>
+                <GradientCard
+                  colors_={[colors.gray.light, colors.white]}
+                  style={styles.invoiceCardContainer}
+                  linearStyle={styles.invoiceCardHeight}
+                  onPress={() => {
+                    refRBSheet?.current?.close();
+                    setReceivedListSecondTab(false);
+                    setTimeout(() => {
+                      dispatchNavigate('ArkInvoiceScreen', {
+                        matchedRate,
+                        currency,
+                      });
+                    }, 150);
+                  }}
+                >
+                  <View style={styles.invoiceCardBackground}>
+                    <View style={styles.invoiceCardContentRow}>
+                      <View style={styles.invoiceCardTextContainer}>
+                        <Text subHeader bold style={styles.invoiceCardTitle}>
+                          Lightning invoice
+                        </Text>
+                        <Text h4 bold style={styles.invoiceCardDescription}>
+                          Receive Lightning payments into Ark — paid out as a VTXO once the next round commits.
+                        </Text>
+                      </View>
+                      <View style={styles.socketIconContainer}>
+                        <Image
+                          source={Electrik}
+                          style={styles.vaultIconImage}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </GradientCard>
+              </View>
+            )}
+
+            {selectedItem === 5 && tab === 1 && (
+              // Lift the Bitcoin-tab content (header text, address +
+              // QR, footer caption) up 10pt via a paint-only
+              // translateY. Bam's call: the tab body sat too low
+              // relative to the sibling Lightning / Ark tabs after
+              // the sub-menu was inlined — a small upward nudge
+              // visually centers the QR within the sheet. Using
+              // transform (not marginTop) so the layout flow
+              // beneath isn't shifted with it.
+              <View style={[styles.bitcoinTabContent, { transform: [{ translateY: -10 }] }]}>
+                <Text h2 bold>
+                  Bitcoin Network Address
+                </Text>
+                {!arkOnchainAddress ? (
+                  <ActivityIndicator size="large" color="#ffffff" />
+                ) : (
+                  <>
+                    <View style={styles.addressRow}>
+                      <Text semibold style={styles.bitcoinAddressText}>
+                        {arkOnchainAddress}
+                      </Text>
+                      <TouchableOpacity onPress={() => {
+                        Clipboard.setString(arkOnchainAddress);
+                        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+                      }}>
+                        <Image source={Copy} style={styles.copyIconImage} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
+                      <QRCode
+                        value={arkOnchainAddress}
+                        size={50}
+                        color="black"
+                        backgroundColor="white"
+                      />
+                    </View>
+                    <Text semibold style={styles.bitcoinAddressText}>
+                      Deposit Bitcoin here to board funds into Ark on the next round
+                    </Text>
+                  </>
+                )}
+              </View>
+            )}
+
+            {selectedItem === 5 && tab === 2 && (
+              <View style={styles.liquidTabContent}>
+                <Text h2 bold>
+                  Ark Address
+                </Text>
+                {!arkAddress ? (
+                  <ActivityIndicator size="large" color="#ffffff" />
+                ) : (
+                  <>
+                    <View style={styles.addressRow}>
+                      {/* Ark addresses are long opaque pubkey hex; the
+                          full string isn't human-verifiable anyway, so
+                          show first 6 + last 6 chars (e.g.
+                          "ark1ab…xyz999") to keep the row tidy. The
+                          tap-to-copy button below ships the full
+                          address to clipboard, unchanged. */}
+                      <Text semibold style={styles.bitcoinAddressText}>
+                        {arkAddress.length > 13
+                          ? `${arkAddress.slice(0, 6)}…${arkAddress.slice(-6)}`
+                          : arkAddress}
+                      </Text>
+                      <TouchableOpacity onPress={() => {
+                        Clipboard.setString(arkAddress);
+                        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+                      }}>
+                        <Image source={Copy} style={styles.copyIconImage} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
+                      <QRCode
+                        value={arkAddress}
+                        size={50}
+                        color="black"
+                        backgroundColor="white"
+                      />
+                    </View>
+                    <Text semibold style={styles.bitcoinAddressText}>
+                      Receive instant VTXO transfers from another Ark user — no fees, no confirmations
+                    </Text>
+                  </>
+                )}
               </View>
             )}
           </Animated.View>

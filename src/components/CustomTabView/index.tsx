@@ -14,7 +14,12 @@ import styles from "./styles";
 interface TabItem {
   id: number;
   name: string;
-  icon: ImageSourcePropType;
+  /** PNG/SVG source rendered via <Image>. Optional when iconElement is provided. */
+  icon?: ImageSourcePropType;
+  /** Rendered React element override — use this to plug in a vector
+   *  icon (Ionicons / Feather / etc.) when no matching PNG exists in
+   *  the assets. Wins over `icon` if both are set. */
+  iconElement?: React.ReactNode;
 }
 
 interface Props {
@@ -51,11 +56,15 @@ export default function CustomTabView({
             onPress={() => onTabChange(tab.id)}
             style={styles.tabButtonContent}
           >
-            <Image
-              source={tab.icon}
-              style={styles.tabIcon}
-              resizeMode="contain"
-            />
+            {tab.iconElement ? (
+              tab.iconElement
+            ) : tab.icon ? (
+              <Image
+                source={tab.icon}
+                style={styles.tabIcon}
+                resizeMode="contain"
+              />
+            ) : null}
             <Text bold h3>
               {tab.name}
             </Text>
