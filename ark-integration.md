@@ -29,20 +29,39 @@ Auto-refresh requires the wallet seed to be readable by the app while your phone
 
 **Ark-backup file.** Unlike a normal wallet, a 12 or 24 word seed alone is not enough to recover an Ark wallet — that only gets you back an empty wallet. You also need an `ark-backup.cbark` file that changes every time your VTXO set changes. Cypher Box rewrites this file automatically on every wallet change and pushes it to multiple destinations so the loss of any one does not lose your funds. On Android that means three places: the app's local storage, your connected Google Drive, and a folder you pick via the system file chooser — the last one survives uninstalling Cypher Box. On iOS it lives in the Files app under Cypher Box; if you have iCloud Drive sync enabled for the app, Apple mirrors it off-device. The file is encrypted on your device with a key derived from your seed before it leaves; whoever stores it sees ciphertext only. When you create a wallet, Cypher Box refuses to finish setup until at least one off-device backup has been written, read back, and decrypted to confirm the round-trip works.
 
-**Emergency exit.** When the ASP is healthy, exits are fast and nearly free. If the ASP is censoring you, offline, or gone, Cypher Box lets you trigger a unilateral exit that broadcasts your VTXOs on-chain. This costs network fees and takes confirmations, but it does not require ASP cooperation.
+**Emergency exit.** Normal on-chain withdrawals from Ark go through the ASP cooperatively — fast, with the ASP's send fee plus miner fees (see Fees below). If the ASP is censoring you, offline, or gone, Cypher Box lets you trigger a unilateral exit that broadcasts your VTXOs on-chain directly. That path costs miner fees only and does not require ASP cooperation. The fact that it exists is what makes Ark self-custodial.
 
 **Fiat onramp.** We have integrated **Strike** for fiat purchases. You can buy bitcoin and have it land directly in your Ark wallet, in small amounts, without thinking about UTXO management or channel opens.
 
-**Instant zero-fee swaps.** You can move funds between **Coinos**, **Strike**, and your Ark balance instantly with no Cypher Box fee — only the underlying Lightning routing fees. For larger amounts, withdraw to a cold-storage on-chain address instead. The wallet makes that a one-tap action for exactly this reason.
+**Instant swaps.** You can move funds between **Coinos**, **Strike**, and your Ark balance instantly with no Cypher Box markup. The Ark-side leg of any swap still pays Second.tech's Lightning send fee (0.2–0.5% with a 20-sat minimum, see Fees below); the Strike and Coinos legs go through their own custodial Lightning rails. For larger amounts, withdraw to a cold-storage on-chain address instead. The wallet makes that a one-tap action for exactly this reason.
 
 ## Fees
 
-Short and honest:
+Bark and Second.tech's Ark server set the fees Cypher Box passes through to you. We do not add a markup on top.
 
-- **Receiving Lightning: free.** No fee, no inbound liquidity purchase, no channel-open cost. For a non-custodial wallet, this is unusual and we think it matters.
-- **Outgoing Lightning: 0.5%** of the payment amount, plus any routing fees the network charges.
-- **On-chain withdrawals:** standard Bitcoin network fees, paid to miners. Cypher Box does not add a markup.
-- **VTXO refreshes and Ark rounds:** participation costs are absorbed by the ASP under normal use. In some scenarios there can be a small on-chain cost when VTXOs need to be settled to the base layer. The wallet shows the cost before you confirm.
+| What you do | What you pay |
+|---|---|
+| Receive Lightning | Free. No inbound liquidity, no channel-open cost. |
+| Send Lightning | 0.2–0.5% of the amount, with a **20-sat minimum**. The percentage scales by how fresh your VTXO is — fresher capsules cost 0.5%, near-expiry capsules cost 0.2%. |
+| On-chain withdraw via Ark | 0.2–0.5% to the ASP **plus** standard Bitcoin miner fees. |
+| Refresh a VTXO | **Free** if refreshed within 2 days of expiry. Otherwise 0.2–0.5%, scaled by age. (See Auto-refresh fee note below.) |
+| Cypher Box swaps (Strike ↔ CoinOS ↔ Ark) | No Cypher Box markup. The Ark-side leg of any swap pays the Lightning-send rate above. |
+| Unilateral on-chain exit (ASP hostile) | Bitcoin miner fees only. The ASP gets nothing — that is the point. |
+
+### What the 20-sat minimum means in practice
+
+Lightning routing has a small flat overhead in any wallet. Second.tech's **20-sat minimum** captures that overhead in a single number, which makes small-payment economics legible:
+
+- **Below 4,000 sats**, the minimum dominates. A 1,000-sat send costs 20 sats (2%); a 200-sat send costs 20 sats (10%). Tiny payments are not where Lightning shines, on Cypher Box or anywhere else.
+- **Above 4,000 sats**, the percentage takes over. A 100k-sat send costs 0.5%; a 1M-sat send costs 0.5%. Predictable.
+
+If you are spending Cypher Box money in the $1–$5 range frequently, expect sub-percent fees. For 10-cent payments, expect to pay 1–2% — not unique to Cypher Box, just Lightning network economics on micro-payments.
+
+### Auto-refresh fee note
+
+Cypher Box's Auto-refresh fires when a VTXO drops to about 9 days from expiry, and includes everything under 14 days in the round. That is earlier than the 2-day free window — deliberately, because waiting until 2 days risks missing the deadline if your phone is asleep, in Doze mode, or out of range. A typical Auto-refresh round therefore costs 0.2–0.4% on the included VTXOs. If you want to chase the free tier, refresh manually inside the 2-day window — the in-app banner tells you when a VTXO is close.
+
+Fees as of May 2026, per Second.tech's [Ark fees documentation](https://second.tech/docs/learn/fees). The schedule may change as the protocol matures.
 
 If a fee ever surprises you, that is a bug — please report it.
 
