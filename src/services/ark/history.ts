@@ -85,17 +85,32 @@ function normaliseStatus(status: string): ArkMovementStatus {
 /**
  * Classify a Movement into a UI-facing kind.
  *
- * SDK emits fields like:
- *   subsystemKind="Ark", subsystemName="Round"
- *   subsystemKind="Ark", subsystemName="ArkoorSend"
- *   subsystemKind="Lightning", subsystemName="Send" | "Receive"
- *   subsystemKind="Onchain", subsystemName="Board" | "Exit"
+ * Bark's `subsystemKind` / `subsystemName` are coarse-grained — every
+ * capsule-round operation comes back as `subsystemKind="Ark"`,
+ * `subsystemName="Round"`, regardless of whether that round was a
+ * refresh, an arkoor send, a board-into-Ark, or a Lightning claim. The
+ * earlier classifier checked `subsystemName.includes('refresh')`, which
+ * never matched, so every refresh was bucketed as `'ark'` and rendered
+ * as "Sent via Ark · -2 sats" — confusing noise that flooded the list.
  *
- * We pick the most specific label that still has a useful UI meaning. When
- * in doubt, fall back to `'other'` — the row will still render with a
- * generic label rather than disappear.
+ * We now disambiguate Round movements *structurally*, using what the
+ * round actually moved:
+ *   - sentTo > 0                                  → arkoor send (we paid someone)
+ *   - inputs > 0 && outputs > 0 && sentTo === 0   → refresh (capsules rolled, no external recipient)
+ *   - inputs === 0 && outputs > 0 && amount > 0   → arkoor receive
+ *   - else                                        → 'ark' catch-all
+ *
+ * Lightning / on-chain / board / exit subsystems are distinct in the
+ * SDK and don't need structural disambiguation.
  */
-function classifyKind(subsystemKind: string, subsystemName: string): ArkMovementKind {
+function classifyKind(
+    subsystemKind: string,
+    subsystemName: string,
+    amountSats: number,
+    inputCount: number,
+    outputCount: number,
+    sentToCount: number,
+): ArkMovementKind {
     const k = subsystemKind.toLowerCase();
     const n = subsystemName.toLowerCase();
 
@@ -106,7 +121,15 @@ function classifyKind(subsystemKind: string, subsystemName: string): ArkMovement
         return 'onchain';
     }
     if (k === 'ark') {
+        // Explicit name hints first — defends against future SDK
+        // versions that might surface refresh / arkoor distinctly.
         if (n.includes('refresh')) return 'refresh';
+        if (n.includes('arkoor') && sentToCount > 0) return 'ark';
+
+        // Structural detection for opaque Round movements.
+        if (sentToCount > 0) return 'ark';
+        if (inputCount > 0 && outputCount > 0) return 'refresh';
+        if (inputCount === 0 && outputCount > 0 && amountSats > 0) return 'ark';
         return 'ark';
     }
     return 'other';
@@ -201,7 +224,14 @@ export async function fetchArkHistory(): Promise<ArkMovementView[] | null> {
         const amountSats = Number(m.effectiveBalanceSats);
         const feeSats = Number(m.offchainFeeSats);
         const status = normaliseStatus(m.status);
-        const kind = classifyKind(m.subsystemKind, m.subsystemName);
+        const kind = classifyKind(
+            m.subsystemKind,
+            m.subsystemName,
+            amountSats,
+            m.inputVtxoIds.length,
+            m.outputVtxoIds.length,
+            m.sentToAddresses.length,
+        );
         return {
             id: m.id,
             amountSats,

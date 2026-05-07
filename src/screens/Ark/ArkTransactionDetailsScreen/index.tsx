@@ -108,21 +108,44 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
             ? Math.min(999, (feeSats / absSats) * 100)
             : null;
 
-    // Try to extract an on-chain txid for the explorer button. Kept lenient
-    // so we don't have to track every SDK metadata shape — any 64-hex string
-    // in a plausible field will do. If nothing matches, no button.
-    //
-    // We *don't* gate on `kind` — the Bark SDK's `subsystemKind` /
-    // `subsystemName` strings vary (and right now most movements come back
-    // classified as `'other'` because the SDK's casing doesn't match our
-    // heuristics in classifyKind). Presence of a 64-hex string in metadata
-    // is a strong-enough signal on its own; false positives would require
-    // the SDK to deliberately stash a 64-char hex non-txid somewhere, which
-    // it doesn't. Lightning movements have a `paymentHash` that *is* 64 hex
-    // — we accept that the explorer link will 404 for those rare cases
-    // rather than hide the button for the common on-chain case.
-    const onchainTxid = findOnchainTxid(movement);
+    // On-chain artefacts (Bitcoin TX ID + mempool.space link) only make
+    // sense for movements that actually settle on-chain. Earlier code
+    // gated the button on "any 64-hex string in metadata" which matched
+    // Lightning paymentHashes and Ark round IDs — both are 64-char hex
+    // and neither is a Bitcoin txid, so the button rendered everywhere
+    // and 404'd. Gate strictly on kind: only board (deposit into Ark),
+    // exit (withdraw from Ark), and direct on-chain movements anchor on
+    // the Bitcoin chain.
+    const hasOnchainAnchor =
+        kind === 'onchain' || kind === 'board' || kind === 'exit';
+    const onchainTxid = hasOnchainAnchor ? findOnchainTxid(movement) : null;
     const canLinkExplorer = !!onchainTxid;
+
+    // Counterparty row rendering is per-kind:
+    //   - refresh: hidden entirely (no counterparty exists for an
+    //     internal capsule roll)
+    //   - lightning: render as "Lightning invoice" with aggressive
+    //     truncation — BOLT11 strings are too long to display literally
+    //   - ark (arkoor): render as "Ark address" (opaque hex pubkey)
+    //   - onchain / board / exit: render as "Bitcoin address"
+    // The kind also controls whether the Bitcoin TX ID row appears at
+    // all — a Lightning payment doesn't have one.
+    const isRefresh = kind === 'refresh';
+    const showCounterpartyRows = !isRefresh;
+    const counterpartyLabel = ((): { sent: string; received: string } => {
+        switch (kind) {
+            case 'lightning':
+                return { sent: 'Lightning invoice: ', received: 'Lightning invoice: ' };
+            case 'ark':
+                return { sent: 'Ark address: ', received: 'Ark address: ' };
+            case 'board':
+            case 'exit':
+            case 'onchain':
+                return { sent: 'Bitcoin address: ', received: 'Bitcoin address: ' };
+            default:
+                return { sent: 'Sent to: ', received: 'Received on: ' };
+        }
+    })();
 
     const handleOpenExplorer = () => {
         if (!onchainTxid) return;
@@ -174,7 +197,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                     uses. Fields in the order a user most likely cares about:
                     status → rail → timing → fee → counterparty → internals. */}
                 <TextView keytext="Status: " text={prettyStatus(status)} />
-                <TextView keytext="Type: " text={prettyKind(kind)} />
+                <TextView keytext="Type: " text={prettyKind(kind, amountSats)} />
                 <TextView
                     keytext="Date: "
                     text={dayjs(timestamp).format('HH:mm:ss MM/DD/YYYY')}
@@ -202,15 +225,23 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                     />
                 )}
 
-                {sentTo.length > 0 && (
+                {showCounterpartyRows && sentTo.length > 0 && (
                     <TextView
-                        keytext={sentTo.length === 1 ? 'Sent to: ' : `Sent to (${sentTo.length}): `}
+                        keytext={
+                            sentTo.length === 1
+                                ? counterpartyLabel.sent
+                                : counterpartyLabel.sent.replace(': ', ` (${sentTo.length}): `)
+                        }
                         text={truncateMiddle(sentTo[0], 40)}
                     />
                 )}
-                {receivedOn.length > 0 && (
+                {showCounterpartyRows && receivedOn.length > 0 && (
                     <TextView
-                        keytext={receivedOn.length === 1 ? 'Received on: ' : `Received on (${receivedOn.length}): `}
+                        keytext={
+                            receivedOn.length === 1
+                                ? counterpartyLabel.received
+                                : counterpartyLabel.received.replace(': ', ` (${receivedOn.length}): `)
+                        }
                         text={truncateMiddle(receivedOn[0], 40)}
                     />
                 )}
@@ -255,16 +286,19 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                     </TouchableOpacity>
                 )}
 
-                {/* Debug footer: raw subsystem + name. Tiny, muted — not
-                    something the average user reads, but essential when
-                    triaging "why did this row classify as X?" reports while
-                    the Ark integration stabilises. Promote behind __DEV__
-                    once the history flow is solid. */}
-                <View style={styles.debugFooter}>
-                    <Text style={styles.debugText}>
-                        {raw.subsystemKind} · {raw.subsystemName} · id#{movement.id}
-                    </Text>
-                </View>
+                {/* Debug footer: raw subsystem + name. Useful when
+                    triaging "why did this row classify as X?" reports
+                    but doesn't belong in production builds — it's
+                    technical noise for end users. __DEV__ is React
+                    Native's compile-time flag (false in release builds),
+                    so this strips out at bundle time. */}
+                {__DEV__ && (
+                    <View style={styles.debugFooter}>
+                        <Text style={styles.debugText}>
+                            {raw.subsystemKind} · {raw.subsystemName} · id#{movement.id}
+                        </Text>
+                    </View>
+                )}
             </ScrollView>
         </ScreenLayout>
     );
@@ -282,11 +316,12 @@ function prettyStatus(status: ArkMovementStatus): string {
     }
 }
 
-function prettyKind(kind: ArkMovementKind): string {
+function prettyKind(kind: ArkMovementKind, amountSats: number): string {
+    const direction = amountSats >= 0 ? 'receive' : 'send';
     switch (kind) {
-        case 'lightning': return 'Lightning';
-        case 'ark':       return 'Ark (capsule send)';
-        case 'onchain':   return 'Bitcoin on-chain';
+        case 'lightning': return `Lightning ${direction}`;
+        case 'ark':       return `Ark ${direction}`;
+        case 'onchain':   return `Bitcoin on-chain ${direction}`;
         case 'board':     return 'Board to Ark';
         case 'exit':      return 'Exit from Ark';
         case 'refresh':   return 'Capsule refresh';

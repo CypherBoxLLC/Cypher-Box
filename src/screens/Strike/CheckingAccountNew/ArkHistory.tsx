@@ -63,6 +63,13 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
     const [movements, setMovements] = useState<ArkMovementView[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    // Refresh rows are internal capsule-roll operations — net delta is
+    // just the round fee (0–2 sats), no external counterparty. They
+    // dominate the list once bg-refresh is on (one per round, many per
+    // day) and read as "Sent via Ark · -2 sats" noise that buries the
+    // user's actual sends/receives. Hide by default; expose a single
+    // header toggle for power users / triage.
+    const [showRefreshes, setShowRefreshes] = useState(false);
 
     // Piggy-back on the global sync tick: when useArkSync completes a cycle
     // (every 30s or after a manual refresh), arkLastSyncedAt changes and we
@@ -114,18 +121,45 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
         void load(false);
     }, [load]);
 
+    // Refresh count for the toggle header — calculated against the full
+    // list, not the filtered one, so the user always sees how many they're
+    // hiding. Counts both successful and pending refreshes; failed/canceled
+    // are excluded since they wouldn't bury the list visually anyway.
+    const refreshCount = React.useMemo(
+        () =>
+            movements.filter(
+                (m) =>
+                    m.kind === 'refresh' &&
+                    (m.status === 'successful' || m.status === 'pending'),
+            ).length,
+        [movements],
+    );
+
+    // Hide refreshes from the default view. The toggle header at the top of
+    // the list flips this. Failed/canceled refreshes still surface — they're
+    // rare and worth seeing so users notice when bg-refresh is misbehaving.
+    const visibleMovements = React.useMemo(() => {
+        if (showRefreshes) return movements;
+        return movements.filter(
+            (m) =>
+                m.kind !== 'refresh' ||
+                m.status === 'failed' ||
+                m.status === 'canceled',
+        );
+    }, [movements, showRefreshes]);
+
     // Group by local-day string — matches how the Strike/CoinOS History tab
     // formats its section headers (Date.toDateString(), e.g. "Fri Apr 24 2026").
     const sections = React.useMemo(() => {
         const byDay: Record<string, ArkMovementView[]> = {};
-        for (const m of movements) {
+        for (const m of visibleMovements) {
             const day = new Date(m.timestamp).toDateString();
             (byDay[day] ??= []).push(m);
         }
         // Entries preserve insertion order, and movements are already sorted
         // newest-first, so the day keys naturally come out newest-first too.
         return Object.entries(byDay).map(([title, data]) => ({ title, data }));
-    }, [movements]);
+    }, [visibleMovements]);
 
     if (isLoading && !isRefreshing) {
         return (
@@ -145,6 +179,21 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
             <SectionList
                 sections={sections}
                 stickySectionHeadersEnabled
+                ListHeaderComponent={
+                    refreshCount > 0 ? (
+                        <TouchableOpacity
+                            onPress={() => setShowRefreshes((v) => !v)}
+                            activeOpacity={0.7}
+                            style={refreshToggleStyles.row}
+                        >
+                            <Text style={refreshToggleStyles.text}>
+                                {showRefreshes
+                                    ? `Hide ${refreshCount} capsule refresh${refreshCount === 1 ? '' : 'es'}`
+                                    : `${refreshCount} capsule refresh${refreshCount === 1 ? '' : 'es'} hidden — show`}
+                            </Text>
+                        </TouchableOpacity>
+                    ) : null
+                }
                 keyExtractor={(item, index) => `${item.id}-${item.timestamp}-${index}`}
                 renderSectionHeader={({ section: { title } }) => (
                     <Header title={title} />
@@ -407,5 +456,27 @@ const rowStyles = StyleSheet.create({
     feeText: {
         fontSize: 10,
         color: colors.gray.light,
+    },
+});
+
+// Header row above the section list: "N capsule refreshes hidden — show".
+// Tapping flips `showRefreshes` to interleave them back into the day
+// sections. Kept understated (small, gray) so it doesn't compete with
+// the actual transaction rows for visual attention.
+const refreshToggleStyles = StyleSheet.create({
+    row: {
+        marginHorizontal: 16,
+        marginTop: 8,
+        marginBottom: 4,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        backgroundColor: '#1a1a1a',
+        alignItems: 'center',
+    },
+    text: {
+        fontSize: 12,
+        color: colors.gray.light,
+        fontFamily: 'Lato-Medium',
     },
 });
