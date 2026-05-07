@@ -33,8 +33,8 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { bitcoinRecommendedFee, createInvoice, getCurrencyRates, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
-import { btc, formatNumber, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
+import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
+import { btc, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
 import loc, { formatBalance, formatBalanceWithoutSuffix } from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
@@ -425,10 +425,9 @@ export default function HomeScreen({ route }: Props) {
         loadPayments();
       } else {
         // Not logged into Coinos - use BlueWallet's native rate for vaults
-        // Convert from USD-per-BTC to USD-per-sat (matchedRate format used by keyboard)
         try {
           const blueWalletRate = await getFiatRate('USD');
-          setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
+          setMatchedRate(blueWalletRate || 0);
           setMatchedRateBTC(blueWalletRate || 0);
         } catch (err) {
           if (__DEV__) console.log('BlueWallet rate error:', err);
@@ -635,59 +634,29 @@ export default function HomeScreen({ route }: Props) {
 
   const handleUser = async () => {
     try {
-      // Always fetch exchange rates first — needed for vault USD conversion
-      let coinosRate = 0;
-      let blueWalletRate = 0;
-      let blueWalletRateRaw = 0; // USD-per-BTC (for vaults)
-
-      // Try to get Coinos data if logged in (for Coinos-specific balance)
-      const response = await getMe();
-
-      if (response) {
-        // Get Coinos rate for Coinos balance display (PRIMARY source)
-        try {
-          const responsetest = await getCurrencyRates();
-          const currency = btc(1);
-          const matched = matchKeyAndValue(responsetest, 'USD');
-          coinosRate = (matched || 0) * currency;
-          if (__DEV__) console.log('[Coinos] rate from API:', coinosRate);
-        } catch (rateError) {
-          if (__DEV__) console.log('[Coinos] rate API failed, trying BlueWallet fallback');
-        }
-      }
-
-      // Use Coinos rate if available, fallback to BlueWallet
+      // Single source of truth for CoinOS-side rate: BlueWallet's USD/BTC rate.
+      // Stored as USD-per-BTC. Do not use the CoinOS rate API or Strike rate here.
+      let finalRate = 0;
       try {
-        blueWalletRateRaw = await getFiatRate('USD') || 0;
-        blueWalletRate = blueWalletRateRaw * btc(1); // Convert USD-per-BTC to USD-per-sat
+        finalRate = (await getFiatRate('USD')) || 0;
       } catch (rateErr) {
         if (__DEV__) console.log('BlueWallet rate error:', rateErr);
       }
-
-      const finalRate = coinosRate || blueWalletRate;
       setMatchedRate(finalRate);
-      setMatchedRateBTC(blueWalletRateRaw || (coinosRate ? coinosRate / btc(1) : 0));
-      if (__DEV__) console.log('[Coinos] matchedRate set to:', finalRate, '(coinos:', coinosRate, ', bluewallet:', blueWalletRate, ')');
+      setMatchedRateBTC(finalRate);
+      if (__DEV__) console.log('[Coinos] matchedRate set to (USD/BTC):', finalRate);
 
+      const response = await getMe();
       if (response) {
-        // Calculate converted rate using the same rate
-        setConvertedRate(finalRate * response.balance);
+        // convertedRate is the USD value of the CoinOS balance. balance is in sats,
+        // finalRate is USD-per-BTC, so multiply by btc(1) (= 1 / SATS) to get USD.
+        setConvertedRate(finalRate * response.balance * btc(1));
         setCurrency("USD")
         setBalance(response?.balance ?? 0);
         setUser(response?.username);
       }
     } catch (error) {
       console.error('error: ', error);
-      // Try BlueWallet's native rate as absolute fallback
-      try {
-        const blueWalletRate = await getFiatRate('USD');
-        setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
-        setMatchedRateBTC(blueWalletRate || 0);
-      } catch (bwError) {
-        console.error('BlueWallet rate failed:', bwError);
-        setMatchedRate(0);
-        setMatchedRateBTC(0);
-      }
       SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
     } finally {
       setIsLoading(false)
@@ -1037,7 +1006,7 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <SendListNew refRBSheet={refSendRBSheet} reopenSendSheet={reopenSendSheet} receiveType={receiveType} matchedRate={matchedRateStrike || matchedRate} matchedRateBTC={matchedRateBTC} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
+        <SendListNew refRBSheet={refSendRBSheet} reopenSendSheet={reopenSendSheet} receiveType={receiveType} matchedRate={matchedRateBTC} matchedRateBTC={matchedRateBTC} currency="USD" wallet={wallet} coldStorageWallet={coldStorageWallet} />
       </RBSheet>
 
       <RBSheet
