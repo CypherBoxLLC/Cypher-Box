@@ -18,6 +18,7 @@ import { GradientCard, SwipeButton } from '@Cypher/components';
 import { colors } from '@Cypher/style-guide';
 import { isIOS } from '@Cypher/helpers';
 import { formatNumber, getStrikeCurrency } from '@Cypher/helpers/coinosHelper';
+import { btc } from '@Cypher/helpers/bitcoinUnits';
 import {
     classifyArkDestination,
     estimateArkSendFee,
@@ -316,8 +317,10 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
 
     // ---- Derived display values -----------------------------------------
 
-    const amountFiat = (amountSats * matchedRate).toFixed(2);
-    const feeFiat = fee ? (fee.feeSats * matchedRate).toFixed(2) : null;
+    // matchedRate is USD-per-BTC (post rate-unification cherry-pick) — fold
+    // in btc(1) so sats × USD/BTC × 1e-8 → USD.
+    const amountFiat = (amountSats * matchedRate * btc(1)).toFixed(2);
+    const feeFiat = fee ? (fee.feeSats * matchedRate * btc(1)).toFixed(2) : null;
     // Express the fee as a percentage of the amount being sent — not of
     // the gross (amount + fee). With 20 sats sent and 400 sats fee, the
     // gross-based math came out to 95% (400/420), which read as "almost

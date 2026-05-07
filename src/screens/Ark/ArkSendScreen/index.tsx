@@ -16,6 +16,7 @@ import { ScreenLayout, Text } from '@Cypher/component-library';
 import { GradientInput, CustomKeyboard } from '@Cypher/components';
 import { dispatchNavigate } from '@Cypher/helpers';
 import { getStrikeCurrency } from '@Cypher/helpers/coinosHelper';
+import { btc } from '@Cypher/helpers/bitcoinUnits';
 import {
     ARK_VTXO_DUST_SATS,
     classifyArkDestination,
@@ -281,9 +282,10 @@ export default function ArkSendScreen({ route }: Props) {
             // Navigate to the shared success screen so the Ark flow ends
             // with the same animation the custodial wallets use. `value` is
             // the net sats that actually left the wallet; `valueUsd` is the
-            // fiat equivalent computed against `matchedRate` (USD per sat).
+            // fiat equivalent computed against `matchedRate` (USD per BTC).
+            // Multiply by btc(1) (= 1e-8) to convert sats × USD/BTC → USD.
             const netSats = result.netAmountSats;
-            const fiat = (netSats * matchedRate).toFixed(2);
+            const fiat = (netSats * matchedRate * btc(1)).toFixed(2);
             dispatchNavigate('SendReceiveSuccessScreen', {
                 isReceive: false,
                 value: String(netSats),
@@ -349,11 +351,12 @@ export default function ArkSendScreen({ route }: Props) {
         : labelForDestinationKind(destination.kind);
 
     // Fiat preview numbers for the estimate box. `matchedRate` from
-    // HomeScreen is USD-per-sat (it's pre-multiplied by btc(1) during store
-    // hydration), so sats × rate = USD. Matches ArkHistoryRow.
-    const netFiat = fee ? (fee.netAmountSats * matchedRate).toFixed(2) : null;
-    const feeFiat = fee ? (fee.feeSats * matchedRate).toFixed(2) : null;
-    const grossFiat = fee ? (fee.grossAmountSats * matchedRate).toFixed(2) : null;
+    // HomeScreen is USD-per-BTC after the rate-unification commit; convert
+    // sats → BTC with btc(1) (= 1e-8) before multiplying by the rate.
+    // Matches ArkHistoryRow.
+    const netFiat = fee ? (fee.netAmountSats * matchedRate * btc(1)).toFixed(2) : null;
+    const feeFiat = fee ? (fee.feeSats * matchedRate * btc(1)).toFixed(2) : null;
+    const grossFiat = fee ? (fee.grossAmountSats * matchedRate * btc(1)).toFixed(2) : null;
     // Fee % is computed against the gross (total debited) so users see what
     // share of their outgoing funds the fee consumes. Toy amounts can spike
     // to >100% on Ark (server fee is ~flat) — capped display at 999% so the

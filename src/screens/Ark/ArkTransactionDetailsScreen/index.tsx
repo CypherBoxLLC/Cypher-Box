@@ -11,6 +11,7 @@ import dayjs from 'dayjs';
 
 import { ScreenLayout, Text } from '@Cypher/component-library';
 import { Bitcoin, Socked } from '@Cypher/assets/images';
+import { btc } from '@Cypher/helpers/bitcoinUnits';
 import type {
     ArkMovementKind,
     ArkMovementStatus,
@@ -93,11 +94,14 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
     const absSats = Math.abs(amountSats);
     const sign = amountSats >= 0 ? '+' : '-';
     const amountColor = rowAmountColor(kind, status, amountSats);
-    // matchedRate is already USD-per-sat (HomeScreen converts from
-    // USD-per-BTC with `* btc(1)` before storing — see handleUser line 671
-    // + 676-677). Don't multiply by btc(1) again here.
-    const fiatAmount = absSats * matchedRate;
-    const feeFiat = feeSats > 0 ? (feeSats * matchedRate).toFixed(2) : null;
+    // matchedRate is now USD-per-BTC (set in HomeScreen.handleUser via
+    // setMatchedRate(getFiatRate('USD')) — fix(coinos): use BlueWallet
+    // USD rate as single source). sats × USD-per-BTC × btc(1) → USD.
+    // The earlier 'don't multiply by btc(1)' comment was correct under
+    // the old USD-per-sat scale; the cherry-picked rate-unification
+    // commit flipped that contract.
+    const fiatAmount = absSats * matchedRate * btc(1);
+    const feeFiat = feeSats > 0 ? (feeSats * matchedRate * btc(1)).toFixed(2) : null;
     // Fee % of total debited. `effectiveBalanceSats` (== amountSats here)
     // already bakes the fee into the signed delta, so for sends |amountSats|
     // is the gross amount. Capped at 999% to keep tiny-amount edge cases

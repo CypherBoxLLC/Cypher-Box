@@ -15,6 +15,7 @@ import { Text } from '@Cypher/component-library';
 import { Bitcoin, Socked } from '@Cypher/assets/images';
 import { dispatchNavigate } from '@Cypher/helpers';
 import { getStrikeCurrency } from '@Cypher/helpers/coinosHelper';
+import { btc } from '@Cypher/helpers/bitcoinUnits';
 import {
     fetchArkHistory,
     type ArkMovementKind,
@@ -321,11 +322,13 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
 
     const absSats = Math.abs(amountSats);
     const sign = amountSats >= 0 ? '+' : '-';
-    // `matchedRate` from HomeScreen is already USD-per-sat — HomeScreen
-    // stores it in that form (see `handleUser` lines 671 + 676-677), so
-    // sats × rate = USD. An earlier version multiplied by `btc(1)` again
-    // and rendered every row as $0.00 next to a non-zero sats amount.
-    const fiatAmount = absSats * matchedRate;
+    // `matchedRate` from HomeScreen is now USD-per-BTC (set by handleUser
+    // via setMatchedRate(getFiatRate('USD')) — fix(coinos): use BlueWallet
+    // USD rate as single source). Convert sats → BTC with btc(1) (= 1e-8)
+    // before multiplying by the rate. An earlier iteration of this comment
+    // assumed USD-per-sat and dropped the btc(1) factor; after the rate
+    // unit flipped, that produced a 1e8× inflated fiat figure.
+    const fiatAmount = absSats * matchedRate * btc(1);
 
     return (
         <TouchableOpacity
