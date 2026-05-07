@@ -7,7 +7,7 @@ import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Animated, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, TouchableOpacity, View } from "react-native";
+import { Animated, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
 
 interface Props {
     balance: any;
@@ -64,6 +64,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         arkBgRefreshEnabled,
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
+        arkIosBackupReminderActive,
     } = useAuthStore();
 
     /**
@@ -74,6 +75,24 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
      * sit BEHIND the buttons. Mirrors ArkWallet's bgRefreshStatus shape so
      * the two surfaces speak the same UX language.
      */
+    /**
+     * iOS-only: surface the Ark backup-snapshot reminder when the user
+     * created the wallet via the manual share+confirm path and hasn't yet
+     * confirmed iCloud Drive is on for Cypher Box. The same flag is shown
+     * as a full action card in Settings → Ark Backup; here on the home
+     * carousel we only render a compact tap-target so users notice it
+     * outside the settings detour. Tap → opens the Ark settings tab where
+     * the dismiss + re-export actions live.
+     *
+     * Takes precedence over bgRefreshStatus in the same absolute slot:
+     * the bg-refresh status is informational ("last refresh 5m ago"), the
+     * backup reminder is a funds-safety nudge — only one fits cleanly in
+     * the slot below the shared Send/Receive row, so the higher-stakes
+     * one wins. bg-refresh status keeps showing on Android (where the
+     * iOS reminder is never active) and on iOS users who've dismissed.
+     */
+    const iosBackupReminderVisible = Platform.OS === 'ios' && isArkAuth && arkIosBackupReminderActive;
+
     const bgRefreshStatus = useMemo(() => {
         if (!arkBgRefreshEnabled) return null;
 
@@ -398,7 +417,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // active — keeping the container size stable across swipes
             // avoids layout jitter when the user pages between Ark and
             // Lightning.
-            ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT + (bgRefreshStatus ? 32 : 0) } : {}),
+            ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT + (iosBackupReminderVisible ? 56 : bgRefreshStatus ? 32 : 0) } : {}),
         }}>
             <Animated.FlatList
                 ref={flatListRef}
@@ -526,6 +545,41 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     />
                 </Animated.View>
             )}
+            {/* iOS backup-snapshot reminder — funds-safety nudge for users
+                who satisfied the create-flow gate via manual share+confirm
+                without iCloud Drive verified. Takes the same absolute slot
+                as bgRefreshStatus and wins priority when both apply: the
+                user can lose funds if they uninstall before re-exporting,
+                whereas the bg-refresh status is informational. Tap → Ark
+                settings tab, where the dismiss + re-export actions live. */}
+            {useSharedButtons && iosBackupReminderVisible && kindFromTab(wTabs[indexStrike]) === 'ark' && (
+                <View
+                    style={{
+                        position: 'absolute',
+                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
+                        left: 16,
+                        right: 16,
+                    }}
+                >
+                    <TouchableOpacity
+                        onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: 3 })}
+                        activeOpacity={0.7}
+                        style={{
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                            borderRadius: 8,
+                            backgroundColor: 'rgba(251, 146, 60, 0.10)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(251, 146, 60, 0.45)',
+                        }}
+                    >
+                        <Text bold style={{ fontSize: 12, color: '#FB923C', textAlign: 'center' }}>
+                            ⚠ Re-export Ark backup after every receive — tap to manage
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
             {/* Background-refresh status banner — sits BELOW the absolutely-
                 positioned shared Send/Receive row. Only shown when:
                   - shared buttons are active (the banner-in-card path
@@ -534,9 +588,11 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     non-null)
                   - the active carousel slide is Ark (banner is Ark-
                     specific status; suppress on Lightning / fiat slides)
+                  - the iOS backup reminder isn't already occupying this
+                    slot (priority: funds-safety nudge over info text)
                 Tap → opens the Ark Capsules screen so the user can drill
                 into the bg-refresh settings or manually retry. */}
-            {useSharedButtons && bgRefreshStatus && kindFromTab(wTabs[indexStrike]) === 'ark' && (
+            {useSharedButtons && !iosBackupReminderVisible && bgRefreshStatus && kindFromTab(wTabs[indexStrike]) === 'ark' && (
                 <View
                     style={{
                         position: 'absolute',
