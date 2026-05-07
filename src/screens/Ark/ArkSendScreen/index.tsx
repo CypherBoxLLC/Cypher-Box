@@ -231,7 +231,13 @@ export default function ArkSendScreen({ route }: Props) {
 
     const canEstimate =
         destinationValid && amountValid && amountWithinBalance && !isEstimating && !isSending;
-    const canSend = canEstimate && !!fee && grossWithinBalance && !wouldStrandDust;
+    // Non-blocking on dust-change: the warning below + Send-Max one-tap
+    // give the user the information; the choice stays theirs. If they
+    // create dust and don't subsequently consolidate it via the home-screen
+    // Consolidate banner, the capsule expires and the ASP sweeps it. That's
+    // an acceptable lesson — Bam's call is that hard-blocking is too
+    // paternalistic when a recovery path exists.
+    const canSend = canEstimate && !!fee && grossWithinBalance;
 
     /**
      * One-tap fix for the dust-change case. Rewrites the sats input
@@ -517,20 +523,22 @@ export default function ArkSendScreen({ route }: Props) {
                     </Text>
                 )}
 
-                {/* Dust-change warning + one-tap fix. Only renders once
-                    the fee is known and the implied change would land
-                    below the dust limit. The Send button is also
-                    disabled in this state via `canSend` — the message
-                    here is the only way the user learns *why* it
-                    disabled, and the button below is the one-tap
-                    escape hatch instead of asking them to mental-math
-                    a non-dust-creating amount. */}
+                {/* Dust-change warning + one-tap fix. Renders when the
+                    implied change would land below the dust limit.
+                    Non-blocking — Send is still allowed. The warning
+                    explains the consequence and the recovery path so
+                    the user can choose: send anyway (and remember to
+                    consolidate later), use Send-Max, or pick a
+                    different amount. If they ignore both this warning
+                    and the home-screen Consolidate banner, the capsule
+                    expires and the ASP sweeps it. */}
                 {wouldStrandDust && fee && sendAllAmount !== null && (
                     <View style={{ marginTop: 8 }}>
                         <Text style={styles.error}>
-                            This send would leave {changeIfSent} sats stranded as a sub-dust capsule
-                            (below {ARK_VTXO_DUST_SATS}-sat limit). A stranded dust capsule can't be
-                            refreshed and will expire to the ASP.
+                            This send will leave {changeIfSent} sats of change as a sub-dust capsule
+                            (below the {ARK_VTXO_DUST_SATS}-sat limit). To keep that {changeIfSent} sats spendable,
+                            combine it with a larger capsule via the Consolidate banner on the Capsules tab
+                            after the send completes. Otherwise it expires and the ASP sweeps it.
                         </Text>
                         <TouchableOpacity
                             onPress={handleSendAll}
