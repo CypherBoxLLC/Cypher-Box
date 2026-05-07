@@ -3,6 +3,7 @@ import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { blocksToDays } from "@Cypher/services/ark";
+import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import React, { useMemo } from "react";
@@ -151,15 +152,18 @@ export default function ArkWallet({
     // balance on the Ark tile — wrong number, misleading to users.
     //
     // Derive the Ark-scoped fiat locally: arkBalance (sats) × matchedRate
-    // (USD/sat). `matchedRate` is *already* USD-per-sat — HomeScreen does
-    // the `* btc(1)` conversion when it stores it (see `handleUser` at
-    // lines 671 + 676-677). So we just multiply sats × rate. An earlier
-    // version of this memo multiplied by `btc(1)` again, which made the
-    // fiat come out ~1e-8× too small (always displayed $0). Don't re-add.
+    // (USD-per-BTC) × btc(1) (= 1e-8) → USD value of the Ark balance.
+    //
+    // `matchedRate` is now stored as USD-per-BTC (set by handleUser via
+    // setMatchedRate(getFiatRate('USD')) — see fix(coinos): use BlueWallet
+    // USD rate as single source). An earlier iteration of this memo
+    // assumed USD-per-sat and multiplied without btc(1); after the rate
+    // unit flipped to USD-per-BTC, that produced a fiat figure 1e8× too
+    // large — a 1.07K-sat balance read as $867M. Keep the btc(1) factor.
     const arkConvertedRate = useMemo(() => {
         const rate = Number(matchedRate) || 0;
         if (!arkBalance || rate === 0) return 0;
-        return arkBalance * rate;
+        return arkBalance * rate * btc(1);
     }, [arkBalance, matchedRate]);
 
     const receiveClickHandler = (type: boolean) => {
