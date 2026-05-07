@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
 import RNFS from 'react-native-fs';
 import Aes from 'react-native-aes-crypto';
@@ -73,18 +73,133 @@ const AES_KEY_BITS = 256; // AES-256-CBC
 const AES_IV_BYTES = 16;  // AES block size
 
 /**
- * Stable path for the auto-backup file in the user's Documents directory.
+ * Stable path for the local-Documents auto-backup file.
  *
  * - DocumentDirectoryPath (not CachesDirectory) so the file survives across
  *   app restarts. iOS/Android won't auto-purge Documents when storage is low.
  * - Fixed filename (no timestamp suffix) — always the single most-recent
  *   auto-backup. The manual export (writeArkBackupToTempFile) writes to
  *   CachesDirectory with a timestamp if the user wants multiple snapshots.
- * - NOT excluded from iCloud backup (we only exclude the raw datadir). An
- *   encrypted .cbark file in iCloud Drive is a net safety gain — it's fully
- *   opaque without the seed phrase.
+ * - On iOS this is the FALLBACK path — used when iCloud Drive is unavailable
+ *   for Cypher Box. The primary iOS path is the iCloud Documents container
+ *   (see `getActiveAutoBackupPath`), which surfaces in the Files app under
+ *   iCloud Drive → Cypher Box and survives uninstall via Apple's iCloud sync.
+ * - On Android this remains the primary path; the SAF folder mirror handles
+ *   the survives-uninstall property there.
  */
 export const AUTO_BACKUP_PATH = `${RNFS.DocumentDirectoryPath}/ark-backup.cbark`;
+
+/**
+ * Native bridge for the iCloud Drive container. Defined in
+ * ios/BlueWallet/CypherCloudStorage.{h,m}. Methods:
+ *   - getICloudDocumentsPath(): absolute path to the container's Documents
+ *     subdirectory, or null when iCloud is unavailable
+ *   - isICloudAvailable(): cheaper probe that only resolves to whether
+ *     URLForUbiquityContainerIdentifier returns non-nil right now
+ *
+ * On Android (and on iOS dev builds without the bridge linked) the lookup
+ * resolves to undefined and the helpers below treat that as "no iCloud".
+ */
+const CypherCloudStorage: {
+    getICloudDocumentsPath?: () => Promise<string | null>;
+    isICloudAvailable?: () => Promise<boolean>;
+} | undefined = NativeModules.CypherCloudStorage;
+
+/**
+ * iOS-only: resolve the per-app iCloud Drive `Documents` directory and
+ * return the full path to the auto-backup file inside it. Returns null
+ * on Android, on iOS without the bridge linked, when the user has
+ * iCloud Drive off for Cypher Box, or when the OS hasn't provisioned
+ * the container yet (transient — typically resolves on a subsequent
+ * call within a few seconds of an entitlement update).
+ */
+export async function getICloudBackupPath(): Promise<string | null> {
+    if (Platform.OS !== 'ios') return null;
+    try {
+        const docsPath = await CypherCloudStorage?.getICloudDocumentsPath?.();
+        if (!docsPath) return null;
+        return `${docsPath}/ark-backup.cbark`;
+    } catch (err: any) {
+        // mkdir-failed inside the bridge surfaces here. Log + treat as
+        // unavailable; we'd rather fall back to the local Documents path
+        // than throw and break the auto-tick.
+        if (__DEV__) console.log('[Ark backup] iCloud probe failed:', err?.message ?? err);
+        return null;
+    }
+}
+
+/**
+ * Probe-only variant — does not create directories. Used by the
+ * Settings → Ark Backup dismiss flow to verify the user's "iCloud Drive
+ * is on" claim before flipping the persistent reminder flag off, so the
+ * dismiss path is self-validating instead of trust-only.
+ */
+export async function isICloudBackupAvailable(): Promise<boolean> {
+    if (Platform.OS !== 'ios') return false;
+    try {
+        return (await CypherCloudStorage?.isICloudAvailable?.()) ?? false;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Resolve the active auto-backup write path.
+ *
+ * - Android: always the local Documents file.
+ * - iOS with iCloud Drive enabled for Cypher Box: the iCloud Documents
+ *   container path. The OS auto-syncs that file to the user's iCloud
+ *   Drive across all their Apple devices and survives uninstall.
+ * - iOS without iCloud Drive: falls back to local Documents — the file
+ *   doesn't survive uninstall in that case, which is why the create-flow
+ *   gate also requires the user to manually share+confirm a snapshot
+ *   somewhere they trust until they verify iCloud is on.
+ *
+ * One-time migration: if the iCloud path is reachable but the file isn't
+ * in iCloud yet AND the local file exists, copy local → iCloud so an
+ * existing user picks up auto-sync without having to re-create their
+ * wallet. We DON'T delete the local copy — leaves a fallback for users
+ * who later disable iCloud Drive. Subsequent writes go to iCloud only,
+ * so the local copy ages out as stale, but stale-fallback beats no-fallback.
+ */
+async function getActiveAutoBackupPath(): Promise<string> {
+    if (Platform.OS !== 'ios') return AUTO_BACKUP_PATH;
+    const iCloudPath = await getICloudBackupPath();
+    if (!iCloudPath) return AUTO_BACKUP_PATH;
+    try {
+        const iCloudExists = await RNFS.exists(iCloudPath);
+        if (!iCloudExists) {
+            const localExists = await RNFS.exists(AUTO_BACKUP_PATH);
+            if (localExists) {
+                await RNFS.copyFile(AUTO_BACKUP_PATH, iCloudPath);
+                if (__DEV__) console.log('[Ark backup] migrated local → iCloud Drive');
+            }
+        }
+    } catch (err: any) {
+        if (__DEV__) {
+            console.log('[Ark backup] iCloud migration check failed (non-fatal):', err?.message ?? err);
+        }
+    }
+    return iCloudPath;
+}
+
+/**
+ * Read-side helper for the recovery flow. Returns whichever auto-backup
+ * file currently exists, preferring iCloud (latest) over local (potentially
+ * stale post-migration). Returns null if neither exists.
+ *
+ * Differs from `getActiveAutoBackupPath` in not running migration / mkdir —
+ * recovery is a read-only intent and shouldn't write anything until the
+ * user has confirmed the seed.
+ */
+export async function findAutoBackupForRecovery(): Promise<string | null> {
+    if (Platform.OS === 'ios') {
+        const iCloudPath = await getICloudBackupPath();
+        if (iCloudPath && (await RNFS.exists(iCloudPath))) return iCloudPath;
+    }
+    if (await RNFS.exists(AUTO_BACKUP_PATH)) return AUTO_BACKUP_PATH;
+    return null;
+}
 
 /**
  * Legacy auto-backup path from earlier dev builds. Kept as a constant so the
@@ -452,7 +567,8 @@ export async function writeArkAutoBackup(
 ): Promise<{ path: string; sizeBytes: number; createdAt: number }> {
     const { blob, createdAt } = await _packDatadirIntoBlob(mnemonic);
 
-    await RNFS.writeFile(AUTO_BACKUP_PATH, blob, 'utf8');
+    const path = await getActiveAutoBackupPath();
+    await RNFS.writeFile(path, blob, 'utf8');
 
     // Android-only off-device sibling upload. iOS gets free off-device
     // backup via Apple's transparent iCloud Drive sync of Documents
@@ -497,7 +613,7 @@ export async function writeArkAutoBackup(
         }
     }
 
-    return { path: AUTO_BACKUP_PATH, sizeBytes: blob.length, createdAt };
+    return { path, sizeBytes: blob.length, createdAt };
 }
 
 /**
@@ -563,12 +679,16 @@ export async function writeAndVerifyArkBackup(
     const sizeBytes = blob.length;
 
     // Local write — try first because it's the only path we can rely on
-    // when the device is offline. iOS users with iCloud Drive on for the
-    // app get free off-device sync from this same write.
+    // when the device is offline. On iOS the active path resolves to the
+    // iCloud Drive container's Documents subdir when iCloud is enabled
+    // for Cypher Box (gives us off-device sync via Apple), falling back
+    // to local Documents otherwise. Either way the write is the same shape.
     let local: VerifiedBackupResult['local'];
+    let activePath: string;
     try {
-        await RNFS.writeFile(AUTO_BACKUP_PATH, blob, 'utf8');
-        local = { ok: true, path: AUTO_BACKUP_PATH };
+        activePath = await getActiveAutoBackupPath();
+        await RNFS.writeFile(activePath, blob, 'utf8');
+        local = { ok: true, path: activePath };
     } catch (err: any) {
         local = { ok: false, error: err?.message ?? String(err) };
     }

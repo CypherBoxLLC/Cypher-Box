@@ -183,6 +183,19 @@ export type AuthStateType = {
     arkBgRefreshLastWarn2hAt: number | null;
     /** User-configurable upper bound on the fee a background refresh round can auto-pay (sats). Default 5000. */
     arkBgRefreshMaxFeeSats: number;
+
+    /**
+     * iOS-only: true when the user satisfied the create-flow backup gate via
+     * manual share+confirm (the only honest iOS path — Documents writes
+     * auto-sync to iCloud Drive only if the user has enabled iCloud Drive
+     * for Cypher Box, which we cannot probe). The flag stays on until the
+     * user explicitly tells us iCloud Drive sync is enabled, after which
+     * the auto-tick has a verifiable off-device channel and the snapshot
+     * reminder no longer applies. Drives the post-create reminder + a
+     * persistent banner reminding the user to re-export from
+     * Settings → Ark Backup after every Lightning receive.
+     */
+    arkIosBackupReminderActive: boolean;
     setArkBgRefreshEnabled: (state: boolean) => void;
     setArkBgRefreshLastSuccessAt: (state: number | null) => void;
     setArkBgRefreshLastAttempt: (
@@ -198,6 +211,7 @@ export type AuthStateType = {
     setArkBgRefreshLastWarn24hAt: (state: number | null) => void;
     setArkBgRefreshLastWarn2hAt: (state: number | null) => void;
     setArkBgRefreshMaxFeeSats: (state: number) => void;
+    setArkIosBackupReminderActive: (state: boolean) => void;
 
     clearArkAuth: () => void;
 
@@ -261,6 +275,7 @@ const createAuthStore = (
     arkBgRefreshLastWarn24hAt: null,
     arkBgRefreshLastWarn2hAt: null,
     arkBgRefreshMaxFeeSats: 5000,
+    arkIosBackupReminderActive: false,
     // 2FA state
     twoFARequired: false,
     twoFAVerified: false,
@@ -313,6 +328,7 @@ const createAuthStore = (
     setArkBgRefreshLastWarn24hAt: (state: number | null) => set({ arkBgRefreshLastWarn24hAt: state }),
     setArkBgRefreshLastWarn2hAt: (state: number | null) => set({ arkBgRefreshLastWarn2hAt: state }),
     setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
+    setArkIosBackupReminderActive: (state: boolean) => set({ arkIosBackupReminderActive: state }),
     clearArkAuth: () =>
         set({
             isArkAuth: false,
@@ -345,6 +361,7 @@ const createAuthStore = (
             arkBgRefreshDeferredBackup: false,
             arkBgRefreshLastWarn24hAt: null,
             arkBgRefreshLastWarn2hAt: null,
+            arkIosBackupReminderActive: false,
         }),
     // 2FA setters
     setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),

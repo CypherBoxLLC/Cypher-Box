@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Image, Platform, ScrollView, Switch, Touchabl
 import { BlurView } from "@react-native-community/blur";
 import { useRoute } from "@react-navigation/native";
 import * as Keychain from "react-native-keychain";
+import Share from "react-native-share";
 import SimpleToast from "react-native-simple-toast";
 
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
@@ -15,11 +16,13 @@ import {
     createArkWallet,
     getSavedSafBackupFolder,
     isGoogleDriveConnected,
+    isICloudBackupAvailable,
     messageForDriveError,
     messageForSafError,
     pickSafBackupFolder,
     setArkBackgroundRefreshEnabled,
     writeAndVerifyArkBackup,
+    writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
 import type { DriveErrorClass, SafErrorClass } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -119,6 +122,7 @@ export default function ArkSeedPhraseScreen() {
         setArkAuth,
         setArkWallet,
         setFirstTimeArk,
+        setArkIosBackupReminderActive,
     } = useAuthStore();
 
     const words: string[] = (mnemonic || "").trim().split(/\s+/).filter(Boolean);
@@ -296,14 +300,87 @@ export default function ArkSeedPhraseScreen() {
             }
 
             if (isIOS) {
-                // iOS: local write into Documents is the cloud path.
-                // iCloud Drive sync (if enabled for Cypher Box) handles
-                // off-device replication transparently.
-                setCloudBackupDone(true);
-                SimpleToast.show(
-                    "Backup saved. It will sync to iCloud Drive automatically if iCloud Drive is on for Cypher Box.",
-                    SimpleToast.LONG,
-                );
+                // iOS — preferred path: probe iCloud Drive. Cypher Box
+                // declares an iCloud Documents container (NSUbiquitousContainers
+                // → iCloud.io.cypherbox.btc); when the user has iCloud Drive
+                // enabled for the app, the OS provisions a sandbox-external
+                // folder under that container's Documents/ subdir, and the
+                // auto-tick writes the .cbark there directly (see
+                // src/services/ark/backup.ts → getActiveAutoBackupPath).
+                // That gives genuine off-device sync: the file appears
+                // under iCloud Drive → Cypher Box on every Apple device on
+                // the same Apple ID, survives uninstall, mirrors instantly
+                // as VTXOs change. So when the probe says iCloud is
+                // reachable, we can pass the gate without even showing
+                // the share sheet — the auto-tick covers everything.
+                //
+                // Probe-fails fallback: manual share + explicit confirmation.
+                // The user physically saves the encrypted backup somewhere
+                // they trust (ideally iCloud Drive — once Cypher Box is
+                // enabled in iCloud's per-app list the auto-tick takes
+                // over and the manual snapshot becomes redundant), and
+                // confirms via the alert. Only the explicit "I saved it"
+                // tap flips the gate. Persistent reminder banner + Settings
+                // dismiss flow keeps nagging the user to enable iCloud
+                // Drive for the app, after which the reminder auto-clears.
+                const iCloudOn = await isICloudBackupAvailable();
+                if (iCloudOn) {
+                    setCloudBackupDone(true);
+                    SimpleToast.show(
+                        'iCloud Drive is on for Cypher Box — backup syncs automatically.',
+                        SimpleToast.LONG,
+                    );
+                    return;
+                }
+                // Snapshot caveat for the manual fallback: the file the
+                // user just shared is a one-shot snapshot. We set
+                // arkIosBackupReminderActive=true unconditionally and let
+                // the persistent reminder banners + the Settings dismiss
+                // (which now auto-validates via the same probe) clear it
+                // the moment iCloud becomes available.
+                let file: { path: string; sizeBytes: number; createdAt: number };
+                try {
+                    file = await writeArkBackupToTempFile(m);
+                } catch (writeErr: any) {
+                    Alert.alert(
+                        "Backup write failed",
+                        `Couldn't prepare the backup file: ${writeErr?.message ?? "unknown error"}. Free up storage and try again.`,
+                    );
+                    return;
+                }
+
+                try {
+                    await Share.open({
+                        url: file.path,
+                        type: 'application/octet-stream',
+                        filename: 'ark-backup.cbark',
+                        failOnCancel: false,
+                    });
+                } catch (shareErr: any) {
+                    // react-native-share throws on user-cancel even with
+                    // failOnCancel:false on some iOS builds. Surface only
+                    // genuine errors; cancel falls through to the confirm
+                    // prompt where the user can say "no, didn't save".
+                    if (__DEV__) console.log("[Ark] Share open returned:", shareErr?.message ?? shareErr);
+                }
+
+                const saved = await new Promise<boolean>((resolve) => {
+                    Alert.alert(
+                        "Did you save the backup file?",
+                        "The .cbark file is encrypted with your seed phrase — safe to keep in iCloud Drive, email to yourself, or any cloud storage. Without this file plus your seed, your Ark balance can't be fully recovered.\n\nThe best path is to enable iCloud Drive for Cypher Box (iOS Settings → [your name] → iCloud → iCloud Drive → Cypher Box) — Cypher Box will then keep an encrypted copy current in your iCloud Drive automatically. Until you do that, re-export from the reminder banner in Ark Settings → Ark Backup after every Lightning receive.",
+                        [
+                            { text: "Not yet", style: "cancel", onPress: () => resolve(false) },
+                            { text: "Yes, I saved it", onPress: () => resolve(true) },
+                        ],
+                        { cancelable: true, onDismiss: () => resolve(false) },
+                    );
+                });
+
+                if (saved) {
+                    setCloudBackupDone(true);
+                    setArkIosBackupReminderActive(true);
+                    SimpleToast.show("Backup saved.", SimpleToast.SHORT);
+                }
                 return;
             }
 
@@ -544,7 +621,7 @@ export default function ArkSeedPhraseScreen() {
             Alert.alert(
                 "Save your backup first",
                 isIOS
-                    ? "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Tap 'Save backup now' above so it's stored in Files (and synced to iCloud Drive if iCloud Drive is on for Cypher Box)."
+                    ? "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Tap 'Save backup file' above and save it somewhere you trust (iCloud Drive recommended)."
                     : "Your seed phrase alone can't restore Ark funds — the encrypted backup file is required too. Pick at least one: Google Drive (off-device), or a folder on this phone (survives uninstall).",
                 [{ text: "OK" }],
                 { cancelable: true },
@@ -618,6 +695,24 @@ export default function ArkSeedPhraseScreen() {
         }
 
         setSubmitting(false);
+
+        // iOS-only post-create reminder. The user satisfied the gate via
+        // manual share + confirm — they have an off-device copy, but it's
+        // a snapshot. Surface the recurring action they need to take if
+        // their saved location isn't iCloud Drive (which we can't probe).
+        // The arkIosBackupReminderActive flag persists in zustand so a
+        // separate banner — added in a follow-up — can keep nagging them
+        // until they tell us iCloud Drive is on.
+        if (isIOS && cloudBackupDone) {
+            await new Promise<void>((resolve) => {
+                Alert.alert(
+                    "One thing to remember",
+                    "The best path is to enable iCloud Drive for Cypher Box (iOS Settings → [your name] → iCloud → iCloud Drive → Cypher Box) — once that's on, your backup syncs automatically and this reminder goes away on its own.\n\nUntil then, the file you saved is a one-time snapshot. Open Ark Settings → Ark Backup and tap 'Re-export now' after every Lightning receive so a future restore picks up your latest funds.",
+                    [{ text: "Got it", onPress: () => resolve() }],
+                    { cancelable: false, onDismiss: () => resolve() },
+                );
+            });
+        }
 
         if (FirstTimeArk) {
             setFirstTimeArk(false);
@@ -785,13 +880,13 @@ export default function ArkSeedPhraseScreen() {
                             <View style={styles.backupOptionTextWrap}>
                                 <Text style={styles.backupOptionLabel}>
                                     {isIOS
-                                        ? "Optional: sync backup to iCloud Drive"
+                                        ? "Save your backup file"
                                         : "Optional: sync backup to Google Drive"}
                                     {cloudBackupDone ? "  ✓" : ""}
                                 </Text>
                                 <Text style={styles.backupOptionDetail}>
                                     {isIOS
-                                        ? "If iCloud Drive is on for Cypher Box (iOS Settings → Apple ID → iCloud → Cypher Box), your ark-backup file syncs off-device and updates whenever your VTXO capsules change. Apple sees only ciphertext."
+                                        ? "Opens the share sheet so you can save the encrypted ark-backup file. We recommend saving inside iCloud Drive — Cypher Box will then keep it current automatically as your VTXO capsules change. Anywhere else (email, AirDrop, local Files) works for recovery too, but you'll need to re-export after every Lightning receive. Whoever stores it sees ciphertext only."
                                         : "Connects your Google account and uploads your ark-backup file to Drive's appDataFolder — hidden from the main Drive UI, only Cypher Box can read it. Updates upload automatically as your VTXO capsules change. Google sees only ciphertext."}
                                 </Text>
                                 <TouchableOpacity
@@ -820,10 +915,10 @@ export default function ArkSeedPhraseScreen() {
                                         }}>
                                             {cloudBackupDone
                                                 ? (isIOS
-                                                    ? "✓ Saved · syncs via iCloud Drive"
+                                                    ? "✓ Saved"
                                                     : "✓ Connected · backup verified")
                                                 : (isIOS
-                                                    ? "Save backup now"
+                                                    ? "Save backup file"
                                                     : driveError
                                                         ? "Retry connect & save"
                                                         : "Connect & save backup")}
@@ -960,10 +1055,15 @@ export default function ArkSeedPhraseScreen() {
                             least one backup destination is verified. Replaces
                             the prior soft-warn that allowed override (cause of
                             the 5000-sat loss on 2026-05-05).
-                            One-shot manual export to share sheet was moved
-                            to Settings → Ark Backup as a manual export
-                            action — it doesn't auto-update so it's not a
-                            real channel, just a snapshot save. */}
+                            On iOS without iCloud Drive enabled for the app,
+                            users who pass the gate via manual share+confirm
+                            see a persistent reminder banner in Settings →
+                            Ark Backup with an inline "Re-export now" pill —
+                            that's the snapshot-refresh path, no longer a
+                            standalone Manual export row in the Ark Backup
+                            card. The reminder + pill auto-clear when the
+                            useArkSync iCloud probe sees the container come
+                            online. */}
                         {revealed && !cloudBackupDone && !safBackupConfirmed && (
                             <View style={styles.warnPanel}>
                                 <Text bold style={styles.warnPanelTitle}>

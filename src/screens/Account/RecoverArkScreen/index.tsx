@@ -9,6 +9,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
     AUTO_BACKUP_PATH,
+    findAutoBackupForRecovery,
     createArkWallet,
     hasArkDatadir,
     restoreArkBackupBlob,
@@ -248,10 +249,15 @@ export default function RecoverArkScreen() {
         setErrorMsg(null);
 
         // Local-first auto-discovery, in order of preference:
-        //   1. AUTO_BACKUP_PATH — Documents/ark-backup.cbark, the
-        //      always-on local file. Wiped on `pm uninstall` and
-        //      `pm clear`, so this only hits on `install -r` or app-data
-        //      preserved scenarios.
+        //   1. findAutoBackupForRecovery() — checks the iCloud Drive
+        //      Documents container first (iOS, when iCloud is enabled
+        //      for Cypher Box; survives uninstall via Apple's iCloud
+        //      sync), then falls back to AUTO_BACKUP_PATH (local
+        //      Documents). On Android only the local path is checked.
+        //      Local Documents is wiped on `pm uninstall` and `pm clear`,
+        //      so this only hits on `install -r` or app-data-preserved
+        //      scenarios on Android. The iCloud lookup gives iOS a
+        //      genuine survives-uninstall path.
         //   2. SAF folder — the user-chosen Storage Access Framework
         //      folder, populated by writeArkAutoBackup via
         //      writeArkBackupToSaf when configured. The persisted URI
@@ -273,11 +279,12 @@ export default function RecoverArkScreen() {
         let blob: string | null = null;
         if (!forcePicker) {
             try {
-                if (await RNFS.exists(AUTO_BACKUP_PATH)) {
-                    blob = await RNFS.readFile(AUTO_BACKUP_PATH, 'utf8');
+                const path = await findAutoBackupForRecovery();
+                if (path) {
+                    blob = await RNFS.readFile(path, 'utf8');
                 }
             } catch (err) {
-                console.warn('[Ark restore] local AUTO_BACKUP_PATH read failed:', err);
+                console.warn('[Ark restore] auto-discovery read failed:', err);
             }
         }
 
@@ -395,11 +402,12 @@ export default function RecoverArkScreen() {
 
         let blob: string | null = null;
         try {
-            if (await RNFS.exists(AUTO_BACKUP_PATH)) {
-                blob = await RNFS.readFile(AUTO_BACKUP_PATH, 'utf8');
+            const path = await findAutoBackupForRecovery();
+            if (path) {
+                blob = await RNFS.readFile(path, 'utf8');
             }
         } catch (err) {
-            console.warn('[Ark restore] local AUTO_BACKUP_PATH read failed:', err);
+            console.warn('[Ark restore] auto-discovery read failed:', err);
         }
 
         if (!blob) {

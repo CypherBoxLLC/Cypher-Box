@@ -21,6 +21,10 @@
 		84E05A842721191B001A0D3A /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 84E05A832721191B001A0D3A /* Settings.bundle */; };
 		89CE79B1B2E3469091CDA30A /* Lato-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 93F5E0FF0936480688D8844D /* Lato-Medium.ttf */; };
 		9460BA93871C46EB9A6A8F32 /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F6F3F7A9DFB74923B662A1B9 /* BootSplash.storyboard */; };
+		9E035EE42FAC16AF00B11110 /* ArkBackgroundScheduler.m in Sources */ = {isa = PBXBuildFile; fileRef = 9E035EE32FAC16AF00B11110 /* ArkBackgroundScheduler.m */; };
+		9E035EE52FAC16AF00B11110 /* ArkBackgroundScheduler.m in Sources */ = {isa = PBXBuildFile; fileRef = 9E035EE32FAC16AF00B11110 /* ArkBackgroundScheduler.m */; };
+		9E035EE82FAC2DDF00B11110 /* CypherCloudStorage.m in Sources */ = {isa = PBXBuildFile; fileRef = 9E035EE72FAC2DDF00B11110 /* CypherCloudStorage.m */; };
+		9E035EE92FAC2DDF00B11110 /* CypherCloudStorage.m in Sources */ = {isa = PBXBuildFile; fileRef = 9E035EE72FAC2DDF00B11110 /* CypherCloudStorage.m */; };
 		A6798FC53EF440C698C534F9 /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 34058D7A36764495B12F2CE0 /* Archivo-SemiBold.ttf */; };
 		A8642ABB2BA2FA8E00805B5E /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F6F3F7A9DFB74923B662A1B9 /* BootSplash.storyboard */; };
 		A8A78FF92BA46C6B007BFB27 /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 34058D7A36764495B12F2CE0 /* Archivo-SemiBold.ttf */; };
@@ -46,7 +50,7 @@
 		BE5BBA7C52E3E8CA70EBDDDF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E515212553A37AA8F24986DE /* PrivacyInfo.xcprivacy */; };
 		C1ECBEBE9F2D4DF795D8F16D /* Lato-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 071766184CB84657AE1D4F51 /* Lato-Italic.ttf */; };
 		C289370B1DA44734A86648F1 /* Archivo-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 088FFD9EFF664454A6F4C12E /* Archivo-Regular.ttf */; };
-		C978A716948AB7DEC5B6F677 /* BuildFile in Frameworks */ = {isa = PBXBuildFile; };
+		C978A716948AB7DEC5B6F677 /* (null) in Frameworks */ = {isa = PBXBuildFile; };
 		CF362669663E4E3AA6DD99ED /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E7D78598F862426E9B640B4E /* Lato-Bold.ttf */; };
 		DF0F1E833FBC7AE1512146CE /* libPods-BlueWallet-NoLDK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F3EB9F4748426707E52C134 /* libPods-BlueWallet-NoLDK.a */; };
 		E37BA376FA7A8E6FB7EAE67E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E515212553A37AA8F24986DE /* PrivacyInfo.xcprivacy */; };
@@ -126,7 +130,7 @@
 		04466491BA2D4876A71222FC /* Foundation.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = Foundation.ttf; path = "../node_modules/react-native-vector-icons/Fonts/Foundation.ttf"; sourceTree = "<group>"; };
 		071766184CB84657AE1D4F51 /* Lato-Italic.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Lato-Italic.ttf"; path = "../src/assets/fonts/Lato-Italic.ttf"; sourceTree = "<group>"; };
 		088FFD9EFF664454A6F4C12E /* Archivo-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Archivo-Regular.ttf"; path = "../src/assets/fonts/Archivo-Regular.ttf"; sourceTree = "<group>"; };
-		13B07F961A680F5B00A75B9A /* BlueWallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BlueWallet.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		13B07F961A680F5B00A75B9A /* CypherBox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CypherBox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = BlueWallet/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = BlueWallet/Info.plist; sourceTree = "<group>"; };
 		13B07FB71A68108700A75B9A /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = main.m; path = BlueWallet/main.m; sourceTree = "<group>"; };
@@ -223,6 +227,10 @@
 		94565BFC6A0C4235B3EC7B01 /* libRNSVG.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = libRNSVG.a; sourceTree = "<group>"; };
 		95208B2A05884A76B5BB99C0 /* libRCTGoogleAnalyticsBridge.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = libRCTGoogleAnalyticsBridge.a; sourceTree = "<group>"; };
 		9DF4E6C040764E4BA1ACC1EB /* libTcpSockets.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = libTcpSockets.a; sourceTree = "<group>"; };
+		9E035EE22FAC16AF00B11110 /* ArkBackgroundScheduler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ArkBackgroundScheduler.h; sourceTree = "<group>"; };
+		9E035EE32FAC16AF00B11110 /* ArkBackgroundScheduler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ArkBackgroundScheduler.m; sourceTree = "<group>"; };
+		9E035EE62FAC2DDF00B11110 /* CypherCloudStorage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CypherCloudStorage.h; sourceTree = "<group>"; };
+		9E035EE72FAC2DDF00B11110 /* CypherCloudStorage.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CypherCloudStorage.m; sourceTree = "<group>"; };
 		9F1F51A83D044F3BB26A35FC /* libRNSVG-tvOS.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = "libRNSVG-tvOS.a"; sourceTree = "<group>"; };
 		A7C4B1FDAD264618BAF8C335 /* libRNCWebView.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = libRNCWebView.a; sourceTree = "<group>"; };
 		A9166D490AEF4938BD6621CF /* Feather.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = Feather.ttf; path = "../node_modules/react-native-vector-icons/Fonts/Feather.ttf"; sourceTree = "<group>"; };
@@ -268,7 +276,7 @@
 		CC4D22B1274D40D2A1C8D7FF /* Archivo-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Archivo-Medium.ttf"; path = "../src/assets/fonts/Archivo-Medium.ttf"; sourceTree = "<group>"; };
 		CD746B955C55410793BB72C0 /* libRNGestureHandler.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = libRNGestureHandler.a; sourceTree = "<group>"; };
 		CF4A4D7AAD974D67A2D62B3E /* MaterialIcons.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = MaterialIcons.ttf; path = "../node_modules/react-native-vector-icons/Fonts/MaterialIcons.ttf"; sourceTree = "<group>"; };
-		E515212553A37AA8F24986DE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = BlueWallet/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		E515212553A37AA8F24986DE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = BlueWallet/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		E6B44173A8854B6D85D7F933 /* libRNVectorIcons-tvOS.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = "libRNVectorIcons-tvOS.a"; sourceTree = "<group>"; };
 		E7D78598F862426E9B640B4E /* Lato-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Lato-Bold.ttf"; path = "../src/assets/fonts/Lato-Bold.ttf"; sourceTree = "<group>"; };
 		E8E8CE89B3D142C6A8A56C34 /* Octicons.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = Octicons.ttf; path = "../node_modules/react-native-vector-icons/Fonts/Octicons.ttf"; sourceTree = "<group>"; };
@@ -293,7 +301,7 @@
 			files = (
 				782F075B5DD048449E2DECE9 /* libz.tbd in Frameworks */,
 				764B49B1420D4AEB8109BF62 /* libsqlite3.0.tbd in Frameworks */,
-				C978A716948AB7DEC5B6F677 /* BuildFile in Frameworks */,
+				C978A716948AB7DEC5B6F677 /* (null) in Frameworks */,
 				34ACAC5F5E7BDFF4B63BA1E9 /* libPods-BlueWallet.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -343,6 +351,10 @@
 				B461B851299599F800E431AA /* AppDelegate.mm */,
 				32C7944323B8879D00BE2AFA /* BlueWalletRelease.entitlements */,
 				32F0A2502310B0910095C559 /* BlueWallet.entitlements */,
+				9E035EE62FAC2DDF00B11110 /* CypherCloudStorage.h */,
+				9E035EE72FAC2DDF00B11110 /* CypherCloudStorage.m */,
+				9E035EE22FAC16AF00B11110 /* ArkBackgroundScheduler.h */,
+				9E035EE32FAC16AF00B11110 /* ArkBackgroundScheduler.m */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				B4A29A462B55C990002A67DF /* BlueWallet-NoLDK.plist */,
@@ -533,7 +545,7 @@
 		83CBBA001A601CBA00E9B192 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				13B07F961A680F5B00A75B9A /* BlueWallet.app */,
+				13B07F961A680F5B00A75B9A /* CypherBox.app */,
 				B47B21E92B2128B8001F6690 /* BlueWalletUITests.xctest */,
 				B4A29A452B55C990002A67DF /* Cypher Box.app */,
 			);
@@ -671,7 +683,7 @@
 			);
 			name = BlueWallet;
 			productName = "Hello World";
-			productReference = 13B07F961A680F5B00A75B9A /* BlueWallet.app */;
+			productReference = 13B07F961A680F5B00A75B9A /* CypherBox.app */;
 			productType = "com.apple.product-type.application";
 		};
 		B47B21E82B2128B8001F6690 /* BlueWalletUITests */ = {
@@ -906,9 +918,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BlueWallet-NoLDK/Pods-BlueWallet-NoLDK-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BlueWallet-NoLDK/Pods-BlueWallet-NoLDK-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -923,9 +939,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BlueWallet/Pods-BlueWallet-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BlueWallet/Pods-BlueWallet-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -940,9 +960,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BlueWallet/Pods-BlueWallet-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BlueWallet/Pods-BlueWallet-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -957,9 +981,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BlueWallet-NoLDK/Pods-BlueWallet-NoLDK-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BlueWallet-NoLDK/Pods-BlueWallet-NoLDK-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -1078,8 +1106,10 @@
 				B4AB21092B61DC3F0080440C /* SplashScreen.m in Sources */,
 				B4AB21072B61D8CA0080440C /* SplashScreen.swift in Sources */,
 				6D32C5C62596CE3A008C077C /* EventEmitter.m in Sources */,
+				9E035EE42FAC16AF00B11110 /* ArkBackgroundScheduler.m in Sources */,
 				13B07FC11A68108700A75B9A /* main.m in Sources */,
 				B461B852299599F800E431AA /* AppDelegate.mm in Sources */,
+				9E035EE92FAC2DDF00B11110 /* CypherCloudStorage.m in Sources */,
 				32B5A32A2334450100F8D608 /* Bridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1096,9 +1126,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E035EE82FAC2DDF00B11110 /* CypherCloudStorage.m in Sources */,
 				B4A29A2C2B55C990002A67DF /* EventEmitter.m in Sources */,
 				B4A29A2D2B55C990002A67DF /* main.m in Sources */,
 				B4A29A2E2B55C990002A67DF /* AppDelegate.mm in Sources */,
+				9E035EE52FAC16AF00B11110 /* ArkBackgroundScheduler.m in Sources */,
 				B4A29A2F2B55C990002A67DF /* Bridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1489,7 +1521,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 10;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = ZJTFQCTLVX;
+				DEVELOPMENT_TEAM = 8J926CQQU9;
 				ENABLE_BITCODE = NO;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -1544,7 +1576,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 10;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = ZJTFQCTLVX;
+				DEVELOPMENT_TEAM = 8J926CQQU9;
 				ENABLE_BITCODE = NO;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				HEADER_SEARCH_PATHS = "$(inherited)";

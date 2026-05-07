@@ -175,6 +175,18 @@
 	<string>Your authorization is required to save this image.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>In order to import an image for scanning, we need your permission to access your photo library.</string>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.io.cypherbox.btc</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+			<key>NSUbiquitousContainerName</key>
+			<string>Cypher Box</string>
+		</dict>
+	</dict>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>io.cypherbox.btc.receiveonchain</string>

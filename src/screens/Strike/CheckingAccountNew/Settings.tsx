@@ -15,6 +15,7 @@ import {
   Modal,
   Platform,
   Animated as RNAnimated,
+  Text as RNText,
   ScrollView,
   TextInput,
   TouchableOpacity,
@@ -29,8 +30,11 @@ import {
   connectGoogleDrive,
   disconnectGoogleDrive,
   fetchPendingExitsTotalSats,
+  findAutoBackupForRecovery,
   getDriveBackupInfo,
+  getICloudBackupPath,
   isGoogleDriveConnected,
+  isICloudBackupAvailable,
   readArkSeedPhrase,
   resetArkWalletState,
   startArkEmergencyExit,
@@ -280,59 +284,88 @@ function ArkSettingsBody() {
     setArkExitDestinationAddress,
     setArkExitStartedAt,
   } = useAuthStore() as any;
+  const arkIosBackupReminderActive = useAuthStore((s) => s.arkIosBackupReminderActive);
+  const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
   const { wallets } = useContext(BlueStorageContext) as any;
   const navigation = useNavigation();
   const [words, setWords] = useState<string[] | null>(null);
   const [revealing, setRevealing] = useState(false);
 
   // Backup status — surfaced in the Settings panel so users can verify
-  // both rails (local on-device file + Google Drive copy) are healthy
-  // without opening a file manager. `null` = unknown, `undefined` = no
-  // backup. Errors are swallowed; UI shows "—" for unreachable values.
+  // each rail (local on-device + iCloud Drive on iOS / Google Drive on
+  // Android) is healthy without opening a file manager. The local row
+  // probes the always-local Documents path; the iCloud row probes the
+  // ubiquity-container path independently so each shows a real
+  // last-modified time, not just an "available?" state.
+  // `null` = unknown / probing, `undefined` = no backup at this rail.
+  // Errors are swallowed; UI shows the loading or "no backup yet" state.
   type BackupInfo = { modifiedAt: number; sizeBytes: number };
   const [localBackup, setLocalBackup] = useState<BackupInfo | null | undefined>(null);
+  const [iCloudAvailable, setICloudAvailable] = useState<boolean | null>(null);
+  const [iCloudBackup, setICloudBackup] = useState<BackupInfo | null | undefined>(null);
   const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
   const [driveBackup, setDriveBackup] = useState<BackupInfo | null | undefined>(null);
   const [driveError, setDriveError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      // Local — RNFS.stat throws if the file doesn't exist; treat as
-      // "no backup yet" rather than an error.
+
+    const statBackup = async (path: string): Promise<BackupInfo | undefined> => {
       try {
-        const exists = await RNFS.exists(AUTO_BACKUP_PATH);
+        if (!(await RNFS.exists(path))) return undefined;
+        const stat = await RNFS.stat(path);
+        return {
+          modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
+          sizeBytes: Number(stat.size) || 0,
+        };
+      } catch {
+        return undefined;
+      }
+    };
+
+    (async () => {
+      // Local — always the Documents/ark-backup.cbark path. Stays
+      // populated even after iCloud takes over as the active write
+      // target (we don't auto-delete on migration), so the user can
+      // see when the local fallback was last refreshed.
+      const local = await statBackup(AUTO_BACKUP_PATH);
+      if (cancelled) return;
+      setLocalBackup(local);
+
+      // iCloud Drive (iOS) — independent probe + path lookup. Shows
+      // "Off" when iCloud isn't enabled for Cypher Box, or "no copy yet"
+      // when iCloud is on but the auto-tick hasn't written there yet.
+      if (Platform.OS === 'ios') {
+        const path = await getICloudBackupPath();
         if (cancelled) return;
-        if (!exists) {
-          setLocalBackup(undefined);
-        } else {
-          const stat = await RNFS.stat(AUTO_BACKUP_PATH);
+        setICloudAvailable(path !== null);
+        if (path) {
+          const info = await statBackup(path);
           if (cancelled) return;
-          setLocalBackup({
-            modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
-            sizeBytes: Number(stat.size) || 0,
-          });
+          setICloudBackup(info);
+        } else {
+          setICloudBackup(undefined);
         }
-      } catch (_) {
-        if (!cancelled) setLocalBackup(undefined);
       }
 
-      // Drive — connection check is cheap; metadata fetch is gated on it.
-      try {
-        const connected = await isGoogleDriveConnected();
-        if (cancelled) return;
-        setDriveConnected(connected);
-        if (connected) {
-          const info = await getDriveBackupInfo();
+      // Google Drive (Android) — connection check first, then metadata.
+      if (Platform.OS === 'android') {
+        try {
+          const connected = await isGoogleDriveConnected();
           if (cancelled) return;
-          setDriveBackup(info ?? undefined);
-        } else {
-          setDriveBackup(undefined);
-        }
-      } catch (e: any) {
-        if (!cancelled) {
-          setDriveConnected(false);
-          setDriveError(e?.message || 'Drive unreachable');
+          setDriveConnected(connected);
+          if (connected) {
+            const info = await getDriveBackupInfo();
+            if (cancelled) return;
+            setDriveBackup(info ?? undefined);
+          } else {
+            setDriveBackup(undefined);
+          }
+        } catch (e: any) {
+          if (!cancelled) {
+            setDriveConnected(false);
+            setDriveError(e?.message || 'Drive unreachable');
+          }
         }
       }
     })();
@@ -448,6 +481,32 @@ function ArkSettingsBody() {
     Alert.alert(
       'Enable iCloud Drive',
       'Cypher Box stores its backup in your Documents folder. To sync it to iCloud, open iOS Settings → [your name] → iCloud → iCloud Drive, then enable Cypher Box in the app list.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
+      ],
+    );
+  };
+
+  /**
+   * Dismiss the iOS backup reminder, with self-validation. We probe
+   * `URLForUbiquityContainerIdentifier` natively before flipping the flag —
+   * if the OS returns a container URL, iCloud Drive is genuinely on for
+   * Cypher Box and the auto-tick will start writing to it (or already is).
+   * If it returns nil the user's claim is wrong (or they haven't enabled
+   * the per-app toggle yet), and we send them to Settings instead of
+   * silently dismissing into a snapshot-only state.
+   */
+  const handleDismissBackupReminder = async () => {
+    const available = await isICloudBackupAvailable();
+    if (available) {
+      setArkIosBackupReminderActive(false);
+      SimpleToast.show('iCloud Drive verified — reminder dismissed.', SimpleToast.LONG);
+      return;
+    }
+    Alert.alert(
+      "iCloud Drive isn't on for Cypher Box",
+      "Open iOS Settings → [your name] → iCloud → iCloud Drive → scroll the app list and switch Cypher Box ON. Then come back here and tap 'iCloud Drive is on — dismiss' again.",
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
@@ -810,13 +869,23 @@ function ArkSettingsBody() {
       <RNAnimated.View style={[styles.main, { paddingHorizontal: 24 }]}>
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Seed Phrase
+            Seed Phrase (1/2)
           </Text>
           <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, padding: 14 }}>
-            <Text style={{ fontSize: 13, color: '#AAA', marginBottom: 12 }}>
-              The 12 words below are the only way to recover your Ark Vault if
-              you lose access to this phone. Write them on paper and store them
-              somewhere safe — we cannot recover them for you.
+            {/* Two-line description split intentionally across two
+                <Text> blocks: the first explains the seed's role and
+                stays in muted gray; the second is the critical "you
+                ALSO need the Ark backup file" warning, in red, so the
+                user can't read the first sentence and assume the seed
+                alone suffices. The previous "12 words are the only
+                way you can recover" copy was wrong — Bark VTXOs are
+                not seed-derivable, the .cbark backup file is also
+                required and equally critical. */}
+            <Text style={{ fontSize: 13, color: '#AAA', marginBottom: 6 }}>
+              Write these 12 words on paper and store them somewhere safe — we cannot recover them for you.
+            </Text>
+            <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 12 }}>
+              You also need the Ark backup file (2/2) below to recover your funds. The seed alone is not enough.
             </Text>
             {words ? (
               <>
@@ -833,9 +902,18 @@ function ArkSettingsBody() {
                         marginBottom: 8,
                       }}
                     >
-                      <Text style={{ fontSize: 14, color: '#FFF', textAlign: 'center' }}>
+                      {/* RNText (built-in) here, not the @Cypher Text
+                          wrapper: the wrapper hardcodes
+                          adjustsFontSizeToFit, which under Fabric (RN
+                          0.76 New Arch) shrinks longer BIP-39 words to
+                          fit the 31%-wide cell. The numeric prefix
+                          (1. → 12.) varies cell-to-cell, so a single
+                          long word in one row would silently drag the
+                          whole grid into a smaller font. Built-in
+                          Text honors fontSize literally. */}
+                      <RNText style={{ fontSize: 14, color: '#FFF', textAlign: 'center' }}>
                         {`${i + 1}. ${word}`}
-                      </Text>
+                      </RNText>
                     </View>
                   ))}
                 </View>
@@ -874,16 +952,132 @@ function ArkSettingsBody() {
             digging into a file manager or the Drive web UI. */}
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Ark Backup
+            Ark backup file (2/2)
           </Text>
-          <Text style={{ fontSize: 12, color: '#888', marginBottom: 10, lineHeight: 17 }}>
-            If you lose this phone, you'll need BOTH your 12-word seed phrase AND your Ark backup file to recover your wallet.
+
+          {/* iOS backup-snapshot reminder. Active whenever the user
+              satisfied the create-flow gate via manual share+confirm
+              (the only honest iOS path — see ArkSeedPhraseScreen.iOS
+              branch). Stays visible on every visit to this screen until
+              iCloud Drive becomes available for Cypher Box, at which
+              point the auto-tick has a verifiable off-device channel
+              and the reminder auto-clears (see useArkSync's iCloud probe
+              effect). Three inline actions:
+                - Re-export now: writes a fresh snapshot via the share
+                  sheet. The action that used to live as a separate
+                  "Manual export" row in the Ark Backup card; moved
+                  inline here because it's only meaningful while this
+                  reminder is active.
+                - How to enable iCloud Drive: opens the iCloud-hint
+                  alert (links into iOS Settings).
+                - iCloud Drive is on — dismiss: auto-validates via the
+                  ubiquity probe before flipping the flag off, so a
+                  user who taps it without actually enabling iCloud
+                  Drive is sent back to Settings rather than silently
+                  ending up in a snapshot-only state. */}
+          {Platform.OS === 'ios' && arkIosBackupReminderActive && (
+            <View
+              style={{
+                marginBottom: 12,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+                borderRadius: 10,
+                backgroundColor: 'rgba(251, 146, 60, 0.10)',
+                borderWidth: 1,
+                borderColor: 'rgba(251, 146, 60, 0.40)',
+              }}
+            >
+              <Text bold style={{ fontSize: 14, color: '#FB923C', marginBottom: 4 }}>
+                ⚠ Re-export backup after every receive
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.white, lineHeight: 17 }}>
+                When you created this wallet, you saved a one-time snapshot of the encrypted backup file. That file doesn't auto-update unless iCloud Drive is on for Cypher Box. Tap "Re-export now" after every Lightning receive — or enable iCloud Drive for Cypher Box and this reminder will go away.
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
+                <TouchableOpacity
+                  onPress={handleManualExport}
+                  disabled={manualExportBusy}
+                  activeOpacity={0.7}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
+                    backgroundColor: '#0F0F0F',
+                    borderWidth: 1,
+                    borderColor: 'rgba(251, 146, 60, 0.55)',
+                    marginRight: 8,
+                    marginBottom: 6,
+                    opacity: manualExportBusy ? 0.5 : 1,
+                  }}
+                >
+                  {manualExportBusy ? (
+                    <ActivityIndicator size="small" color="#FB923C" />
+                  ) : (
+                    <Text bold style={{ fontSize: 12, color: '#FB923C' }}>
+                      Re-export now
+                    </Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleICloudHint}
+                  activeOpacity={0.7}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
+                    backgroundColor: '#0F0F0F',
+                    borderWidth: 1,
+                    borderColor: '#444',
+                    marginRight: 8,
+                    marginBottom: 6,
+                  }}
+                >
+                  <Text bold style={{ fontSize: 12, color: '#AAA' }}>
+                    How to enable iCloud Drive
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleDismissBackupReminder}
+                  activeOpacity={0.7}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
+                    backgroundColor: '#0F0F0F',
+                    borderWidth: 1,
+                    borderColor: 'rgba(74, 222, 128, 0.5)',
+                    marginBottom: 6,
+                  }}
+                >
+                  <Text bold style={{ fontSize: 12, color: '#4ADE80' }}>
+                    iCloud Drive is on — dismiss
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          {/* Mirror of the red warning under the Seed Phrase section: a
+              user reading only this card and seeing a fresh backup file
+              shouldn't conclude they're protected. The .cbark file
+              alone can't restore funds — it has no spending key. The
+              symmetric pair (seed alone insufficient, backup alone
+              insufficient) makes the (1/2) + (2/2) labels honest. */}
+          <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 10, lineHeight: 17 }}>
+            You also need your seed phrase (1/2) above. The Ark backup file alone is not enough.
           </Text>
           <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
-            {/* Local file row */}
+            {/* Local file row — always probes Documents/ark-backup.cbark
+                so the user sees when the on-device copy was last refreshed,
+                even after iCloud Drive takes over as the active write
+                target. The folder hint matches what the user would see in
+                their files browser: iOS exposes the app's Documents
+                directory under "On My iPhone → Cypher Box" via
+                UIFileSharingEnabled + LSSupportsOpeningDocumentsInPlace,
+                Android keeps it inside the private app sandbox where it
+                isn't user-navigable without root or adb. */}
             <View style={{ paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: '#333' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 15, color: '#AAA' }}>Local (on-device)</Text>
+                <Text style={{ fontSize: 15, color: '#AAA' }}>Local copy (on-device)</Text>
                 {localBackup === null ? (
                   <ActivityIndicator size="small" color="#888" />
                 ) : localBackup === undefined ? (
@@ -897,18 +1091,34 @@ function ArkSettingsBody() {
                   {`${formatSize(localBackup.sizeBytes)} · ark-backup.cbark`}
                 </Text>
               )}
+              <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                {Platform.OS === 'ios'
+                  ? 'Files → On My iPhone → Cypher Box'
+                  : 'Inside the app\'s private storage'}
+              </Text>
             </View>
 
-            {/* Cloud row — Google Drive on Android, iCloud Drive on iOS.
-                On iOS the local Documents file IS the iCloud copy when
-                the user enables iCloud Drive sync for Cypher Box, so
-                "connect" opens iOS Settings rather than calling an
-                in-app SDK. */}
+            {/* iCloud Drive row (iOS) — independent probe of the ubiquity
+                container so the timestamp reflects the iCloud copy's own
+                last-modified time, not the local Documents file. Status
+                pill mirrors the Drive row's shape so the two cloud rails
+                read the same way: Off / No copy yet / X min ago.
+                Android branch is the Google Drive row.*/}
             <View style={{ paddingVertical: 8 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 15, color: '#AAA' }}>{Platform.OS === 'ios' ? 'iCloud Drive' : 'Google Drive'}</Text>
+                <Text style={{ fontSize: 15, color: '#AAA' }}>{Platform.OS === 'ios' ? 'iCloud Drive copy' : 'Google Drive copy'}</Text>
                 {Platform.OS === 'ios' ? (
-                  <Text bold style={{ fontSize: 13, color: '#888' }}>System-managed</Text>
+                  iCloudAvailable === null ? (
+                    <ActivityIndicator size="small" color="#888" />
+                  ) : !iCloudAvailable ? (
+                    <Text bold style={{ fontSize: 13, color: '#888' }}>Off for Cypher Box</Text>
+                  ) : iCloudBackup === null ? (
+                    <ActivityIndicator size="small" color="#888" />
+                  ) : iCloudBackup === undefined ? (
+                    <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>No copy yet</Text>
+                  ) : (
+                    <Text bold style={{ fontSize: 13, color: colors.green }}>{formatAgo(iCloudBackup.modifiedAt)}</Text>
+                  )
                 ) : driveConnected === null ? (
                   <ActivityIndicator size="small" color="#888" />
                 ) : !driveConnected ? (
@@ -921,7 +1131,17 @@ function ArkSettingsBody() {
                   <Text bold style={{ fontSize: 13, color: colors.green }}>{formatAgo(driveBackup.modifiedAt)}</Text>
                 )}
               </View>
-              {driveBackup && (
+              {Platform.OS === 'ios' && iCloudBackup && (
+                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                  {`${formatSize(iCloudBackup.sizeBytes)} · ark-backup.cbark`}
+                </Text>
+              )}
+              {Platform.OS === 'ios' && (
+                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                  Files → iCloud Drive → Cypher Box
+                </Text>
+              )}
+              {Platform.OS === 'android' && driveBackup && (
                 <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
                   {`${formatSize(driveBackup.sizeBytes)} · appDataFolder`}
                 </Text>
@@ -931,94 +1151,76 @@ function ArkSettingsBody() {
                   {driveError}
                 </Text>
               )}
-              {/* Connect / Disconnect / iCloud-hint CTA. Inline pill so
-                  the action is one tap away — backup status is the kind
-                  of thing you only check when something feels off, and
-                  bouncing through a separate screen would defeat the
-                  point. */}
-              <TouchableOpacity
-                onPress={
-                  Platform.OS === 'ios'
-                    ? handleICloudHint
-                    : driveConnected
-                      ? handleDriveDisconnect
-                      : handleDriveConnect
-                }
-                disabled={driveBusy}
-                activeOpacity={0.7}
-                style={{
-                  marginTop: 10,
-                  alignSelf: 'flex-start',
-                  paddingVertical: 8,
-                  paddingHorizontal: 14,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: Platform.OS === 'ios'
-                    ? '#444'
-                    : driveConnected ? '#E85C5A' : (colors.ark?.light ?? colors.green),
-                  backgroundColor: '#0F0F0F',
-                  opacity: driveBusy ? 0.5 : 1,
-                }}
-              >
-                {driveBusy ? (
-                  <ActivityIndicator size="small" color="#888" />
-                ) : (
-                  <Text bold style={{
-                    fontSize: 13,
-                    color: Platform.OS === 'ios'
-                      ? '#AAA'
-                      : driveConnected ? '#E85C5A' : (colors.ark?.light ?? colors.green),
-                  }}>
-                    {Platform.OS === 'ios'
-                      ? 'How to enable iCloud Drive'
-                      : driveConnected
-                        ? 'Disconnect'
-                        : 'Connect Google Drive'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+              {/* Cloud-rail CTA. Inline pill so the action is one tap
+                  away — backup status is the kind of thing you only check
+                  when something feels off, and bouncing through a separate
+                  screen would defeat the point.
+                    iOS: when iCloud is verified for Cypher Box, the pill
+                      shows a green "✓ iCloud Drive enabled" — same
+                      "connected" affordance the Android Drive row uses
+                      when Google Drive is connected. Tap still opens the
+                      iCloud-hint alert (Open Settings) so users can
+                      verify or disable from one place. When iCloud is
+                      off the pill reverts to the neutral "How to enable
+                      iCloud Drive" prompt.
+                    Android: Connect / Disconnect, gated on driveBusy. */}
+              {Platform.OS === 'ios' ? (
+                <TouchableOpacity
+                  onPress={handleICloudHint}
+                  activeOpacity={0.7}
+                  style={{
+                    marginTop: 10,
+                    alignSelf: 'flex-start',
+                    paddingVertical: 8,
+                    paddingHorizontal: 14,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: iCloudAvailable ? colors.green : '#444',
+                    backgroundColor: '#0F0F0F',
+                  }}
+                >
+                  {iCloudAvailable === null ? (
+                    <ActivityIndicator size="small" color="#888" />
+                  ) : (
+                    <Text bold style={{
+                      fontSize: 13,
+                      color: iCloudAvailable ? colors.green : '#AAA',
+                    }}>
+                      {iCloudAvailable ? '✓ iCloud Drive enabled' : 'How to enable iCloud Drive'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={driveConnected ? handleDriveDisconnect : handleDriveConnect}
+                  disabled={driveBusy}
+                  activeOpacity={0.7}
+                  style={{
+                    marginTop: 10,
+                    alignSelf: 'flex-start',
+                    paddingVertical: 8,
+                    paddingHorizontal: 14,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: driveConnected ? '#E85C5A' : (colors.ark?.light ?? colors.green),
+                    backgroundColor: '#0F0F0F',
+                    opacity: driveBusy ? 0.5 : 1,
+                  }}
+                >
+                  {driveBusy ? (
+                    <ActivityIndicator size="small" color="#888" />
+                  ) : (
+                    <Text bold style={{
+                      fontSize: 13,
+                      color: driveConnected ? '#E85C5A' : (colors.ark?.light ?? colors.green),
+                    }}>
+                      {driveConnected ? 'Disconnect' : 'Connect Google Drive'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
-            {/* Manual export — one-shot snapshot to share sheet. Lives
-                here rather than in the create flow because it's a
-                snapshot, not a backup channel: the file you export now
-                doesn't update on later VTXO changes. Useful for users
-                who want a redundant copy in a different cloud (different
-                Google account, OneDrive, email-to-self) or a manual
-                "Save to Files" target on iOS that's outside Documents. */}
-            <View style={{ paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: '#333', marginTop: 4 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 15, color: '#AAA' }}>Manual export</Text>
-                <Text style={{ fontSize: 11, color: '#666' }}>snapshot</Text>
-              </View>
-              <Text style={{ fontSize: 11, color: '#666', marginTop: 2, lineHeight: 16 }}>
-                Save the current encrypted backup file anywhere via the share sheet — email, another Drive account, OneDrive, etc. Doesn't auto-update; export again after big changes.
-              </Text>
-              <TouchableOpacity
-                onPress={handleManualExport}
-                disabled={manualExportBusy}
-                activeOpacity={0.7}
-                style={{
-                  marginTop: 10,
-                  alignSelf: 'flex-start',
-                  paddingVertical: 8,
-                  paddingHorizontal: 14,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: '#444',
-                  backgroundColor: '#0F0F0F',
-                  opacity: manualExportBusy ? 0.5 : 1,
-                }}
-              >
-                {manualExportBusy ? (
-                  <ActivityIndicator size="small" color="#888" />
-                ) : (
-                  <Text bold style={{ fontSize: 13, color: '#AAA' }}>
-                    Save backup file
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
 
