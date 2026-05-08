@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from "react";
-import { ActivityIndicator, Image, TouchableOpacity, View } from "react-native"
+import { Image, TouchableOpacity, View } from "react-native"
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
 import { EyeVisible } from "@Cypher/assets/images";
@@ -22,13 +22,11 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
     const { colors } = useTheme();
 
     const [isView, setIsView] = useState(false);
-    const [loading, setLoading] = useState(false);
     const [secretList, setSecretList] = useState([]);
 
     useEffect(() => {
         const entries = wallet?.getSecret().split(/\s/).entries();
         if(entries){
-            setLoading(true)
             let arr: any = [];
             for (const [index, secret] of entries) {
                 if (secret) {
@@ -39,21 +37,13 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                 }
             }
             setSecretList(arr);
-            setLoading(false)
         }
     }, [])
     const viewClickHandler = () => {
-        setLoading(true);
+        setIsView(true);
         setTimeout(() => {
-            setLoading(false);
-            setIsView(true);
-            setTimeout(() => {
-                callNext();
-                // setTimeout(() => {
-                //     setIsView(false);
-                // }, 2000);
-            }, 3000);
-        }, 1500);
+            callNext();
+        }, 3000);
     }
 
     const buttons = [
@@ -98,20 +88,16 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                       a direct child again without the sibling-overlay dance.
                     */}
                     <View style={[styles.hideView, styles.hideOverlay]}>
-                        {loading ? (
-                            <ActivityIndicator style={{ position: 'absolute', top: 100, bottom: 0, left: 0, right: 0 }} />
-                        ) : (
-                            <View style={styles.centerView}>
-                                <View>
-                                    <Text style={styles.title} center>Tap to reveal your seed phrase</Text>
-                                    <Text style={styles.detail} center>Make sure no one is watching your screen.</Text>
-                                </View>
-                                <TouchableOpacity style={styles.viewStyle} onPress={viewClickHandler}>
-                                    <Image source={EyeVisible} />
-                                    <Text h3 style={styles.viewBtn}>View</Text>
-                                </TouchableOpacity>
+                        <View style={styles.centerView}>
+                            <View>
+                                <Text style={styles.title} center>Tap to reveal your seed phrase</Text>
+                                <Text style={styles.detail} center>Make sure no one is watching your screen.</Text>
                             </View>
-                        )}
+                            <TouchableOpacity style={styles.viewStyle} onPress={viewClickHandler}>
+                                <Image source={EyeVisible} />
+                                <Text h3 style={styles.viewBtn}>View</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </>
             )}
