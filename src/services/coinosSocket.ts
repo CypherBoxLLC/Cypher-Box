@@ -4,7 +4,11 @@ import { triggerPaymentNotification } from '@Cypher/components/PaymentNotificati
 
 // Connect to our relay instead of directly to CoinOS (Cloudflare blocks direct WS)
 const RELAY_WS_URL = 'wss://notifications.cypherbox.io:3003';
-const { coinosRelayUri, RELAY_API_KEY } = require('../../blue_modules/constants');
+const { coinosRelayUri } = require('../../blue_modules/constants');
+// RELAY_API_KEY lives in a gitignored secrets module so it never enters
+// repo history. Bootstrap with `cp blue_modules/secrets.example.ts
+// blue_modules/secrets.ts` on a fresh checkout.
+const { RELAY_API_KEY } = require('../../blue_modules/secrets');
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
