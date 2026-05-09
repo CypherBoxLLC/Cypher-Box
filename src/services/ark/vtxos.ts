@@ -73,7 +73,7 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         '[Ark vtxos] allVtxos() returned',
         all.length,
         'total:',
-        all.map((v) => `${v.kind}/${v.state}/${v.sats}sats/id=${v.id.slice(0, 12)}…`),
+        all.map((v) => `${v.kind}/${v.state}/${v.sats}sats/exp=${v.expiryHeight}/id=${v.id.slice(0, 12)}…`),
     );
 
     const spendable = all.filter((v) => !HIDDEN_STATES.has(v.state.toLowerCase()));

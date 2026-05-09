@@ -310,7 +310,8 @@ export default function useArkSync(): UseArkSync {
                     '(spendable=', filteredBalance.spendableSats,
                     'pendingInRound=', filteredBalance.pendingInRoundSats,
                     'claimableLn=', filteredBalance.claimableLightningReceiveSats,
-                    'expiredUnrecoverable=', filteredBalance.expiredUnrecoverableSats, ')',
+                    'expiredUnrecoverable=', filteredBalance.expiredUnrecoverableSats,
+                    'tip=', tip, ')',
                 );
                 setArkBalance(filteredBalance.totalSats);
                 setArkBalanceDetail(filteredBalance);
