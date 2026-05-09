@@ -33,7 +33,7 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { useArkSync, useArkRestoreOnBoot } from "@Cypher/custom-hooks";
+import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill } from "@Cypher/custom-hooks";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
 import { btc, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
@@ -133,6 +133,12 @@ export default function HomeScreen({ route }: Props) {
   // initial fetch + 30s interval + foreground-kick for balance / vtxos /
   // chain tip. No-op when Ark isn't set up.
   const arkSync = useArkSync();
+  // Ark exit-destination backfill: derives the reserved-slot address from
+  // the Hot Vault and writes it to `arkExitDestinationAddress` if unset.
+  // Reactive so it covers create / recover / existing-user upgrade paths
+  // with a single mount. No-op once the destination is set or when there
+  // is no Hot Vault.
+  useArkExitDestinationBackfill();
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [carouselPage, setCarouselPage] = useState(0);

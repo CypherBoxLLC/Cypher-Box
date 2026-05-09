@@ -3,3 +3,4 @@ export {default as useArkSync} from './useArkSync';
 export type {UseArkSync} from './useArkSync';
 export {default as useArkRestoreOnBoot} from './useArkRestoreOnBoot';
 export type {ArkRestoreBootStatus} from './useArkRestoreOnBoot';
+export {default as useArkExitDestinationBackfill} from './useArkExitDestinationBackfill';
