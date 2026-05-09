@@ -1,6 +1,7 @@
 import useAuthStore from '@Cypher/stores/authStore';
 import { Platform } from 'react-native';
 import { triggerPaymentNotification } from '@Cypher/components/PaymentNotification';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 // Connect to our relay instead of directly to CoinOS (Cloudflare blocks direct WS)
 const RELAY_WS_URL = 'wss://notifications.cypherbox.io:3003';
@@ -62,6 +63,13 @@ if (__DEV__) console.log('[CoinOS WS] Payment received:', data.amount, 'sats');
 
           // Show in-app banner
           triggerPaymentNotification(data.amount, data.confirmed, 'coinos', 'CoinOS');
+
+          // Activity log: only emit on confirmed=true to avoid double-
+          // counting the unconfirmed → confirmed transition for the
+          // same invoice. Iid is intentionally NOT logged (privacy).
+          if (data.confirmed) {
+            recordEvent({ kind: 'ln-received', wallet: 'coinos', sats: data.amount });
+          }
 
           if (onPaymentReceived) {
             onPaymentReceived(data);

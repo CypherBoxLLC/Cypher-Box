@@ -101,6 +101,7 @@ import ColdVaultIntro2 from '@Cypher/screens/ColdVaultIntro2';
 import CheckingAccountIntro from '@Cypher/screens/CheckingAccountIntro';
 import CheckingAccountLogin from '@Cypher/screens/CheckingAccountLogin';
 import CheckingAccountCreated from '@Cypher/screens/CheckingAccountCreated';
+import Activity from '@Cypher/screens/Activity';
 import CreateArkScreen from '@Cypher/screens/Account/CreateArkScreen';
 import ArkSeedPhraseScreen from '@Cypher/screens/Account/ArkSeedPhraseScreen';
 import RecoverArkScreen from '@Cypher/screens/Account/RecoverArkScreen';
@@ -303,6 +304,7 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="CPFP" component={CPFP} options={CPFP.navigationOptions(theme)} />
       <WalletsStack.Screen name="RBFBumpFee" component={RBFBumpFee} options={RBFBumpFee.navigationOptions(theme)} />
       <WalletsStack.Screen name="RBFCancel" component={RBFCancel} options={RBFCancel.navigationOptions(theme)} />
+      <WalletsStack.Screen name="Activity" component={Activity} options={{ headerShown: false }} />
       <WalletsStack.Screen name="Settings" component={Settings} options={Settings.navigationOptions(theme)} />
       <WalletsStack.Screen name="Security" component={Security} options={Security.navigationOptions(theme)} />
       <WalletsStack.Screen name="SelectWallet" component={SelectWallet} options={SelectWallet.navigationOptions(theme)} />

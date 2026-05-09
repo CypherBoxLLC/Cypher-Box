@@ -1,4 +1,5 @@
 import useAuthStore from '@Cypher/stores/authStore';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 import { writeArkAutoBackup } from './backup';
 import { fetchChainTipHeight, blocksToDays } from './chainTip';
@@ -370,6 +371,7 @@ export async function runBackgroundRefresh(
 
         let triggerCount = 0;
         const batchIds: string[] = [];
+        let batchTotalSats = 0;
         let imminent24h = false;
         let imminent2h = false;
         for (const v of vtxos.spendable) {
@@ -381,6 +383,7 @@ export async function runBackgroundRefresh(
             const daysLeft = blocksToDays(Math.max(0, blocksLeft));
             if (daysLeft < BG_REFRESH_TUNABLES.batchDays) {
                 batchIds.push(v.id);
+                batchTotalSats += v.sats;
                 if (daysLeft < BG_REFRESH_TUNABLES.triggerDays) triggerCount++;
             }
             // Imminent-expiry observation runs across ALL spendable VTXOs,
@@ -452,7 +455,7 @@ export async function runBackgroundRefresh(
         // (charger + idle, longer window). Android WorkManager has no
         // equivalent budget concern.
         try {
-            await refreshArkVtxosAndSync(batchIds);
+            await refreshArkVtxosAndSync(batchIds, batchTotalSats);
         } catch (err: any) {
             return finalize('error', {
                 vtxoCount: batchIds.length,
@@ -471,8 +474,10 @@ export async function runBackgroundRefresh(
         if (mnemonic) {
             try {
                 await writeArkAutoBackup(mnemonic);
+                recordEvent({ kind: 'auto-backup', result: 'success', target: 'local' });
             } catch (err) {
                 console.warn('[Ark bg refresh] post-refresh local backup failed:', err);
+                recordEvent({ kind: 'auto-backup', result: 'failure', target: 'local' });
             }
         }
 

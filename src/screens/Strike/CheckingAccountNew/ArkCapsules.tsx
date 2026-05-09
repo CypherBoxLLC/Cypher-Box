@@ -958,7 +958,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
             const WATCHDOG_MS = 90_000;
             type RefreshResult = Awaited<ReturnType<typeof refreshArkVtxosAndSync>>;
-            const refreshPromise: Promise<RefreshResult> = refreshArkVtxosAndSync(ids);
+            const refreshPromise: Promise<RefreshResult> = refreshArkVtxosAndSync(ids, totalIn);
             // Detach the rejection handler so the promise won't complain
             // if it settles after the watchdog fires.
             refreshPromise.catch((detachedErr) => {

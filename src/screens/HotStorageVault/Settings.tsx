@@ -26,6 +26,7 @@ import {
     backupHotVaultSeedWithMeta,
     resetHotVaultBackupFully,
 } from "@Cypher/services/hotVaultKeychain";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
 import loc from "../../../loc";
 import Notifications from "../../../blue_modules/notifications";
@@ -309,6 +310,12 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
 
         deleteWallet(wallet);
         vaultTab ? setColdStorageWalletID(undefined) : setWalletID(undefined);
+        // Activity log: only emit for cold-vault deletions; hot-vault
+        // deletions are intentionally not logged (Bam's call — symmetry
+        // isn't a strong enough reason to ship an unrequested event kind).
+        if (vaultTab) {
+            recordEvent({ kind: 'cold-vault-deleted' });
+        }
         dispatchReset('HomeScreen');
         saveToDisk(true);
         triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);

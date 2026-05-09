@@ -27,6 +27,7 @@ import {
 import type { DriveErrorClass, SafErrorClass } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
 
 import styles from "./styles";
 
@@ -674,6 +675,11 @@ export default function ArkSeedPhraseScreen() {
         if (!allBTCWallets.includes("ARK")) {
             setAllBTCWallets([...allBTCWallets, "ARK"]);
         }
+        // Activity log: emit AFTER the strict backup gate has passed and
+        // setArkAuth has flipped — at this point the wallet is durably
+        // created and a recovery path exists. Earlier emits would record
+        // half-created state if the user backed out at the backup gate.
+        recordEvent({ kind: 'ark-created' });
 
         // Arm background-refresh for the new wallet. The zustand default
         // is `arkBgRefreshEnabled: true` so the toggle in ArkCapsules

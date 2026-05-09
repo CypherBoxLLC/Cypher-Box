@@ -7,6 +7,7 @@ import {
 import { getArkWalletHandle } from './walletHandle';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 /**
  * What kind of thing the user pasted into the destination field.
@@ -220,6 +221,13 @@ export async function executeArkSend(
         await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
     } catch (err) {
         console.warn('[Ark send] post-send sync/refresh failed:', err);
+    }
+
+    // Activity log: only Lightning kinds map to the wallet-cross-cutting
+    // "ln-sent" event in the Activity feed. Ark-to-ark and on-chain Ark
+    // sends are out of scope for the v1 event-log schema.
+    if (dest.kind === 'ln-invoice' || dest.kind === 'ln-offer' || dest.kind === 'ln-address') {
+        recordEvent({ kind: 'ln-sent', wallet: 'ark', sats: amountSats });
     }
 
     return {

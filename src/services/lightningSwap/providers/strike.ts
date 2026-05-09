@@ -20,6 +20,7 @@ import {
     sendStrikeLightningPayment,
 } from '@Cypher/api/strikeAPIs';
 import useAuthStore from '@Cypher/stores/authStore';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 import type {
     LightningSwapProvider,
@@ -130,6 +131,7 @@ const strikeProvider: LightningSwapProvider = {
         const id = String(
             result?.paymentId ?? result?.paymentQuoteId ?? result?.id ?? '(strike payment)',
         );
+        recordEvent({ kind: 'ln-sent', wallet: 'strike', sats: _amountSats });
         return {
             id,
             // Strike doesn't surface the routing fee separately on

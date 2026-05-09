@@ -1,6 +1,7 @@
 import { getArkWalletHandle } from './walletHandle';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
 import type { FeeEstimate, RoundState } from '@secondts/bark-react-native';
 
 export type ArkRefreshFeeView = {
@@ -52,19 +53,44 @@ export async function estimateArkRefreshFee(
  */
 export async function refreshArkVtxos(
     vtxoIds: string[],
+    totalSats?: number,
 ): Promise<ArkRefreshResult> {
     const handle = requireHandle();
     console.log('[Ark refresh] refreshVtxos() calling for', vtxoIds.length, 'vtxo(s):', vtxoIds.map((id) => id.slice(0, 12) + '…'));
     const t0 = Date.now();
+    // Activity log: correlationId links the started/finished pair so the
+    // UI can show "Refreshing… → Refresh complete" as a single timeline
+    // entry. Round ID from the SDK is intentionally NOT used (privacy +
+    // it can be undefined). Totals fall back to 0 when the caller
+    // didn't pass them — the kind+wallet still carry the signal.
+    const correlationId = `${t0.toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    recordEvent({
+        kind: 'ark-refresh-started',
+        vtxoCount: vtxoIds.length,
+        totalSats: totalSats ?? 0,
+        correlationId,
+    });
     try {
         const roundId = await handle.refreshVtxos(vtxoIds);
         console.log(
             '[Ark refresh] refreshVtxos() resolved in', Math.round((Date.now() - t0) / 1000), 's, roundId=',
             roundId ?? '(undefined)',
         );
+        recordEvent({
+            kind: 'ark-refresh-finished',
+            correlationId,
+            result: 'success',
+            durationMs: Date.now() - t0,
+        });
         return { roundId: roundId ?? null };
     } catch (err: any) {
         console.warn('[Ark refresh] refreshVtxos() threw after', Math.round((Date.now() - t0) / 1000), 's:', err?.message ?? err);
+        recordEvent({
+            kind: 'ark-refresh-finished',
+            correlationId,
+            result: 'failure',
+            durationMs: Date.now() - t0,
+        });
         throw err;
     }
 }
@@ -86,9 +112,10 @@ export async function refreshArkVtxos(
  */
 export async function refreshArkVtxosAndSync(
     vtxoIds: string[],
+    totalSats?: number,
 ): Promise<ArkRefreshResult> {
     const handle = requireHandle();
-    const result = await refreshArkVtxos(vtxoIds);
+    const result = await refreshArkVtxos(vtxoIds, totalSats);
     // Pull the round outcome into the local datadir before we re-read.
     await handle.sync();
     await Promise.all([fetchArkBalance(), fetchArkVtxos()]);

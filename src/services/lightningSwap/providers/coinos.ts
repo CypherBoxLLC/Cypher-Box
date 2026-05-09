@@ -14,6 +14,7 @@ import {
     sendLightningPayment as coinosSendLightning,
 } from '@Cypher/api/coinOSApis';
 import useAuthStore from '@Cypher/stores/authStore';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 import type {
     LightningSwapProvider,
@@ -110,6 +111,7 @@ const coinosProvider: LightningSwapProvider = {
             }
             throw new Error(parsed.message ?? 'Coinos payment failed');
         }
+        recordEvent({ kind: 'ln-sent', wallet: 'coinos', sats: amountSats });
         return {
             id: parsed.id ?? '(coinos payment)',
             // Coinos doesn't currently surface the routing fee in its

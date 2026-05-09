@@ -68,6 +68,10 @@ export default React.memo(function Header({
         dispatchNavigate("Settings");
     };
 
+    const navigateToActivity = () => {
+        dispatchNavigate("Activity");
+    };
+
     /**
      * Open the camera scanner and resolve with the raw scanned string.
      * Wraps the existing `ScanQRCodeRoot` route so we can `await` the
@@ -250,9 +254,14 @@ export default React.memo(function Header({
                   (commented-out) version had.
                 */}
                 <View style={styles.row}>
-                    {/* Gear → settings on the left, scan on the right.
-                        Only the scan icon is enlarged for tappability;
-                        gear keeps its original size via the shared styles. */}
+                    <TouchableOpacity
+                        activeOpacity={0.6}
+                        style={styles.imageView}
+                        onPress={navigateToActivity}
+                        accessibilityLabel="Activity"
+                    >
+                        <Ionicons name="notifications-outline" size={28} color="#FFFFFF" />
+                    </TouchableOpacity>
                     <TouchableOpacity
                         activeOpacity={0.6}
                         style={styles.imageView}

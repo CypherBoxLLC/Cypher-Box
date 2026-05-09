@@ -34,6 +34,8 @@ import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
 import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill } from "@Cypher/custom-hooks";
+import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
+import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
 import { btc, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
@@ -308,11 +310,19 @@ export default function HomeScreen({ route }: Props) {
       setBalanceVault(balanceTemp)
       const hasVault = walletTemp.secret ? true : false;
       setHasSavingVault(hasVault)
+      // Activity log: diff the wallet's tx list for new on-chain receives.
+      // Failure is non-fatal — the rest of the home screen renders fine
+      // and the next refresh tick will retry.
+      try {
+        processHotVaultTxsForActivity(walletTemp as any);
+      } catch (diffErr) {
+        if (__DEV__) console.warn('[Activity] hot-vault tx diff failed:', diffErr);
+      }
       if (wallets && walletID) {
         setIsAllDone(!!walletTemp);
       } else {
         setIsAllDone(false)
-      }  
+      }
     } catch (error) {
       console.error('Error getting wallet:', error);
     } finally {
@@ -427,6 +437,16 @@ export default function HomeScreen({ route }: Props) {
                   const directRate = Number(availableBalance * (numericAmount || 0));
                   setStrikeConvertedBalance(directRate);
               }
+          }
+          // Activity log: best-effort poll of /invoices for newly-paid
+          // Strike LN receives. Strike has no real-time hook, so this
+          // only fires when something else triggers loadStrikeData
+          // (HomeScreen focus / refresh). First-sync suppressed to
+          // avoid backfilling existing receive history.
+          try {
+              await processStrikeInvoicesForActivity();
+          } catch (diffErr) {
+              if (__DEV__) console.warn('[Activity] strike invoice diff failed:', diffErr);
           }
       } catch (error) {
           console.error('Error loading Strike data:', error);

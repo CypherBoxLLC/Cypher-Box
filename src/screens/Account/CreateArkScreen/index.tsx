@@ -12,6 +12,7 @@ import {
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
 import styles from "./styles";
 
 /**
@@ -90,6 +91,7 @@ export default function CreateArkScreen() {
             if (!allBTCWallets.includes("ARK")) {
                 setAllBTCWallets([...allBTCWallets, "ARK"]);
             }
+            recordEvent({ kind: 'ark-recovered' });
             setOpeningExisting(false);
             dispatchReset("HomeScreen", { isComplete: true });
         } catch (err) {
@@ -145,6 +147,10 @@ export default function CreateArkScreen() {
             if (!allBTCWallets.includes("ARK")) {
                 setAllBTCWallets([...allBTCWallets, "ARK"]);
             }
+            // Activity log: hot-vault-seed-reuse path is the canonical
+            // creation moment for this branch. The fresh-seed branch
+            // emits later in ArkSeedPhraseScreen, after Wallet.create.
+            recordEvent({ kind: 'ark-created' });
 
             setLoading(false);
 

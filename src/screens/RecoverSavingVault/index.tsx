@@ -14,6 +14,7 @@ import {
     resetHotVaultBackupFully,
     HotVaultBackupSummary,
 } from '@Cypher/services/hotVaultKeychain';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 const inputs = [
     1, 2, 3, 4, 5, 6,
@@ -133,6 +134,14 @@ export default function RecoverSavingVault({ route }: Props) {
         }
         triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
         saveWallet(w); // flips importing.current + persists via BlueStorage
+        // Activity log: 'cloud' covers any auto-recovery path (Keychain on
+        // iOS, future iCloud Drive). 'seed' is manual 12-word entry. The
+        // schema name follows the brief's terminology even though Keychain
+        // is a per-device backup, not a remote cloud sync.
+        recordEvent({
+            kind: 'hot-vault-recovered',
+            source: restoredWalletID ? 'cloud' : 'seed',
+        });
         dispatchNavigate('HomeScreen');
     };
 

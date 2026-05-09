@@ -10,6 +10,7 @@ import { PrivateKeyGenerater, Tips } from "@Cypher/components";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { backupHotVaultSeedWithMeta } from "@Cypher/services/hotVaultKeychain";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
 
 /**
  * SavingVault — the second screen of the hot-vault creation flow.
@@ -103,6 +104,11 @@ export default function SavingVault() {
         }
 
         setSubmitting(false);
+        // Activity log: emit AFTER seed-confirmation rather than at
+        // wallet-generation in SavingVaultIntro — a user who backs out
+        // before this point hasn't actually committed to having a Hot
+        // Vault yet, even though the wallet object already exists.
+        recordEvent({ kind: 'hot-vault-created' });
         dispatchNavigate("SavingVaultCreated");
     };
 

@@ -43,6 +43,8 @@ import {
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
+import { setArkExitCorrelationId } from "@Cypher/services/activityCursors";
 
 interface Props {
   receiveType: boolean;
@@ -734,6 +736,25 @@ function ArkSettingsBody() {
                 setArkExitDestinationAddress(address);
                 setArkExitStartedAt(Date.now());
                 setArkExitInProgress(true);
+                // Activity log: read pending sats fresh — the exit just
+                // moved every spendable VTXO into pending-exit state, so
+                // pendingExitsTotalSats is the right "amount being
+                // exited" number. correlationId persists across sync
+                // cycles + app restarts so the auto-claim path in
+                // useArkSync can match the started/finished pair.
+                const correlationId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+                setArkExitCorrelationId(correlationId);
+                let exitSats = 0;
+                try {
+                  exitSats = await fetchPendingExitsTotalSats();
+                } catch {
+                  // non-fatal — emit the event with 0 if the read fails
+                }
+                recordEvent({
+                  kind: 'ark-exit-started',
+                  sats: exitSats,
+                  correlationId,
+                });
                 SimpleToast.show(
                   'Emergency exit started — broadcasting on-chain. Funds will sweep automatically once the timelock expires.',
                   SimpleToast.LONG,

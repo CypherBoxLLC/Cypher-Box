@@ -24,8 +24,14 @@ import {
     tryClaimArkLightningReceives,
     writeArkAutoBackup,
 } from '@Cypher/services/ark';
+import { processArkMovementsForActivity } from '@Cypher/services/ark/movementsActivity';
 import { postArkRefreshExpiry } from '@Cypher/services/coinosSocket';
 import useAuthStore from '@Cypher/stores/authStore';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
+import {
+    getArkExitCorrelationId,
+    setArkExitCorrelationId,
+} from '@Cypher/services/activityCursors';
 
 /**
  * Keep Ark wallet state in zustand fresh.
@@ -184,6 +190,21 @@ export default function useArkSync(): UseArkSync {
                     const stillClaimable = await fetchClaimableExitVtxos();
                     if (pendingTotal === 0 && stillClaimable.length === 0) {
                         if (__DEV__) console.log('[Ark exit] complete — auto-deleting vault');
+                        // Activity log: emit BEFORE resetArkWalletState
+                        // wipes the Ark identity from this device, so the
+                        // event-log entry is the user's lasting record
+                        // that the exit succeeded. correlationId pairs
+                        // this with the ark-exit-started event captured
+                        // at the start of the exit.
+                        const correlationId = getArkExitCorrelationId();
+                        if (correlationId) {
+                            recordEvent({
+                                kind: 'ark-exit-finished',
+                                correlationId,
+                                result: 'success',
+                            });
+                            setArkExitCorrelationId(null);
+                        }
                         await resetArkWalletState();
                         clearArkAuth();
                         setArkExitInProgress(false);
@@ -348,6 +369,15 @@ export default function useArkSync(): UseArkSync {
                 );
             }
             setArkPendingLnReceives(inFlight);
+
+            // Activity log: diff Ark movements for newly-settled LN
+            // receives. Reads local SQLite (cheap), first-sync suppresses
+            // historical movements, failure non-fatal.
+            try {
+                await processArkMovementsForActivity();
+            } catch (diffErr) {
+                if (__DEV__) console.warn('[Activity] ark movements diff failed:', diffErr);
+            }
 
             // Update the idle-skip counter based on what this tick saw.
             // Both balance and vtxo list have to be empty for us to count
