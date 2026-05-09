@@ -30,7 +30,7 @@ export {
     getCachedArkMnemonic,
 } from './walletHandle';
 
-export { fetchArkBalance } from './balance';
+export { fetchArkBalance, applyExpiredVtxoFilter } from './balance';
 export type { ArkBalanceSummary } from './balance';
 
 export { fetchArkVtxos } from './vtxos';

@@ -1,4 +1,5 @@
 import { getArkWalletHandle } from './walletHandle';
+import type { ArkVtxoView } from './vtxos';
 
 /**
  * Plain-number view of the Bark SDK's Balance struct.
@@ -13,7 +14,12 @@ import { getArkWalletHandle } from './walletHandle';
  * BTC cap — so the lossy conversion is safe for this domain.
  */
 export type ArkBalanceSummary = {
-    /** Total sats (spendable + all pending buckets). This is what the UI shows. */
+    /**
+     * Headline balance shown in the UI: sats the user can send right now.
+     * Mirrors `spendableSats` exactly — pending in-flight buckets (exits,
+     * LN sends/receives, on-chain board confirmations, in-progress rounds)
+     * are NOT silently rolled in. Render those separately if relevant.
+     */
     totalSats: number;
     /** Spendable off-chain (Ark) sats — immediately sendable. */
     spendableSats: number;
@@ -27,6 +33,17 @@ export type ArkBalanceSummary = {
     claimableLightningReceiveSats: number;
     /** Sats awaiting on-chain board confirmations. */
     pendingBoardSats: number;
+    /**
+     * Sats trapped in expired VTXOs the SDK still flags Spendable. The Bark
+     * SDK keeps expired VTXOs in its local DB until the ASP sweeps them
+     * server-side and a sync prunes them; until that happens `wallet.balance()`
+     * over-reports `spendableSats` by this amount. We subtract them at the
+     * `applyExpiredVtxoFilter` boundary so the headline never shows phantom
+     * dust the user can't actually spend.
+     *
+     * Always 0 when the filter wasn't applied (no vtxo list / no chain tip).
+     */
+    expiredUnrecoverableSats: number;
 };
 
 function toNum(b: bigint): number {
@@ -44,6 +61,11 @@ function toNum(b: bigint): number {
  * Note: `wallet.balance()` reads from the local SQLite datadir; it does NOT
  * round-trip to the ASP. For a fresh on-chain deposit to appear, the daemon
  * sync loop (configured via daemonSlowSyncIntervalSecs) must have run.
+ *
+ * The returned summary's `totalSats` equals `spendableSats`. Callers that
+ * also have the VTXO list and current chain tip should pipe the result
+ * through `applyExpiredVtxoFilter` to subtract expired-but-still-Spendable
+ * dust before rendering or running spend-availability checks.
  */
 export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
     const handle = getArkWalletHandle();
@@ -66,32 +88,67 @@ export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
         'pendingBoard=', pendingBoard,
     );
 
-    // IMPORTANT: `pendingInRoundSats` is NOT added to the headline total.
-    //
-    // Quirk on Second.tech's private mainnet: the SDK sums BOTH sides of a
-    // pending round (e.g. 10,000 sats input VTXO + 9,911 expected output
-    // = 19,911 in this field) — so naively adding it to `spendable` would
-    // render ~2× the user's real balance during a refresh.
-    //
-    // We also don't try to derive an "in-round amount" from this field
-    // alone (e.g. halving it) because the Locked output VTXO is already
-    // materialised in the SDK's allVtxos() list with its exact post-fee
-    // amount. The accurate fix for the "balance drops to 0 mid-refresh"
-    // bug lives in `useArkSync`, which composes this bucket with the VTXO
-    // list — see comments there. This function stays pure and just
-    // reports what the SDK says.
     return {
-        totalSats:
-            spendable +
-            pendingExit +
-            pendingLnSend +
-            claimableLnRecv +
-            pendingBoard,
+        totalSats: spendable,
         spendableSats: spendable,
         pendingInRoundSats: pendingRound,
         pendingExitSats: pendingExit,
         pendingLightningSendSats: pendingLnSend,
         claimableLightningReceiveSats: claimableLnRecv,
         pendingBoardSats: pendingBoard,
+        expiredUnrecoverableSats: 0,
+    };
+}
+
+/**
+ * Subtract sats trapped in expired Spendable VTXOs from the headline.
+ *
+ * The Bark SDK doesn't auto-evict expired VTXOs from its local DB — until
+ * the ASP sweeps them and a sync picks up the eviction, `wallet.balance()`
+ * still reports them as part of `spendableSats`. For dust (value < exit
+ * fee) this is unrecoverable: the user can't refresh it (uneconomic /
+ * below round minimum) and can't unilateral-exit it (exit fee > value),
+ * so counting it as spendable produces a phantom balance the user can
+ * never actually move.
+ *
+ * Pass the `all` list from `fetchArkVtxos()` and the height from
+ * `fetchChainTipHeight()`. When either is missing this function returns
+ * the input summary unchanged (with `expiredUnrecoverableSats: 0`).
+ */
+export function applyExpiredVtxoFilter(
+    summary: ArkBalanceSummary,
+    vtxos: ArkVtxoView[] | null | undefined,
+    chainTipHeight: number | null | undefined,
+): ArkBalanceSummary {
+    if (!vtxos || typeof chainTipHeight !== 'number' || chainTipHeight <= 0) {
+        return { ...summary, expiredUnrecoverableSats: 0 };
+    }
+    let expired = 0;
+    for (const v of vtxos) {
+        if (
+            v.expiryHeight > 0 &&
+            v.expiryHeight <= chainTipHeight &&
+            v.state.toLowerCase() === 'spendable'
+        ) {
+            expired += v.sats;
+        }
+    }
+    if (expired === 0) {
+        return { ...summary, expiredUnrecoverableSats: 0 };
+    }
+    const adjustedSpendable = Math.max(0, summary.spendableSats - expired);
+    console.log(
+        '[Ark balance] expired-VTXO filter subtracted',
+        expired,
+        'sats; spendable',
+        summary.spendableSats,
+        '→',
+        adjustedSpendable,
+    );
+    return {
+        ...summary,
+        totalSats: adjustedSpendable,
+        spendableSats: adjustedSpendable,
+        expiredUnrecoverableSats: expired,
     };
 }

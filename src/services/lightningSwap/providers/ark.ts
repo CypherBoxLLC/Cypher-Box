@@ -15,11 +15,14 @@
  */
 
 import {
+    applyExpiredVtxoFilter,
     classifyArkDestination,
     createArkLightningInvoice,
     estimateArkSendFee,
     executeArkSend,
     fetchArkBalance,
+    fetchArkVtxos,
+    fetchChainTipHeight,
 } from '@Cypher/services/ark';
 import useAuthStore from '@Cypher/stores/authStore';
 
@@ -83,11 +86,22 @@ const arkProvider: LightningSwapProvider = {
         // on every keystroke (the SwapAmount fee preview already runs
         // its own debounced estimate).
         try {
-            const [balance, feeView] = await Promise.all([
+            // Pull vtxos + chain tip alongside balance so the preflight
+            // check uses the same expired-dust-filtered spendable number
+            // the headline shows. Without this, the SDK's raw
+            // `spendableSats` includes expired VTXOs the user can't
+            // actually select for a send, and the preflight greenlights
+            // a swap that fails inside the SDK with `BarkError.Internal`.
+            const [balance, feeView, vtxosResult, tip] = await Promise.all([
                 fetchArkBalance(),
                 estimateArkSendFee(dest, amountSats),
+                fetchArkVtxos(),
+                fetchChainTipHeight(),
             ]);
-            const spendable = balance?.spendableSats ?? 0;
+            const filteredBalance = balance
+                ? applyExpiredVtxoFilter(balance, vtxosResult?.all, tip)
+                : null;
+            const spendable = filteredBalance?.spendableSats ?? 0;
             const fee = Number(feeView.feeSats || 0);
             const required = amountSats + fee;
             if (spendable < required) {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus, InteractionManager, Platform } from 'react-native';
 
 import {
+    applyExpiredVtxoFilter,
     AVG_BLOCK_MINUTES,
     claimArkExitsToAddress,
     fetchArkBalance,
@@ -269,40 +270,50 @@ export default function useArkSync(): UseArkSync {
             ]);
             _stamp('fetchBalance/Vtxos/Tip/PendingLn done');
 
-            // Headline = the SDK's `balance.totalSats` (Spendable VTXOs +
-            // pendingExit/Lightning/Board buckets). We deliberately do NOT
-            // mix in the VTXO list here.
+            // Headline = sats the user can actually spend right now. The
+            // SDK's `wallet.balance()` reports `spendableSats` based on
+            // its local VTXO DB, which has two known over-reporting modes:
             //
-            // History — why this used to be `Math.max(balance.totalSats,
-            // vtxoSum + claimableLn)`: during a VTXO refresh the SDK
-            // marks the input VTXO Locked and emits a Locked output VTXO,
-            // which would temporarily drop `spendableSats` to 0. The
-            // Math.max kept the headline stable mid-round by trusting the
-            // VTXO list instead. But that path has a worse failure: it
-            // ALSO counts Locked VTXOs that are mid-send (i.e. already
-            // spent, just waiting for the SDK to flip them to Spent),
-            // so post-withdrawal the balance stays artificially high
-            // until the spent VTXOs detach from the wallet's pubkey
-            // server-side — which can take many minutes. That was the
-            // bigger UX hit (users see "balance unchanged" after a tx
-            // confirmed in their hot vault), so we revert to trusting
-            // `balance.totalSats`.
+            //   1. Pending in-flight buckets — pendingExit / pendingLnSend /
+            //      claimableLnRecv / pendingBoard. These are real sats
+            //      tied up in mid-flight flows but NOT immediately spendable.
+            //      `fetchArkBalance` already keeps them in their own fields
+            //      (and out of `totalSats`), so consumers can render them
+            //      as separate UI elements ("100 sats incoming via LN"…)
+            //      rather than rolling them into the big number.
             //
-            // For the refresh-mid-round case: `pendingInRoundSats` is now
-            // surfaced through `arkBalanceDetail` and the UI can render
-            // a "+ X sats refreshing" indicator beside the headline,
-            // rather than inflating the headline itself. That matches
-            // user expectation: balance = what you can actually spend
-            // right now, with in-flight movements shown separately.
-            if (balance) {
+            //   2. Expired-but-still-Spendable VTXOs — the SDK doesn't
+            //      auto-evict expired VTXOs until the ASP sweeps them and
+            //      a sync prunes them, so dust the user can't recover
+            //      (exit fee > value) lingers in `spendableSats` as a
+            //      phantom. `applyExpiredVtxoFilter` subtracts these by
+            //      comparing each VTXO's expiryHeight to the chain tip.
+            //
+            // Trade-off accepted: during a VTXO refresh the SDK briefly
+            // marks the input VTXO Locked while the output isn't yet
+            // Spendable, so the headline can flicker toward 0 for ~10–30s
+            // mid-round. The fix for that is a "+ X sats refreshing"
+            // indicator beside the headline driven by `pendingInRoundSats`
+            // from `arkBalanceDetail`, not inflating the headline itself.
+            // Earlier iterations tried `Math.max(balance, vtxoSum)` to
+            // hide the dip, but it had a worse failure: it ALSO counted
+            // Locked VTXOs that were mid-send, so post-withdrawal the
+            // balance stayed artificially high until server-side pubkey
+            // detachment (many minutes). Trusting `spendableSats` post-
+            // expiry-filter is the lesser evil.
+            const filteredBalance = balance
+                ? applyExpiredVtxoFilter(balance, vtxos?.all, tip)
+                : null;
+            if (filteredBalance) {
                 console.log(
-                    '[Ark sync] headline=', balance.totalSats,
-                    '(spendable=', balance.spendableSats,
-                    'pendingInRound=', balance.pendingInRoundSats,
-                    'claimableLn=', balance.claimableLightningReceiveSats, ')',
+                    '[Ark sync] headline=', filteredBalance.totalSats,
+                    '(spendable=', filteredBalance.spendableSats,
+                    'pendingInRound=', filteredBalance.pendingInRoundSats,
+                    'claimableLn=', filteredBalance.claimableLightningReceiveSats,
+                    'expiredUnrecoverable=', filteredBalance.expiredUnrecoverableSats, ')',
                 );
-                setArkBalance(balance.totalSats);
-                setArkBalanceDetail(balance);
+                setArkBalance(filteredBalance.totalSats);
+                setArkBalanceDetail(filteredBalance);
             }
             if (vtxos) {
                 console.log(
