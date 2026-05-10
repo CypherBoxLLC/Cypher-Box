@@ -59,6 +59,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     const {
         allBTCWallets,
         setWalletTab,
+        isAuth,
+        isStrikeAuth,
         isArkAuth,
         arkWallet,
         arkBgRefreshEnabled,
@@ -66,6 +68,26 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         arkBgRefreshLastAttempt,
         arkIosBackupReminderActive,
     } = useAuthStore();
+
+    // Per-card vertical nudge for the Ark slide.
+    //
+    // Bam's spec (2026-05-10):
+    //   - (Ark alone) and (Ark + CoinOS) — handled by the parent
+    //     container's translateY ladder in HomeScreen/index.tsx (no-Strike
+    //     combos shift the whole carousel down 10pt). No per-card work.
+    //   - (Ark + Strike) — the carousel-container stays put (so the Strike
+    //     slide isn't dragged), but the Ark slide should sit ~5pt HIGHER
+    //     than the Strike slide so the two cards visually line up. Strike's
+    //     box has more top-padding than Ark's; we close that gap with a
+    //     negative marginTop on the Ark wrapper.
+    //   - (CoinOS + Strike + Ark, all-three) — Ark stays put. The carousel
+    //     container is unchanged for this combo and the per-card offset is
+    //     0, so swiping between cards doesn't visually jump.
+    //
+    // Single negative-or-zero offset, applied ONLY when (Strike + Ark) is
+    // the active combo without CoinOS.
+    const arkCardExtraOffsetPt =
+        isStrikeAuth && isArkAuth && !isAuth ? 5 : 0;
 
     /**
      * Status line shown below the shared Send/Receive row when the user has
@@ -282,7 +304,28 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // and Ark are both connected, all internal pairs are suppressed and
         // a single shared pair rendered outside the carousel takes over —
         // see the Animated.View below the <Carousel>.
-        ARK: { key: 'ark', component: () => <ArkWallet convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
+        ARK: {
+            key: 'ark',
+            // Wrap with a marginTop View so the Strike+Ark combo can nudge
+            // the Ark card 10pt down without also moving the Strike card —
+            // see `arkCardExtraOffsetPt` rationale above. marginTop=0 in
+            // every other combo collapses to a no-op wrapper.
+            component: () => (
+                <View style={{ marginTop: arkCardExtraOffsetPt }}>
+                    <ArkWallet
+                        convertedRate={convertedRate}
+                        currency={currency}
+                        isLoading={isLoading}
+                        matchedRate={matchedRate}
+                        refRBSheet={refRBSheet}
+                        refSendRBSheet={refSendRBSheet}
+                        setReceiveType={setReceiveType}
+                        homeMessage={homeMessage}
+                        hideActionButtons={useSharedButtons}
+                    />
+                </View>
+            ),
+        },
     };
 
 

@@ -260,8 +260,8 @@ export default function CreateArkScreen() {
                             value={arkUseHotVaultSeed && hasHotVault}
                             disabled={!hasHotVault}
                             onValueChange={setArkUseHotVaultSeed}
-                            trackColor={{ false: colors.gray.disable, true: colors.ark.dark }}
-                            thumbColor={arkUseHotVaultSeed ? colors.ark.light : colors.gray.light}
+                            trackColor={{ false: "#3a3a3a", true: colors.green }}
+                            thumbColor={colors.white}
                         />
                     </View>
 

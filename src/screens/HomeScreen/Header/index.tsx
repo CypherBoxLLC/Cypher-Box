@@ -12,6 +12,7 @@ import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 
 import styles from "../styles";
 import ScanWithPicker, { ScanTargetKey } from "./ScanWithPicker";
+import ActivityDropdown from "@Cypher/components/ActivityDropdown";
 
 interface Props {
     /** Routing context — propagated to whichever send screen we open. */
@@ -63,13 +64,14 @@ export default React.memo(function Header({
     const { isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID } = useAuthStore();
 
     const [pickerVisible, setPickerVisible] = useState(false);
+    const [activityDropdownVisible, setActivityDropdownVisible] = useState(false);
 
     const navigateToSettings = () => {
         dispatchNavigate("Settings");
     };
 
-    const navigateToActivity = () => {
-        dispatchNavigate("Activity");
+    const toggleActivityDropdown = () => {
+        setActivityDropdownVisible((v) => !v);
     };
 
     /**
@@ -257,7 +259,7 @@ export default React.memo(function Header({
                     <TouchableOpacity
                         activeOpacity={0.6}
                         style={styles.imageView}
-                        onPress={navigateToActivity}
+                        onPress={toggleActivityDropdown}
                         accessibilityLabel="Activity"
                     >
                         <Ionicons name="notifications-outline" size={28} color="#FFFFFF" />
@@ -304,6 +306,11 @@ export default React.memo(function Header({
                     coldVault: !!coldStorageWalletID && !!coldStorageWallet,
                     ark: !!isArkAuth,
                 }}
+            />
+
+            <ActivityDropdown
+                visible={activityDropdownVisible}
+                onClose={() => setActivityDropdownVisible(false)}
             />
         </>
     );

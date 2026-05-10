@@ -95,7 +95,7 @@ const describe = (ev: AppEvent): RowMeta => {
     }
 };
 
-const Row = React.memo(function Row({ ev, now }: { ev: AppEvent; now: number }) {
+export const Row = React.memo(function Row({ ev, now }: { ev: AppEvent; now: number }) {
     const meta = describe(ev);
     return (
         <View style={styles.row}>

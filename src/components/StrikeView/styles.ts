@@ -337,17 +337,19 @@ export default StyleSheet.create<Style>({
         // shrinks. linearSecondStyle below mirrors with 52pt for the
         // inner gradient so both layers stay flush.
         height: 56,
-        // Lift the box 5pt via paint-only transform. Tried marginTop
-        // first (13 → 3) but it didn't visibly move — the parent
-        // column flex absorbed the change because the next sibling
+        // Position via paint-only transform. Tried marginTop first
+        // (13 → 3) but it didn't visibly move — the parent column
+        // flex absorbed the change because the next sibling
         // (`isShowButtons` GradientView with marginTop:60, only on
-        // the Account screen) consumes free vertical space. translateY
-        // is layout-independent: it shifts the rendered position
-        // without affecting flex math, so it lifts cleanly on home.
-        // Was -10pt initially; backed off to -5 per Bam after the
-        // shorter box freed enough vertical breathing room that the
-        // -10 lift left a visible gap below the BUY/SELL buttons.
-        transform: [{ translateY: -5 }],
+        // the Account screen) consumes free vertical space.
+        // translateY is layout-independent: it shifts the rendered
+        // position without affecting flex math, so it lifts/drops
+        // cleanly on home.
+        // History: was -10 (lift 10), then -5 (lift 5), now 0 per
+        // Bam's 2026-05-10 ask to bring the exchange-rate box back
+        // down 5pt — the surrounding home-screen layout shifts made
+        // the -5 lift redundant.
+        transform: [{ translateY: 0 }],
     },
     bitcoinPriceContainerInner: {
         height: 52,

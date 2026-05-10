@@ -466,21 +466,32 @@ export default function BottomBar({
             {bothVaultsExist && (isAuth || isStrikeAuth || isArkAuth) && (
                 <TopUpWithdrawView isVault={index === 1} />
             )}
-            <FlatList
-                ref={flatListRef}
-                data={tabs}
-                keyExtractor={(item) => item.key}
-                renderItem={renderItem}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                snapToInterval={screenWidth}
-                decelerationRate="fast"
-                disableIntervalMomentum
-                initialScrollIndex={index}
-                getItemLayout={(_, i) => ({ length: screenWidth, offset: screenWidth * i, index: i })}
-                onMomentumScrollEnd={onMomentumScrollEnd}
-            />
+            {/* Force the FlatList to render at full screen width despite
+                the parent HomeScreen container's paddingHorizontal:20.
+                Without this wrapper, each FlatList page (set to
+                screenWidth) overflows the FlatList's measured width
+                (screenWidth - 40 due to padding) and the right edge of
+                each vault card gets clipped. Mirrors the same pattern
+                WalletsView uses (its top-level View also forces
+                width: screenWidth). The parent container has
+                overflow: 'visible' so this overflow is permitted. */}
+            <View style={{ width: screenWidth }}>
+                <FlatList
+                    ref={flatListRef}
+                    data={tabs}
+                    keyExtractor={(item) => item.key}
+                    renderItem={renderItem}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    snapToInterval={screenWidth}
+                    decelerationRate="fast"
+                    disableIntervalMomentum
+                    initialScrollIndex={index}
+                    getItemLayout={(_, i) => ({ length: screenWidth, offset: screenWidth * i, index: i })}
+                    onMomentumScrollEnd={onMomentumScrollEnd}
+                />
+            </View>
             <TabBar isVault={index == 1 ? true : false} coldStorageClickHandler={coldStorageClickHandler} hotStorageClickHandler={hotStorageClickHandler} />
         </>
     )

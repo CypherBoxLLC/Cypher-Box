@@ -753,13 +753,30 @@ export default function ArkSeedPhraseScreen() {
                         <Text style={styles.sectionTitle}>1/2 — Seed phrase</Text>
                         <Text style={styles.warnTitle}>⚠ Write these 12 words down</Text>
                         <Text style={styles.warnBody}>
-                            This phrase is the master key to your Ark wallet. Keep it offline,
-                            somewhere only you can find it. Anyone with these words can spend
-                            your funds.
+                            Keep it safe and secure offline (paper and pen are good enough).
                         </Text>
-                        <Text style={styles.sectionSub}>
-                            Can be saved in Keychain behind {isIOS ? 'Face ID' : 'Touch ID'}.
-                        </Text>
+
+                        <View style={styles.keychainRow}>
+                            <Text bold style={[styles.keychainLabel, { flex: 1 }]}>
+                                Save to {isIOS ? 'iPhone Keychain' : 'Android Keystore'} ({isIOS ? 'Face ID' : 'fingerprint'})
+                            </Text>
+                            <Switch
+                                value={saveToKeychain}
+                                onValueChange={setSaveToKeychain}
+                                trackColor={{ false: "#3a3a3a", true: colors.green }}
+                                thumbColor={colors.white}
+                            />
+                        </View>
+
+                        {keychainStatus === "ok" && (
+                            <Text style={styles.statusOk}>✓ Saved to Keychain</Text>
+                        )}
+                        {keychainStatus === "err" && (
+                            <Text style={styles.statusErr}>
+                                ✗ Keychain save failed — please back up the words manually
+                            </Text>
+                        )}
+
                         <Text style={styles.headerNote}>
                             Note: even with the seed, full balance recovery on a new device
                             also requires your{' '}
@@ -814,36 +831,6 @@ export default function ArkSeedPhraseScreen() {
                                 )}
                             </View>
                         </View>
-
-                        <View style={styles.divider} />
-
-                        <View style={styles.keychainRow}>
-                            <View style={{ flex: 1 }}>
-                                <Text bold style={styles.keychainLabel}>
-                                    {isIOS ? "iPhone Keychain" : "Android Keystore"}
-                                </Text>
-                                <Text style={styles.keychainSub}>
-                                    {isIOS
-                                        ? "Encrypted on this device, unlocked by FaceID / passcode. Survives app reinstall. Does not sync to iCloud or any other device."
-                                        : "Encrypted on this device, unlocked by your screen lock / fingerprint. ⚠ Wiped if you uninstall Cypher Box (Android removes the Keystore entry when the app's UID changes), so write the 12 words down somewhere safe even with this on."}
-                                </Text>
-                            </View>
-                            <Switch
-                                value={saveToKeychain}
-                                onValueChange={setSaveToKeychain}
-                                trackColor={{ false: colors.gray.disable, true: colors.ark.dark }}
-                                thumbColor={saveToKeychain ? colors.ark.light : colors.gray.light}
-                            />
-                        </View>
-
-                        {keychainStatus === "ok" && (
-                            <Text style={styles.statusOk}>✓ Saved to Keychain</Text>
-                        )}
-                        {keychainStatus === "err" && (
-                            <Text style={styles.statusErr}>
-                                ✗ Keychain save failed — please back up the words manually
-                            </Text>
-                        )}
 
                         <View style={styles.divider} />
 

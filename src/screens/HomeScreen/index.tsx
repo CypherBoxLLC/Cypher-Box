@@ -971,7 +971,13 @@ export default function HomeScreen({ route }: Props) {
                   underneath. The previous code had this case Android-
                   only with -18; iOS fell through to -53 and broke.
                   Single all-three branch now, platform-agnostic. */}
-              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -33 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -33 : -53 }, { translateY: enterTranslate }] }}>
+              {/* No-Strike combos (CoinOS alone / Ark alone / CoinOS+Ark)
+                  shift Total Balance down 15pt vs the prior layout —
+                  Bam's call (2026-05-10): the BalanceView felt cramped
+                  against the header in those configurations. Strike-
+                  included cases stay at their existing translateY
+                  values — that layout was already tuned correctly. */}
+              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -33 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -18 : (!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? -38 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -38 : -53 }, { translateY: enterTranslate }] }}>
                 <BalanceView
                   // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                   // Ark balance is stored in zustand as plain sats (see
@@ -1006,7 +1012,11 @@ export default function HomeScreen({ route }: Props) {
                     {/* Add Account button moved into BalanceView */}
           {/* Lightning Accounts title moved into WalletsView carousel */}
 
-          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -65 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -33 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -25 : (!isLoading && isStrikeAuth && isArkAuth) ? -30 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -13 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 2 : -68 }, { translateY: enterTranslate }] }}>
+          {/* No-Strike combos shift the wallet-cards row down 10pt vs
+              the prior layout — paired with the BalanceView shift above
+              so the gap between them stays the same. Strike-included
+              cases stay at their existing translateY values. */}
+          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -45 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -25 : (!isLoading && isStrikeAuth && isArkAuth) ? -30 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -13 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 2 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -38 : -68 }, { translateY: enterTranslate }] }}>
             {/*
               Carousel-vs-CTA gate. Falls through to CreateLightningAccount only
               when NO Lightning provider (CoinOS / Strike / Ark) is connected.
