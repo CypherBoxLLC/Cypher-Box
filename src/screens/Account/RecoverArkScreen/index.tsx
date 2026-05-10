@@ -8,16 +8,19 @@ import { Button, Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
-    AUTO_BACKUP_PATH,
-    findAutoBackupForRecovery,
-    createArkWallet,
-    hasArkDatadir,
-    restoreArkBackupBlob,
+    checkArkSeedKeychainConflict,
+    classifyPickedBackupBlob,
     connectGoogleDrive,
+    createArkWallet,
+    deriveBackupFingerprint,
+    hasArkDatadir,
     isGoogleDriveConnected,
-    downloadArkBackupFromDrive,
-    readArkBackupFromSaf,
+    lookupArkBackupInLocalDocuments,
+    lookupArkBackupInSafFolder,
+    lookupArkBackupOnDrive,
+    restoreArkBackupBlob,
 } from "@Cypher/services/ark";
+import type { ChannelLookupResult } from "@Cypher/services/ark";
 import { validateMnemonic } from "@secondts/bark-react-native";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -204,6 +207,42 @@ export default function RecoverArkScreen() {
     };
 
     const persistSeedToKeychain = async (mnemonic: string, label: string) => {
+        // Conflict guard — same rationale as ArkSeedPhraseScreen. The
+        // recovery path can hit this when the user previously had a
+        // different wallet active with "keep on device" set: the old
+        // wallet's seed is still in keychain, and the just-recovered
+        // wallet has a different fingerprint. Silent overwrite would
+        // strand the previous wallet's biometric fast-recover path.
+        //
+        // Different from create flow: here the wallet is ALREADY
+        // restored and open — declining the overwrite just means we
+        // skip the keychain save. The user can still operate the
+        // recovered wallet this session and recover again next time
+        // by typing the seed.
+        const conflict = await checkArkSeedKeychainConflict(mnemonic);
+        if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
+            const proceed = await new Promise<boolean>(resolve => {
+                const message =
+                    conflict.kind === 'different-wallet'
+                        ? `A saved seed already exists on this device for wallet ${conflict.existingFingerprint}. Saving the recovered seed will overwrite it.\n\nThe old seed phrase will need to be re-entered to recover that wallet later — make sure you have it written down somewhere safe.`
+                        : `A saved seed already exists on this device but couldn't be read to compare (${conflict.reason}). Saving the recovered seed may overwrite it.\n\nIf the old seed is only in the keychain (not written down), it may be lost.`;
+                Alert.alert(
+                    "Replace saved seed?",
+                    message,
+                    [
+                        { text: "Don't save", style: "cancel", onPress: () => resolve(false) },
+                        { text: "Replace", style: "destructive", onPress: () => resolve(true) },
+                    ],
+                    { cancelable: true, onDismiss: () => resolve(false) },
+                );
+            });
+            if (!proceed) {
+                // Skip the keychain write. Wallet stays open this session;
+                // user types seed next time. Not an error.
+                return;
+            }
+        }
+
         try {
             await Keychain.setGenericPassword(KEYCHAIN_ACCOUNT, mnemonic, {
                 service: KEYCHAIN_SERVICE,
@@ -234,6 +273,50 @@ export default function RecoverArkScreen() {
         dispatchReset("HomeScreen", { isComplete: true });
     };
 
+    /**
+     * Run a `ChannelLookupResult` through restore + finalize. v2 matches
+     * decrypt definitively; v1 candidates may have come from a different
+     * wallet so a decrypt failure here gets the "no backup matches this
+     * seed" treatment rather than the generic "restore failed."
+     *
+     * Returns true if the wallet was restored + finalized, false if the
+     * caller should keep searching other channels / surface a no-match
+     * error.
+     */
+    const tryRestoreFromLookup = async (
+        result: ChannelLookupResult,
+        mnemonic: string,
+        finalizeChannel: string | undefined,
+        keychainLabel: string,
+    ): Promise<boolean> => {
+        if (result.kind === 'not-found') return false;
+        try {
+            await restoreArkBackupBlob(result.blob, mnemonic);
+        } catch (err: any) {
+            // v2 match should never fail decrypt — fingerprints matched
+            // and the AES key is the same seed. If it does, the file is
+            // genuinely corrupt; surface a precise error.
+            if (result.kind === 'matched') {
+                console.warn('[Ark restore] decrypt of fingerprint-matched blob failed:', err);
+                setRestoring(false);
+                setErrorMsg(
+                    `Backup file is corrupt: ${err?.message ?? 'decryption failed'}. ` +
+                    `Try a different backup source — Drive, iCloud, or pick a manually-exported file.`,
+                );
+                return true; // handled (with error); don't keep scanning
+            }
+            // v1 candidate: this file was the last-resort try; failure
+            // means it didn't belong to this seed. Pretend not-found so
+            // caller surfaces the unified "no backup matches" error.
+            if (__DEV__) console.log('[Ark restore] legacy v1 try-decrypt failed:', err?.message ?? err);
+            return false;
+        }
+        await persistSeedToKeychain(mnemonic, keychainLabel);
+        setRestoring(false);
+        finalizeWallet(finalizeChannel);
+        return true;
+    };
+
     // forcePicker bypasses the local-first read so the user can restore from
     // some other .cbark — e.g. an older manually-exported snapshot. Wired to
     // the "Pick a different file…" escape hatch in both view variants.
@@ -248,100 +331,95 @@ export default function RecoverArkScreen() {
         setRestoring(true);
         setErrorMsg(null);
 
-        // Local-first auto-discovery, in order of preference:
-        //   1. findAutoBackupForRecovery() — checks the iCloud Drive
-        //      Documents container first (iOS, when iCloud is enabled
-        //      for Cypher Box; survives uninstall via Apple's iCloud
-        //      sync), then falls back to AUTO_BACKUP_PATH (local
-        //      Documents). On Android only the local path is checked.
-        //      Local Documents is wiped on `pm uninstall` and `pm clear`,
-        //      so this only hits on `install -r` or app-data-preserved
-        //      scenarios on Android. The iCloud lookup gives iOS a
-        //      genuine survives-uninstall path.
-        //   2. SAF folder — the user-chosen Storage Access Framework
-        //      folder, populated by writeArkAutoBackup via
-        //      writeArkBackupToSaf when configured. The persisted URI
-        //      (in AsyncStorage) is wiped on uninstall/pm-clear too,
-        //      but during `install -r` recovery the URI survives, so
-        //      the SAF auto-find covers update reinstalls when
-        //      Documents was wiped but the SAF URI persisted.
-        //   3. DocumentPicker — the explicit picker. Default landing on
-        //      Android is "Recent files"; the user navigates from
-        //      there to wherever they kept the .cbark (Drive folder,
-        //      manual export they emailed themselves, etc.). This is
-        //      the only path that works after a fresh reinstall on a
-        //      different device.
-        //
-        // Each step skipped when forcePicker is true — that bypasses
-        // the local-first reads so the user can pick an OLDER
-        // manually-exported .cbark even when the always-current one
-        // is on disk.
-        let blob: string | null = null;
-        if (!forcePicker) {
-            try {
-                const path = await findAutoBackupForRecovery();
-                if (path) {
-                    blob = await RNFS.readFile(path, 'utf8');
-                }
-            } catch (err) {
-                console.warn('[Ark restore] auto-discovery read failed:', err);
-            }
-        }
-
-        if (!blob && !forcePicker) {
-            // SAF folder fallback — Android only (no-op on iOS via the
-            // service-side guard). Survives `install -r` even when the
-            // app-private Documents file is gone, because the SAF
-            // folder lives outside the app sandbox.
-            try {
-                const safBlob = await readArkBackupFromSaf();
-                if (safBlob) blob = safBlob;
-            } catch (err) {
-                console.warn('[Ark restore] SAF folder read failed:', err);
-            }
-        }
-
-        if (!blob) {
-            try {
-                const result = await DocumentPicker.pickSingle({
-                    type: [DocTypes.allFiles],
-                    copyTo: "cachesDirectory",
-                });
-                const pickedUri = result.fileCopyUri ?? result.uri;
-                if (!pickedUri) {
-                    setRestoring(false);
-                    setErrorMsg("Couldn't read picked file (no path returned)");
-                    return;
-                }
-                const cleanPath = pickedUri.replace(/^file:\/\//, "");
-                blob = await RNFS.readFile(cleanPath, "utf8");
-            } catch (err: any) {
-                if (DocumentPicker.isCancel(err)) {
-                    setRestoring(false);
-                    return;
-                }
-                console.warn('[Ark restore] picker threw:', err);
-                setRestoring(false);
-                setErrorMsg(`Couldn't open file picker: ${err?.message ?? "unknown error"}`);
-                return;
-            }
-        }
-
+        // Derive the BIP32 fingerprint from the entered seed once, up
+        // front. Every channel scan hashes against this — without it
+        // we'd be try-decrypting blindly and producing the misleading
+        // "decryption failed" UX the v2 envelope was designed to fix.
+        let fingerprint: string;
         try {
-            await restoreArkBackupBlob(blob, mnemonic);
+            fingerprint = await deriveBackupFingerprint(mnemonic);
         } catch (err: any) {
-            console.warn('[Ark restore] failed:', err);
+            console.warn('[Ark restore] fingerprint derive failed:', err);
             setRestoring(false);
-            setErrorMsg(
-                `Restore failed: ${err?.message ?? "unknown error"}. ` +
-                `Make sure your seed matches the backup, and that this is the right ark-backup file.`,
-            );
+            setErrorMsg(`Couldn't process the seed phrase: ${err?.message ?? 'unknown error'}.`);
             return;
         }
 
-        await persistSeedToKeychain(mnemonic, "file restore");
+        // Auto-discovery, in order of preference:
+        //   1. Local Documents — Documents/ark-backup-{fp}.cbark and
+        //      every other .cbark scanned for header match. Includes
+        //      legacy-v1 fallback (pre-multi-wallet single-name file).
+        //   2. SAF folder (Android) — same shape via the native bridge.
+        //      Survives `install -r` even when Documents is wiped.
+        //   3. DocumentPicker — explicit user pick. Header-checked the
+        //      same way; mismatch surfaces as "this isn't a backup for
+        //      this seed phrase."
+        //
+        // Each step skipped when forcePicker is true — bypasses
+        // auto-discovery so the user can pick an older manually-
+        // exported .cbark even when the rolling auto-backup is fresh.
+        if (!forcePicker) {
+            const local = await lookupArkBackupInLocalDocuments(fingerprint);
+            if (await tryRestoreFromLookup(local, mnemonic, undefined, 'file restore')) return;
+        }
+
+        if (!forcePicker) {
+            try {
+                const saf = await lookupArkBackupInSafFolder(fingerprint);
+                if (await tryRestoreFromLookup(saf, mnemonic, undefined, 'file restore')) return;
+            } catch (err) {
+                if (__DEV__) console.log('[Ark restore] SAF lookup threw:', err);
+                // Fall through to picker — SAF permission may be revoked.
+            }
+        }
+
+        // DocumentPicker: user navigates to wherever they kept the
+        // .cbark (Drive folder, manual export they emailed themselves,
+        // etc.). The only path that works after a fresh reinstall on a
+        // different device. Header-checked: fingerprint match → decrypt;
+        // v1 with no header → try-decrypt; mismatch → clean error.
+        let pickedBlob: string;
+        try {
+            const result = await DocumentPicker.pickSingle({
+                type: [DocTypes.allFiles],
+                copyTo: "cachesDirectory",
+            });
+            const pickedUri = result.fileCopyUri ?? result.uri;
+            if (!pickedUri) {
+                setRestoring(false);
+                setErrorMsg("Couldn't read picked file (no path returned)");
+                return;
+            }
+            const cleanPath = pickedUri.replace(/^file:\/\//, "");
+            pickedBlob = await RNFS.readFile(cleanPath, "utf8");
+        } catch (err: any) {
+            if (DocumentPicker.isCancel(err)) {
+                setRestoring(false);
+                // No no-match error — user explicitly cancelled.
+                return;
+            }
+            console.warn('[Ark restore] picker threw:', err);
+            setRestoring(false);
+            setErrorMsg(`Couldn't open file picker: ${err?.message ?? "unknown error"}`);
+            return;
+        }
+
+        const picked = classifyPickedBackupBlob(pickedBlob, fingerprint);
+        if (picked.kind === 'not-found') {
+            setRestoring(false);
+            setErrorMsg(
+                "This file isn't a backup for the seed phrase you entered. " +
+                "Pick a different file, or check your seed.",
+            );
+            return;
+        }
+        if (await tryRestoreFromLookup(picked, mnemonic, undefined, 'file restore')) return;
+
         setRestoring(false);
-        finalizeWallet();
+        setErrorMsg(
+            "No backup matches this seed phrase. " +
+            "Check the seed, or proceed without a backup if you don't have one.",
+        );
     };
 
     const handleRestoreFromGoogleDrive = async () => {
@@ -354,6 +432,17 @@ export default function RecoverArkScreen() {
 
         setRestoring(true);
         setErrorMsg(null);
+
+        let fingerprint: string;
+        try {
+            fingerprint = await deriveBackupFingerprint(mnemonic);
+        } catch (err: any) {
+            console.warn('[Ark restore] fingerprint derive failed:', err);
+            setRestoring(false);
+            setErrorMsg(`Couldn't process the seed phrase: ${err?.message ?? 'unknown error'}.`);
+            return;
+        }
+
         try {
             const connected = await isGoogleDriveConnected();
             if (!connected) {
@@ -364,29 +453,28 @@ export default function RecoverArkScreen() {
                     return;
                 }
             }
-            const blob = await downloadArkBackupFromDrive();
-            if (!blob) {
-                setRestoring(false);
-                setErrorMsg(
-                    "No backup found in Google Drive for this Google account. " +
-                    "Make sure you signed in with the same account you used when you first connected Drive.",
-                );
+
+            // `lookupArkBackupOnDrive` does the full scan: fast-path
+            // by per-wallet name, then full appDataFolder scan with
+            // header match (rename-tolerant), then legacy v1 / v0
+            // fallback (try-decrypt for unmigrated single-name files).
+            const result = await lookupArkBackupOnDrive(fingerprint);
+            if (await tryRestoreFromLookup(result, mnemonic, 'google-drive', 'Drive restore')) {
                 return;
             }
-            await restoreArkBackupBlob(blob, mnemonic);
+            setRestoring(false);
+            setErrorMsg(
+                "No backup matches this seed phrase in Google Drive. " +
+                "Check that you're signed in with the right Google account, or pick a backup file manually.",
+            );
         } catch (err: any) {
             console.warn('[Ark restore] Drive flow failed:', err);
             setRestoring(false);
             setErrorMsg(
-                `Restore from Drive failed: ${err?.message ?? "unknown error"}. ` +
-                `Make sure your seed matches the backup.`,
+                `Couldn't reach Google Drive: ${err?.message ?? "unknown error"}. ` +
+                `Try again, or pick a backup file manually.`,
             );
-            return;
         }
-
-        await persistSeedToKeychain(mnemonic, "Drive restore");
-        setRestoring(false);
-        finalizeWallet('google-drive');
     };
 
     const handleRestoreFromICloud = async () => {
@@ -400,62 +488,75 @@ export default function RecoverArkScreen() {
         setRestoring(true);
         setErrorMsg(null);
 
-        let blob: string | null = null;
+        let fingerprint: string;
         try {
-            const path = await findAutoBackupForRecovery();
-            if (path) {
-                blob = await RNFS.readFile(path, 'utf8');
-            }
-        } catch (err) {
-            console.warn('[Ark restore] auto-discovery read failed:', err);
+            fingerprint = await deriveBackupFingerprint(mnemonic);
+        } catch (err: any) {
+            console.warn('[Ark restore] fingerprint derive failed:', err);
+            setRestoring(false);
+            setErrorMsg(`Couldn't process the seed phrase: ${err?.message ?? 'unknown error'}.`);
+            return;
         }
 
-        if (!blob) {
-            try {
-                const result = await DocumentPicker.pickSingle({
-                    type: [DocTypes.allFiles],
-                    copyTo: 'cachesDirectory',
-                    presentationStyle: 'fullScreen',
-                });
-                const pickedUri = result.fileCopyUri ?? result.uri;
-                if (!pickedUri) {
-                    setRestoring(false);
-                    setErrorMsg("Couldn't read picked file (no path returned)");
-                    return;
-                }
-                const cleanPath = pickedUri.replace(/^file:\/\//, '');
-                blob = await RNFS.readFile(cleanPath, 'utf8');
-            } catch (err: any) {
-                if (DocumentPicker.isCancel(err)) {
-                    setRestoring(false);
-                    return;
-                }
-                console.warn('[Ark restore] iCloud picker threw:', err);
+        // iOS local Documents IS the iCloud Drive folder for the app —
+        // Apple mirrors it transparently when the user has iCloud Drive
+        // enabled for Cypher Box. So scanning Documents finds files
+        // that originated locally AND files that came down from iCloud.
+        // Includes legacy-v1 fallback automatically.
+        const local = await lookupArkBackupInLocalDocuments(fingerprint);
+        if (await tryRestoreFromLookup(local, mnemonic, 'icloud-drive', 'iCloud restore')) {
+            return;
+        }
+
+        // Fallback: DocumentPicker into iCloud Drive proper. Lets the
+        // user navigate to a backup that lives somewhere else in iCloud
+        // (e.g. they exported manually to iCloud Drive → Cypher Box).
+        let pickedBlob: string;
+        try {
+            const result = await DocumentPicker.pickSingle({
+                type: [DocTypes.allFiles],
+                copyTo: 'cachesDirectory',
+                presentationStyle: 'fullScreen',
+            });
+            const pickedUri = result.fileCopyUri ?? result.uri;
+            if (!pickedUri) {
                 setRestoring(false);
-                setErrorMsg(
-                    `Couldn't read backup from iCloud Drive: ${err?.message ?? 'unknown error'}. ` +
-                    `Make sure iCloud Drive is enabled for Cypher Box, then tap again — ` +
-                    `the picker should show "iCloud Drive → Cypher Box → ark-backup.cbark".`,
-                );
+                setErrorMsg("Couldn't read picked file (no path returned)");
                 return;
             }
-        }
-
-        try {
-            await restoreArkBackupBlob(blob, mnemonic);
+            const cleanPath = pickedUri.replace(/^file:\/\//, '');
+            pickedBlob = await RNFS.readFile(cleanPath, 'utf8');
         } catch (err: any) {
-            console.warn('[Ark restore] iCloud blob restore failed:', err);
+            if (DocumentPicker.isCancel(err)) {
+                setRestoring(false);
+                return;
+            }
+            console.warn('[Ark restore] iCloud picker threw:', err);
             setRestoring(false);
             setErrorMsg(
-                `Restore from iCloud failed: ${err?.message ?? 'unknown error'}. ` +
-                `Make sure your seed matches the backup, and that this is the right ark-backup file.`,
+                `Couldn't read backup from iCloud Drive: ${err?.message ?? 'unknown error'}. ` +
+                `Make sure iCloud Drive is enabled for Cypher Box, then tap again — ` +
+                `the picker should show "iCloud Drive → Cypher Box → ark-backup-{fingerprint}.cbark".`,
             );
             return;
         }
 
-        await persistSeedToKeychain(mnemonic, "iCloud restore");
+        const picked = classifyPickedBackupBlob(pickedBlob, fingerprint);
+        if (picked.kind === 'not-found') {
+            setRestoring(false);
+            setErrorMsg(
+                "This file isn't a backup for the seed phrase you entered. " +
+                "Pick a different file, or check your seed.",
+            );
+            return;
+        }
+        if (await tryRestoreFromLookup(picked, mnemonic, 'icloud-drive', 'iCloud restore')) return;
+
         setRestoring(false);
-        finalizeWallet('icloud-drive');
+        setErrorMsg(
+            "No backup matches this seed phrase. " +
+            "Check the seed, or proceed without a backup if you don't have one.",
+        );
     };
 
     const handleRecoverSeedOnly = async () => {
@@ -498,6 +599,33 @@ export default function RecoverArkScreen() {
 
         setSubmitting(true);
         setErrorMsg(null);
+
+        // Conflict guard: same as the file-restore paths. Seed-only
+        // recovery (no .cbark) is a strong signal the user is committed
+        // to this seed; still surface the overwrite warning so the
+        // previous wallet's biometric fast-recover isn't silently lost.
+        const conflict = await checkArkSeedKeychainConflict(mnemonic);
+        if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
+            const proceed = await new Promise<boolean>(resolve => {
+                const message =
+                    conflict.kind === 'different-wallet'
+                        ? `A saved seed already exists on this device for wallet ${conflict.existingFingerprint}. Recovering this seed will overwrite it.\n\nThe old seed phrase will need to be re-entered to recover that wallet later — make sure you have it written down somewhere safe.`
+                        : `A saved seed already exists on this device but couldn't be read to compare (${conflict.reason}). Recovering this seed may overwrite it.\n\nIf the old seed is only in the keychain (not written down), it may be lost.`;
+                Alert.alert(
+                    "Replace saved seed?",
+                    message,
+                    [
+                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                        { text: "Replace", style: "destructive", onPress: () => resolve(true) },
+                    ],
+                    { cancelable: true, onDismiss: () => resolve(false) },
+                );
+            });
+            if (!proceed) {
+                setSubmitting(false);
+                return;
+            }
+        }
 
         try {
             await Keychain.setGenericPassword(KEYCHAIN_ACCOUNT, mnemonic, {

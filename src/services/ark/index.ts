@@ -12,8 +12,12 @@ export { ARK_DATADIR, ensureArkDatadir, deleteArkDatadir } from './datadir';
 
 export { resetArkWalletState } from './reset';
 
-export { recoverArkWalletFromKeychain, readArkSeedPhrase } from './recover';
-export type { ArkRecoveryResult } from './recover';
+export {
+    checkArkSeedKeychainConflict,
+    readArkSeedPhrase,
+    recoverArkWalletFromKeychain,
+} from './recover';
+export type { ArkRecoveryResult, ArkSeedKeychainConflict } from './recover';
 
 export { restoreArkWalletFromDisk, hasArkDatadir } from './restore';
 export type { ArkRestoreResult } from './restore';
@@ -54,16 +58,23 @@ export {
     AUTO_BACKUP_PATH,
     LEGACY_AUTO_BACKUP_PATH,
     buildArkBackupBlob,
+    deleteArkBackupForWallet,
+    deleteLocalArkBackup,
     findAutoBackupForRecovery,
+    getActiveBackupFingerprint,
+    getAutoBackupPath,
+    getCachedArkBackupFingerprint,
     getICloudBackupPath,
     isICloudBackupAvailable,
     migrateLegacyBackupFile,
+    peekBackupHeader,
     restoreArkBackupBlob,
     writeArkAutoBackup,
     writeAndVerifyArkBackup,
     writeArkBackupToTempFile,
     clearArkKeyCache,
 } from './backup';
+export { deriveBackupFingerprint, normalizeMnemonic } from './backupFingerprint';
 export type { VerifiedBackupResult, VerifiedBackupDriveOutcome } from './backup';
 
 export {
@@ -73,6 +84,10 @@ export {
     disconnectGoogleDrive,
     uploadArkBackupToDrive,
     downloadArkBackupFromDrive,
+    downloadDriveBackupByFingerprint,
+    findDriveBackupByFingerprint,
+    deleteDriveBackupByFingerprint,
+    deleteLegacyDriveBackup,
     getDriveBackupInfo,
     classifyDriveError,
     messageForDriveError,
@@ -86,9 +101,22 @@ export {
     probeSafBackupFolder,
     writeArkBackupToSaf,
     readArkBackupFromSaf,
+    readSafBackupByFingerprint,
+    findSafBackupByFingerprint,
+    listSafBackupFilenames,
+    deleteSafBackupByFingerprint,
+    deleteLegacySafBackup,
     messageForSafError,
 } from './safFolderBackup';
 export type { SafBackupOutcome, SafErrorClass, SafFolderStatus } from './safFolderBackup';
+
+export {
+    classifyPickedBackupBlob,
+    lookupArkBackupInLocalDocuments,
+    lookupArkBackupInSafFolder,
+    lookupArkBackupOnDrive,
+} from './findBackup';
+export type { ChannelLookupResult } from './findBackup';
 
 export {
     cancelArkPendingRound,

@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 
+import { peekBackupHeader } from './backup';
+
 /**
  * Google Drive integration for the Android off-device .cbark backup path.
  *
@@ -44,18 +46,39 @@ import { Platform } from 'react-native';
  * favourably on apps that stay scoped this way.
  */
 
-/** Filename used inside the appDataFolder. Stable so we overwrite the
- * single rolling backup rather than littering Drive with N versions
- * (Drive does keep its own version history under the hood for paid
- * tiers, but we don't depend on that). */
-const DRIVE_FILE_NAME = 'ark-backup.cbark';
 /**
- * Legacy Drive filename from earlier dev builds. Used by the lookup helper
- * (in `findDriveFileId`) so a user who took an OAuth-connected backup before
- * the rename still has their backup discoverable. The next upload writes
- * the new name; we never write the legacy name again.
+ * Legacy v1 Drive filename — single shared `ark-backup.cbark`. Used by
+ * the lookup-side helpers so a user who connected Drive on a pre-v2
+ * build can still recover via the new flow (we read it as a v1 envelope
+ * and rewrite as v2 on next sync once the active seed decrypts it).
+ *
+ * Multi-wallet builds NEVER write this filename. New writes always go
+ * to `getDriveBackupName(fingerprint)`.
  */
-const LEGACY_DRIVE_FILE_NAME = 'cypher-box-ark-backup.cbark';
+const LEGACY_V1_DRIVE_FILE_NAME = 'ark-backup.cbark';
+
+/**
+ * Legacy v0 Drive filename from very early dev builds. Same role as
+ * `LEGACY_V1_DRIVE_FILE_NAME` — included in the back-compat lookup
+ * path so an upgrade-in-place from a pre-v0 install still finds the
+ * file. Never written.
+ */
+const LEGACY_V0_DRIVE_FILE_NAME = 'cypher-box-ark-backup.cbark';
+
+/**
+ * Per-wallet Drive filename, keyed by BIP32 master fingerprint. Two
+ * Ark wallets sharing the same Google account each upload to a distinct
+ * appDataFolder entry, so neither wallet's backup overwrites the other's.
+ *
+ * Mirrors the local-Documents `getAutoBackupPath` and the SAF
+ * `getSafBackupFilename` so all three destinations agree on the
+ * naming convention. A `null` fingerprint resolves to the legacy v1
+ * filename — used only by the back-compat lookup path that finds
+ * pre-multi-wallet backups still living under the old shared name.
+ */
+function getDriveBackupName(fingerprint: string | null): string {
+    return fingerprint ? `ark-backup-${fingerprint}.cbark` : LEGACY_V1_DRIVE_FILE_NAME;
+}
 
 /** OAuth scopes — minimal: app-scoped Drive folder only. */
 const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.appdata'];
@@ -292,28 +315,28 @@ async function getAccessToken(): Promise<string> {
     return tokens.accessToken as string;
 }
 
+/** Internal: file metadata shape returned by `drive.files.list`. */
+type DriveFileMeta = { id: string; name: string; modifiedTime?: string; size?: string };
+
 /**
- * Look up the existing backup file's Drive ID inside `appDataFolder`,
- * if any. Returns null when no prior upload has happened. Used to
- * decide between PATCH (update existing) vs POST (create new) on
- * subsequent uploads — Drive doesn't have a "createOrUpdate" verb;
- * we have to do the lookup ourselves.
+ * Look up the Drive ID of an existing entry by exact name. Used by the
+ * upload path to decide between PATCH (entry exists for this fingerprint
+ * already; update-in-place) vs POST (no entry; create new).
+ *
+ * Returns null if no entry with that exact name exists in appDataFolder.
+ * Looking up by exact name (rather than fingerprint scan) keeps the
+ * upload hot path one Drive list call regardless of how many other
+ * wallets' backups share the folder.
  */
-async function findExistingBackupId(): Promise<string | null> {
-    const meta = await findExistingBackupMeta();
+async function findDriveBackupIdByName(name: string): Promise<string | null> {
+    const meta = await findDriveBackupMetaByName(name);
     return meta?.id ?? null;
 }
 
-/** Internal: list metadata for the existing backup file. Used both for
- *  the upload-or-update lookup (id only) and the Settings status panel
- *  (id + modifiedTime + size). */
-async function findExistingBackupMeta(): Promise<{ id: string; name: string; modifiedTime?: string; size?: string } | null> {
+/** Internal: list metadata for one specific filename in appDataFolder. */
+async function findDriveBackupMetaByName(name: string): Promise<DriveFileMeta | null> {
     const token = await getAccessToken();
-    // Match either the new or legacy filename so a user who uploaded a
-    // backup before the rename still has it discoverable. The next upload
-    // will write the new name; old `cypher-box-ark-backup.cbark` entries
-    // get overwritten by a PATCH on the same Drive ID.
-    const query = `name='${DRIVE_FILE_NAME}' or name='${LEGACY_DRIVE_FILE_NAME}'`;
+    const query = `name='${name}'`;
     const url =
         'https://www.googleapis.com/drive/v3/files' +
         `?spaces=appDataFolder` +
@@ -327,22 +350,79 @@ async function findExistingBackupMeta(): Promise<{ id: string; name: string; mod
         throw new Error(`Drive list failed: ${resp.status} ${body}`);
     }
     const json = await resp.json();
-    const files = (json?.files as Array<{ id: string; name: string; modifiedTime?: string; size?: string }>) ?? [];
-    if (files.length === 0) return null;
-    // Prefer the new-name entry if both exist; otherwise return the one we got.
-    const newName = files.find(f => f.name === DRIVE_FILE_NAME);
-    return newName ?? files[0];
+    const files = (json?.files as DriveFileMeta[]) ?? [];
+    return files[0] ?? null;
 }
 
 /**
- * Public: fetch Drive backup status for the Settings panel — last-modified
- * timestamp + size, or `null` if no backup exists yet (or Drive isn't
- * connected). Caller should pre-check `isGoogleDriveConnected()` and
- * suppress UI loading state when disconnected. Errors propagate so the
- * caller can show "Couldn't fetch status" rather than silently lying.
+ * Internal: list metadata for every `.cbark` file in appDataFolder.
+ *
+ * Drive's `q=` mini-language doesn't support glob or starts-with on
+ * `name`, so we list everything in the spaces=appDataFolder scope (the
+ * scope is per-app already, so it only contains Cypher Box's own
+ * uploads — nothing else of the user's Drive shows up here) and filter
+ * client-side by the `.cbark` extension. The legacy v0 / v1 names get
+ * matched the same way.
+ *
+ * Cypher Box's appDataFolder typically contains 1–3 entries (one per
+ * wallet currently or recently active on this device + maybe a
+ * leftover legacy file mid-migration), so the listing fits comfortably
+ * in a single page even on the conservative `pageSize=100` default.
  */
-export async function getDriveBackupInfo(): Promise<{ modifiedAt: number; sizeBytes: number } | null> {
-    const meta = await findExistingBackupMeta();
+async function listAllDriveBackups(): Promise<DriveFileMeta[]> {
+    const token = await getAccessToken();
+    const url =
+        'https://www.googleapis.com/drive/v3/files' +
+        `?spaces=appDataFolder` +
+        `&fields=files(id,name,modifiedTime,size)` +
+        `&pageSize=100`;
+    const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`Drive list failed: ${resp.status} ${body}`);
+    }
+    const json = await resp.json();
+    const files = (json?.files as DriveFileMeta[]) ?? [];
+    return files.filter(f => typeof f.name === 'string' && f.name.toLowerCase().endsWith('.cbark'));
+}
+
+/**
+ * Internal: download one file's content by Drive ID. Throws on
+ * non-2xx; callers handle by skipping the candidate and continuing
+ * the scan.
+ */
+async function downloadDriveFileById(id: string): Promise<string> {
+    const token = await getAccessToken();
+    const url = `https://www.googleapis.com/drive/v3/files/${id}?alt=media`;
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`Drive download failed: ${resp.status} ${body}`);
+    }
+    return resp.text();
+}
+
+/**
+ * Public: fetch Drive backup status for the Settings panel of the
+ * active wallet — last-modified timestamp + size of the backup matching
+ * the active wallet's fingerprint, or `null` if no backup exists for
+ * this wallet yet.
+ *
+ * Caller passes the active wallet's fingerprint so the status reflects
+ * THIS wallet's backup, not some other wallet's that happens to share
+ * the same Google account. Pre-Slice-3 callers (Settings.tsx) still
+ * use the back-compat lookup that targets the legacy filename — wired
+ * to the new fingerprint-aware version when Settings migrates.
+ *
+ * @param fingerprint - active wallet fingerprint, or null to look up
+ *   the legacy single-file entry (back-compat).
+ */
+export async function getDriveBackupInfo(
+    fingerprint: string | null = null,
+): Promise<{ modifiedAt: number; sizeBytes: number } | null> {
+    const meta = await findDriveBackupMetaByName(getDriveBackupName(fingerprint));
     if (!meta) return null;
     const modifiedAt = meta.modifiedTime ? Date.parse(meta.modifiedTime) : NaN;
     const sizeBytes = meta.size ? Number(meta.size) : NaN;
@@ -353,18 +433,36 @@ export async function getDriveBackupInfo(): Promise<{ modifiedAt: number; sizeBy
 }
 
 /**
- * Upload (or update) the encrypted backup blob into the appDataFolder.
+ * Upload (or update) the encrypted backup blob into the appDataFolder
+ * under the per-wallet name `ark-backup-{fingerprint}.cbark`. PATCH
+ * the existing entry of the SAME name if present, POST a new one
+ * otherwise — never touches a different wallet's entry.
+ *
+ * Multi-wallet correctness: two wallets sharing the same Drive account
+ * each upload to a distinct filename. Wallet B's upload looks up
+ * `ark-backup-{fpB}.cbark`, doesn't find Wallet A's
+ * `ark-backup-{fpA}.cbark` (different name), creates fresh. Wallet A's
+ * blob is untouched.
+ *
  * Uses Drive's multipart/related upload so metadata + content go in one
  * request — simpler than the resumable protocol for a small (< 1 MB)
  * blob and works fine over typical mobile connections.
  *
  * Returns the Drive file ID on success. Throws on auth / network /
- * quota failures; caller should swallow and surface a non-blocking
- * toast — the local backup is still good.
+ * quota failures; caller swallows during the auto-backup tick and
+ * surfaces during verified-create.
  */
-export async function uploadArkBackupToDrive(blob: string): Promise<string> {
+export async function uploadArkBackupToDrive(
+    blob: string,
+    fingerprint: string,
+): Promise<string> {
     const token = await getAccessToken();
-    const existingId = await findExistingBackupId();
+    const filename = getDriveBackupName(fingerprint);
+    // Look up by exact per-wallet name so wallet B's upload never PATCHes
+    // wallet A's existing entry. The check is lookup-by-exact-name only —
+    // legacy `ark-backup.cbark` files belonging to other wallets stay
+    // untouched until their owning seed migrates them.
+    const existingId = await findDriveBackupIdByName(filename);
 
     // Drive multipart upload boundary. The body is:
     //   --boundary
@@ -384,7 +482,7 @@ export async function uploadArkBackupToDrive(blob: string): Promise<string> {
               modifiedTime: new Date().toISOString(),
           }
         : {
-              name: DRIVE_FILE_NAME,
+              name: filename,
               parents: ['appDataFolder'],
           };
 
@@ -418,26 +516,162 @@ export async function uploadArkBackupToDrive(blob: string): Promise<string> {
 }
 
 /**
- * Pull the most recent backup blob down from Drive's appDataFolder.
- * Returns null if no backup exists for this Google account / app combo
- * (e.g. fresh install on a new device that hasn't backed up yet, or
- * the user signed in with the wrong account).
+ * Fast-path read by exact per-wallet name. Used by the verify-after-
+ * upload step in `writeAndVerifyArkBackup` — we just uploaded as
+ * `ark-backup-{fingerprint}.cbark`, so reading back by that exact
+ * name avoids a full appDataFolder scan.
  *
- * Caller treats this as the bytes equivalent of `RNFS.readFile(
- * AUTO_BACKUP_PATH)` — pass straight to `restoreArkBackupBlob`.
+ * Returns null when no entry exists for this fingerprint.
  */
-export async function downloadArkBackupFromDrive(): Promise<string | null> {
-    const token = await getAccessToken();
-    const id = await findExistingBackupId();
+export async function downloadDriveBackupByFingerprint(
+    fingerprint: string,
+): Promise<string | null> {
+    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint));
     if (!id) return null;
+    return downloadDriveFileById(id);
+}
 
-    const url = `https://www.googleapis.com/drive/v3/files/${id}?alt=media`;
+/**
+ * Recovery scan: enumerate every `.cbark` file in the user's Drive
+ * appDataFolder, peek each one's unencrypted header, return the blob
+ * whose header.fingerprint matches `fingerprint`.
+ *
+ * Header-match (not filename-match) so a user who manually renamed
+ * their backup file (downloaded it, re-uploaded under a different
+ * name, etc.) still recovers — the fingerprint sits inside the file,
+ * not in the name.
+ *
+ * Skips files with malformed JSON or unsupported version with a warn,
+ * keeps scanning — a single corrupt file in the folder must not abort
+ * the whole recovery flow.
+ *
+ * Returns null when no file matches (caller surfaces the
+ * "no backup matches this seed phrase" UX).
+ */
+export async function findDriveBackupByFingerprint(
+    fingerprint: string,
+): Promise<string | null> {
+    let files: DriveFileMeta[];
+    try {
+        files = await listAllDriveBackups();
+    } catch (err) {
+        if (__DEV__) console.log('[Ark/Drive] listAllDriveBackups failed:', err);
+        throw err;
+    }
+
+    for (const f of files) {
+        let blob: string;
+        try {
+            blob = await downloadDriveFileById(f.id);
+        } catch (err) {
+            if (__DEV__) console.log(`[Ark/Drive] download "${f.name}" failed; skipping:`, err);
+            continue;
+        }
+        const header = peekBackupHeader(blob);
+        if (!header) {
+            if (__DEV__) console.log(`[Ark/Drive] skipping malformed envelope at "${f.name}"`);
+            continue;
+        }
+        if (header.fingerprint && header.fingerprint === fingerprint) {
+            return blob;
+        }
+    }
+    return null;
+}
+
+/**
+ * Internal: delete a Drive file by ID. Best-effort — Drive returns 404
+ * if the file's already gone, which we swallow because the caller's
+ * goal ("make sure this is gone") is already satisfied.
+ */
+async function deleteDriveFileById(id: string): Promise<void> {
+    const token = await getAccessToken();
+    const url = `https://www.googleapis.com/drive/v3/files/${id}`;
     const resp = await fetch(url, {
+        method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
     });
+    if (resp.status === 404) return; // already gone
     if (!resp.ok) {
         const body = await resp.text();
-        throw new Error(`Drive download failed: ${resp.status} ${body}`);
+        throw new Error(`Drive delete failed: ${resp.status} ${body}`);
     }
-    return resp.text();
+}
+
+/**
+ * Delete the per-wallet entry (`ark-backup-{fingerprint}.cbark`) from
+ * the Drive appDataFolder. Wallet-scoped: only this wallet's entry is
+ * removed; other wallets' entries survive. Idempotent — resolves
+ * cleanly when no entry exists for this fingerprint.
+ *
+ * iOS callers: short-circuits with no-op (Drive is Android-only).
+ */
+export async function deleteDriveBackupByFingerprint(fingerprint: string): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    let connected = false;
+    try {
+        connected = await isGoogleDriveConnected();
+    } catch {
+        // Sign-in lib hiccup — nothing to delete if we can't reach Drive.
+    }
+    if (!connected) return;
+    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint));
+    if (!id) return;
+    await deleteDriveFileById(id);
+}
+
+/**
+ * Delete the legacy single-wallet entries (`ark-backup.cbark` and
+ * `cypher-box-ark-backup.cbark`) from the appDataFolder. Used by the
+ * auto-migration cleanup once the active wallet's seed has confirmed
+ * the legacy file is this wallet's snapshot.
+ *
+ * Best-effort: errors logged but not thrown — the auto-migration
+ * mustn't break the auto-backup tick.
+ */
+export async function deleteLegacyDriveBackup(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    let connected = false;
+    try {
+        connected = await isGoogleDriveConnected();
+    } catch {
+        return;
+    }
+    if (!connected) return;
+    for (const legacyName of [LEGACY_V1_DRIVE_FILE_NAME, LEGACY_V0_DRIVE_FILE_NAME]) {
+        try {
+            const id = await findDriveBackupIdByName(legacyName);
+            if (!id) continue;
+            await deleteDriveFileById(id);
+        } catch (err) {
+            if (__DEV__) console.log(`[Ark/Drive] legacy delete "${legacyName}" failed:`, err);
+        }
+    }
+}
+
+/**
+ * Legacy back-compat fetch — returns the v1 `ark-backup.cbark` (or
+ * v0 `cypher-box-ark-backup.cbark`) entry's content if either exists.
+ * Used by the recovery flow's v1-fallback path: when the fingerprint
+ * scan misses but a single legacy file exists, the caller try-decrypts
+ * with the entered seed and (on success) rewrites it as v2 under the
+ * matching per-wallet filename.
+ *
+ * Returns null when no legacy file exists.
+ *
+ * Kept under the original `downloadArkBackupFromDrive` name for back-
+ * compat with consumers (RecoverArkScreen) that haven't migrated to
+ * the fingerprint-keyed flow yet — rewired in Slice 3.
+ *
+ * @deprecated Use `findDriveBackupByFingerprint` for fingerprint-keyed
+ *   recovery, or `downloadDriveBackupByFingerprint` for fast-path
+ *   reads.
+ */
+export async function downloadArkBackupFromDrive(): Promise<string | null> {
+    // Try the v1 legacy filename first (more common), v0 second.
+    const idV1 = await findDriveBackupIdByName(LEGACY_V1_DRIVE_FILE_NAME);
+    if (idV1) return downloadDriveFileById(idV1);
+    const idV0 = await findDriveBackupIdByName(LEGACY_V0_DRIVE_FILE_NAME);
+    if (idV0) return downloadDriveFileById(idV0);
+    return null;
 }

@@ -12,6 +12,7 @@ import { EyeVisible } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
+    checkArkSeedKeychainConflict,
     connectGoogleDrive,
     createArkWallet,
     getSavedSafBackupFolder,
@@ -232,7 +233,7 @@ export default function ArkSeedPhraseScreen() {
             const looksLikeStaleDatadir = /Internal|InvalidMnemonic|Database/i.test(msg);
             SimpleToast.show(
                 looksLikeStaleDatadir
-                    ? "An Ark wallet already exists on this device. Go back and tap Reset Ark wallet state, then try again."
+                    ? "Couldn't create a new Ark wallet on top of existing state. Go back to the Create screen and try again."
                     : `Ark wallet creation failed: ${msg}`,
                 SimpleToast.LONG,
             );
@@ -462,6 +463,37 @@ export default function ArkSeedPhraseScreen() {
     };
 
     const persistToKeychain = async (): Promise<boolean> => {
+        // Conflict guard: the keychain holds at most ONE Ark seed at a
+        // time. If a previous wallet's seed is still there (e.g. user
+        // chose "keep on device" on delete and is now creating a new
+        // wallet), silently overwriting it would orphan the prior
+        // wallet's biometric fast-recover path. Prompt before doing it.
+        const conflict = await checkArkSeedKeychainConflict(mnemonic || "");
+        if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
+            const ok = await new Promise<boolean>(resolve => {
+                const message =
+                    conflict.kind === 'different-wallet'
+                        ? `A saved seed already exists on this device for wallet ${conflict.existingFingerprint}. Saving the new seed will overwrite it.\n\nThe old seed phrase will need to be re-entered to recover that wallet later — make sure you have it written down somewhere safe.`
+                        : `A saved seed already exists on this device but couldn't be read to compare (${conflict.reason}). Saving the new seed may overwrite it.\n\nIf the old seed is only in the keychain (not written down), it may be lost.`;
+                Alert.alert(
+                    "Replace saved seed?",
+                    message,
+                    [
+                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                        { text: "Replace", style: "destructive", onPress: () => resolve(true) },
+                    ],
+                    { cancelable: true, onDismiss: () => resolve(false) },
+                );
+            });
+            if (!ok) {
+                // Caller (the "Save & continue" flow) treats false as
+                // "keychain step failed" and surfaces the same toast as
+                // a write failure. The wallet creation itself isn't
+                // gated on keychain — `saveToKeychain` is a UX preference.
+                return false;
+            }
+        }
+
         try {
             await Keychain.setGenericPassword(KEYCHAIN_ACCOUNT, mnemonic || "", {
                 service: KEYCHAIN_SERVICE,

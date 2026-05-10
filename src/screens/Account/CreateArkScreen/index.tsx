@@ -6,6 +6,7 @@ import { HeaderWithLine } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
+    getArkWalletHandle,
     hasArkDatadir,
     resetArkWalletState,
     restoreArkWalletFromDisk,
@@ -38,6 +39,7 @@ export default function CreateArkScreen() {
         walletID,
         FirstTimeArk,
         arkUseHotVaultSeed,
+        isArkAuth,
         setAllBTCWallets,
         setArkAuth,
         setArkWallet,
@@ -55,8 +57,55 @@ export default function CreateArkScreen() {
     useEffect(() => {
         (async () => {
             const exists = await hasArkDatadir();
-            setExistingCheck(exists ? "exists" : "none");
+            if (!exists) {
+                setExistingCheck("none");
+                return;
+            }
+
+            // Datadir exists. Distinguish "live, healthy wallet" from
+            // "orphan datadir from an interrupted create / recover."
+            //
+            // Heuristic without re-prompting biometric (the boot hook in
+            // useArkRestoreOnBoot already triggered the prompt once and
+            // either set the in-memory handle + zustand auth, or reported
+            // 'needs-reset' and bailed out):
+            //
+            //   live handle  → wallet is operational, show "Open existing"
+            //   isArkAuth    → zustand says authed, even if handle is null
+            //                  (Metro reload edge case; restore will re-open
+            //                  silently via the "already-open" short-circuit
+            //                  inside restoreArkWalletFromDisk)
+            //   neither      → orphan: datadir on disk but no live state.
+            //                  Auto-clean silently (preserve keychain in
+            //                  case the still-stored seed maps to a `.cbark`
+            //                  the user will recover later).
+            //
+            // Auto-clean is a destructive operation but the only state it
+            // wipes is the local `${docDir}/ark-datadir/` — backup files at
+            // every destination are preserved (multi-wallet PR invariant).
+            // If a user actually had funds in this orphan datadir, those
+            // funds are still recoverable via the matching `.cbark` file.
+            const handle = getArkWalletHandle();
+            if (handle || isArkAuth) {
+                setExistingCheck("exists");
+                return;
+            }
+
+            try {
+                if (__DEV__) console.log('[CreateArkScreen] orphan datadir detected — auto-cleaning');
+                await resetArkWalletState({ keepSeedInKeychain: true });
+            } catch (err: any) {
+                console.warn('[CreateArkScreen] orphan auto-clean failed:', err?.message ?? err);
+                // Fall back to showing the existing-wallet branch with the
+                // (DEV-gated) Reset button. Users in a release build hitting
+                // this fallback can navigate to RecoverArkScreen and recover
+                // from a `.cbark`, which wipes the datadir as part of restore.
+                setExistingCheck("exists");
+                return;
+            }
+            setExistingCheck("none");
         })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleOpenExisting = async () => {

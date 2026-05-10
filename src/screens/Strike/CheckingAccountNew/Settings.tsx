@@ -31,6 +31,8 @@ import {
   disconnectGoogleDrive,
   fetchPendingExitsTotalSats,
   findAutoBackupForRecovery,
+  getAutoBackupPath,
+  getCachedArkBackupFingerprint,
   getDriveBackupInfo,
   getICloudBackupPath,
   isGoogleDriveConnected,
@@ -312,67 +314,100 @@ function ArkSettingsBody() {
   useEffect(() => {
     let cancelled = false;
 
-    const statBackup = async (path: string): Promise<BackupInfo | undefined> => {
+    // One status read. Returns whether the fingerprint cache was warm —
+    // caller uses that to decide whether to keep polling.
+    //
+    // TODO(iOS iCloud display): The legacy panel had a separate iCloud
+    // Drive probe (getICloudBackupPath + isICloudBackupAvailable) that
+    // surfaced "iCloud Off" / "no copy yet" copy. The multi-wallet
+    // refactor reads from local Documents only; per-wallet iCloud
+    // surfacing depends on the bridge gaining a fingerprint-aware
+    // variant and is a follow-up.
+    const refresh = async (): Promise<{ cacheWarm: boolean }> => {
+      // Resolve the active wallet's per-wallet backup filename via the
+      // cached BIP32 fingerprint — populated by every auto-backup tick.
+      // When cold (cache empty), fall back to the legacy single-wallet
+      // path so an upgrade-in-place user with a v1 backup still sees
+      // something, and the polling loop below keeps trying until the
+      // first auto-backup tick fires (~30s after wallet open).
+      const fp = getCachedArkBackupFingerprint();
+      const localPath = fp ? getAutoBackupPath(fp) : AUTO_BACKUP_PATH;
+
+      // Local — RNFS.stat throws if the file doesn't exist; treat as
+      // "no backup yet" rather than an error.
       try {
-        if (!(await RNFS.exists(path))) return undefined;
-        const stat = await RNFS.stat(path);
-        return {
-          modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
-          sizeBytes: Number(stat.size) || 0,
-        };
-      } catch {
-        return undefined;
+        const exists = await RNFS.exists(localPath);
+        if (cancelled) return { cacheWarm: !!fp };
+        if (!exists) {
+          setLocalBackup(undefined);
+        } else {
+          const stat = await RNFS.stat(localPath);
+          if (cancelled) return { cacheWarm: !!fp };
+          setLocalBackup({
+            modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
+            sizeBytes: Number(stat.size) || 0,
+          });
+        }
+      } catch (e: any) {
+        if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
       }
+
+      // Drive — connection check is cheap; metadata fetch is gated on it.
+      // Pass the active fingerprint so the status reflects THIS wallet's
+      // entry, not some other wallet's that happens to share the same
+      // Google account. `null` (cold cache) targets the legacy single-
+      // file entry as a back-compat fallback.
+      try {
+        const connected = await isGoogleDriveConnected();
+        if (cancelled) return { cacheWarm: !!fp };
+        setDriveConnected(connected);
+        if (connected) {
+          const info = await getDriveBackupInfo(fp);
+          if (cancelled) return { cacheWarm: !!fp };
+          setDriveBackup(info ?? undefined);
+        } else {
+          setDriveBackup(undefined);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setDriveConnected(false);
+          setDriveError(e?.message || 'Drive unreachable');
+        }
+      }
+
+      return { cacheWarm: !!fp };
     };
 
+    // Poll until the fingerprint cache warms (= an auto-backup tick has
+    // run since wallet open). Without polling, a user opening Settings
+    // immediately after recovery sees "no copy yet" and never updates,
+    // because the cache is module state and useEffect's deps array is
+    // empty. Stop polling once the cache is warm — subsequent ticks
+    // overwrite the same per-wallet file, so the displayed mtime/size
+    // is at most one tick stale (acceptable for a status panel).
+    let intervalHandle: ReturnType<typeof setInterval> | null = null;
     (async () => {
-      // Local — always the Documents/ark-backup.cbark path. Stays
-      // populated even after iCloud takes over as the active write
-      // target (we don't auto-delete on migration), so the user can
-      // see when the local fallback was last refreshed.
-      const local = await statBackup(AUTO_BACKUP_PATH);
-      if (cancelled) return;
-      setLocalBackup(local);
-
-      // iCloud Drive (iOS) — independent probe + path lookup. Shows
-      // "Off" when iCloud isn't enabled for Cypher Box, or "no copy yet"
-      // when iCloud is on but the auto-tick hasn't written there yet.
-      if (Platform.OS === 'ios') {
-        const path = await getICloudBackupPath();
-        if (cancelled) return;
-        setICloudAvailable(path !== null);
-        if (path) {
-          const info = await statBackup(path);
-          if (cancelled) return;
-          setICloudBackup(info);
-        } else {
-          setICloudBackup(undefined);
-        }
-      }
-
-      // Google Drive (Android) — connection check first, then metadata.
-      if (Platform.OS === 'android') {
-        try {
-          const connected = await isGoogleDriveConnected();
-          if (cancelled) return;
-          setDriveConnected(connected);
-          if (connected) {
-            const info = await getDriveBackupInfo();
-            if (cancelled) return;
-            setDriveBackup(info ?? undefined);
-          } else {
-            setDriveBackup(undefined);
-          }
-        } catch (e: any) {
-          if (!cancelled) {
-            setDriveConnected(false);
-            setDriveError(e?.message || 'Drive unreachable');
+      const first = await refresh();
+      if (cancelled || first.cacheWarm) return;
+      // Re-poll every 3s for up to ~60s — covers the worst-case window
+      // between wallet open and the first sync tick (which fires every
+      // 30s in useArkSync). Once the cache warms, stop the interval.
+      let polls = 0;
+      intervalHandle = setInterval(async () => {
+        polls += 1;
+        const r = await refresh();
+        if (cancelled || r.cacheWarm || polls >= 20) {
+          if (intervalHandle !== null) {
+            clearInterval(intervalHandle);
+            intervalHandle = null;
           }
         }
-      }
+      }, 3000);
     })();
+
     return () => {
       cancelled = true;
+      if (intervalHandle !== null) clearInterval(intervalHandle);
     };
   }, []);
 
