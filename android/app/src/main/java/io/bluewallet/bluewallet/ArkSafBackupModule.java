@@ -9,10 +9,12 @@ import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.documentfile.provider.DocumentFile;
 
+import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.WritableArray;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -71,12 +73,26 @@ public class ArkSafBackupModule extends ReactContextBaseJavaModule {
     private static final String NAME = "ArkSafBackup";
 
     /**
-     * Stable filename inside the user-chosen folder. Matches the Drive
-     * appDataFolder filename and the Documents auto-backup filename so
-     * the three channels are visually consistent ("there is one file
-     * named ark-backup.cbark; here are three places it lives").
+     * Legacy single-wallet filename. Pre–multi-wallet builds wrote one
+     * shared file at this name across every wallet on the device — the
+     * source of the silent-overwrite data-loss bug fixed in v2 of the
+     * envelope format. Multi-wallet builds use `writeBackupNamed` /
+     * `readBackupNamed` / `listBackups` with per-wallet filenames keyed
+     * by BIP32 master fingerprint (`ark-backup-{fp}.cbark`); this
+     * constant only services back-compat for callers still on the old
+     * `writeBackup` / `readBackup` entry points and for the legacy-file
+     * scan that the recovery flow performs to migrate v1 files.
      */
     private static final String BACKUP_FILE_NAME = "ark-backup.cbark";
+
+    /**
+     * File extension shared by every Ark backup file (v0 / v1 / v2). The
+     * `listBackups` enumeration filters on this so a user-chosen folder
+     * containing other documents (the user picked Internal/Documents
+     * because that's their general-purpose dump) doesn't surface
+     * unrelated files to the JS-side recovery scan.
+     */
+    private static final String BACKUP_FILE_EXTENSION = ".cbark";
 
     /**
      * MIME type registered with SAF when creating the file. octet-stream
@@ -309,5 +325,243 @@ public class ArkSafBackupModule extends ReactContextBaseJavaModule {
         } catch (Exception e) {
             promise.reject("E_READ_FAILED", e.getMessage(), e);
         }
+    }
+
+    /**
+     * Multi-wallet write: same semantics as `writeBackup` but the JS
+     * caller supplies the filename. JS uses `ark-backup-{fp}.cbark`
+     * (one file per wallet seed) so two wallets sharing the same SAF
+     * folder coexist without overwriting each other.
+     *
+     * Filename validation: a malicious / buggy JS caller could in
+     * principle pass `../something` and the SAF provider would happily
+     * write outside the chosen tree. Reject any filename containing
+     * path separators or `..` defensively. Real callers always pass
+     * a flat `ark-backup-<8 hex>.cbark` produced by `getAutoBackupPath`.
+     */
+    @ReactMethod
+    public void writeBackupNamed(String treeUriString, String filename, String content, Promise promise) {
+        if (!isSafeFlatFilename(filename)) {
+            promise.reject("E_INVALID_FILENAME", "Filename must be a flat file with no path separators.");
+            return;
+        }
+        try {
+            Context ctx = getReactApplicationContext();
+            Uri treeUri = Uri.parse(treeUriString);
+
+            DocumentFile tree = DocumentFile.fromTreeUri(ctx, treeUri);
+            if (tree == null || !tree.canWrite()) {
+                promise.reject(
+                        "E_FOLDER_UNREACHABLE",
+                        "Backup folder is no longer reachable. Pick the folder again.");
+                return;
+            }
+
+            DocumentFile target = tree.findFile(filename);
+            if (target == null || !target.exists()) {
+                target = tree.createFile(BACKUP_MIME, filename);
+                if (target == null) {
+                    promise.reject(
+                            "E_CREATE_FAILED",
+                            "Couldn't create " + filename + " in the chosen folder.");
+                    return;
+                }
+            }
+
+            ContentResolver cr = ctx.getContentResolver();
+            try (OutputStream out = cr.openOutputStream(target.getUri(), "wt")) {
+                if (out == null) {
+                    promise.reject("E_OPEN_FAILED", "Couldn't open backup file for writing.");
+                    return;
+                }
+                out.write(content.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+            }
+            promise.resolve(target.getUri().toString());
+        } catch (SecurityException e) {
+            promise.reject(
+                    "E_PERMISSION_REVOKED",
+                    "Permission to the backup folder was revoked. Pick the folder again.",
+                    e);
+        } catch (Exception e) {
+            promise.reject("E_WRITE_FAILED", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Multi-wallet read: same semantics as `readBackup` but the JS
+     * caller supplies the filename. Resolves to null when the file
+     * doesn't exist (caller treats as "no backup with that name in this
+     * folder"). Filename safety enforced as in `writeBackupNamed`.
+     */
+    @ReactMethod
+    public void readBackupNamed(String treeUriString, String filename, Promise promise) {
+        if (!isSafeFlatFilename(filename)) {
+            promise.reject("E_INVALID_FILENAME", "Filename must be a flat file with no path separators.");
+            return;
+        }
+        try {
+            Context ctx = getReactApplicationContext();
+            Uri treeUri = Uri.parse(treeUriString);
+
+            DocumentFile tree = DocumentFile.fromTreeUri(ctx, treeUri);
+            if (tree == null) {
+                promise.reject(
+                        "E_FOLDER_UNREACHABLE",
+                        "Backup folder is no longer reachable. Pick the folder again.");
+                return;
+            }
+
+            DocumentFile target = tree.findFile(filename);
+            if (target == null || !target.exists()) {
+                promise.resolve(null);
+                return;
+            }
+
+            ContentResolver cr = ctx.getContentResolver();
+            try (InputStream in = cr.openInputStream(target.getUri())) {
+                if (in == null) {
+                    promise.reject("E_OPEN_FAILED", "Couldn't open backup file for reading.");
+                    return;
+                }
+                ByteArrayOutputStream buf = new ByteArrayOutputStream();
+                byte[] tmp = new byte[8192];
+                int n;
+                while ((n = in.read(tmp)) > 0) {
+                    buf.write(tmp, 0, n);
+                }
+                promise.resolve(buf.toString(StandardCharsets.UTF_8.name()));
+            }
+        } catch (SecurityException e) {
+            promise.reject(
+                    "E_PERMISSION_REVOKED",
+                    "Permission to the backup folder was revoked. Pick the folder again.",
+                    e);
+        } catch (Exception e) {
+            promise.reject("E_READ_FAILED", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Enumerate every `.cbark` file in the user-chosen folder. The
+     * recovery flow uses this to scan-and-header-match: list filenames →
+     * read each one's unencrypted envelope header → match by BIP32
+     * fingerprint → decrypt the matching file with the entered seed.
+     *
+     * Only filenames are returned (not URIs); callers re-resolve via
+     * `readBackupNamed` for any file they want to open. Keeping the JS
+     * surface as flat-string lists rather than URI-laden objects avoids
+     * coupling JS to provider-internal URI shapes that vary by Android
+     * version.
+     *
+     * `.cbark`-only filter: protects against a user who picked a
+     * general-purpose folder (e.g. Internal Storage/Documents) — we
+     * don't surface every PDF / .txt / random content as a candidate.
+     */
+    @ReactMethod
+    public void listBackups(String treeUriString, Promise promise) {
+        try {
+            Context ctx = getReactApplicationContext();
+            Uri treeUri = Uri.parse(treeUriString);
+
+            DocumentFile tree = DocumentFile.fromTreeUri(ctx, treeUri);
+            if (tree == null) {
+                promise.reject(
+                        "E_FOLDER_UNREACHABLE",
+                        "Backup folder is no longer reachable. Pick the folder again.");
+                return;
+            }
+
+            WritableArray names = Arguments.createArray();
+            DocumentFile[] children = tree.listFiles();
+            if (children != null) {
+                for (DocumentFile child : children) {
+                    if (child == null || !child.isFile()) continue;
+                    String name = child.getName();
+                    if (name == null) continue;
+                    if (name.toLowerCase().endsWith(BACKUP_FILE_EXTENSION)) {
+                        names.pushString(name);
+                    }
+                }
+            }
+            promise.resolve(names);
+        } catch (SecurityException e) {
+            promise.reject(
+                    "E_PERMISSION_REVOKED",
+                    "Permission to the backup folder was revoked. Pick the folder again.",
+                    e);
+        } catch (Exception e) {
+            promise.reject("E_LIST_FAILED", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Delete a single per-wallet backup file from the chosen folder.
+     * Wallet-delete-scoped: only the named file is removed; every other
+     * `.cbark` in the folder (other wallets' backups, the user's own
+     * unrelated files) survives. Idempotent — resolves null when the
+     * file doesn't exist (caller treats as "already cleaned up").
+     *
+     * Filename safety enforced as in `writeBackupNamed` / `readBackupNamed`.
+     */
+    @ReactMethod
+    public void deleteBackupNamed(String treeUriString, String filename, Promise promise) {
+        if (!isSafeFlatFilename(filename)) {
+            promise.reject("E_INVALID_FILENAME", "Filename must be a flat file with no path separators.");
+            return;
+        }
+        try {
+            Context ctx = getReactApplicationContext();
+            Uri treeUri = Uri.parse(treeUriString);
+
+            DocumentFile tree = DocumentFile.fromTreeUri(ctx, treeUri);
+            if (tree == null) {
+                promise.reject(
+                        "E_FOLDER_UNREACHABLE",
+                        "Backup folder is no longer reachable. Pick the folder again.");
+                return;
+            }
+
+            DocumentFile target = tree.findFile(filename);
+            if (target == null || !target.exists()) {
+                // Idempotent: nothing to delete. Caller's reconciliation is
+                // simpler if "already gone" is success rather than error.
+                promise.resolve(null);
+                return;
+            }
+
+            boolean ok = target.delete();
+            if (!ok) {
+                promise.reject(
+                        "E_DELETE_FAILED",
+                        "Couldn't delete " + filename + " in the chosen folder.");
+                return;
+            }
+            promise.resolve(null);
+        } catch (SecurityException e) {
+            promise.reject(
+                    "E_PERMISSION_REVOKED",
+                    "Permission to the backup folder was revoked. Pick the folder again.",
+                    e);
+        } catch (Exception e) {
+            promise.reject("E_DELETE_FAILED", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Defensive: a flat filename has no path separators, no `..`, and is
+     * non-empty. Anything else gets rejected at the bridge so a buggy or
+     * malicious JS caller can't escape the chosen tree. Real callers
+     * pass `ark-backup-<8 hex>.cbark` produced by `getAutoBackupPath`,
+     * which is always flat by construction.
+     */
+    private static boolean isSafeFlatFilename(String name) {
+        if (name == null) return false;
+        if (name.isEmpty()) return false;
+        if (name.indexOf('/') >= 0) return false;
+        if (name.indexOf('\\') >= 0) return false;
+        if (name.equals(".") || name.equals("..")) return false;
+        if (name.contains("..")) return false;
+        return true;
     }
 }

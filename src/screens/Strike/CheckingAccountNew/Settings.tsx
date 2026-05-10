@@ -29,6 +29,8 @@ import {
   connectGoogleDrive,
   disconnectGoogleDrive,
   fetchPendingExitsTotalSats,
+  getAutoBackupPath,
+  getCachedArkBackupFingerprint,
   getDriveBackupInfo,
   isGoogleDriveConnected,
   readArkSeedPhrase,
@@ -297,17 +299,29 @@ function ArkSettingsBody() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    // One status read. Returns whether the fingerprint cache was warm —
+    // caller uses that to decide whether to keep polling.
+    const refresh = async (): Promise<{ cacheWarm: boolean }> => {
+      // Resolve the active wallet's per-wallet backup filename via the
+      // cached BIP32 fingerprint — populated by every auto-backup tick.
+      // When cold (cache empty), fall back to the legacy single-wallet
+      // path so an upgrade-in-place user with a v1 backup still sees
+      // something, and the polling loop below keeps trying until the
+      // first auto-backup tick fires (~30s after wallet open).
+      const fp = getCachedArkBackupFingerprint();
+      const localPath = fp ? getAutoBackupPath(fp) : AUTO_BACKUP_PATH;
+
       // Local — RNFS.stat throws if the file doesn't exist; treat as
       // "no backup yet" rather than an error.
       try {
-        const exists = await RNFS.exists(AUTO_BACKUP_PATH);
-        if (cancelled) return;
+        const exists = await RNFS.exists(localPath);
+        if (cancelled) return { cacheWarm: !!fp };
         if (!exists) {
           setLocalBackup(undefined);
         } else {
-          const stat = await RNFS.stat(AUTO_BACKUP_PATH);
-          if (cancelled) return;
+          const stat = await RNFS.stat(localPath);
+          if (cancelled) return { cacheWarm: !!fp };
           setLocalBackup({
             modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
             sizeBytes: Number(stat.size) || 0,
@@ -318,13 +332,17 @@ function ArkSettingsBody() {
       }
 
       // Drive — connection check is cheap; metadata fetch is gated on it.
+      // Pass the active fingerprint so the status reflects THIS wallet's
+      // entry, not some other wallet's that happens to share the same
+      // Google account. `null` (cold cache) targets the legacy single-
+      // file entry as a back-compat fallback.
       try {
         const connected = await isGoogleDriveConnected();
-        if (cancelled) return;
+        if (cancelled) return { cacheWarm: !!fp };
         setDriveConnected(connected);
         if (connected) {
-          const info = await getDriveBackupInfo();
-          if (cancelled) return;
+          const info = await getDriveBackupInfo(fp);
+          if (cancelled) return { cacheWarm: !!fp };
           setDriveBackup(info ?? undefined);
         } else {
           setDriveBackup(undefined);
@@ -335,9 +353,40 @@ function ArkSettingsBody() {
           setDriveError(e?.message || 'Drive unreachable');
         }
       }
+
+      return { cacheWarm: !!fp };
+    };
+
+    // Poll until the fingerprint cache warms (= an auto-backup tick has
+    // run since wallet open). Without polling, a user opening Settings
+    // immediately after recovery sees "no copy yet" and never updates,
+    // because the cache is module state and useEffect's deps array is
+    // empty. Stop polling once the cache is warm — subsequent ticks
+    // overwrite the same per-wallet file, so the displayed mtime/size
+    // is at most one tick stale (acceptable for a status panel).
+    let intervalHandle: ReturnType<typeof setInterval> | null = null;
+    (async () => {
+      const first = await refresh();
+      if (cancelled || first.cacheWarm) return;
+      // Re-poll every 3s for up to ~60s — covers the worst-case window
+      // between wallet open and the first sync tick (which fires every
+      // 30s in useArkSync). Once the cache warms, stop the interval.
+      let polls = 0;
+      intervalHandle = setInterval(async () => {
+        polls += 1;
+        const r = await refresh();
+        if (cancelled || r.cacheWarm || polls >= 20) {
+          if (intervalHandle !== null) {
+            clearInterval(intervalHandle);
+            intervalHandle = null;
+          }
+        }
+      }, 3000);
     })();
+
     return () => {
       cancelled = true;
+      if (intervalHandle !== null) clearInterval(intervalHandle);
     };
   }, []);
 

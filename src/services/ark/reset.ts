@@ -1,6 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 
-import { clearArkKeyCache } from './backup';
+import { clearArkKeyCache, deleteArkBackupForWallet } from './backup';
 import { deleteArkDatadir } from './datadir';
 import { clearArkWalletHandle } from './walletHandle';
 
@@ -25,6 +25,27 @@ export interface ResetArkWalletOptions {
      * unilateral exit in `useArkSync`).
      */
     keepSeedInKeychain?: boolean;
+
+    /**
+     * When set, also delete THIS wallet's per-wallet backup files
+     * (`ark-backup-{fingerprint}.cbark`) at every destination — local
+     * Documents, Drive's appDataFolder (Android), the SAF folder
+     * (Android). Wallet-scoped: other wallets' backup files at the
+     * same destinations are NEVER touched.
+     *
+     * Caller must derive the fingerprint from the mnemonic BEFORE
+     * calling reset (the keychain mnemonic may be wiped during this
+     * call when `keepSeedInKeychain` is false, so `resetArkWalletState`
+     * can't read it after starting). The standard derivation is
+     * `await getActiveBackupFingerprint(mnemonic)` from the cache, or
+     * `await deriveBackupFingerprint(mnemonic)` cold.
+     *
+     * Defaults to `undefined` — backup files survive reset, matching
+     * the historic behavior. The user can always re-recover from the
+     * surviving backup later if they change their mind. Opt-in for the
+     * future "delete vault AND its backups" UI.
+     */
+    deleteBackupFilesForFingerprint?: string;
 }
 
 /**
@@ -48,7 +69,7 @@ export interface ResetArkWalletOptions {
 export async function resetArkWalletState(
     options: ResetArkWalletOptions = {},
 ): Promise<void> {
-    const { keepSeedInKeychain = false } = options;
+    const { keepSeedInKeychain = false, deleteBackupFilesForFingerprint } = options;
 
     clearArkWalletHandle();
     // Scrub the in-memory PBKDF2 key so it doesn't carry over to a new wallet.
@@ -59,6 +80,19 @@ export async function resetArkWalletState(
     } catch (err) {
         console.warn('[Ark] deleteArkDatadir failed:', err);
         // Swallow — a missing datadir is the success state anyway.
+    }
+
+    // Wallet-scoped backup deletion. Best-effort, swallow per-channel
+    // failures — if Drive is offline, the local file should still get
+    // deleted, and so on. Only this wallet's per-wallet files at
+    // `ark-backup-{fp}.cbark` are removed; other wallets' files
+    // coexisting at the same destinations stay intact.
+    if (deleteBackupFilesForFingerprint) {
+        try {
+            await deleteArkBackupForWallet(deleteBackupFilesForFingerprint);
+        } catch (err) {
+            console.warn('[Ark] backup file delete failed:', err);
+        }
     }
 
     if (!keepSeedInKeychain) {

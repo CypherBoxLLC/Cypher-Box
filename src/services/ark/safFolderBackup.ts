@@ -3,6 +3,8 @@ import { NativeModules, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DocumentPicker from 'react-native-document-picker';
 
+import { peekBackupHeader } from './backup';
+
 /**
  * User-chosen folder backup channel — Storage Access Framework (SAF)
  * on Android, no-op on iOS.
@@ -96,8 +98,18 @@ interface ArkSafBackupNative {
     takePersistablePermission(treeUri: string): Promise<void>;
     releasePersistablePermission(treeUri: string): Promise<void>;
     probePermission(treeUri: string): Promise<'ok' | 'missing-permission' | 'unreachable'>;
+    /** @deprecated legacy single-wallet path; new code uses `writeBackupNamed`. */
     writeBackup(treeUri: string, content: string): Promise<string>;
+    /** @deprecated legacy single-wallet path; new code uses `readBackupNamed`. */
     readBackup(treeUri: string): Promise<string | null>;
+    /** Multi-wallet write: caller supplies the per-wallet filename. */
+    writeBackupNamed(treeUri: string, filename: string, content: string): Promise<string>;
+    /** Multi-wallet read: caller supplies the per-wallet filename. */
+    readBackupNamed(treeUri: string, filename: string): Promise<string | null>;
+    /** Enumerate every `.cbark` filename in the chosen tree (flat names). */
+    listBackups(treeUri: string): Promise<string[]>;
+    /** Wallet-scoped delete by exact filename. Idempotent (no-op when file is absent). */
+    deleteBackupNamed(treeUri: string, filename: string): Promise<void>;
 }
 
 /**
@@ -256,15 +268,28 @@ export async function probeSafBackupFolder(): Promise<SafFolderStatus> {
 }
 
 /**
+ * Per-wallet filename inside the SAF folder. Mirrors `getAutoBackupPath`
+ * in backup.ts: per-wallet writes go to `ark-backup-{fp}.cbark`, and the
+ * legacy single-file fallback (`null` fingerprint) targets the v1
+ * filename. Two wallets sharing the same SAF folder write to distinct
+ * files — neither overwrites the other.
+ */
+export function getSafBackupFilename(fingerprint: string | null): string {
+    return fingerprint ? `ark-backup-${fingerprint}.cbark` : 'ark-backup.cbark';
+}
+
+/**
  * Write `blob` (the encrypted .cbark envelope as JSON text) into the
- * configured SAF folder, overwriting the existing ark-backup.cbark.
+ * configured SAF folder under the per-wallet filename
+ * `ark-backup-{fingerprint}.cbark`. Multiple wallets coexist because
+ * each writes a distinct filename.
  *
  * Throws on failure with a `code` matching native error codes — caller
- * uses `classifySafError`+ `messageForSafError` to render UI copy.
+ * uses `classifySafError` + `messageForSafError` to render UI copy.
  *
  * Returns the file URI on success.
  */
-export async function writeArkBackupToSaf(blob: string): Promise<string> {
+export async function writeArkBackupToSaf(blob: string, fingerprint: string): Promise<string> {
     if (Platform.OS !== 'android') {
         throw Object.assign(new Error('SAF backup only on Android'), { code: 'NATIVE_NOT_LOADED' });
     }
@@ -276,16 +301,47 @@ export async function writeArkBackupToSaf(blob: string): Promise<string> {
     if (!saved) {
         throw Object.assign(new Error('No SAF folder configured'), { code: 'NOT_CONFIGURED' });
     }
-    return native.writeBackup(saved, blob);
+    const filename = getSafBackupFilename(fingerprint);
+    return native.writeBackupNamed(saved, filename, blob);
 }
 
 /**
- * Read back the most recent ark-backup.cbark from the configured SAF
- * folder. Resolves to null when no folder is configured or no backup
- * file exists yet.
+ * Read the per-wallet `.cbark` file from the SAF folder by exact
+ * filename (`ark-backup-{fingerprint}.cbark`). Resolves to null if the
+ * folder isn't configured or no file with that name exists.
  *
- * Used by the verify-roundtrip step in `writeAndVerifyArkBackup` to
- * confirm that a write we just did is decryptable by the same seed.
+ * Used by the verify-roundtrip step in `writeAndVerifyArkBackup` —
+ * after a write of fingerprint X, we know the file's name is exactly
+ * `ark-backup-X.cbark`, so the fast path-by-name read is correct here.
+ *
+ * Recovery flow uses `findSafBackupByFingerprint` instead — it scans
+ * the folder so a file the user manually renamed is still found by
+ * its header.
+ */
+export async function readSafBackupByFingerprint(fingerprint: string): Promise<string | null> {
+    if (Platform.OS !== 'android') return null;
+    const native = loadNative();
+    if (!native) return null;
+    const saved = await getSavedSafBackupFolder();
+    if (!saved) return null;
+    const filename = getSafBackupFilename(fingerprint);
+    return native.readBackupNamed(saved, filename);
+}
+
+/**
+ * Legacy back-compat read: fetches the v1 `ark-backup.cbark` from the
+ * configured SAF folder, regardless of fingerprint. Used by the
+ * recovery flow's v1-fallback path — when the fingerprint scan misses
+ * but a single legacy file exists, the caller try-decrypts it with the
+ * entered seed and (on success) rewrites it as v2.
+ *
+ * Kept under the original `readArkBackupFromSaf` name for back-compat
+ * with consumers (RecoverArkScreen) that haven't been migrated to the
+ * fingerprint-keyed flow yet — they're rewired in Slice 3.
+ *
+ * @deprecated Use `findSafBackupByFingerprint` for fingerprint-keyed
+ *   recovery, or `readSafBackupByFingerprint` for fast-path reads when
+ *   the caller already knows the file's exact per-wallet name.
  */
 export async function readArkBackupFromSaf(): Promise<string | null> {
     if (Platform.OS !== 'android') return null;
@@ -293,7 +349,125 @@ export async function readArkBackupFromSaf(): Promise<string | null> {
     if (!native) return null;
     const saved = await getSavedSafBackupFolder();
     if (!saved) return null;
-    return native.readBackup(saved);
+    return native.readBackupNamed(saved, 'ark-backup.cbark');
+}
+
+/**
+ * List every `.cbark` filename in the user-chosen SAF folder. Returns
+ * an empty array when no folder is configured (rather than throwing) so
+ * the recovery scan can treat it as "no candidates from this channel"
+ * uniformly with the other destinations.
+ */
+export async function listSafBackupFilenames(): Promise<string[]> {
+    if (Platform.OS !== 'android') return [];
+    const native = loadNative();
+    if (!native) return [];
+    const saved = await getSavedSafBackupFolder();
+    if (!saved) return [];
+    try {
+        return await native.listBackups(saved);
+    } catch (err) {
+        if (__DEV__) console.log('[Ark/SAF] listBackups failed:', err);
+        return [];
+    }
+}
+
+/**
+ * Delete the per-wallet `.cbark` file (`ark-backup-{fingerprint}.cbark`)
+ * from the configured SAF folder. Wallet-scoped: only this wallet's
+ * file is removed; other wallets' files in the same folder survive.
+ * Idempotent (no-op if no folder is configured or the file doesn't
+ * exist). Best-effort errors logged in __DEV__ but don't propagate —
+ * the caller (`resetArkWalletState` cleanup or auto-migration) treats
+ * SAF cleanup as opportunistic.
+ */
+export async function deleteSafBackupByFingerprint(fingerprint: string): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    const native = loadNative();
+    if (!native) return;
+    const saved = await getSavedSafBackupFolder();
+    if (!saved) return;
+    const filename = getSafBackupFilename(fingerprint);
+    try {
+        await native.deleteBackupNamed(saved, filename);
+    } catch (err) {
+        if (__DEV__) console.log(`[Ark/SAF] deleteBackupNamed("${filename}") failed:`, err);
+    }
+}
+
+/**
+ * Delete the legacy single-wallet `ark-backup.cbark` (or v0
+ * `cypher-box-ark-backup.cbark`) file from the SAF folder. Used by the
+ * auto-migration cleanup once the active wallet's seed has decrypted
+ * the legacy file and confirmed it's this wallet's snapshot — at that
+ * point it's redundant with the per-wallet file we just wrote.
+ *
+ * Best-effort: errors logged but not thrown.
+ */
+export async function deleteLegacySafBackup(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    const native = loadNative();
+    if (!native) return;
+    const saved = await getSavedSafBackupFolder();
+    if (!saved) return;
+    for (const legacyName of ['ark-backup.cbark', 'cypher-box-ark-backup.cbark']) {
+        try {
+            await native.deleteBackupNamed(saved, legacyName);
+        } catch (err) {
+            if (__DEV__) console.log(`[Ark/SAF] legacy delete "${legacyName}" failed:`, err);
+        }
+    }
+}
+
+/**
+ * Recovery scan: enumerate every `.cbark` in the SAF folder, peek each
+ * one's unencrypted header, return the blob whose header.fingerprint
+ * matches `fingerprint`. Reads regardless of filename — a user who
+ * manually renamed their file (e.g. `my-funky-name.cbark`) still
+ * recovers because the fingerprint sits inside the file, not in the
+ * name.
+ *
+ * Skips files with malformed JSON / unsupported version with a warn,
+ * keeps scanning — a single corrupt file in the folder must not abort
+ * the whole recovery flow.
+ *
+ * Returns null when no file matches (caller surfaces the
+ * "no backup matches this seed phrase" UX).
+ */
+export async function findSafBackupByFingerprint(fingerprint: string): Promise<string | null> {
+    if (Platform.OS !== 'android') return null;
+    const native = loadNative();
+    if (!native) return null;
+    const saved = await getSavedSafBackupFolder();
+    if (!saved) return null;
+
+    let names: string[];
+    try {
+        names = await native.listBackups(saved);
+    } catch (err) {
+        if (__DEV__) console.log('[Ark/SAF] listBackups failed:', err);
+        return null;
+    }
+
+    for (const name of names) {
+        let blob: string | null;
+        try {
+            blob = await native.readBackupNamed(saved, name);
+        } catch (err) {
+            if (__DEV__) console.log(`[Ark/SAF] readBackupNamed("${name}") failed:`, err);
+            continue;
+        }
+        if (!blob) continue;
+        const header = peekBackupHeader(blob);
+        if (!header) {
+            if (__DEV__) console.log(`[Ark/SAF] skipping malformed envelope at "${name}"`);
+            continue;
+        }
+        if (header.fingerprint && header.fingerprint === fingerprint) {
+            return blob;
+        }
+    }
+    return null;
 }
 
 /**
@@ -305,13 +479,13 @@ export async function readArkBackupFromSaf(): Promise<string | null> {
  * Caller is responsible for the decrypt/sanity-check step on the
  * returned blob — that needs the mnemonic which lives one level up.
  */
-export async function writeAndReadbackSafBackup(blob: string): Promise<{
+export async function writeAndReadbackSafBackup(blob: string, fingerprint: string): Promise<{
     written: { ok: true; uri: string } | { ok: false; classification: SafErrorClass; error: string };
     readback: string | null;
 }> {
     let writtenUri: string;
     try {
-        writtenUri = await writeArkBackupToSaf(blob);
+        writtenUri = await writeArkBackupToSaf(blob, fingerprint);
     } catch (err: any) {
         return {
             written: {
@@ -325,7 +499,11 @@ export async function writeAndReadbackSafBackup(blob: string): Promise<{
 
     let readback: string | null = null;
     try {
-        readback = await readArkBackupFromSaf();
+        // Fast path: read by exact per-wallet name we just wrote. The
+        // recovery flow uses `findSafBackupByFingerprint` (scan + header
+        // match) instead — but here we already know the filename, so
+        // the scan would just be wasted work.
+        readback = await readSafBackupByFingerprint(fingerprint);
     } catch {
         // Read-back failure handled by the caller (it'll see readback=null
         // alongside written.ok=true and classify as verify-failed).
