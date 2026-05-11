@@ -151,22 +151,19 @@ const CypherCloudStorage: {
 } | undefined = NativeModules.CypherCloudStorage;
 
 /**
- * iOS-only: resolve the per-app iCloud Drive `Documents` directory and
- * return the full path to the auto-backup file inside it. Returns null
- * on Android, on iOS without the bridge linked, when the user has
- * iCloud Drive off for Cypher Box, or when the OS hasn't provisioned
- * the container yet.
+ * iOS-only: resolve the per-app iCloud Drive `Documents` directory.
+ * Returns null on Android, on iOS without the bridge linked, when the
+ * user has iCloud Drive off for Cypher Box, or when the OS hasn't
+ * provisioned the container yet.
  *
- * NOTE: returns the LEGACY single-file path. Multi-wallet enumeration
- * within the iCloud Documents container is the job of the channel-aware
- * lookup helpers (forthcoming follow-up).
+ * Exposed so readers (recovery / status) can enumerate `.cbark` files
+ * in the iCloud container alongside the local Documents scan. Writers
+ * compose per-wallet paths via `getICloudBackupPath(fingerprint)`.
  */
-export async function getICloudBackupPath(): Promise<string | null> {
+export async function getICloudDocumentsDir(): Promise<string | null> {
     if (Platform.OS !== 'ios') return null;
     try {
-        const docsPath = await CypherCloudStorage?.getICloudDocumentsPath?.();
-        if (!docsPath) return null;
-        return `${docsPath}/${AUTO_BACKUP_FILENAME_LEGACY_V1}`;
+        return (await CypherCloudStorage?.getICloudDocumentsPath?.()) ?? null;
     } catch (err: any) {
         // mkdir-failed inside the bridge surfaces here. Log + treat as
         // unavailable; we'd rather fall back to the local Documents path
@@ -174,6 +171,28 @@ export async function getICloudBackupPath(): Promise<string | null> {
         if (__DEV__) console.log('[Ark backup] iCloud probe failed:', err?.message ?? err);
         return null;
     }
+}
+
+/**
+ * iOS-only: resolve the full path to a backup file inside the iCloud
+ * Documents container. Returns null when the container is unavailable
+ * (see `getICloudDocumentsDir`).
+ *
+ *   fingerprint === string  →  `${docsPath}/ark-backup-${fp}.cbark`
+ *   fingerprint === null    →  `${docsPath}/ark-backup.cbark` (legacy)
+ *
+ * Same shape as `getAutoBackupPath` for local Documents — multiple
+ * Ark wallets on the same device get distinct iCloud filenames.
+ */
+export async function getICloudBackupPath(
+    fingerprint: string | null = null,
+): Promise<string | null> {
+    const docsPath = await getICloudDocumentsDir();
+    if (!docsPath) return null;
+    const filename = fingerprint
+        ? `ark-backup-${fingerprint}.cbark`
+        : AUTO_BACKUP_FILENAME_LEGACY_V1;
+    return `${docsPath}/${filename}`;
 }
 
 /**
@@ -877,22 +896,33 @@ export async function writeArkAutoBackup(
     // Per-wallet path. Multiple wallets on the same device write to distinct
     // filenames (`ark-backup-{fp}.cbark`), so creating a second wallet no
     // longer overwrites the first wallet's local backup.
-    //
-    // TODO(iOS iCloud regression): the previous single-file flow wrote to
-    // `getActiveAutoBackupPath()` which returned the iCloud Documents
-    // container path on iOS when iCloud Drive was on, giving free
-    // off-device sync. Multi-wallet writes go to local Documents only;
-    // iCloud-aware per-wallet writes are a follow-up (the bridge today
-    // hands back a single legacy filename; needs a fingerprint-aware
-    // variant).
     const localPath = getAutoBackupPath(fingerprint);
     await RNFS.writeFile(localPath, blob, 'utf8');
 
-    // Android-only off-device sibling upload. iOS gets free off-device
-    // backup via Apple's transparent iCloud Drive sync of Documents
-    // (when the user has it enabled for Cypher Box). Android has no
-    // equivalent — the local file stays on this device unless we push
-    // it to Drive ourselves.
+    // iOS-only iCloud sibling write — same per-wallet filename inside
+    // the iCloud Documents container. The OS auto-syncs the file to
+    // iCloud Drive → Cypher Box (visible in the Files app) and pulls
+    // it down to the user's other Apple devices. Silent-fail like the
+    // Drive branch below: a missing container or disabled toggle must
+    // not break the local-write path.
+    if (Platform.OS === 'ios') {
+        try {
+            const iCloudPath = await getICloudBackupPath(fingerprint);
+            if (iCloudPath) {
+                await RNFS.writeFile(iCloudPath, blob, 'utf8');
+                if (__DEV__) console.log('[Ark auto-backup] iCloud write OK');
+            }
+        } catch (err: any) {
+            if (__DEV__) {
+                console.log('[Ark auto-backup] iCloud write failed (non-fatal):', err?.message ?? err);
+            }
+        }
+    }
+
+    // Android-only off-device sibling upload. iOS gets off-device
+    // sync via the iCloud write above. Android has no equivalent —
+    // the local file stays on this device unless we push it to Drive
+    // ourselves.
     //
     // INTENTIONALLY SILENT-FAILS HERE: this function is called every
     // sync tick from useArkSync. A Drive outage mid-session must not
@@ -1020,11 +1050,6 @@ export async function writeAndVerifyArkBackup(
     // Local write — try first because it's the only path we can rely on
     // when the device is offline. Per-wallet path so a second wallet's
     // verified-create doesn't clobber the first wallet's local backup.
-    //
-    // TODO(iOS iCloud regression): same as in writeArkAutoBackup — the
-    // single-file flow used to write into the iCloud Documents container
-    // when iCloud Drive was on, giving free off-device sync. Per-wallet
-    // iCloud writes are a follow-up.
     const localPath = getAutoBackupPath(fingerprint);
     let local: VerifiedBackupResult['local'];
     try {
@@ -1032,6 +1057,31 @@ export async function writeAndVerifyArkBackup(
         local = { ok: true, path: localPath };
     } catch (err: any) {
         local = { ok: false, error: err?.message ?? String(err) };
+    }
+
+    // iOS-only iCloud sibling write — same per-wallet filename inside
+    // the iCloud Documents container. Best-effort: a failure here does
+    // not flunk the verified-create gate, because the gate's contract
+    // is "at least one verified off-device copy exists". On iOS that
+    // role is filled by Apple's transparent iCloud Drive sync of the
+    // local Documents file when the user has iCloud on; the explicit
+    // write here just guarantees the per-wallet filename ends up in
+    // the container even when the OS hasn't surfaced the local file
+    // to iCloud yet. A future slice may promote iCloud to a verified
+    // channel on iOS (Drive-equivalent) so the gate refuses to proceed
+    // without it.
+    if (Platform.OS === 'ios') {
+        try {
+            const iCloudPath = await getICloudBackupPath(fingerprint);
+            if (iCloudPath) {
+                await RNFS.writeFile(iCloudPath, blob, 'utf8');
+                if (__DEV__) console.log('[Ark verified-create] iCloud write OK');
+            }
+        } catch (err: any) {
+            if (__DEV__) {
+                console.log('[Ark verified-create] iCloud write failed (non-fatal):', err?.message ?? err);
+            }
+        }
     }
 
     // Drive — Android-only. iOS short-circuits with `skipped-platform`;

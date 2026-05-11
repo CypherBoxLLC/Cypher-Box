@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 
 import RNFS from 'react-native-fs';
 
-import { getAutoBackupPath, peekBackupHeader } from './backup';
+import { getICloudDocumentsDir, peekBackupHeader } from './backup';
 import {
     downloadArkBackupFromDrive,
     downloadDriveBackupByFingerprint,
@@ -66,83 +66,149 @@ export type ChannelLookupResult =
     | { kind: 'not-found' };
 
 // ---------------------------------------------------------------------------
-// Local Documents (works on both iOS and Android — on iOS this is also the
-// folder Apple's iCloud Drive sync mirrors transparently)
+// Local + iCloud Documents
+//
+// On Android: just the app's local Documents directory. The off-device
+// rail is Drive (handled separately by `lookupArkBackupOnDrive`).
+//
+// On iOS: BOTH the app's local Documents AND the iCloud Drive ubiquity
+// container's Documents subdir, when iCloud is provisioned for Cypher
+// Box. The iCloud scan is essential for cross-device recovery — a
+// fresh install on a new iPhone signed into the same Apple ID won't
+// have any local files yet, but iCloud will have synced the backups
+// down from the previous device. Without scanning iCloud here, those
+// users hit "no backup matches this seed phrase" despite having the
+// file visible in Files → iCloud Drive → Cypher Box.
 // ---------------------------------------------------------------------------
 
+const LEGACY_FILENAMES = ['ark-backup.cbark', 'cypher-box-ark-backup.cbark'];
+
 /**
- * Scan the app's Documents directory for an Ark backup matching
- * `fingerprint`. Order: fast-path read of the per-wallet filename, then
- * directory scan with header-match for renamed files, then legacy v1
- * fallback at the original `ark-backup.cbark` path.
+ * iOS placeholder filenames: when a file is in iCloud but not yet
+ * downloaded to this device, `NSFileManager` surfaces it as
+ * `.{name}.icloud` — a dot-prefixed stub with `.icloud` extension. We
+ * skip those during the scan because RNFS.readFile against a
+ * placeholder either blocks for an unpredictable time or fails outright
+ * depending on network state.
+ *
+ * Cross-device recovery on a fresh-install device with placeholder
+ * files is therefore best-effort in this slice: the user can open Files
+ * → iCloud Drive → Cypher Box and tap each `.cbark` to force download,
+ * then re-run recovery. A future native hook around
+ * `startDownloadingUbiquitousItemAtURL:` could trigger the pull from
+ * here and re-scan after a short wait.
+ */
+function isICloudPlaceholder(name: string): boolean {
+    return name.startsWith('.') && name.toLowerCase().endsWith('.icloud');
+}
+
+/**
+ * Scan the device's Documents directories for an Ark backup matching
+ * `fingerprint`. On iOS this covers both the app-local Documents path
+ * and the iCloud Drive ubiquity container; on Android, just the local
+ * Documents path.
+ *
+ * Order per directory:
+ *   1. Fast path — read the file at the per-wallet name
+ *      (`ark-backup-{fp}.cbark`). Owner of this seed wrote that exact
+ *      filename; one IO call if present.
+ *   2. Scan path — list every `.cbark`, peek headers, return on
+ *      fingerprint match. Catches renamed files.
+ *   3. Legacy path — single shared `ark-backup.cbark` (v1) /
+ *      `cypher-box-ark-backup.cbark` (v0). Returns as
+ *      `legacy-v1-candidate` for the caller to try-decrypt.
+ *
+ * Each step runs against every directory in turn before falling
+ * through to the next step — fast path beats scan path even when the
+ * fast path is in iCloud and the scan path would hit local Documents.
  */
 export async function lookupArkBackupInLocalDocuments(
     fingerprint: string,
 ): Promise<ChannelLookupResult> {
-    // Step 1: fast path — exact per-wallet filename.
-    const perWalletPath = getAutoBackupPath(fingerprint);
-    try {
-        if (await RNFS.exists(perWalletPath)) {
-            const blob = await RNFS.readFile(perWalletPath, 'utf8');
-            const header = peekBackupHeader(blob);
-            if (header?.fingerprint === fingerprint) {
-                return { kind: 'matched', blob };
-            }
-            // File present but header doesn't match — fall through to scan.
-        }
-    } catch (err) {
-        if (__DEV__) console.log('[Ark/find-local] fast-path read failed:', err);
+    // Build the directory list. iCloud is appended on iOS only when
+    // the bridge resolves it — null means iCloud is off / unprovisioned
+    // and we silently scan local-only.
+    const dirs: string[] = [RNFS.DocumentDirectoryPath];
+    if (Platform.OS === 'ios') {
+        const iCloudDocs = await getICloudDocumentsDir();
+        if (iCloudDocs) dirs.push(iCloudDocs);
     }
 
-    // Step 2: scan every `.cbark` in Documents, peek headers.
-    try {
-        const entries = await RNFS.readDir(RNFS.DocumentDirectoryPath);
-        for (const e of entries) {
-            if (!e.isFile() || !e.name.toLowerCase().endsWith('.cbark')) continue;
-            // Skip the legacy v1 path here — handled below as a typed candidate.
-            if (e.name === 'ark-backup.cbark' || e.name === 'cypher-box-ark-backup.cbark') {
-                continue;
-            }
-            let blob: string;
-            try {
-                blob = await RNFS.readFile(e.path, 'utf8');
-            } catch (err) {
-                if (__DEV__) console.log(`[Ark/find-local] read "${e.name}" failed; skipping:`, err);
-                continue;
-            }
-            const header = peekBackupHeader(blob);
-            if (!header) {
-                if (__DEV__) console.log(`[Ark/find-local] skipping malformed envelope at "${e.name}"`);
-                continue;
-            }
-            if (header.fingerprint === fingerprint) {
-                return { kind: 'matched', blob };
-            }
-        }
-    } catch (err) {
-        if (__DEV__) console.log('[Ark/find-local] readDir failed:', err);
-    }
-
-    // Step 3: legacy v1 / v0 fallback. Single file at the historical path.
-    for (const legacyName of ['ark-backup.cbark', 'cypher-box-ark-backup.cbark']) {
-        const legacyPath = `${RNFS.DocumentDirectoryPath}/${legacyName}`;
+    // Step 1: fast path — exact per-wallet filename in each directory.
+    const perWalletFilename = `ark-backup-${fingerprint}.cbark`;
+    for (const dir of dirs) {
+        const perWalletPath = `${dir}/${perWalletFilename}`;
         try {
-            if (await RNFS.exists(legacyPath)) {
-                const blob = await RNFS.readFile(legacyPath, 'utf8');
+            if (await RNFS.exists(perWalletPath)) {
+                const blob = await RNFS.readFile(perWalletPath, 'utf8');
                 const header = peekBackupHeader(blob);
-                // If a v1 / v0 file has a fingerprint header (someone running
-                // multiple devices with the same seed wrote a v2 to the legacy
-                // filename — unlikely but possible) and it matches, surface
-                // as a definitive match rather than a try-decrypt candidate.
                 if (header?.fingerprint === fingerprint) {
                     return { kind: 'matched', blob };
                 }
-                if (header) {
-                    return { kind: 'legacy-v1-candidate', blob };
+                // File present but header doesn't match — fall through to scan.
+            }
+        } catch (err) {
+            if (__DEV__) console.log(`[Ark/find-local] fast-path read "${dir}" failed:`, err);
+        }
+    }
+
+    // Step 2: scan every `.cbark` in each directory, peek headers.
+    for (const dir of dirs) {
+        try {
+            const entries = await RNFS.readDir(dir);
+            for (const e of entries) {
+                if (!e.isFile()) continue;
+                if (isICloudPlaceholder(e.name)) continue;
+                if (!e.name.toLowerCase().endsWith('.cbark')) continue;
+                // Skip legacy paths here — handled below as typed candidates.
+                if (LEGACY_FILENAMES.includes(e.name)) continue;
+                let blob: string;
+                try {
+                    blob = await RNFS.readFile(e.path, 'utf8');
+                } catch (err) {
+                    if (__DEV__) console.log(`[Ark/find-local] read "${e.name}" failed; skipping:`, err);
+                    continue;
+                }
+                const header = peekBackupHeader(blob);
+                if (!header) {
+                    if (__DEV__) console.log(`[Ark/find-local] skipping malformed envelope at "${e.name}"`);
+                    continue;
+                }
+                if (header.fingerprint === fingerprint) {
+                    return { kind: 'matched', blob };
                 }
             }
         } catch (err) {
-            if (__DEV__) console.log(`[Ark/find-local] legacy read "${legacyName}" failed:`, err);
+            if (__DEV__) console.log(`[Ark/find-local] readDir "${dir}" failed:`, err);
+        }
+    }
+
+    // Step 3: legacy v1 / v0 fallback. Single file at the historical
+    // name in each directory. We prefer the FIRST match found (local
+    // before iCloud) because callers try-decrypt either way; if local
+    // is stale-but-correct, the caller succeeds and the next
+    // auto-backup tick rewrites it under the per-wallet name.
+    for (const dir of dirs) {
+        for (const legacyName of LEGACY_FILENAMES) {
+            const legacyPath = `${dir}/${legacyName}`;
+            try {
+                if (await RNFS.exists(legacyPath)) {
+                    const blob = await RNFS.readFile(legacyPath, 'utf8');
+                    const header = peekBackupHeader(blob);
+                    // A v1 / v0 file with a fingerprint header (someone running
+                    // multiple devices with the same seed wrote a v2 under the
+                    // legacy filename — unlikely but possible) gets surfaced as
+                    // a definitive match rather than a try-decrypt candidate.
+                    if (header?.fingerprint === fingerprint) {
+                        return { kind: 'matched', blob };
+                    }
+                    if (header) {
+                        return { kind: 'legacy-v1-candidate', blob };
+                    }
+                }
+            } catch (err) {
+                if (__DEV__) console.log(`[Ark/find-local] legacy read "${legacyPath}" failed:`, err);
+            }
         }
     }
 

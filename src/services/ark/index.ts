@@ -65,6 +65,7 @@ export {
     getAutoBackupPath,
     getCachedArkBackupFingerprint,
     getICloudBackupPath,
+    getICloudDocumentsDir,
     isICloudBackupAvailable,
     migrateLegacyBackupFile,
     peekBackupHeader,

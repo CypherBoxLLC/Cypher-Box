@@ -316,13 +316,6 @@ function ArkSettingsBody() {
 
     // One status read. Returns whether the fingerprint cache was warm —
     // caller uses that to decide whether to keep polling.
-    //
-    // TODO(iOS iCloud display): The legacy panel had a separate iCloud
-    // Drive probe (getICloudBackupPath + isICloudBackupAvailable) that
-    // surfaced "iCloud Off" / "no copy yet" copy. The multi-wallet
-    // refactor reads from local Documents only; per-wallet iCloud
-    // surfacing depends on the bridge gaining a fingerprint-aware
-    // variant and is a follow-up.
     const refresh = async (): Promise<{ cacheWarm: boolean }> => {
       // Resolve the active wallet's per-wallet backup filename via the
       // cached BIP32 fingerprint — populated by every auto-backup tick.
@@ -350,6 +343,39 @@ function ArkSettingsBody() {
         }
       } catch (e: any) {
         if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
+      }
+
+      // iCloud — iOS only. Same per-wallet fingerprint pattern as the
+      // local read; the bridge composes the path inside the iCloud
+      // Documents container. `available` is the cheap probe (no
+      // mkdir); `iCloudPath` may still resolve to null on iOS if the
+      // bridge mkdir step fails or the user just turned iCloud off
+      // between calls — treat as "no copy" rather than an error.
+      if (Platform.OS === 'ios') {
+        try {
+          const available = await isICloudBackupAvailable();
+          if (cancelled) return { cacheWarm: !!fp };
+          setICloudAvailable(available);
+          if (!available) {
+            setICloudBackup(undefined);
+          } else {
+            const iCloudPath = await getICloudBackupPath(fp);
+            if (cancelled) return { cacheWarm: !!fp };
+            if (!iCloudPath || !(await RNFS.exists(iCloudPath))) {
+              if (cancelled) return { cacheWarm: !!fp };
+              setICloudBackup(undefined);
+            } else {
+              const stat = await RNFS.stat(iCloudPath);
+              if (cancelled) return { cacheWarm: !!fp };
+              setICloudBackup({
+                modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
+                sizeBytes: Number(stat.size) || 0,
+              });
+            }
+          }
+        } catch (e: any) {
+          if (__DEV__) console.log('[Ark settings] iCloud stat failed:', e?.message ?? e);
+        }
       }
 
       // Drive — connection check is cheap; metadata fetch is gated on it.
