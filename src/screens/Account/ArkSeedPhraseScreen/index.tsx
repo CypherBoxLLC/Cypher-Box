@@ -21,6 +21,7 @@ import {
     messageForDriveError,
     messageForSafError,
     pickSafBackupFolder,
+    resetArkWalletState,
     setArkBackgroundRefreshEnabled,
     writeAndVerifyArkBackup,
     writeArkBackupToTempFile,
@@ -231,13 +232,61 @@ export default function ArkSeedPhraseScreen() {
             console.warn("[Ark] Wallet.create failed during backup setup:", err);
             const msg = (err as Error)?.message ?? "unknown error";
             const looksLikeStaleDatadir = /Internal|InvalidMnemonic|Database/i.test(msg);
-            SimpleToast.show(
-                looksLikeStaleDatadir
-                    ? "Couldn't create a new Ark wallet on top of existing state. Go back to the Create screen and try again."
-                    : `Ark wallet creation failed: ${msg}`,
-                SimpleToast.LONG,
-            );
-            return false;
+
+            // Non-stale-datadir errors: just toast and bail. Caller retries on next tap.
+            if (!looksLikeStaleDatadir) {
+                SimpleToast.show(`Ark wallet creation failed: ${msg}`, SimpleToast.LONG);
+                return false;
+            }
+
+            // Stale-datadir trap: a previous (different-seed) Bark wallet's
+            // datadir is on disk and rejects opens with this new seed.
+            // Used to send the user "back to the Create screen" hoping the
+            // auto-clean would fire — but that path is invisible and often
+            // doesn't unblock. Offer an explicit in-context reset that
+            // wipes the orphan + retries the create with the seed in hand.
+            return await new Promise<boolean>((resolve) => {
+                Alert.alert(
+                    "Couldn't create wallet on top of old state",
+                    "Leftover data from a previous Ark wallet is on this device. The new seed phrase you're about to back up can't replace it without wiping the old state first.\n\nIf you don't have access to the previous wallet's seed AND its backup file, those funds (if any) are not recoverable from this device anyway. Reset to continue.",
+                    [
+                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                        {
+                            text: "Reset & retry",
+                            style: "destructive",
+                            onPress: async () => {
+                                try {
+                                    // Preserve the keychain seed of the OLD wallet — it's not
+                                    // useful without its backup file anyway, but keeping it lets
+                                    // a user who recovers the backup later still unlock.
+                                    await resetArkWalletState({ keepSeedInKeychain: true });
+                                } catch (resetErr: any) {
+                                    console.warn("[Ark] resetArkWalletState failed:", resetErr);
+                                    SimpleToast.show(
+                                        `Couldn't reset: ${resetErr?.message ?? "unknown error"}`,
+                                        SimpleToast.LONG,
+                                    );
+                                    resolve(false);
+                                    return;
+                                }
+                                try {
+                                    await createArkWallet(mnemonic);
+                                    setWalletReady(true);
+                                    resolve(true);
+                                } catch (retryErr: any) {
+                                    console.warn("[Ark] Wallet.create still failed after reset:", retryErr);
+                                    SimpleToast.show(
+                                        `Wallet still couldn't be created after reset: ${retryErr?.message ?? "unknown error"}. Try force-quitting and reopening the app.`,
+                                        SimpleToast.LONG,
+                                    );
+                                    resolve(false);
+                                }
+                            },
+                        },
+                    ],
+                    { cancelable: true, onDismiss: () => resolve(false) },
+                );
+            });
         }
     };
 
@@ -452,7 +501,6 @@ export default function ArkSeedPhraseScreen() {
             setCloudBackupBusy(false);
         }
     };
-
 
     const handleReveal = () => {
         setRevealing(true);

@@ -150,24 +150,43 @@ export default function CreateArkScreen() {
     };
 
     const handleResetExisting = () => {
+        // Two-step confirmation. The first alert spells out the risk in
+        // user-readable language; the second is a final "are you SURE"
+        // gate before we wipe the datadir + the keychain seed. Both steps
+        // are needed in production — the existing-wallet gate is the only
+        // protection against a user who hits Create on an unrelated
+        // device and would otherwise wipe a wallet that's not theirs.
         Alert.alert(
-            "Reset Ark wallet?",
-            "This wipes your Ark wallet on this device. Without a backup file saved somewhere off-device, your VTXO capsules can't be recovered.",
+            "Reset Ark wallet on this device?",
+            "This deletes the wallet's local state AND removes the seed phrase from your Keychain.\n\nWithout your written-down seed phrase AND your encrypted .cbark backup file, any funds in this wallet become permanently unrecoverable.\n\nOnly continue if:\n• You don't own this wallet (e.g. previous device owner), OR\n• You've written down your seed AND saved your backup file elsewhere",
             [
                 { text: "Cancel", style: "cancel" },
                 {
-                    text: "Reset",
+                    text: "Continue…",
                     style: "destructive",
-                    onPress: async () => {
-                        setResetting(true);
-                        try {
-                            await resetArkWalletState();
-                        } finally {
-                            clearArkAuth();
-                            setExistingCheck("none");
-                            setExistingError(null);
-                            setResetting(false);
-                        }
+                    onPress: () => {
+                        Alert.alert(
+                            "Last chance — really reset?",
+                            "Tap 'Reset & wipe' to permanently delete the Ark wallet state on this device. This cannot be undone from inside the app.",
+                            [
+                                { text: "Cancel", style: "cancel" },
+                                {
+                                    text: "Reset & wipe",
+                                    style: "destructive",
+                                    onPress: async () => {
+                                        setResetting(true);
+                                        try {
+                                            await resetArkWalletState();
+                                        } finally {
+                                            clearArkAuth();
+                                            setExistingCheck("none");
+                                            setExistingError(null);
+                                            setResetting(false);
+                                        }
+                                    },
+                                },
+                            ],
+                        );
                     },
                 },
             ],
@@ -259,13 +278,31 @@ export default function CreateArkScreen() {
                         textStyle={styles.btnText}
                         disabled={openingExisting || resetting}
                     />
-                    {__DEV__ && (
-                        <TouchableOpacity onPress={handleResetExisting} disabled={resetting}>
-                            <Text style={styles.resetText}>
-                                {resetting ? "Resetting…" : "Reset Ark wallet state (DEV)"}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
+                    {/* Reset is always reachable in production — locking it
+                        behind __DEV__ created a real trap: users who lost
+                        their seed + backup had no way to recover the
+                        Create flow short of uninstalling the app. The two-
+                        step confirmation in handleResetExisting (with
+                        explicit data-loss warning) is the safety net. */}
+                    <TouchableOpacity
+                        onPress={handleResetExisting}
+                        disabled={resetting || openingExisting}
+                        style={{
+                            alignSelf: "center",
+                            marginTop: 14,
+                            paddingVertical: 10,
+                            paddingHorizontal: 18,
+                            borderRadius: 8,
+                            borderWidth: 1,
+                            borderColor: "rgba(255, 90, 90, 0.55)",
+                            backgroundColor: "rgba(255, 90, 90, 0.08)",
+                            opacity: resetting || openingExisting ? 0.5 : 1,
+                        }}
+                    >
+                        <Text bold style={{ color: "#FF5A5A", fontSize: 13 }}>
+                            {resetting ? "Resetting…" : "Reset & wipe this wallet"}
+                        </Text>
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => dispatchNavigate("HomeScreen")}>
                         <Text style={styles.cancelText}>Cancel</Text>
                     </TouchableOpacity>
