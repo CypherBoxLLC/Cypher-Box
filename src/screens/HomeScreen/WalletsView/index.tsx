@@ -586,12 +586,17 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // is only 133pt and without this minHeight the buttons would
             // render outside WalletsView's measured bounds, overlapping
             // BottomBar. minHeight = card + gap + buttons = 133+10+47=190.
-            // When the bg-refresh banner is showing, reserve another ~32pt
-            // below the button row for it. Don't gate on which slide is
-            // active — keeping the container size stable across swipes
-            // avoids layout jitter when the user pages between Ark and
-            // Lightning.
-            ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT + (iosBackupReminderVisible ? 56 : bgRefreshStatus ? 32 : 0) } : {}),
+            // Always reserve the ~32pt below the button row for the bg-
+            // refresh status slot, regardless of whether bgRefreshStatus
+            // is currently truthy. Without this, the slot collapses to 0
+            // when the wallet is in the healthy state (bgRefreshStatus
+            // returns null) and the section below the carousel (vault
+            // recover row / Hot Vault tile) jumps up against the buttons.
+            // The 56pt iOS-backup-reminder slot still wins when active.
+            // Don't gate on which slide is active — keeping the container
+            // size stable across swipes avoids layout jitter when the
+            // user pages between Ark and Lightning.
+            ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT + (iosBackupReminderVisible ? 56 : 32) } : {}),
         }}>
             <Animated.FlatList
                 ref={flatListRef}
