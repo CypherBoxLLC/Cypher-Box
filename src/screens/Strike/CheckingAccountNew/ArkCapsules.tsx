@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, AppState, AppStateStatus, Easing, FlatList, Image, ImageBackground, Platform, Switch, Text as RNText, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, Text as RNText, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Icon } from "react-native-elements";
 import Svg, { Circle } from "react-native-svg";
 import SimpleToast from "react-native-simple-toast";
-import * as Keychain from "react-native-keychain";
 
 import { Text } from "@Cypher/component-library";
 import { GradientView } from "@Cypher/components";
@@ -18,12 +17,7 @@ import {
     AVG_BLOCK_MINUTES,
     blocksToDays,
     estimateArkRefreshFee,
-    getDeviceManufacturer,
-    isIgnoringBatteryOptimizations,
-    openBatteryOptimizationSettings,
     refreshArkVtxosAndSync,
-    setArkBackgroundRefreshEnabled,
-    vendorGuidance,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -693,29 +687,16 @@ interface ArkCapsulesProps {
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
-    const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
+    // Read-only on this screen — the actual toggle lives on the Ark
+    // Settings tab. We just surface a one-line on/off status indicator
+    // at the top of the Capsules tab so users can confirm the feature
+    // is armed without leaving this screen.
     const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
-
-    // Battery-optimisation drift probe. The toggle-ON handler nudges the
-    // user to grant the exemption when they first enable bg-refresh, but
-    // nothing prevents Android from reverting Cypher Box to "Optimised"
-    // later — vendor battery managers (Samsung One UI, MIUI, EMUI, ColorOS)
-    // routinely demote apps the user hasn't opened in days. Without a
-    // re-probe, the toggle reads ON in our UI but the OS silently kills
-    // the AlarmManager fires, and the user only finds out when their VTXOs
-    // expire. So we probe on mount + on every AppState→active transition,
-    // and surface an inline banner when the exemption has drifted.
-    //
-    // null = unprobed (don't render the banner yet — avoids a flash on
-    // mount before the native call returns). true = drifted, banner shows.
-    // false = exempt, banner hidden. iOS short-circuits to false because
-    // `isIgnoringBatteryOptimizations` always returns true there.
-    const [batteryNotExempt, setBatteryNotExempt] = useState<boolean | null>(null);
 
     // Sum of sats currently locked in pending refresh rounds. Same derivation
     // as ArkWallet/index.tsx (Locked-state VTXO sats), to avoid the SDK's
@@ -747,39 +728,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             setQueuedRoundsCount(0);
         }
     }, [pendingRoundSats]);
-
-    // Battery-exemption probe. Fires on mount (Capsules tab opened) and on
-    // every AppState→active transition (user came back from Settings). We
-    // only probe when bg-refresh is enabled; if the user has the toggle
-    // off we don't care whether they're exempt, and probing would just
-    // hit the native module for nothing. Toggling off resets to null so
-    // a stale "drifted" reading doesn't linger after the user disables.
-    useEffect(() => {
-        if (Platform.OS !== 'android') return;
-        if (!arkBgRefreshEnabled) {
-            setBatteryNotExempt(null);
-            return;
-        }
-        let cancelled = false;
-        const probe = async () => {
-            try {
-                const ignoring = await isIgnoringBatteryOptimizations();
-                if (!cancelled) setBatteryNotExempt(!ignoring);
-            } catch (err) {
-                // Native bridge hiccup — leave the previous value alone
-                // rather than flipping the banner state on a transient.
-                if (__DEV__) console.warn('[ArkCapsules] battery probe failed:', err);
-            }
-        };
-        void probe();
-        const sub = AppState.addEventListener('change', (status: AppStateStatus) => {
-            if (status === 'active') void probe();
-        });
-        return () => {
-            cancelled = true;
-            sub.remove();
-        };
-    }, [arkBgRefreshEnabled]);
 
     // Project SDK VTXOs → row data with days-until-expiry computed from the
     // current chain tip. If tip is unknown (esplora offline) we render a
@@ -1104,91 +1052,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         void refreshIds(dustConsolidate.ids);
     };
 
-    /**
-     * Toggle the opt-in background VTXO refresh feature.
-     *
-     * Enable path: read the seed from the biometry-locked primary keychain
-     * entry (one prompt), then hand it to the service which writes a
-     * background-readable copy under a separate keychain service. Subsequent
-     * background wakes can read that copy without user presence.
-     *
-     * Disable path: deletes the background-readable copy and clears all
-     * derived state. The primary biometric entry is untouched.
-     */
-    const handleToggleBgRefresh = async (next: boolean) => {
-        if (togglingBgRefresh) return;
-        setTogglingBgRefresh(true);
-        try {
-            if (next) {
-                const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
-                if (!creds || !creds.password) {
-                    SimpleToast.show(
-                        "Can't enable — seed not in Keychain. Use Recover to type it in first.",
-                        SimpleToast.LONG,
-                    );
-                    return;
-                }
-                await setArkBackgroundRefreshEnabled(true, creds.password);
-                SimpleToast.show("Background refresh enabled", SimpleToast.SHORT);
-
-                // Battery onboarding nudge. AlarmManager fires can be
-                // deferred indefinitely under Doze + vendor battery
-                // managers (Samsung One UI is the worst offender; see
-                // commit ee6f24f's "User-side requirement on Samsung"
-                // note). Probing here, on toggle-on, is the right
-                // moment — the user just opted into the feature, so a
-                // one-time setup walkthrough is expected. iOS resolves
-                // true and skips this entirely.
-                const ignoring = await isIgnoringBatteryOptimizations();
-                if (!ignoring) {
-                    const manufacturer = await getDeviceManufacturer();
-                    const guidance = vendorGuidance(manufacturer);
-                    // Compact native-Alert copy: short, honest framing
-                    // of the consequence + minimal vendor-specific
-                    // steps. Earlier draft warned about VTXO expiry,
-                    // which overstates the stakes — manual refresh in
-                    // foreground always works, so the actual loss case
-                    // is "user forgot to open the app for weeks AND
-                    // skipped this exemption". Toned down to the real
-                    // tradeoff: auto-refresh becomes unreliable;
-                    // manual still works.
-                    const body = [
-                        "Android sleeps apps to save battery. Without this, auto-refresh becomes unreliable — you'll need to open Cypher Box manually to keep your VTXO capsules current.",
-                        "",
-                        ...guidance.steps,
-                    ].join("\n");
-                    Alert.alert(
-                        guidance.headline,
-                        body,
-                        [
-                            { text: "Skip for now", style: "cancel" },
-                            {
-                                text: "Open Settings",
-                                onPress: () => {
-                                    openBatteryOptimizationSettings().catch((err) => {
-                                        console.warn("[Ark bg refresh toggle] open settings failed:", err);
-                                    });
-                                },
-                            },
-                        ],
-                        { cancelable: true },
-                    );
-                }
-            } else {
-                await setArkBackgroundRefreshEnabled(false);
-                SimpleToast.show("Background refresh disabled", SimpleToast.SHORT);
-            }
-        } catch (err: any) {
-            console.warn("[Ark bg refresh toggle] failed:", err);
-            SimpleToast.show(
-                `Toggle failed: ${err?.message ?? "unknown error"}`,
-                SimpleToast.LONG,
-            );
-        } finally {
-            setTogglingBgRefresh(false);
-        }
-    };
-
     const renderActionButton = (label: string, onPress: () => void) => (
         <GradientView
             onPress={onPress}
@@ -1204,107 +1067,38 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     return (
         <View style={vaultStyles.flex}>
-            {/* Background-refresh toggle — first thing the user sees on the
-                Capsules tab. Lives at the top because it's the single most
-                consequential setting on this screen (decides whether the
-                wallet keeps itself alive in the background). Moved up from
-                the previous ListFooterComponent slot per UX feedback —
-                hidden below the capsule list it was easy to miss. ON by
-                default for new wallets (zustand initial state); the actual
-                scheduler is armed at wallet-create time. */}
+            {/* Read-only auto-refresh status. The toggle itself moved to
+                the Ark Settings tab; this row stays so users can confirm
+                at a glance that the feature is armed without leaving the
+                Capsules screen. Tappable would belong here too, but the
+                handler involves a Keychain read + battery onboarding
+                Alert, which is one-time setup — wrong shape for an
+                always-visible status row. */}
             <View
                 style={{
                     marginHorizontal: 20,
                     marginTop: 14,
                     marginBottom: 8,
-                    paddingVertical: 10,
-                    paddingHorizontal: 14,
-                    borderRadius: 10,
-                    backgroundColor: "#1a1a1a",
+                    flexDirection: 'row',
+                    alignItems: 'center',
                 }}
             >
-                <View
-                    style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                    }}
-                >
-                    {/* Built-in RNText here, not the @Cypher Text wrapper:
-                        the wrapper hardcodes adjustsFontSizeToFit, which
-                        under Fabric (New Arch in RN 0.76) shrinks the
-                        title aggressively to fit the flex:1 column next
-                        to the Switch. Bypassing the wrapper keeps the
-                        declared 14pt size honored. fontWeight inline so
-                        we don't depend on the Lato-Bold family being
-                        registered for system Text. */}
-                    <RNText
-                        style={{
-                            fontSize: 14,
-                            fontWeight: '700',
-                            color: colors.white,
-                            flex: 1,
-                            marginRight: 12,
-                        }}
-                    >
-                        Refresh Ark capsules in background
-                    </RNText>
-                    <Switch
-                        value={arkBgRefreshEnabled}
-                        onValueChange={handleToggleBgRefresh}
-                        disabled={togglingBgRefresh}
-                        trackColor={{ false: "#3a3a3a", true: colors.green }}
-                        thumbColor={colors.white}
-                    />
-                </View>
                 <Text
                     style={{
-                        fontSize: 12,
-                        color: arkBgRefreshEnabled ? '#888' : colors.redLight,
-                        marginTop: 6,
-                        lineHeight: 16,
+                        fontSize: 13,
+                        color: '#888',
                     }}
                 >
-                    {arkBgRefreshEnabled
-                        ? 'Cypher Box refreshes capsules approaching expiry without you opening the app.'
-                        : '⚠ Auto-refresh is OFF — open Cypher Box once in a while and refresh Ark capsules before they expire. After expiry, the ASP can sweep them.'}
-                </Text>
-
-                {/* Battery-exemption drift banner. Only shows on Android,
-                    only when bg-refresh is on, and only after the probe
-                    has actually returned a "not exempt" reading. The
-                    toggle-on handler nudges the user once at first
-                    enable; this banner is the persistent surface that
-                    catches the case where Android (or a vendor manager)
-                    has demoted Cypher Box back to "Optimised" later —
-                    silent until you re-open the app, by which point
-                    auto-refresh has already been failing for hours. */}
-                {arkBgRefreshEnabled && batteryNotExempt === true && (
-                    <TouchableOpacity
-                        onPress={() => {
-                            openBatteryOptimizationSettings().catch((err) => {
-                                console.warn('[Ark bg refresh banner] open settings failed:', err);
-                            });
-                        }}
+                    Auto-vtxo refresh:{' '}
+                    <Text
+                        bold
                         style={{
-                            marginTop: 10,
-                            paddingVertical: 10,
-                            paddingHorizontal: 12,
-                            borderRadius: 8,
-                            backgroundColor: 'rgba(251, 146, 60, 0.12)',
-                            borderWidth: 1,
-                            borderColor: 'rgba(251, 146, 60, 0.45)',
+                            color: arkBgRefreshEnabled ? colors.green : colors.redLight,
                         }}
                     >
-                        <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
-                            ⚠ Battery optimisation is on for Cypher Box
-                        </Text>
-                        <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
-                            Auto-refresh may not run reliably until you exempt Cypher Box from battery optimisation. Tap to open Settings.
-                        </Text>
-                    </TouchableOpacity>
-                )}
-
+                        {arkBgRefreshEnabled ? 'on' : 'off'}
+                    </Text>
+                </Text>
             </View>
 
             {/* Explainer header — single line describing the depletion ring. */}
