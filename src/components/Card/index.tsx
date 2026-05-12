@@ -303,71 +303,78 @@ export default function Card({ onPress,
                         {getSats()}
                     </Text>
                 )}
-                {/* Ark capsule slot row: up to 5 solid-coloured pills
-                    showing the most-urgent VTXOs by expiry band, with a
-                    fade-pulse on any that are currently mid-refresh.
-                    Padding-row mirrors Hot Vault's empty-slot pattern so
-                    the box looks the same when the wallet has fewer than
-                    5 capsules or none at all. */}
-                {wallet === 'ARK' && arkCapsuleSlots && (() => {
-                    const VISIBLE = 5;
-                    const filled = arkCapsuleSlots.slice(0, VISIBLE);
-                    const empties = Math.max(0, VISIBLE - filled.length);
-                    return (
-                        <View style={{ flexDirection: 'row', marginTop: 10 }}>
-                            {filled.map((slot, i) => {
-                                const last = i === VISIBLE - 1;
-                                const pill = (
+            </View>
+            {/* Ark capsule slot row: up to 5 solid-coloured pills showing
+                the most-urgent VTXOs by expiry band, with a fade-pulse on
+                any that are currently mid-refresh. Padding-row mirrors
+                Hot Vault's empty-slot pattern so the box visual stays
+                constant when the wallet has fewer than 5 capsules or
+                none at all. Rendered OUTSIDE `styles.view` (which is
+                flexDirection: 'row' holding balance + brand logo) so it
+                stacks below as its own full-width row instead of being
+                squeezed into the horizontal balance/brand layout. */}
+            {wallet === 'ARK' && arkCapsuleSlots && (() => {
+                const VISIBLE = 5;
+                const filled = arkCapsuleSlots.slice(0, VISIBLE);
+                const empties = Math.max(0, VISIBLE - filled.length);
+                return (
+                    <View style={{ flexDirection: 'row', marginTop: 12 }}>
+                        {filled.map((slot, i) => {
+                            const last = i === VISIBLE - 1;
+                            return slot.refreshing ? (
+                                <Animated.View
+                                    key={`s-${i}`}
+                                    style={{
+                                        flex: 1,
+                                        opacity: refreshPulseAnim,
+                                        marginRight: last ? 0 : 6,
+                                    }}
+                                >
                                     <View
                                         style={{
-                                            flex: 1,
-                                            height: 12,
-                                            borderRadius: 4,
+                                            height: 14,
+                                            borderRadius: 5,
                                             borderWidth: 1,
                                             borderColor: colors.white,
                                             backgroundColor: slot.color,
-                                            marginRight: last ? 0 : 6,
-                                            overflow: 'hidden',
                                         }}
                                     />
-                                );
-                                return slot.refreshing ? (
-                                    <Animated.View key={`s-${i}`} style={{ flex: 1, opacity: refreshPulseAnim, marginRight: last ? 0 : 6 }}>
-                                        <View
-                                            style={{
-                                                height: 12,
-                                                borderRadius: 4,
-                                                borderWidth: 1,
-                                                borderColor: colors.white,
-                                                backgroundColor: slot.color,
-                                            }}
-                                        />
-                                    </Animated.View>
-                                ) : (
-                                    <React.Fragment key={`s-${i}`}>{pill}</React.Fragment>
-                                );
-                            })}
-                            {Array(empties).fill(0).map((_, i) => {
-                                const idx = filled.length + i;
-                                const last = idx === VISIBLE - 1;
-                                return (
-                                    <View
-                                        key={`e-${i}`}
-                                        style={{
-                                            flex: 1,
-                                            height: 12,
-                                            borderRadius: 4,
-                                            borderWidth: 1,
-                                            borderColor: colors.white,
-                                            marginRight: last ? 0 : 6,
-                                        }}
-                                    />
-                                );
-                            })}
-                        </View>
-                    );
-                })()}
-            </View>
+                                </Animated.View>
+                            ) : (
+                                <View
+                                    key={`s-${i}`}
+                                    style={{
+                                        flex: 1,
+                                        height: 14,
+                                        borderRadius: 5,
+                                        borderWidth: 1,
+                                        borderColor: colors.white,
+                                        backgroundColor: slot.color,
+                                        marginRight: last ? 0 : 6,
+                                    }}
+                                />
+                            );
+                        })}
+                        {Array(empties).fill(0).map((_, i) => {
+                            const idx = filled.length + i;
+                            const last = idx === VISIBLE - 1;
+                            return (
+                                <View
+                                    key={`e-${i}`}
+                                    style={{
+                                        flex: 1,
+                                        height: 14,
+                                        borderRadius: 5,
+                                        borderWidth: 1,
+                                        borderColor: colors.white,
+                                        marginRight: last ? 0 : 6,
+                                    }}
+                                />
+                            );
+                        })}
+                    </View>
+                );
+            })()}
             {/* Threshold progress bar (glow + indicator + gradient fill).
                 Same self-custody rationale as the reminder above: hidden
                 for Ark, kept for Strike/CoinOS. */}
