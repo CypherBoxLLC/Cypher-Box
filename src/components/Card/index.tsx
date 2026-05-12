@@ -252,9 +252,13 @@ export default function Card({ onPress,
                     // "0 sats ~ $0.00" would mislead users into thinking
                     // they have nothing left when funds are merely locked
                     // mid-refresh. Replace the line entirely with the
-                    // pulsing refreshing status.
+                    // pulsing refreshing status. Sized to match the
+                    // instruction-message text below the card (h4) rather
+                    // than the big `styles.sats` balance face — Bam's
+                    // intent: same visual weight as the rest of the
+                    // home-screen status copy, not the headline number.
                     <Animated.View style={{ opacity: refreshPulseAnim }}>
-                        <Text h2 bold style={[styles.sats, { color: colors.green }]}>
+                        <Text h4 bold style={{ color: colors.green }}>
                             {refreshingText}
                         </Text>
                     </Animated.View>
@@ -265,7 +269,7 @@ export default function Card({ onPress,
                         </Text>
                         {refreshingText && (
                             <Animated.View style={{ opacity: refreshPulseAnim, marginTop: 4 }}>
-                                <Text bold style={{ fontSize: 13, color: colors.green }}>
+                                <Text h4 bold style={{ color: colors.green }}>
                                     {refreshingText}
                                 </Text>
                             </Animated.View>
