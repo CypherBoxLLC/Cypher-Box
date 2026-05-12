@@ -342,6 +342,16 @@ export default function ArkWallet({
                         currency={currency}
                         receiveClickHandler={receiveClickHandler}
                         sendClickHandler={sendClickHandler}
+                        // In-card pulsing refreshing line. Replaces the
+                        // zero-balance line when all VTXOs are locked in a
+                        // round, or renders beneath the live balance when
+                        // some VTXOs remain spendable. Same pulse cadence
+                        // as the per-capsule transient animation, so the
+                        // visual ties the card to the Capsules tab when
+                        // the user taps through.
+                        refreshingInfo={pendingRoundCount > 0
+                            ? { count: pendingRoundCount, sats: pendingRoundSats }
+                            : null}
                     />
                     {/* When shared buttons are active (`hideActionButtons`),
                         skip this minHeight-40 reserve so the shared row can

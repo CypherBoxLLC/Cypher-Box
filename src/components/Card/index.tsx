@@ -4,8 +4,8 @@ import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } fro
 import { formatNumber, formatSats, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 import MaskedView from "@react-native-masked-view/masked-view";
-import React from "react";
-import { Image, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { Animated, Easing, Image, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import GradientButtonWithShadow from "../GradientButtonWithShadow";
 import styles from "./styles";
@@ -27,6 +27,16 @@ interface Props {
     receiveType?: boolean;
     receiveClickHandler?(value: boolean): void;
     sendClickHandler?(value: boolean): void;
+    /**
+     * In-flight refresh-round info shown inside the balance area with a
+     * pulsing fade so the user can see WHY their visible balance is lower
+     * than they expect (locked VTXOs mid-round). When `balance > 0`, the
+     * refreshing line renders BELOW the normal "X sats ~ $Y.YY" line.
+     * When `balance === 0`, it REPLACES the "0 sats ~ $0.00" line so the
+     * user doesn't see a confusing zero balance while a round is locking
+     * everything they have.
+     */
+    refreshingInfo?: { count: number; sats: number } | null;
 }
 
 export default function Card({ onPress,
@@ -43,8 +53,45 @@ export default function Card({ onPress,
     receiveType = false,
     receiveClickHandler,
     sendClickHandler,
+    refreshingInfo = null,
 }: Props) {
     const {coldStorageWalletID, walletID, allBTCWallets} = useAuthStore();
+
+    // Pulsing fade for the in-card refreshing line. Same shape as the
+    // capsule pulse in ArkCapsules' TransactionRowAnim (1 → 0.2 → 1, 1.6s
+    // total) so the in-card status reads visually consistent with the
+    // capsule animation a tap-through reveals on the Capsules tab.
+    const refreshPulseAnim = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        if (!refreshingInfo) {
+            refreshPulseAnim.setValue(1);
+            return;
+        }
+        const pulse = Animated.loop(
+            Animated.sequence([
+                Animated.timing(refreshPulseAnim, {
+                    toValue: 0.2,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+                Animated.timing(refreshPulseAnim, {
+                    toValue: 1,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+            ]),
+        );
+        pulse.start();
+        return () => pulse.stop();
+    }, [refreshingInfo, refreshPulseAnim]);
+
+    const refreshingText = refreshingInfo
+        ? `Refreshing ${refreshingInfo.count} ${refreshingInfo.count === 1 ? 'capsule' : 'capsules'} · ${refreshingInfo.sats.toLocaleString()} sats`
+        : null;
+    const showRefreshingInsteadOfBalance =
+        refreshingInfo !== null && (Number(balance) || 0) === 0;
 
     const thresholdMet = calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount)) >= 100;
 
@@ -200,9 +247,31 @@ export default function Card({ onPress,
                 )}
             </View>
             <View style={styles.view}>
-                <Text h2 bold style={styles.sats}>
-                    {getBalance()}
-                </Text>
+                {showRefreshingInsteadOfBalance ? (
+                    // Zero spendable balance + round in flight: showing
+                    // "0 sats ~ $0.00" would mislead users into thinking
+                    // they have nothing left when funds are merely locked
+                    // mid-refresh. Replace the line entirely with the
+                    // pulsing refreshing status.
+                    <Animated.View style={{ opacity: refreshPulseAnim }}>
+                        <Text h2 bold style={[styles.sats, { color: colors.green }]}>
+                            {refreshingText}
+                        </Text>
+                    </Animated.View>
+                ) : (
+                    <>
+                        <Text h2 bold style={styles.sats}>
+                            {getBalance()}
+                        </Text>
+                        {refreshingText && (
+                            <Animated.View style={{ opacity: refreshPulseAnim, marginTop: 4 }}>
+                                <Text bold style={{ fontSize: 13, color: colors.green }}>
+                                    {refreshingText}
+                                </Text>
+                            </Animated.View>
+                        )}
+                    </>
+                )}
                 <Text bold style={styles.totalsats}>
                     {getSats()}
                 </Text>
