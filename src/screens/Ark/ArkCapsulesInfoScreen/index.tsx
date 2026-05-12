@@ -5,19 +5,14 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
 
 /**
- * Read-only "what you need to know about your Ark capsules" surface.
+ * Plain-language "what you need to know about your Ark capsules" surface.
  *
  * Reached from the circular "?" button on the V-capsules tab. Pure
- * educational content — no actions, no state. Covers the self-custody
- * trust model, why receives can briefly lock funds, the depletion-ring
- * color bands, capsule status meanings, and the fee model for the three
- * primary operations.
- *
- * Copy is kept honest about the trust window during LN receives — that
- * gap (arkoor → refresh) is the only non-self-custodial moment in the
- * normal flow and users deserve to know it exists. The project memory
- * `project_arkoor_lightning_trust_model` carries the underlying protocol
- * detail this screen surfaces.
+ * educational content — no actions, no state. Copy written for a normal
+ * user, not someone who knows the protocol terms. Fees in the bottom
+ * section are quoted directly from Second's published Ark fee schedule
+ * (https://second.tech/docs/learn/fees) so they stay honest rather than
+ * estimated.
  */
 export default function ArkCapsulesInfoScreen() {
     return (
@@ -26,86 +21,96 @@ export default function ArkCapsulesInfoScreen() {
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 40 }}
             >
-                <Section title="Self-custody and refresh">
+                <Section title="Why we refresh your balance">
                     <Body>
-                        Your Ark balance lives as a set of virtual capsules (VTXOs) signed
-                        between you and the Ark server. To stay fully self-custodial — meaning
-                        you can sweep the funds on-chain without the server's cooperation — each
-                        capsule must be refreshed before its lifetime ends.
+                        Your Ark balance is held as a collection of small "capsules". To keep
+                        your funds fully self-custodial — meaning you can always recover them
+                        yourself without needing the Ark server's permission — each capsule
+                        needs to be refreshed before it ages out.
                     </Body>
                     <Body>
-                        Cypher Box handles refresh automatically when the Refresh Ark capsules
-                        in background toggle is on (Settings tab). With it off, you stay on the
-                        hook for refreshing each capsule yourself before expiry, or the server
-                        can sweep it.
-                    </Body>
-                </Section>
-
-                <Section title="Why a Lightning receive can briefly lock your balance">
-                    <Body>
-                        Lightning payments arrive as arkoor-style capsules: instant, but until
-                        they're refreshed into a regular capsule, they sit under a temporary
-                        server-trust window. Cypher Box's auto-refresh kicks in seconds after
-                        a receive lands and bundles every short-expiry capsule into one round.
-                    </Body>
-                    <Body>
-                        While the round is in flight, the included capsules show as Refreshing
-                        and aren't spendable. On mainnet a round can take up to an hour to
-                        commit; on signet it's typically a few minutes. Your balance returns
-                        the moment the round commits.
+                        Cypher Box refreshes them in the background as long as the toggle in
+                        Settings is on. If you turn it off, you're responsible for refreshing
+                        them yourself before they expire.
                     </Body>
                 </Section>
 
-                <Section title="Capsule ring colors">
+                <Section title="Some balance may briefly be unspendable">
+                    <Body>
+                        This is most noticeable after you receive over Lightning. Lightning
+                        payments land in a form that needs one more step before they're fully
+                        self-custodial, and Cypher Box converts them automatically. While
+                        that's happening, the affected capsules show as Refreshing and you
+                        won't be able to spend them.
+                    </Body>
+                    <Body>
+                        It usually only takes a moment, though it can occasionally take
+                        longer. Your balance comes right back the moment it finishes.
+                    </Body>
+                </Section>
+
+                <Section title="What the capsule colors mean">
                     <ColorRow
                         color="#4ADE80"
-                        label="Green (≥21 days left)"
+                        label="Green — 21+ days left"
                         body="Fresh. Nothing to do."
                     />
                     <ColorRow
                         color={colors.ark?.light ?? "#F2C94C"}
-                        label="Yellow (14–20 days left)"
-                        body="Past midlife. Auto-refresh hasn't included it yet, but it will when expiry gets closer."
+                        label="Yellow — 14–20 days left"
+                        body="Past the midpoint. We'll refresh it before it gets urgent."
                     />
                     <ColorRow
                         color="#FB923C"
-                        label="Orange (7–13 days left)"
-                        body="Within the refresh window. The next scheduled round or Lightning receive will sweep it in."
+                        label="Orange — 7–13 days left"
+                        body="Within the refresh window. Cypher Box will roll it in on the next refresh."
                     />
                     <ColorRow
                         color={colors.redLight ?? "#FF6B6B"}
-                        label="Red (<7 days left)"
-                        body="Refresh now or you risk losing the chain-enforced exit on this capsule."
+                        label="Red — less than 7 days left"
+                        body="Needs refresh soon. After it expires, the server can claim the capsule."
                     />
                 </Section>
 
-                <Section title="Capsule status">
+                <Section title="What capsule status means">
                     <StatusRow
                         title="Backed up"
-                        body="Capsule is spendable and chain-enforced — you can unilaterally exit it on-chain without the server's cooperation. The everyday state."
+                        body="Spendable, and fully under your control. You can always recover it on-chain yourself. This is the everyday state."
                     />
                     <StatusRow
                         title="Refreshing"
-                        body="Capsule is locked into an in-flight refresh round. Temporarily unspendable; spendability returns when the round commits server-side."
+                        body="Being converted into a fresh capsule. Temporarily unspendable until it finishes."
                     />
                     <StatusRow
                         title="In-flight"
-                        body="Capsule is locked into a different operation — an outgoing send, an on-chain board, or an emergency exit. Same temporary-lock window as Refreshing."
+                        body="Being used in another operation — an outgoing send, withdrawal, or boarding. Same kind of brief lock as Refreshing."
                     />
                 </Section>
 
                 <Section title="Fees">
+                    <Body>
+                        These are the fees the Ark server (operated by Second) charges. They
+                        vary with how old the capsule is — younger capsules cost less.
+                    </Body>
                     <FeeRow
-                        title="Receiving"
-                        body="Free for you. Lightning senders pay routing on their side; the Ark server doesn't charge you to receive a capsule."
+                        title="Receiving from Lightning"
+                        body="0% — free."
+                    />
+                    <FeeRow
+                        title="Sending Ark-to-Ark"
+                        body="0% — free."
                     />
                     <FeeRow
                         title="Refreshing"
-                        body="A few sats per round on mainnet — the cost is shared across every wallet participating in that round, so it stays small even for tiny capsules. Auto-refresh skips rounds where the fee would exceed the value being preserved."
+                        body="0% to 0.5% of the amount, depending on the capsule's age. 0% if the capsule is less than 2 days old."
                     />
                     <FeeRow
-                        title="Spending"
-                        body="Lightning sends pay normal LN routing fees. Ark-to-Ark sends are off-round and effectively free. Boarding back on-chain pays a regular Bitcoin transaction fee at the current network rate."
+                        title="Sending over Lightning"
+                        body="0.2% to 0.5% of the amount, with a 20-sat minimum."
+                    />
+                    <FeeRow
+                        title="Withdrawing on-chain"
+                        body="0.2% to 0.5% of the amount, plus standard Bitcoin network fees for the on-chain transaction."
                     />
                 </Section>
             </ScrollView>
