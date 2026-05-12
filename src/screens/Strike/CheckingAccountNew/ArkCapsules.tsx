@@ -1067,24 +1067,24 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     return (
         <View style={vaultStyles.flex}>
-            {/* Header block: small Auto-refresh on/off status on the
-                first row, then the explainer tagline + "Learn more" link
-                + "?" entry point on the second row. The on/off line is
-                read-only — the actual toggle lives on the Ark Settings
-                tab. */}
-            <View style={{ marginHorizontal: 20, marginTop: 14, marginBottom: 8 }}>
-                <Text style={{ fontSize: 13, color: '#888', marginBottom: 4 }}>
+            {/* Header block: prominent Auto-refresh on/off status on the
+                first row (left-aligned), then the explainer tagline +
+                "Learn more" link + "?" entry point on the second row.
+                The on/off line is read-only — the actual toggle lives on
+                the Ark Settings tab. */}
+            <View style={{ marginHorizontal: 20, marginTop: 14, marginBottom: 8, alignItems: 'flex-start' }}>
+                <Text bold style={{ fontSize: 16, color: '#FFF', marginBottom: 6 }}>
                     Auto-refresh:{' '}
                     <Text
                         bold
-                        style={{ color: arkBgRefreshEnabled ? colors.green : colors.redLight }}
+                        style={{ color: arkBgRefreshEnabled ? colors.green : colors.redLight, fontSize: 16 }}
                     >
                         {arkBgRefreshEnabled ? 'on' : 'off'}
                     </Text>
                 </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                        Keep your virtual V-capsules (VTXOs) refreshed.{' '}
+                        Keep your virtual capsules (VTXOs) refreshed.{' '}
                         <Text
                             bold
                             style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
