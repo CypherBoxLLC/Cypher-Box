@@ -324,7 +324,13 @@ export default function Card({ onPress,
                 // their flex:1 share of width, holding the grid stable.
                 // Match Hot Vault's VaultCapsules.tab geometry for the
                 // visible pills.
-                const SLOT_HEIGHT = 12;
+                // Hot Vault's tab is height:12 + borderWidth:1, but the
+                // INNER colored capsule image is constrained smaller via
+                // the MaskedView+resizeMode pipeline — visible colored
+                // band ends up ~8pt thick. Match that visible thickness
+                // here so the Ark filled pill reads as the same size as
+                // a filled Hot Vault capsule rather than as a chunky bar.
+                const SLOT_HEIGHT = 8;
                 const SLOT_RADIUS = 4;
                 const SLOT_GAP = 10;
                 const filledSlot = (color: string) => (
