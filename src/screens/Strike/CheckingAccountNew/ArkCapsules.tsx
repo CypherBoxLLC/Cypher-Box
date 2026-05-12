@@ -1119,11 +1119,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 </TouchableOpacity>
             </View>
 
-            {/* Explainer header — single line describing the depletion ring. */}
-            <Text bold style={[vaultStyles.desc, { marginRight: 20 }]}>
-                The ring around each Ark capsule depletes as it ages (green → yellow → orange → red).
-            </Text>
-
             {/* Dust-consolidate banner. Surfaces only when there's at
                 least one dust capsule on the wallet. Two states:
                   - viable (we can build a refresh set above the
@@ -1181,23 +1176,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     )}
                 </View>
             )}
-
-            {/* Recoverability legend — three colour-coded states matching
-                the per-row suffix below. Bark VTXOs aren't seed-derivable,
-                so "recoverable" means "backed up to a .cbark file plus
-                you have the seed". See VtxoRowData.recoverability for the
-                full classification. */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: 20, marginBottom: 6 }}>
-                <Text style={{ color: '#4ADE80', fontSize: 11, marginRight: 10 }}>
-                    ✓ Backed up
-                </Text>
-                <Text style={{ color: '#FB923C', fontSize: 11, marginRight: 10 }}>
-                    ⚠ Back up to recover
-                </Text>
-                <Text style={{ color: colors.ark.light, fontSize: 11 }}>
-                    ⚠ In-flight
-                </Text>
-            </View>
 
             {/* Column header row — matches Hot Vault's layout */}
             <View style={vaultStyles.titleStyle}>
