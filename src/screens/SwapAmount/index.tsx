@@ -20,6 +20,7 @@ import {
     type LightningSwapProvider,
     type LightningSwapProviderId,
 } from "@Cypher/services/lightningSwap";
+import { getFiatRate } from "../../../models/fiatUnit";
 
 export default function SwapAmount() {
     const navigation = useNavigation();
@@ -32,10 +33,26 @@ export default function SwapAmount() {
         sourceBalance?: number;
     };
     const { matchedRateStrike, strikeUser } = useAuthStore();
-    // Currency follows the source rail's user prefs when Strike is the
-    // source (Strike is the only fiat-aware rail in the app); otherwise
-    // we default to USD for the keyboard's fiat-mode display.
+    // Currency and rate are rail-specific. Strike carries the user's
+    // configured fiat currency (e.g. EUR) and a Strike-side rate in that
+    // currency. Every other rail uses USD and BlueWallet's USD/BTC rate
+    // (same source HomeScreen reads). Using Strike's rate as the default
+    // for non-Strike rails was the prior bug — fiat preview stayed blank
+    // whenever Strike wasn't linked.
     const currency = swapFrom === 'strike' ? (strikeUser?.[1]?.currency || 'USD') : 'USD';
+    const [usdRate, setUsdRate] = useState(0);
+    useEffect(() => {
+        if (swapFrom === 'strike') return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = (await getFiatRate('USD')) || 0;
+                if (!cancelled) setUsdRate(r);
+            } catch {}
+        })();
+        return () => { cancelled = true; };
+    }, [swapFrom]);
+    const matchedRate = swapFrom === 'strike' ? matchedRateStrike : usdRate;
 
     // Resolve provider metadata from the registry once. Fallbacks are
     // defensive — the navigation should never get here without valid
@@ -305,7 +322,7 @@ export default function SwapAmount() {
     return (
         <ScreenLayout disableScroll showToolbar isBackButton title="Lightning Swap">
             <View style={styles.main}>
-                <GradientInput isSats={isSats} walletInfo={{ matchedRate: matchedRateStrike, currency }} sats={sats} setSats={setSats} usd={usd} />
+                <GradientInput isSats={isSats} walletInfo={{ matchedRate, currency }} sats={sats} setSats={setSats} usd={usd} />
                 <View style={styles.directionRow}>
                     {renderProviderBadge(fromProvider, swapFrom, 'inline')}
                     <Text style={styles.arrow}>→</Text>
@@ -335,7 +352,7 @@ export default function SwapAmount() {
                     setUSD={setUsd}
                     setIsSATS={setIsSats}
                     disabled={!sats || Number(sats) <= 0 || loading}
-                    matchedRate={matchedRateStrike}
+                    matchedRate={matchedRate}
                     currency={currency}
                     colors_={[colors.pink.extralight, colors.pink.default]}
                     // Effective max = balance minus reserved fee headroom.
