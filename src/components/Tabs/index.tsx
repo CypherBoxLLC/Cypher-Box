@@ -21,16 +21,19 @@ interface Props {
 
 export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accountType }: Props) {
     const isArk = accountType === 'ark';
-    // Ark swaps the "Threshold" tab (custodial-only concept) for "Capsules"
-    // (VTXO management). Icon switches to the CoinOs coin/capsule glyph that
-    // the Hot Vault already uses for its Capsules tab — keeps the visual
-    // language unified across UTXO/VTXO surfaces.
-    // Ark renames "Account" → "Vault" + swaps the bank icon for a white
-    // lightning bolt (Electricity asset, already white-tinted via styles.key)
-    // to signal "Lightning-native non-custodial vault" at a glance.
+    // Ark surfaces Capsules as the FIRST tab — it's the day-to-day VTXO
+    // management surface that users land on most often. The custodial-
+    // shaped "Vault" tab (balance + threshold copy) is second. Strike/
+    // CoinOS keep the historical Account/Threshold ordering since they
+    // don't have a Capsules concept.
+    //
+    // Ark icons: Capsules uses the CoinOs coin/capsule glyph (also used
+    // by Hot Vault's Capsules tab) for visual continuity across UTXO/
+    // VTXO surfaces. "Vault" uses Electricity (white-tinted lightning
+    // bolt) to signal "Lightning-native non-custodial vault" at a glance.
     const tabs = useMemo(() => [
-        { id: 0, name: isArk ? 'Vault' : 'Account', icon: isArk ? Electricity : Bank },
-        { id: 1, name: isArk ? 'Capsules' : 'Threshold', icon: isArk ? CoinOs : Threshold },
+        { id: 0, name: isArk ? 'Capsules' : 'Account', icon: isArk ? CoinOs : Bank },
+        { id: 1, name: isArk ? 'Vault' : 'Threshold', icon: isArk ? Electricity : Threshold },
         { id: 2, name: 'History', icon: Time },
         { id: 3, name: 'Settings', icon: Settings },
     ], [isArk]);

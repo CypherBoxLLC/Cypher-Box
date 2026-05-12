@@ -50,13 +50,18 @@ export default function CheckingAccountNew({ navigation, route }: any) {
     const renderView = useCallback(() => {
         switch (selectedTab) {
             case 0:
-                return <Account isArk={isArk} currency={effCurrency} matchedRate={effMatchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
-            case 1:
-                // Ark replaces "Threshold" (a custodial trigger concept that
-                // doesn't apply to non-custodial Ark) with "Capsules" — the
-                // VTXO management surface. Strike/CoinOS keep Threshold.
+                // Ark surfaces Capsules first (day-to-day VTXO management);
+                // Strike/CoinOS keep Account first (custodial balance view).
                 return isArk
                     ? <ArkCapsules currency={effCurrency} matchedRate={effMatchedRate} />
+                    : <Account isArk={isArk} currency={effCurrency} matchedRate={effMatchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
+            case 1:
+                // For Ark this is the Vault tab — same Account component,
+                // renders the Ark balance Card + threshold/reserve pickers
+                // via its `isArk` branch. For Strike/CoinOS this is the
+                // Threshold tab (custodial-only trigger concept).
+                return isArk
+                    ? <Account isArk={isArk} currency={effCurrency} matchedRate={effMatchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />
                     : <Threshold currency={effCurrency} matchedRate={effMatchedRate} receiveType={receiveType} />;
             case 2:
                 // Ark pulls movements from the local SQLite datadir via
@@ -73,7 +78,10 @@ export default function CheckingAccountNew({ navigation, route }: any) {
                 // of the Strike/CoinOS account-management surface.
                 return <Settings receiveType={receiveType} currency={effCurrency} isArk={isArk} />;
             default:
-                return <Account isArk={isArk} currency={effCurrency} matchedRate={effMatchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
+                // Default matches case 0 — Ark lands on Capsules, others on Account.
+                return isArk
+                    ? <ArkCapsules currency={effCurrency} matchedRate={effMatchedRate} />
+                    : <Account isArk={isArk} currency={effCurrency} matchedRate={effMatchedRate} receiveType={receiveType} balance={balance} converted={converted} reserveAmount={reserveAmount} withdrawThreshold={withdrawThreshold} />;
         }
     }, [selectedTab, vaultTab, wallet, effMatchedRate, receiveType, effCurrency, isArk]);
 

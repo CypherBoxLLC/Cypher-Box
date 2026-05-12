@@ -212,7 +212,7 @@ export default function ArkWallet({
             return {
                 text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
                 linkText: 'here',
-                tapTab: 1, // Capsules tab
+                tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
                 error: true,
             };
         }

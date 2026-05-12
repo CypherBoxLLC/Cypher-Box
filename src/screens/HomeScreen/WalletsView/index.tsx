@@ -215,7 +215,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             return {
                 text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
                 linkText: 'here',
-                tapTab: 1,
+                tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
                 error: true,
             };
         }
@@ -818,7 +818,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         }}
                     >
                         <TouchableOpacity
-                            onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tapTab ?? 1 })}
+                            onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tapTab ?? 0 })}
                             activeOpacity={0.7}
                         >
                             <Text
