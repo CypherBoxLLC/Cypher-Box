@@ -110,6 +110,7 @@ import ArkInvoiceScreen from '@Cypher/screens/Ark/ArkInvoiceScreen';
 import ArkTransactionDetailsScreen from '@Cypher/screens/Ark/ArkTransactionDetailsScreen';
 import ArkSendScreen from '@Cypher/screens/Ark/ArkSendScreen';
 import ArkWithdrawReviewScreen from '@Cypher/screens/Ark/ArkWithdrawReviewScreen';
+import ArkCapsulesInfoScreen from '@Cypher/screens/Ark/ArkCapsulesInfoScreen';
 
 const WalletsStack = createStackNavigator();
 
@@ -208,6 +209,7 @@ const WalletsRoot = () => {
       />
       <WalletsStack.Screen name="ArkReceiveScreen" component={ArkReceiveScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkInvoiceScreen" component={ArkInvoiceScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="ArkCapsulesInfoScreen" component={ArkCapsulesInfoScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkTransactionDetailsScreen" component={ArkTransactionDetailsScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkSendScreen" component={ArkSendScreen} options={{ headerShown: false, gestureEnabled: true }} />
       <WalletsStack.Screen name="ArkWithdrawReviewScreen" component={ArkWithdrawReviewScreen} options={{ headerShown: false, gestureEnabled: true }} />

@@ -1067,13 +1067,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     return (
         <View style={vaultStyles.flex}>
-            {/* Read-only auto-refresh status. The toggle itself moved to
-                the Ark Settings tab; this row stays so users can confirm
-                at a glance that the feature is armed without leaving the
-                Capsules screen. Tappable would belong here too, but the
-                handler involves a Keychain read + battery onboarding
-                Alert, which is one-time setup — wrong shape for an
-                always-visible status row. */}
+            {/* Read-only auto-refresh status + "?" help button. The status
+                stays so users can confirm at a glance that auto-refresh
+                is armed without leaving the Capsules screen. The "?"
+                opens an explainer screen covering the self-custody/refresh
+                model, why LN receives can briefly lock funds, the ring
+                colors, capsule statuses, and the fee model — content
+                that's too much for an inline expansion. */}
             <View
                 style={{
                     marginHorizontal: 20,
@@ -1081,6 +1081,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     marginBottom: 8,
                     flexDirection: 'row',
                     alignItems: 'center',
+                    justifyContent: 'space-between',
                 }}
             >
                 <Text
@@ -1099,6 +1100,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         {arkBgRefreshEnabled ? 'on' : 'off'}
                     </Text>
                 </Text>
+                <TouchableOpacity
+                    onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 11,
+                        borderWidth: 1,
+                        borderColor: colors.ark?.light ?? colors.pink.default,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                >
+                    <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 13, lineHeight: 17 }}>
+                        ?
+                    </Text>
+                </TouchableOpacity>
             </View>
 
             {/* Explainer header — single line describing the depletion ring. */}
