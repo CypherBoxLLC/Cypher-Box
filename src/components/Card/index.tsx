@@ -6,6 +6,7 @@ import { colors } from "@Cypher/style-guide";
 import MaskedView from "@react-native-masked-view/masked-view";
 import React, { useEffect, useRef } from "react";
 import { Animated, Easing, Image, TouchableOpacity, View } from "react-native";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
 import GradientButtonWithShadow from "../GradientButtonWithShadow";
 import styles from "./styles";
@@ -193,15 +194,17 @@ export default function Card({ onPress,
             />
             <View style={styles.view}>
                 {wallet === 'ARK' ? (
-                    // White lightning bolt next to the "Ark Vault"
-                    // title to mirror the icon-+-label pattern used
-                    // in the Receive/Send tile, the Vault tab, and
-                    // the Add-Account flow.
+                    // Boat-outline icon next to the "Ark Vault" title —
+                    // matches the Ark = boat icon used in the receive
+                    // flow ([ReceivedListNew:310]) and the Vault tab on
+                    // the Ark menu, so the visual is consistent
+                    // everywhere "Ark Vault" appears.
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Image
-                            source={Electricity}
-                            style={{ width: 12, height: 16, marginRight: 6, tintColor: '#FFFFFF' }}
-                            resizeMode="contain"
+                        <Ionicons
+                            name="boat-outline"
+                            size={18}
+                            color="#FFFFFF"
+                            style={{ marginRight: 6 }}
                         />
                         <Text h2 bold style={[styles.check, { fontSize: 16 }]}>
                             {title}
