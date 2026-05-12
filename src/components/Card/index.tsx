@@ -317,42 +317,52 @@ export default function Card({ onPress,
                 const VISIBLE = 5;
                 const filled = arkCapsuleSlots.slice(0, VISIBLE);
                 const empties = Math.max(0, VISIBLE - filled.length);
+                // Match Hot Vault's VaultCapsules tab geometry (height 12,
+                // borderRadius 4, marginEnd 10) so the Ark slot row reads
+                // as the same visual element family as the Hot Vault
+                // capsule row immediately below the Ark Card on the home
+                // screen.
+                const SLOT_HEIGHT = 12;
+                const SLOT_RADIUS = 4;
+                const SLOT_GAP = 10;
+                const filledSlot = (color: string) => (
+                    <View
+                        style={{
+                            height: SLOT_HEIGHT,
+                            borderRadius: SLOT_RADIUS,
+                            backgroundColor: color,
+                        }}
+                    />
+                );
+                const emptySlot = (
+                    <View
+                        style={{
+                            height: SLOT_HEIGHT,
+                            borderRadius: SLOT_RADIUS,
+                            borderWidth: 1,
+                            borderColor: colors.white,
+                        }}
+                    />
+                );
                 return (
                     <View style={{ flexDirection: 'row', marginTop: 12 }}>
                         {filled.map((slot, i) => {
                             const last = i === VISIBLE - 1;
+                            const wrapStyle = {
+                                flex: 1,
+                                marginRight: last ? 0 : SLOT_GAP,
+                            } as const;
                             return slot.refreshing ? (
                                 <Animated.View
                                     key={`s-${i}`}
-                                    style={{
-                                        flex: 1,
-                                        opacity: refreshPulseAnim,
-                                        marginRight: last ? 0 : 6,
-                                    }}
+                                    style={{ ...wrapStyle, opacity: refreshPulseAnim }}
                                 >
-                                    <View
-                                        style={{
-                                            height: 14,
-                                            borderRadius: 5,
-                                            borderWidth: 1,
-                                            borderColor: colors.white,
-                                            backgroundColor: slot.color,
-                                        }}
-                                    />
+                                    {filledSlot(slot.color)}
                                 </Animated.View>
                             ) : (
-                                <View
-                                    key={`s-${i}`}
-                                    style={{
-                                        flex: 1,
-                                        height: 14,
-                                        borderRadius: 5,
-                                        borderWidth: 1,
-                                        borderColor: colors.white,
-                                        backgroundColor: slot.color,
-                                        marginRight: last ? 0 : 6,
-                                    }}
-                                />
+                                <View key={`s-${i}`} style={wrapStyle}>
+                                    {filledSlot(slot.color)}
+                                </View>
                             );
                         })}
                         {Array(empties).fill(0).map((_, i) => {
@@ -361,15 +371,10 @@ export default function Card({ onPress,
                             return (
                                 <View
                                     key={`e-${i}`}
-                                    style={{
-                                        flex: 1,
-                                        height: 14,
-                                        borderRadius: 5,
-                                        borderWidth: 1,
-                                        borderColor: colors.white,
-                                        marginRight: last ? 0 : 6,
-                                    }}
-                                />
+                                    style={{ flex: 1, marginRight: last ? 0 : SLOT_GAP }}
+                                >
+                                    {emptySlot}
+                                </View>
                             );
                         })}
                     </View>
