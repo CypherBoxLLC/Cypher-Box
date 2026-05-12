@@ -692,6 +692,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
+    // Read-only on this screen — the toggle lives on the Ark Settings
+    // tab. Surfaced as a small on/off status above the explainer tagline
+    // so users can confirm the feature is armed without leaving the
+    // Capsules tab.
+    const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
 
     // Sum of sats currently locked in pending refresh rounds. Same derivation
     // as ArkWallet/index.tsx (Locked-state VTXO sats), to avoid the SDK's
@@ -1062,50 +1067,51 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     return (
         <View style={vaultStyles.flex}>
-            {/* Educational tagline + "?" entry point to the explainer
-                screen. Replaced the prior "Auto-vtxo refresh: on/off"
-                status line — that on/off state belongs in Settings (where
-                the toggle lives), not as ambient noise on the Capsules
-                tab. The tagline frames what the screen is about; the
-                "?" (and the underlined "Learn more" tap target) opens
-                the full explainer for users who want the details. */}
-            <View
-                style={{
-                    marginHorizontal: 20,
-                    marginTop: 14,
-                    marginBottom: 8,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                }}
-            >
-                <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                    Keep your virtual capsules refreshed.{' '}
+            {/* Header block: small Auto-refresh on/off status on the
+                first row, then the explainer tagline + "Learn more" link
+                + "?" entry point on the second row. The on/off line is
+                read-only — the actual toggle lives on the Ark Settings
+                tab. */}
+            <View style={{ marginHorizontal: 20, marginTop: 14, marginBottom: 8 }}>
+                <Text style={{ fontSize: 13, color: '#888', marginBottom: 4 }}>
+                    Auto-refresh:{' '}
                     <Text
                         bold
-                        style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
-                        onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
+                        style={{ color: arkBgRefreshEnabled ? colors.green : colors.redLight }}
                     >
-                        Learn more
+                        {arkBgRefreshEnabled ? 'on' : 'off'}
                     </Text>
                 </Text>
-                <TouchableOpacity
-                    onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    style={{
-                        marginLeft: 8,
-                        width: 22,
-                        height: 22,
-                        borderRadius: 11,
-                        borderWidth: 1,
-                        borderColor: colors.ark?.light ?? colors.pink.default,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    }}
-                >
-                    <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 13, lineHeight: 17 }}>
-                        ?
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
+                        Keep your virtual V-capsules (VTXOs) refreshed.{' '}
+                        <Text
+                            bold
+                            style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
+                            onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
+                        >
+                            Learn more
+                        </Text>
                     </Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        style={{
+                            marginLeft: 8,
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            borderWidth: 1,
+                            borderColor: colors.ark?.light ?? colors.pink.default,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}
+                    >
+                        <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 13, lineHeight: 17 }}>
+                            ?
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Dust-consolidate banner. Surfaces only when there's at
