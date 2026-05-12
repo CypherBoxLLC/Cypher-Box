@@ -78,7 +78,13 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
     const arkReserveSats = Number(reserveArkAmount) || 100_000;
     return (
       <View style={{ flex: 1 }}>
-        <View style={{ marginTop: 20 }}>
+        {/* Card sits in a centered row above the scrolling actions
+            panel — mirrors the original Strike/CoinOS isArk layout's
+            `styles.container2` centering (alignItems: 'center') so
+            the Card holds the same horizontal position as before the
+            Settings → Vault move. Centering on this wrapper only —
+            ArkSettingsBody below manages its own layout. */}
+        <View style={{ marginTop: 20, alignItems: 'center' }}>
           <Card
             wallet="ARK"
             title="Ark Vault"
