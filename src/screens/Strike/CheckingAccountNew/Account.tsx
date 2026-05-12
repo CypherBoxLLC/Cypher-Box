@@ -10,6 +10,8 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { ArkSettingsBody } from "./Settings";
 
 import { btc } from "@Cypher/helpers/coinosHelper";
+import { blocksToDays } from "@Cypher/services/ark";
+import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 
 interface AccountProps {
   matchedRate: string;
@@ -51,6 +53,28 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
     ),
     [arkVtxos],
   );
+
+  // Same per-VTXO capsule-slot data as the homescreen ArkWallet card —
+  // see ArkWallet/index.tsx for the rationale. Kept in sync visually so
+  // the Vault tab's Card shows identical pills to the home card.
+  const arkChainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
+  const arkCapsuleSlots = useMemo(() => {
+    if (arkChainTipHeight === null) return undefined;
+    return arkVtxos
+      .filter((v) => v.state.toLowerCase() !== 'spent')
+      .map((v) => {
+        const daysLeft = v.expiryHeight > 0
+          ? Math.max(0, blocksToDays(v.expiryHeight - arkChainTipHeight))
+          : 30;
+        return {
+          color: getCapsuleColorBand(daysLeft).color,
+          refreshing: v.state.toLowerCase() === 'locked',
+          daysLeft,
+        };
+      })
+      .sort((a, b) => a.daysLeft - b.daysLeft)
+      .map(({ color, refreshing }) => ({ color, refreshing }));
+  }, [arkVtxos, arkChainTipHeight]);
 
   const handleCoinosLogout = () => {
     clearAuth();
@@ -98,6 +122,7 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
             refreshingInfo={pendingRoundCount > 0
               ? { count: pendingRoundCount, sats: pendingRoundSats }
               : null}
+            arkCapsuleSlots={arkCapsuleSlots}
           />
         </View>
         {/* Day-to-day vault management — auto-refresh toggle, Emergency

@@ -3,6 +3,7 @@ import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { ARK_VTXO_DUST_SATS, blocksToDays } from "@Cypher/services/ark";
+import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -118,6 +119,35 @@ export default function ArkWallet({
     const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
         ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d — refresh soon`
         : null;
+
+    /**
+     * Solid-coloured capsule slot data for the in-Card row. One pill per
+     * spendable/locked VTXO; colour reflects expiry band (green/yellow/
+     * orange/red) per `getCapsuleColorBand`; refreshing flag mirrors
+     * locked-state so the slot pulses on the Card's existing pulse
+     * animation. Sorted most-urgent first (smallest daysLeft) so the
+     * Card's 5-slot cap surfaces the capsules that need attention. VTXOs
+     * with expiryHeight === 0 (arkoor inherit) get a healthy daysLeft
+     * default of 30 so they don't dominate the urgency sort with a
+     * misleading 0.
+     */
+    const arkCapsuleSlots = useMemo(() => {
+        if (arkChainTipHeight === null) return undefined;
+        return arkVtxos
+            .filter((v) => v.state.toLowerCase() !== 'spent')
+            .map((v) => {
+                const daysLeft = v.expiryHeight > 0
+                    ? Math.max(0, blocksToDays(v.expiryHeight - arkChainTipHeight))
+                    : 30;
+                return {
+                    color: getCapsuleColorBand(daysLeft).color,
+                    refreshing: v.state.toLowerCase() === 'locked',
+                    daysLeft,
+                };
+            })
+            .sort((a, b) => a.daysLeft - b.daysLeft)
+            .map(({ color, refreshing }) => ({ color, refreshing }));
+    }, [arkVtxos, arkChainTipHeight]);
 
     /**
      * Count of dust capsules that haven't expired yet. A "dust capsule" is
@@ -353,6 +383,7 @@ export default function ArkWallet({
                         refreshingInfo={pendingRoundCount > 0
                             ? { count: pendingRoundCount, sats: pendingRoundSats }
                             : null}
+                        arkCapsuleSlots={arkCapsuleSlots}
                     />
                     {/* When shared buttons are active (`hideActionButtons`),
                         skip this minHeight-40 reserve so the shared row can
