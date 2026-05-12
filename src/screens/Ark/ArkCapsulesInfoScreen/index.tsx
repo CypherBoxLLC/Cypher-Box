@@ -44,8 +44,8 @@ export default function ArkCapsulesInfoScreen() {
                         won't be able to spend them.
                     </Body>
                     <Body>
-                        It usually only takes a moment, though it can occasionally take
-                        longer. Your balance comes right back the moment it finishes.
+                        Refreshing usually takes less than an hour. Your balance comes
+                        right back the moment it finishes.
                     </Body>
                 </Section>
 
