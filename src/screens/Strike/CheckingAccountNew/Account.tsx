@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { ScrollView, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
@@ -28,7 +28,29 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
     withdrawArkThreshold,
     reserveArkAmount,
   } = useAuthStore();
+  const arkVtxos = useAuthStore((s) => s.arkVtxos);
   const navigation = useNavigation();
+
+  // Mirror ArkWallet's pendingRound derivation so the in-tab Ark Card
+  // surfaces the same "Refreshing N capsules · X sats" pulsing line the
+  // homescreen card does (see Card's `refreshingInfo` prop). Without
+  // this, the Vault menu's Ark Card would display "0 sats ~ $0.00"
+  // whenever the homescreen card was correctly showing a refresh in
+  // flight, contradicting the home view.
+  const pendingRoundSats = useMemo(
+    () => arkVtxos.reduce(
+      (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
+      0,
+    ),
+    [arkVtxos],
+  );
+  const pendingRoundCount = useMemo(
+    () => arkVtxos.reduce(
+      (n, v) => (v.state.toLowerCase() === 'locked' ? n + 1 : n),
+      0,
+    ),
+    [arkVtxos],
+  );
 
   const handleCoinosLogout = () => {
     clearAuth();
@@ -64,6 +86,9 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
             reserveAmount={arkReserveSats}
             withdrawThreshold={arkThresholdSats}
             receiveType={receiveType}
+            refreshingInfo={pendingRoundCount > 0
+              ? { count: pendingRoundCount, sats: pendingRoundSats }
+              : null}
           />
         </View>
 
