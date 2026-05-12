@@ -6,8 +6,11 @@ import { MMKV } from "react-native-mmkv";
 const ENCRYPTION_KEY = "cypherbox-mmkv-v1"; // rotated by changing this value + clearing app data
 const storage = new MMKV({ id: "cypherbox-secure", encryptionKey: ENCRYPTION_KEY });
 
-// Migration: read from old unencrypted store, copy to encrypted, then delete old
-const legacyStorage = new MMKV();
+// Migration: read from old unencrypted store, copy to encrypted, then delete old.
+// Explicit id matches v2's implicit default ('mmkv.default') so the legacy
+// instance points at the same on-disk file v2 wrote to. Required as of
+// react-native-mmkv v3 where Configuration.id is no longer optional.
+const legacyStorage = new MMKV({ id: 'mmkv.default' });
 try {
     const legacyKeys = legacyStorage.getAllKeys();
     if (legacyKeys.length > 0) {

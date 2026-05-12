@@ -52,6 +52,23 @@ post_install do |installer|
     :mac_catalyst_enabled => true
   )
 
+  # Force the Pods project default to c++20.
+  #
+  # Why: CocoaPods generates the Pods.xcodeproj with a project-level default
+  # of `gnu++14` (__cplusplus == 201402L). Most pods override this in their
+  # own podspec, but a few don't — most notably React-jsi, whose xcconfig
+  # has no CLANG_CXX_LANGUAGE_STANDARD at all and inherits the project
+  # default. When NitroModules / RN 0.76's newer RCT-Folly is in the dep
+  # graph, Folly's Portability.h hits:
+  #     static_assert(__cplusplus >= 201703L, ...)
+  # and the build cascades into hundreds of "auto not allowed in template
+  # parameter until C++17" errors. Setting the project-level default to
+  # c++20 fixes React-jsi (and any other un-pinned pod) without disturbing
+  # pods that explicitly pin a different standard.
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++20'
+  end
+
   # Fix fmt consteval issue with Xcode 26 Clang
   fmt_base = File.join(__dir__, 'Pods', 'fmt', 'include', 'fmt', 'base.h')
   if File.exist?(fmt_base)
