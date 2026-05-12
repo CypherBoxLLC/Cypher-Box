@@ -198,7 +198,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // record would otherwise linger underneath the in-card live
         // status for an hour.
         if (pendingRound.count > 0) {
-            return { text: 'Auto-refresh: on', error: false };
+            return null;
         }
 
         if (arkBgRefreshEnabled && arkBgRefreshLastAttempt?.outcome === 'error') {
@@ -238,7 +238,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             };
         }
 
-        return { text: 'Auto-refresh: on', error: false };
+        return null;
     }, [
         arkBgRefreshEnabled,
         arkBgRefreshLastAttempt,

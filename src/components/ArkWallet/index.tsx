@@ -154,14 +154,13 @@ export default function ArkWallet({
      * everything funnels through one renderer.
      *
      * Priority (top wins, green for healthy states, red for warnings):
-     *   1. Refresh in flight — short-circuit to all-clear. The Card
-     *      surfaces "Refreshing N capsules · X sats" inside its balance
-     *      area via the `refreshingInfo` prop, so a duplicate message
-     *      in this pill would be redundant. Falling through to all-clear
-     *      also suppresses the stale failure-record branch (finalize
-     *      only writes 'success' after the round commits — up to 1h on
-     *      mainnet — so the prior failure would otherwise linger under
-     *      the in-card live status).
+     *   1. Refresh in flight — return null (no pill). The Card surfaces
+     *      "Refreshing N capsules · X sats" inside its balance area via
+     *      the `refreshingInfo` prop, so a duplicate message in this
+     *      pill would be redundant. Returning null here also suppresses
+     *      the stale failure-record branch (finalize only writes 'success'
+     *      after the round commits — up to 1h on mainnet — so the prior
+     *      failure would otherwise linger under the in-card live status).
      *   2. Auto-refresh attempt errored — capsules at risk, user back on hook
      *   3. Dust capsules present — sub-fee VTXOs need batch consolidation
      *   4. A VTXO is within a week of expiry — funds at risk imminently
@@ -170,7 +169,8 @@ export default function ArkWallet({
      *   6. iOS backup reminder active — iCloud Drive not synced, off-device
      *      backup missing (only a flag on iOS; Android handles backup via
      *      Drive / SAF which never flips this state)
-     *   7. All clear — short "Auto-refresh: on" status in green
+     *   7. All clear — return null. The homescreen stays quiet when
+     *      there's nothing the user needs to act on.
      *
      * The standalone expiryWarning render below this hook used to handle
      * priority 4 separately; that block is now removed since this hook
@@ -190,7 +190,7 @@ export default function ArkWallet({
         //    means the pill confirms the system is healthy while the card
         //    shows the active operation.
         if (pendingRoundCount > 0) {
-            return { text: 'Auto-refresh: on', error: false };
+            return null;
         }
 
         // 2. Auto-refresh errored — only when nothing is currently in
@@ -240,8 +240,11 @@ export default function ArkWallet({
             };
         }
 
-        // 7. All clear — short, friendly status
-        return { text: 'Auto-refresh: on', error: false };
+        // 7. All clear — no pill. Bam's call: the homescreen stays quiet
+        //    when there's nothing the user needs to act on. The Card's
+        //    own balance line + the in-card refreshing animation (when
+        //    a round is in flight) are signal enough.
+        return null;
     }, [
         arkBgRefreshEnabled,
         arkBgRefreshLastAttempt,
