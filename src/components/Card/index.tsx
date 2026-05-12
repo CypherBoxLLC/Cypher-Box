@@ -313,15 +313,16 @@ export default function Card({ onPress,
                 flexDirection: 'row' holding balance + brand logo) so it
                 stacks below as its own full-width row instead of being
                 squeezed into the horizontal balance/brand layout. */}
-            {wallet === 'ARK' && arkCapsuleSlots && (() => {
+            {wallet === 'ARK' && arkCapsuleSlots && arkCapsuleSlots.length > 0 && (() => {
                 const VISIBLE = 5;
                 const filled = arkCapsuleSlots.slice(0, VISIBLE);
-                const empties = Math.max(0, VISIBLE - filled.length);
                 // Match Hot Vault's VaultCapsules tab geometry (height 12,
-                // borderRadius 4, marginEnd 10) so the Ark slot row reads
-                // as the same visual element family as the Hot Vault
-                // capsule row immediately below the Ark Card on the home
-                // screen.
+                // borderRadius 4, gap 10) so the row reads as the same
+                // visual element family as Hot Vault's capsule row.
+                // No empty-slot padding — Bam's call: a slot only exists
+                // if there's a VTXO behind it. With 1 VTXO the single
+                // pill takes the full row width (flex:1), with 3 it splits
+                // into thirds, etc.
                 const SLOT_HEIGHT = 12;
                 const SLOT_RADIUS = 4;
                 const SLOT_GAP = 10;
@@ -334,20 +335,10 @@ export default function Card({ onPress,
                         }}
                     />
                 );
-                const emptySlot = (
-                    <View
-                        style={{
-                            height: SLOT_HEIGHT,
-                            borderRadius: SLOT_RADIUS,
-                            borderWidth: 1,
-                            borderColor: colors.white,
-                        }}
-                    />
-                );
                 return (
                     <View style={{ flexDirection: 'row', marginTop: 12 }}>
                         {filled.map((slot, i) => {
-                            const last = i === VISIBLE - 1;
+                            const last = i === filled.length - 1;
                             const wrapStyle = {
                                 flex: 1,
                                 marginRight: last ? 0 : SLOT_GAP,
@@ -362,18 +353,6 @@ export default function Card({ onPress,
                             ) : (
                                 <View key={`s-${i}`} style={wrapStyle}>
                                     {filledSlot(slot.color)}
-                                </View>
-                            );
-                        })}
-                        {Array(empties).fill(0).map((_, i) => {
-                            const idx = filled.length + i;
-                            const last = idx === VISIBLE - 1;
-                            return (
-                                <View
-                                    key={`e-${i}`}
-                                    style={{ flex: 1, marginRight: last ? 0 : SLOT_GAP }}
-                                >
-                                    {emptySlot}
                                 </View>
                             );
                         })}
