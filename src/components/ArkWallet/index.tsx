@@ -153,22 +153,50 @@ export default function ArkWallet({
      * the entire "what does the user need to know?" priority chain so
      * everything funnels through one renderer.
      *
-     * Priority (top wins, all red except the all-clear which is green):
-     *   1. Auto-refresh attempt errored — capsules at risk, user back on hook
-     *   2. A VTXO is within a week of expiry — funds at risk imminently
-     *   3. Auto-refresh toggle is off — capsules WILL eventually expire
+     * Priority (top wins, green for active/healthy states, red for warnings):
+     *   1. Refresh round in flight — surface "Refreshing N capsules · X sats"
+     *      so the user understands why their headline balance is temporarily
+     *      lower. Wins over the failure record below because the live state
+     *      is more informative than a stale "failed at HH:MM" — finalize()
+     *      only records 'success' after the round commits (up to 1h on
+     *      mainnet), so without this priority a successful in-flight round
+     *      would show the previous failure for an hour.
+     *   2. Auto-refresh attempt errored — capsules at risk, user back on hook
+     *   3. Dust capsules present — sub-fee VTXOs need batch consolidation
+     *   4. A VTXO is within a week of expiry — funds at risk imminently
+     *   5. Auto-refresh toggle is off — capsules WILL eventually expire
      *      without manual refresh; soft warning so the user notices
-     *   4. iOS backup reminder active — iCloud Drive not synced, off-device
+     *   6. iOS backup reminder active — iCloud Drive not synced, off-device
      *      backup missing (only a flag on iOS; Android handles backup via
      *      Drive / SAF which never flips this state)
-     *   5. All clear — short "Auto-refresh: on" status in green
+     *   7. All clear — short "Auto-refresh: on" status in green
      *
      * The standalone expiryWarning render below this hook used to handle
-     * priority 2 separately; that block is now removed since this hook
+     * priority 4 separately; that block is now removed since this hook
      * subsumes it.
      */
     const bgRefreshStatus = useMemo(() => {
-        // 1. Auto-refresh errored
+        // 1. Refresh / send / board in flight. Wins over the stored
+        //    last-attempt error record because the LIVE state is more
+        //    informative than a stale "failed at HH:MM" timestamp from
+        //    a prior attempt — especially since `finalize('success')`
+        //    only runs after the round commits server-side (up to 1h
+        //    on mainnet), so a successful round in flight would
+        //    otherwise still show the prior failure for an hour.
+        //    Headline `arkBalance` EXCLUDES locked VTXOs, so without
+        //    this line a user watching their balance during a refresh
+        //    would see it drop with no explanation. Green because this
+        //    is a healthy active state, not a warning.
+        if (pendingRoundCount > 0) {
+            const noun = pendingRoundCount === 1 ? 'capsule' : 'capsules';
+            return {
+                text: `Refreshing ${pendingRoundCount} ${noun} · ${pendingRoundSats.toLocaleString()} sats`,
+                error: false,
+            };
+        }
+
+        // 2. Auto-refresh errored — only when nothing is currently in
+        //    flight, otherwise the active refresh above takes precedence.
         if (arkBgRefreshEnabled && arkBgRefreshLastAttempt?.outcome === 'error') {
             const d = new Date(arkBgRefreshLastAttempt.at);
             const hh = String(d.getHours()).padStart(2, '0');
@@ -179,7 +207,7 @@ export default function ArkWallet({
             };
         }
 
-        // 2. Dust capsules present — can't be refreshed individually
+        // 3. Dust capsules present — can't be refreshed individually
         //    (refresh fee > value). Needs batch refresh on the Capsules
         //    tab. Render "here" as an underlined link to invite the tap.
         if (dustCapsuleCount > 0) {
@@ -191,12 +219,12 @@ export default function ArkWallet({
             };
         }
 
-        // 3. Non-dust capsule near expiry (oldest spendable VTXO < 7d)
+        // 4. Non-dust capsule near expiry (oldest spendable VTXO < 7d)
         if (expiryWarning) {
             return { text: expiryWarning, error: true };
         }
 
-        // 4. Auto-refresh toggle off
+        // 5. Auto-refresh toggle off
         if (!arkBgRefreshEnabled) {
             return {
                 text: 'Auto-refresh: off — capsules will expire without manual refresh',
@@ -204,26 +232,13 @@ export default function ArkWallet({
             };
         }
 
-        // 5. iOS backup not synced (iCloud Drive off for Cypher Box, or
+        // 6. iOS backup not synced (iCloud Drive off for Cypher Box, or
         //    user created via the manual share+confirm path without yet
         //    enabling iCloud Drive). Android never sets this flag.
         if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
             return {
                 text: 'Backup not synced — enable iCloud Drive in iOS Settings',
                 error: true,
-            };
-        }
-
-        // 6. Refresh / send / board in progress. Headline `arkBalance`
-        //    EXCLUDES locked VTXOs, so without this line a user watching
-        //    their balance during a refresh would see it drop with no
-        //    explanation. Green because this is a healthy active state,
-        //    not a warning.
-        if (pendingRoundCount > 0) {
-            const noun = pendingRoundCount === 1 ? 'capsule' : 'capsules';
-            return {
-                text: `Refreshing ${pendingRoundCount} ${noun} · ${pendingRoundSats.toLocaleString()} sats`,
-                error: false,
             };
         }
 

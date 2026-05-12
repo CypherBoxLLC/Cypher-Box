@@ -188,6 +188,23 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
      *     warning passes 1 (Capsules) to land on the batch-refresh UI.
      */
     const bgRefreshStatus = useMemo(() => {
+        // Refresh / send / board in flight — wins over the stored
+        // last-attempt error record because the LIVE state is more
+        // informative than a stale "failed at HH:MM" timestamp.
+        // `finalize('success')` only runs after the round commits server-
+        // side (up to 1h on mainnet), so a successful round in flight
+        // would otherwise show the prior failure for an hour. Headline
+        // balance excludes these locked VTXOs, so surface count + total
+        // so the user knows why their visible balance is lower than
+        // expected. Green because it's a healthy active state.
+        if (pendingRound.count > 0) {
+            const noun = pendingRound.count === 1 ? 'capsule' : 'capsules';
+            return {
+                text: `Refreshing ${pendingRound.count} ${noun} · ${pendingRound.sats.toLocaleString()} sats`,
+                error: false,
+            };
+        }
+
         if (arkBgRefreshEnabled && arkBgRefreshLastAttempt?.outcome === 'error') {
             const d = new Date(arkBgRefreshLastAttempt.at);
             const hh = String(d.getHours()).padStart(2, '0');
@@ -222,18 +239,6 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             return {
                 text: 'Backup not synced — enable iCloud Drive in iOS Settings',
                 error: true,
-            };
-        }
-
-        // Refresh / send / board in progress. Headline balance excludes
-        // these locked VTXOs, so surface count + total so the user knows
-        // why their visible balance is lower than expected. Green because
-        // it's a healthy active state, not a warning.
-        if (pendingRound.count > 0) {
-            const noun = pendingRound.count === 1 ? 'capsule' : 'capsules';
-            return {
-                text: `Refreshing ${pendingRound.count} ${noun} · ${pendingRound.sats.toLocaleString()} sats`,
-                error: false,
             };
         }
 
