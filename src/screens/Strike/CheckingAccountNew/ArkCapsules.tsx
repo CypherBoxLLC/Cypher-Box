@@ -1176,7 +1176,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             <View style={vaultStyles.titleStyle}>
                 <Text bold style={vaultStyles.coin}>Capsules</Text>
                 <Text bold style={vaultStyles.size}>Size</Text>
-                <Text bold style={[vaultStyles.label, { fontSize: 14, textAlign: 'left' }]}>Refresh</Text>
+                <Text bold style={[vaultStyles.label, { fontSize: 18, textAlign: 'left', marginLeft: -8 }]}>Refresh</Text>
                 <Text bold style={vaultStyles.select}>Select</Text>
             </View>
             <View style={vaultStyles.border} />
