@@ -692,11 +692,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
-    // Read-only on this screen — the actual toggle lives on the Ark
-    // Settings tab. We just surface a one-line on/off status indicator
-    // at the top of the Capsules tab so users can confirm the feature
-    // is armed without leaving this screen.
-    const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
 
     // Sum of sats currently locked in pending refresh rounds. Same derivation
     // as ArkWallet/index.tsx (Locked-state VTXO sats), to avoid the SDK's
@@ -1067,13 +1062,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     return (
         <View style={vaultStyles.flex}>
-            {/* Read-only auto-refresh status + "?" help button. The status
-                stays so users can confirm at a glance that auto-refresh
-                is armed without leaving the Capsules screen. The "?"
-                opens an explainer screen covering the self-custody/refresh
-                model, why LN receives can briefly lock funds, the ring
-                colors, capsule statuses, and the fee model — content
-                that's too much for an inline expansion. */}
+            {/* Educational tagline + "?" entry point to the explainer
+                screen. Replaced the prior "Auto-vtxo refresh: on/off"
+                status line — that on/off state belongs in Settings (where
+                the toggle lives), not as ambient noise on the Capsules
+                tab. The tagline frames what the screen is about; the
+                "?" (and the underlined "Learn more" tap target) opens
+                the full explainer for users who want the details. */}
             <View
                 style={{
                     marginHorizontal: 20,
@@ -1081,29 +1076,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     marginBottom: 8,
                     flexDirection: 'row',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
                 }}
             >
-                <Text
-                    style={{
-                        fontSize: 13,
-                        color: '#888',
-                    }}
-                >
-                    Auto-vtxo refresh:{' '}
+                <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
+                    Keep your virtual capsules refreshed.{' '}
                     <Text
                         bold
-                        style={{
-                            color: arkBgRefreshEnabled ? colors.green : colors.redLight,
-                        }}
+                        style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
+                        onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
                     >
-                        {arkBgRefreshEnabled ? 'on' : 'off'}
+                        Learn more
                     </Text>
                 </Text>
                 <TouchableOpacity
                     onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={{
+                        marginLeft: 8,
                         width: 22,
                         height: 22,
                         borderRadius: 11,
