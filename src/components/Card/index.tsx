@@ -279,31 +279,37 @@ export default function Card({ onPress,
                         )}
                     </>
                 )}
-                <Text bold style={styles.totalsats}>
-                    {getSats()}
-                </Text>
+                {/* Withdrawal-threshold reminder. Hidden for Ark because
+                    Ark is self-custodial — there's no custodial-balance
+                    counterparty-risk threshold to nudge the user toward.
+                    Strike/CoinOS still surface their threshold/reserve
+                    nudge here. */}
+                {wallet !== 'ARK' && (
+                    <Text bold style={styles.totalsats}>
+                        {getSats()}
+                    </Text>
+                )}
             </View>
-            <View style={thresholdMet ? {
-                // Threshold-met glow tracks wallet branding so Ark glows
-                // yellow rather than pink. Strike/CoinOS keep the pink glow.
-                shadowColor: wallet === 'ARK' ? colors.ark.shadowTopNew : '#e84393',
-                shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 1,
-                shadowRadius: 16,
-                elevation: 10,
-            } : undefined}>
-                <View style={styles.showLine} />
-                <View style={[styles.box, { left: getLineLeft() } as any]} />
-                <LinearGradient
-                    start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-                    colors={
-                        wallet === 'ARK'
-                            ? [colors.white, colors.ark.dark]
-                            : [colors.white, colors.pink.dark]
-                    }
-                    style={[styles.linearGradient2, { width: getWidth() } as any]}>
-                </LinearGradient>
-            </View>
+            {/* Threshold progress bar (glow + indicator + gradient fill).
+                Same self-custody rationale as the reminder above: hidden
+                for Ark, kept for Strike/CoinOS. */}
+            {wallet !== 'ARK' && (
+                <View style={thresholdMet ? {
+                    shadowColor: '#e84393',
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 1,
+                    shadowRadius: 16,
+                    elevation: 10,
+                } : undefined}>
+                    <View style={styles.showLine} />
+                    <View style={[styles.box, { left: getLineLeft() } as any]} />
+                    <LinearGradient
+                        start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
+                        colors={[colors.white, colors.pink.dark]}
+                        style={[styles.linearGradient2, { width: getWidth() } as any]}>
+                    </LinearGradient>
+                </View>
+            )}
         </>
     );
 

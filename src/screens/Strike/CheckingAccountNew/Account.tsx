@@ -7,7 +7,6 @@ import { Text } from "@Cypher/component-library";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
 import useAuthStore from "@Cypher/stores/authStore";
-import ArkThreshold from "./ArkThreshold";
 
 import { btc } from "@Cypher/helpers/coinosHelper";
 
@@ -66,11 +65,14 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
   // CheckingAccountNew screen for layout/parity with Strike+CoinOS, so users
   // get a familiar tabs-and-card shape regardless of provider.)
   if (isArk) {
-    // Ark Card mirrors the Strike one for layout parity, but its threshold
-    // and reserve come from dedicated Ark slots in the auth store rather
-    // than the shared withdrawThreshold/reserveAmount props passed in
-    // (those are CoinOS-rail specific). The ArkThreshold component below
-    // owns the dual-picker UI for editing both values.
+    // Ark Card: no threshold/reserve UI. Ark is self-custodial — the
+    // custodial-balance "withdraw above X" nudge that Strike/CoinOS use
+    // to manage counterparty-risk exposure has no analogue here. The
+    // ArkThreshold dual-picker also lived on this tab but is gone for
+    // the same reason. We still pass the threshold/reserve props to
+    // Card so the threshold-met glow logic doesn't trip on undefined,
+    // but Card itself short-circuits the threshold bar render for
+    // wallet === 'ARK' (see Card/index.tsx).
     const arkThresholdSats = Number(withdrawArkThreshold) || 500_000;
     const arkReserveSats = Number(reserveArkAmount) || 100_000;
     return (
@@ -91,12 +93,6 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
               : null}
           />
         </View>
-
-        {/* Threshold + reserve picker UI. Strike-style chevron-down
-            dropdowns for both, with a "Customize" link to the keypad
-            screen for free entry. Wired to withdrawArkThreshold and
-            reserveArkAmount in the store. */}
-        <ArkThreshold matchedRate={matchedRate} currency={currency} />
       </ScrollView>
     );
   }
