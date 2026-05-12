@@ -84,7 +84,15 @@ export async function refreshArkVtxos(
         });
         return { roundId: roundId ?? null };
     } catch (err: any) {
-        console.warn('[Ark refresh] refreshVtxos() threw after', Math.round((Date.now() - t0) / 1000), 's:', err?.message ?? err);
+        // BarkError variants carry detail in `err.inner.errorMessage` rather than
+        // `err.message` (which only reports the variant tag, e.g. "BarkError.Internal").
+        // Surface the inner detail so we can see why bark actually rejected the call.
+        const inner = err?.inner?.errorMessage ?? err?.inner?.message ?? null;
+        const tag = err?.tag ?? null;
+        console.warn(
+            '[Ark refresh] refreshVtxos() threw after', Math.round((Date.now() - t0) / 1000),
+            's: tag=', tag, 'inner=', inner, 'message=', err?.message ?? String(err),
+        );
         recordEvent({
             kind: 'ark-refresh-finished',
             correlationId,

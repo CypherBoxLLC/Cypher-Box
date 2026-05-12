@@ -25,6 +25,36 @@ let uniffiReady: Promise<void> | null = null;
 // string can't outlive its wallet.
 let cachedMnemonic: string | null = null;
 
+// Lazy-require avoids the import cycle with `./movementWatcher`, which itself
+// imports `getArkWalletHandle` from this file (and transitively
+// `runBackgroundRefresh` whose dependency tree also walks back through here).
+// Static ES imports across that cycle work in Hermes but become brittle as
+// the orchestrator graph grows; established codebase pattern is to use
+// `require()` at the call site for these intra-package back-references.
+function startWatcher(): void {
+    console.log('[Ark] startWatcher() invoked from walletHandle');
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const mod = require('./movementWatcher');
+        if (typeof mod?.startArkMovementWatcher !== 'function') {
+            console.warn('[Ark] movement watcher module loaded but startArkMovementWatcher is', typeof mod?.startArkMovementWatcher);
+            return;
+        }
+        mod.startArkMovementWatcher();
+    } catch (err) {
+        console.warn('[Ark] movement watcher start failed:', err);
+    }
+}
+
+function stopWatcher(): void {
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        require('./movementWatcher').stopArkMovementWatcher();
+    } catch (err) {
+        console.warn('[Ark] movement watcher stop failed:', err);
+    }
+}
+
 /**
  * Return the mnemonic that was used to open the current Ark wallet handle.
  * Returns null if no wallet is open (handle was cleared or never created).
@@ -86,6 +116,7 @@ export async function createArkWallet(
         handle = await Wallet.open(mnemonic, config, datadir);
         cachedMnemonic = mnemonic;
         if (__DEV__) console.log('[Ark] Opened existing wallet from datadir');
+        startWatcher();
         return handle;
     } catch (openErr) {
         if (__DEV__) {
@@ -96,6 +127,7 @@ export async function createArkWallet(
     handle = await Wallet.create(mnemonic, config, datadir, forceRescan);
     cachedMnemonic = mnemonic;
     if (__DEV__) console.log('[Ark] Created new wallet in datadir (forceRescan=' + forceRescan + ')');
+    startWatcher();
     return handle;
 }
 
@@ -105,6 +137,7 @@ export async function openArkWallet(mnemonic: string): Promise<WalletInterface> 
     const config = createArkConfig();
     handle = await Wallet.open(mnemonic, config, datadir);
     cachedMnemonic = mnemonic;
+    startWatcher();
     return handle;
 }
 
@@ -149,6 +182,12 @@ export async function hydrateArkWalletFromBackgroundSeed(
  * to reach.
  */
 export function clearArkWalletHandle(): void {
+    // Stop the notification watcher BEFORE destroying the handle so its
+    // pending `nextNotification()` await unblocks via the holder cancel
+    // and the holder's own uniffiDestroy runs while the wallet is still
+    // alive. Tearing the wallet down first would leave the holder dangling
+    // on a freed Rust pointer.
+    stopWatcher();
     if (onchainHandle && typeof (onchainHandle as any).uniffiDestroy === 'function') {
         try {
             (onchainHandle as any).uniffiDestroy();

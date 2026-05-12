@@ -13,13 +13,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const STORAGE_KEY = 'ark-bg-refresh-telemetry';
 const MAX_ENTRIES = 50;
 
-export type ArkBgRefreshTrigger = 'scheduled' | 'push' | 'manual-test';
+export type ArkBgRefreshTrigger = 'scheduled' | 'push' | 'manual-test' | 'arrival';
 
 export type ArkBgRefreshOutcome =
     | 'success'
     | 'no_eligible_vtxos'
     | 'rate_limited'
     | 'fee_gated'
+    | 'dust_uneconomic'
+    | 'dust_stranded'
     | 'no_seed'
     | 'disabled'
     | 'error';

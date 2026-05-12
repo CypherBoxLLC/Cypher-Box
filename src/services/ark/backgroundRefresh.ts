@@ -3,6 +3,7 @@ import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 import { writeArkAutoBackup } from './backup';
 import { fetchChainTipHeight, blocksToDays } from './chainTip';
+import { ARK_REFRESH_MIN_SATS, ARK_VTXO_DUST_SATS } from './config';
 import { estimateArkRefreshFee, refreshArkVtxosAndSync } from './refresh';
 import { fetchArkVtxos } from './vtxos';
 import {
@@ -18,6 +19,8 @@ import {
 import {
     ensureBgNotificationPermission,
     notifyConsecutiveFailures,
+    notifyDustStranded,
+    notifyDustUneconomic,
     notifyExpiryWarning24h,
     notifyExpiryWarning2h,
     notifyFeeGated,
@@ -52,6 +55,14 @@ export const BG_REFRESH_TUNABLES = {
     batchDays: 14,
     /** Minimum gap between successful background rounds, ms. */
     minGapBetweenSuccessMs: 12 * 60 * 60 * 1000,
+    /**
+     * Min gap for `arrival` triggers. LN receives land in an arkoor trust
+     * window that closes only after refresh, so we want fire-on-arrival
+     * latency — but a 60s coalescing floor batches rapid-fire receives
+     * into one round and prevents fee-drain attacks via micro-payment
+     * spam. See `project_arkoor_lightning_trust_model` memory entry.
+     */
+    minGapBetweenSuccessMsArrival: 60 * 1000,
     /** Suppress duplicate "<24h to expiry" notifications within this window, ms. */
     warn24hDedupeWindowMs: 12 * 60 * 60 * 1000,
     /** Suppress duplicate "<2h to expiry" notifications within this window, ms. */
@@ -209,7 +220,12 @@ export async function runBackgroundRefresh(
 
     const finalize = async (
         outcome: ArkBgRefreshOutcome,
-        opts: { vtxoCount?: number; feeSats?: number | null; errorMsg?: string } = {},
+        opts: {
+            vtxoCount?: number;
+            feeSats?: number | null;
+            totalSats?: number;
+            errorMsg?: string;
+        } = {},
     ): Promise<ArkBgRefreshResult> => {
         const elapsedMs = Date.now() - startedAt;
         const result: ArkBgRefreshResult = {
@@ -263,6 +279,26 @@ export async function runBackgroundRefresh(
             } catch (notifErr) {
                 console.warn('[Ark bg refresh] fee-gate notification threw:', notifErr);
             }
+        } else if (outcome === 'dust_uneconomic' && opts.feeSats != null) {
+            try {
+                notifyDustUneconomic(
+                    opts.feeSats,
+                    opts.totalSats ?? 0,
+                    opts.vtxoCount ?? 0,
+                );
+            } catch (notifErr) {
+                console.warn('[Ark bg refresh] dust-uneconomic notification threw:', notifErr);
+            }
+        } else if (outcome === 'dust_stranded') {
+            try {
+                notifyDustStranded(
+                    opts.totalSats ?? 0,
+                    ARK_REFRESH_MIN_SATS,
+                    opts.vtxoCount ?? 0,
+                );
+            } catch (notifErr) {
+                console.warn('[Ark bg refresh] dust-stranded notification threw:', notifErr);
+            }
         }
         // Other outcomes (no_eligible_vtxos, rate_limited, no_seed,
         // disabled) represent the system correctly declining to run — they
@@ -279,14 +315,19 @@ export async function runBackgroundRefresh(
             return finalize('disabled');
         }
 
-        // Rate limit: at most one successful round per minGapBetweenSuccessMs.
+        // Rate limit: at most one successful round per min-gap window.
         // Counting from last SUCCESS (not last attempt) so a string of failed
-        // attempts doesn't lock us out.
+        // attempts doesn't lock us out. Arrival triggers (LN-receive
+        // fire-on-landing) use a much shorter gap so the arkoor trust window
+        // closes quickly, while burst arrivals still coalesce into one round
+        // and a micro-payment spam attacker can't drain fees faster than once
+        // per gap.
         const lastSuccess = useAuthStore.getState().arkBgRefreshLastSuccessAt;
-        if (
-            lastSuccess !== null &&
-            Date.now() - lastSuccess < BG_REFRESH_TUNABLES.minGapBetweenSuccessMs
-        ) {
+        const minGapMs =
+            trigger === 'arrival'
+                ? BG_REFRESH_TUNABLES.minGapBetweenSuccessMsArrival
+                : BG_REFRESH_TUNABLES.minGapBetweenSuccessMs;
+        if (lastSuccess !== null && Date.now() - lastSuccess < minGapMs) {
             return finalize('rate_limited');
         }
 
@@ -369,29 +410,82 @@ export async function runBackgroundRefresh(
         store.setArkChainTipHeight(tip);
         store.setArkLastSyncedAt(Date.now());
 
+        // Categorise spendable VTXOs by expiry window and dust status.
+        // The round-input constraint is on the AGGREGATE input total
+        // (≥ ARK_REFRESH_MIN_SATS, currently 500 sats), not per-input —
+        // so dust capsules CAN be refreshed if we top up the batch with
+        // non-dust fillers. Mirrors the manual `dustConsolidate` logic
+        // in `src/screens/Strike/CheckingAccountNew/ArkCapsules.tsx`.
+        type Candidate = { id: string; sats: number; daysLeft: number };
+        const shortExpiry: Candidate[] = []; // < batchDays, will be batched
+        const longExpiryNonDust: Candidate[] = []; // ≥ batchDays AND > dust — usable as filler
         let triggerCount = 0;
-        const batchIds: string[] = [];
-        let batchTotalSats = 0;
         let imminent24h = false;
         let imminent2h = false;
         for (const v of vtxos.spendable) {
-            // arkoor VTXOs inherit parent expiry — we can't compute their
-            // own expiry timeline from chain data alone. Skip; they refresh
-            // when their parent does.
+            // Skip VTXOs with no resolved expiry (SDK sentinel: expiryHeight=0).
+            // Arkoor VTXOs inherit their source's expiry and the SDK normally
+            // resolves it; a 0 here means the source isn't in the local
+            // datadir yet, so we can't compute a timeline — next sync should
+            // populate it. Arkoor VTXOs refresh independently via
+            // refreshVtxos(), they don't piggyback on the source.
             if (v.expiryHeight === 0) continue;
             const blocksLeft = v.expiryHeight - tip;
             const daysLeft = blocksToDays(Math.max(0, blocksLeft));
-            if (daysLeft < BG_REFRESH_TUNABLES.batchDays) {
-                batchIds.push(v.id);
-                batchTotalSats += v.sats;
-                if (daysLeft < BG_REFRESH_TUNABLES.triggerDays) triggerCount++;
-            }
-            // Imminent-expiry observation runs across ALL spendable VTXOs,
-            // not just the batch-eligible set — the warning fires regardless
-            // of whether the round can run. daysLeft × 24 = hours.
+            // Imminent-expiry warning observation runs across ALL spendable VTXOs,
+            // not just the batch-eligible set.
             const hoursLeft = daysLeft * 24;
             if (hoursLeft < 24) imminent24h = true;
             if (hoursLeft < 2) imminent2h = true;
+            const cand: Candidate = { id: v.id, sats: v.sats, daysLeft };
+            if (daysLeft < BG_REFRESH_TUNABLES.batchDays) {
+                shortExpiry.push(cand);
+                if (daysLeft < BG_REFRESH_TUNABLES.triggerDays) triggerCount++;
+            } else if (v.sats > ARK_VTXO_DUST_SATS) {
+                longExpiryNonDust.push(cand);
+            }
+        }
+
+        // Build the round batch. Start with everything short-expiry; if
+        // the aggregate is below the round minimum, top up with the
+        // smallest non-dust long-expiry fillers (refreshing them too is
+        // a small cost — they get a fresh ~30d lifetime — and unlocks
+        // the dust). If even with all available fillers we can't reach
+        // the minimum, the dust is protocol-stranded for this cycle and
+        // we surface that to the user instead of submitting a round
+        // that bark will reject with BarkError.Internal.
+        const batchCandidates: Candidate[] = [...shortExpiry];
+        let batchTotalSats = batchCandidates.reduce((a, c) => a + c.sats, 0);
+        let fillerCount = 0;
+        if (batchTotalSats > 0 && batchTotalSats < ARK_REFRESH_MIN_SATS) {
+            // Filler selection priority:
+            //   1. soonest-to-expire first (within the long-expiry set) —
+            //      a filler at 16d gains ~14 days from this refresh,
+            //      a filler at 30d gains only ~0 days, so we get more
+            //      "expiry value" per fee sat spent;
+            //   2. smallest sats within the same expiry tier — minimises
+            //      the amount of healthy capsule value we drag into a
+            //      dust-driven round;
+            // Skipping fresh long-life big capsules unless nothing else
+            // is available — matches Bam's intent for auto-consolidation.
+            const fillers = [...longExpiryNonDust].sort((a, b) => {
+                if (a.daysLeft !== b.daysLeft) return a.daysLeft - b.daysLeft;
+                return a.sats - b.sats;
+            });
+            for (const f of fillers) {
+                batchCandidates.push(f);
+                batchTotalSats += f.sats;
+                fillerCount++;
+                if (batchTotalSats >= ARK_REFRESH_MIN_SATS) break;
+            }
+        }
+        const batchIds: string[] = batchCandidates.map((c) => c.id);
+        if (fillerCount > 0) {
+            console.log(
+                '[Ark bg refresh] topped up batch with', fillerCount,
+                'long-expiry non-dust filler(s) to clear', ARK_REFRESH_MIN_SATS,
+                'sat round minimum (final total=', batchTotalSats, 'sats)',
+            );
         }
 
         // Fire imminent-expiry notifications BEFORE the action decision —
@@ -425,6 +519,21 @@ export async function runBackgroundRefresh(
             return finalize('no_eligible_vtxos', { vtxoCount: batchIds.length });
         }
 
+        // Round-input minimum: bark/ASP rejects rounds whose total input
+        // value is below ARK_REFRESH_MIN_SATS with `BarkError.Internal:
+        // "vtxo amount must be at least 0.00000330 BTC to participate in
+        // a round"`. We already topped up with fillers above; if we
+        // still can't reach the minimum, the user genuinely doesn't
+        // have enough non-dust value in their wallet to consolidate
+        // the dust. Surface it instead of submitting a round that
+        // bark will reject.
+        if (batchTotalSats < ARK_REFRESH_MIN_SATS) {
+            return finalize('dust_stranded', {
+                vtxoCount: batchIds.length,
+                totalSats: batchTotalSats,
+            });
+        }
+
         // Fee preview before committing to the round. If the ASP returns an
         // unexpectedly large fee, surface it instead of silently auto-paying
         // — protects against runaway-fee scenarios drained without user
@@ -445,6 +554,20 @@ export async function runBackgroundRefresh(
             return finalize('fee_gated', {
                 vtxoCount: batchIds.length,
                 feeSats,
+            });
+        }
+
+        // Dust-economic guard. Refreshing a batch whose total value is at or
+        // below the round fee is value-destroying — better to let those
+        // VTXOs expire and notify the user than to lock in a guaranteed loss.
+        // At observed mainnet refresh fees of 0–20 sats per user this only
+        // fires for genuine sub-fee dust (e.g. a stray 1-sat LN tip with no
+        // larger batch-mate to amortise it against).
+        if (feeSats >= batchTotalSats) {
+            return finalize('dust_uneconomic', {
+                vtxoCount: batchIds.length,
+                feeSats,
+                totalSats: batchTotalSats,
             });
         }
 

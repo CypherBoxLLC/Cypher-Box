@@ -104,3 +104,29 @@ export function notifyExpiryWarning2h(): void {
         'high',
     );
 }
+
+export function notifyDustUneconomic(
+    feeSats: number,
+    totalSats: number,
+    vtxoCount: number,
+): void {
+    fire(
+        'Tiny capsules at risk',
+        `${vtxoCount} capsule${vtxoCount === 1 ? '' : 's'} totalling ${totalSats} sats will expire — refresh fee (${feeSats} sats) exceeds their value.`,
+        'low',
+        { feeSats, totalSats, vtxoCount },
+    );
+}
+
+export function notifyDustStranded(
+    totalSats: number,
+    minRequired: number,
+    vtxoCount: number,
+): void {
+    fire(
+        'Tiny capsules need topping up',
+        `${vtxoCount} capsule${vtxoCount === 1 ? '' : 's'} totalling ${totalSats} sats can't auto-refresh — round minimum is ${minRequired} sats. Send funds to yourself to combine them before expiry.`,
+        'high',
+        { totalSats, minRequired, vtxoCount },
+    );
+}
