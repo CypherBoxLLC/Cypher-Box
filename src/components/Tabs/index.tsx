@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { Image, LayoutAnimation, StyleSheet, TouchableOpacity, View } from "react-native";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { Text } from "@Cypher/component-library";
 import { Bank, CoinOs, Electricity, Settings, Threshold, Time } from "@Cypher/assets/images";
 import { colors, widths } from "@Cypher/style-guide";
@@ -21,19 +22,37 @@ interface Props {
 
 export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accountType }: Props) {
     const isArk = accountType === 'ark';
-    // Ark surfaces Capsules as the FIRST tab — it's the day-to-day VTXO
-    // management surface that users land on most often. The custodial-
-    // shaped "Vault" tab (balance + threshold copy) is second. Strike/
-    // CoinOS keep the historical Account/Threshold ordering since they
-    // don't have a Capsules concept.
+    // Ark surfaces V-capsules as the FIRST tab — it's the day-to-day VTXO
+    // management surface users land on most often. The Vault tab (balance
+    // + threshold copy) is second. Strike/CoinOS keep the historical
+    // Account/Threshold ordering since they don't have a V-capsules
+    // concept.
     //
-    // Ark icons: Capsules uses the CoinOs coin/capsule glyph (also used
-    // by Hot Vault's Capsules tab) for visual continuity across UTXO/
-    // VTXO surfaces. "Vault" uses Electricity (white-tinted lightning
-    // bolt) to signal "Lightning-native non-custodial vault" at a glance.
-    const tabs = useMemo(() => [
-        { id: 0, name: isArk ? 'Capsules' : 'Account', icon: isArk ? CoinOs : Bank },
-        { id: 1, name: isArk ? 'Vault' : 'Threshold', icon: isArk ? Electricity : Threshold },
+    // Ark icons:
+    //   - V-capsules: Electricity (white-tinted lightning bolt) — VTXOs
+    //     are Lightning-native capsules, the bolt signals that lineage.
+    //   - Vault: Ionicons "boat-outline" — matches the Ark = boat icon
+    //     already used in the receive flow ([ReceivedListNew:310]) so the
+    //     visual is consistent everywhere Ark is represented.
+    type TabDef = {
+        id: number;
+        name: string;
+        icon?: any;
+        iconElement?: React.ReactNode;
+    };
+    const tabs: TabDef[] = useMemo(() => [
+        {
+            id: 0,
+            name: isArk ? 'V-capsules' : 'Account',
+            icon: isArk ? Electricity : Bank,
+        },
+        isArk
+            ? {
+                id: 1,
+                name: 'Vault',
+                iconElement: <Ionicons name="boat-outline" size={32} color="#FFFFFF" />,
+            }
+            : { id: 1, name: 'Threshold', icon: Threshold },
         { id: 2, name: 'History', icon: Time },
         { id: 3, name: 'Settings', icon: Settings },
     ], [isArk]);
@@ -67,14 +86,22 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accou
                         }
                         onPress={() => tabClickListener(tab.id)}
                     >
-                        <Image
-                            source={tab.icon}
-                            style={[
-                                tab.id === 1 ? styles.coinos : tab.id === 0 ? styles.key : tab.id === 3 ? styles.key : styles.icon,
-                                // { tintColor: getTabStyle(tab.id).tintColor }
-                            ]}
-                            resizeMode="contain"
-                        />
+                        {tab.iconElement ? (
+                            // Vector-icon tab (currently only the Ark
+                            // Vault tab's boat-outline). Ionicons sizes
+                            // itself via its own `size` prop, so we skip
+                            // the per-id image-style switch.
+                            tab.iconElement
+                        ) : (
+                            <Image
+                                source={tab.icon}
+                                style={[
+                                    tab.id === 1 ? styles.coinos : tab.id === 0 ? styles.key : tab.id === 3 ? styles.key : styles.icon,
+                                    // { tintColor: getTabStyle(tab.id).tintColor }
+                                ]}
+                                resizeMode="contain"
+                            />
+                        )}
                     </GradientButton>
                     {selectedTab === tab.id ?
                         <GradientText
