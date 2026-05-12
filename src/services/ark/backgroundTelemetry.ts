@@ -19,6 +19,7 @@ export type ArkBgRefreshOutcome =
     | 'success'
     | 'no_eligible_vtxos'
     | 'rate_limited'
+    | 'pending_round_conflict'
     | 'fee_gated'
     | 'dust_uneconomic'
     | 'dust_stranded'

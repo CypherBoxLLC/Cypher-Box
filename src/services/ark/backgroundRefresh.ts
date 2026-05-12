@@ -4,7 +4,7 @@ import { recordEvent } from '@Cypher/stores/eventLogStore';
 import { writeArkAutoBackup } from './backup';
 import { fetchChainTipHeight, blocksToDays } from './chainTip';
 import { ARK_REFRESH_MIN_SATS, ARK_VTXO_DUST_SATS } from './config';
-import { estimateArkRefreshFee, refreshArkVtxosAndSync } from './refresh';
+import { estimateArkRefreshFee, fetchArkPendingRoundStates, refreshArkVtxosAndSync } from './refresh';
 import { fetchArkVtxos } from './vtxos';
 import {
     getArkWalletHandle,
@@ -347,6 +347,30 @@ export async function runBackgroundRefresh(
                     errorMsg: `hydrate failed: ${err?.message ?? err}`,
                 });
             }
+        }
+
+        // Pending-round-state pre-check. If the ASP / SDK is still working
+        // a round we previously submitted (the SDK exposes this via
+        // `pendingRoundStates()` regardless of whether our local VTXO state
+        // has caught up), bail before doing any more work. Submitting a
+        // refresh with one of those VTXOs included produces a server-side
+        // `vtxo … already registered` rejection that surfaces as
+        // BarkError.ServerConnection, ticks the consecutive-failures
+        // counter, and flashes a failed-round Movement event through the
+        // UI — none of which is a real error: the round just hasn't
+        // committed yet. The next sync cycle's MovementUpdated will fire
+        // when the in-flight round resolves and the retry will work
+        // naturally.
+        try {
+            const pendingRounds = await fetchArkPendingRoundStates();
+            if (pendingRounds.some((r) => r.ongoing)) {
+                return finalize('pending_round_conflict');
+            }
+        } catch (err) {
+            // Probe failed — fall through and let the round attempt
+            // surface any real issue. We don't want a transient SDK
+            // hiccup on a status query to block refresh entirely.
+            console.warn('[Ark bg refresh] pendingRoundStates probe failed, proceeding:', err);
         }
 
         // Local VTXO read (no network) first — feeds both the cached
