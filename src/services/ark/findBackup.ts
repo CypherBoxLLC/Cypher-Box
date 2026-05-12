@@ -2,7 +2,12 @@ import { Platform } from 'react-native';
 
 import RNFS from 'react-native-fs';
 
-import { getAutoBackupPath, peekBackupHeader } from './backup';
+import {
+    getAutoBackupPath,
+    getICloudBackupPath,
+    getICloudBackupPathForFingerprint,
+    peekBackupHeader,
+} from './backup';
 import {
     downloadArkBackupFromDrive,
     downloadDriveBackupByFingerprint,
@@ -79,6 +84,18 @@ export type ChannelLookupResult =
 export async function lookupArkBackupInLocalDocuments(
     fingerprint: string,
 ): Promise<ChannelLookupResult> {
+    // Step 0 (iOS only): check the iCloud Documents container first.
+    // When iCloud Drive is on for Cypher Box, writes go directly into the
+    // ubiquity container via getActiveAutoBackupPath. Recovery needs to
+    // find them there before falling through to local sandbox — otherwise
+    // a user who created a wallet with iCloud on and is now restoring on
+    // a fresh install (where the sandbox is empty) would see "no backup
+    // matches" even though their backup is sitting in iCloud Drive.
+    if (Platform.OS === 'ios') {
+        const iCloudResult = await scanICloudContainerForBackup(fingerprint);
+        if (iCloudResult.kind !== 'not-found') return iCloudResult;
+    }
+
     // Step 1: fast path — exact per-wallet filename.
     const perWalletPath = getAutoBackupPath(fingerprint);
     try {
@@ -143,6 +160,98 @@ export async function lookupArkBackupInLocalDocuments(
             }
         } catch (err) {
             if (__DEV__) console.log(`[Ark/find-local] legacy read "${legacyName}" failed:`, err);
+        }
+    }
+
+    return { kind: 'not-found' };
+}
+
+/**
+ * iOS iCloud Documents container scan. Same shape as the local-sandbox
+ * scan in `lookupArkBackupInLocalDocuments` — fast-path per-wallet
+ * filename, directory enumeration with header match, legacy v1 / v0
+ * fallback — but rooted at the ubiquity container instead of
+ * RNFS.DocumentDirectoryPath. Returns `not-found` if iCloud Drive is
+ * not reachable for Cypher Box, so callers cleanly fall through to the
+ * local sandbox scan.
+ */
+async function scanICloudContainerForBackup(
+    fingerprint: string,
+): Promise<ChannelLookupResult> {
+    // Fast path — exact per-wallet filename inside the iCloud container.
+    try {
+        const perWalletICloudPath = await getICloudBackupPathForFingerprint(fingerprint);
+        if (perWalletICloudPath && (await RNFS.exists(perWalletICloudPath))) {
+            const blob = await RNFS.readFile(perWalletICloudPath, 'utf8');
+            const header = peekBackupHeader(blob);
+            if (header?.fingerprint === fingerprint) {
+                return { kind: 'matched', blob };
+            }
+            // Header present but mismatched — fall through to scan in case
+            // the user renamed files in iCloud Drive.
+        }
+    } catch (err) {
+        if (__DEV__) console.log('[Ark/find-icloud] fast-path read failed:', err);
+    }
+
+    // Derive the iCloud Documents container directory by stripping the
+    // filename from the legacy-name iCloud path. If that probe returns
+    // null, iCloud Drive isn't reachable — bail out cleanly.
+    let containerDir: string | null = null;
+    try {
+        const sampleICloudPath = await getICloudBackupPath();
+        if (sampleICloudPath) {
+            const lastSlash = sampleICloudPath.lastIndexOf('/');
+            if (lastSlash > 0) containerDir = sampleICloudPath.substring(0, lastSlash);
+        }
+    } catch (err) {
+        if (__DEV__) console.log('[Ark/find-icloud] container path resolve failed:', err);
+    }
+    if (!containerDir) return { kind: 'not-found' };
+
+    // Scan path: every `.cbark` in the iCloud container, peek headers,
+    // match by fingerprint. Catches files the user might have renamed
+    // or copied in from another device via iCloud Drive.
+    try {
+        const entries = await RNFS.readDir(containerDir);
+        for (const e of entries) {
+            if (!e.isFile() || !e.name.toLowerCase().endsWith('.cbark')) continue;
+            if (e.name === 'ark-backup.cbark' || e.name === 'cypher-box-ark-backup.cbark') {
+                continue;
+            }
+            let blob: string;
+            try {
+                blob = await RNFS.readFile(e.path, 'utf8');
+            } catch (err) {
+                if (__DEV__) console.log(`[Ark/find-icloud] read "${e.name}" failed; skipping:`, err);
+                continue;
+            }
+            const header = peekBackupHeader(blob);
+            if (!header) continue;
+            if (header.fingerprint === fingerprint) {
+                return { kind: 'matched', blob };
+            }
+        }
+    } catch (err) {
+        if (__DEV__) console.log('[Ark/find-icloud] readDir failed:', err);
+    }
+
+    // Legacy v1 / v0 fallback inside the iCloud container.
+    for (const legacyName of ['ark-backup.cbark', 'cypher-box-ark-backup.cbark']) {
+        const legacyPath = `${containerDir}/${legacyName}`;
+        try {
+            if (await RNFS.exists(legacyPath)) {
+                const blob = await RNFS.readFile(legacyPath, 'utf8');
+                const header = peekBackupHeader(blob);
+                if (header?.fingerprint === fingerprint) {
+                    return { kind: 'matched', blob };
+                }
+                if (header) {
+                    return { kind: 'legacy-v1-candidate', blob };
+                }
+            }
+        } catch (err) {
+            if (__DEV__) console.log(`[Ark/find-icloud] legacy read "${legacyName}" failed:`, err);
         }
     }
 

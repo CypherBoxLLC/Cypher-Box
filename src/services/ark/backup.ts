@@ -177,6 +177,40 @@ export async function getICloudBackupPath(): Promise<string | null> {
 }
 
 /**
+ * Fingerprint-aware iCloud path resolver — mirrors `getAutoBackupPath(fp)`
+ * but composes against the iCloud Documents container instead of the local
+ * sandbox Documents.
+ *
+ * Used by the Settings panel's iCloud row to stat the iCloud copy of THIS
+ * wallet's backup directly (rather than relying on the local mtime, which
+ * would mask an out-of-sync iCloud upload).
+ *
+ *   `null` fingerprint → legacy single-file path inside the iCloud container,
+ *                        for back-compat with v1 backups that haven't been
+ *                        rewritten to per-wallet names yet.
+ *   `<fp>`             → `ark-backup-<fp>.cbark` inside the iCloud container.
+ *
+ * Returns null if iCloud Drive isn't available for Cypher Box, mirroring
+ * `getICloudBackupPath()`'s contract.
+ */
+export async function getICloudBackupPathForFingerprint(
+    fingerprint: string | null,
+): Promise<string | null> {
+    if (Platform.OS !== 'ios') return null;
+    try {
+        const docsPath = await CypherCloudStorage?.getICloudDocumentsPath?.();
+        if (!docsPath) return null;
+        const filename = fingerprint
+            ? `ark-backup-${fingerprint}.cbark`
+            : AUTO_BACKUP_FILENAME_LEGACY_V1;
+        return `${docsPath}/${filename}`;
+    } catch (err: any) {
+        if (__DEV__) console.log('[Ark backup] iCloud fp-aware probe failed:', err?.message ?? err);
+        return null;
+    }
+}
+
+/**
  * Probe-only variant — does not create directories. Used by the
  * Settings → Ark Backup dismiss flow to verify the user's "iCloud Drive
  * is on" claim before flipping the persistent reminder flag off, so the
@@ -205,17 +239,33 @@ export async function isICloudBackupAvailable(): Promise<boolean> {
  * go directly through `getAutoBackupPath(fp)`; this function is retained
  * for the legacy auto-backup pipeline and the iCloud migration nudge.
  */
-async function getActiveAutoBackupPath(): Promise<string> {
-    if (Platform.OS !== 'ios') return AUTO_BACKUP_PATH;
-    const iCloudPath = await getICloudBackupPath();
-    if (!iCloudPath) return AUTO_BACKUP_PATH;
+async function getActiveAutoBackupPath(
+    fingerprint: string | null = null,
+): Promise<string> {
+    if (Platform.OS !== 'ios') return getAutoBackupPath(fingerprint);
+    const iCloudPath = fingerprint
+        ? await getICloudBackupPathForFingerprint(fingerprint)
+        : await getICloudBackupPath();
+    if (!iCloudPath) return getAutoBackupPath(fingerprint);
+    // One-time per-wallet migration: if the local sandbox has a backup for
+    // this fingerprint but iCloud doesn't yet, copy it across so the
+    // upgrade-in-place user doesn't lose their existing backup. After the
+    // copy, writes go to iCloud and the local file ages out as stale
+    // (acceptable — the canonical store is iCloud once it's reachable,
+    // and the local sandbox copy is just the bootstrap seed for migration).
     try {
         const iCloudExists = await RNFS.exists(iCloudPath);
         if (!iCloudExists) {
-            const localExists = await RNFS.exists(AUTO_BACKUP_PATH);
+            const localPath = getAutoBackupPath(fingerprint);
+            const localExists = await RNFS.exists(localPath);
             if (localExists) {
-                await RNFS.copyFile(AUTO_BACKUP_PATH, iCloudPath);
-                if (__DEV__) console.log('[Ark backup] migrated local → iCloud Drive');
+                await RNFS.copyFile(localPath, iCloudPath);
+                if (__DEV__) {
+                    console.log(
+                        '[Ark backup] migrated local → iCloud Drive for fingerprint:',
+                        fingerprint ?? 'legacy',
+                    );
+                }
             }
         }
     } catch (err: any) {
@@ -878,15 +928,14 @@ export async function writeArkAutoBackup(
     // filenames (`ark-backup-{fp}.cbark`), so creating a second wallet no
     // longer overwrites the first wallet's local backup.
     //
-    // TODO(iOS iCloud regression): the previous single-file flow wrote to
-    // `getActiveAutoBackupPath()` which returned the iCloud Documents
-    // container path on iOS when iCloud Drive was on, giving free
-    // off-device sync. Multi-wallet writes go to local Documents only;
-    // iCloud-aware per-wallet writes are a follow-up (the bridge today
-    // hands back a single legacy filename; needs a fingerprint-aware
-    // variant).
-    const localPath = getAutoBackupPath(fingerprint);
-    await RNFS.writeFile(localPath, blob, 'utf8');
+    // Destination: when iCloud Drive is on for Cypher Box, the write goes
+    // directly into the iCloud Documents container per-fingerprint path —
+    // Apple uploads it to iCloud and surfaces it under Files → iCloud Drive
+    // → Cypher Box, surviving device loss + uninstall. When iCloud is off,
+    // falls back to local sandbox `Documents/`. Identical filename either
+    // way so the lookup logic on recovery doesn't need to differentiate.
+    const activePath = await getActiveAutoBackupPath(fingerprint);
+    await RNFS.writeFile(activePath, blob, 'utf8');
 
     // Android-only off-device sibling upload. iOS gets free off-device
     // backup via Apple's transparent iCloud Drive sync of Documents
@@ -952,7 +1001,7 @@ export async function writeArkAutoBackup(
         }
     }
 
-    return { path: localPath, sizeBytes: blob.length, createdAt };
+    return { path: activePath, sizeBytes: blob.length, createdAt };
 }
 
 /**
@@ -1017,19 +1066,19 @@ export async function writeAndVerifyArkBackup(
     const { blob, createdAt, fingerprint } = await _packDatadirIntoBlob(mnemonic);
     const sizeBytes = blob.length;
 
-    // Local write — try first because it's the only path we can rely on
-    // when the device is offline. Per-wallet path so a second wallet's
-    // verified-create doesn't clobber the first wallet's local backup.
-    //
-    // TODO(iOS iCloud regression): same as in writeArkAutoBackup — the
-    // single-file flow used to write into the iCloud Documents container
-    // when iCloud Drive was on, giving free off-device sync. Per-wallet
-    // iCloud writes are a follow-up.
-    const localPath = getAutoBackupPath(fingerprint);
+    // Primary write — local sandbox if iCloud Drive is off, iCloud
+    // Documents container if it's on. Per-fingerprint filename either way,
+    // so multi-wallet stays intact and recovery can match by header
+    // regardless of where the file physically landed. We write FIRST
+    // because it's the only path we can rely on when the device is offline
+    // (and on iOS with iCloud on, Apple still writes to the local cache of
+    // the iCloud container immediately, then uploads asynchronously — so
+    // even an offline iOS device gets a usable local copy from this write).
+    const activePath = await getActiveAutoBackupPath(fingerprint);
     let local: VerifiedBackupResult['local'];
     try {
-        await RNFS.writeFile(localPath, blob, 'utf8');
-        local = { ok: true, path: localPath };
+        await RNFS.writeFile(activePath, blob, 'utf8');
+        local = { ok: true, path: activePath };
     } catch (err: any) {
         local = { ok: false, error: err?.message ?? String(err) };
     }
