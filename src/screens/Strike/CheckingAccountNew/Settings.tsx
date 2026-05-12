@@ -35,6 +35,7 @@ import {
   getCachedArkBackupFingerprint,
   getDriveBackupInfo,
   getICloudBackupPath,
+  getICloudBackupPathForFingerprint,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
   readArkSeedPhrase,
@@ -310,6 +311,11 @@ function ArkSettingsBody() {
   const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
   const [driveBackup, setDriveBackup] = useState<BackupInfo | null | undefined>(null);
   const [driveError, setDriveError] = useState<string | null>(null);
+  // Controls the expandable "When to use Emergency Exit" note below the
+  // Emergency Exit button on the Ark Settings tab. Default collapsed —
+  // the short caption is always visible, the longer explanation opens
+  // inline on ? tap.
+  const [exitInfoExpanded, setExitInfoExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,12 +323,13 @@ function ArkSettingsBody() {
     // One status read. Returns whether the fingerprint cache was warm —
     // caller uses that to decide whether to keep polling.
     //
-    // TODO(iOS iCloud display): The legacy panel had a separate iCloud
-    // Drive probe (getICloudBackupPath + isICloudBackupAvailable) that
-    // surfaced "iCloud Off" / "no copy yet" copy. The multi-wallet
-    // refactor reads from local Documents only; per-wallet iCloud
-    // surfacing depends on the bridge gaining a fingerprint-aware
-    // variant and is a follow-up.
+    // iOS iCloud row: probes the ubiquity container DIRECTLY rather than
+    // reusing the local file's stat. Documents IS the iCloud-mirrored
+    // location when iCloud Drive is on, but Apple's sync isn't instant —
+    // showing the iCloud copy's own mtime lets users SEE if upload is
+    // lagging (mtime older than local row = sync stalled). This catches
+    // the class of bug where the local file is fresh but iCloud's copy
+    // is corrupted or truncated mid-upload.
     const refresh = async (): Promise<{ cacheWarm: boolean }> => {
       // Resolve the active wallet's per-wallet backup filename via the
       // cached BIP32 fingerprint — populated by every auto-backup tick.
@@ -350,6 +357,63 @@ function ArkSettingsBody() {
         }
       } catch (e: any) {
         if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
+      }
+
+      // iCloud Drive (iOS only) — independent probe of the ubiquity
+      // container. `isICloudBackupAvailable()` answers the gate question
+      // (Drive on for Cypher Box?); the path stat answers the freshness
+      // question against the active wallet's per-fingerprint file. We
+      // fall back to the legacy single-file path when the fingerprint
+      // cache is cold so an upgrade-in-place user with a v1 backup still
+      // sees their iCloud copy reflected — the polling loop above will
+      // re-probe after the first auto-backup tick warms the cache and
+      // the per-wallet file shows up.
+      if (Platform.OS === 'ios') {
+        try {
+          const available = await isICloudBackupAvailable();
+          if (cancelled) return { cacheWarm: !!fp };
+          setICloudAvailable(available);
+          if (!available) {
+            setICloudBackup(undefined);
+          } else {
+            const iCloudPath = fp
+              ? await getICloudBackupPathForFingerprint(fp)
+              : await getICloudBackupPath();
+            if (cancelled) return { cacheWarm: !!fp };
+            if (!iCloudPath) {
+              // Bridge returned no path despite isICloudAvailable=true —
+              // treat as "no copy yet" so the UI surfaces it instead of
+              // spinning. Auto-backup tick will re-create on next run.
+              setICloudBackup(undefined);
+            } else {
+              const exists = await RNFS.exists(iCloudPath);
+              if (cancelled) return { cacheWarm: !!fp };
+              if (!exists) {
+                setICloudBackup(undefined);
+              } else {
+                const stat = await RNFS.stat(iCloudPath);
+                if (cancelled) return { cacheWarm: !!fp };
+                setICloudBackup({
+                  modifiedAt:
+                    typeof stat.mtime === 'number'
+                      ? stat.mtime
+                      : new Date(stat.mtime as any).getTime(),
+                  sizeBytes: Number(stat.size) || 0,
+                });
+              }
+            }
+          }
+        } catch (e: any) {
+          if (__DEV__) console.log('[Ark settings] iCloud probe failed:', e?.message ?? e);
+          // Resolve the spinner to a definite state even on probe error —
+          // showing "Off for Cypher Box" is correct enough when the
+          // bridge call throws, and avoids the user staring at the
+          // spinner thinking the app's hung.
+          if (!cancelled) {
+            setICloudAvailable(false);
+            setICloudBackup(undefined);
+          }
+        }
       }
 
       // Drive — connection check is cheap; metadata fetch is gated on it.
@@ -1324,9 +1388,68 @@ function ArkSettingsBody() {
               </Text>
             </GradientView>
 
-            <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', marginTop: 8, paddingHorizontal: 24 }}>
-              Eject from Ark: sweep your Ark balance back on-chain without ASP cooperation. Use only if you no longer trust the Ark server.
-            </Text>
+            {/* Caption row: short summary + circular "?" toggle that
+                expands an inline note explaining all the cases where
+                Emergency Exit is the right tool (server down, censored,
+                shutdown, compromise). Matches the ?-button pattern used
+                on the vault Capsules screen (HotStorageVault/Capsules.tsx). */}
+            <View style={{ marginTop: 8, paddingHorizontal: 24 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', flexShrink: 1 }}>
+                  Eject from Ark: sweep your Ark balance back on-chain without ASP cooperation.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setExitInfoExpanded(v => !v)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={{
+                    marginLeft: 8,
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: colors.ark?.light ?? colors.pink.default,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 12, lineHeight: 16 }}>
+                    ?
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {exitInfoExpanded && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    padding: 12,
+                    borderRadius: 10,
+                    backgroundColor: 'rgba(255, 200, 80, 0.06)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 200, 80, 0.30)',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: '#BBB', lineHeight: 17 }}>
+                    <Text bold style={{ color: colors.ark?.light ?? colors.pink.default }}>
+                      When to use Emergency Exit
+                    </Text>
+                    {'\n\n'}
+                    Normal sends, swaps and refreshes all go through the Ark server (Second.tech). Emergency Exit is the trustless fallback that doesn't need the server — it broadcasts pre-signed exit transactions directly to the Bitcoin chain.
+                    {'\n\n'}
+                    Use it when:
+                    {'\n'}
+                    • The Ark server is down or unreachable for an extended period
+                    {'\n'}
+                    • The server refuses your transactions (regulatory pressure, censorship, or a server-side bug blocking specific capsules)
+                    {'\n'}
+                    • The server is going out of business or has shut down
+                    {'\n'}
+                    • News breaks of a server-side compromise and you want out fast without waiting for cooperative paths
+                    {'\n\n'}
+                    Emergency Exit moves funds on-chain (slower, higher fee) so it's the break-glass option, not the everyday one. In normal use prefer swap or refresh — same destinations, faster, cheaper.
+                  </Text>
+                </View>
+              )}
+            </View>
 
             {/* Delete Ark vault — last-ditch destructive action. Below
                 Emergency Exit so users naturally try the safer option first. */}

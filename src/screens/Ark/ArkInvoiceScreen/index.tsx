@@ -116,6 +116,10 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
                 matchedRate={matchedRate}
                 currency={currency}
                 colors_={ARK_GRADIENT}
+                // Invoices have no "max" semantics — the receiver picks
+                // any amount they want to be paid. MAX is a send-side
+                // affordance (drain the wallet); suppress it on receive.
+                hideMax
             />
         </ScreenLayout>
     );

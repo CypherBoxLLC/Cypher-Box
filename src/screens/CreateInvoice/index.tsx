@@ -83,6 +83,10 @@ export default function CreateInvoice({navigation, route}: any) {
                 setIsSATS={setIsSats}
                 matchedRate={matchedRate}
                 currency={currency}
+                // Invoices have no "max" semantics — the receiver picks
+                // any amount they want to be paid. MAX is a send-side
+                // affordance (drain the wallet); suppress it on receive.
+                hideMax
             />
         </ScreenLayout>
     )
