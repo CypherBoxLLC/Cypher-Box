@@ -153,14 +153,15 @@ export default function ArkWallet({
      * the entire "what does the user need to know?" priority chain so
      * everything funnels through one renderer.
      *
-     * Priority (top wins, green for active/healthy states, red for warnings):
-     *   1. Refresh round in flight — surface "Refreshing N capsules · X sats"
-     *      so the user understands why their headline balance is temporarily
-     *      lower. Wins over the failure record below because the live state
-     *      is more informative than a stale "failed at HH:MM" — finalize()
-     *      only records 'success' after the round commits (up to 1h on
-     *      mainnet), so without this priority a successful in-flight round
-     *      would show the previous failure for an hour.
+     * Priority (top wins, green for healthy states, red for warnings):
+     *   1. Refresh in flight — short-circuit to all-clear. The Card
+     *      surfaces "Refreshing N capsules · X sats" inside its balance
+     *      area via the `refreshingInfo` prop, so a duplicate message
+     *      in this pill would be redundant. Falling through to all-clear
+     *      also suppresses the stale failure-record branch (finalize
+     *      only writes 'success' after the round commits — up to 1h on
+     *      mainnet — so the prior failure would otherwise linger under
+     *      the in-card live status).
      *   2. Auto-refresh attempt errored — capsules at risk, user back on hook
      *   3. Dust capsules present — sub-fee VTXOs need batch consolidation
      *   4. A VTXO is within a week of expiry — funds at risk imminently
@@ -176,23 +177,20 @@ export default function ArkWallet({
      * subsumes it.
      */
     const bgRefreshStatus = useMemo(() => {
-        // 1. Refresh / send / board in flight. Wins over the stored
-        //    last-attempt error record because the LIVE state is more
-        //    informative than a stale "failed at HH:MM" timestamp from
-        //    a prior attempt — especially since `finalize('success')`
-        //    only runs after the round commits server-side (up to 1h
-        //    on mainnet), so a successful round in flight would
-        //    otherwise still show the prior failure for an hour.
-        //    Headline `arkBalance` EXCLUDES locked VTXOs, so without
-        //    this line a user watching their balance during a refresh
-        //    would see it drop with no explanation. Green because this
-        //    is a healthy active state, not a warning.
+        // 1. Refresh / send / board in flight. Short-circuits the rest of
+        //    the chain because the Card itself now renders a prominent
+        //    pulsing "Refreshing N capsules · X sats" line inside the
+        //    balance area (see Card's `refreshingInfo` prop), so duplicating
+        //    it in the pill below would be redundant. We ALSO want to
+        //    suppress the failure-record branch in this state: `finalize`
+        //    only writes `outcome: 'success'` after the round commits
+        //    server-side (up to 1h on mainnet), so a stale "failed at
+        //    HH:MM" from a prior attempt would otherwise linger underneath
+        //    the in-card live status for an hour. Returning all-clear here
+        //    means the pill confirms the system is healthy while the card
+        //    shows the active operation.
         if (pendingRoundCount > 0) {
-            const noun = pendingRoundCount === 1 ? 'capsule' : 'capsules';
-            return {
-                text: `Refreshing ${pendingRoundCount} ${noun} · ${pendingRoundSats.toLocaleString()} sats`,
-                error: false,
-            };
+            return { text: 'Auto-refresh: on', error: false };
         }
 
         // 2. Auto-refresh errored — only when nothing is currently in

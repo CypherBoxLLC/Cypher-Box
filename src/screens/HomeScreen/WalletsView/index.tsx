@@ -188,21 +188,17 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
      *     warning passes 1 (Capsules) to land on the batch-refresh UI.
      */
     const bgRefreshStatus = useMemo(() => {
-        // Refresh / send / board in flight — wins over the stored
-        // last-attempt error record because the LIVE state is more
-        // informative than a stale "failed at HH:MM" timestamp.
-        // `finalize('success')` only runs after the round commits server-
-        // side (up to 1h on mainnet), so a successful round in flight
-        // would otherwise show the prior failure for an hour. Headline
-        // balance excludes these locked VTXOs, so surface count + total
-        // so the user knows why their visible balance is lower than
-        // expected. Green because it's a healthy active state.
+        // Refresh in flight: short-circuit to all-clear. The Ark Card
+        // itself surfaces the live "Refreshing N capsules · X sats" line
+        // inside its balance area (see Card's `refreshingInfo` prop) so
+        // a duplicate message in the shared-row status pill would be
+        // redundant. Also suppresses the failure-record branch below
+        // because `finalize` only writes 'success' after the round
+        // commits server-side (up to 1h on mainnet) — a stale failure
+        // record would otherwise linger underneath the in-card live
+        // status for an hour.
         if (pendingRound.count > 0) {
-            const noun = pendingRound.count === 1 ? 'capsule' : 'capsules';
-            return {
-                text: `Refreshing ${pendingRound.count} ${noun} · ${pendingRound.sats.toLocaleString()} sats`,
-                error: false,
-            };
+            return { text: 'Auto-refresh: on', error: false };
         }
 
         if (arkBgRefreshEnabled && arkBgRefreshLastAttempt?.outcome === 'error') {
