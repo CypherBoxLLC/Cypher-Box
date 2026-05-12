@@ -286,7 +286,23 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
  *      a "Hide" button that wipes them from React state when the user
  *      walks away. We never persist them in zustand or AsyncStorage.
  */
-function ArkSettingsBody() {
+/**
+ * Ark vault management panel.
+ *
+ * `view` controls which sections render so the same body can drive two
+ * different tabs:
+ *   - 'backup' (default) — Seed Phrase + Ark backup file. Lives on the
+ *     Settings tab where one-time wallet-secret management belongs.
+ *   - 'actions' — Auto-refresh capsules toggle, Emergency Exit flow,
+ *     Delete Ark vault. Lives on the Vault tab so day-to-day wallet
+ *     operations sit next to the balance card.
+ *
+ * All state and handlers live in this function regardless of view, so
+ * mounting either tab pays a known cost; the unused branch just doesn't
+ * render its JSX. The state still re-allocates per mount but only one
+ * tab is mounted at a time per CheckingAccountNew session.
+ */
+export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'actions' }) {
   const {
     clearArkAuth,
     walletID,
@@ -1096,6 +1112,7 @@ function ArkSettingsBody() {
   return (
     <ScrollView style={styles.flex} contentContainerStyle={{ paddingBottom: 40 }}>
       <RNAnimated.View style={[styles.main, { paddingHorizontal: 24 }]}>
+      {view === 'backup' && (<>
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
             Seed Phrase (1/2)
@@ -1453,14 +1470,12 @@ function ArkSettingsBody() {
           </View>
         </View>
 
-        {/* Background VTXO refresh toggle. Moved here from the Capsules
-            tab where it used to live at the top of the screen — it's
-            one-time wallet configuration, not something users need to
-            see every time they look at their capsules. The Capsules
-            tab now shows a read-only "Auto-vtxo refresh: on/off" status
-            indicator instead. ON by default for new wallets (zustand
-            initial state); the actual scheduler is armed at wallet-
-            create time. */}
+      </>)}
+      {view === 'actions' && (<>
+        {/* Background VTXO refresh toggle + Emergency Exit + Delete Vault.
+            Moved here from the Settings tab so day-to-day wallet operations
+            sit next to the balance card. The Settings tab now only holds
+            Seed Phrase + Ark backup file — true one-time setup. */}
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
             Auto-refresh capsules
@@ -2058,6 +2073,7 @@ function ArkSettingsBody() {
             </View>
           </View>
         </Modal>
+      </>)}
       </RNAnimated.View>
     </ScrollView>
   );

@@ -7,6 +7,7 @@ import { Text } from "@Cypher/component-library";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
 import useAuthStore from "@Cypher/stores/authStore";
+import { ArkSettingsBody } from "./Settings";
 
 import { btc } from "@Cypher/helpers/coinosHelper";
 
@@ -76,7 +77,7 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
     const arkThresholdSats = Number(withdrawArkThreshold) || 500_000;
     const arkReserveSats = Number(reserveArkAmount) || 100_000;
     return (
-      <ScrollView contentContainerStyle={styles.container2}>
+      <View style={{ flex: 1 }}>
         <View style={{ marginTop: 20 }}>
           <Card
             wallet="ARK"
@@ -93,7 +94,11 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
               : null}
           />
         </View>
-      </ScrollView>
+        {/* Day-to-day vault management — auto-refresh toggle, Emergency
+            Exit flow, Delete Ark vault. ArkSettingsBody owns its own
+            ScrollView, so it scrolls below the (fixed) balance card. */}
+        <ArkSettingsBody view="actions" />
+      </View>
     );
   }
 
