@@ -2,12 +2,12 @@ import { Text } from "@Cypher/component-library";
 import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
-import { blocksToDays } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, blocksToDays } from "@Cypher/services/ark";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import React, { useMemo } from "react";
-import { Image, TouchableOpacity, View } from "react-native";
+import { Image, Platform, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 
 interface Props {
@@ -56,6 +56,7 @@ export default function ArkWallet({
         arkBgRefreshEnabled,
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
+        arkIosBackupReminderActive,
     } = useAuthStore();
 
     // Strike + CoinOS + Ark: this combination pulls the Ark card up out
@@ -85,6 +86,16 @@ export default function ArkWallet({
         );
     }, [arkVtxos]);
 
+    // Count of locked VTXOs (mid-round). Paired with pendingRoundSats
+    // so the status banner can render "Refreshing N capsules · X sats"
+    // and tell the user why their headline balance dropped.
+    const pendingRoundCount = useMemo(() => {
+        return arkVtxos.reduce(
+            (n, v) => (v.state.toLowerCase() === 'locked' ? n + 1 : n),
+            0,
+        );
+    }, [arkVtxos]);
+
     // Surface a nudge when the soonest-expiring VTXO is under a week out, so
     // users don't need to dig into the capsules tab to notice. VTXOs with
     // expiryHeight === 0 (arkoor) inherit parent expiry — we can't compute a
@@ -109,21 +120,56 @@ export default function ArkWallet({
         : null;
 
     /**
-     * Status line shown when the user has opted into background refresh.
+     * Count of dust capsules that haven't expired yet. A "dust capsule" is
+     * a spendable VTXO whose sats value is at or below ARK_VTXO_DUST_SATS
+     * (330). Bark's refresh fee is greater than the capsule's value, so
+     * dust capsules CAN'T be refreshed individually — they need batch
+     * refresh (consolidate several dust VTXOs into one above-dust output).
      *
-     * Replaces — does not append to — the expiryWarning text, since the
-     * whole point of opting in is to take that worry off the user. We
-     * still surface a clear failure state if the last attempt errored,
-     * because at that point the user IS back on the hook and needs to
-     * know.
+     * Drives a dedicated home-card warning so the user knows they can't
+     * just hit "refresh" — they have to go to the Capsules tab and batch
+     * them. Independent from `expiryWarning` because dust capsules need
+     * the batch action regardless of how soon they expire.
+     */
+    const dustCapsuleCount = useMemo(() => {
+        if (!arkVtxos || arkChainTipHeight == null) return 0;
+        let count = 0;
+        for (const v of arkVtxos) {
+            if (v.sats > ARK_VTXO_DUST_SATS) continue;
+            if (v.state.toLowerCase() !== 'spendable') continue;
+            if (v.expiryHeight === 0) continue;
+            const blocks = v.expiryHeight - arkChainTipHeight;
+            if (blocks <= 0) continue; // already expired — different kind of problem
+            count++;
+        }
+        return count;
+    }, [arkVtxos, arkChainTipHeight]);
+
+    /**
+     * Single status line surfaced under the Ark balance.
      *
-     * Returns null when the toggle is off so the regular expiryWarning
-     * path runs unchanged.
+     * Always returns a value (was previously null when bg-refresh was off,
+     * forcing a separate expiryWarning render below). Now this slot owns
+     * the entire "what does the user need to know?" priority chain so
+     * everything funnels through one renderer.
+     *
+     * Priority (top wins, all red except the all-clear which is green):
+     *   1. Auto-refresh attempt errored — capsules at risk, user back on hook
+     *   2. A VTXO is within a week of expiry — funds at risk imminently
+     *   3. Auto-refresh toggle is off — capsules WILL eventually expire
+     *      without manual refresh; soft warning so the user notices
+     *   4. iOS backup reminder active — iCloud Drive not synced, off-device
+     *      backup missing (only a flag on iOS; Android handles backup via
+     *      Drive / SAF which never flips this state)
+     *   5. All clear — short "Auto-refresh: on" status in green
+     *
+     * The standalone expiryWarning render below this hook used to handle
+     * priority 2 separately; that block is now removed since this hook
+     * subsumes it.
      */
     const bgRefreshStatus = useMemo(() => {
-        if (!arkBgRefreshEnabled) return null;
-
-        if (arkBgRefreshLastAttempt?.outcome === 'error') {
+        // 1. Auto-refresh errored
+        if (arkBgRefreshEnabled && arkBgRefreshLastAttempt?.outcome === 'error') {
             const d = new Date(arkBgRefreshLastAttempt.at);
             const hh = String(d.getHours()).padStart(2, '0');
             const mm = String(d.getMinutes()).padStart(2, '0');
@@ -133,17 +179,65 @@ export default function ArkWallet({
             };
         }
 
-        if (arkBgRefreshLastSuccessAt === null) {
-            return { text: 'Auto-refresh on — waiting for first run', error: false };
+        // 2. Dust capsules present — can't be refreshed individually
+        //    (refresh fee > value). Needs batch refresh on the Capsules
+        //    tab. Render "here" as an underlined link to invite the tap.
+        if (dustCapsuleCount > 0) {
+            return {
+                text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
+                linkText: 'here',
+                tapTab: 1, // Capsules tab
+                error: true,
+            };
         }
 
-        const ageMs = Date.now() - arkBgRefreshLastSuccessAt;
-        const ageHrs = ageMs / (60 * 60 * 1000);
-        const ageStr = ageHrs < 1
-            ? `${Math.max(1, Math.round(ageMs / 60_000))}m ago`
-            : `${Math.round(ageHrs)}h ago`;
-        return { text: `Auto-refresh on, last refresh ${ageStr}`, error: false };
-    }, [arkBgRefreshEnabled, arkBgRefreshLastSuccessAt, arkBgRefreshLastAttempt]);
+        // 3. Non-dust capsule near expiry (oldest spendable VTXO < 7d)
+        if (expiryWarning) {
+            return { text: expiryWarning, error: true };
+        }
+
+        // 4. Auto-refresh toggle off
+        if (!arkBgRefreshEnabled) {
+            return {
+                text: 'Auto-refresh: off — capsules will expire without manual refresh',
+                error: true,
+            };
+        }
+
+        // 5. iOS backup not synced (iCloud Drive off for Cypher Box, or
+        //    user created via the manual share+confirm path without yet
+        //    enabling iCloud Drive). Android never sets this flag.
+        if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
+            return {
+                text: 'Backup not synced — enable iCloud Drive in iOS Settings',
+                error: true,
+            };
+        }
+
+        // 6. Refresh / send / board in progress. Headline `arkBalance`
+        //    EXCLUDES locked VTXOs, so without this line a user watching
+        //    their balance during a refresh would see it drop with no
+        //    explanation. Green because this is a healthy active state,
+        //    not a warning.
+        if (pendingRoundCount > 0) {
+            const noun = pendingRoundCount === 1 ? 'capsule' : 'capsules';
+            return {
+                text: `Refreshing ${pendingRoundCount} ${noun} · ${pendingRoundSats.toLocaleString()} sats`,
+                error: false,
+            };
+        }
+
+        // 7. All clear — short, friendly status
+        return { text: 'Auto-refresh: on', error: false };
+    }, [
+        arkBgRefreshEnabled,
+        arkBgRefreshLastAttempt,
+        expiryWarning,
+        dustCapsuleCount,
+        arkIosBackupReminderActive,
+        pendingRoundCount,
+        pendingRoundSats,
+    ]);
 
     // IMPORTANT: the parent's `convertedRate` prop is globally computed from
     // the CoinOS balance (HomeScreen/index.tsx:683 — `setConvertedRate(
@@ -186,7 +280,7 @@ export default function ArkWallet({
         refSendRBSheet.current.open();
     };
 
-    const arkMenuClickHandler = () => {
+    const arkMenuClickHandler = (initialTab?: number) => {
         dispatchNavigate("CheckingAccountNew", {
             wallet: arkWallet,
             matchedRate,
@@ -199,6 +293,11 @@ export default function ArkWallet({
             currency,
             reserveAmount: reserveArkAmount,
             withdrawThreshold: withdrawArkThreshold,
+            // Tab index when the caller wants to deep-link past the
+            // default Account view. The dust-capsule warning passes 1 to
+            // jump straight to the Capsules tab where the batch-refresh
+            // action lives.
+            initialTab,
         });
     };
 
@@ -221,7 +320,7 @@ export default function ArkWallet({
                         convertedRate={arkConvertedRate}
                         reserveAmount={reserveArkAmount}
                         withdrawThreshold={withdrawArkThreshold}
-                        onPress={arkMenuClickHandler}
+                        onPress={() => arkMenuClickHandler()}
                         isShowButtons
                         hideActionButtons={hideActionButtons}
                         matchedRate={matchedRate}
@@ -242,46 +341,63 @@ export default function ArkWallet({
                                     {homeMessage}
                                 </Text>
                             )}
-                            {!isLoading && bgRefreshStatus && (
-                                <TouchableOpacity onPress={arkMenuClickHandler} activeOpacity={0.7}>
-                                    <Text
-                                        h4
-                                        style={[
-                                            styles.alert,
-                                            {
-                                                color: bgRefreshStatus.error
-                                                    ? colors.redLight
-                                                    : colors.ark.light,
-                                            },
-                                        ]}
-                                    >
-                                        {bgRefreshStatus.text}
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-                            {/* Plain expiry warning suppressed when the bg-
-                                refresh banner is up — the banner above
-                                already covers expiry context (next-run ETA /
-                                last-run failure). */}
-                            {!isLoading && !bgRefreshStatus && expiryWarning && (
-                                <Text h4 style={[styles.alert, { color: colors.redLight }]}>
-                                    {expiryWarning}
-                                </Text>
-                            )}
-                            {!isLoading && pendingRoundSats > 0 && (
-                                // The headline `arkBalance` already excludes
-                                // these sats (Locked VTXO state, summed in
-                                // `pendingRoundSats`), so this subtitle is
-                                // purely informational — the user's spendable
-                                // figure stays accurate while a round is mid-
-                                // flight. Wording requested by Bam: "refreshing
-                                // - in flight" reads cleaner than the longer
-                                // "pending in a round (refresh/send in flight)"
-                                // we used before. Same data either way.
-                                <Text h4 style={[styles.alert, { color: colors.green }]}>
-                                    {`(refreshing - in flight): ${pendingRoundSats.toLocaleString()} sats`}
-                                </Text>
-                            )}
+                            {!isLoading && bgRefreshStatus && (() => {
+                                const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
+                                // Build the rendered text. When the status
+                                // declares a `linkText` substring (e.g. "here"
+                                // for the dust-batch nudge), split the message
+                                // and render that substring with underline so
+                                // the user reads it as a tap target. The whole
+                                // pill is tappable either way.
+                                const linkText = (bgRefreshStatus as any).linkText as string | undefined;
+                                const tapTab = (bgRefreshStatus as any).tapTab as number | undefined;
+                                let body: React.ReactNode = bgRefreshStatus.text;
+                                if (linkText) {
+                                    const idx = bgRefreshStatus.text.indexOf(linkText);
+                                    if (idx >= 0) {
+                                        const before = bgRefreshStatus.text.slice(0, idx);
+                                        const after = bgRefreshStatus.text.slice(idx + linkText.length);
+                                        body = (
+                                            <>
+                                                {before}
+                                                <Text
+                                                    bold
+                                                    style={{ color: statusColor, textDecorationLine: 'underline' }}
+                                                >
+                                                    {linkText}
+                                                </Text>
+                                                {after}
+                                            </>
+                                        );
+                                    }
+                                }
+                                return (
+                                    <TouchableOpacity onPress={() => arkMenuClickHandler(tapTab)} activeOpacity={0.7}>
+                                        <Text
+                                            h4
+                                            style={[
+                                                styles.alert,
+                                                { color: statusColor },
+                                            ]}
+                                        >
+                                            {body}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })()}
+                            {/* Standalone expiryWarning render removed —
+                                bgRefreshStatus above now folds capsule-
+                                expiry into the same priority chain that
+                                handles auto-refresh / backup status, so
+                                only one status line ever renders here. */}
+                            {/* Standalone "refreshing - in flight" line
+                                removed — bgRefreshStatus above now folds
+                                pending-round count + sats into the same
+                                priority chain so the user sees a single
+                                clear status. The headline balance still
+                                excludes locked VTXOs; the status line now
+                                explains why ("Refreshing N capsules · X
+                                sats" in green). */}
                         </View>
                     )}
                     {/*

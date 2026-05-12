@@ -1158,7 +1158,14 @@ export default function HomeScreen({ route }: Props) {
           setReceivedListSecondTab={setReceivedListSecondTab}
           refRBSheet={refRBSheet}
           receiveType={receiveType}
-          matchedRate={matchedRateStrike}
+          // Rate fallback chain: prefer Strike's rate (drives the EUR
+          // display for EUR Strike accounts), but fall back to the
+          // BlueWallet-derived `matchedRate` when Strike isn't logged
+          // in. Previous version was hard-wired to `matchedRateStrike`,
+          // which is 0 until the Strike rate fetch runs — so the
+          // CoinOS Lightning invoice keyboard displayed "$0.00" for
+          // any sat amount when Strike was logged out.
+          matchedRate={matchedRateStrike || matchedRate}
           currency={strikeUser?.[1]?.currency || 'USD'}
           wallet={wallet}
           coldStorageWallet={coldStorageWallet}

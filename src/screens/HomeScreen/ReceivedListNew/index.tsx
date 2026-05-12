@@ -63,6 +63,14 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     if (initialVaultType === 'cold') return 4;
     if (allBTCWallets.length == 1 && (!coldStorageWalletID && !walletID) && allBTCWallets[0] == "STRIKE") return 1;
     if (allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "COINOS") return 2;
+    // Ark-only case: jump straight to the Ark sub-menu (onchain / lightning
+    // / Ark address tabs) instead of falling through to the Strike-default
+    // create-invoice path, which tries Strike's API and fails for
+    // unauthenticated users (loss of UX path: ark-only users were taken to
+    // an invoice screen that errored on the create call). selectedItem === 5
+    // is the Ark tile in the wallet picker; setting it here makes the
+    // single-wallet auto-show pick the right submenu.
+    if (allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "ARK") return 5;
     return null;
   };
 

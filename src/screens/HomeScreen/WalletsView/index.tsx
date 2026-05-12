@@ -1,7 +1,7 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
-import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, blocksToDays } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
@@ -63,6 +63,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         isStrikeAuth,
         isArkAuth,
         arkWallet,
+        arkVtxos,
+        arkChainTipHeight,
         arkBgRefreshEnabled,
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
@@ -115,10 +117,78 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
      */
     const iosBackupReminderVisible = Platform.OS === 'ios' && isArkAuth && arkIosBackupReminderActive;
 
-    const bgRefreshStatus = useMemo(() => {
-        if (!arkBgRefreshEnabled) return null;
+    // Days until the soonest-expiring spendable, non-locked VTXO ages out.
+    // Mirrors the computation in ArkWallet/index.tsx so the shared-row
+    // status surface speaks the same UX language as the in-card status
+    // when only Ark is present.
+    const soonestDaysLeft = useMemo(() => {
+        if (!arkVtxos || arkChainTipHeight == null) return null;
+        let minBlocks = Infinity;
+        for (const v of arkVtxos) {
+            if (v.expiryHeight === 0) continue;
+            if (v.state.toLowerCase() === 'locked') continue;
+            const blocks = v.expiryHeight - arkChainTipHeight;
+            if (blocks < minBlocks) minBlocks = blocks;
+        }
+        if (!isFinite(minBlocks)) return null;
+        return Math.max(0, blocksToDays(minBlocks));
+    }, [arkVtxos, arkChainTipHeight]);
 
-        if (arkBgRefreshLastAttempt?.outcome === 'error') {
+    const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
+        ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d — refresh soon`
+        : null;
+
+    // Count of dust capsules (≤ ARK_VTXO_DUST_SATS = 330 sats) that are
+    // still spendable and haven't expired. These can't be refreshed
+    // individually (refresh fee > capsule value) — only batch refresh on
+    // the Capsules tab consolidates them into above-dust outputs.
+    const dustCapsuleCount = useMemo(() => {
+        if (!arkVtxos || arkChainTipHeight == null) return 0;
+        let count = 0;
+        for (const v of arkVtxos) {
+            if (v.sats > ARK_VTXO_DUST_SATS) continue;
+            if (v.state.toLowerCase() !== 'spendable') continue;
+            if (v.expiryHeight === 0) continue;
+            const blocks = v.expiryHeight - arkChainTipHeight;
+            if (blocks <= 0) continue;
+            count++;
+        }
+        return count;
+    }, [arkVtxos, arkChainTipHeight]);
+
+    // VTXOs currently mid-round (state === 'locked' — refresh / send / board
+    // in flight). The headline balance EXCLUDES these (only spendable
+    // capsules count), so without surfacing this the user sees their
+    // balance drop with no explanation while a refresh is in progress.
+    const pendingRound = useMemo(() => {
+        if (!arkVtxos) return { count: 0, sats: 0 };
+        let count = 0;
+        let sats = 0;
+        for (const v of arkVtxos) {
+            if (v.state.toLowerCase() !== 'locked') continue;
+            count++;
+            sats += v.sats;
+        }
+        return { count, sats };
+    }, [arkVtxos]);
+
+    /**
+     * Unified status line for the shared Send/Receive row's status slot.
+     * Priority chain (top wins, all red except the all-clear "Auto-refresh:
+     * on" in green). Mirrors the same shape as ArkWallet's bgRefreshStatus
+     * — same priorities, same wording — so a user switching between the
+     * single-Ark layout (in-card status from ArkWallet) and the multi-
+     * wallet layout (shared-row status from here) sees consistent copy.
+     *
+     * Status can optionally carry:
+     *   - linkText: a substring of `text` to render underlined as a tap-
+     *     target hint (e.g. "here" on the dust-batch nudge).
+     *   - tapTab: optional initial tab index to deep-link to when the
+     *     user taps the pill. Defaults to the Account tab (0); the dust
+     *     warning passes 1 (Capsules) to land on the batch-refresh UI.
+     */
+    const bgRefreshStatus = useMemo(() => {
+        if (arkBgRefreshEnabled && arkBgRefreshLastAttempt?.outcome === 'error') {
             const d = new Date(arkBgRefreshLastAttempt.at);
             const hh = String(d.getHours()).padStart(2, '0');
             const mm = String(d.getMinutes()).padStart(2, '0');
@@ -128,17 +198,54 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             };
         }
 
-        if (arkBgRefreshLastSuccessAt === null) {
-            return { text: 'Auto-refresh on — waiting for first run', error: false };
+        if (dustCapsuleCount > 0) {
+            return {
+                text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
+                linkText: 'here',
+                tapTab: 1,
+                error: true,
+            };
         }
 
-        const ageMs = Date.now() - arkBgRefreshLastSuccessAt;
-        const ageHrs = ageMs / (60 * 60 * 1000);
-        const ageStr = ageHrs < 1
-            ? `${Math.max(1, Math.round(ageMs / 60_000))}m ago`
-            : `${Math.round(ageHrs)}h ago`;
-        return { text: `Auto-refresh on, last refresh ${ageStr}`, error: false };
-    }, [arkBgRefreshEnabled, arkBgRefreshLastSuccessAt, arkBgRefreshLastAttempt]);
+        if (expiryWarning) {
+            return { text: expiryWarning, error: true };
+        }
+
+        if (!arkBgRefreshEnabled) {
+            return {
+                text: 'Auto-refresh: off — capsules will expire without manual refresh',
+                error: true,
+            };
+        }
+
+        if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
+            return {
+                text: 'Backup not synced — enable iCloud Drive in iOS Settings',
+                error: true,
+            };
+        }
+
+        // Refresh / send / board in progress. Headline balance excludes
+        // these locked VTXOs, so surface count + total so the user knows
+        // why their visible balance is lower than expected. Green because
+        // it's a healthy active state, not a warning.
+        if (pendingRound.count > 0) {
+            const noun = pendingRound.count === 1 ? 'capsule' : 'capsules';
+            return {
+                text: `Refreshing ${pendingRound.count} ${noun} · ${pendingRound.sats.toLocaleString()} sats`,
+                error: false,
+            };
+        }
+
+        return { text: 'Auto-refresh: on', error: false };
+    }, [
+        arkBgRefreshEnabled,
+        arkBgRefreshLastAttempt,
+        expiryWarning,
+        dustCapsuleCount,
+        arkIosBackupReminderActive,
+        pendingRound,
+    ]);
 
     const [indexStrike, setIndexStrike] = useState(0);
     const [wTabs, setWTabs] = useState([]);
@@ -428,6 +535,29 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         extrapolate: 'clamp',
     });
 
+    // Ark-anchored opacity for the Ark-specific reminders/warnings that
+    // sit below the shared Send/Receive row (iOS backup pill,
+    // bgRefreshStatus banner). Previously these rendered conditionally
+    // on `kindFromTab(wTabs[indexStrike]) === 'ark'`, which only flipped
+    // at the snap end — so they'd ABRUPTLY appear/disappear as the user
+    // slid into/out of the Ark card. Now driven by scrollX so they
+    // smoothly fade in as the Ark card enters view and fade out as it
+    // leaves. Anchored on the previous-slide → Ark transition; clamped
+    // outside so the row sits fully invisible past the leftward edge of
+    // the Ark slide.
+    const arkIdxForFade = wTabs.findIndex((t: any) => kindFromTab(t) === 'ark');
+    const arkOffsetForFade = arkIdxForFade >= 0 ? arkIdxForFade * screenWidth : 0;
+    const prevArkOffsetForFade = arkIdxForFade > 0
+        ? (arkIdxForFade - 1) * screenWidth
+        : arkOffsetForFade;
+    const arkReminderOpacity = scrollX.interpolate({
+        inputRange: arkIdxForFade > 0
+            ? [prevArkOffsetForFade, arkOffsetForFade]
+            : [arkOffsetForFade, arkOffsetForFade + 1],
+        outputRange: arkIdxForFade > 0 ? [0, 1] : [1, 1],
+        extrapolate: 'clamp',
+    });
+
     const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
         if (next !== indexStrike) {
@@ -595,13 +725,18 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 user can lose funds if they uninstall before re-exporting,
                 whereas the bg-refresh status is informational. Tap → Ark
                 settings tab, where the dismiss + re-export actions live. */}
-            {useSharedButtons && iosBackupReminderVisible && kindFromTab(wTabs[indexStrike]) === 'ark' && (
-                <View
+            {useSharedButtons && iosBackupReminderVisible && (
+                <Animated.View
+                    pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
                     style={{
                         position: 'absolute',
                         top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
                         left: 16,
                         right: 16,
+                        // Drive visibility from scrollX so the pill fades in/out
+                        // as the Ark card slides into/out of view (was an
+                        // abrupt mount on indexStrike change before).
+                        opacity: arkReminderOpacity,
                     }}
                 >
                     <TouchableOpacity
@@ -620,7 +755,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                             ⚠ Re-export Ark backup after every receive — tap to manage
                         </Text>
                     </TouchableOpacity>
-                </View>
+                </Animated.View>
             )}
 
             {/* Background-refresh status banner — sits BELOW the absolutely-
@@ -635,30 +770,65 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     slot (priority: funds-safety nudge over info text)
                 Tap → opens the Ark Capsules screen so the user can drill
                 into the bg-refresh settings or manually retry. */}
-            {useSharedButtons && !iosBackupReminderVisible && bgRefreshStatus && kindFromTab(wTabs[indexStrike]) === 'ark' && (
-                <View
-                    style={{
-                        position: 'absolute',
-                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
-                        left: 0,
-                        right: 40,
-                        alignItems: 'center',
-                    }}
-                >
-                    <TouchableOpacity onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: 1 })} activeOpacity={0.7}>
-                        <Text
-                            h4
-                            style={{
-                                color: bgRefreshStatus.error ? colors.redLight : colors.ark.light,
-                                textAlign: 'center',
-                                paddingHorizontal: 12,
-                            }}
+            {useSharedButtons && !iosBackupReminderVisible && bgRefreshStatus && (() => {
+                const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
+                const linkText = (bgRefreshStatus as any).linkText as string | undefined;
+                const tapTab = (bgRefreshStatus as any).tapTab as number | undefined;
+                let body: React.ReactNode = bgRefreshStatus.text;
+                if (linkText) {
+                    const idx = bgRefreshStatus.text.indexOf(linkText);
+                    if (idx >= 0) {
+                        const before = bgRefreshStatus.text.slice(0, idx);
+                        const after = bgRefreshStatus.text.slice(idx + linkText.length);
+                        body = (
+                            <>
+                                {before}
+                                <Text
+                                    bold
+                                    style={{ color: statusColor, textDecorationLine: 'underline' }}
+                                >
+                                    {linkText}
+                                </Text>
+                                {after}
+                            </>
+                        );
+                    }
+                }
+                return (
+                    <Animated.View
+                        // Stays mounted regardless of which slide is active;
+                        // opacity is driven by scrollX so the banner fades in
+                        // as the Ark slide enters view and fades out as it
+                        // leaves. pointerEvents disabled when off-Ark so taps
+                        // pass through to whatever's underneath.
+                        pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
+                        style={{
+                            position: 'absolute',
+                            top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
+                            left: 0,
+                            right: 40,
+                            alignItems: 'center',
+                            opacity: arkReminderOpacity,
+                        }}
+                    >
+                        <TouchableOpacity
+                            onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tapTab ?? 1 })}
+                            activeOpacity={0.7}
                         >
-                            {bgRefreshStatus.text}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            )}
+                            <Text
+                                h4
+                                style={{
+                                    color: statusColor,
+                                    textAlign: 'center',
+                                    paddingHorizontal: 12,
+                                }}
+                            >
+                                {body}
+                            </Text>
+                        </TouchableOpacity>
+                    </Animated.View>
+                );
+            })()}
         </View>
     );
 });

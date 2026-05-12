@@ -68,24 +68,54 @@ export default function Card({ onPress,
     const getWidth = () => {
         return `${calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount))}%`
     }
+    // Single-wallet shortcuts. When the user has exactly one BTC wallet
+    // and no vaults, skip the wallet-picker sheet (it would show a single
+    // tile anyway) and dispatch straight to the wallet-specific entry
+    // screen.
+    //
+    //   - Lightning wallet (STRIKE / COINOS): receive → CreateInvoice,
+    //     send → SendScreen. Those screens hit Strike/CoinOS APIs.
+    //   - Ark wallet: send → ArkSendScreen directly (unified paste-and-
+    //     classify handles all four rails: LN invoice / LN address / Ark
+    //     address / on-chain — no rail picker needed before it). Receive
+    //     still routes through the sheet because the receive UX
+    //     intentionally exposes three discrete rails as tabs (Onchain /
+    //     Lightning / Ark address), different from the unified-send design.
+    //
+    // The OLD single-wallet shortcut treated Lightning and Ark the same,
+    // so Ark-only users landed on the Strike create-invoice screen and
+    // hit "not authenticated."
+    const isSingleWallet =
+        allBTCWallets.length == 1 && !coldStorageWalletID && !walletID;
+    const isSingleLightningWallet = isSingleWallet && wallet !== "ARK";
+    const isSingleArkWallet = isSingleWallet && wallet === "ARK";
+
     const onReceiveClickHandler = () => {
-        if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
+        if (isSingleLightningWallet) {
             dispatchNavigate('CreateInvoice', {
                 matchedRate,
                 currency,
                 receiveType: true
             });
         } else {
+            // Ark-only and multi-wallet both go through the sheet. The sheet
+            // auto-shows the Ark sub-menu (Onchain / Lightning / Ark address)
+            // when only Ark is present (see ReceivedListNew.getInitialSelectedItem).
             receiveClickHandler?.(true);
         }
     }
 
     const onSendClickHandler = () => {
-        if(allBTCWallets.length == 1 && !coldStorageWalletID && !walletID) {
+        if (isSingleLightningWallet) {
             dispatchNavigate('SendScreen', {
                 matchedRate,
                 currency,
                 receiveType: true
+            });
+        } else if (isSingleArkWallet) {
+            dispatchNavigate('ArkSendScreen', {
+                matchedRate,
+                currency,
             });
         } else {
             sendClickHandler?.(true);
@@ -222,21 +252,30 @@ export default function Card({ onPress,
                         {cardChildren}
                     </View>
                 ) : (
-                    // Strike / CoinOS Lightning cards: a pink-gradient ring
-                    // wraps the card surface to brand the custodial Lightning
-                    // tier. Outer LinearGradient with 1.5px padding paints
-                    // the visible outline; `shadowTopInner` (colors.primary)
-                    // covers the center, leaving the 1.5px gradient ring.
-                    <LinearGradient
-                        colors={[colors.pink.gradient1, colors.pink.gradient2]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.shadowTopGradientOutline}
+                    // Strike / CoinOS Lightning cards: a solid pink outline
+                    // matches the Ark pattern (1.5px coloured edge on a
+                    // primary-coloured body), but in pink to brand the
+                    // custodial Lightning tier. The previous version wrapped
+                    // the card in a pink-gradient ring (gradient1 → gradient2
+                    // diagonal stops); that rendered the outline visibly
+                    // pink only along the top-left edge where gradient1 sat,
+                    // fading to near-dark on the bottom-right where
+                    // gradient2 sat — looked like a half-coloured frame and
+                    // an unintended 3D embossed effect closer to the vault
+                    // cards than to the Lightning brand. Lightning is flat;
+                    // the outline should be flat too.
+                    <View
+                        style={[
+                            styles.shadowTop,
+                            // colors.pink.dark (#FB17A0) — fully opaque hot
+                            // pink, more saturated than colors.pink.default
+                            // (rgba 0.9, reads slightly muted). Matches the
+                            // visual weight of the Ark card's yellow outline.
+                            { borderWidth: 1.5, borderColor: colors.pink.dark },
+                        ]}
                     >
-                        <View style={styles.shadowTopInner}>
-                            {cardChildren}
-                        </View>
-                    </LinearGradient>
+                        {cardChildren}
+                    </View>
                 )}
             </TouchableOpacity>
             {isShowButtons && !hideActionButtons &&
