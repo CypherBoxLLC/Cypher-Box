@@ -1,9 +1,7 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
-import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, blocksToDays, cancelArkPendingRound, fetchArkPendingRoundStates } from "@Cypher/services/ark";
-import Ionicons from "react-native-vector-icons/Ionicons";
-import SimpleToast from "react-native-simple-toast";
+import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, blocksToDays } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
@@ -704,63 +702,20 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         isTextShadow
                     />
                     {/* Swap icon between Receive and Send (Lightning↔Ark).
-                        Contextual: when the user is on the Ark slide AND a
-                        refresh round is in flight, the icon flips to a
-                        cancel-X — tapping cancels every ongoing round so
-                        the user's funds become spendable again immediately
-                        (their alternative was waiting ~1h for the round
-                        to commit). Otherwise the icon stays its normal
-                        swap-sheet trigger.
                         Suppressed entirely when all three Lightning rails
                         (Strike + CoinOS + Ark) are connected — Bam asked
                         for it gone on both the CircularView slide AND the
                         Ark slide in that combo. For Strike+Ark-only and
                         CoinOS+Ark-only configs the swap stays here, since
                         those slides have no internal swap of their own. */}
-                    {!allThreeLightningRails && (() => {
-                        const isArkSlide = kindFromTab(wTabs[indexStrike]) === 'ark';
-                        const canCancel = isArkSlide && pendingRound.count > 0;
-                        const handlePress = async () => {
-                            if (!canCancel) {
-                                refSwapRBSheet?.current?.open();
-                                return;
-                            }
-                            try {
-                                const states = await fetchArkPendingRoundStates();
-                                const ongoing = states.filter((s) => s.ongoing);
-                                if (ongoing.length === 0) {
-                                    SimpleToast.show('No active refresh to cancel', SimpleToast.SHORT);
-                                    return;
-                                }
-                                for (const s of ongoing) {
-                                    try {
-                                        await cancelArkPendingRound(s.id);
-                                    } catch (err: any) {
-                                        console.warn('[Ark] cancel round failed:', err?.message ?? err);
-                                    }
-                                }
-                                SimpleToast.show(
-                                    `Cancelled ${ongoing.length} refresh${ongoing.length === 1 ? '' : 'es'} — funds unlocked`,
-                                    SimpleToast.SHORT,
-                                );
-                            } catch (err: any) {
-                                console.warn('[Ark] fetch pending rounds for cancel failed:', err?.message ?? err);
-                                SimpleToast.show('Cancel failed — try again in a moment', SimpleToast.LONG);
-                            }
-                        };
-                        return (
-                            <TouchableOpacity
-                                onPress={handlePress}
-                                style={{ alignItems: 'center', justifyContent: 'center', width: 40, height: 40 }}
-                            >
-                                {canCancel ? (
-                                    <Ionicons name="close" size={28} color={colors.redLight} />
-                                ) : (
-                                    <Image source={Refresh} style={{ width: 18, height: 29 }} />
-                                )}
-                            </TouchableOpacity>
-                        );
-                    })()}
+                    {!allThreeLightningRails && (
+                        <TouchableOpacity
+                            onPress={() => refSwapRBSheet?.current?.open()}
+                            style={{ alignItems: 'center', justifyContent: 'center', width: 40, height: 40 }}
+                        >
+                            <Image source={Refresh} style={{ width: 18, height: 29 }} />
+                        </TouchableOpacity>
+                    )}
                     <GradientButtonWithShadow
                         title="Send"
                         onPress={sharedSend}
