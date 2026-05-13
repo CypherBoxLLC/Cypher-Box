@@ -299,7 +299,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
     const isTransientForLabel = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
     const labelColor = isTransientForLabel ? colors.ark.light : view.color;
     const labelText = isTransientForLabel
-        ? 'Refreshing\n(takes less than an hour)'
+        ? 'Refreshing or In-flight\n(takes less than an hour)'
         : vtxo.unknownExpiry
             ? vtxo.kind
             : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
@@ -321,7 +321,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
             recoverabilityColor = "#4ADE80";
             break;
         case 'needs-backup':
-            recoverabilityText = "Back up to recover";
+            recoverabilityText = "⚠ Back up to recover";
             recoverabilityColor = "#FB923C"; // orange — actionable, not just informative
             break;
         case 'in-flight':
@@ -455,14 +455,14 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
                         left text on the same line. Other recoverability
                         states keep the inline " - <text>" layout. */}
                     {vtxo.recoverability === 'in-flight' ? (
-                        <>
-                            <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
-                                {labelText}
-                            </Text>
-                            <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
-                                {recoverabilityText}
-                            </Text>
-                        </>
+                        // The two-line italic label above already says
+                        // "Refreshing or In-flight\n(takes less than an hour)"
+                        // so we drop the separate recoverabilityText
+                        // suffix on this branch — it'd just say
+                        // "In-flight" again.
+                        <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
+                            {labelText}
+                        </Text>
                     ) : (
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
                             <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
