@@ -243,5 +243,22 @@ export async function fetchArkRoundIntervalSecs(): Promise<number | null> {
  */
 export async function cancelArkPendingRound(roundId: number): Promise<void> {
     const handle = requireHandle();
-    await handle.cancelPendingRound(roundId);
+    try {
+        await handle.cancelPendingRound(roundId);
+    } catch (err: any) {
+        // BarkError variants carry the bark-side reason in
+        // `err.inner.errorMessage` rather than `err.message`. Surface
+        // the inner detail so caller logs / telemetry capture WHY
+        // cancellation was refused (round already past commit, server-
+        // side state mismatch, etc.) instead of the opaque
+        // "BarkError.Internal" string. Same shape as the improved
+        // refreshVtxos() error logging.
+        const inner = err?.inner?.errorMessage ?? err?.inner?.message ?? null;
+        const tag = err?.tag ?? null;
+        console.warn(
+            '[Ark refresh] cancelPendingRound threw: roundId=', roundId,
+            'tag=', tag, 'inner=', inner, 'message=', err?.message ?? String(err),
+        );
+        throw err;
+    }
 }
