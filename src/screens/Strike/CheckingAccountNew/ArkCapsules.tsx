@@ -735,10 +735,15 @@ interface ArkCapsulesProps {
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
-    // True between cancel-tap and post-cancel sync. Drives the per-row
-    // "Cancelling" label + disables further taps on the cancel button so
-    // the user can't fire handleRowCancel multiple times while bark works.
+    // True between cancel-tap and the round actually clearing (NOT just
+    // until our cancel call returns). bark's cancel can return failure
+    // due to a transient internal-lock timeout while the round itself
+    // still settles ~1 min later via natural failure. Keeping the
+    // "Cancelling" UI up until pendingRoundSats hits 0 (handled by the
+    // effect below) prevents the misleading "X icon flickered back"
+    // experience the user reported on the first cancel attempt.
     const [cancelling, setCancelling] = useState(false);
+    const cancellingStartRef = useRef<number | null>(null);
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
@@ -1042,6 +1047,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
      */
     const handleRowCancel = async () => {
         if (cancelling) return;
+        cancellingStartRef.current = Date.now();
         setCancelling(true);
         try {
             const states = await fetchArkPendingRoundStates();
@@ -1050,35 +1056,107 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 SimpleToast.show('No active refresh to cancel', SimpleToast.SHORT);
                 return;
             }
+            // Per-round cancel with retry. Bark's cancel can fail with
+            // BarkError.Internal "Timed out waiting for lock on round
+            // state N" — the round-progression logic is holding an
+            // internal lock and our cancel call couldn't acquire it.
+            // Lock contention is transient (the progression loop hands
+            // it back between iterations), so a small retry budget with
+            // 500ms backoff usually catches a free window. After 3
+            // attempts we give up and lean on the natural-settlement
+            // path (round fails out on its own ~1 min later and sync
+            // reflects it). See refresh.ts cancelArkPendingRound for
+            // the wrapper that surfaces the inner errorMessage.
+            const RETRIES = 3;
+            const BACKOFF_MS = 500;
+            let succeeded = 0;
             for (const s of ongoing) {
-                try {
-                    await cancelArkPendingRound(s.id);
-                } catch (err: any) {
-                    console.warn('[Ark] cancel round failed:', err?.message ?? err);
+                let lastErr: any = null;
+                for (let attempt = 0; attempt < RETRIES; attempt++) {
+                    try {
+                        await cancelArkPendingRound(s.id);
+                        succeeded++;
+                        lastErr = null;
+                        break;
+                    } catch (err: any) {
+                        lastErr = err;
+                        if (attempt < RETRIES - 1) {
+                            await new Promise((r) => setTimeout(r, BACKOFF_MS));
+                        }
+                    }
+                }
+                if (lastErr) {
+                    console.warn(
+                        '[Ark] cancel round gave up after',
+                        RETRIES, 'attempts: roundId=', s.id,
+                        'lastErr=', lastErr?.message ?? lastErr,
+                    );
                 }
             }
-            // Drive a sync immediately so the per-row state flips from
-            // Locked → Spendable in zustand and the row stops pulsing.
-            // Without this the row would keep showing transient visuals
-            // until the next 30s useArkSync tick — making the cancel
-            // feel like it did nothing.
+            // Drive a sync immediately so successful cancels show up
+            // in zustand (Locked → Spendable). For rounds that didn't
+            // cancel, we leave `cancelling=true` and poll for the
+            // pendingRound to drop on its own — the round usually
+            // fails out within a minute or two and sync picks it up.
             try {
                 await syncArkWallet();
                 await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
             } catch (syncErr: any) {
                 console.warn('[Ark] post-cancel sync failed:', syncErr?.message ?? syncErr);
             }
-            SimpleToast.show(
-                `Cancelled ${ongoing.length} refresh${ongoing.length === 1 ? '' : 'es'} — funds unlocked`,
-                SimpleToast.SHORT,
-            );
+            if (succeeded === ongoing.length) {
+                SimpleToast.show(
+                    `Cancelled ${succeeded} refresh${succeeded === 1 ? '' : 'es'} — funds unlocked`,
+                    SimpleToast.SHORT,
+                );
+            } else if (succeeded > 0) {
+                SimpleToast.show(
+                    `Cancelled ${succeeded} of ${ongoing.length} — the rest will settle in ~1 min`,
+                    SimpleToast.LONG,
+                );
+            } else {
+                SimpleToast.show(
+                    'Cancel held up server-side — the round will settle in ~1 min',
+                    SimpleToast.LONG,
+                );
+            }
         } catch (err: any) {
             console.warn('[Ark] fetch pending rounds for cancel failed:', err?.message ?? err);
             SimpleToast.show('Cancel failed — try again in a moment', SimpleToast.LONG);
-        } finally {
+            // Outer-catch (the fetch itself failed, not the per-round
+            // cancels). No round was ever attempted; clear the UI gate
+            // immediately so the X icon comes back and the user can
+            // retry. The pendingRoundSats effect won't fire because no
+            // state changed.
             setCancelling(false);
+            cancellingStartRef.current = null;
         }
+        // NOTE: NOT clearing `cancelling` here on the success path —
+        // the effect below clears it when pendingRoundSats drops to 0
+        // (real round settlement) or when the 2-min safety timeout
+        // fires (bark stuck). That keeps the "Cancelling" label up
+        // until funds actually unlock, not just until our async cancel
+        // call returns (which can be misleadingly fast on internal
+        // lock timeouts).
     };
+
+    // Auto-clear `cancelling` when funds actually unlock or after a
+    // 2-minute safety timeout. Watching pendingRoundSats means the
+    // UI reflects round settlement regardless of whether our explicit
+    // cancel call succeeded or the round had to fail out naturally.
+    useEffect(() => {
+        if (!cancelling) return;
+        if (pendingRoundSats === 0) {
+            setCancelling(false);
+            cancellingStartRef.current = null;
+            return;
+        }
+        const start = cancellingStartRef.current;
+        if (start !== null && Date.now() - start > 2 * 60 * 1000) {
+            setCancelling(false);
+            cancellingStartRef.current = null;
+        }
+    }, [cancelling, pendingRoundSats]);
 
     /**
      * Dust-aware consolidation set.
