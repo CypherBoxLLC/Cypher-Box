@@ -291,18 +291,19 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
     // breathing rather than zooming.
     const iconScale = pulseAnim.interpolate({ inputRange: [0.2, 1], outputRange: [0.92, 1.08] });
 
-    // Pending-round VTXOs: flat yellow label, full ring (so the row doesn't
-    // read as "almost expired" while it's actually sitting in a round).
-    const labelColor = vtxo.pendingRound ? colors.ark.light : view.color;
-    const refreshingLabel = roundIntervalSecs != null
-        ? "Refreshing (takes less than an hour)"
-        : "Refreshing (takes less than an hour)";
-    const labelText = vtxo.pendingRound
-        ? refreshingLabel
+    // Pending-round / in-flight VTXOs: flat yellow label, full ring (so
+    // the row doesn't read as "almost expired" while it's actually
+    // sitting in a round / mid-send / mid-board). Both states share the
+    // same two-line label since the user-visible behaviour is identical
+    // (capsule is locked, unspendable until the operation commits).
+    const isTransientForLabel = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
+    const labelColor = isTransientForLabel ? colors.ark.light : view.color;
+    const labelText = isTransientForLabel
+        ? 'Refreshing or In-flight\n(takes less than an hour)'
         : vtxo.unknownExpiry
             ? vtxo.kind
             : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
-    const ringDaysLeft = vtxo.pendingRound ? VTXO_MAX_DAYS : vtxo.daysLeft;
+    const ringDaysLeft = isTransientForLabel ? VTXO_MAX_DAYS : vtxo.daysLeft;
 
     // Recoverability suffix — appended to the existing expiry/state line as
     // a second colored span separated by " - ". Three states drive both
@@ -455,7 +456,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
                         states keep the inline " - <text>" layout. */}
                     {vtxo.recoverability === 'in-flight' ? (
                         <>
-                            <Text bold numberOfLines={1} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
+                            <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
                                 {labelText}
                             </Text>
                             <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
@@ -464,7 +465,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
                         </>
                     ) : (
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
-                            <Text bold numberOfLines={1} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
+                            <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
                                 {labelText}
                             </Text>
                             <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
