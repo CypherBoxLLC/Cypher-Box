@@ -201,9 +201,12 @@ export async function recoverArkWalletFromKeychain(): Promise<ArkRecoveryResult>
     console.log('[Ark recover] seed loaded, length=', mnemonic.split(/\s+/).filter(Boolean).length, 'words');
 
     // Drop the native handle first so the SQLite file isn't held open when
-    // we try to unlink it. Without this, deleteArkDatadir can fail with
-    // "resource busy" on iOS.
-    clearArkWalletHandle();
+    // we try to unlink it. Awaiting is essential — the movement watcher
+    // tears down asynchronously and its holder pins SQLite FDs until
+    // destroyed. Without await, deleteArkDatadir fails with "resource
+    // busy" on iOS, or the next Wallet.open/create errors with
+    // BarkError.Database.
+    await clearArkWalletHandle();
     console.log('[Ark recover] cleared native handle');
 
     try {

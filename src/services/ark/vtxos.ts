@@ -69,12 +69,14 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
     // if spendable is still empty we can see what state Lightning-received
     // VTXOs are actually landing in. Cheap log, keep on until the capsule
     // flow is solid.
-    console.log(
-        '[Ark vtxos] allVtxos() returned',
-        all.length,
-        'total:',
-        all.map((v) => `${v.kind}/${v.state}/${v.sats}sats/exp=${v.expiryHeight}/id=${v.id.slice(0, 12)}…`),
-    );
+    //
+    // Emit one log line per VTXO — packing the array into a single
+    // console.log makes oslog truncate after the first element, which
+    // hides most of the state we care about.
+    console.log('[Ark vtxos] allVtxos() returned', all.length, 'total');
+    all.forEach((v, i) => {
+        console.log(`[Ark vtxos] #${i} kind=${v.kind} state=${v.state} sats=${v.sats} exp=${v.expiryHeight} id=${v.id}`);
+    });
 
     const spendable = all.filter((v) => !HIDDEN_STATES.has(v.state.toLowerCase()));
     console.log('[Ark vtxos] visible (non-spent/locked):', spendable.length);

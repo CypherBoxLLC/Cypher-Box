@@ -150,7 +150,7 @@ export default function ArkSeedPhraseScreen() {
     }, []);
 
     const [submitting, setSubmitting] = useState(false);
-    const [keychainStatus, setKeychainStatus] = useState<null | "ok" | "err">(null);
+    const [keychainStatus, setKeychainStatus] = useState<null | "ok" | "err" | "cancelled">(null);
 
     // Backup state. Two independent channels satisfy the Continue gate
     // — one cloud, one local — chosen per platform:
@@ -510,7 +510,7 @@ export default function ArkSeedPhraseScreen() {
         }, 800);
     };
 
-    const persistToKeychain = async (): Promise<boolean> => {
+    const persistToKeychain = async (): Promise<'ok' | 'cancelled' | 'error'> => {
         // Conflict guard: the keychain holds at most ONE Ark seed at a
         // time. If a previous wallet's seed is still there (e.g. user
         // chose "keep on device" on delete and is now creating a new
@@ -519,26 +519,29 @@ export default function ArkSeedPhraseScreen() {
         const conflict = await checkArkSeedKeychainConflict(mnemonic || "");
         if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
             const ok = await new Promise<boolean>(resolve => {
+                const keychainLabel = isIOS ? 'Keychain' : 'Keystore';
+                const biometricLabel = isIOS ? 'Face ID' : 'fingerprint';
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? `A saved seed already exists on this device for wallet ${conflict.existingFingerprint}. Saving the new seed will overwrite it.\n\nThe old seed phrase will need to be re-entered to recover that wallet later — make sure you have it written down somewhere safe.`
-                        : `A saved seed already exists on this device but couldn't be read to compare (${conflict.reason}). Saving the new seed may overwrite it.\n\nIf the old seed is only in the keychain (not written down), it may be lost.`;
+                        ? `A saved seed already exists on this device's ${keychainLabel} behind ${biometricLabel} for wallet ${conflict.existingFingerprint}.\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe.`
+                        : `A saved seed already exists on this device's ${keychainLabel} but couldn't be read to compare (${conflict.reason}).\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe — it may otherwise be lost.`;
                 Alert.alert(
-                    "Replace saved seed?",
+                    "Replace keychain-saved seed?",
                     message,
                     [
-                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                        { text: "Replace", style: "destructive", onPress: () => resolve(true) },
+                        { text: `Keep old seed in ${keychainLabel}`, style: "cancel", onPress: () => resolve(false) },
+                        { text: `Save new seed in ${keychainLabel}`, onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
             });
             if (!ok) {
-                // Caller (the "Save & continue" flow) treats false as
-                // "keychain step failed" and surfaces the same toast as
-                // a write failure. The wallet creation itself isn't
-                // gated on keychain — `saveToKeychain` is a UX preference.
-                return false;
+                // User chose to keep the existing keychain seed. NOT an
+                // error — they have an explicit intent. Distinguish from
+                // a real write failure below so the caller can skip the
+                // error toast on this path.
+                setKeychainStatus("cancelled");
+                return 'cancelled';
             }
         }
 
@@ -549,11 +552,11 @@ export default function ArkSeedPhraseScreen() {
                 accessible: Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
             });
             setKeychainStatus("ok");
-            return true;
+            return 'ok';
         } catch (err) {
             console.warn("[Ark] Keychain save failed:", err);
             setKeychainStatus("err");
-            return false;
+            return 'error';
         }
     };
 
@@ -713,10 +716,12 @@ export default function ArkSeedPhraseScreen() {
         setSubmitting(true);
 
         if (saveToKeychain) {
-            const ok = await persistToKeychain();
-            if (!ok) {
+            const result = await persistToKeychain();
+            if (result === 'error') {
                 SimpleToast.show("Keychain save failed — please back up manually", SimpleToast.LONG);
             }
+            // 'cancelled' = user kept the existing keychain seed by
+            // choice. Silent, not a failure.
         }
 
         // Wallet may already exist from a backup-button tap;
@@ -747,7 +752,7 @@ export default function ArkSeedPhraseScreen() {
             id: `ark-${Date.now()}`,
             createdAt: new Date().toISOString(),
             useHotVaultSeed: arkUseHotVaultSeed,
-            keychainSaved: saveToKeychain && keychainStatus !== "err",
+            keychainSaved: saveToKeychain && keychainStatus === "ok",
             backupDestination,
         };
         setArkWallet(wallet);
@@ -782,30 +787,14 @@ export default function ArkSeedPhraseScreen() {
 
         setSubmitting(false);
 
-        // iOS-only post-create reminder. The user satisfied the gate via
-        // manual share + confirm — they have an off-device copy, but it's
-        // a snapshot. Surface the recurring action they need to take if
-        // their saved location isn't iCloud Drive (which we can't probe).
-        // The arkIosBackupReminderActive flag persists in zustand so a
-        // separate banner — added in a follow-up — can keep nagging them
-        // until they tell us iCloud Drive is on.
-        if (isIOS && cloudBackupDone) {
-            await new Promise<void>((resolve) => {
-                Alert.alert(
-                    "One thing to remember",
-                    "The best path is to enable iCloud Drive for Cypher Box (iOS Settings → [your name] → iCloud → iCloud Drive → Cypher Box) — once that's on, your backup syncs automatically and this reminder goes away on its own.\n\nUntil then, the file you saved is a one-time snapshot. Open Ark Settings → Ark Backup and tap 'Re-export now' after every Lightning receive so a future restore picks up your latest funds.",
-                    [{ text: "Got it", onPress: () => resolve() }],
-                    { cancelable: false, onDismiss: () => resolve() },
-                );
-            });
-        }
-
-        if (FirstTimeArk) {
-            setFirstTimeArk(false);
-            dispatchNavigate("CheckingAccountCreated", { accountType: "ark" });
-        } else {
-            dispatchReset("HomeScreen", { isComplete: true });
-        }
+        // Always land on the educational vault-created screen after a
+        // successful create, even on subsequent wallets — the screen
+        // covers Ark's self-custody invariants (capsules must be
+        // refreshed, expired VTXOs can be swept, where the backup file
+        // lives) and a refresher each time someone re-creates a wallet
+        // is cheaper than the funds-loss risk of skipping it.
+        setFirstTimeArk(false);
+        dispatchNavigate("CheckingAccountCreated", { accountType: "ark" });
     };
 
     if (submitting) {

@@ -13,12 +13,14 @@ import {
     connectGoogleDrive,
     createArkWallet,
     deriveBackupFingerprint,
+    getArkWalletHandle,
     hasArkDatadir,
     isGoogleDriveConnected,
     lookupArkBackupInLocalDocuments,
     lookupArkBackupInSafFolder,
     lookupArkBackupOnDrive,
     restoreArkBackupBlob,
+    setArkBackgroundRefreshEnabled,
 } from "@Cypher/services/ark";
 import type { ChannelLookupResult } from "@Cypher/services/ark";
 import { validateMnemonic } from "@secondts/bark-react-native";
@@ -68,6 +70,7 @@ const BIOMETRIC_LABEL = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
 export default function RecoverArkScreen() {
     const {
         allBTCWallets,
+        isArkAuth,
         setAllBTCWallets,
         setArkAuth,
         setArkWallet,
@@ -193,6 +196,17 @@ export default function RecoverArkScreen() {
 
     const confirmReplaceDatadir = async (sourceLabel: string): Promise<boolean> => {
         if (!datadirExists) return true;
+        // Datadir-on-disk alone doesn't mean a live wallet exists.
+        // Orphan datadirs are common after a failed/stuck delete (boot
+        // restore hits `open-failed`, leaves the directory behind) and
+        // there's nothing for the user to "replace" — they're trying
+        // to recover precisely because no live wallet is present.
+        // Mirror CreateArkScreen's mount-time heuristic: only prompt
+        // if a live handle OR `isArkAuth` is set; otherwise let the
+        // restore wipe the orphan silently (the restore is already
+        // gated by seed entry + biometric).
+        const liveWallet = !!getArkWalletHandle() || isArkAuth;
+        if (!liveWallet) return true;
         return new Promise<boolean>((resolve) => {
             Alert.alert(
                 "Replace existing Ark wallet?",
@@ -222,16 +236,17 @@ export default function RecoverArkScreen() {
         const conflict = await checkArkSeedKeychainConflict(mnemonic);
         if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
             const proceed = await new Promise<boolean>(resolve => {
+                const keychainLabel = Platform.OS === 'ios' ? 'Keychain' : 'Keystore';
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? `A saved seed already exists on this device for wallet ${conflict.existingFingerprint}. Saving the recovered seed will overwrite it.\n\nThe old seed phrase will need to be re-entered to recover that wallet later — make sure you have it written down somewhere safe.`
-                        : `A saved seed already exists on this device but couldn't be read to compare (${conflict.reason}). Saving the recovered seed may overwrite it.\n\nIf the old seed is only in the keychain (not written down), it may be lost.`;
+                        ? `A saved seed already exists on this device's ${keychainLabel} behind ${BIOMETRIC_LABEL} for wallet ${conflict.existingFingerprint}.\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe.`
+                        : `A saved seed already exists on this device's ${keychainLabel} but couldn't be read to compare (${conflict.reason}).\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe — it may otherwise be lost.`;
                 Alert.alert(
-                    "Replace saved seed?",
+                    "Replace keychain-saved seed?",
                     message,
                     [
-                        { text: "Don't save", style: "cancel", onPress: () => resolve(false) },
-                        { text: "Replace", style: "destructive", onPress: () => resolve(true) },
+                        { text: `Keep old seed in ${keychainLabel}`, style: "cancel", onPress: () => resolve(false) },
+                        { text: `Save new seed in ${keychainLabel}`, onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -255,7 +270,7 @@ export default function RecoverArkScreen() {
         }
     };
 
-    const finalizeWallet = (restoredFrom?: string) => {
+    const finalizeWallet = async (mnemonic: string, restoredFrom?: string) => {
         const wallet = {
             id: `ark-${Date.now()}`,
             createdAt: new Date().toISOString(),
@@ -269,6 +284,18 @@ export default function RecoverArkScreen() {
         setArkAuth(true);
         if (!allBTCWallets.includes("ARK")) {
             setAllBTCWallets([...allBTCWallets, "ARK"]);
+        }
+        // Arm background-refresh the same way the create flow does
+        // (ArkSeedPhraseScreen). clearArkAuth resets arkBgRefreshEnabled
+        // to false on disconnect, so a fresh recovery would otherwise
+        // come back with auto-refresh OFF — which silently leaves the
+        // user's restored arkoor VTXOs under server-trust until they
+        // notice the toggle. Mirroring create here keeps the post-
+        // recovery experience identical to a fresh wallet.
+        try {
+            await setArkBackgroundRefreshEnabled(true, mnemonic);
+        } catch (err) {
+            console.warn("[Ark recover] failed to arm bg refresh:", err);
         }
         dispatchReset("HomeScreen", { isComplete: true });
     };
@@ -313,7 +340,7 @@ export default function RecoverArkScreen() {
         }
         await persistSeedToKeychain(mnemonic, keychainLabel);
         setRestoring(false);
-        finalizeWallet(finalizeChannel);
+        await finalizeWallet(mnemonic, finalizeChannel);
         return true;
     };
 
@@ -607,16 +634,17 @@ export default function RecoverArkScreen() {
         const conflict = await checkArkSeedKeychainConflict(mnemonic);
         if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
             const proceed = await new Promise<boolean>(resolve => {
+                const keychainLabel = Platform.OS === 'ios' ? 'Keychain' : 'Keystore';
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? `A saved seed already exists on this device for wallet ${conflict.existingFingerprint}. Recovering this seed will overwrite it.\n\nThe old seed phrase will need to be re-entered to recover that wallet later — make sure you have it written down somewhere safe.`
-                        : `A saved seed already exists on this device but couldn't be read to compare (${conflict.reason}). Recovering this seed may overwrite it.\n\nIf the old seed is only in the keychain (not written down), it may be lost.`;
+                        ? `A saved seed already exists on this device's ${keychainLabel} behind ${BIOMETRIC_LABEL} for wallet ${conflict.existingFingerprint}.\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe.`
+                        : `A saved seed already exists on this device's ${keychainLabel} but couldn't be read to compare (${conflict.reason}).\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe — it may otherwise be lost.`;
                 Alert.alert(
-                    "Replace saved seed?",
+                    "Replace keychain-saved seed?",
                     message,
                     [
-                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                        { text: "Replace", style: "destructive", onPress: () => resolve(true) },
+                        { text: `Keep old seed in ${keychainLabel}`, style: "cancel", onPress: () => resolve(false) },
+                        { text: `Save new seed in ${keychainLabel}`, onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -657,7 +685,7 @@ export default function RecoverArkScreen() {
         }
 
         setSubmitting(false);
-        finalizeWallet();
+        await finalizeWallet(mnemonic);
     };
 
     const cloudLabel = Platform.OS === 'ios' ? 'iCloud Drive' : 'Google Drive';

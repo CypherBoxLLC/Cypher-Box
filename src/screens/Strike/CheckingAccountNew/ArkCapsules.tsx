@@ -21,8 +21,11 @@ import {
     fetchArkBalance,
     fetchArkPendingRoundStates,
     fetchArkVtxos,
+    getArkCancelling,
     refreshArkVtxosAndSync,
+    setArkCancelling,
     syncArkWallet,
+    useArkCancelling,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -563,9 +566,16 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                             )}
                         </TouchableOpacity>
                         <View style={rowStyles.select}>
-                            <View style={rowStyles.checkbox}>
-                                {selected && <Image source={Yes} />}
-                            </View>
+                            {/* While a cancel is in flight the selection
+                                checkbox vanishes — the user shouldn't be
+                                queueing new refresh actions over a cancel
+                                they're still waiting on. The outer slot
+                                stays so row column widths don't shift. */}
+                            {!isCancelling && (
+                                <View style={rowStyles.checkbox}>
+                                    {selected && <Image source={Yes} />}
+                                </View>
+                            )}
                         </View>
                     </>
                 )}
@@ -738,12 +748,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // True between cancel-tap and the round actually clearing (NOT just
     // until our cancel call returns). bark's cancel can return failure
     // due to a transient internal-lock timeout while the round itself
-    // still settles ~1 min later via natural failure. Keeping the
-    // "Cancelling" UI up until pendingRoundSats hits 0 (handled by the
-    // effect below) prevents the misleading "X icon flickered back"
-    // experience the user reported on the first cancel attempt.
-    const [cancelling, setCancelling] = useState(false);
-    const cancellingStartRef = useRef<number | null>(null);
+    // still settles ~1 min later via natural failure. Hoisted to a
+    // module-level singleton (see services/ark/cancellingState.ts) so
+    // the gate survives the V-capsules tab unmounting — otherwise
+    // navigating to Home and back mid-cancel resets the flag and the
+    // X button reappears, inviting users to spam-tap it.
+    const cancelling = useArkCancelling();
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
@@ -1046,9 +1056,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
      * finalised server-side; the next sync picks up the actual result.
      */
     const handleRowCancel = async () => {
-        if (cancelling) return;
-        cancellingStartRef.current = Date.now();
-        setCancelling(true);
+        // Read from the module so we don't race against a stale render
+        // value (e.g. two rapid taps within the same render cycle).
+        if (getArkCancelling()) return;
+        setArkCancelling(true);
         try {
             const states = await fetchArkPendingRoundStates();
             const ongoing = states.filter((s) => s.ongoing);
@@ -1126,37 +1137,17 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // Outer-catch (the fetch itself failed, not the per-round
             // cancels). No round was ever attempted; clear the UI gate
             // immediately so the X icon comes back and the user can
-            // retry. The pendingRoundSats effect won't fire because no
-            // state changed.
-            setCancelling(false);
-            cancellingStartRef.current = null;
+            // retry.
+            setArkCancelling(false);
         }
         // NOTE: NOT clearing `cancelling` here on the success path —
-        // the effect below clears it when pendingRoundSats drops to 0
-        // (real round settlement) or when the 2-min safety timeout
-        // fires (bark stuck). That keeps the "Cancelling" label up
-        // until funds actually unlock, not just until our async cancel
-        // call returns (which can be misleadingly fast on internal
-        // lock timeouts).
+        // the module-level singleton clears it when pendingRoundSats
+        // drops to 0 (real round settlement) or when the 2-min safety
+        // timeout fires (bark stuck). That keeps the "Cancelling"
+        // label up until funds actually unlock, not just until our
+        // async cancel call returns (which can be misleadingly fast
+        // on internal lock timeouts).
     };
-
-    // Auto-clear `cancelling` when funds actually unlock or after a
-    // 2-minute safety timeout. Watching pendingRoundSats means the
-    // UI reflects round settlement regardless of whether our explicit
-    // cancel call succeeded or the round had to fail out naturally.
-    useEffect(() => {
-        if (!cancelling) return;
-        if (pendingRoundSats === 0) {
-            setCancelling(false);
-            cancellingStartRef.current = null;
-            return;
-        }
-        const start = cancellingStartRef.current;
-        if (start !== null && Date.now() - start > 2 * 60 * 1000) {
-            setCancelling(false);
-            cancellingStartRef.current = null;
-        }
-    }, [cancelling, pendingRoundSats]);
 
     /**
      * Dust-aware consolidation set.
@@ -1354,7 +1345,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
             {/* Column header row — matches Hot Vault's layout */}
             <View style={vaultStyles.titleStyle}>
-                <Text bold style={vaultStyles.coin}>Capsules</Text>
+                <Text bold style={vaultStyles.coin}>VTXOs</Text>
                 <Text bold style={vaultStyles.size}>Size</Text>
                 <Text
                     bold

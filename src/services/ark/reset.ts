@@ -71,7 +71,12 @@ export async function resetArkWalletState(
 ): Promise<void> {
     const { keepSeedInKeychain = false, deleteBackupFilesForFingerprint } = options;
 
-    clearArkWalletHandle();
+    // Await full handle teardown — including the movement watcher's
+    // async holder destroy — BEFORE deleting the datadir. Without this
+    // await, bark's SQLite FDs are still open when deleteArkDatadir
+    // runs, and the next Wallet.open/create on the recreated path
+    // fails with BarkError.Database.
+    await clearArkWalletHandle();
     // Scrub the in-memory PBKDF2 key so it doesn't carry over to a new wallet.
     clearArkKeyCache();
 

@@ -130,6 +130,12 @@ export {
 } from './refresh';
 
 export {
+    getArkCancelling,
+    setArkCancelling,
+    useArkCancelling,
+} from './cancellingState';
+
+export {
     claimArkExitsToAddress,
     fetchArkExitVtxos,
     fetchClaimableExitVtxos,

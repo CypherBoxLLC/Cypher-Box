@@ -4,26 +4,23 @@ import {
     type NotificationHolderInterface,
 } from '@secondts/bark-react-native';
 
-import { runBackgroundRefresh } from './backgroundRefresh';
 import { getArkWalletHandle } from './walletHandle';
 
 /**
  * Long-lived consumer of the bark wallet's notification stream.
  *
- * Why this exists: Lightning receives land in Bark as arkoor VTXOs that
- * sit under an Ark-server-trust assumption until refreshed (see project
- * memory `project_arkoor_lightning_trust_model`). The scheduled
- * background-refresh closes that trust window on its wake cadence
- * (~hours) — fine for an idle wallet, but every minute a Lightning
- * receive sits unrefreshed is a minute the user's funds are
- * server-trusted instead of chain-enforced.
+ * Originally fired `runBackgroundRefresh('arrival')` on every LN receive
+ * to close the arkoor server-trust window within minutes. That strategy
+ * was replaced by lazy refresh: the 30s sweep in useArkSync fires
+ * `runBackgroundRefresh('foreground')` only when a spendable VTXO has
+ * `daysLeft < URGENCY_THRESHOLD_DAYS` (2 days). Trust window grows from
+ * "minutes" to "up to several days" for fresh receives, matching bark's
+ * fee schedule (0-fee refresh below 2 days) and avoiding hammering the
+ * ASP during flaky periods.
  *
- * The bark FFI exposes `wallet.notifications()` returning a pull-based
- * `NotificationHolder` that emits `MovementCreated` events the moment a
- * new VTXO materialises. We loop on `nextNotification()` and fire
- * `runBackgroundRefresh('arrival')` whenever a new VTXO lands. The
- * orchestrator's `minGapBetweenSuccessMsArrival` (60s) coalesces rapid
- * arrivals and bounds the cost of micro-payment spam.
+ * The watcher is kept for diagnostic logging of MovementCreated /
+ * MovementUpdated events — useful when investigating stuck rounds or
+ * receive-pipeline issues. It no longer dispatches any refresh.
  *
  * Lifecycle: started when a wallet handle opens, stopped when it
  * clears. Idempotent — calling start twice is a no-op. The loop tears
@@ -34,23 +31,15 @@ import { getArkWalletHandle } from './walletHandle';
 let active = false;
 let holder: NotificationHolderInterface | null = null;
 let cancelled = false;
-
-/**
- * Debounce arrival triggers. A single LN receive in Bark fires up to three
- * movement events within ~400ms (MovementUpdated → MovementCreated →
- * MovementUpdated when the round commits). Without coalescing we'd invoke
- * `runBackgroundRefresh` three times in rapid succession, AND we'd race
- * against bark's own commit pipeline — a refresh fired ~50ms after the
- * receive round committed throws `BarkError.Internal` because the new VTXO
- * isn't yet refreshable in the wallet's state machine, even though
- * `allVtxos()` already reports it Spendable.
- *
- * The 3-second window batches receive bursts into one round and gives
- * bark's internal state ~3s to settle past the just-completed round.
- */
-const ARRIVAL_DEBOUNCE_MS = 3000;
-let pendingArrivalTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingArrivalInFlight = false;
+// Promise that resolves when the runLoop has fully torn down — used by
+// `stopArkMovementWatcher` to give callers an awaitable signal that the
+// holder's `uniffiDestroy()` has run and bark's SQLite file descriptors
+// are actually released. Without this, callers like
+// `clearArkWalletHandle` (and downstream `resetArkWalletState` →
+// `deleteArkDatadir`) race the watcher's async drop and bark rejects
+// the next `Wallet.open/create` with `BarkError.Database` because
+// stale FDs are still pinning the old datadir.
+let runLoopPromise: Promise<void> | null = null;
 
 export function startArkMovementWatcher(): void {
     console.log('[Ark watcher] startArkMovementWatcher() called, active=', active);
@@ -63,11 +52,18 @@ export function startArkMovementWatcher(): void {
     active = true;
     cancelled = false;
     console.log('[Ark watcher] kicking runLoop');
-    void runLoop(handle);
+    runLoopPromise = runLoop(handle);
 }
 
-export function stopArkMovementWatcher(): void {
-    if (!active) return;
+export async function stopArkMovementWatcher(): Promise<void> {
+    if (!active) {
+        // Cover the edge case where stop is called after a previous
+        // stop's promise hasn't fully resolved yet (e.g. delete-then-
+        // create happening fast). If a promise is still in flight,
+        // await it so the caller gets a clean teardown signal.
+        if (runLoopPromise) await runLoopPromise;
+        return;
+    }
     cancelled = true;
     // Unblock the currently pending `nextNotification()` so the loop
     // exits its await promptly. The holder is destroyed inside the loop
@@ -78,6 +74,19 @@ export function stopArkMovementWatcher(): void {
         holder?.cancelNextNotificationWait();
     } catch (err) {
         console.warn('[Ark watcher] cancel wait threw:', err);
+    }
+    // Wait for the runLoop to actually finish — that's where the
+    // holder's uniffiDestroy() runs in the finally block, releasing the
+    // last SQLite FD bark holds for this wallet. Without awaiting, the
+    // caller proceeds to wipe/recreate the datadir while bark still has
+    // open file descriptors and the next Wallet.open/create errors out
+    // with BarkError.Database.
+    if (runLoopPromise) {
+        try {
+            await runLoopPromise;
+        } catch (err) {
+            console.warn('[Ark watcher] runLoop awaited error:', err);
+        }
     }
 }
 
@@ -117,6 +126,7 @@ async function runLoop(handle: ReturnType<typeof getArkWalletHandle>): Promise<v
         }
         holder = null;
         active = false;
+        runLoopPromise = null;
     }
 }
 
@@ -124,8 +134,8 @@ function handleNotification(notif: { tag: string; inner?: any }): void {
     // Movement lifecycle in bark fires:
     //   MovementCreated  (status=pending, outputVtxoIds=[])  ← VTXO doesn't exist yet
     //   MovementUpdated  (status=successful, outputVtxoIds=[…])  ← VTXO landed in datadir
-    // Listen to both — the orchestrator's eligibility scan decides whether
-    // anything is actually worth refreshing.
+    // Logged for diagnostics only — no refresh dispatch happens here;
+    // lazy refresh is driven by useArkSync's sweep based on expiry.
     if (
         notif.tag !== WalletNotification_Tags.MovementCreated &&
         notif.tag !== WalletNotification_Tags.MovementUpdated
@@ -141,46 +151,4 @@ function handleNotification(notif: { tag: string; inner?: any }): void {
         'outputs=', movement.outputVtxoIds?.length ?? 0,
         'effectiveSats=', movement.effectiveBalanceSats?.toString?.() ?? movement.effectiveBalanceSats,
     );
-    // Gate arrival triggers to receive-subsystem movements only. Refresh
-    // / send / board / exit subsystems also fire Movement events as their
-    // rounds progress — including the cancellation transition when the
-    // user cancels a round mid-flight. Without this filter, a user-
-    // initiated cancel produced its own MovementUpdated, the watcher
-    // re-fired runBackgroundRefresh('arrival'), and the freshly-unlocked
-    // VTXOs got re-locked into yet another refresh round 3s later (the
-    // debounce window). Observed in production logs 2026-05-13 09:13:
-    // cancel succeeded at 09:13:04 → pendingRound=0; new refresh fired
-    // at 09:13:07 → pendingRound=1041 again.
-    if (movement.subsystemKind !== 'receive') {
-        return;
-    }
-    scheduleDebouncedArrival();
-}
-
-function scheduleDebouncedArrival(): void {
-    if (pendingArrivalInFlight) {
-        // An arrival refresh is already running. Skip — the orchestrator's
-        // own rate-limit handles successive triggers, and we don't want to
-        // queue a follow-on while one is in flight.
-        return;
-    }
-    if (pendingArrivalTimer !== null) {
-        // A debounce is already armed. Extend it by clearing+rescheduling so
-        // a burst of movement events keeps pushing the fire time out until
-        // the burst settles. Capped naturally by ARRIVAL_DEBOUNCE_MS being
-        // short relative to typical movement-event spacing.
-        clearTimeout(pendingArrivalTimer);
-    }
-    pendingArrivalTimer = setTimeout(() => {
-        pendingArrivalTimer = null;
-        pendingArrivalInFlight = true;
-        console.log('[Ark watcher] debounce fired, invoking runBackgroundRefresh(arrival)');
-        runBackgroundRefresh('arrival')
-            .catch((err: any) => {
-                console.warn('[Ark watcher] arrival refresh threw:', err?.message ?? err);
-            })
-            .finally(() => {
-                pendingArrivalInFlight = false;
-            });
-    }, ARRIVAL_DEBOUNCE_MS);
 }

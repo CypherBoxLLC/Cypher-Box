@@ -9,6 +9,7 @@ import {
   ImageSourcePropType,
 } from "react-native";
 import MaskedView from "@react-native-masked-view/masked-view";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
 import styles from "./styles";
@@ -32,10 +33,14 @@ type LoginOptionProps = {
    *  white. tintColor was tested first per the prior MaskedView note in
    *  Card/index.tsx and didn't take on these specific assets. */
   invertLogoToWhite?: boolean;
-  /** Small icon rendered to the LEFT of the label — used for the
-   *  lightning bolt that prefixes "Ark Vault". `tintColor` applied
-   *  via iconPrefixTint, default white. */
+  /** Small icon rendered to the LEFT of the label. Either a static
+   *  image (`iconPrefix`) or an Ionicons name (`iconPrefixIonicon`) —
+   *  the Ionicons path lets us reuse the same vector glyph the rest of
+   *  the app uses for a given provider (e.g. boat-outline for Ark)
+   *  without shipping a duplicate raster asset. `tintColor` / `color`
+   *  applied via iconPrefixTint, default white. */
   iconPrefix?: ImageSourcePropType;
+  iconPrefixIonicon?: string;
   iconPrefixTint?: string;
   /** When true, lays the label group out on the LEFT and the logo on
    *  the RIGHT (justifyContent: space-between) instead of grouping
@@ -53,6 +58,7 @@ export default function LoginOption({
   containerStyle,
   invertLogoToWhite = false,
   iconPrefix,
+  iconPrefixIonicon,
   iconPrefixTint = colors.white,
   spread = false,
 }: LoginOptionProps) {
@@ -85,12 +91,18 @@ export default function LoginOption({
               pressed && styles.loginOptionPressed,
             ]}
           >
-            {/* Label cluster — when iconPrefix is set, the icon and
-                text sit together as one unit on the left; the logo
-                stays on the right (with `spread` enabled). */}
-            {(label || iconPrefix) ? (
+            {/* Label cluster — when an icon-prefix is set, the icon
+                and text sit together as one unit on the left; the
+                logo stays on the right (with `spread` enabled). */}
+            {(label || iconPrefix || iconPrefixIonicon) ? (
               <View style={styles.labelCluster}>
-                {iconPrefix ? (
+                {iconPrefixIonicon ? (
+                  <Ionicons
+                    name={iconPrefixIonicon}
+                    size={18}
+                    color={iconPrefixTint}
+                  />
+                ) : iconPrefix ? (
                   <Image
                     source={iconPrefix}
                     style={[styles.labelIcon, { tintColor: iconPrefixTint }]}

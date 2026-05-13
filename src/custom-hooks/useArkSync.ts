@@ -19,6 +19,7 @@ import {
     progressArkExits,
     progressArkPendingRounds,
     resetArkWalletState,
+    runBackgroundRefresh,
     syncArkExits,
     syncArkWallet,
     tryClaimArkLightningReceives,
@@ -75,6 +76,24 @@ const INTERVAL_MS = Platform.OS === 'android' ? INTERVAL_MS_ANDROID : INTERVAL_M
 // nothing to refresh). Skip the slow `syncArkWallet` call on those ticks
 // and just refresh balance/vtxos/tip — saving ~2s per cycle.
 const IDLE_SKIP_AFTER_EMPTY_TICKS = 3;
+
+// Lazy refresh threshold. The sweep below fires runBackgroundRefresh
+// ('foreground') only when a spendable, non-arkoor VTXO is within this
+// many days of expiry. Anything farther out is left alone — the arkoor
+// server-trust window is acceptable (and bark's refresh fee is 0 below
+// 2 days per their published schedule). Replaces the old arrival-trigger
+// strategy that fired on every LN receive.
+const URGENCY_THRESHOLD_DAYS = 2;
+const URGENCY_THRESHOLD_BLOCKS = Math.round(
+    (URGENCY_THRESHOLD_DAYS * 24 * 60) / AVG_BLOCK_MINUTES,
+);
+// JS-side gate so a 30s sync tick doesn't spam runBackgroundRefresh()
+// while the wallet sits in the urgent zone. The orchestrator has its
+// own success-rate-limit, but it also writes a telemetry entry on
+// every call (including rate_limited ones) — without this guard the
+// telemetry buffer would fill with no-ops.
+const FOREGROUND_SWEEP_MIN_GAP_MS = 5 * 60 * 1000;
+let lastForegroundSweepAt = 0;
 
 export type UseArkSync = {
     isSyncing: boolean;
@@ -412,18 +431,20 @@ export default function useArkSync(): UseArkSync {
             // duplicating it inline is cheaper than introducing a
             // dependency cycle.
             const state = useAuthStore.getState();
+            let minBlocks = Infinity;
+            if (tip !== null && vtxos) {
+                for (const v of vtxos.spendable) {
+                    if (v.expiryHeight === 0) continue;
+                    if (v.state.toLowerCase() === 'locked') continue;
+                    const blocks = v.expiryHeight - tip;
+                    if (blocks < minBlocks) minBlocks = blocks;
+                }
+            }
             if (state.arkBgRefreshEnabled && tip !== null && vtxos) {
                 const user = state.user;
                 const username =
                     (user && (user.username ?? (typeof user === 'string' ? user : null))) || null;
                 if (username) {
-                    let minBlocks = Infinity;
-                    for (const v of vtxos.spendable) {
-                        if (v.expiryHeight === 0) continue;
-                        if (v.state.toLowerCase() === 'locked') continue;
-                        const blocks = v.expiryHeight - tip;
-                        if (blocks < minBlocks) minBlocks = blocks;
-                    }
                     const soonestExpiryAt = isFinite(minBlocks)
                         ? Math.floor(
                               Date.now() / 1000 +
@@ -432,6 +453,37 @@ export default function useArkSync(): UseArkSync {
                         : null;
                     void postArkRefreshExpiry(username, soonestExpiryAt);
                 }
+            }
+
+            // --- Lazy-refresh sweep ---
+            //
+            // Fires runBackgroundRefresh('foreground') only when a
+            // spendable, non-arkoor VTXO is within URGENCY_THRESHOLD_DAYS
+            // of expiry. Replaces the old movement-watcher arrival path
+            // that triggered on every LN receive — that strategy locked
+            // funds for ~1h within minutes of arrival and hammered the
+            // ASP during flake periods. Lazy refresh lets fresh receives
+            // stay spendable for days (Lightning-like UX) and only spends
+            // refresh fees / takes round-locking risk near expiry.
+            //
+            // The JS-side FOREGROUND_SWEEP_MIN_GAP_MS guard prevents
+            // every 30s tick from invoking the orchestrator and writing
+            // a rate_limited telemetry entry. The orchestrator's own
+            // success rate-limit still applies.
+            if (
+                state.arkBgRefreshEnabled &&
+                isFinite(minBlocks) &&
+                minBlocks < URGENCY_THRESHOLD_BLOCKS &&
+                Date.now() - lastForegroundSweepAt > FOREGROUND_SWEEP_MIN_GAP_MS
+            ) {
+                lastForegroundSweepAt = Date.now();
+                console.log(
+                    '[Ark sync] urgency sweep firing — minBlocks=', minBlocks,
+                    'threshold=', URGENCY_THRESHOLD_BLOCKS,
+                );
+                void runBackgroundRefresh('foreground').catch((err) => {
+                    console.warn('[Ark sync] foreground sweep threw:', err?.message ?? err);
+                });
             }
 
             // --- Auto-backup (fire-and-forget, off the critical path) ---
@@ -465,13 +517,21 @@ export default function useArkSync(): UseArkSync {
             const mnemonic = getCachedArkMnemonic();
             if (mnemonic) {
                 writeArkAutoBackup(mnemonic)
-                    .then(({ sizeBytes, createdAt }) => {
+                    .then(({ path, iCloudPath, sizeBytes, createdAt }) => {
                         setArkLastBackupAt(createdAt);
                         if (__DEV__) {
+                            // Auto-backup now writes BOTH the local sandbox
+                            // and (on iOS w/ iCloud Drive) the iCloud
+                            // container in the same tick. Log both so the
+                            // destinations are explicit. iCloudPath is null
+                            // on Android, or on iOS when iCloud is off /
+                            // the mirror write failed (silent-fail per the
+                            // auto-backup contract).
                             console.log(
                                 '[Ark auto-backup] wrote',
                                 (sizeBytes / 1024).toFixed(1),
-                                'KB to Documents',
+                                'KB · local=', path,
+                                '· iCloud=', iCloudPath ?? '(skipped)',
                             );
                         }
                     })

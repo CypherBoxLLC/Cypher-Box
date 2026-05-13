@@ -222,12 +222,12 @@ export default function CreateArkScreen() {
 
             setLoading(false);
 
-            if (FirstTimeArk) {
-                setFirstTimeArk(false);
-                dispatchNavigate("CheckingAccountCreated", { accountType: "ark" });
-            } else {
-                dispatchReset("HomeScreen", { isComplete: true });
-            }
+            // Always land on the educational vault-created screen, even
+            // on a second-or-later wallet — matches ArkSeedPhraseScreen.
+            // Hot-vault-seed-reuse skips ArkSeedPhraseScreen entirely
+            // so this is its only path through that education flow.
+            setFirstTimeArk(false);
+            dispatchNavigate("CheckingAccountCreated", { accountType: "ark" });
             return;
         }
 

@@ -848,10 +848,13 @@ export async function restoreArkBackupBlob(
     }
 
     // Step 2: close the wallet so SQLite handles release file descriptors.
-    // Without this the subsequent unlink races with live writers and the
-    // restore fails with BarkError.Database (we hit this exact mode during
-    // the seed-only recovery testing — see walletHandle.clearArkWalletHandle).
-    clearArkWalletHandle();
+    // Awaiting is required — the movement watcher's holder destroy
+    // happens asynchronously and pins SQLite FDs until it runs.
+    // Without the await, the subsequent unlink races the watcher's
+    // teardown and the restore fails with BarkError.Database (we hit
+    // this exact mode during the seed-only recovery testing — see
+    // walletHandle.clearArkWalletHandle).
+    await clearArkWalletHandle();
 
     // Step 3+4: nuke and recreate datadir. Don't use deleteArkDatadir() since
     // it flips the `ensured` latch in datadir.ts and we want to resume using
@@ -921,21 +924,45 @@ export async function restoreArkBackupBlob(
  */
 export async function writeArkAutoBackup(
     mnemonic: string,
-): Promise<{ path: string; sizeBytes: number; createdAt: number }> {
+): Promise<{ path: string; iCloudPath: string | null; sizeBytes: number; createdAt: number }> {
     const { blob, createdAt, fingerprint } = await _packDatadirIntoBlob(mnemonic);
 
     // Per-wallet path. Multiple wallets on the same device write to distinct
     // filenames (`ark-backup-{fp}.cbark`), so creating a second wallet no
     // longer overwrites the first wallet's local backup.
     //
-    // Destination: when iCloud Drive is on for Cypher Box, the write goes
-    // directly into the iCloud Documents container per-fingerprint path —
-    // Apple uploads it to iCloud and surfaces it under Files → iCloud Drive
-    // → Cypher Box, surviving device loss + uninstall. When iCloud is off,
-    // falls back to local sandbox `Documents/`. Identical filename either
-    // way so the lookup logic on recovery doesn't need to differentiate.
-    const activePath = await getActiveAutoBackupPath(fingerprint);
-    await RNFS.writeFile(activePath, blob, 'utf8');
+    // Belt-and-suspenders: the local sandbox copy is ALWAYS written so
+    // recovery has a fallback when iCloud Drive is off / unreachable /
+    // throttled. On iOS we ALSO mirror to the iCloud Documents container
+    // so the user gets cross-device + post-uninstall recovery via Apple's
+    // transparent sync. Both files carry the same fingerprint-keyed
+    // filename so the recovery lookup logic doesn't need to differentiate.
+    //
+    // Same blob is written to both locations in the same tick — no drift
+    // risk because each tick is an atomic re-pack-and-write.
+    const localPath = getAutoBackupPath(fingerprint);
+    await RNFS.writeFile(localPath, blob, 'utf8');
+
+    // iCloud mirror — silent-fail per the auto-backup contract (next sync
+    // tick retries). The local copy already succeeded so the wallet is
+    // recoverable from this device regardless of iCloud outcome.
+    let iCloudPath: string | null = null;
+    if (Platform.OS === 'ios') {
+        try {
+            iCloudPath = await getICloudBackupPathForFingerprint(fingerprint);
+            if (iCloudPath) {
+                await RNFS.writeFile(iCloudPath, blob, 'utf8');
+            }
+        } catch (err: any) {
+            if (__DEV__) {
+                console.log(
+                    '[Ark auto-backup] iCloud mirror failed (non-fatal):',
+                    err?.message ?? err,
+                );
+            }
+            iCloudPath = null;
+        }
+    }
 
     // Android-only off-device sibling upload. iOS gets free off-device
     // backup via Apple's transparent iCloud Drive sync of Documents
@@ -1001,7 +1028,7 @@ export async function writeArkAutoBackup(
         }
     }
 
-    return { path: activePath, sizeBytes: blob.length, createdAt };
+    return { path: localPath, iCloudPath, sizeBytes: blob.length, createdAt };
 }
 
 /**

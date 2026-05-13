@@ -1,3 +1,4 @@
+import RNFS from 'react-native-fs';
 import * as Keychain from 'react-native-keychain';
 
 import {
@@ -46,10 +47,10 @@ function startWatcher(): void {
     }
 }
 
-function stopWatcher(): void {
+async function stopWatcher(): Promise<void> {
     try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        require('./movementWatcher').stopArkMovementWatcher();
+        await require('./movementWatcher').stopArkMovementWatcher();
     } catch (err) {
         console.warn('[Ark] movement watcher stop failed:', err);
     }
@@ -122,6 +123,25 @@ export async function createArkWallet(
         if (__DEV__) {
             console.log('[Ark] Wallet.open failed, falling back to create (forceRescan=' + forceRescan + '):', openErr);
         }
+        // Bark schema-init bug: `Wallet.open` against a fresh datadir
+        // creates an empty `bark.sqlite` as a side-effect of just
+        // opening the path, then errors with `no such table:
+        // bark_properties` because the migration hasn't run. That
+        // 0-byte file then blocks the `Wallet.create` fallback (bark
+        // sees an existing file and tries to migrate instead of create
+        // fresh). A zero-byte file can't contain real wallet state, so
+        // nuke it before retrying create. See the gitlab draft for the
+        // upstream report.
+        try {
+            const sqlitePath = `${datadir}/bark.sqlite`;
+            const stat = await RNFS.stat(sqlitePath).catch(() => null);
+            if (stat && Number((stat as any).size) === 0) {
+                await RNFS.unlink(sqlitePath);
+                if (__DEV__) console.log('[Ark] cleared 0-byte bark.sqlite trap before create fallback');
+            }
+        } catch (cleanupErr) {
+            console.warn('[Ark] 0-byte sqlite cleanup failed:', cleanupErr);
+        }
     }
 
     handle = await Wallet.create(mnemonic, config, datadir, forceRescan);
@@ -181,13 +201,20 @@ export async function hydrateArkWalletFromBackgroundSeed(
  * was already destroyed / pointer was bad) is exactly the state we're trying
  * to reach.
  */
-export function clearArkWalletHandle(): void {
+export async function clearArkWalletHandle(): Promise<void> {
     // Stop the notification watcher BEFORE destroying the handle so its
     // pending `nextNotification()` await unblocks via the holder cancel
     // and the holder's own uniffiDestroy runs while the wallet is still
     // alive. Tearing the wallet down first would leave the holder dangling
     // on a freed Rust pointer.
-    stopWatcher();
+    //
+    // AWAITING is essential: bark's SQLite file descriptors stay pinned
+    // until the holder is destroyed inside the watcher's runLoop finally
+    // block. If we proceed sync, callers race the watcher's drop and the
+    // next Wallet.open/create on the recreated datadir throws
+    // BarkError.Database. Confirmed empirically 2026-05-13 (delete vault
+    // → immediate create → Database fault on both open and create).
+    await stopWatcher();
     if (onchainHandle && typeof (onchainHandle as any).uniffiDestroy === 'function') {
         try {
             (onchainHandle as any).uniffiDestroy();

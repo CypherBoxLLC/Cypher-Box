@@ -251,7 +251,7 @@ export default function CheckingAccountLogin() {
             <>
               <View style={styles.sectionHeader}>
                 <Text bold style={[styles.sectionTitle, styles.sectionTitleAccent]}>
-                  NON-CUSTODIAL  ·  LIGHTNING
+                  NON-CUSTODIAL  ·  LIGHTNING-ENABLED
                 </Text>
                 <View style={[styles.sectionDivider, styles.sectionDividerArk]} />
               </View>
@@ -261,14 +261,16 @@ export default function CheckingAccountLogin() {
 
               {/* Ark (Second.tech) — gated behind FEATURE_ARK_ENABLED until
                   mainnet ASP launches. Re-enable in services/ark/config.ts.
-                  Row layout mirrors Strike/CoinOS: [Ark Vault ⚡ + Second]
+                  Row layout mirrors Strike/CoinOS: [Ark Vault 🚣 + Second]
                   on the left, [Recover] on the right (yellow-accented to
-                  signal the non-custodial provider). */}
+                  signal the non-custodial provider). The boat-outline
+                  glyph reuses the same Ark visual identifier the Vault
+                  tab and home Card use, so the brand is consistent. */}
               <View style={accountStyles.providerRow}>
                 <LoginOption
                   label="Create Ark Vault"
                   labelColor={colors.white}
-                  iconPrefix={require("@Cypher/assets/images/electricity.png")}
+                  iconPrefixIonicon="boat-outline"
                   iconPrefixTint={colors.white}
                   borderColor={colors.ark.extralight}
                   onPress={handleArkCreate}
@@ -304,7 +306,7 @@ export default function CheckingAccountLogin() {
           {showCustodial && (
             <>
               <View style={styles.sectionHeader}>
-                <Text bold style={styles.sectionTitle}>CUSTODIAL  ·  LIGHTNING</Text>
+                <Text bold style={styles.sectionTitle}>CUSTODIAL  ·  LIGHTNING-ENABLED</Text>
                 <View style={styles.sectionDivider} />
               </View>
               <Text style={styles.sectionSubtitle}>

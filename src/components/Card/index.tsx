@@ -51,6 +51,14 @@ interface Props {
      * slots so the box visual stays consistent regardless of VTXO count.
      */
     arkCapsuleSlots?: { color: string; refreshing: boolean }[];
+    /**
+     * Suppress the balance / "X sats ~ $Y.YY" line entirely. Used by the
+     * "Ark Vault Created!" educational screen, which shows a Card preview
+     * with decorative capsule slots but no numbers (the wallet is empty,
+     * displaying "0 sats ~ $0.00" is noise). Default false — every
+     * existing live caller renders the balance as before.
+     */
+    hideBalance?: boolean;
 }
 
 export default function Card({ onPress,
@@ -69,6 +77,7 @@ export default function Card({ onPress,
     sendClickHandler,
     refreshingInfo = null,
     arkCapsuleSlots,
+    hideBalance = false,
 }: Props) {
     const {coldStorageWalletID, walletID, allBTCWallets} = useAuthStore();
 
@@ -102,8 +111,12 @@ export default function Card({ onPress,
         return () => pulse.stop();
     }, [refreshingInfo, refreshPulseAnim]);
 
+    // Capsule count is redundant with the capsule-slot row rendered right
+    // below the balance — users can already see how many shapes are
+    // pulsing. Just show the sats being refreshed. "+" prefix reads as
+    // "incoming/about-to-be-spendable" alongside the balance line.
     const refreshingText = refreshingInfo
-        ? `Refreshing ${refreshingInfo.count} ${refreshingInfo.count === 1 ? 'capsule' : 'capsules'} · ${refreshingInfo.sats.toLocaleString()} sats`
+        ? `+ Refreshing ${refreshingInfo.sats.toLocaleString()} sats`
         : null;
     const showRefreshingInsteadOfBalance =
         refreshingInfo !== null && (Number(balance) || 0) === 0;
@@ -264,7 +277,7 @@ export default function Card({ onPress,
                 )}
             </View>
             <View style={styles.view}>
-                {showRefreshingInsteadOfBalance ? (
+                {hideBalance ? null : showRefreshingInsteadOfBalance ? (
                     // Zero spendable balance + round in flight: showing
                     // "0 sats ~ $0.00" would mislead users into thinking
                     // they have nothing left when funds are merely locked
@@ -280,18 +293,23 @@ export default function Card({ onPress,
                         </Text>
                     </Animated.View>
                 ) : (
-                    <>
+                    // Inner row wrapper so the refreshing line sits on the
+                    // same horizontal line as the balance, with a small
+                    // controlled gap. Without this, both would be direct
+                    // siblings of the outer row (space-between) and the
+                    // refreshing line would be shoved to the far right.
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
                         <Text h2 bold style={styles.sats}>
                             {getBalance()}
                         </Text>
                         {refreshingText && (
-                            <Animated.View style={{ opacity: refreshPulseAnim, marginTop: 4 }}>
+                            <Animated.View style={{ opacity: refreshPulseAnim, marginLeft: 8 }}>
                                 <Text h4 bold style={{ color: colors.green }}>
                                     {refreshingText}
                                 </Text>
                             </Animated.View>
                         )}
-                    </>
+                    </View>
                 )}
                 {/* Withdrawal-threshold reminder. Hidden for Ark because
                     Ark is self-custodial — there's no custodial-balance
@@ -314,25 +332,18 @@ export default function Card({ onPress,
                 stacks below as its own full-width row instead of being
                 squeezed into the horizontal balance/brand layout. */}
             {wallet === 'ARK' && arkCapsuleSlots && (() => {
-                const VISIBLE = 5;
+                const VISIBLE = 10;
                 const filled = arkCapsuleSlots.slice(0, VISIBLE);
                 const emptyCount = Math.max(0, VISIBLE - filled.length);
-                // Always reserve 5 slot positions in the row so the
-                // first capsule sits at the leftmost position and new
-                // capsules fill rightward as they arrive. Empty slots
-                // are INVISIBLE (no fill, no outline) but still take
-                // their flex:1 share of width, holding the grid stable.
-                // Match Hot Vault's VaultCapsules.tab geometry for the
-                // visible pills.
-                // Hot Vault's tab is height:12 + borderWidth:1, but the
-                // INNER colored capsule image is constrained smaller via
-                // the MaskedView+resizeMode pipeline — visible colored
-                // band ends up ~8pt thick. Match that visible thickness
-                // here so the Ark filled pill reads as the same size as
-                // a filled Hot Vault capsule rather than as a chunky bar.
+                // 10 slots auto-distributed across the card width via
+                // flex:1 — at 10 the per-slot width naturally lands near
+                // ~22pt (narrower than the previous 5×32pt grid Bam asked
+                // to shrink), so we don't need a fixed-width constant.
+                // Empty slots are INVISIBLE but still take their flex:1
+                // share so the grid stays stable as VTXOs arrive.
                 const SLOT_HEIGHT = 8;
                 const SLOT_RADIUS = 4;
-                const SLOT_GAP = 10;
+                const SLOT_GAP = 6;
                 const filledSlot = (color: string) => (
                     <View
                         style={{
