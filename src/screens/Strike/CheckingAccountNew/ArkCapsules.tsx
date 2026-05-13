@@ -18,8 +18,11 @@ import {
     blocksToDays,
     cancelArkPendingRound,
     estimateArkRefreshFee,
+    fetchArkBalance,
     fetchArkPendingRoundStates,
+    fetchArkVtxos,
     refreshArkVtxosAndSync,
+    syncArkWallet,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -292,8 +295,8 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
     // read as "almost expired" while it's actually sitting in a round).
     const labelColor = vtxo.pendingRound ? colors.ark.light : view.color;
     const refreshingLabel = roundIntervalSecs != null
-        ? `Refreshing… ≤${formatRoundUpperBound(roundIntervalSecs)}`
-        : "Refreshing…";
+        ? "Refreshing (takes less than an hour)"
+        : "Refreshing (takes less than an hour)";
     const labelText = vtxo.pendingRound
         ? refreshingLabel
         : vtxo.unknownExpiry
@@ -1020,6 +1023,17 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 } catch (err: any) {
                     console.warn('[Ark] cancel round failed:', err?.message ?? err);
                 }
+            }
+            // Drive a sync immediately so the per-row state flips from
+            // Locked → Spendable in zustand and the row stops pulsing.
+            // Without this the row would keep showing transient visuals
+            // until the next 30s useArkSync tick — making the cancel
+            // feel like it did nothing.
+            try {
+                await syncArkWallet();
+                await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+            } catch (syncErr: any) {
+                console.warn('[Ark] post-cancel sync failed:', syncErr?.message ?? syncErr);
             }
             SimpleToast.show(
                 `Cancelled ${ongoing.length} refresh${ongoing.length === 1 ? '' : 'es'} — funds unlocked`,
