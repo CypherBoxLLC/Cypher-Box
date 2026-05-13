@@ -16,7 +16,9 @@ import {
     ARK_VTXO_DUST_SATS,
     AVG_BLOCK_MINUTES,
     blocksToDays,
+    cancelArkPendingRound,
     estimateArkRefreshFee,
+    fetchArkPendingRoundStates,
     refreshArkVtxosAndSync,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -188,6 +190,13 @@ interface VtxoRowProps {
     onPress: () => void;
     /** Tap on the per-row refresh icon — refresh just this one VTXO. */
     onRefreshIcon: () => void;
+    /**
+     * Fires when the user taps the per-row icon WHILE the capsule is
+     * mid-refresh (isTransient). In that state the spinning refresh-cw
+     * icon flips to a cancel-X; tapping cancels every ongoing round so
+     * the funds become spendable again immediately.
+     */
+    onCancelIcon: () => void;
     /** Round cadence in seconds (from wallet.arkInfo()), null until fetched. */
     roundIntervalSecs: number | null;
 }
@@ -210,7 +219,7 @@ function formatRoundUpperBound(secs: number): string {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIntervalSecs }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = formatCapsuleAmount(vtxo.sats);
 
@@ -502,17 +511,26 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, roundIntervalSecs }: 
                             pixel-perfect aim. */}
                         <TouchableOpacity
                             style={[rowStyles.label, { alignItems: 'flex-start' }]}
-                            onPress={onRefreshIcon}
+                            onPress={isTransient ? onCancelIcon : onRefreshIcon}
                             delayPressIn={0}
                             hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
                             activeOpacity={0.6}
                         >
-                            {/* Feather refresh-cw — circular two-arrow icon. While
-                                pendingRound is true, the spinAnim drives a 360°
-                                rotate to telegraph the in-flight refresh. */}
-                            <Animated.View style={{ transform: [{ rotate: spinDeg }, { scale: iconScale }] }}>
-                                <Icon name="refresh-cw" type="feather" color="#FFFFFF" size={22} />
-                            </Animated.View>
+                            {/* Two visual states tied to whether the capsule is
+                                in transient (refresh/send/board) state:
+                                  - idle: Feather refresh-cw spinning glyph, tap
+                                    queues a single-capsule refresh round
+                                  - transient: Feather "x" close glyph, tap
+                                    cancels every ongoing round so the user's
+                                    funds unlock immediately (alternative was
+                                    waiting ~1h for the round to commit). */}
+                            {isTransient ? (
+                                <Icon name="x" type="feather" color={colors.redLight} size={24} />
+                            ) : (
+                                <Animated.View style={{ transform: [{ rotate: spinDeg }, { scale: iconScale }] }}>
+                                    <Icon name="refresh-cw" type="feather" color="#FFFFFF" size={22} />
+                                </Animated.View>
+                            )}
                         </TouchableOpacity>
                         <View style={rowStyles.select}>
                             <View style={rowStyles.checkbox}>
@@ -979,6 +997,41 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     };
 
     /**
+     * Per-row icon (transient-state variant) — cancels every ongoing
+     * refresh/send/board round so the user's locked VTXOs become
+     * spendable again immediately. RoundState carries no VTXO mapping,
+     * so we can't pinpoint a single round for a single capsule tap —
+     * cancelling them all is the pragmatic UX (in practice the user
+     * almost always has exactly one round in flight). Per Erik (Bark
+     * team): cancellation may be refused if a round has already
+     * finalised server-side; the next sync picks up the actual result.
+     */
+    const handleRowCancel = async () => {
+        try {
+            const states = await fetchArkPendingRoundStates();
+            const ongoing = states.filter((s) => s.ongoing);
+            if (ongoing.length === 0) {
+                SimpleToast.show('No active refresh to cancel', SimpleToast.SHORT);
+                return;
+            }
+            for (const s of ongoing) {
+                try {
+                    await cancelArkPendingRound(s.id);
+                } catch (err: any) {
+                    console.warn('[Ark] cancel round failed:', err?.message ?? err);
+                }
+            }
+            SimpleToast.show(
+                `Cancelled ${ongoing.length} refresh${ongoing.length === 1 ? '' : 'es'} — funds unlocked`,
+                SimpleToast.SHORT,
+            );
+        } catch (err: any) {
+            console.warn('[Ark] fetch pending rounds for cancel failed:', err?.message ?? err);
+            SimpleToast.show('Cancel failed — try again in a moment', SimpleToast.LONG);
+        }
+    };
+
+    /**
      * Dust-aware consolidation set.
      *
      * Surfaces a one-tap path out of the dust trap: gather every dust
@@ -1197,6 +1250,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         selected={selectedIds.includes(item.id)}
                         onPress={() => toggle(item.id)}
                         onRefreshIcon={() => handleRowRefresh(item.id)}
+                        onCancelIcon={handleRowCancel}
                         roundIntervalSecs={arkRoundIntervalSecs}
                     />
                 )}
