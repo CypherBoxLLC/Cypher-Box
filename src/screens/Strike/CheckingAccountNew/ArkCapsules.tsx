@@ -200,6 +200,17 @@ interface VtxoRowProps {
      * the funds become spendable again immediately.
      */
     onCancelIcon: () => void;
+    /**
+     * True while the user-initiated cancel is in flight (between tap and
+     * post-cancel sync). Drives a "Cancelling" UI state — the per-row
+     * label flips from "Refreshing…" to "Cancelling…" and the tappable
+     * cancel-X is replaced with a non-tappable "Cancelling" text so the
+     * user can't fire the cancel handler again while we wait for bark to
+     * respond. Per-row state isn't needed (handleRowCancel cancels ALL
+     * ongoing rounds at once), so this flips uniformly across all
+     * transient rows.
+     */
+    isCancelling: boolean;
     /** Round cadence in seconds (from wallet.arkInfo()), null until fetched. */
     roundIntervalSecs: number | null;
 }
@@ -222,7 +233,7 @@ function formatRoundUpperBound(secs: number): string {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIntervalSecs }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCancelling, roundIntervalSecs }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = formatCapsuleAmount(vtxo.sats);
 
@@ -299,7 +310,9 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
     const isTransientForLabel = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
     const labelColor = isTransientForLabel ? colors.ark.light : view.color;
     const labelText = isTransientForLabel
-        ? 'Refreshing or In-flight\n(takes less than an hour)'
+        ? (isCancelling
+            ? 'Cancelling\n(takes less than an hour)'
+            : 'Refreshing or In-flight\n(takes less than an hour)')
         : vtxo.unknownExpiry
             ? vtxo.kind
             : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
@@ -519,17 +532,30 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
                             delayPressIn={0}
                             hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
                             activeOpacity={0.6}
+                            // Disable the touchable while a cancel is in
+                            // flight — both to prevent double-firing the
+                            // cancel handler and to give the "Cancelling"
+                            // text a visually-locked feel.
+                            disabled={isTransient && isCancelling}
                         >
-                            {/* Two visual states tied to whether the capsule is
-                                in transient (refresh/send/board) state:
-                                  - idle: Feather refresh-cw spinning glyph, tap
-                                    queues a single-capsule refresh round
-                                  - transient: Feather "x" close glyph, tap
-                                    cancels every ongoing round so the user's
-                                    funds unlock immediately (alternative was
-                                    waiting ~1h for the round to commit). */}
+                            {/* Three visual states for the row's action slot:
+                                  - idle (not transient): spinning refresh-cw,
+                                    tap queues a single-capsule refresh round.
+                                  - transient + NOT cancelling: red Feather "x",
+                                    tap cancels every ongoing round so the
+                                    user's funds unlock immediately.
+                                  - transient + cancelling: "Cancelling" text
+                                    standing in for the X, non-tappable, so
+                                    the user can't spam-tap the cancel button
+                                    while waiting for bark to settle. */}
                             {isTransient ? (
-                                <Icon name="x" type="feather" color={colors.redLight} size={24} />
+                                isCancelling ? (
+                                    <Text bold style={{ color: colors.redLight, fontSize: 12 }}>
+                                        Cancelling
+                                    </Text>
+                                ) : (
+                                    <Icon name="x" type="feather" color={colors.redLight} size={24} />
+                                )
                             ) : (
                                 <Animated.View style={{ transform: [{ rotate: spinDeg }, { scale: iconScale }] }}>
                                     <Icon name="refresh-cw" type="feather" color="#FFFFFF" size={22} />
@@ -709,6 +735,10 @@ interface ArkCapsulesProps {
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
+    // True between cancel-tap and post-cancel sync. Drives the per-row
+    // "Cancelling" label + disables further taps on the cancel button so
+    // the user can't fire handleRowCancel multiple times while bark works.
+    const [cancelling, setCancelling] = useState(false);
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
@@ -1011,6 +1041,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
      * finalised server-side; the next sync picks up the actual result.
      */
     const handleRowCancel = async () => {
+        if (cancelling) return;
+        setCancelling(true);
         try {
             const states = await fetchArkPendingRoundStates();
             const ongoing = states.filter((s) => s.ongoing);
@@ -1043,6 +1075,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         } catch (err: any) {
             console.warn('[Ark] fetch pending rounds for cancel failed:', err?.message ?? err);
             SimpleToast.show('Cancel failed — try again in a moment', SimpleToast.LONG);
+        } finally {
+            setCancelling(false);
         }
     };
 
@@ -1266,6 +1300,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         onPress={() => toggle(item.id)}
                         onRefreshIcon={() => handleRowRefresh(item.id)}
                         onCancelIcon={handleRowCancel}
+                        isCancelling={cancelling}
                         roundIntervalSecs={arkRoundIntervalSecs}
                     />
                 )}
