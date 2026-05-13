@@ -141,6 +141,19 @@ function handleNotification(notif: { tag: string; inner?: any }): void {
         'outputs=', movement.outputVtxoIds?.length ?? 0,
         'effectiveSats=', movement.effectiveBalanceSats?.toString?.() ?? movement.effectiveBalanceSats,
     );
+    // Gate arrival triggers to receive-subsystem movements only. Refresh
+    // / send / board / exit subsystems also fire Movement events as their
+    // rounds progress — including the cancellation transition when the
+    // user cancels a round mid-flight. Without this filter, a user-
+    // initiated cancel produced its own MovementUpdated, the watcher
+    // re-fired runBackgroundRefresh('arrival'), and the freshly-unlocked
+    // VTXOs got re-locked into yet another refresh round 3s later (the
+    // debounce window). Observed in production logs 2026-05-13 09:13:
+    // cancel succeeded at 09:13:04 → pendingRound=0; new refresh fired
+    // at 09:13:07 → pendingRound=1041 again.
+    if (movement.subsystemKind !== 'receive') {
+        return;
+    }
     scheduleDebouncedArrival();
 }
 
