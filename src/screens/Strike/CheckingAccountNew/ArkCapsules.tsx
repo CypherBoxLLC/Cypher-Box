@@ -299,7 +299,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
     const isTransientForLabel = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
     const labelColor = isTransientForLabel ? colors.ark.light : view.color;
     const labelText = isTransientForLabel
-        ? 'Refreshing or In-flight\n(takes less than an hour)'
+        ? 'Refreshing\n(takes less than an hour)'
         : vtxo.unknownExpiry
             ? vtxo.kind
             : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
@@ -321,12 +321,12 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, roundIn
             recoverabilityColor = "#4ADE80";
             break;
         case 'needs-backup':
-            recoverabilityText = "⚠ Back up to recover";
+            recoverabilityText = "Back up to recover";
             recoverabilityColor = "#FB923C"; // orange — actionable, not just informative
             break;
         case 'in-flight':
         default:
-            recoverabilityText = "⚠ In-flight";
+            recoverabilityText = "In-flight";
             recoverabilityColor = colors.ark.light;
             break;
     }
