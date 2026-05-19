@@ -437,6 +437,16 @@ export default function useArkSync(): UseArkSync {
                     if (v.expiryHeight === 0) continue;
                     if (v.state.toLowerCase() === 'locked') continue;
                     const blocks = v.expiryHeight - tip;
+                    // Skip already-expired VTXOs. Including them would make
+                    // the lazy-refresh sweep fire on dead funds (refresh
+                    // hangs because the ASP can sweep at any time past
+                    // expiry — observed 2026-05-16 on a sim that was offline
+                    // for 3+ days). The sweep should react to the
+                    // next-most-urgent SPENDABLE-IN-PRACTICE VTXO, not to
+                    // already-lost ones. Same gate is applied to the
+                    // relay-push expiry — no point waking the device for
+                    // funds it can't save anyway.
+                    if (blocks <= 0) continue;
                     if (blocks < minBlocks) minBlocks = blocks;
                 }
             }

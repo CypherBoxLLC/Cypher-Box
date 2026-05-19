@@ -404,15 +404,15 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                     }}
                 />
             )}
-            {/* Outer row tap toggles selection. For expired-dust
-                capsules the checkbox is suppressed (no refresh, no
-                send), so the tap has nothing useful to toggle —
-                disable it to avoid an invisible "selected" state
-                that the user can't see or act on. */}
+            {/* Outer row tap toggles selection. For ANY expired capsule
+                (dust or not) the action area renders EXPIRED instead of
+                a refresh icon / checkbox, so the tap has nothing useful
+                to toggle — disable it to avoid an invisible "selected"
+                state that the user can't see or act on. */}
             <TouchableOpacity
-                activeOpacity={vtxo.sats <= ARK_VTXO_DUST_SATS && vtxo.daysLeft <= 0 ? 1 : 0.7}
+                activeOpacity={vtxo.daysLeft <= 0 ? 1 : 0.7}
                 style={rowStyles.container}
-                onPress={vtxo.sats <= ARK_VTXO_DUST_SATS && vtxo.daysLeft <= 0 ? undefined : onPress}
+                onPress={vtxo.daysLeft <= 0 ? undefined : onPress}
             >
                 {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
                     bump the size column from 1.8 → 2.8 so the time-left +
@@ -493,15 +493,15 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                         </View>
                     )}
                 </View>
-                {vtxo.sats <= ARK_VTXO_DUST_SATS && vtxo.daysLeft <= 0 ? (
-                    // Expired-dust action area: no refresh icon, no
-                    // checkbox — neither operation is reachable. The
-                    // EXPIRED DUST badge expands to take the combined
-                    // width of the icon + select columns (flex 2),
-                    // so the entire right side of the row reads as a
-                    // single inert "this is dead" indicator instead
-                    // of two empty boxes where affordances used to
-                    // live. Outer row tap is also disabled below.
+                {vtxo.daysLeft <= 0 ? (
+                    // Expired action area: no refresh icon, no checkbox —
+                    // neither operation is reachable on a VTXO that's past
+                    // its expiry height (ASP can sweep it at any time, and
+                    // bark's refresh on an expired input hangs the round).
+                    // The badge expands to the combined width of the icon
+                    // + select columns (flex 2). Dust-vs-non-dust changes
+                    // only the label text — visual treatment is identical.
+                    // Outer row tap is also disabled below for both.
                     <View
                         style={{
                             flex: 2,
@@ -517,7 +517,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                         }}
                     >
                         <RNText style={{ fontSize: 10, color: '#888', fontWeight: '700', textAlign: 'center' }}>
-                            EXPIRED DUST
+                            {vtxo.sats <= ARK_VTXO_DUST_SATS ? 'EXPIRED DUST' : 'EXPIRED'}
                         </RNText>
                     </View>
                 ) : (
