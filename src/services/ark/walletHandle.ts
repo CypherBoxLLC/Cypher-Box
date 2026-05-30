@@ -118,6 +118,7 @@ export async function createArkWallet(
         cachedMnemonic = mnemonic;
         if (__DEV__) console.log('[Ark] Opened existing wallet from datadir');
         startWatcher();
+        await tryEagerSpawnOnchainHandle('createArkWallet open');
         return handle;
     } catch (openErr) {
         if (__DEV__) {
@@ -148,6 +149,7 @@ export async function createArkWallet(
     cachedMnemonic = mnemonic;
     if (__DEV__) console.log('[Ark] Created new wallet in datadir (forceRescan=' + forceRescan + ')');
     startWatcher();
+    await tryEagerSpawnOnchainHandle('createArkWallet create');
     return handle;
 }
 
@@ -158,6 +160,7 @@ export async function openArkWallet(mnemonic: string): Promise<WalletInterface> 
     handle = await Wallet.open(mnemonic, config, datadir);
     cachedMnemonic = mnemonic;
     startWatcher();
+    await tryEagerSpawnOnchainHandle('openArkWallet');
     return handle;
 }
 
@@ -177,7 +180,16 @@ export async function openArkWallet(mnemonic: string): Promise<WalletInterface> 
 export async function hydrateArkWalletFromBackgroundSeed(
     mnemonic: string,
 ): Promise<WalletInterface> {
-    if (handle) return handle;
+    if (handle) {
+        // Handle survived from a previous foreground session but the onchain
+        // handle may not have been spawned yet. Make sure it is, so the
+        // next syncArkWallet tick covers the boarding-deposit path. We
+        // already have a fresh mnemonic from the caller — bias the cache
+        // to it just in case the previous cache was cleared.
+        if (!cachedMnemonic) cachedMnemonic = mnemonic;
+        await tryEagerSpawnOnchainHandle('hydrateArkWalletFromBackgroundSeed reuse');
+        return handle;
+    }
     return createArkWallet(mnemonic, false);
 }
 
@@ -243,7 +255,15 @@ export function getArkOnchainHandle(): OnchainWalletInterface | null {
  * wallet (shared seed + datadir). Used for boarding funds into Ark and for
  * the "receive on-chain" address in the Ark receive flow.
  *
- * Reads the mnemonic from Keychain on first call (may trigger biometric).
+ * Mnemonic source preference:
+ *   1. The in-process `cachedMnemonic` populated by `createArkWallet` /
+ *      `openArkWallet` / `hydrateArkWalletFromBackgroundSeed`. This is the
+ *      common path: anything happening *during* an open session reuses the
+ *      same seed, no Keychain hit, no biometric prompt, works in background.
+ *   2. Keychain fallback for the rare case where this is the very first call
+ *      after a hot reload or some other restart where the wallet handle was
+ *      restored but the JS-side cache was lost.
+ *
  * Cached for the lifetime of the process — flushed by `clearArkWalletHandle`.
  *
  * Throws if the Ark wallet handle isn't open yet (we gate UI access through
@@ -253,16 +273,40 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
     if (onchainHandle) return onchainHandle;
     if (!handle) throw new Error('Ark wallet not initialized');
 
-    const creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
-    if (!creds || !creds.password) {
-        throw new Error('Ark seed not in Keychain — cannot spawn onchain wallet');
+    let mnemonic = cachedMnemonic;
+    if (!mnemonic) {
+        const creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+        if (!creds || !creds.password) {
+            throw new Error('Ark seed not in Keychain — cannot spawn onchain wallet');
+        }
+        mnemonic = creds.password;
     }
 
     await ensureUniffi();
     const datadir = await ensureArkDatadir();
     const config = createArkConfig();
 
-    onchainHandle = await OnchainWallet.default_(creds.password, config, datadir);
+    onchainHandle = await OnchainWallet.default_(mnemonic, config, datadir);
     if (__DEV__) console.log('[Ark] Spawned onchain wallet');
     return onchainHandle;
+}
+
+/**
+ * Best-effort proactive spawn of the on-chain handle right after the Ark
+ * wallet handle is opened. Swallows errors — failure here just means the
+ * lazy path in `ensureArkOnchainHandle` (or the first call to
+ * `getArkOnchainAddress`) will spawn it later.
+ *
+ * Why eagerly: `syncArkWallet` calls `onchain.sync()` to detect deposits
+ * at boarding addresses. If the onchain handle isn't already present, the
+ * sync routine skips that step — meaning a board sitting unboarded on
+ * chain stays invisible until the user manually opens the receive screen.
+ * Eager spawn closes that gap for the cold-start case.
+ */
+async function tryEagerSpawnOnchainHandle(context: string): Promise<void> {
+    try {
+        await ensureArkOnchainHandle();
+    } catch (err) {
+        if (__DEV__) console.log('[Ark] eager onchain spawn skipped (' + context + '):', err);
+    }
 }
