@@ -103,8 +103,7 @@ export default function useArkRestoreOnBoot(): ArkRestoreBootStatus {
             }
 
             // Datadir present but Keychain missing or open failed.
-            // Leave zustand pointing at "not authed" so the UI doesn't lie,
-            // and surface the drift so CreateArkScreen can show Reset.
+            // Surface the drift so CreateArkScreen can show Reset.
             if (__DEV__) {
                 // The stringified Error at the top level is opaque (e.g.
                 // "[Error: BarkError.Internal]") — the SDK's UniFFI wrapper
@@ -124,9 +123,31 @@ export default function useArkRestoreOnBoot(): ArkRestoreBootStatus {
                     },
                 );
             }
+
+            // CRITICAL: don't flip auth false just because a single boot
+            // attempt failed. The datadir is still on disk; this is a
+            // transient (ASP timeout / slow biometric / one-off
+            // BarkError.Internal) that the next sync tick or next mount can
+            // recover from. The previous behavior (`setArkAuth(false)`)
+            // made the user see a "Create Ark wallet" yellow card on the
+            // home screen even though their wallet and funds were intact —
+            // a particularly alarming UX since the obvious next click,
+            // Recover, then collides with the .cbark atomic-write race
+            // (Bug 1 in .claude/OPEN_BUGS.md) and fails too, compounding
+            // the "I lost my funds" panic.
+            //
+            // The safer treatment: re-confirm the datadir actually still
+            // exists. If yes, leave auth alone (UI keeps showing the Ark
+            // card as it did pre-flip; the watcher/sync layer will retry
+            // automatically). If no, the wallet is genuinely gone and the
+            // flip is appropriate.
+            const datadirStill = await hasArkDatadir();
             const latest = useAuthStore.getState();
-            if (latest.isArkAuth) {
+            if (!datadirStill && latest.isArkAuth) {
+                if (__DEV__) console.log('[Ark] Boot: datadir confirmed gone — clearing auth');
                 latest.setArkAuth(false);
+            } else if (datadirStill && __DEV__) {
+                console.log('[Ark] Boot: restore failed but datadir present — keeping auth, will retry on next sync tick');
             }
             setStatus('needs-reset');
         })();

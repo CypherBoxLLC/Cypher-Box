@@ -47,11 +47,47 @@ export const ARK_VTXO_DUST_SATS = 330;
  */
 export const ARK_REFRESH_MIN_SATS = 500;
 
+/**
+ * Empirical default TTL for an Arkoor VTXO produced by a Lightning receive.
+ *
+ * Arkoor VTXOs are out-of-round outputs (typically materialised when the
+ * ASP claims a Lightning HTLC into the wallet without batching through a
+ * round). The SDK reports `expiryHeight === 0` for them — bark intentionally
+ * doesn't surface the ASP-side TTL because it can vary per server. In our
+ * mainnet testing against `ark.second.tech` the observed TTL is consistently
+ * ~3 days.
+ *
+ * We use this constant in two places, both UI-only / advisory:
+ *   1. The "new Arkoor received" prompt (useArkoorReceivePrompt) — to tell
+ *      the user how long they have to refresh.
+ *   2. Scheduling 24h + 2h OS-level expiry-warning notifications for
+ *      arkoor VTXOs (useArkSync skips them today because expiryHeight=0).
+ *
+ * If Second.tech ever exposes the real TTL via the SDK (e.g. on
+ * `wallet.arkInfo()` or per-VTXO), switch to that and drop the constant.
+ */
+export const ARK_ARKOOR_ASSUMED_DAYS = 3;
+
 export const ARK_NETWORK: Network = Network.Bitcoin;
 
 export const ARK_SERVER_URL = 'https://ark.second.tech';
 
-export const ESPLORA_URL = 'https://blockstream.info/api';
+// Esplora endpoint used by bark's BDK onchain wallet for chain scans + by
+// `Wallet.open` for the initial blockhash query.
+//
+// History: previously `https://blockstream.info/api`. Blockstream began
+// aggressively rate-limiting unauthenticated IPs in 2025 (700 req/hour, 500k
+// req/month per IP per their notice) and during heavy dev sessions a single
+// machine can blow through the hourly quota in minutes — boot, sync, board,
+// recovery, every one hits esplora. The visible failure mode was a misleading
+// "Backup file is corrupt: BarkError.ServerConnection" toast on the recovery
+// screen (the .cbark was fine; `Wallet.open` was hitting 429 from esplora and
+// the catch upstream collapsed every wallet-open failure into one error
+// string). See .claude/OPEN_BUGS.md for the full diagnosis trail.
+//
+// `https://mempool.space/api` is the same Esplora-spec API and currently
+// serves unauthenticated traffic without per-IP throttling at our scale.
+export const ESPLORA_URL = 'https://mempool.space/api';
 
 export function createArkConfig(overrides?: Partial<Parameters<typeof Config.create>[0]>) {
     return Config.create({

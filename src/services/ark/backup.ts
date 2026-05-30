@@ -3,6 +3,78 @@ import { NativeModules, Platform } from 'react-native';
 import RNFS from 'react-native-fs';
 import Aes from 'react-native-aes-crypto';
 
+/**
+ * Atomic-ish file write: stage to `${path}.tmp`, unlink target, rename.
+ *
+ * Why this exists: every `RNFS.writeFile(target, …)` truncates `target` and
+ * streams the new bytes in. A concurrent reader that opens `target` mid-write
+ * sees a half-written file. For the auto-backup `.cbark` envelope this means
+ * the recovery flow's `decryptBackupBlob` can pick up a truncated payload,
+ * fail AES decrypt, and surface as `[Ark restore] decrypt of
+ * fingerprint-matched blob failed: Error`. We hit this twice in one
+ * 2026-05-30 session — see .claude/OPEN_BUGS.md Bug 1.
+ *
+ * Implementation note — why unlink + move, not just move:
+ *   The first version of this helper assumed `RNFS.moveFile` was a thin wrap
+ *   around POSIX `rename(2)`, which atomically replaces an existing
+ *   destination. That's true at the syscall layer, BUT RNFS goes through
+ *   `[NSFileManager moveItemAtURL:toURL:error:]` on iOS, which is more
+ *   conservative — it errors out with "an item with the same name already
+ *   exists" if the destination already exists. Result: the helper succeeded
+ *   exactly once (the first auto-backup after the fix), then every subsequent
+ *   tick failed silently while the .cbark on disk went stale. Caught only
+ *   because the user happened to watch the warning stream during a real
+ *   boarding test, ~$40 of state would have been irrecoverable from the
+ *   stale backup.
+ *
+ * The fix: explicitly unlink the destination before moveFile. This trades
+ * true atomicity for a tiny "file briefly absent" window — but that's still
+ * strictly better than the original in-place writeFile race:
+ *   - Old race: reader sees half-corrupted file → AES decrypt FAILS
+ *   - New race: reader sees no file → caller gets ENOENT cleanly and either
+ *               retries on the next sync tick or falls back to iCloud copy
+ *
+ * iOS APFS unlink + move are both fast (<1ms typical) so the window is
+ * microseconds. The auto-backup tick runs every ~30s; collision with a
+ * recovery read is already rare.
+ *
+ * For TRUE atomic replace we'd need a native module wrapping
+ * `[NSFileManager replaceItemAtURL:withItemAtURL:...]` or going straight to
+ * `rename(2)`. Not worth the native shim right now; revisit if any future
+ * data shows the absent-file window is causing recovery failures.
+ *
+ * On error: best-effort cleanup of the tmp file so we don't leave orphans.
+ */
+async function atomicWriteFile(
+    targetPath: string,
+    contents: string,
+    encoding: 'utf8' | 'base64',
+): Promise<void> {
+    const tmpPath = `${targetPath}.tmp`;
+    try {
+        // 1. Stage. If a previous failed run left a stale .tmp around,
+        //    writeFile will overwrite (truncate-then-write) which is fine —
+        //    nothing reads .tmp directly, it's a private staging path.
+        await RNFS.writeFile(tmpPath, contents, encoding);
+
+        // 2. Unlink the target so moveFile won't trip on NSFileManager's
+        //    refusal to overwrite. exists() guard keeps the first-write case
+        //    clean (no spurious "file not found" exception path).
+        if (await RNFS.exists(targetPath)) {
+            await RNFS.unlink(targetPath);
+        }
+
+        // 3. Rename into place. With the destination gone, this can't collide.
+        await RNFS.moveFile(tmpPath, targetPath);
+    } catch (err) {
+        // Best-effort cleanup of the staged file. If unlink itself fails the
+        // tmp just sits there until next run — harmless, next writeFile call
+        // will overwrite it.
+        try { await RNFS.unlink(tmpPath); } catch { /* ignore */ }
+        throw err;
+    }
+}
+
 import { deriveBackupFingerprint, normalizeMnemonic } from './backupFingerprint';
 import { ARK_DATADIR, ensureArkDatadir } from './datadir';
 import {
@@ -941,7 +1013,7 @@ export async function writeArkAutoBackup(
     // Same blob is written to both locations in the same tick — no drift
     // risk because each tick is an atomic re-pack-and-write.
     const localPath = getAutoBackupPath(fingerprint);
-    await RNFS.writeFile(localPath, blob, 'utf8');
+    await atomicWriteFile(localPath, blob, 'utf8');
 
     // iCloud mirror — silent-fail per the auto-backup contract (next sync
     // tick retries). The local copy already succeeded so the wallet is
@@ -951,7 +1023,7 @@ export async function writeArkAutoBackup(
         try {
             iCloudPath = await getICloudBackupPathForFingerprint(fingerprint);
             if (iCloudPath) {
-                await RNFS.writeFile(iCloudPath, blob, 'utf8');
+                await atomicWriteFile(iCloudPath, blob, 'utf8');
             }
         } catch (err: any) {
             if (__DEV__) {
@@ -1104,7 +1176,7 @@ export async function writeAndVerifyArkBackup(
     const activePath = await getActiveAutoBackupPath(fingerprint);
     let local: VerifiedBackupResult['local'];
     try {
-        await RNFS.writeFile(activePath, blob, 'utf8');
+        await atomicWriteFile(activePath, blob, 'utf8');
         local = { ok: true, path: activePath };
     } catch (err: any) {
         local = { ok: false, error: err?.message ?? String(err) };
