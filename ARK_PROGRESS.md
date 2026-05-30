@@ -1,6 +1,6 @@
 # Ark / Bark SDK Integration — Progress Tracker
 
-**Branch:** `rn-upgrade` (preserved snapshot: `Bam-RN` on origin)
+**Branch:** `CB-Ark` (active dev branch; `rn-upgrade` / `Bam-RN` were the pre-merge snapshots, kept on origin for reference)
 **SDK:** `@secondts/bark-react-native@0.4.1` (Second.tech, UniFFI Rust-core binding)
 **Plan source:** `/Users/kaliko/Documents/Ark implementaion.rtf` + plan in assistant-generated integration doc
 
@@ -8,52 +8,56 @@ This file is the single source of truth for Ark integration state. Update it aft
 
 ---
 
-## ▶ STATUS: RESUMED — DEV BUILDS ONLY (2026-04-25)
+## ▶ STATUS: MAINNET, UNCONDITIONAL (2026-05-27)
 
-**Re-enabled for iteration. Production builds remain gated.**
+**Cypher Box runs Ark on Bitcoin mainnet. There is no signet code path and there never will be one.** Do not add one "for testing." We test on mainnet with small amounts.
 
-[config.ts](src/services/ark/config.ts) now sets `FEATURE_ARK_ENABLED = __DEV__`, so Metro / debug builds show the full Ark surface (home tile, login CTA, send/receive sheets, boot restore hook, 30s sync) while release / TestFlight / App Store builds ship with Ark entirely hidden. This lets us keep building out Phase 5+ against `ark.signet.2nd.dev` without any risk of signet UI leaking into a production channel.
+Why this is in big text at the top: most of this document's pre-May history is written as if signet were the dev target and mainnet were a future flip. That mental model is dead. Ark is non-custodial, Second.tech doesn't geo-restrict the EU, and the production plan is Strike + Ark (no CoinOS). So Ark needs to be visible in every channel — Metro, archive, TestFlight, App Store — pointed at the live ASP.
 
-### What's unblocked
-- Dev-loop iteration on Send / fees / emergency exit / notifications against signet.
-- Re-testing create → restore → receive on the current signet server to confirm nothing rotted during the pause.
-- Encrypted backup/restore work (Phase 2) — still mandatory before a production flip.
+### Live config ([src/services/ark/config.ts](src/services/ark/config.ts))
 
-### Still blocked (on Second.tech)
-- Mainnet captaind at `ark.mainnet.2nd.dev` is not live yet. Any TestFlight build that pays with a real wallet remains impossible until then.
-- Watch [Second blog](https://blog.second.tech/) and [changelog](https://second.tech/docs/changelog) for the mainnet launch. Latest pre-mainnet signal was v0.1.0 dropping the "beta" tag on 2026-04-04.
+| Setting | Value |
+|---|---|
+| `FEATURE_ARK_ENABLED` | `true` (unconditional; not `__DEV__`) |
+| `ARK_NETWORK` | `Network.Bitcoin` |
+| `ARK_SERVER_URL` | `https://ark.second.tech` |
+| `ESPLORA_URL` | `https://blockstream.info/api` |
+| ASP auth | `BARK_ACCESS_TOKEN` from gitignored `src/services/ark/secrets.ts` |
+| `ARK_VTXO_DUST_SATS` | `330` (mirrors Bitcoin standard dust) |
+| `ARK_REFRESH_MIN_SATS` | `500` (empirical ASP minimum for round participation) |
 
-### Good news from Bark devs (2026-04-25)
-- **Backwards compat**: Bark maintains SQLite migration files and CI tests since 0.1.0-beta7/8. Our raw .cbark datadir backups are safer than we assumed — a Bark version bump won't silently break them.
-- **Recovery mailbox**: Since 0.1.0, received VTXOs are posted to an ASP-hosted mailbox. Client-side recovery not yet implemented, but the infrastructure is live. Seed-only recovery is coming; .cbark backup is still mandatory for now but will eventually become belt-and-suspenders.
+### Do not
+- Add a `signet` branch to `ARK_NETWORK` selection logic.
+- Reintroduce `ark.signet.2nd.dev` or `esplora.signet.2nd.dev` as URLs anywhere in the codebase.
+- Wrap Ark behind `__DEV__` again. The kill-switch exists as a boolean for emergency-disable, not as a per-environment gate.
+- Suggest "let's test this on signet first." We don't.
 
-### To flip to production
-1. Confirm `ark.mainnet.2nd.dev` resolves and responds (last checked DNS `000`).
-2. Flip `FEATURE_ARK_ENABLED = true` (unconditional, not `__DEV__`) in [config.ts](src/services/ark/config.ts).
-3. Revisit `ARK_NETWORK` / `ARK_SERVER_URL` / `ESPLORA_URL` — pick a rollout strategy (always mainnet vs. keep signet for dev builds).
-4. Phase 2 encrypted backup/restore MUST be green before this step; seed alone cannot recover balance on Bark.
+### Implications for backups & recovery
+- Datadirs on disk hold **real funds**. Treat reset / delete operations as destructive in every code path — no silent wipes, every wipe confirmed by the user.
+- Seed-alone recovery still does NOT restore VTXOs (Bark limitation — see Phase 2 notes below). Encrypted `.cbark` backups (iCloud Drive on iOS, SAF folder + Google Drive on Android) are the only path back to a wallet's balance. Wallet creation hard-fails if the chosen backup channel can't verify the written blob round-trips.
 
-### What stayed while paused
-- **Code** — all services, hooks, screens kept intact. No scaffolding was deleted.
-- **Native SDK** — `@secondts/bark-react-native@0.3.3` pods / jniLibs still linked; no build churn.
-- **On-disk state on dev installs** — datadir + Keychain mnemonic from previous signet wallets are **not** scrubbed when the flag flips. Boot restore will try to reopen them; if they fail (network mismatch, corrupt state) CreateArkScreen surfaces the Reset escape hatch. Fresh install still works if you want a clean slate.
+### Bark SDK back-compat (carried forward from 2026-04-25, still accurate)
+- Second.tech maintains SQLite migration files and back-compat CI since `0.1.0-beta7/8`. A Bark version bump won't silently break existing `.cbark` files — but our backup/restore CI gap (open item below) means we should still round-trip-test before adopting a new minor.
+- Recovery mailbox: ASP-side infra has been live since `0.1.0`. Client-side recovery is on Second.tech's roadmap; once shipped, `.cbark` demotes from mandatory to belt-and-suspenders.
 
 ---
 
 ## Status at-a-glance
 
+_(refreshed 2026-05-27)_
+
 | Phase | Status | Notes |
 |-------|--------|-------|
 | 0. Foundations | **DONE** | SDK installed, pods linked, Android prechecks pass, config + datadir services scaffolded |
-| 1. Seed create + keychain | **DONE (for signet)** | Real `Wallet.create` + `Wallet.open` wired; Keychain persistence + boot-time auto-restore + dev-only Reset escape hatch. Hot-vault reuse + lazy uniffi + transient mnemonic are `__DEV__` leftovers, fine for signet. |
-| 2. Encrypted backup/restore | **PARTIAL (Phase 2A + auto-backup done)** | Manual encrypted `.cbark` export + auto-backup-on-change both wired. Native AES (off-thread) replaces CryptoJS. iCloud / Drive sync still deferred to Phase 2B. Seed-alone recovery confirmed NOT possible — datadir backup is mandatory. |
-| 3. Balance + VTXOs + History | **DONE** | `wallet.balance()` + `wallet.allVtxos()` + 30s sync + chain tip + `wallet.movements()` all wired. ArkCapsules + ArkHistory tabs live. |
-| 4. Receive | **DONE (for signet)** | Ark address / bolt11 / on-chain board address — three-option `ArkReceiveScreen` + sats-only `ArkInvoiceScreen`. Lazy `OnchainWallet` spawn alongside the Ark wallet. |
-| 5. Send | **PARTIAL** | Service (`send.ts`) + `ArkSendScreen` scaffolded. Destination classification + fee estimation + execute wired in service layer. UI fee-confirm flow needs end-to-end signet test. |
-| 6. Fees | **PARTIAL** | `estimateArkSendFee()` + `estimateArkRefreshFee()` done in service layer. Not yet exposed in a standalone fee UI. |
-| 7. Emergency exit | NOT STARTED | SDK has the machinery, expose UI |
-| 8. Notifications | NOT STARTED | Local + background sync; stream via `Wallet.notifications()` |
-| 9. Hardening | PARTIAL | Feature-flag kill-switch landed. Auto-backup, backup/restore CI, signet→mainnet rollout still pending. |
+| 1. Seed create + keychain | **DONE** | Real `Wallet.create` + `Wallet.open` wired; Keychain persistence + boot-time auto-restore + production-visible Reset / in-context recovery from stale datadir. Hot-vault seed reuse still TODO. |
+| 2. Encrypted backup/restore | **DONE** | Multi-wallet, fingerprint-keyed `.cbark` files; native AES (off-thread); auto-backup-on-change with throttle; iOS Files-app + iCloud Drive sync; Android SAF user-chosen folder + Google Drive channels; restore-from-folder before file picker; verified backup on wallet create (hard-fails create if backup can't be verified). Seed-only recovery still NOT possible — datadir backup remains mandatory. |
+| 3. Balance + VTXOs + History | **DONE** | `wallet.balance()` + `wallet.allVtxos()` + 30s sync + chain tip + `wallet.movements()` all wired. Structural refresh classifier; per-kind details; refreshes hidden by default; exit-destination backfill from Hot Vault reserved slot. Headline balance now spendable-only (filters expired dust). |
+| 4. Receive | **DONE** | In-sheet Ark sub-menu (Lightning / Bitcoin / Ark) replacing the standalone screen. Pending-LN-receive row surfaces between payment and VTXO materialisation. Bolt11 invoice unchanged. |
+| 5. Send | **DONE** | Service + screen + cross-screen rewrite landed. Dust pre-flight guards, Send-Max one-tap, Consolidate banner, dust-change downgraded from blocker to warning. Fiat preview falls back to BlueWallet rate when source isn't Strike. End-to-end send tested implicitly through bg-refresh + LN-receive flows on mainnet. |
+| 6. Fees | **DONE (functional)** | `estimateArkSendFee()` + `estimateArkRefreshFee()` exposed inline in Send + Refresh flows. User-facing Fees section in [ark-integration.md](ark-integration.md) rewritten to Second.tech's actual schedule. Per-round fee ceiling on auto-refresh skips rounds above the user's cap. No standalone Fees screen — fees live in the action sheets where they're spent. |
+| 7. Emergency exit | **DONE** | [src/services/ark/exit.ts](src/services/ark/exit.ts) + Vault-tab Emergency Exit entry + explainer screen. Exit destination backfilled from Hot Vault reserved slot. Per-wallet iOS iCloud backup writes still flow alongside the exit path. |
+| 8. Notifications + background refresh | **DONE** | Background VTXO refresh shipped (PR #91 merged into CB-Ark). Native wake via Android `AlarmManager` (swapped out of WorkManager) and iOS BG tasks; opt-in relay push (`wss://notifications.cypherbox.io:3003`); per-row spinning refresh icon flips to cancel-X; "Cancelling" intermediate state; auto-refresh on LN receive with dust consolidation; boot rearm; battery-optimisation onboarding. Latest fix excludes expired VTXOs from the refresh sweep and locks down their row UI. |
+| 9. Hardening | **PARTIAL** | `FEATURE_ARK_ENABLED` is now unconditional `true` — kill-switch retained as a boolean for emergency disable, not a per-environment gate. Backup/restore CI + `crypto-js` removal still pending. Activity log + structured telemetry now landed and feed the triage loop. RELAY_API_KEY pulled out of source into a gitignored secrets file. `BARK_ACCESS_TOKEN` likewise. |
 
 ---
 
@@ -366,12 +370,71 @@ npm run android
 
 ---
 
+## May 2026 — Phase 5 → 9 push
+
+This block consolidates the ~95 commits between 2026-04-30 and 2026-05-19. The branch went from "Phase 5/6 partial, 7/8 not started" to "Phase 7/8 done, Phase 9 in progress." Listed roughly oldest → newest; commit hashes inline where the diff is the source of truth.
+
+- **2026-05-04…05-12 — Phase 7 Emergency Exit shipped** (`860e134 feat(ark): Emergency Exit, backup rename, refresh ETA, UX polish`, `8956368 feat(ark): backfill exit destination from Hot Vault reserved slot`, `01c348e chore(ark): log VTXO expiryHeight and chain tip for triage`):
+  - New [src/services/ark/exit.ts](src/services/ark/exit.ts) — wraps `wallet.startExit()` / `wallet.claimableExits()` / claim flow. Destructive-action modal in the Vault tab triggers it.
+  - Exit destination is auto-populated from the Hot Vault reserved-slot address ([src/services/arkExitDestination.ts](src/services/arkExitDestination.ts)) so the user never types a fallback address into a panic UI.
+  - Triage logging: VTXO `expiryHeight` + current chain tip logged on every sync so post-mortem of "why didn't this refresh in time" is tractable from a captured log.
+
+- **2026-05-05…05-10 — Multi-channel backup completed** (`b358020 feat(ark+integrations): Drive backup, lightning swap registry, send/receive flows`, `06a1fa3 feat(ark/android): user-chosen folder backup channel via SAF`, `bd7be37 fix(ark): hard-fail wallet create when Drive backup can't be verified`, `b644237 feat(ark): iOS Files-app gate, snapshot reminder, iCloud Drive sync`, `8c5c090 fix(ark/ios): restore per-wallet iCloud backup writes + recovery scan`):
+  - iOS: iCloud Drive sync writes the `.cbark` to the app's iCloud container; Files-app gate verifies the file is readable before the wallet is considered "backed up." Per-wallet snapshot reminder surfaces on the Ark carousel slot until the user acknowledges or rotates the backup.
+  - Android: SAF picker lets the user nominate a folder (Google Drive, Dropbox, on-device) and the app writes the `.cbark` there directly. Google Drive ([src/services/ark/googleDrive.ts](src/services/ark/googleDrive.ts)) added as a first-class channel. Restore tries the SAF folder before falling back to the file picker.
+  - **Hard guarantee**: wallet creation now fails closed if the chosen backup channel can't verify the written blob round-trips. Prevents the "I created a wallet and the backup silently went nowhere" footgun.
+
+- **2026-05-08 — Multi-wallet backup** (`408d7b5 feat(ark): multi-wallet backup support with seed-fingerprint-keyed files`, `851b6ff Merge multi-wallet Ark backup feature into CB-Ark`):
+  - Backup filenames now include a seed fingerprint ([src/services/ark/backupFingerprint.ts](src/services/ark/backupFingerprint.ts)), so two devices using the same iCloud account / Drive folder don't overwrite each other's `.cbark`. Restore picks the right file by fingerprint via [src/services/ark/findBackup.ts](src/services/ark/findBackup.ts).
+
+- **2026-05-08…05-15 — Phase 8 Background Refresh shipped** (`4fa1219 feat(ark): background VTXO refresh — scheduler, native wake, notifications, relay opt-in`, `ee6f24f fix(ark/android): switch bg refresh to AlarmManager, drop WorkManager scheduler`, `a1f61fe docs(ark): document Android bg-refresh architecture and rationale`, `ef17a42 Merge pull request #91 from CypherBoxLLC/ark-bg-refresh`, `05da4a3 feat(ark/android): bg-refresh polish — boot rearm + battery onboarding`):
+  - New [src/services/ark/backgroundRefresh.ts](src/services/ark/backgroundRefresh.ts), [src/services/ark/scheduler.ts](src/services/ark/scheduler.ts), [src/services/ark/backgroundNotifications.ts](src/services/ark/backgroundNotifications.ts), [src/services/ark/backgroundTelemetry.ts](src/services/ark/backgroundTelemetry.ts), [src/services/ark/movementWatcher.ts](src/services/ark/movementWatcher.ts), [src/services/ark/batteryGuidance.ts](src/services/ark/batteryGuidance.ts), [src/services/ark/cancellingState.ts](src/services/ark/cancellingState.ts).
+  - **Wake path**: opt-in silent push from the relay (`wss://notifications.cypherbox.io:3003`) wakes the app when soonest VTXO crosses the 48h-to-expiry threshold; iOS `BGAppRefreshTask` + Android `AlarmManager` are the safety nets.
+  - **Android AlarmManager swap**: WorkManager was deferring wakes past expiry on Galaxy A14 with battery-optimised default. Replaced with `AlarmManager.setExactAndAllowWhileIdle` + boot-rearm broadcast receiver. Architecture rationale captured in [docs/](docs/) per `a1f61fe`.
+  - **Battery onboarding** (`05da4a3`, `2d3b170`, `4d9e722`, `ec66d68`, `0462792`): one-screen-per-vendor walkthrough (Samsung, Xiaomi, OnePlus, stock Android) for unblocking battery optimisation. Auto-refresh stays primary; manual still works if the user declines.
+  - **LN-receive auto-refresh** (`0ebad5f`): a received Lightning payment triggers an immediate refresh + dust consolidation so the new VTXO doesn't fragment the wallet.
+
+- **2026-05-12…05-19 — Capsules tab UX rewrite** (many commits, see `f241cb7 feat(ark): "?" help icon → ArkCapsulesInfoScreen`, `463121f ux(ark): rewrite capsule explainer in plain language with real fee numbers`, `4c27ae4 ux(ark): rename Capsules→V-capsules with lightning icon; Vault gets boat icon`, `3548352 ux(ark): move Auto-refresh + Emergency Exit + Delete Vault to the Vault tab`, `18ae8e0 feat(ark): coloured capsule slots inside the Ark Card`, `9cf69b9 feat(ark): per-row spinning refresh icon flips to cancel-X mid-refresh`, `eef5928 fix(ark): cancel triggers an immediate sync so row stops pulsing; new label`, `ea62244 fix(ark): cancel retries on lock-timeout; UI stays "Cancelling" until round settles`):
+  - Two-tab restructure: **V-capsules** (lightning icon) for the capsule list, **Vault** (boat icon) for settings + Emergency Exit + Delete Vault. Auto-refresh toggle moved to Vault; V-capsules shows read-only status.
+  - In-card UX: five reserved slot positions (empty ones invisible spacers), height matched to Hot Vault's visible band, coloured per VTXO, no threshold bar.
+  - Per-row refresh affordance: spinning icon → cancel-X mid-flight → "Cancelling" intermediate label → settles to refreshed or restored on round resolution. `BarkError` inner detail surfaced when cancelPendingRound fails (`0c10148`). Watcher only triggers on receive subsystem to avoid cancel→re-refresh loop (`ffbab52`).
+  - In-context recovery: stale-datadir detection surfaces a production-visible reset path (`0591601 feat(ark/create): production-visible reset + in-context recovery from stale datadir`) — no more dev-only escape hatch.
+  - Latest fix (`caa09a7`): expired VTXOs excluded from refresh sweep, their row UI locked down (no spinning icon, no cancel-X, recoverability stripped).
+
+- **2026-05-13…05-15 — Activity log + cross-wallet visibility** (`768d41e feat(activity): in-app cross-wallet event log with privacy-strict emit sites`, `c347a7e ui(home): iterative layout tuning, Activity dropdown, Ark seed-reveal cleanup`):
+  - New in-app event log surfaces refresh attempts, exits, swap events, etc. across all wallets in one stream. Privacy-strict emit sites — no amounts in log lines, only kind + outcome + duration.
+  - Home-screen Activity dropdown lets the user open the log without leaving the carousel.
+
+- **2026-05-14…05-18 — UI infra catch-up** (`a6d8f5a chore(deps): upgrade react-native-mmkv 2.12.2 → 3.3.3 + add react-native-nitro-modules`, `1ce73d8 fix(ui): swap react-native-snap-carousel for FlatList — Fabric compat`, `01680ac fix(text-wrapper): adjustsFontSizeToFit now opt-in (default false) under Fabric`):
+  - `react-native-mmkv` v3 + `react-native-nitro-modules` brings async storage off the JS thread for the high-frequency keys (auth state, Ark sync metadata). Pairs with the bg-refresh work where main-thread budget is precious.
+  - `react-native-snap-carousel` removed in favour of FlatList — the former is unmaintained and triggers a layout warning storm under Fabric. Page-indicator dots reimplemented against FlatList's `viewabilityConfigCallbackPairs`.
+
+- **2026-05-15 — Security hygiene** (`5c86909 fix(security): move RELAY_API_KEY out of source into gitignored secrets file`):
+  - The relay-push API key was hard-coded in source. Pulled into a gitignored `.env`-style file with a documented fallback for local dev. CI build pipeline reads from the project's secrets store. **History was not rewritten** — the leaked key has been rotated by the relay team and the old one revoked.
+
+- **2026-05-15 — Help / docs** (`4744ee3 docs(ark): rewrite Fees section to match Second.tech's actual schedule`, `97b7dd2 ux(ark): plain-language alert copy + adopt 'VTXO capsule' user-facing term`, `8e5bc43 docs(ark): platform-correct keychain copy in seed-phrase onboarding`):
+  - User-facing terminology unified on "VTXO capsule." Fees section in [ark-integration.md](ark-integration.md) rewritten against Second.tech's public schedule (not the assumed numbers from the v0.4 spike). Keychain copy now distinguishes iOS Secure Enclave vs Android EncryptedSharedPreferences-with-StrongBox.
+
+- **2026-05-15…05-19 — Fiat-rate plumbing audit** (`b4b91bf`, `52aafef`, `cbb4022`, `a248c9b`, `a4b9169`):
+  - After a unit-flip in the BlueWallet rate source (sats-per-rate vs btc-per-rate), every site that multiplied sats × rate needed a `btc(1)` factor re-applied. Caught five sites across Ark balance, send screen, CoinOS, Strike swap preview. Single source of truth: BlueWallet's `getFiatRate` daemon fall-through, with CoinOS rate-box reading the BlueWallet value.
+
+---
+
 ## Open items / next session pickup
 
-1. **Wire the backup UI** — `writeArkBackupToTempFile` + `react-native-share` export button on Capsules tab or Settings. One-tap "Back up wallet state" CTA.
-2. **End-to-end send test on signet** — fund a signet wallet, do an Ark→Ark send, verify fee estimation + execute + history update.
-3. **Hot-vault seed reuse** (Phase 1 TODO) — real keychain read + `createArkWallet(hotVaultMnemonic)` + warn modal.
-4. **Phase 7 emergency exit** — expose `wallet.exitAll()` / `wallet.claimExits()` behind a destructive-action modal.
-5. **Contact Second.tech** — request stable `Wallet.export()` / `Wallet.import()` API (draft message prepared) **AND** flag the synchronous-on-JS-thread UniFFI behavior of `wallet.sync()` / `wallet.balance()` / `wallet.allVtxos()` — the biggest remaining UX issue on Android.
-6. **Tighten auto-backup signature** — current signature includes `tip` which can flap on parallel-cycle esplora calls and trigger an unnecessary backup. Either de-dupe parallel cycles via the `inFlight` guard (which currently races) or drop `tip` from the signature (balance/vtxo changes already imply state churn).
-7. **Drop `crypto-js`** — once a CB-Ark build with the new AES path has been validated end-to-end on both platforms, remove `crypto-js` from `package.json`.
+_(refreshed 2026-05-27. Was 7 items; 4 of those landed in the May push — keep this list short and accurate.)_
+
+1. **Hot-vault seed reuse** (still Phase 1 TODO from 2026-04-20) — `useHotVaultSeed` toggle on [CreateArkScreen](src/screens/Account/CreateArkScreen/index.tsx) sets a flag but never reads the hot-vault mnemonic. Wire: keychain read → `createArkWallet(hotVaultMnemonic)` → warn modal explaining shared-seed leak risk.
+2. **End-to-end mainnet send test, captured** — sends have been exercised implicitly through the LN-receive + auto-refresh + dust-consolidation flows, but no recorded Ark→Ark and Ark→Lightning end-to-end. Worth doing once on mainnet with a small amount + a captured log so any future regression is bisectable. Service layer is stable; this is verification, not implementation.
+3. **Backup/restore CI** — Phase 9 hardening gap. A pinned mainnet `.cbark` (small-amount test wallet) from each SDK minor should round-trip through `restoreArkBackupBlob` in CI on every PR. Catches schema drift from a Bark bump before users do. Fixture wallet should be funded with the minimum that exercises real round participation.
+4. **Drop `crypto-js`** — superseded by `react-native-aes-crypto` since 2026-04-30. Left in `package.json` as a safety net pending an end-to-end build validation. Validation has now happened across iOS + Android in the May push — safe to remove.
+5. **Tighten auto-backup signature** — `tip` is still in the signature; it flaps on parallel-cycle esplora calls and triggers spurious backups. Either de-dupe parallel cycles via the (currently racy) `inFlight` guard or drop `tip` from the signature.
+6. **Second.tech upstream asks** — single message covering:
+   - Stable `Wallet.export()` / `Wallet.import()` API so backups stop depending on internal SQLite schema.
+   - Async UniFFI bindings (or worker-thread wrapper) for `wallet.sync()` / `wallet.balance()` / `wallet.allVtxos()`. Still the biggest UX cost on Galaxy A14 — 2–9s JS-thread block per sync cycle.
+   - iOS Podfile `HEADER_SEARCH_PATHS` quirk for the codegen output ([ios/Podfile](ios/Podfile)). Worth documenting upstream.
+   - Recovery-mailbox client API timeline (since 0.1.0 the ASP posts received VTXOs to a mailbox; client code to drain it would demote `.cbark` from mandatory to belt-and-suspenders).
+7. **Production rollout readiness** — Ark is mainnet-on by default (see status banner). Outstanding pre-GA work is operational rather than a config flip:
+   - Items 3 (backup CI) and 4 (drop crypto-js) should land before broad release.
+   - Documented incident response: what happens if `ark.second.tech` goes down? Today the UI shows a stale balance and refresh retries — surface this state explicitly.
+   - In-app surfacing of the "back up your seed AND your VTXO state" warning for non-tester users (called out in the [config.ts](src/services/ark/config.ts) preamble — still relies on Phase 2 backup flows actually being completed by the user).
