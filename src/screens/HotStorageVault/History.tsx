@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, RefreshControl, SectionList, View } from "react-native";
 import dayjs from "dayjs";
 
@@ -10,6 +10,7 @@ import Header from "./Header";
 import { BlueStorageContext, WalletTransactionsStatus } from "../../../blue_modules/storage-context";
 import screenHeight from "@Cypher/style-guide/screenHeight";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { detectCpfpRelations } from "./cpfpDetection";
 
 export default function History({ wallet, matchedRate, vaultTab }: any) {
 
@@ -130,8 +131,31 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
     };
     
 
-    const onPressHandler = (item: any) => { 
-        dispatchNavigate('SendReceiveOnChain', {transaction: item, history: true, matchedRate, wallet});    
+    // Detect CPFP relationships across the FULL tx list (not just the
+    // paginated slice in `dataSource`) so a parent-of-child relationship
+    // isn't missed when the child pages out. Memoised on the tx list
+    // identity — recomputes only when a sync delta lands.
+    const { accelerators, suppressedChildIds } = useMemo(
+        () => detectCpfpRelations(wallet.getTransactions(), wallet),
+        // dataSource changes whenever new txs arrive; using it as the
+        // dependency keeps the memo aligned with the rendered list.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [wallet, dataSource],
+    );
+
+    const onPressHandler = (item: any) => {
+        dispatchNavigate('SendReceiveOnChain', {
+            transaction: item,
+            history: true,
+            matchedRate,
+            wallet,
+            // Pass the accelerator info through so the detail screen can
+            // gate the Accelerate button (already-bumped parents must not
+            // be bumped again — the parent's output is already spent by
+            // the existing child and CPFP would fail with a "missing utxo"
+            // error in createCPFPbumpFee).
+            cpfpAccelerator: accelerators.get(item?.hash || item?.txid) ?? null,
+        });
     };
 
     const transformDataToSections = (data) => {
@@ -141,14 +165,21 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
             acc[date].push(item);
             return acc;
         }, {});
-    
+
         return Object.keys(groupedData).map(date => ({
             title: date,
             data: groupedData[date]
         }));
     };
-    
-    const sections = transformDataToSections(dataSource);
+
+    // Suppress CPFP child rows from the displayed list. They're rendered
+    // implicitly via the "⚡ Accelerated" badge on their parent.
+    const visibleData = useMemo(
+        () => dataSource.filter((tx: any) => !suppressedChildIds.has(tx?.hash || tx?.txid)),
+        [dataSource, suppressedChildIds],
+    );
+
+    const sections = transformDataToSections(visibleData);
 
     console.log('getTransactionsSliced(Infinity).length: ', getTransactionsSliced(Infinity).length, sections, limit)
 
@@ -162,7 +193,7 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
             <SectionList
                 sections={sections}
                 keyExtractor={(item, index) => index.toString()}
-                renderItem={({ item }) => <Items wallet={wallet} matchedRate={matchedRate}  item={item} onPressHandler={() => onPressHandler(item)} vaultTab={vaultTab} />}
+                renderItem={({ item }) => <Items wallet={wallet} matchedRate={matchedRate}  item={item} onPressHandler={() => onPressHandler(item)} vaultTab={vaultTab} cpfpChildInfo={accelerators.get(item?.hash || item?.txid) ?? null} />}
                 renderSectionHeader={({ section: { title } }) => <Header title={title} />}
                 onEndReached={async () => {
                     // pagination in works. in this block we will add more txs to FlatList

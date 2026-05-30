@@ -28,7 +28,12 @@ const shortenAddress = (address: string) => {
 
 
 export default function SendReceiveOnChain({ route }: Props) {
-    const { transaction, history, matchedRate, wallet } = route?.params;
+    const { transaction, history, matchedRate, wallet, cpfpAccelerator } = route?.params;
+    // cpfpAccelerator: { childTxid, childFeeSats } | null
+    //   Set by HotStorageVault/History when this tx already has a CPFP
+    //   child paying its fee. Used to hide the Accelerate button so we
+    //   don't let the user double-bump (the parent's output is already
+    //   spent by the child and createCPFPbumpFee would throw).
     const isSent = transaction.value < 0;
     const satsAmount = transaction.value.toString().replace('-', ''); // Adjusted for negative sign
     const amountSign = transaction.value < 0 ? "-" : "+";
@@ -128,12 +133,15 @@ export default function SendReceiveOnChain({ route }: Props) {
             }
 
             const txObject = new HDSegwitBech32Transaction(null, transaction?.txid, walletInstance);
-            const isOurTx = await txObject.isOurTransaction();
             const confirmations = await txObject.getRemoteConfirmationsNum();
-            const isReplaceable = await txObject.isSequenceReplaceable();
+            // SEND direction → RBF; RECEIVE direction → CPFP. The two paths
+            // share this whole prep flow except for the eligibility check
+            // and the bumper method chosen at submit time.
+            const isOurSend = await txObject.isOurTransaction();
+            const isOurReceive = await txObject.isToUsTransaction();
 
-            if (!isOurTx) {
-                alert('This transaction does not belong to the current wallet');
+            if (!isOurSend && !isOurReceive) {
+                alert('This transaction does not involve the current wallet');
                 setIsRBFLoading(false);
                 return;
             }
@@ -144,14 +152,20 @@ export default function SendReceiveOnChain({ route }: Props) {
                 return;
             }
 
-            if (!isReplaceable) {
-                alert('This transaction was not created with RBF enabled');
-                setIsRBFLoading(false);
-                return;
+            // RBF requires the sender to have signalled it on the original
+            // tx. CPFP imposes no such requirement — the child is a brand
+            // new tx that spends our unconfirmed output.
+            if (isOurSend) {
+                const isReplaceable = await txObject.isSequenceReplaceable();
+                if (!isReplaceable) {
+                    alert('This transaction was not created with RBF enabled');
+                    setIsRBFLoading(false);
+                    return;
+                }
             }
 
             const info = await txObject.getInfo();
-            
+
             // Fetch current fee options from mempool
             try {
                 const fees = await NetworkTransactionFees.recommendedFees();
@@ -160,13 +174,13 @@ export default function SendReceiveOnChain({ route }: Props) {
                 console.warn('Failed to fetch fee options:', e);
                 setFeeOptions(null);
             }
-            
+
             setNewFeeRate(String(info.feeRate + 1));
             setCurrentFeeRate(info.feeRate);
             setRbfTx(txObject);
             rbfSheetRef.current?.open();
         } catch (error) {
-            console.error('RBF prep error:', error);
+            console.error('Accelerate prep error:', error);
             alert('Unable to accelerate transaction: ' + error.message);
         }
         setIsRBFLoading(false);
@@ -200,21 +214,37 @@ export default function SendReceiveOnChain({ route }: Props) {
                 return;
             }
 
-            const { tx: newTx } = await rbfTx.createRBFbumpFee(feeRateNumber);
+            // Branch on direction. For a send the wallet re-signs the same
+            // tx with a higher fee (RBF). For a receive the wallet builds a
+            // child that spends the unconfirmed output and pays the higher
+            // effective combined rate (CPFP). Both methods take the same
+            // "target effective fee rate" argument, so the UI is identical.
+            const { tx: newTx } = isSent
+                ? await rbfTx.createRBFbumpFee(feeRateNumber)
+                : await rbfTx.createCPFPbumpFee(feeRateNumber);
 
-            await walletInstance.broadcast(newTx.toHex());
-            console.log('RBF transaction broadcasted:', newTx.getId());
+            // Canonical broadcast in this codebase is `broadcastTx`, not
+            // `broadcast`. Legacy wallets (legacy-wallet.ts:370), watch-only
+            // wallets, and lightning-ldk-wallet (363) all use `broadcastTx`.
+            // The pre-existing RBF code path called `.broadcast()` which
+            // silently failed at the .broadcast-is-undefined assert until
+            // we widened the gate to receive-direction CPFP and tripped on
+            // a real test. Returns Promise<boolean>; throws on transport
+            // error and resolves to false on a typed server rejection.
+            const ok = await walletInstance.broadcastTx(newTx.toHex());
+            if (!ok) throw new Error('Broadcast rejected by the network');
+            console.log((isSent ? 'RBF' : 'CPFP') + ' transaction broadcasted:', newTx.getId());
 
             rbfSheetRef.current?.close();
-            navigateToBroadcastScreen(feeRateNumber, newTx.getId());
+            navigateToBroadcastScreen(feeRateNumber, newTx.getId(), isSent ? 'rbf' : 'cpfp');
         } catch (error) {
-            console.error('RBF error:', error);
+            console.error('Accelerate error:', error);
             alert('Failed to accelerate transaction: ' + error.message);
         }
         setIsRBFSubmitting(false);
     };
 
-    const navigateToBroadcastScreen = (feeRateNumber: number, newTxid: string) => {
+    const navigateToBroadcastScreen = (feeRateNumber: number, newTxid: string, bumpType: 'rbf' | 'cpfp') => {
         const satValueNumber = Number(satsAmount || 0);
         const fiatValue = dollarAmount || 0;
         const toAddress = transaction?.outputs?.[0]?.scriptPubKey?.addresses?.[0] || transaction?.outputs?.[0]?.addresses?.[0];
@@ -222,7 +252,7 @@ export default function SendReceiveOnChain({ route }: Props) {
         dispatchNavigate('TransactionBroadCast', {
             matchedRate,
             currency: route?.params?.currency || 'USD',
-            type: 'rbf',
+            type: bumpType,
             value: satValueNumber,
             converted: fiatValue,
             isSats: true,
@@ -267,13 +297,46 @@ export default function SendReceiveOnChain({ route }: Props) {
                 {/* {!isSent && <TextView keytext="At bitcoin exchange rate: " text={'$'+matchedRate} />} */}
                 <TextView keytext="Txid:  " text={transaction?.txid} />
 
-                {isSent && transaction.confirmations == 0 &&
-                    <TouchableOpacity 
+                {transaction.confirmations == 0 && !cpfpAccelerator &&
+                    <TouchableOpacity
                         style={[styles.button, { marginBottom: 20 }, vaultTab && { borderColor: colors.coldGreen}]}
                         onPress={handleAccelerateTransaction}
                         disabled={isRBFLoading}
                     >
                         <Text bold h4 style={styles.text}>{isRBFLoading ? 'Preparing...' : 'Accelerate transaction'}</Text>
+                    </TouchableOpacity>
+                }
+                {transaction.confirmations == 0 && cpfpAccelerator &&
+                    <TouchableOpacity
+                        style={{
+                            marginBottom: 20,
+                            paddingVertical: 10,
+                            paddingHorizontal: 14,
+                            borderRadius: 12,
+                            backgroundColor: 'rgba(255, 213, 79, 0.08)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(255, 213, 79, 0.35)',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                        }}
+                        onPress={() => {
+                            // Open the CPFP child in the explorer so the user
+                            // can see what's actually accelerating the parent.
+                            // #details auto-expands the inputs/outputs panel
+                            // on mempool.space — same fragment used elsewhere.
+                            const url = `https://mempool.space/tx/${cpfpAccelerator.childTxid}#details`;
+                            Linking.openURL(url).catch(err => console.error('mempool open failed:', err));
+                        }}
+                    >
+                        <View style={{ flex: 1 }}>
+                            <Text semibold style={{ color: '#FFD54F', fontSize: 13 }}>
+                                ⚡ Accelerated with CPFP
+                            </Text>
+                            <Text style={{ color: '#FFD54F', opacity: 0.7, fontSize: 11, marginTop: 2 }}>
+                                {'Child fee: +' + cpfpAccelerator.childFeeSats.toLocaleString() + ' sats · tap to view'}
+                            </Text>
+                        </View>
+                        <Text style={{ color: '#FFD54F', opacity: 0.6, fontSize: 16, marginLeft: 8 }}>›</Text>
                     </TouchableOpacity>
                 }
                 <TouchableOpacity style={[styles.button, vaultTab && { borderColor: colors.coldGreen}]} onPress={handleViewBtcNetExplorerClickHandler}>
@@ -296,7 +359,10 @@ export default function SendReceiveOnChain({ route }: Props) {
                 }}
             >
                 <View style={{ padding: 20 }}>
-                    <Text bold h3 center style={{ marginBottom: 20, color: colors.white }}>Accelerate Transaction</Text>
+                    <Text bold h3 center style={{ marginBottom: 4, color: colors.white }}>Accelerate Transaction</Text>
+                    <Text center style={{ marginBottom: 16, color: colors.gray.light, fontSize: 12 }}>
+                        {isSent ? 'Replace by Fee (RBF)' : 'Child Pays for Parent (CPFP)'}
+                    </Text>
                     {currentFeeRate !== null && (
                         <Text semibold style={{ marginBottom: 10, color: colors.gray.light }}>
                             Current fee rate: {currentFeeRate} sat/vbyte

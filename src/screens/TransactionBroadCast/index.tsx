@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Image, ImageBackground, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Image, ImageBackground, Linking, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput, GradientText } from "@Cypher/components";
@@ -178,6 +178,32 @@ export default function TransactionBroadCast({navigation, route}: any) {
                     </ImageBackground>
                 } */}
                 {/* <View style={styles.extra} /> */}
+                {response && item?.txid &&
+                    <TouchableOpacity
+                        style={{
+                            alignSelf: 'center',
+                            marginTop: 12,
+                            paddingHorizontal: 16,
+                            paddingVertical: 8,
+                        }}
+                        onPress={() => {
+                            // #details auto-expands the inputs/outputs panel on
+                            // mempool.space — same fragment used by the parent
+                            // tx detail explorer button in SendReceiveOnChain.
+                            const url = `https://mempool.space/tx/${item.txid}#details`;
+                            Linking.openURL(url).catch(err => console.error('mempool open failed:', err));
+                        }}
+                    >
+                        <Text semibold center style={{ color: colors.white, textDecorationLine: 'underline' }}>
+                            View transaction in Bitcoin Network Explorer
+                        </Text>
+                        {item?.originalTxid &&
+                            <Text center style={{ color: colors.gray.light, fontSize: 11, marginTop: 4 }}>
+                                {type === 'cpfp' ? 'Child of' : 'Replaces'} {String(item.originalTxid).substring(0, 8)}…
+                            </Text>
+                        }
+                    </TouchableOpacity>
+                }
                 {response &&
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
                         title={receiveType ? 'Transaction Details' : 'Home'}
