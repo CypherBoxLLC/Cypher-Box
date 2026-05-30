@@ -1,5 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Alert, Image, Keyboard, LayoutAnimation, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from "react-native";
+import MaskedView from "@react-native-masked-view/masked-view";
 import { Icon } from 'react-native-elements';
 import SimpleToast from "react-native-simple-toast";
 
@@ -1166,41 +1167,103 @@ export default function ColdStorage({ route, navigation }: Props) {
                               {!isBatch &&
                                 <>
                                   {!vaultSend &&
-                                    <View style={[styles.cardListContainer, type === 'TOPUP' && { justifyContent: 'center' }, { marginTop: 0, marginBottom: 5, gap: 20 }]}>
-                                      {data?.map((item) => (
-                                        <GradientView
-                                          key={item.id}
-                                          onPress={() => {
-                                            if (item.enabled) setSelectedItem(item.id);
-                                          }}
-                                          style={[styles.cardGradientStyle, !item.enabled && { opacity: 0.35 }]}
-                                          linearGradientStyle={styles.cardOuterShadow}
-                                          topShadowStyle={[
-                                            styles.cardTopShadow,
-                                            (selectedItem == null || selectedItem != item?.id) && { shadowColor : colors.gray.disable }
-                                          ]}
-                                          bottomShadowStyle={[
-                                            styles.cardInnerShadow,
-                                            (selectedItem == null || selectedItem != item?.id) && { shadowColor : colors.gray.disable }
-                                          ]}
-                                          linearGradientStyleMain={styles.cardGradientMainStyle}
-                                          gradiantColors={[colors.black.bg, colors.black.bg]}
-                                        >
-                                          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
-                                            <Image
-                                              source={item?.icon}
-                                              style={styles.logoImage}
-                                              resizeMode="contain"
-                                            />
-                                          </View>
-                                        </GradientView>
-                                      ))}
-                                    </View>
+                                    <ScrollView
+                                      horizontal
+                                      showsHorizontalScrollIndicator={false}
+                                      // Cards used to wrap a plain row View. With three providers
+                                      // (Strike + CoinOS + Ark Vault) on a 393pt iPhone the math
+                                      // already overflows (3 × widths*0.3 + 2 × 20pt gap ≈ 394pt),
+                                      // cropping the Second card on the right. Future providers
+                                      // (e.g. another Lightning rail) would compound. Horizontal
+                                      // ScrollView gracefully degrades regardless of N cards.
+                                      contentContainerStyle={[
+                                        styles.cardListContainer,
+                                        type === 'TOPUP' && { justifyContent: 'center' },
+                                        { marginTop: 0, marginBottom: 5, gap: 12, paddingHorizontal: 4 },
+                                      ]}
+                                    >
+                                      {data?.map((item) => {
+                                        const isSelected = selectedItem === item?.id;
+                                        return (
+                                          <GradientView
+                                            key={item.id}
+                                            // Honour the enabled gate at the TouchableOpacity layer
+                                            // (was previously only checked inside onPress, leaving
+                                            // disabled cards visually identical to enabled ones —
+                                            // user taps, nothing happens, looks broken). Now disabled
+                                            // cards get GradientView's grey-on-grey treatment so the
+                                            // affordance matches reality.
+                                            disabled={!item.enabled}
+                                            onPress={() => {
+                                              if (item.enabled) setSelectedItem(item.id);
+                                            }}
+                                            style={[
+                                              styles.cardGradientStyle,
+                                              !item.enabled && { opacity: 0.35 },
+                                              // Yellow Ark-accent outline on the selected card so
+                                              // the selection is unmistakable. The previous design
+                                              // relied on the inner/outer shadow swapping color
+                                              // when selected, which is subtle to the point of
+                                              // invisibility on this dark background.
+                                              isSelected && { borderWidth: 2, borderColor: '#FFD54F', borderRadius: 20 },
+                                            ]}
+                                            linearGradientStyle={styles.cardOuterShadow}
+                                            topShadowStyle={[
+                                              styles.cardTopShadow,
+                                              !isSelected && { shadowColor: colors.gray.disable },
+                                            ]}
+                                            bottomShadowStyle={[
+                                              styles.cardInnerShadow,
+                                              !isSelected && { shadowColor: colors.gray.disable },
+                                            ]}
+                                            linearGradientStyleMain={styles.cardGradientMainStyle}
+                                            gradiantColors={[colors.black.bg, colors.black.bg]}
+                                          >
+                                            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+                                              {item.id === 3 ? (
+                                                // second.png ships as a multi-color (not a flat alpha
+                                                // mask), so `tintColor: '#FFFFFF'` does NOT visibly
+                                                // tint it — confirmed empirically and noted in
+                                                // src/components/Card/index.tsx:257. MaskedView is the
+                                                // working pattern: use the PNG as an alpha mask and
+                                                // fill it with a solid white. Other providers (Strike,
+                                                // CoinOS) ship as white-on-transparent PNGs already
+                                                // and render fine with plain <Image>.
+                                                <MaskedView
+                                                  style={styles.logoImage}
+                                                  maskElement={
+                                                    <Image
+                                                      source={item?.icon}
+                                                      style={styles.logoImage}
+                                                      resizeMode="contain"
+                                                    />
+                                                  }
+                                                >
+                                                  <View style={[styles.logoImage, { backgroundColor: '#FFFFFF' }]} />
+                                                </MaskedView>
+                                              ) : (
+                                                <Image
+                                                  source={item?.icon}
+                                                  style={styles.logoImage}
+                                                  resizeMode="contain"
+                                                />
+                                              )}
+                                            </View>
+                                          </GradientView>
+                                        );
+                                      })}
+                                    </ScrollView>
                                   }
                                 </>
                               }
                               {!vaultSend &&
-                                <Text style={{fontSize: 12, color: '#AAAAAA'}}>{selectedItem == 1 ? "Strike Lightning account deposit address" : "CoinOS Lightning account deposit address"}</Text>
+                                <Text style={{fontSize: 12, color: '#AAAAAA'}}>
+                                  {selectedItem == 1
+                                    ? "Strike Lightning account deposit address"
+                                    : selectedItem == 3
+                                      ? "Ark Vault boarding address (P2TR)"
+                                      : "CoinOS Lightning account deposit address"}
+                                </Text>
                               }
                               {type !== 'TOPUP' && (
                                 isBatch ?
@@ -1229,7 +1292,37 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     </TouchableOpacity>
                                   </View>
                                   :
-                                    <Text style={{fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888', marginTop: 4}}>{vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(selectedItem == 1 ? (toStrike || '') : selectedItem == 3 ? (toArk || '') : (to || ''))}</Text>
+                                  (() => {
+                                    // Resolve the actual address shown next to the destination
+                                    // label so the user can verify + copy what's going to be
+                                    // signed. CoinOS used to be hardcoded when multiple LN
+                                    // wallets existed; now it follows selectedItem.
+                                    const fullAddr = vaultSend
+                                      ? to
+                                      : selectedItem == 1
+                                        ? (toStrike || '')
+                                        : selectedItem == 3
+                                          ? (toArk || '')
+                                          : (to || '');
+                                    return (
+                                      <TouchableOpacity
+                                        activeOpacity={0.6}
+                                        onPress={() => {
+                                          if (!fullAddr) return;
+                                          Clipboard.setString(fullAddr);
+                                          SimpleToast.show('Address copied', SimpleToast.SHORT);
+                                        }}
+                                        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}
+                                      >
+                                        <Text style={{ fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888', flex: 1 }}>
+                                          {vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(fullAddr)}
+                                        </Text>
+                                        {!!fullAddr &&
+                                          <Text style={{ fontSize: 10, color: '#888', marginLeft: 8, textDecorationLine: 'underline' }}>copy</Text>
+                                        }
+                                      </TouchableOpacity>
+                                    );
+                                  })()
                               )}
                           </View>
                         </View>
