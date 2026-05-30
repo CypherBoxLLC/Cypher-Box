@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, Text as RNText, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Icon } from "react-native-elements";
@@ -27,6 +27,10 @@ import {
     syncArkWallet,
     useArkCancelling,
 } from "@Cypher/services/ark";
+// Imported from the file path directly rather than the @Cypher/services/ark
+// barrel to keep this change self-contained — the barrel has in-flight edits
+// in a separate branch state and re-exporting through it would conflict.
+import { cancelArkLightningReceive } from "@Cypher/services/ark/lightning";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
@@ -615,9 +619,17 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
 interface PendingLnReceiveRowProps {
     sats: number;
     paymentHash: string;
+    /**
+     * Tap handler. When provided, the row becomes tappable and surfaces a
+     * "tap to cancel" affordance in the subtitle. When omitted, the row is
+     * non-interactive (back-compat with any caller that doesn't want the
+     * cancel surface). The handler should manage its own confirm UI — this
+     * component just fires the tap.
+     */
+    onPress?: () => void;
 }
 
-function PendingLnReceiveRow({ sats }: PendingLnReceiveRowProps) {
+function PendingLnReceiveRow({ sats, onPress }: PendingLnReceiveRowProps) {
     const BTCAmount = formatCapsuleAmount(sats);
 
     const spinAnim = useRef(new Animated.Value(0)).current;
@@ -680,7 +692,19 @@ function PendingLnReceiveRow({ sats }: PendingLnReceiveRowProps) {
                     elevation: 10,
                 }}
             />
-            <View style={rowStyles.container}>
+            {/* Tappable content area. When onPress is set, the row reads as
+                tappable and surfaces the cancel action. When omitted, the
+                touchable degrades to a passive container (activeOpacity=1,
+                disabled). The LinearGradient backdrop above is intentionally
+                outside this touchable so the visual edges aren't part of the
+                tap target — the row reads as "tap the card body to cancel",
+                not "tap anywhere on the row". */}
+            <TouchableOpacity
+                style={rowStyles.container}
+                activeOpacity={onPress ? 0.7 : 1}
+                onPress={onPress}
+                disabled={!onPress}
+            >
                 <View style={[rowStyles.coin, { flex: 1.5 }]}>
                     {/* Indeterminate spinner — a single yellow arc rotating
                         forever. Reusing the VtxoRing geometry (38pt circle,
@@ -718,13 +742,11 @@ function PendingLnReceiveRow({ sats }: PendingLnReceiveRowProps) {
                         Claiming via round…
                     </Text>
                     <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 11 }}>
-                        Lightning ~1–3 min
+                        {onPress ? "Lightning ~1–3 min · tap to cancel" : "Lightning ~1–3 min"}
                     </Text>
                 </View>
                 {/* Bolt icon in the refresh column — visually distinguishes
-                    a pending Lightning receive from a real capsule. No tap
-                    handler: there's nothing the user can do here, the ASP
-                    is committing the claim into the next round. */}
+                    a pending Lightning receive from a real capsule. */}
                 <View style={[rowStyles.label, { alignItems: 'flex-start' }]}>
                     <Icon name="zap" type="feather" color={colors.ark.light} size={22} />
                 </View>
@@ -732,7 +754,7 @@ function PendingLnReceiveRow({ sats }: PendingLnReceiveRowProps) {
                     Send/Refresh actions. We still reserve the column so the
                     row width matches the real capsule rows below. */}
                 <View style={rowStyles.select} />
-            </View>
+            </TouchableOpacity>
         </Animated.View>
     );
 }
@@ -756,6 +778,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const cancelling = useArkCancelling();
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
+    const setArkPendingLnReceives = useAuthStore((s) => s.setArkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
@@ -1044,6 +1067,65 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const handleRowRefresh = (vtxoId: string) => {
         void refreshIds([vtxoId]);
     };
+
+    /**
+     * Cancel a specific pending Lightning receive by payment hash.
+     *
+     * Two-stage UX:
+     *   1. Confirm modal — plain copy because cancel is safe by construction
+     *      (verified against bark 0.1.3 source: bark refuses the call if the
+     *      preimage has been revealed or the receive has already settled, so
+     *      the worst case from a stray confirm is an error toast, not a
+     *      forfeit).
+     *   2. On confirm: fire `cancelArkLightningReceive`, optimistically drop
+     *      the row from zustand on success (the 30s sync will reconcile if
+     *      something unexpected put it back), surface the SDK's guard-error
+     *      reason on failure ("payment already in flight", "already settled",
+     *      generic transient).
+     */
+    const handleCancelPendingLnReceive = useCallback(
+        (paymentHash: string, sats: number) => {
+            Alert.alert(
+                "Cancel Lightning receive?",
+                `Cancel pending Lightning receive of ${formatCapsuleAmount(sats)}? ` +
+                `The sender (if any) will see the invoice as unpaid.`,
+                [
+                    { text: "Keep waiting", style: "cancel" },
+                    {
+                        text: "Cancel receive",
+                        style: "destructive",
+                        onPress: async () => {
+                            const result = await cancelArkLightningReceive(paymentHash);
+                            if (result.ok) {
+                                // Optimistic update: read latest zustand state at
+                                // tap time (not at handler-bind time) so we don't
+                                // race with a parallel sync tick that just landed.
+                                const current =
+                                    useAuthStore.getState().arkPendingLnReceives;
+                                setArkPendingLnReceives(
+                                    current.filter((r) => r.paymentHash !== paymentHash),
+                                );
+                                SimpleToast.show(
+                                    "Lightning receive cancelled.",
+                                    SimpleToast.SHORT,
+                                );
+                            } else {
+                                // Leave the row in place — for the two terminal
+                                // guard errors the row reflecting "still pending"
+                                // is misleading, but the next sync tick (≤30s)
+                                // either drops it (already-finished case) or
+                                // updates it (preimage-revealed → claim in
+                                // flight). Toast carries the reason regardless.
+                                SimpleToast.show(result.reason, SimpleToast.LONG);
+                            }
+                        },
+                    },
+                ],
+                { cancelable: true },
+            );
+        },
+        [setArkPendingLnReceives],
+    );
 
     /**
      * Per-row icon (transient-state variant) — cancels every ongoing
@@ -1388,6 +1470,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                                     key={`pending-ln-${r.paymentHash}`}
                                     sats={r.amountSats}
                                     paymentHash={r.paymentHash}
+                                    onPress={() =>
+                                        handleCancelPendingLnReceive(
+                                            r.paymentHash,
+                                            r.amountSats,
+                                        )
+                                    }
                                 />
                             ))}
                         </>

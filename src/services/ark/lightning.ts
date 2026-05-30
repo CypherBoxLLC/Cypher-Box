@@ -124,3 +124,107 @@ export async function fetchArkPendingLightningReceives(): Promise<ArkLightningRe
         return [];
     }
 }
+
+/**
+ * Outcome of a cancel attempt on a specific pending Lightning receive.
+ *
+ * The `ok: false` shape carries a `reason` and a `kind` discriminator that the
+ * UI can branch on — the two terminal error cases ("preimage revealed" and
+ * "already finished") are user-actionable (the row should stay; the toast
+ * explains why) and distinct from a transient ASP/network failure.
+ */
+export type CancelArkLightningReceiveResult =
+    | { ok: true }
+    | { ok: false; kind: 'preimage-revealed' | 'already-finished' | 'unknown'; reason: string };
+
+/**
+ * Ask bark to cancel a specific pending Lightning receive by its payment hash.
+ *
+ * SAFETY: this call is non-destructive by construction. Verified against bark
+ * 0.1.3 source (bark/src/lightning/receive.rs#cancel_lightning_receive):
+ *   - If the preimage has been revealed (sender's payment is in flight and
+ *     bark has committed to claim), the call bails with
+ *     "cannot cancel: preimage has already been revealed".
+ *   - If the receive is already finished (claimed → VTXO), the call bails
+ *     with "lightning receive is already finished".
+ *   - The server additionally refuses if HTLC-recv VTXOs have already been
+ *     granted, regardless of the client check.
+ * So the worst case from the user mashing cancel on any row is a toast — no
+ * fund loss is possible at the bark layer.
+ *
+ * Returns a discriminated result rather than throwing so the caller can render
+ * an outcome toast without try/catch ceremony at the UI layer.
+ */
+export async function cancelArkLightningReceive(
+    paymentHash: string,
+): Promise<CancelArkLightningReceiveResult> {
+    const handle = getArkWalletHandle();
+    if (!handle) {
+        return { ok: false, kind: 'unknown', reason: 'Ark wallet not open' };
+    }
+
+    try {
+        await handle.cancelLightningReceive(paymentHash);
+        return { ok: true };
+    } catch (err: any) {
+        // bark surfaces both guard errors as anyhow!-style strings on the
+        // BarkError.Internal branch. Match on substrings rather than parsing
+        // structured error codes — the SDK doesn't expose a discriminator
+        // for these specific failures, and the strings are stable in the
+        // bark source.
+        const msg = err?.message ?? String(err);
+        if (/preimage has already been revealed/i.test(msg)) {
+            return {
+                ok: false,
+                kind: 'preimage-revealed',
+                reason: 'Payment is already in flight — can\'t cancel.',
+            };
+        }
+        if (/already finished/i.test(msg)) {
+            return {
+                ok: false,
+                kind: 'already-finished',
+                reason: 'Receive already settled — nothing to cancel.',
+            };
+        }
+        console.warn('[Ark cancel-ln-recv] failed:', err);
+        return {
+            ok: false,
+            kind: 'unknown',
+            reason: msg || 'Cancel failed; try again or wait for the next sync.',
+        };
+    }
+}
+
+/**
+ * Read-only fetch of a specific Lightning receive's current state.
+ *
+ * Returns null when the SDK has no record of the payment hash (e.g. the
+ * receive was already cancelled / claimed and pruned). Use the bigint →
+ * number boundary conversion convention every other helper here uses.
+ *
+ * Intended for the confirm-modal subtitle ("X sats, awaiting payment…") on
+ * the pending-row tap. Not wired into the 30s sync loop — that's what
+ * `fetchArkPendingLightningReceives` is for.
+ */
+export async function getArkLightningReceiveStatus(
+    paymentHash: string,
+): Promise<ArkLightningReceiveView | null> {
+    const handle = getArkWalletHandle();
+    if (!handle) return null;
+
+    try {
+        const raw = await handle.lightningReceiveStatus(paymentHash);
+        if (!raw) return null;
+        return {
+            paymentHash: raw.paymentHash,
+            invoice: raw.invoice,
+            amountSats: Number(raw.amountSats),
+            hasHtlcVtxos: raw.hasHtlcVtxos,
+            preimageRevealed: raw.preimageRevealed,
+        };
+    } catch (err) {
+        console.warn('[Ark cancel-ln-recv] lightningReceiveStatus failed:', err);
+        return null;
+    }
+}
