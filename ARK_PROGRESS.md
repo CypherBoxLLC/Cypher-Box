@@ -418,6 +418,8 @@ This block consolidates the ~95 commits between 2026-04-30 and 2026-05-19. The b
 - **2026-05-15…05-19 — Fiat-rate plumbing audit** (`b4b91bf`, `52aafef`, `cbb4022`, `a248c9b`, `a4b9169`):
   - After a unit-flip in the BlueWallet rate source (sats-per-rate vs btc-per-rate), every site that multiplied sats × rate needed a `btc(1)` factor re-applied. Caught five sites across Ark balance, send screen, CoinOS, Strike swap preview. Single source of truth: BlueWallet's `getFiatRate` daemon fall-through, with CoinOS rate-box reading the BlueWallet value.
 
+- **2026-05-30 — Dev toolkit: bark CLI** — Added host-side `bark` CLI (pinned to `bark-0.1.3`, the Rust crate version embedded in `@secondts/bark-react-native@0.4.1`) plus wrappers under [scripts/bark/](scripts/bark) (`decode.sh`, `vtxos.sh`, `round-status.sh`, `restore.sh`). Gives us an independent ground-truth path into VTXO / round / datadir state when the JS SDK's reported `kind` enum disagrees with the docstrings. Dev-only — not bundled, not in `package.json`. See `CLAUDE.md → "Bark CLI for Ark debugging"` for install + recipes. Phase 9 status unchanged — this is tooling, not user-facing hardening.
+
 ---
 
 ## Open items / next session pickup
@@ -427,14 +429,15 @@ _(refreshed 2026-05-27. Was 7 items; 4 of those landed in the May push — keep 
 1. **Hot-vault seed reuse** (still Phase 1 TODO from 2026-04-20) — `useHotVaultSeed` toggle on [CreateArkScreen](src/screens/Account/CreateArkScreen/index.tsx) sets a flag but never reads the hot-vault mnemonic. Wire: keychain read → `createArkWallet(hotVaultMnemonic)` → warn modal explaining shared-seed leak risk.
 2. **End-to-end mainnet send test, captured** — sends have been exercised implicitly through the LN-receive + auto-refresh + dust-consolidation flows, but no recorded Ark→Ark and Ark→Lightning end-to-end. Worth doing once on mainnet with a small amount + a captured log so any future regression is bisectable. Service layer is stable; this is verification, not implementation.
 3. **Backup/restore CI** — Phase 9 hardening gap. A pinned mainnet `.cbark` (small-amount test wallet) from each SDK minor should round-trip through `restoreArkBackupBlob` in CI on every PR. Catches schema drift from a Bark bump before users do. Fixture wallet should be funded with the minimum that exercises real round participation.
-4. **Drop `crypto-js`** — superseded by `react-native-aes-crypto` since 2026-04-30. Left in `package.json` as a safety net pending an end-to-end build validation. Validation has now happened across iOS + Android in the May push — safe to remove.
-5. **Tighten auto-backup signature** — `tip` is still in the signature; it flaps on parallel-cycle esplora calls and triggers spurious backups. Either de-dupe parallel cycles via the (currently racy) `inFlight` guard or drop `tip` from the signature.
-6. **Second.tech upstream asks** — single message covering:
+4. **Bark CLI–driven backup/restore round-trip tests in CI** — Phase 9 hardening, sibling to #3 but independent. Same fixture `.cbark`, but the round-trip runs through the host-side `bark` CLI ([scripts/bark/restore.sh](scripts/bark/restore.sh) → `bark vtxos --all` → expected snapshot diff) instead of the RN code path. Catches drift between the SDK (FFI binding) and the CLI (same Rust core, independent build) — when they disagree we want CI to flag it, not a user. Requires: CI Linux runner with the pinned-version `bark` binary preinstalled, the fixture seed in CI secrets, and an "expected" VTXO-snapshot JSON checked in that we regenerate intentionally on SDK bumps. Wiring is separate work; this item only tracks the task.
+5. **Drop `crypto-js`** — superseded by `react-native-aes-crypto` since 2026-04-30. Left in `package.json` as a safety net pending an end-to-end build validation. Validation has now happened across iOS + Android in the May push — safe to remove.
+6. **Tighten auto-backup signature** — `tip` is still in the signature; it flaps on parallel-cycle esplora calls and triggers spurious backups. Either de-dupe parallel cycles via the (currently racy) `inFlight` guard or drop `tip` from the signature.
+7. **Second.tech upstream asks** — single message covering:
    - Stable `Wallet.export()` / `Wallet.import()` API so backups stop depending on internal SQLite schema.
    - Async UniFFI bindings (or worker-thread wrapper) for `wallet.sync()` / `wallet.balance()` / `wallet.allVtxos()`. Still the biggest UX cost on Galaxy A14 — 2–9s JS-thread block per sync cycle.
    - iOS Podfile `HEADER_SEARCH_PATHS` quirk for the codegen output ([ios/Podfile](ios/Podfile)). Worth documenting upstream.
    - Recovery-mailbox client API timeline (since 0.1.0 the ASP posts received VTXOs to a mailbox; client code to drain it would demote `.cbark` from mandatory to belt-and-suspenders).
-7. **Production rollout readiness** — Ark is mainnet-on by default (see status banner). Outstanding pre-GA work is operational rather than a config flip:
-   - Items 3 (backup CI) and 4 (drop crypto-js) should land before broad release.
+8. **Production rollout readiness** — Ark is mainnet-on by default (see status banner). Outstanding pre-GA work is operational rather than a config flip:
+   - Items 3 (backup CI) and 5 (drop crypto-js) should land before broad release.
    - Documented incident response: what happens if `ark.second.tech` goes down? Today the UI shows a stale balance and refresh retries — surface this state explicitly.
    - In-app surfacing of the "back up your seed AND your VTXO state" warning for non-tester users (called out in the [config.ts](src/services/ark/config.ts) preamble — still relies on Phase 2 backup flows actually being completed by the user).
