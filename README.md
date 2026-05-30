@@ -47,6 +47,8 @@ Built with React Native, Electrum, and powered by **Coinos.io + Strike APIs**
 # BUILD & RUN
 
 > See the `engines` field in `package.json` for minimum Node/npm versions. Use even-numbered (LTS) versions.
+>
+> Branch-specific toolchain pins, Gradle cache rules, Android codegen gotchas, the iOS Node 22 LTS pin for hermes-engine, and other build-environment notes live in [docs/BUILD.md](docs/BUILD.md). Worth a read before your first build on `CB-Ark`.
 
 ```bash
 git clone https://github.com/CypherBoxLLC/Cypher-Box.git
