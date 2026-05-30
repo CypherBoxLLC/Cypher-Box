@@ -31,6 +31,10 @@ import {
 // barrel to keep this change self-contained — the barrel has in-flight edits
 // in a separate branch state and re-exporting through it would conflict.
 import { cancelArkLightningReceive } from "@Cypher/services/ark/lightning";
+import {
+    fetchArkNextRequiredRefreshHeight,
+    formatBlocksUntil,
+} from "@Cypher/services/ark/expiry";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
@@ -787,6 +791,48 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // so users can confirm the feature is armed without leaving the
     // Capsules tab.
     const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
+    // Subscribed purely as a re-render trigger for the "next refresh due"
+    // status line below — the useArkSync loop bumps this at the end of every
+    // successful tick, so we re-fetch the SDK's `getNextRequiredRefreshBlockheight`
+    // alongside the rest of the wallet's read state without spinning up a
+    // separate poll.
+    const arkLastSyncedAt = useAuthStore((s) => s.arkLastSyncedAt);
+
+    // Block-height the wallet's policy says we need to refresh by, or null
+    // when nothing's in scope (no spendable VTXOs / all already refreshed
+    // within margin). Held as blocks rather than days so the formatter can
+    // pick the right unit (hours vs days) at render time. NOT in zustand —
+    // local-only because no other surface needs it yet; if WalletsView /
+    // ArkWallet want the same signal later, this lifts cleanly.
+    const [nextRefreshBlocks, setNextRefreshBlocks] = useState<number | null>(null);
+    useEffect(() => {
+        // chainTipHeight may briefly be null on first mount before the
+        // esplora fetch lands — skip until both signals are ready, the next
+        // sync tick re-runs the effect when they are.
+        if (chainTipHeight === null) return;
+        let cancelled = false;
+        (async () => {
+            const targetHeight = await fetchArkNextRequiredRefreshHeight();
+            if (cancelled) return;
+            if (targetHeight === null) {
+                setNextRefreshBlocks(null);
+                return;
+            }
+            const blocks = targetHeight - chainTipHeight;
+            setNextRefreshBlocks(blocks);
+            if (__DEV__) {
+                // Block number kept in console for triage — never surfaced
+                // in user-facing copy. Paired with the time formatting so
+                // logs read as "raw + interpreted" at a glance.
+                console.log(
+                    `[Ark expiry] next required refresh at block ${targetHeight} (${formatBlocksUntil(blocks)})`,
+                );
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [arkLastSyncedAt, chainTipHeight]);
 
     // Sum of sats currently locked in pending refresh rounds. Same derivation
     // as ArkWallet/index.tsx (Locked-state VTXO sats), to avoid the SDK's
@@ -1335,6 +1381,25 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         {arkBgRefreshEnabled ? 'on' : 'off'}
                     </Text>
                 </Text>
+                {/* Wallet-policy refresh deadline. Always shown when the SDK
+                    has a value, regardless of whether auto-refresh is on —
+                    a user with auto-refresh off still needs to know when
+                    to manually act. Hidden when nextRefreshBlocks is null
+                    (no spendable VTXOs / all already refreshed within
+                    policy margin) so the line doesn't render as broken
+                    state on a fresh / empty wallet. */}
+                {nextRefreshBlocks !== null && (
+                    <Text
+                        style={{
+                            fontSize: 12,
+                            color: '#888',
+                            marginTop: -2,
+                            marginBottom: 6,
+                        }}
+                    >
+                        {`Next refresh ${formatBlocksUntil(nextRefreshBlocks)}`}
+                    </Text>
+                )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
                         Keep your virtual capsules (VTXOs) refreshed.{' '}
