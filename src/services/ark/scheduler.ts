@@ -150,6 +150,19 @@ export function registerArkBackgroundRefreshHandlers(): void {
                     // signal back to native.
                     require('./backgroundRefresh')
                         .runBackgroundRefresh('push')
+                        .then(() => {
+                            // Safety net: after refresh resolves, fire the
+                            // custodial-sweep check. Per Feature spec B,
+                            // refresh wins when it can; this only acts on
+                            // VTXOs still < CUSTODIAL_SWEEP_THRESHOLD blocks
+                            // from expiry. Idempotent + rate-limited
+                            // internally.
+                            return require('./emergencyCustodialSweep')
+                                .runEmergencyCustodialSweep('push')
+                                .catch((sweepErr: unknown) => {
+                                    console.warn('[Ark scheduler] post-push sweep threw:', sweepErr);
+                                });
+                        })
                         .catch((err: unknown) => {
                             console.warn('[Ark scheduler] Android push handler threw:', err);
                         });
@@ -166,6 +179,16 @@ export function registerArkBackgroundRefreshHandlers(): void {
         AppRegistry.registerHeadlessTask('ArkBackgroundRefresh', () => async () => {
             const { runBackgroundRefresh } = require('./backgroundRefresh');
             const result = await runBackgroundRefresh('scheduled');
+            // Post-refresh safety net per Feature spec B. Fire-and-forget
+            // from the worker's perspective — the sweep records its own
+            // outcome via console + push, and we don't gate the
+            // WorkManager Result on it.
+            try {
+                const { runEmergencyCustodialSweep } = require('./emergencyCustodialSweep');
+                await runEmergencyCustodialSweep('scheduled');
+            } catch (sweepErr) {
+                console.warn('[Ark scheduler] post-scheduled sweep threw:', sweepErr);
+            }
             // Return value lands in the WorkManager Result via the bridge.
             // We always succeed at the worker level — refresh-round outcome
             // is recorded in our own telemetry rather than reflected as a
@@ -188,6 +211,17 @@ export function registerArkBackgroundRefreshHandlers(): void {
                 try {
                     const { runBackgroundRefresh } = require('./backgroundRefresh');
                     const result = await runBackgroundRefresh(trigger);
+                    // Post-refresh safety net per Feature spec B. Fire
+                    // before marking the task complete so the iOS
+                    // BGProcessingTask window covers it; idempotent +
+                    // rate-limited, so a fast no-op when nothing's
+                    // imminent.
+                    try {
+                        const { runEmergencyCustodialSweep } = require('./emergencyCustodialSweep');
+                        await runEmergencyCustodialSweep(trigger);
+                    } catch (sweepErr) {
+                        console.warn('[Ark scheduler] iOS post-refresh sweep threw:', sweepErr);
+                    }
                     // iOS uses success/failure as a signal to the OS
                     // scheduler. Treat any clean exit as success — only
                     // hard errors and missing-seed cases mark failure.
