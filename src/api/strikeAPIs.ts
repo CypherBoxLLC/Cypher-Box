@@ -391,6 +391,76 @@ export const getInvoices = async () => {
     }
 };
 
+/**
+ * Poll Strike for the terminal state of a Lightning payment that came back
+ * from `/payment-quotes/{id}/execute` as `PENDING`. The execute endpoint
+ * returns immediately once Strike accepts the invoice into its routing
+ * queue — the payment then takes a few seconds to settle on the Lightning
+ * network. Callers that need a definitive success/failure signal must poll
+ * `GET /payments/{paymentId}` until the state transitions to one of:
+ *   - `COMPLETED` → settled, funds left Strike
+ *   - `FAILED`    → LN routing gave up; funds returned to Strike balance
+ *   - `REVERSED`  → settled then refunded (rare; treat as failure)
+ *
+ * Polls every `intervalMs` for at most `timeoutMs`. Returns the final
+ * payment record; caller decides how to react to the terminal state.
+ * If the timeout elapses while still PENDING/NEW, returns the last
+ * observed record with state intact — caller can decide whether to
+ * treat that as a soft failure or keep waiting in the background.
+ *
+ * Why polling and not webhooks: Strike's webhook delivery requires a
+ * public HTTPS endpoint we don't have for the mobile client. Polling
+ * is the canonical approach for mobile-only Strike integrations.
+ */
+export const getStrikePaymentStatus = async (paymentId: string): Promise<any> => {
+    try {
+        const response = await fetch(`${BASE_URL}/payments/${paymentId}`, await withAuthToken({
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        }));
+        if (response.status === 401) {
+            useAuthStore.getState().clearStrikeAuth();
+            throw new Error('Strike session expired — please log into Strike again.');
+        }
+        if (!response.ok) {
+            let body = '';
+            try { body = await response.text(); } catch { /* ignore */ }
+            throw new Error(
+                `Strike payment-status error: ${response.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+            );
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching Strike payment status:', error);
+        throw error;
+    }
+};
+
+export const pollStrikePaymentUntilTerminal = async (
+    paymentId: string,
+    opts: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<any> => {
+    const timeoutMs = opts.timeoutMs ?? 30_000;
+    const intervalMs = opts.intervalMs ?? 1_000;
+    const start = Date.now();
+    let last: any = null;
+    while (Date.now() - start < timeoutMs) {
+        last = await getStrikePaymentStatus(paymentId);
+        const state = String(last?.state ?? '').toUpperCase();
+        if (__DEV__) {
+            console.log('[Strike] poll payment', paymentId.slice(0, 8), 'state=', state);
+        }
+        if (state === 'COMPLETED' || state === 'FAILED' || state === 'REVERSED') {
+            return last;
+        }
+        await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    if (__DEV__) {
+        console.log('[Strike] poll payment', paymentId.slice(0, 8), 'TIMEOUT after', timeoutMs, 'ms; last state=', last?.state);
+    }
+    return last;
+};
+
 // ===== Account Profile & Limits =====
 
 export const getStrikeProfile = async () => {
