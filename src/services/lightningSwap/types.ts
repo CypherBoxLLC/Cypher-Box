@@ -171,3 +171,34 @@ export class PaymentFailedError extends LightningSwapError {
         this.name = 'PaymentFailedError';
     }
 }
+
+/**
+ * The source provider accepted the payment but it has NOT reached a
+ * terminal state — it's still in-flight on Lightning, or we cannot
+ * confirm its outcome (e.g. Strike returns `state: PENDING` and the
+ * client token lacks the scope to poll `GET /payments/{id}`).
+ *
+ * This is deliberately NOT a subclass-of-nothing-special: it is a
+ * THIRD outcome distinct from success and failure. Critically, the UI
+ * must NOT frame it as a retryable failure — retrying re-reserves the
+ * source balance for a payment that may still settle, which is exactly
+ * how a single user-intended swap turned into three reserved Strike
+ * payments during the 2026-05-31 debug session.
+ *
+ * Handling contract:
+ *   - The engine RE-THROWS this as-is (does not wrap it as
+ *     PaymentFailedError) so callers can distinguish it.
+ *   - The UI shows a clear "submitted, do not retry, check the source
+ *     wallet" message. Pending Lightning payments either complete or
+ *     auto-refund when their HTLC times out; the user should wait, not
+ *     retry.
+ */
+export class PaymentPendingError extends LightningSwapError {
+    /** Provider-side payment id so the UI can tell the user what to look up. */
+    paymentId?: string;
+    constructor(id: LightningSwapProviderId, message: string, paymentId?: string) {
+        super(message);
+        this.name = 'PaymentPendingError';
+        this.paymentId = paymentId;
+    }
+}

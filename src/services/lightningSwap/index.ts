@@ -48,4 +48,5 @@ export {
     ProviderUnavailableError,
     InvoiceCreationFailedError,
     PaymentFailedError,
+    PaymentPendingError,
 } from './types';

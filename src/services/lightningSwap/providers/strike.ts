@@ -27,6 +27,7 @@ import type {
     LightningSwapProvider,
     LightningSwapResult,
 } from '../types';
+import { PaymentPendingError } from '../types';
 import { register } from '../registry';
 
 /**
@@ -117,27 +118,37 @@ const strikeProvider: LightningSwapProvider = {
         if (__DEV__) console.log('[lightningSwap/strike] payInvoice execute result=', JSON.stringify(result));
 
         // Strike's `/payment-quotes/{id}/execute` returns immediately once
-        // the invoice is accepted into Strike's routing queue. The state
-        // at that moment is almost always `PENDING` — the LN payment
-        // takes a few seconds to actually route. Terminal states are
-        // `COMPLETED`, `FAILED`, `REVERSED`. Polling `GET /payments/{id}`
-        // bridges the gap.
+        // the invoice is accepted into Strike's routing queue. When Strike
+        // can route synchronously the state is already `COMPLETED`. When
+        // routing is slow (or failing — e.g. no route to the destination
+        // ASP) it returns `PENDING`, debits/reserves the source balance,
+        // and the payment then either settles or times out and refunds.
+        // Terminal states are `COMPLETED`, `FAILED`, `REVERSED`.
         //
-        // History: earlier this code path treated PENDING as failure and
-        // threw `PaymentFailedError` immediately. Users saw "swap failed"
-        // toasts while the LN payment was actually going through, and
-        // retried, sometimes producing duplicate Strike payments. See
-        // session notes for the 2026-05-31 incident where 3 quotes were
-        // executed for a single user-intended swap.
+        // Confirming a PENDING outcome requires `GET /payments/{id}`, but
+        // the mobile client's Strike token does NOT carry the scope for
+        // that endpoint — it returns `403 Insufficient permissions`
+        // (observed live 2026-05-31). So we attempt the poll defensively
+        // (in case a future token has the scope) but treat ANY inability
+        // to confirm as PENDING, not as failure.
+        //
+        // History: this path used to throw `PaymentFailedError` on the
+        // PENDING state. Users saw "swap failed" while the LN payment was
+        // actually in-flight, retried, and each retry reserved another
+        // real payment. On 2026-05-31 a single intended swap became three
+        // reserved Strike payments this way. PENDING must surface as its
+        // own "submitted, do not retry" outcome.
         let final: any = result;
         const initialState = String(result?.state ?? '').toUpperCase();
         const paymentId: string | undefined = result?.paymentId ?? result?.id;
+        const pidShort = String(paymentId ?? '(unknown)').slice(0, 8);
+
         if (initialState !== 'COMPLETED' && initialState !== 'FAILED' && initialState !== 'REVERSED' && paymentId) {
             try {
                 if (__DEV__) {
                     console.log(
                         '[lightningSwap/strike] state=', initialState,
-                        '— polling payment', String(paymentId).slice(0, 8), 'for terminal state',
+                        '— attempting to poll payment', pidShort, 'for terminal state',
                     );
                 }
                 final = await pollStrikePaymentUntilTerminal(String(paymentId), {
@@ -145,16 +156,18 @@ const strikeProvider: LightningSwapProvider = {
                     intervalMs: 1_000,
                 });
             } catch (pollErr) {
-                // Polling failure does NOT automatically mean payment failure
-                // — Strike auth could have expired mid-flight, network could
-                // have flaked. Surface the polling error but keep the original
-                // execute result available for triage.
+                // Can't confirm (403 no-scope, auth expiry, network flake).
+                // This is NOT a failure — the payment is in-flight and will
+                // settle or auto-refund. Surface as PENDING so the UI tells
+                // the user to wait and check Strike, NOT to retry.
                 if (__DEV__) {
-                    console.warn('[lightningSwap/strike] poll threw, falling back to initial execute result:', pollErr);
+                    console.warn('[lightningSwap/strike] cannot poll payment status, treating as PENDING:', pollErr);
                 }
-                throw new Error(
-                    `Strike payment ${String(paymentId).slice(0, 8)} status check failed: ${(pollErr as any)?.message ?? pollErr}. ` +
-                    `Check the Strike app to confirm whether the payment settled before retrying.`,
+                throw new PaymentPendingError(
+                    'strike',
+                    `Strike accepted your payment (id ${pidShort}) but it's still settling on Lightning and the app can't confirm the result. ` +
+                    `Do NOT retry. Open the Strike app to check: it will either complete or refund automatically within a few hours.`,
+                    String(paymentId),
                 );
             }
         }
@@ -162,22 +175,23 @@ const strikeProvider: LightningSwapProvider = {
         const finalState = String(final?.state ?? '').toUpperCase();
         const ok = finalState === 'COMPLETED' || final?.completed === true;
         if (!ok) {
+            // Still PENDING/NEW after the poll window → in-flight, not failed.
+            // Surface as PENDING (do-not-retry), never as a retryable failure.
+            if (finalState === 'PENDING' || finalState === 'NEW' || finalState === '') {
+                throw new PaymentPendingError(
+                    'strike',
+                    `Strike payment ${pidShort} is still settling on Lightning. ` +
+                    `Do NOT retry — open the Strike app to check. It will complete or refund automatically within a few hours.`,
+                    String(paymentId ?? ''),
+                );
+            }
+            // Genuinely terminal failure (FAILED / REVERSED) → the source
+            // balance is refunded, safe to surface as a real failure.
             const msg =
                 final?.error?.message ??
                 final?.data?.message ??
                 final?.message ??
-                (final?.state ? `Strike payment state: ${final.state}` : 'Strike payment did not complete');
-            // Special case: stayed PENDING past the polling timeout. This
-            // is NOT a confirmed failure — the payment may still settle.
-            // Refuse to retry; tell the user to check Strike before
-            // re-attempting so they don't double-pay.
-            if (finalState === 'PENDING' || finalState === 'NEW') {
-                throw new Error(
-                    `Strike payment still ${finalState} after 30s. ` +
-                    `Do NOT retry yet — check the Strike app first to see if it settled. ` +
-                    `Payment id: ${String(paymentId ?? '(unknown)').slice(0, 8)}.`,
-                );
-            }
+                `Strike payment ${finalState.toLowerCase()}`;
             throw new Error(msg);
         }
         const id = String(

@@ -11,6 +11,7 @@ import * as registry from './registry';
 import {
     InvoiceCreationFailedError,
     PaymentFailedError,
+    PaymentPendingError,
     type LightningSwapProviderId,
     type LightningSwapResult,
     type LightningSwapFeeEstimate,
@@ -68,6 +69,15 @@ export async function swap(
         if (__DEV__) console.log('[lightningSwap] swap done', fromId, '→', toId, 'id=', result.id);
         return result;
     } catch (err) {
+        // A PENDING/unconfirmed payment is NOT a failure — propagate it
+        // verbatim so the UI can show a "submitted, do not retry" message
+        // instead of a retryable-failure toast. Wrapping it as
+        // PaymentFailedError here is what previously made the swap screen
+        // invite a retry that re-reserved the source balance.
+        if (err instanceof PaymentPendingError) {
+            if (__DEV__) console.log('[lightningSwap] payInvoice PENDING on', fromId, '— propagating, not a failure');
+            throw err;
+        }
         if (__DEV__) console.log('[lightningSwap] payInvoice failed on', fromId, err);
         throw new PaymentFailedError(fromId, err);
     }

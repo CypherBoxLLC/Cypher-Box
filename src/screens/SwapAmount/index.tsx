@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Image, ActivityIndicator, TouchableOpacity, Animated, Easing } from "react-native";
+import { View, Image, ActivityIndicator, TouchableOpacity, Animated, Easing, Alert } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import LinearGradient from "react-native-linear-gradient";
@@ -17,6 +17,7 @@ import {
     LightningSwapError,
     InvoiceCreationFailedError,
     PaymentFailedError,
+    PaymentPendingError,
     type LightningSwapProvider,
     type LightningSwapProviderId,
 } from "@Cypher/services/lightningSwap";
@@ -174,6 +175,24 @@ export default function SwapAmount() {
             setSuccess(true);
         } catch (error) {
             console.error('Swap error:', error);
+
+            // PENDING is NOT a failure and must NOT invite a retry — a
+            // retry re-reserves the source balance for a payment that may
+            // still settle. Surface it as a blocking modal (not a toast)
+            // so the user actually reads "do not retry, check the source
+            // wallet" before tapping anything. See the 2026-05-31 incident
+            // where retrying a PENDING Strike swap reserved it three times.
+            if (error instanceof PaymentPendingError) {
+                Alert.alert(
+                    'Payment submitted, not yet confirmed',
+                    error.message,
+                    [{ text: 'OK, I will check', style: 'default' }],
+                    { cancelable: false },
+                );
+                setLoading(false);
+                return;
+            }
+
             // Tailored toast per failure stage so the user knows whether
             // the destination's invoice or the source's payment failed.
             const fallback = 'Swap failed. Please try again.';
