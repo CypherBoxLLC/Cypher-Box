@@ -33,6 +33,32 @@ export default function ArkCapsulesInfoScreen() {
                         Settings is on. If you turn it off, you're responsible for refreshing
                         them yourself before they expire.
                     </Body>
+                    <Body>
+                        The capsules tab shows when the next automatic refresh is due, so you
+                        always know whether you need to do anything.
+                    </Body>
+                </Section>
+
+                <Section title="If a capsule can't be refreshed in time">
+                    <Body>
+                        Refreshing needs the Ark server to be reachable. If it has trouble and
+                        a capsule keeps failing to refresh as it nears its expiry, Cypher Box
+                        escalates so your money is never lost.
+                    </Body>
+                    <Body>
+                        You'll first get a reminder notification around 24 hours, and again
+                        around 2 hours, before a capsule would expire, in case you want to act
+                        yourself (refresh manually, or spend the balance).
+                    </Body>
+                    <StatusRow
+                        title="Last-resort rescue to Strike or CoinOS"
+                        body="If a capsule is within roughly 12 hours of expiring and still hasn't refreshed, Cypher Box automatically forwards those funds over Lightning to your connected Strike or CoinOS balance (Strike first, CoinOS as backup). Your money is safe there as a custodial balance, which is far better than letting the capsule expire and forcing a costly on-chain recovery. You can move it back into Ark whenever you like."
+                    />
+                    <Body>
+                        This rescue only runs if you have Strike or CoinOS connected. If neither
+                        is connected, Cypher Box notifies you instead, so you can refresh or
+                        spend the funds yourself before the deadline.
+                    </Body>
                 </Section>
 
                 <Section title="Some balance may briefly be unspendable">
