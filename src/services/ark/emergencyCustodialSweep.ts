@@ -2,8 +2,10 @@ import { Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 
 import { fetchChainTipHeight } from './chainTip';
+import { ARK_VTXO_DUST_SATS } from './config';
 import { fetchArkPendingRoundStates } from './refresh';
 import { fetchArkVtxos, type ArkVtxoView } from './vtxos';
+import { estimateArkSendFee } from './send';
 import { getArkWalletHandle } from './walletHandle';
 import {
     getLightningSwapProvider,
@@ -62,11 +64,23 @@ import {
 export const CUSTODIAL_SWEEP_THRESHOLD = 72;
 
 /**
- * Per-VTXO fee budget reserved off the swept amount to cover LN routing.
- * Empirically Ark→Strike/CoinOS LN sends settle for <20 sats; 50 gives
- * 2.5x headroom. Sweep amount = sum(imminent_vtxos.sats) - 50 * N.
+ * LN routing fee reserve, subtracted off the gross before sweeping so the
+ * Ark `payLightningInvoice` doesn't fail with "not enough balance" (amount
+ * + fee > spendable).
+ *
+ * History: this was a flat 50-sat-per-VTXO budget. That was wrong on two
+ * counts, surfaced by a live mainnet test 2026-06-01: (1) the routing fee
+ * is charged ONCE per LN payment, not per VTXO; (2) real mainnet fees run
+ * ~0.5% of the amount — 276 sats on a 55k sweep — far above any flat
+ * 50/VTXO budget. Under-reserving made the pay step fail outright.
+ *
+ * We now estimate the actual fee via `estimateArkSendFee` and reserve it
+ * plus a small margin. If the estimate call fails we fall back to a
+ * percentage reserve with a floor.
  */
-const LN_FEE_BUDGET_PER_VTXO = 50;
+const LN_FEE_SAFETY_MARGIN = 10;      // sats added on top of the estimate
+const LN_FEE_FALLBACK_PCT = 0.01;     // 1% reserve if estimate unavailable
+const LN_FEE_FALLBACK_FLOOR = 50;     // never reserve less than this
 
 /**
  * Minimum interval between sweep attempts (ms). Anchored to last attempt
@@ -268,22 +282,53 @@ export async function runEmergencyCustodialSweep(
             return { outcome: 'no_imminent_vtxos' };
         }
 
-        // Sweep amount: gross sum minus per-VTXO fee budget. The Bark
+        // Sweep amount: gross sum minus the real LN routing fee. The Bark
         // SDK's `payLightningInvoice` decides actual VTXO selection
         // internally; the amount we ask for is what determines whether
         // the imminent ones get spent (small enough → SDK picks them;
         // larger than imminent total → SDK pulls in fresher VTXOs as
         // well, leaving imminent ones unspent). We bias toward the
-        // first behaviour by sizing exactly to imminent total minus a
-        // small fee budget.
+        // first behaviour by sizing to imminent total minus the fee.
+        //
+        // CRITICAL: the fee must be reserved or `payLightningInvoice`
+        // fails with "not enough balance" (amount + routing fee >
+        // spendable). Estimate the actual fee for the gross amount rather
+        // than guessing a flat budget — see the LN_FEE_* constants above
+        // for why a flat per-VTXO budget was wrong.
         const grossSats = imminent.reduce((a, v) => a + v.sats, 0);
-        const sweepSats = grossSats - LN_FEE_BUDGET_PER_VTXO * imminent.length;
         const idPrefixes = imminent.map((v) => v.id.slice(0, 12));
+
+        let feeReserve = Math.max(
+            LN_FEE_FALLBACK_FLOOR,
+            Math.ceil(grossSats * LN_FEE_FALLBACK_PCT),
+        );
+        try {
+            const feeView = await estimateArkSendFee(
+                { kind: 'ln-invoice', value: '' },
+                grossSats,
+            );
+            const estFee = Number(feeView.feeSats || 0);
+            if (estFee > 0) feeReserve = estFee + LN_FEE_SAFETY_MARGIN;
+        } catch (err) {
+            console.warn(
+                '[Ark sweep] LN fee estimate failed, using fallback reserve',
+                feeReserve, ':', err,
+            );
+        }
+        // Also reserve one dust limit so the LN send's CHANGE output isn't
+        // sub-dust. Bark rejects a sub-dust change VTXO with
+        // BarkError.Internal (observed live 2026-06-01: a 55211/55498 sweep
+        // left 11 sats change and failed). Reserving fee + dust guarantees
+        // the change is >= dust (a fresh-expiry VTXO, so not at risk) and
+        // the send goes through. We strand ~fee+dust (~600 sats) of a 55k
+        // sweep — acceptable for a safety net that rescues the other 99%.
+        const sweepSats = grossSats - feeReserve - ARK_VTXO_DUST_SATS;
 
         if (sweepSats <= 0) {
             console.warn(
-                '[Ark sweep] imminent gross is below fee budget — skipping',
-                'gross=', grossSats, 'count=', imminent.length,
+                '[Ark sweep] imminent gross below fee + dust reserve — skipping',
+                'gross=', grossSats, 'reserve=', feeReserve + ARK_VTXO_DUST_SATS,
+                'count=', imminent.length,
             );
             return {
                 outcome: 'no_imminent_vtxos',
@@ -303,7 +348,7 @@ export async function runEmergencyCustodialSweep(
             '[Ark sweep] trigger=', trigger,
             'imminent vtxos count=', imminent.length,
             'gross=', grossSats,
-            'fee_budget=', LN_FEE_BUDGET_PER_VTXO * imminent.length,
+            'fee_reserve=', feeReserve,
             'sweep_amount=', sweepSats,
             'tip=', tip,
             'ids=', idPrefixes.join(','),
