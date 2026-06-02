@@ -244,6 +244,8 @@ export type AuthStateType = {
     arkBgRefreshLastWarn24hAt: number | null;
     /** Last fire time of the <2h-to-expiry notification. Used to suppress repeat fires within a 1h window. */
     arkBgRefreshLastWarn2hAt: number | null;
+    /** Last fire time of the stuck-refresh notification. Suppresses repeat fires within stuckWarnDedupeWindowMs. */
+    arkBgRefreshLastStuckWarnAt: number | null;
     /** User-configurable upper bound on the fee a background refresh round can auto-pay (sats). Default 5000. */
     arkBgRefreshMaxFeeSats: number;
 
@@ -321,6 +323,7 @@ export type AuthStateType = {
     setArkBgRefreshDeferredBackup: (state: boolean) => void;
     setArkBgRefreshLastWarn24hAt: (state: number | null) => void;
     setArkBgRefreshLastWarn2hAt: (state: number | null) => void;
+    setArkBgRefreshLastStuckWarnAt: (state: number | null) => void;
     setArkBgRefreshMaxFeeSats: (state: number) => void;
     setArkIosBackupReminderActive: (state: boolean) => void;
     setArkArkoorPromptState: (
@@ -396,6 +399,7 @@ const createAuthStore = (
     arkBgRefreshDeferredBackup: false,
     arkBgRefreshLastWarn24hAt: null,
     arkBgRefreshLastWarn2hAt: null,
+    arkBgRefreshLastStuckWarnAt: null,
     arkBgRefreshMaxFeeSats: 5000,
     arkIosBackupReminderActive: false,
     arkArkoorPromptState: {},
@@ -454,6 +458,7 @@ const createAuthStore = (
     setArkBgRefreshDeferredBackup: (state: boolean) => set({ arkBgRefreshDeferredBackup: state }),
     setArkBgRefreshLastWarn24hAt: (state: number | null) => set({ arkBgRefreshLastWarn24hAt: state }),
     setArkBgRefreshLastWarn2hAt: (state: number | null) => set({ arkBgRefreshLastWarn2hAt: state }),
+    setArkBgRefreshLastStuckWarnAt: (state: number | null) => set({ arkBgRefreshLastStuckWarnAt: state }),
     setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
     setArkIosBackupReminderActive: (state: boolean) => set({ arkIosBackupReminderActive: state }),
     setArkArkoorPromptState: (state) => set({ arkArkoorPromptState: state }),
@@ -493,6 +498,7 @@ const createAuthStore = (
             arkBgRefreshDeferredBackup: false,
             arkBgRefreshLastWarn24hAt: null,
             arkBgRefreshLastWarn2hAt: null,
+            arkBgRefreshLastStuckWarnAt: null,
             arkIosBackupReminderActive: false,
             // Per-VTXO Arkoor-prompt state is wallet-scoped — clear on
             // disconnect so the next wallet doesn't inherit prior prompts.

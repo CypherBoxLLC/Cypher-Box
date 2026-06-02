@@ -1,3 +1,4 @@
+import { AppState } from 'react-native';
 import {
     WalletNotification_Tags,
     type Movement,
@@ -5,6 +6,7 @@ import {
 } from '@secondts/bark-react-native';
 
 import useAuthStore from '@Cypher/stores/authStore';
+import { notifyArkReceived } from './backgroundNotifications';
 import { getArkWalletHandle } from './walletHandle';
 
 /**
@@ -207,5 +209,14 @@ function handleNotification(notif: { tag: string; inner?: any }): void {
             sats,
         );
     }
-    if (mutated) store.setArkArkoorPromptState(next);
+    if (mutated) {
+        store.setArkArkoorPromptState(next);
+        // Money-received push. Foreground is already covered by the in-app
+        // Arkoor popup (useArkoorReceivePrompt), so only buzz when
+        // backgrounded to avoid a double signal. Fires once per receive
+        // movement (sats = the movement amount), not once per output id.
+        if (AppState.currentState !== 'active') {
+            notifyArkReceived(sats);
+        }
+    }
 }

@@ -224,3 +224,33 @@ export function notifyDustStranded(
         { totalSats, minRequired, vtxoCount },
     );
 }
+
+/**
+ * "You got paid" — fired when a new Lightning/arkoor receive lands while the
+ * app is backgrounded. When foreground, the in-app Arkoor popup
+ * (useArkoorReceivePrompt) already surfaces the receive, so the caller gates
+ * this on AppState to avoid a double signal.
+ */
+export function notifyArkReceived(sats?: number): void {
+    const body =
+        typeof sats === 'number' && sats > 0
+            ? `You received ${sats.toLocaleString()} sats in your Ark Vault.`
+            : 'You received a payment in your Ark Vault.';
+    fire('Payment received', body, 'high', { sats });
+}
+
+/**
+ * Fired when a refresh round has been detected stuck (ongoing past the
+ * expected completion window). The in-app red "tap to recover" banner only
+ * helps a user who has the app open; this push reaches them when it's closed.
+ * Caller dedupes per round so this can't fire on every wake.
+ */
+export function notifyStuckRefresh(sats?: number): void {
+    const amount =
+        typeof sats === 'number' && sats > 0 ? ` (${sats.toLocaleString()} sats)` : '';
+    fire(
+        'Refresh stuck',
+        `A capsule refresh got stuck${amount}. Open Cypher Box to recover it.`,
+        'high',
+    );
+}

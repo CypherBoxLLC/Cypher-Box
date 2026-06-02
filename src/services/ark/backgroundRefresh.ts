@@ -1,3 +1,5 @@
+import { AppState } from 'react-native';
+
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 
@@ -24,6 +26,7 @@ import {
     notifyExpiryWarning24h,
     notifyExpiryWarning2h,
     notifyFeeGated,
+    notifyStuckRefresh,
 } from './backgroundNotifications';
 import {
     cancelArkBackgroundRefresh,
@@ -67,6 +70,8 @@ export const BG_REFRESH_TUNABLES = {
     warn24hDedupeWindowMs: 12 * 60 * 60 * 1000,
     /** Suppress duplicate "<2h to expiry" notifications within this window, ms. */
     warn2hDedupeWindowMs: 60 * 60 * 1000,
+    /** Suppress duplicate stuck-refresh notifications within this window, ms. */
+    stuckWarnDedupeWindowMs: 2 * 60 * 60 * 1000,
     /**
      * Maximum age of the cached chain tip we'll trust for the
      * skip-esplora pre-check. Older than this and we fetch fresh —
@@ -82,6 +87,67 @@ export const BG_REFRESH_TUNABLES = {
      */
     cachedPrecheckSlackDays: 1,
 };
+
+/**
+ * Background-only stuck-refresh push. Called from the pending-round
+ * pre-check: when a round has been in flight past the expected window
+ * (the same 2x-round-interval threshold useArkSync uses for the in-app
+ * banner), buzz the user so they can recover it with the app closed.
+ *
+ * - Foreground is skipped: useArkSync's "tap to recover" banner covers it
+ *   there, and it (not us) owns the firstSeen map, so we avoid a double
+ *   writer on the same zustand slot.
+ * - Dedupe is PERSISTED (arkBgRefreshLastStuckWarnAt) because a cold
+ *   background wake runs in a fresh JS process where an in-memory flag
+ *   would be blank and re-fire on every wake.
+ */
+function maybeNotifyStuckRound(ongoingRoundIds: string[]): void {
+    if (AppState.currentState === 'active') return;
+    try {
+        const store = useAuthStore.getState();
+        const intervalSecs = store.arkRoundIntervalSecs;
+        const prev = store.arkPendingRoundFirstSeen ?? {};
+        const now = Date.now();
+        // Maintain firstSeen like useArkSync does: keep stamps for
+        // still-ongoing rounds, stamp newly-seen ones, drop the rest. Lets a
+        // round first observed on a prior wake (no foreground tick since)
+        // still age into "stuck".
+        const onSet = new Set(ongoingRoundIds);
+        const nextFirstSeen: Record<string, number> = {};
+        for (const [id, ts] of Object.entries(prev)) {
+            if (onSet.has(id)) nextFirstSeen[id] = ts;
+        }
+        for (const id of ongoingRoundIds) {
+            if (nextFirstSeen[id] == null) nextFirstSeen[id] = now;
+        }
+        const changed =
+            Object.keys(prev).length !== Object.keys(nextFirstSeen).length ||
+            ongoingRoundIds.some((id) => prev[id] !== nextFirstSeen[id]);
+        if (changed) store.setArkPendingRoundFirstSeen(nextFirstSeen);
+
+        // No round interval yet (set once the interval fetch resolves); we
+        // can't age a round without it. Bail quietly; a later wake retries.
+        if (intervalSecs == null) return;
+        const stuckThresholdMs = 2 * intervalSecs * 1000;
+        const anyStuck = ongoingRoundIds.some(
+            (id) => now - (nextFirstSeen[id] ?? now) > stuckThresholdMs,
+        );
+        if (!anyStuck) return;
+
+        const last = store.arkBgRefreshLastStuckWarnAt;
+        if (last !== null && now - last <= BG_REFRESH_TUNABLES.stuckWarnDedupeWindowMs) {
+            return;
+        }
+        notifyStuckRefresh();
+        store.setArkBgRefreshLastStuckWarnAt(now);
+        console.log(
+            '[Ark bg refresh] stuck-round push fired; ongoing round ids=',
+            ongoingRoundIds.join(','),
+        );
+    } catch (err) {
+        console.warn('[Ark bg refresh] stuck-round push check threw:', err);
+    }
+}
 
 export type ArkBgRefreshResult = {
     outcome: ArkBgRefreshOutcome;
@@ -400,7 +466,16 @@ export async function runBackgroundRefresh(
         // naturally.
         try {
             const pendingRounds = await fetchArkPendingRoundStates();
-            if (pendingRounds.some((r) => r.ongoing)) {
+            const ongoingRoundIds = pendingRounds
+                .filter((r) => r.ongoing)
+                .map((r) => String(r.id));
+            if (ongoingRoundIds.length > 0) {
+                // A round is in flight. If it has been in flight past the
+                // expected completion window, buzz the user so they can
+                // recover it even with the app closed (the in-app banner
+                // only helps when the app is open). Backgrounded-only +
+                // deduped inside the helper.
+                maybeNotifyStuckRound(ongoingRoundIds);
                 return finalize('pending_round_conflict');
             }
         } catch (err) {
