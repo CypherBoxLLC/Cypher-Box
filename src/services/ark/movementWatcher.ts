@@ -4,6 +4,7 @@ import {
     type NotificationHolderInterface,
 } from '@secondts/bark-react-native';
 
+import useAuthStore from '@Cypher/stores/authStore';
 import { getArkWalletHandle } from './walletHandle';
 
 /**
@@ -134,8 +135,11 @@ function handleNotification(notif: { tag: string; inner?: any }): void {
     // Movement lifecycle in bark fires:
     //   MovementCreated  (status=pending, outputVtxoIds=[])  ← VTXO doesn't exist yet
     //   MovementUpdated  (status=successful, outputVtxoIds=[…])  ← VTXO landed in datadir
-    // Logged for diagnostics only — no refresh dispatch happens here;
-    // lazy refresh is driven by useArkSync's sweep based on expiry.
+    // Logged for diagnostics + drives the Arkoor-receive popup. Lazy
+    // refresh from useArkSync still handles its own dispatch based on
+    // expiry; the popup needs movement-level latency (sub-second) because
+    // it has to race auto-refresh, which fires within a few seconds of
+    // the receive settling.
     if (
         notif.tag !== WalletNotification_Tags.MovementCreated &&
         notif.tag !== WalletNotification_Tags.MovementUpdated
@@ -151,4 +155,57 @@ function handleNotification(notif: { tag: string; inner?: any }): void {
         'outputs=', movement.outputVtxoIds?.length ?? 0,
         'effectiveSats=', movement.effectiveBalanceSats?.toString?.() ?? movement.effectiveBalanceSats,
     );
+
+    // Push new receive VTXOs into arkArkoorPromptState so the
+    // useArkoorReceivePrompt hook can surface the choice + the auto-refresh
+    // gate can block them. We do this from the movement notification (not
+    // from the 30s arkVtxos poll) because auto-refresh fires within a
+    // couple seconds of the receive settling — a poll-driven detector
+    // loses the race and the VTXO is already Locked in a refresh round
+    // before the user sees the popup.
+    //
+    // Conditions to trigger the prompt:
+    //   - tag = MovementUpdated     (Created has outputs=[]; Updated is where ids appear)
+    //   - subsystemKind = receive   (subsystem strings are lowercase in this SDK)
+    //   - status = successful       (means the VTXO actually exists in datadir)
+    //   - outputVtxoIds non-empty   (there's a vtxo id to track)
+    if (notif.tag !== WalletNotification_Tags.MovementUpdated) return;
+    const subsystem = String(movement.subsystemKind ?? '').toLowerCase();
+    const status = String(movement.status ?? '').toLowerCase();
+    if (subsystem !== 'receive') return;
+    if (status !== 'successful') return;
+    const ids: string[] = movement.outputVtxoIds ?? [];
+    if (!ids.length) return;
+
+    // Extract sats from the movement so the prompt state entry carries
+    // the amount directly. This decouples the popup from arkVtxos (which
+    // only contains Spendable; if the SDK Locks the just-received vtxo
+    // immediately into a round, the popup needs the amount from somewhere
+    // else). Bark reports bigint; coerce to a plain number at the JS
+    // boundary (the amounts fit comfortably in Number for any realistic
+    // single-receive sat amount).
+    const rawSats = movement.effectiveBalanceSats;
+    const sats =
+        typeof rawSats === 'bigint'
+            ? Number(rawSats)
+            : typeof rawSats === 'number'
+            ? rawSats
+            : 0;
+    const store = useAuthStore.getState();
+    const cur = store.arkArkoorPromptState ?? {};
+    const now = Date.now();
+    let mutated = false;
+    const next = { ...cur };
+    for (const id of ids) {
+        if (next[id]) continue; // already tracked (avoid re-prompt)
+        next[id] = { status: 'pending' as const, observedAt: now, sats };
+        mutated = true;
+        console.log(
+            '[Ark watcher] queued arkoor prompt for',
+            id.slice(0, 12),
+            'sats=',
+            sats,
+        );
+    }
+    if (mutated) store.setArkArkoorPromptState(next);
 }

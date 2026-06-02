@@ -4,6 +4,7 @@ export {
     ARK_SERVER_URL,
     ARK_VTXO_DUST_SATS,
     ARK_REFRESH_MIN_SATS,
+    ARK_ARKOOR_ASSUMED_DAYS,
     ESPLORA_URL,
     createArkConfig,
 } from './config';
@@ -170,6 +171,8 @@ export {
 
 export {
     ensureBgNotificationPermission,
+    scheduleVtxoExpiryWarnings,
+    cancelVtxoExpiryWarnings,
 } from './backgroundNotifications';
 
 export {

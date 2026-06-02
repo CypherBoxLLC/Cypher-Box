@@ -70,6 +70,19 @@ if (__DEV__) console.log('Response status:', response.status);
     
     if (response.status === 401) {
       const errorText = await response.text();
+      // Diagnostic — multiple users have reported "Captcha verification
+      // failed" on CoinOS login but our prior throw discarded the raw
+      // response. Log the literal body + response headers so we can tell
+      // apart: "failed captcha" (Google scored low / domain mismatch /
+      // action mismatch), "invalid recaptcha" (siteKey wrong), or anything
+      // else CoinOS might surface. Trim/limit so we don't dump huge bodies.
+      console.log(
+        '[CoinOS login 401]',
+        'bodyLen=', errorText?.length ?? 0,
+        'bodyHead=', JSON.stringify(errorText?.slice?.(0, 300) ?? ''),
+        'contentType=', response.headers.get('content-type'),
+        'recaptchaTokenLen=', recaptchaToken?.length ?? 0,
+      );
       if (errorText === 'failed captcha' || errorText.includes('captcha')) {
         throw new Error('Captcha verification failed. Please try again.');
       }
@@ -139,7 +152,20 @@ if (__DEV__) console.log('[CoinOS] No keychain credentials for token refresh');
     });
 
     if (!response.ok) {
-      console.warn('[CoinOS] Token refresh failed:', response.status);
+      // Diagnostic — when silent token refresh started 401-ing for multiple
+      // users (and persisted across networks), the comment above said
+      // CoinOS "allows re-login without captcha for existing sessions."
+      // That's worth verifying — if CoinOS now requires captcha on EVERY
+      // login including silent refresh, this whole path is broken and we
+      // need to either drive the captcha here too or stop calling refresh
+      // and force a manual login. The body tells us which.
+      const errorText = await response.text().catch(() => '');
+      console.warn(
+        '[CoinOS] Token refresh failed:',
+        response.status,
+        'bodyHead=', JSON.stringify(errorText?.slice?.(0, 300) ?? ''),
+        'contentType=', response.headers.get('content-type'),
+      );
       return null;
     }
 

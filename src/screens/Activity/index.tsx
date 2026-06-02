@@ -92,6 +92,124 @@ const describe = (ev: AppEvent): RowMeta => {
                 line1: ev.result === "success" ? "Auto-backup saved" : "Auto-backup failed",
                 walletLabel: ev.target === "cloud" ? "Cloud" : "Local",
             };
+        case "ark-bg-refresh": {
+            // Per-outcome copy. The outcome set here is the user-visible
+            // subset that backgroundRefresh.ts records — rate_limited /
+            // no_eligible_vtxos / disabled / pending_round_conflict are
+            // filtered at the call site so we never see them here. We
+            // still default-case the switch for forward-compat in case a
+            // future outcome lands without an explicit branch.
+            const triggerLabel =
+                ev.trigger === "scheduled"
+                    ? "Scheduled"
+                    : ev.trigger === "push"
+                    ? "Push"
+                    : ev.trigger === "foreground"
+                    ? "Foreground"
+                    : ev.trigger === "arrival"
+                    ? "On-arrival"
+                    : "Manual-test";
+            let icon = "refresh-outline";
+            let line1 = "";
+            switch (ev.outcome) {
+                case "success":
+                    icon = "checkmark-circle-outline";
+                    line1 =
+                        ev.vtxoCount != null && ev.vtxoCount > 0
+                            ? `Auto-refresh complete · ${ev.vtxoCount} VTXO${ev.vtxoCount === 1 ? "" : "s"}`
+                            : "Auto-refresh complete";
+                    break;
+                case "error":
+                    icon = "alert-circle-outline";
+                    line1 = ev.errorMsg
+                        ? `Auto-refresh failed · ${ev.errorMsg.slice(0, 60)}`
+                        : "Auto-refresh failed";
+                    break;
+                case "fee_gated":
+                    icon = "warning-outline";
+                    line1 =
+                        ev.feeSats != null
+                            ? `Auto-refresh paused · fee ${formatSats(ev.feeSats)} above limit`
+                            : "Auto-refresh paused · fee above limit";
+                    break;
+                case "dust_uneconomic":
+                    icon = "warning-outline";
+                    line1 = "Auto-refresh skipped · fee exceeds VTXO value";
+                    break;
+                case "dust_stranded":
+                    icon = "warning-outline";
+                    line1 = "Auto-refresh skipped · balance below recoverable threshold";
+                    break;
+                case "no_seed":
+                    icon = "key-outline";
+                    line1 = "Auto-refresh blocked · seed not available";
+                    break;
+                default:
+                    icon = "refresh-outline";
+                    line1 = `Auto-refresh: ${ev.outcome}`;
+            }
+            return {
+                icon,
+                line1,
+                walletLabel: `${WALLET_LABEL["ark"]} · ${triggerLabel}`,
+            };
+        }
+        case "arkoor-prompt": {
+            // Surface every popup-lifecycle outcome so the user (and us
+            // debugging) can see exactly what the Arkoor-receive prompt
+            // did, including the silent skip modes that are otherwise
+            // invisible without tailing Metro.
+            const satsTag =
+                ev.sats != null ? ` · ${formatSats(ev.sats)}` : "";
+            const idTag = ev.vtxoIdPrefix ? ` · ${ev.vtxoIdPrefix}` : "";
+            let icon = "chatbubble-ellipses-outline";
+            let line1 = "";
+            switch (ev.outcome) {
+                case "fired":
+                    icon = "chatbubble-ellipses-outline";
+                    line1 = `Arkoor prompt shown${satsTag}`;
+                    break;
+                case "skipped-disabled":
+                    icon = "notifications-off-outline";
+                    line1 = `Arkoor prompt skipped · toggle off${satsTag}`;
+                    break;
+                case "skipped-background":
+                    icon = "moon-outline";
+                    line1 = `Arkoor prompt skipped · app backgrounded${satsTag}`;
+                    break;
+                case "skipped-in-flight":
+                    icon = "hourglass-outline";
+                    line1 = `Arkoor prompt skipped · alert busy${satsTag}`;
+                    break;
+                case "skipped-vtxo-gone":
+                    icon = "ghost-outline";
+                    line1 = `Arkoor prompt skipped · capsule already refreshed${satsTag}`;
+                    break;
+                case "refresh-now":
+                    icon = "refresh-outline";
+                    line1 = `You chose: Refresh now${satsTag}`;
+                    break;
+                case "use-immediately":
+                    icon = "flash-outline";
+                    line1 = `You chose: Use immediately${satsTag}`;
+                    break;
+                case "auto-skipped":
+                    icon = "shield-checkmark-outline";
+                    line1 =
+                        ev.vtxoCount != null && ev.vtxoCount > 0
+                            ? `Auto-refresh skipped ${ev.vtxoCount} deferred VTXO${ev.vtxoCount === 1 ? "" : "s"}`
+                            : "Auto-refresh respected your deferral";
+                    break;
+                default:
+                    icon = "chatbubble-ellipses-outline";
+                    line1 = `Arkoor prompt: ${(ev as any).outcome}`;
+            }
+            return {
+                icon,
+                line1,
+                walletLabel: `${WALLET_LABEL["ark"]}${idTag}`,
+            };
+        }
     }
 };
 

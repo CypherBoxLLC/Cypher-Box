@@ -247,6 +247,43 @@ export async function runBackgroundRefresh(
         };
         await recordTelemetry(entry);
 
+        // Mirror meaningful outcomes into the unified activity-log store so
+        // the in-app notifications bell / Activity screen show bg refresh
+        // alongside ln-sent / ln-received / auto-backup. Filter at the
+        // call site (not inside recordEvent) so the detailed telemetry
+        // buffer above keeps every attempt for debugging, while the
+        // user-facing dropdown stays signal-dense.
+        //
+        // Skipped on purpose:
+        //   - rate_limited            (normal — orchestrator declining)
+        //   - no_eligible_vtxos       (normal — nothing near expiry)
+        //   - disabled                (toggle is off; user knows)
+        //   - pending_round_conflict  (transient — next sync resolves)
+        const userVisibleOutcomes: ReadonlySet<ArkBgRefreshOutcome> = new Set([
+            'success',
+            'error',
+            'fee_gated',
+            'dust_uneconomic',
+            'dust_stranded',
+            'no_seed',
+        ]);
+        if (userVisibleOutcomes.has(outcome)) {
+            try {
+                recordEvent({
+                    kind: 'ark-bg-refresh',
+                    trigger,
+                    outcome,
+                    elapsedMs,
+                    vtxoCount: opts.vtxoCount,
+                    feeSats: opts.feeSats ?? undefined,
+                    errorMsg: opts.errorMsg,
+                });
+            } catch (logErr) {
+                // Telemetry must not break the refresh flow.
+                console.warn('[Ark bg refresh] activity-log record failed:', logErr);
+            }
+        }
+
         const store = useAuthStore.getState();
         store.setArkBgRefreshLastAttempt({
             at: startedAt,
@@ -434,6 +471,51 @@ export async function runBackgroundRefresh(
         store.setArkChainTipHeight(tip);
         store.setArkLastSyncedAt(Date.now());
 
+        // VTXOs the user has explicitly opted out of auto-refresh via the
+        // Arkoor-receive popup's "Use immediately" / "still pending" path.
+        // These must be excluded BOTH from the short-expiry trigger set
+        // AND from the filler set — otherwise the orchestrator drags the
+        // user-deferred VTXO into a refresh round either as the trigger
+        // (if it's the only short-expiry one in the wallet) or as a
+        // top-up filler under the round-minimum (if its sats round out
+        // an otherwise-tiny shortExpiry batch). Either way honours
+        // "Use immediately" only on the JS-trigger side, not at the
+        // batch-construction layer where Bark actually composes the
+        // round payload.
+        //
+        // Paranoia gate: VTXOs observed within the last RECENT_WINDOW_MS
+        // are also deferred regardless of their prompt-state status. This
+        // closes the race where:
+        //   T=0  bg refresh starts (useArkSync sweep, scheduled wake, ...)
+        //   T=1  receive movement fires, movementWatcher pushes 'pending'
+        //   T=2  bg refresh's getState() snapshot — already captured at T=0
+        //        BEFORE the push — doesn't see the new entry, and the
+        //        new vtxo gets pulled into the round as a filler.
+        // Adding the time-window check picks up arkoors that arrived
+        // mid-orchestrator and prevents them from being swept.
+        const RECENT_WINDOW_MS = 90_000; // 90s — covers a slow ASP round + sync lag
+        const promptState = useAuthStore.getState().arkArkoorPromptState ?? {};
+        const nowForGate = Date.now();
+        const deferredIds = new Set<string>();
+        for (const [id, entry] of Object.entries(promptState)) {
+            if (entry.status === 'pending' || entry.status === 'dismissed') {
+                deferredIds.add(id);
+                continue;
+            }
+            // Recently observed but somehow not pending (e.g. user already
+            // resolved it via popup but the entry hasn't been pruned yet).
+            // Don't double-refresh.
+            if (entry.observedAt && nowForGate - entry.observedAt < RECENT_WINDOW_MS) {
+                deferredIds.add(id);
+            }
+        }
+        console.log(
+            '[Ark bg refresh] deferral set:',
+            deferredIds.size,
+            'ids; promptState keys:',
+            Object.keys(promptState).length,
+        );
+
         // Categorise spendable VTXOs by expiry window and dust status.
         // The round-input constraint is on the AGGREGATE input total
         // (≥ ARK_REFRESH_MIN_SATS, currently 500 sats), not per-input —
@@ -446,7 +528,16 @@ export async function runBackgroundRefresh(
         let triggerCount = 0;
         let imminent24h = false;
         let imminent2h = false;
+        let deferredSkipped = 0;
         for (const v of vtxos.spendable) {
+            // Honour user-deferred VTXOs (Arkoor-receive popup "Use
+            // immediately"). Never include them in either bucket; the
+            // 24h-before push schedule fires the safety net when they
+            // approach actual expiry.
+            if (deferredIds.has(v.id)) {
+                deferredSkipped++;
+                continue;
+            }
             // Skip VTXOs with no resolved expiry (SDK sentinel: expiryHeight=0).
             // Arkoor VTXOs inherit their source's expiry and the SDK normally
             // resolves it; a 0 here means the source isn't in the local
@@ -468,6 +559,23 @@ export async function runBackgroundRefresh(
             } else if (v.sats > ARK_VTXO_DUST_SATS) {
                 longExpiryNonDust.push(cand);
             }
+        }
+        if (deferredSkipped > 0) {
+            console.log(
+                '[Ark bg refresh] skipped',
+                deferredSkipped,
+                'user-deferred VTXO(s) from round eligibility',
+            );
+            // Surface in the activity feed so the user sees the
+            // orchestrator actually honoured their "Use immediately"
+            // choice. Without this, deferral is invisible until they
+            // notice the VTXO isn't Locked — fine for the happy path,
+            // confusing for "wait, did my choice register?" moments.
+            recordEvent({
+                kind: 'arkoor-prompt',
+                outcome: 'auto-skipped',
+                vtxoCount: deferredSkipped,
+            });
         }
 
         // Build the round batch. Start with everything short-expiry; if
@@ -535,6 +643,55 @@ export async function runBackgroundRefresh(
                     useAuthStore.getState().setArkBgRefreshLastWarn24hAt(Date.now());
                 } catch (notifErr) {
                     console.warn('[Ark bg refresh] 24h warning threw:', notifErr);
+                }
+            }
+        }
+
+        // Final-mile deferral re-check. Receive notifications that landed
+        // AFTER we read promptState at categorization-time would otherwise
+        // sneak into batchIds. Re-read state here and drop any newly-added
+        // deferred ids before fee estimation / round submission.
+        {
+            const latestPromptState =
+                useAuthStore.getState().arkArkoorPromptState ?? {};
+            const lateAddedDeferred = new Set<string>();
+            const lateNow = Date.now();
+            for (const [id, entry] of Object.entries(latestPromptState)) {
+                if (deferredIds.has(id)) continue; // already accounted for at categorization
+                if (
+                    entry.status === 'pending' ||
+                    entry.status === 'dismissed' ||
+                    (entry.observedAt && lateNow - entry.observedAt < RECENT_WINDOW_MS)
+                ) {
+                    lateAddedDeferred.add(id);
+                }
+            }
+            if (lateAddedDeferred.size > 0) {
+                const droppedFromBatch = batchIds.filter((id) =>
+                    lateAddedDeferred.has(id),
+                );
+                if (droppedFromBatch.length > 0) {
+                    console.log(
+                        '[Ark bg refresh] final-mile drop:',
+                        droppedFromBatch.length,
+                        'mid-orchestrator deferrals (ids:',
+                        droppedFromBatch.map((id) => id.slice(0, 12)).join(', '),
+                        ')',
+                    );
+                    const keptIds = batchIds.filter(
+                        (id) => !lateAddedDeferred.has(id),
+                    );
+                    const keptSats = batchCandidates
+                        .filter((c) => keptIds.includes(c.id))
+                        .reduce((a, c) => a + c.sats, 0);
+                    batchIds.length = 0;
+                    batchIds.push(...keptIds);
+                    batchTotalSats = keptSats;
+                    recordEvent({
+                        kind: 'arkoor-prompt',
+                        outcome: 'auto-skipped',
+                        vtxoCount: droppedFromBatch.length,
+                    });
                 }
             }
         }

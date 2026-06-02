@@ -105,6 +105,100 @@ export function notifyExpiryWarning2h(): void {
     );
 }
 
+/**
+ * Schedule the 24h + 2h expiry-warning notifications for a specific VTXO.
+ *
+ * These are queued in the OS notification scheduler (UNUserNotificationCenter
+ * on iOS, AlarmManager on Android) at the moment the VTXO is observed. They
+ * fire even if the app process is killed, the device sleeps for days, no
+ * background-refresh task ever wakes, and no silent push lands — as long as
+ * the device clock is running and notifications are permitted.
+ *
+ * That's the whole point: this path is the only mitigation for the
+ * "user receives via Lightning while online, then goes offline indefinitely"
+ * edge case. Background refresh and silent push both need the device to
+ * have signal + battery + OS goodwill. Pre-scheduled local notifications
+ * just need the clock to tick.
+ *
+ * Idempotent on re-schedule with the same `vtxoId` — the OS replaces the
+ * existing entry. The caller is responsible for canceling on VTXO state
+ * change (refreshed / spent / exited) via {@link cancelVtxoExpiryWarnings}
+ * so users don't get phantom alerts about funds that already moved.
+ *
+ * vtxoId is hashed to a 31-bit signed integer because the underlying
+ * library (react-native-push-notification 8.1.1) treats `id` as a
+ * positive int on iOS — VTXO IDs are 64-char hex+colon which the
+ * library can't handle natively. Collision risk across a 50-VTXO
+ * wallet is statistically negligible; if it ever bites we'll switch
+ * to a longer hash + a numeric-namespace map.
+ */
+function notificationIdFor(vtxoId: string, kind: 'warn24h' | 'warn2h'): string {
+    // FNV-1a 32-bit hash, then mask to 31 bits and prefix-tag by kind so the
+    // 24h and 2h alerts for the same VTXO get distinct IDs. Stable across
+    // app restarts — same input always produces same id, so cancel works.
+    let h = 2166136261;
+    const tagged = `${kind}:${vtxoId}`;
+    for (let i = 0; i < tagged.length; i++) {
+        h ^= tagged.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return String(h & 0x7fffffff);
+}
+
+export function scheduleVtxoExpiryWarnings(
+    vtxoId: string,
+    expiryAtMs: number,
+): void {
+    ensureInit();
+    const now = Date.now();
+    const warn24hAt = expiryAtMs - 24 * 60 * 60 * 1000;
+    const warn2hAt = expiryAtMs - 2 * 60 * 60 * 1000;
+
+    if (warn24hAt > now) {
+        PushNotification.localNotificationSchedule({
+            id: notificationIdFor(vtxoId, 'warn24h'),
+            channelId: CHANNEL_ID,
+            title: 'Capsule expiring soon',
+            message:
+                'A capsule will expire within 24 hours. Open Cypher Box to refresh.',
+            date: new Date(warn24hAt),
+            priority: 'high',
+            importance: 'high',
+            playSound: true,
+            soundName: 'default',
+            userInfo: { source: 'ark-vtxo-expiry-warn24h', vtxoId },
+            allowWhileIdle: true,
+        });
+    }
+    if (warn2hAt > now) {
+        PushNotification.localNotificationSchedule({
+            id: notificationIdFor(vtxoId, 'warn2h'),
+            channelId: CHANNEL_ID,
+            title: 'Capsule expiring NOW',
+            message:
+                'A capsule will expire within 2 hours. Open Cypher Box immediately to refresh.',
+            date: new Date(warn2hAt),
+            priority: 'high',
+            importance: 'high',
+            playSound: true,
+            soundName: 'default',
+            userInfo: { source: 'ark-vtxo-expiry-warn2h', vtxoId },
+            allowWhileIdle: true,
+        });
+    }
+}
+
+export function cancelVtxoExpiryWarnings(vtxoId: string): void {
+    try {
+        PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, 'warn24h'));
+        PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, 'warn2h'));
+    } catch (err) {
+        // Cancellation should never throw, but the library has been
+        // observed to no-throw-but-warn on stale ids. Swallow.
+        console.warn('[Ark notifications] cancelVtxoExpiryWarnings:', err);
+    }
+}
+
 export function notifyDustUneconomic(
     feeSats: number,
     totalSats: number,

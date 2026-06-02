@@ -4,3 +4,4 @@ export type {UseArkSync} from './useArkSync';
 export {default as useArkRestoreOnBoot} from './useArkRestoreOnBoot';
 export type {ArkRestoreBootStatus} from './useArkRestoreOnBoot';
 export {default as useArkExitDestinationBackfill} from './useArkExitDestinationBackfill';
+export {default as useArkoorReceivePrompt} from './useArkoorReceivePrompt';

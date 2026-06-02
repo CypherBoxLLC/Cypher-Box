@@ -4,6 +4,7 @@ import { AppState, AppStateStatus, InteractionManager, Platform } from 'react-na
 import {
     applyExpiredVtxoFilter,
     AVG_BLOCK_MINUTES,
+    cancelVtxoExpiryWarnings,
     claimArkExitsToAddress,
     fetchArkBalance,
     fetchArkPendingLightningReceives,
@@ -20,6 +21,7 @@ import {
     progressArkPendingRounds,
     resetArkWalletState,
     runBackgroundRefresh,
+    scheduleVtxoExpiryWarnings,
     syncArkExits,
     syncArkWallet,
     tryClaimArkLightningReceives,
@@ -107,6 +109,9 @@ export default function useArkSync(): UseArkSync {
     const setArkBalance = useAuthStore((s) => s.setArkBalance);
     const setArkBalanceDetail = useAuthStore((s) => s.setArkBalanceDetail);
     const setArkVtxos = useAuthStore((s) => s.setArkVtxos);
+    const setArkRefreshStuck = useAuthStore((s) => s.setArkRefreshStuck);
+    const setArkPendingRoundFirstSeen = useAuthStore((s) => s.setArkPendingRoundFirstSeen);
+    const setArkScheduledExpiryNotifs = useAuthStore((s) => s.setArkScheduledExpiryNotifs);
     const setArkPendingLnReceives = useAuthStore((s) => s.setArkPendingLnReceives);
     const setArkChainTipHeight = useAuthStore((s) => s.setArkChainTipHeight);
     const setArkLastSyncedAt = useAuthStore((s) => s.setArkLastSyncedAt);
@@ -266,14 +271,15 @@ export default function useArkSync(): UseArkSync {
             // If a Locked VTXO persists with ongoing=false across multiple
             // cycles, that's the signal for the future "Cancel stuck
             // refresh" UX (Layer 3). For now we just log the snapshot.
-            if (__DEV__) {
-                const rounds = await fetchArkPendingRoundStates();
-                if (rounds.length > 0) {
-                    console.log(
-                        '[Ark sync] pending rounds:',
-                        rounds.map((r) => `${r.id}(${r.ongoing ? 'ongoing' : 'finalising'})`).join(', '),
-                    );
-                }
+            // Fetch pending rounds outside the __DEV__ guard so the result
+            // is available for the stuck-refresh detection below. The dev-
+            // only console.log stays gated.
+            const rounds = await fetchArkPendingRoundStates();
+            if (__DEV__ && rounds.length > 0) {
+                console.log(
+                    '[Ark sync] pending rounds:',
+                    rounds.map((r) => `${r.id}(${r.ongoing ? 'ongoing' : 'finalising'})`).join(', '),
+                );
             }
 
             // Pull round finalizations + server-side updates into the local
@@ -369,6 +375,190 @@ export default function useArkSync(): UseArkSync {
                 console.log('[Ark sync] fetchArkVtxos returned null (no handle)');
             }
 
+            // --- Pre-schedule OS-level expiry-warning notifications ---
+            //
+            // This is the only mitigation for the "user receives via
+            // Lightning while online, then goes offline indefinitely" edge
+            // case. Background refresh + silent push both require the
+            // device to wake up. Pre-scheduled local notifications fire
+            // from the OS scheduler (UNUserNotificationCenter on iOS,
+            // AlarmManager on Android) — they need only the clock ticking
+            // and notification permission.
+            //
+            // We schedule the moment a VTXO with on-chain expiry appears
+            // and cancel the moment it disappears (refreshed → new VTXO id,
+            // spent, exited). True arkoor VTXOs (`expiryHeight === 0`)
+            // are skipped — we'd need the ASP's trust window duration
+            // to know when to fire, and the SDK doesn't expose that.
+            // Documented limitation.
+            //
+            // Persisted bookkeeping in `arkScheduledExpiryNotifs` avoids
+            // re-scheduling on every 30s tick. The OS's idempotent-by-id
+            // behavior would make re-scheduling safe, but it's wasteful
+            // and racy with the OS scheduler.
+            if (vtxos && typeof tip === 'number') {
+                const prevScheduled = useAuthStore.getState().arkScheduledExpiryNotifs;
+                const nextScheduled: Record<string, number> = {};
+                const blockMs = AVG_BLOCK_MINUTES * 60 * 1000;
+                const nowMs = Date.now();
+
+                // Add / keep entries for currently-spendable VTXOs with
+                // an on-chain expiry. Skip ones that already expired (the
+                // sweep upstream skips them too) and arkoor (expiryHeight=0).
+                for (const v of vtxos.spendable) {
+                    if (v.expiryHeight <= 0) continue;
+                    const blocksLeft = v.expiryHeight - tip;
+                    if (blocksLeft <= 0) continue;
+                    const expiryAtMs = nowMs + blocksLeft * blockMs;
+                    nextScheduled[v.id] = expiryAtMs;
+                    if (prevScheduled[v.id] == null) {
+                        try {
+                            scheduleVtxoExpiryWarnings(v.id, expiryAtMs);
+                            if (__DEV__) {
+                                console.log(
+                                    '[Ark sync] scheduled expiry warnings for',
+                                    v.id.slice(0, 12),
+                                    'at',
+                                    new Date(expiryAtMs).toISOString(),
+                                );
+                            }
+                        } catch (notifErr) {
+                            console.warn(
+                                '[Ark sync] scheduleVtxoExpiryWarnings threw:',
+                                notifErr,
+                            );
+                        }
+                    }
+                }
+
+                // Cancel for entries that are gone (refreshed, spent,
+                // exited, or otherwise no longer spendable).
+                for (const id of Object.keys(prevScheduled)) {
+                    if (nextScheduled[id] == null) {
+                        try {
+                            cancelVtxoExpiryWarnings(id);
+                            if (__DEV__) {
+                                console.log(
+                                    '[Ark sync] cancelled expiry warnings for',
+                                    id.slice(0, 12),
+                                );
+                            }
+                        } catch (notifErr) {
+                            console.warn(
+                                '[Ark sync] cancelVtxoExpiryWarnings threw:',
+                                notifErr,
+                            );
+                        }
+                    }
+                }
+
+                // Only commit the map back if it changed, to avoid
+                // pointless re-renders of any subscriber to this slot.
+                const prevKeys = Object.keys(prevScheduled);
+                const nextKeys = Object.keys(nextScheduled);
+                const changed =
+                    prevKeys.length !== nextKeys.length ||
+                    nextKeys.some((k) => prevScheduled[k] !== nextScheduled[k]);
+                if (changed) setArkScheduledExpiryNotifs(nextScheduled);
+            }
+
+            // Stuck-refresh detection — TIME-based.
+            //
+            // Reliable signal: a round that's been `ongoing=true` for more
+            // than `2 × roundIntervalSecs` (interval from
+            // `fetchArkRoundIntervalSecs` — mainnet=3600s, signet=300s) is
+            // past the natural ASP completion window. 2× allows for normal
+            // jitter, a missed round, or a single network blip. Anything
+            // beyond that is statistically not coming back without
+            // intervention via `cancelPendingRound`.
+            //
+            // Why time and not on-chain expiry: tested empirically on
+            // 2026-05-20 — a Locked VTXO's `expiryHeight` is the
+            // PRE-refresh leaf's expiry, not the future round's. It's
+            // expected to lag `tip` during a normal in-flight round.
+            // (Confirmed: 3 Locked VTXOs at exp=949589 with tip=950146
+            // were replaced by fresh exp=954176 VTXOs the moment the
+            // round completed.) Using expiry as the stuck signal produced
+            // false positives whenever a refresh was driven on
+            // already-past-expiry VTXOs — exactly the recovery case the
+            // SDK is designed to handle. Tapping the banner during a
+            // false positive would call `cancelPendingRound` on a healthy
+            // in-flight round.
+            //
+            // We track `firstSeenAt` per roundId in authStore (persisted
+            // via existing zustand persist middleware) so a round that's
+            // been pending across an app cold-restart still trips the
+            // threshold instead of restarting the clock. The map is
+            // pruned each sync to drop roundIds no longer in
+            // `pendingRoundStates()`.
+            const ongoingRounds = rounds.filter((r) => r.ongoing);
+            const now = Date.now();
+            const prevFirstSeen = useAuthStore.getState().arkPendingRoundFirstSeen;
+            const intervalSecs = useAuthStore.getState().arkRoundIntervalSecs;
+            const ongoingIdSet = new Set(ongoingRounds.map((r) => String(r.id)));
+
+            // Build the next firstSeen map: keep existing entries for
+            // rounds still pending; add a fresh `now` stamp for newly-
+            // observed rounds; drop entries for rounds that have left
+            // the pending list. Skip the setter call when the map is
+            // unchanged to avoid re-rendering subscribers for nothing.
+            const nextFirstSeen: Record<string, number> = {};
+            for (const [id, ts] of Object.entries(prevFirstSeen)) {
+                if (ongoingIdSet.has(id)) nextFirstSeen[id] = ts;
+            }
+            for (const r of ongoingRounds) {
+                const key = String(r.id);
+                if (nextFirstSeen[key] == null) nextFirstSeen[key] = now;
+            }
+            const prevKeys = Object.keys(prevFirstSeen);
+            const nextKeys = Object.keys(nextFirstSeen);
+            const mapChanged =
+                prevKeys.length !== nextKeys.length ||
+                nextKeys.some((k) => prevFirstSeen[k] !== nextFirstSeen[k]);
+            if (mapChanged) setArkPendingRoundFirstSeen(nextFirstSeen);
+
+            if (intervalSecs != null && ongoingRounds.length > 0) {
+                const stuckThresholdMs = 2 * intervalSecs * 1000;
+                const stuck = ongoingRounds.filter((r) => {
+                    const seen = nextFirstSeen[String(r.id)];
+                    return seen != null && now - seen > stuckThresholdMs;
+                });
+                if (stuck.length > 0) {
+                    // "stuckSats" = sum of Locked VTXO amounts. Note: the
+                    // SDK doesn't expose a vtxo→round link, so this is the
+                    // total locked across all rounds, not strictly the
+                    // stuck-round subset. Acceptable for a banner headline
+                    // ("Refresh stuck · ~N sats") since the user is going
+                    // to cancel all stuck rounds anyway.
+                    const lockedSats = (vtxos?.all ?? [])
+                        .filter((v) => v.state.toLowerCase() === 'locked')
+                        .reduce((sum, v) => sum + v.sats, 0);
+                    setArkRefreshStuck({
+                        stuckRoundIds: stuck.map((r) => r.id),
+                        stuckSats: lockedSats,
+                        detectedAtTip: typeof tip === 'number' ? tip : 0,
+                    });
+                    if (__DEV__) {
+                        console.warn(
+                            '[Ark sync] STUCK refresh (time-based):',
+                            'roundIds=', stuck.map((r) => r.id),
+                            'ages(s)=', stuck.map((r) =>
+                                Math.round((now - nextFirstSeen[String(r.id)]) / 1000),
+                            ),
+                            'thresholdSecs=', intervalSecs * 2,
+                            'lockedSats=', lockedSats,
+                        );
+                    }
+                } else {
+                    setArkRefreshStuck(null);
+                }
+            } else {
+                // No interval cached yet (first sync after sign-in before
+                // the interval fetcher resolves), OR no ongoing rounds at
+                // all. Either way: no stuck signal.
+                setArkRefreshStuck(null);
+            }
+
             // In-flight LN receives: pay-only entries (hasHtlcVtxos === true)
             // are the gap state — money landed at the ASP, but the round
             // that condenses it into a VTXO hasn't run yet. Surface to
@@ -431,11 +621,29 @@ export default function useArkSync(): UseArkSync {
             // duplicating it inline is cheaper than introducing a
             // dependency cycle.
             const state = useAuthStore.getState();
+            // VTXOs the user has explicitly told us NOT to auto-refresh —
+            // via the Arkoor-receive popup's "Use immediately" path. Without
+            // this gate, picking "Use immediately" is a lie: auto-refresh
+            // hits the urgency threshold a few seconds later and grabs the
+            // VTXO anyway, locking the funds into a round. Status
+            // 'pending' is included for the brief window between
+            // movementWatcher pushing the entry and the user tapping a
+            // button, so the race-winner is the user, not the scheduler.
+            const promptState = state.arkArkoorPromptState ?? {};
+            const deferredIds = new Set<string>();
+            for (const [id, entry] of Object.entries(promptState)) {
+                if (entry.status === 'pending' || entry.status === 'dismissed') {
+                    deferredIds.add(id);
+                }
+            }
             let minBlocks = Infinity;
             if (tip !== null && vtxos) {
                 for (const v of vtxos.spendable) {
                     if (v.expiryHeight === 0) continue;
                     if (v.state.toLowerCase() === 'locked') continue;
+                    // User-deferred — skip so the urgency sweep doesn't
+                    // try to refresh a VTXO the user said to leave alone.
+                    if (deferredIds.has(v.id)) continue;
                     const blocks = v.expiryHeight - tip;
                     // Skip already-expired VTXOs. Including them would make
                     // the lazy-refresh sweep fire on dead funds (refresh

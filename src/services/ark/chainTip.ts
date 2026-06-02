@@ -30,3 +30,8 @@ export const AVG_BLOCK_MINUTES = 10;
 export function blocksToDays(blocks: number): number {
     return (blocks * AVG_BLOCK_MINUTES) / (60 * 24);
 }
+
+/** Hours-precision sibling of {@link blocksToDays}; used for the 24h-before-expiry threshold. */
+export function blocksToHours(blocks: number): number {
+    return (blocks * AVG_BLOCK_MINUTES) / 60;
+}

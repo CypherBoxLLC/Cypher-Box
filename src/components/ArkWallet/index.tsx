@@ -2,7 +2,7 @@ import { Text } from "@Cypher/component-library";
 import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
-import { ARK_VTXO_DUST_SATS, blocksToDays } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, blocksToDays, cancelArkPendingRound } from "@Cypher/services/ark";
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -58,7 +58,31 @@ export default function ArkWallet({
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
         arkIosBackupReminderActive,
+        arkRefreshStuck,
+        setArkRefreshStuck,
     } = useAuthStore();
+
+    // Recovery handler for "stuck refresh" — fired when the user taps the
+    // banner that surfaces when expired-on-chain VTXOs are still Locked in
+    // rounds the SDK reports as ongoing=true. Calls cancelPendingRound for
+    // each stuck round (unlocks the input VTXOs so the user can retry), then
+    // clears the banner. The next sync cycle (which compares fresh
+    // expiryHeight to fresh tip) re-detects from on-chain truth, so a banner
+    // re-shows automatically if any round is still stuck after cancellation.
+    const handleStuckRecovery = React.useCallback(async () => {
+        if (!arkRefreshStuck) return;
+        for (const roundId of arkRefreshStuck.stuckRoundIds) {
+            try {
+                await cancelArkPendingRound(roundId);
+            } catch {
+                // cancelArkPendingRound already console.warns the inner
+                // BarkError detail (roundId + tag + inner errorMessage).
+                // We swallow per-round failures so one bad round doesn't
+                // block cancellation of the others.
+            }
+        }
+        setArkRefreshStuck(null);
+    }, [arkRefreshStuck, setArkRefreshStuck]);
 
     // Strike + CoinOS + Ark: this combination pulls the Ark card up out
     // of position. Bump it down 10pt for this specific 3-Lightning combo
@@ -398,7 +422,36 @@ export default function ArkWallet({
                                     {homeMessage}
                                 </Text>
                             )}
-                            {!isLoading && bgRefreshStatus && (() => {
+                            {/* Stuck-refresh banner — renders ABOVE the
+                                bgRefreshStatus pill and takes visual
+                                priority because "your funds are at risk
+                                of a stuck round" outweighs the auto-
+                                refresh / backup nudges that pill carries.
+                                Detection happens in useArkSync: any Locked
+                                VTXO with expiryHeight <= tip + at least
+                                one round still ongoing=true. Tap fires
+                                cancelPendingRound per round; the next
+                                sync re-detects from on-chain truth, so a
+                                still-stuck condition pops the banner back. */}
+                            {!isLoading && arkRefreshStuck && (
+                                <TouchableOpacity
+                                    onPress={handleStuckRecovery}
+                                    activeOpacity={0.7}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Recover stuck refresh"
+                                >
+                                    <Text
+                                        h4
+                                        style={[
+                                            styles.alert,
+                                            { color: colors.redLight, textDecorationLine: 'underline' },
+                                        ]}
+                                    >
+                                        Refresh stuck · {arkRefreshStuck.stuckSats} sats — tap to recover
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+                            {!isLoading && !arkRefreshStuck && bgRefreshStatus && (() => {
                                 const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
                                 // Build the rendered text. When the status
                                 // declares a `linkText` substring (e.g. "here"

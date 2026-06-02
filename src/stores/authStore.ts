@@ -3,6 +3,31 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { zustandStorage } from "./index";
 import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
 
+/**
+ * Stuck-refresh detection state.
+ *
+ * Set by useArkSync when at least one VTXO is `state=Locked` AND its
+ * `expiryHeight <= tip` (i.e. expired on-chain) AND the SDK still reports
+ * at least one round with `ongoing=true`. The SDK's `progressPendingRounds()`
+ * normally drives stuck rounds to terminal state, but if the ASP went silent
+ * mid-round the SDK can sit at `ongoing=true` indefinitely with no client-
+ * side timeout. The on-chain VTXO expiry is our reliable signal that the
+ * round is past saving and the user should be offered manual cancellation.
+ *
+ * Recovery: call `cancelArkPendingRound(id)` for each entry in
+ * `stuckRoundIds`, then sync. Cancellation unlocks the input VTXOs so the
+ * user can retry. Per Erik (Bark team): the server may refuse if the round
+ * has already finalised — in that case the next sync ingests the result.
+ */
+export type ArkRefreshStuckInfo = {
+    /** Round IDs the SDK currently reports as `ongoing=true`. */
+    stuckRoundIds: number[];
+    /** Sum of `Locked` VTXOs whose `expiryHeight <= tip`. The sats at risk. */
+    stuckSats: number;
+    /** Chain tip at detection time — for "X blocks past expiry" messaging. */
+    detectedAtTip: number;
+};
+
 export type AuthStateType = {
     user: null | any;
     token: string | null;
@@ -79,6 +104,41 @@ export type AuthStateType = {
     // view. Spendable-only subset drives the capsule UI.
     arkVtxos: ArkVtxoView[];
     /**
+     * Set when at least one ongoing round has been pending for longer than
+     * `2 × roundIntervalSecs` (time-based detection). Drives the "Recover
+     * stuck refresh" banner in ArkWallet. `null` means no stuck round
+     * detected this sync cycle. See {@link ArkRefreshStuckInfo} for full
+     * rationale + history of the earlier (incorrect) expiryHeight-based
+     * trigger.
+     */
+    arkRefreshStuck: ArkRefreshStuckInfo | null;
+    /**
+     * Per-round wall-clock timestamps (epoch ms) for stuck-refresh detection.
+     * Map of stringified `roundId` (u32) → ms when the round was first seen
+     * in `pendingRoundStates()`. Persisted via the existing zustand persist
+     * middleware so a round stuck across an app cold-restart still trips the
+     * `2 × roundIntervalSecs` threshold instead of restarting the clock.
+     * Pruned each sync to drop roundIds no longer pending — never grows
+     * unbounded.
+     */
+    arkPendingRoundFirstSeen: Record<string, number>;
+    /**
+     * Map of `vtxoId → scheduled-for expiry epoch ms` for VTXOs that have
+     * OS-level expiry-warning notifications queued via
+     * `scheduleVtxoExpiryWarnings`. Persisted so the sync sweep doesn't
+     * re-schedule on every 30s tick (which would be wasteful and could
+     * race with the OS scheduler).
+     *
+     * On every sync after the vtxos write:
+     *   - New VTXO with on-chain expiry but no entry here → schedule + add
+     *   - Entry here whose VTXO no longer spendable → cancel + remove
+     *
+     * The value (expiry ms) is what we scheduled FOR, so a future cleanup
+     * pass can detect and clear stale entries even if a VTXO disappears
+     * outside the sync flow.
+     */
+    arkScheduledExpiryNotifs: Record<string, number>;
+    /**
      * Pending Lightning receives from `wallet.pendingLightningReceives()`.
      *
      * Why this is separate from arkVtxos: between the moment a counterparty
@@ -147,6 +207,9 @@ export type AuthStateType = {
     setArkBalance: (state: number) => void;
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => void;
     setArkVtxos: (state: ArkVtxoView[]) => void;
+    setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => void;
+    setArkPendingRoundFirstSeen: (state: Record<string, number>) => void;
+    setArkScheduledExpiryNotifs: (state: Record<string, number>) => void;
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setArkChainTipHeight: (state: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
@@ -185,6 +248,54 @@ export type AuthStateType = {
     arkBgRefreshMaxFeeSats: number;
 
     /**
+     * Per-VTXO state for the "Arkoor receive" prompt feature.
+     *
+     * Map of vtxoId → { status, observedAt, dismissedAt? }. Tracks which
+     * arkoor VTXOs we've already shown the popup for (so we don't re-prompt
+     * on every reload) and when the user dismissed each one (drives the
+     * 24h-before-expiry push fallback).
+     *
+     * Statuses:
+     *   - 'pending'   — first time we observed this arkoor, popup not yet shown
+     *                   or shown but not yet acknowledged. Hook picks first
+     *                   pending one and fires Alert.alert.
+     *   - 'dismissed' — user picked "Use immediately". Schedule 24h+2h push
+     *                   based on observedAt + ARK_ARKOOR_ASSUMED_DAYS.
+     *   - 'refreshed' — user picked "Refresh now". Refresh was kicked off;
+     *                   when the VTXO transitions to a round VTXO the entry
+     *                   becomes irrelevant (existing useArkSync schedules
+     *                   warnings on the new round VTXO automatically).
+     *
+     * Persisted so a kill-and-relaunch doesn't re-prompt for a vtxo the user
+     * already saw. Entries are cleaned up by the hook when the underlying
+     * vtxo disappears from arkVtxos.all (spent / refreshed-and-replaced /
+     * exited).
+     */
+    arkArkoorPromptState: Record<string, {
+        status: 'pending' | 'dismissed' | 'refreshed';
+        observedAt: number;
+        dismissedAt?: number;
+        /**
+         * Sats from the Bark movement event's `effectiveBalanceSats`.
+         * Stored at push time so the popup can render the amount even
+         * when the vtxo has already been Locked into a refresh round
+         * and is no longer in `arkVtxos` (which only contains Spendable).
+         * Optional for back-compat with entries persisted before this
+         * field existed.
+         */
+        sats?: number;
+    }>;
+    /**
+     * @deprecated The "always show the popup" decision was made after
+     * direct user feedback ("what toggle do you mean") — if users don't
+     * notice the control, they're not making an informed off-decision,
+     * so the toggle was UX-noise rather than agency. Field retained for
+     * persistence-store back-compat; new code treats the popup as always
+     * on. Remove from the schema in a future migration cycle.
+     */
+    arkArkoorPromptEnabled: boolean;
+
+    /**
      * iOS-only: true when the user satisfied the create-flow backup gate via
      * manual share+confirm (the only honest iOS path — Documents writes
      * auto-sync to iCloud Drive only if the user has enabled iCloud Drive
@@ -212,6 +323,14 @@ export type AuthStateType = {
     setArkBgRefreshLastWarn2hAt: (state: number | null) => void;
     setArkBgRefreshMaxFeeSats: (state: number) => void;
     setArkIosBackupReminderActive: (state: boolean) => void;
+    setArkArkoorPromptState: (
+        state: Record<string, {
+            status: 'pending' | 'dismissed' | 'refreshed';
+            observedAt: number;
+            dismissedAt?: number;
+        }>,
+    ) => void;
+    setArkArkoorPromptEnabled: (state: boolean) => void;
 
     clearArkAuth: () => void;
 
@@ -249,6 +368,9 @@ const createAuthStore = (
     arkBalance: 0,
     arkBalanceDetail: null,
     arkVtxos: [],
+    arkRefreshStuck: null,
+    arkPendingRoundFirstSeen: {},
+    arkScheduledExpiryNotifs: {},
     arkPendingLnReceives: [],
     arkChainTipHeight: null,
     arkLastSyncedAt: null,
@@ -276,6 +398,8 @@ const createAuthStore = (
     arkBgRefreshLastWarn2hAt: null,
     arkBgRefreshMaxFeeSats: 5000,
     arkIosBackupReminderActive: false,
+    arkArkoorPromptState: {},
+    arkArkoorPromptEnabled: true,
     // 2FA state
     twoFARequired: false,
     twoFAVerified: false,
@@ -309,6 +433,9 @@ const createAuthStore = (
     setArkBalance: (state: number) => set({ arkBalance: state }),
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
+    setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => set({ arkRefreshStuck: state }),
+    setArkPendingRoundFirstSeen: (state: Record<string, number>) => set({ arkPendingRoundFirstSeen: state }),
+    setArkScheduledExpiryNotifs: (state: Record<string, number>) => set({ arkScheduledExpiryNotifs: state }),
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => set({ arkPendingLnReceives: state }),
     setArkChainTipHeight: (state: number | null) => set({ arkChainTipHeight: state }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
@@ -329,6 +456,8 @@ const createAuthStore = (
     setArkBgRefreshLastWarn2hAt: (state: number | null) => set({ arkBgRefreshLastWarn2hAt: state }),
     setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
     setArkIosBackupReminderActive: (state: boolean) => set({ arkIosBackupReminderActive: state }),
+    setArkArkoorPromptState: (state) => set({ arkArkoorPromptState: state }),
+    setArkArkoorPromptEnabled: (state: boolean) => set({ arkArkoorPromptEnabled: state }),
     clearArkAuth: () =>
         set({
             isArkAuth: false,
@@ -336,6 +465,9 @@ const createAuthStore = (
             arkBalance: 0,
             arkBalanceDetail: null,
             arkVtxos: [],
+            arkRefreshStuck: null,
+            arkPendingRoundFirstSeen: {},
+    arkScheduledExpiryNotifs: {},
             arkPendingLnReceives: [],
             arkChainTipHeight: null,
             arkLastSyncedAt: null,
@@ -362,6 +494,11 @@ const createAuthStore = (
             arkBgRefreshLastWarn24hAt: null,
             arkBgRefreshLastWarn2hAt: null,
             arkIosBackupReminderActive: false,
+            // Per-VTXO Arkoor-prompt state is wallet-scoped — clear on
+            // disconnect so the next wallet doesn't inherit prior prompts.
+            // arkArkoorPromptEnabled is a user preference, kept across
+            // wallet changes (matches the withdrawArkThreshold pattern).
+            arkArkoorPromptState: {},
         }),
     // 2FA setters
     setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),

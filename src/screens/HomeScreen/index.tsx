@@ -33,7 +33,7 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill } from "@Cypher/custom-hooks";
+import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
@@ -126,7 +126,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning, arkBalance } = useAuthStore();
+  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
   // Ark boot restore: reopens the wallet from on-disk state (datadir +
   // Keychain mnemonic) once per mount, and reconciles zustand so the
   // carousel reflects reality. Handles Metro reload + zustand/disk drift.
@@ -141,6 +141,11 @@ export default function HomeScreen({ route }: Props) {
   // with a single mount. No-op once the destination is set or when there
   // is no Hot Vault.
   useArkExitDestinationBackfill();
+  // Arkoor receive prompt: detects new arkoor VTXOs (Lightning receives
+  // typically materialise as arkoor with a ~3-day TTL the SDK doesn't
+  // surface as expiryHeight) and shows a one-time educational popup +
+  // schedules a 24h-before-expiry OS push. Opt-out via Vault tab toggle.
+  useArkoorReceivePrompt();
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [carouselPage, setCarouselPage] = useState(0);
@@ -784,11 +789,12 @@ export default function HomeScreen({ route }: Props) {
   };
 
   const loginClickHandler = () => {
-    if (hasSeenCustodialWarning) {
-      dispatchNavigate('CheckingAccountLogin');
-    } else {
-      dispatchNavigate('CheckingAccountIntro');
-    }
+    // Custodian warning was previously a one-time gate on the way into
+    // this flow (CheckingAccountIntro -> CheckingAccountLogin). It's now
+    // an on-demand info screen reached via the "?" icon next to the
+    // CUSTODIAL section header in CheckingAccountLogin, so we go straight
+    // to the provider picker.
+    dispatchNavigate('CheckingAccountLogin');
   };
 
   const onBarScanned = (value: any) => {
@@ -997,7 +1003,10 @@ export default function HomeScreen({ route }: Props) {
                   // Strike. We gate per-rail instead of by raw count
                   // because the same wallet shouldn't be addable twice.
                   showAddAccount={(!isAuth || !isStrikeAuth || !isArkAuth) && !isLoading}
-                  onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
+                  // Custodian warning is no longer a creation step — see
+                  // loginClickHandler comment above. Go straight to the
+                  // provider picker on every add-account tap.
+                  onAddAccount={() => dispatchNavigate('CheckingAccountLogin')}
                   carouselPage={carouselPage}
                   carouselTotal={carouselTotal}
                   carouselKinds={carouselKinds}

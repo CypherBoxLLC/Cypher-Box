@@ -65,6 +65,83 @@ export type AppEvent =
         kind: "auto-backup";
         result: "success" | "failure";
         target: "local" | "cloud";
+    })
+    /**
+     * Background-refresh attempt outcome.
+     *
+     * Distinct from `ark-refresh-{started,finished}` which only fires for
+     * user-tapped foreground refresh. This kind covers the unattended path —
+     * the BGAppRefreshTask / WorkManager wake, silent-push trigger, and the
+     * foreground urgency sweep in useArkSync. The detailed rolling buffer
+     * still lives in `backgroundTelemetry.ts` (AsyncStorage); this event is
+     * the user-visible subset that surfaces in the activity dropdown.
+     *
+     * Recorded only for outcomes the user would want to know about
+     * (success, error, fee_gated, dust_*, no_seed). Boring outcomes
+     * (rate_limited, no_eligible_vtxos, disabled, pending_round_conflict)
+     * are filtered at the call site to keep the dropdown signal-dense.
+     *
+     * Type union is inlined here (rather than imported from
+     * `@Cypher/services/ark`) to avoid an import cycle:
+     * services/ark/backgroundRefresh.ts already imports `recordEvent`
+     * from this store.
+     */
+    | (EventBase & {
+        kind: "ark-bg-refresh";
+        trigger: "scheduled" | "push" | "manual-test" | "arrival" | "foreground";
+        outcome:
+            | "success"
+            | "no_eligible_vtxos"
+            | "rate_limited"
+            | "pending_round_conflict"
+            | "fee_gated"
+            | "dust_uneconomic"
+            | "dust_stranded"
+            | "no_seed"
+            | "disabled"
+            | "error";
+        elapsedMs: number;
+        vtxoCount?: number;
+        feeSats?: number;
+        errorMsg?: string;
+    })
+    /**
+     * Arkoor-receive popup lifecycle event.
+     *
+     * Surfaces every meaningful step of the popup feature into the
+     * in-app Activity feed so issues are diagnosable without having to
+     * hook up Metro / a debugger. Without this, the popup's silent
+     * failure modes (toggle off, app backgrounded, prompt-in-flight ref
+     * stuck) are invisible to the user and only inferable from a Metro
+     * console — which production users can't tail.
+     *
+     * Subkinds:
+     *   - "fired"             — Alert.alert was successfully invoked.
+     *   - "skipped-disabled"  — toggle off in Ark Settings.
+     *   - "skipped-background" — app not foregrounded when receive landed; will retry on next foreground.
+     *   - "skipped-in-flight" — promptInFlight ref was already true; another alert blocking.
+     *   - "skipped-vtxo-gone" — vtxo was already refreshed/consumed before the hook could render the alert (race lost to auto-refresh).
+     *   - "refresh-now"       — user tapped "Refresh now"; refreshArkVtxosAndSync kicked.
+     *   - "use-immediately"   — user tapped "Use immediately"; VTXO deferred from auto-refresh.
+     *   - "auto-skipped"      — bg-refresh orchestrator honoured the deferral and excluded N VTXOs from the round.
+     */
+    | (EventBase & {
+        kind: "arkoor-prompt";
+        outcome:
+            | "fired"
+            | "skipped-disabled"
+            | "skipped-background"
+            | "skipped-in-flight"
+            | "skipped-vtxo-gone"
+            | "refresh-now"
+            | "use-immediately"
+            | "auto-skipped";
+        /** Short prefix of the VTXO id (12 chars) for readability in the activity row. */
+        vtxoIdPrefix?: string;
+        /** Amount the user is being prompted about; absent on auto-skipped events. */
+        sats?: number;
+        /** For auto-skipped: how many user-deferred VTXOs were excluded from the round. */
+        vtxoCount?: number;
     });
 
 export type AppEventKind = AppEvent["kind"];
@@ -109,7 +186,14 @@ const useEventLogStore = create<EventLogState>()(
     )
 );
 
-export const recordEvent = (ev: AppEventInput) =>
-    useEventLogStore.getState().recordEvent(ev);
+export const recordEvent = (ev: AppEventInput) => {
+    // Dev-only console mirror for the arkoor-prompt feature so the
+    // outcomes are tailable from Metro while we're hardening it. Drop
+    // this once the activity feed is the canonical surface.
+    if (__DEV__ && ev.kind === 'arkoor-prompt') {
+        console.log('[arkoor-prompt event]', JSON.stringify(ev));
+    }
+    return useEventLogStore.getState().recordEvent(ev);
+};
 
 export default useEventLogStore;
