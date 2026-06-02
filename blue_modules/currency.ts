@@ -209,7 +209,6 @@ function fiatToBTC(fiatFloat: number): string {
 }
 
 async function convertFiatToUSD(amount: number, fiatCurrency: string): number {
-  console.log('amount: ', amount, ', fiatCurrency: ', fiatCurrency);
   // const currencyInformation = JSON.parse((await AsyncStorage.getItem(EXCHANGE_RATES_STORAGE_KEY)) || '{}');
   // const rates = await AsyncStorage.getItem(EXCHANGE_RATES_STORAGE_KEY);
   // const currencyInformation = rates ? JSON.parse(rates) : { LAST_UPDATED_ERROR: false };
