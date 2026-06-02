@@ -141,6 +141,14 @@ export default function CheckingAccountLogin() {
     Linking.openURL("https://second.tech");
   };
 
+  // Opens the standalone custodial-risk explainer (CheckingAccountIntro,
+  // repurposed from its old role as a one-time gate on the way into this
+  // screen — see HomeScreen.loginClickHandler). Reached via the "?" icon
+  // next to the CUSTODIAL section header below.
+  const openCustodialInfo = () => {
+    dispatchNavigate("CheckingAccountIntro");
+  };
+
   const handleStrikeLogin = async () => {
     try {
       const result = await authorize(config);
@@ -307,6 +315,21 @@ export default function CheckingAccountLogin() {
             <>
               <View style={styles.sectionHeader}>
                 <Text bold style={styles.sectionTitle}>CUSTODIAL  ·  LIGHTNING-ENABLED</Text>
+                {/* On-demand explainer of custodial-Lightning trust
+                    assumptions. Replaces the prior one-time
+                    CheckingAccountIntro gate so users who already
+                    understand the model aren't forced through it on
+                    every install. */}
+                <TouchableOpacity
+                  onPress={openCustodialInfo}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.helpIcon}
+                  accessibilityLabel="Learn about custodial Lightning"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="help-circle-outline" size={16} color={colors.white} />
+                </TouchableOpacity>
                 <View style={styles.sectionDivider} />
               </View>
               <Text style={styles.sectionSubtitle}>

@@ -321,9 +321,46 @@ export default function RecoverArkScreen() {
             await restoreArkBackupBlob(result.blob, mnemonic);
         } catch (err: any) {
             // v2 match should never fail decrypt — fingerprints matched
-            // and the AES key is the same seed. If it does, the file is
-            // genuinely corrupt; surface a precise error.
+            // and the AES key is the same seed. If decrypt itself fails,
+            // the file is genuinely corrupt; surface a precise error.
+            //
+            // BUT: `restoreArkBackupBlob` doesn't ONLY decrypt — its last
+            // step is `await openArkWallet(mnemonic)` which connects to
+            // the ASP and esplora. A network failure there throws BACK
+            // through this catch, which used to flatten every failure
+            // into "Backup file is corrupt: BarkError.ServerConnection"
+            // — wildly misleading. The file was fine; the user just
+            // couldn't reach the server. Cost us 45 minutes of debugging
+            // on 2026-05-30 because the toast was actively lying.
+            //
+            // Distinguish by message shape: known network/server errors
+            // get a connectivity message + a "your backup is intact"
+            // reassurance, everything else stays as the original corrupt-
+            // file path. See .claude/OPEN_BUGS.md for the original
+            // diagnosis trail.
             if (result.kind === 'matched') {
+                const msg = String(err?.message ?? '');
+                const isNetworkError =
+                    msg.includes('BarkError.ServerConnection') ||
+                    msg.includes('BarkError.Network') ||
+                    msg.includes('ServerConnection') ||
+                    msg.includes('failed to open wallet') ||
+                    msg.includes('Reqwest') ||
+                    msg.includes('Timed out') ||
+                    msg.includes('connect to') ||
+                    msg.toLowerCase().includes('network');
+
+                if (isNetworkError) {
+                    console.warn('[Ark restore] post-decrypt network failure (file is intact, server unreachable):', err);
+                    setRestoring(false);
+                    setErrorMsg(
+                        "Your backup file is intact, but the wallet couldn't reach the Ark server right now. " +
+                        "This is usually temporary. Check your internet connection and try again in a moment. " +
+                        "Your funds and seed are safe; no need to pick a different backup file.",
+                    );
+                    return true;
+                }
+
                 console.warn('[Ark restore] decrypt of fingerprint-matched blob failed:', err);
                 setRestoring(false);
                 setErrorMsg(

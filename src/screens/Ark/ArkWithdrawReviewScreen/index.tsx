@@ -678,6 +678,28 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                         : ''
                                 }`}
                             />
+                            {/* Fee composition disclosure. The SDK returns a
+                             * single total for `fee.totalSats` that combines:
+                             *   - ASP service / liquidity fee (server margin)
+                             *   - On-chain broadcast fee (actually paid to miners)
+                             * Empirically on a 60k-sat withdrawal in 2026-05-30
+                             * testing the split was ~55% ASP / ~45% on-chain.
+                             * The SDK doesn't expose the split yet (filed
+                             * upstream-ask in OPEN_BUGS.md). Until it does,
+                             * tell the user the fee has two components so the
+                             * "why did it broadcast at 2 sat/vb when I paid X"
+                             * confusion has an answer. */}
+                            <Text
+                                style={{
+                                    color: colors.gray.light,
+                                    fontSize: 11,
+                                    marginLeft: 25,
+                                    marginTop: 4,
+                                    lineHeight: 14,
+                                }}
+                            >
+                                Includes Ark server service fee + on-chain broadcast fee.
+                            </Text>
                             {fee.vtxosSpent.length > 0 && (
                                 <TextViewV2
                                     keytext="Capsules used:  "
@@ -708,6 +730,34 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                     />
                 </GradientCard>
             </View>
+
+            {/* Confirmation-time disclosure.
+             *
+             * The Ark on-chain fee rate is set ASP-side at round-construction
+             * time, not by the client. Empirically the ASP picks the lowest
+             * rate it can get away with to maximise margin, so withdrawals
+             * routinely broadcast at ~2 sat/vb (at-or-below mempool's
+             * `economyFee`). That can mean hours of mempool wait. The user
+             * was confused by this in 2026-05-30 testing — paid 1149 sats
+             * "in fees", saw only 518 hit the chain, and the tx took ages
+             * to confirm because the ASP pocketed the rest.
+             *
+             * Point the user at the post-broadcast CPFP path we shipped in
+             * `a0f3740` so they have an out without needing to discover the
+             * Accelerate-transaction UI on their own.
+             */}
+            <Text
+                style={{
+                    color: colors.gray.light,
+                    fontSize: 12,
+                    textAlign: 'center',
+                    marginBottom: 12,
+                    marginHorizontal: 30,
+                    lineHeight: 16,
+                }}
+            >
+                Estimated confirmation: 1–6h at current rates. To speed up after broadcast, tap the pending transaction in your Hot Vault history and choose "Accelerate transaction".
+            </Text>
 
             {/* Caution caption — same copy + position as ReviewPayment. */}
             <Text

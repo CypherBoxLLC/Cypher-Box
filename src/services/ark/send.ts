@@ -201,6 +201,53 @@ export async function executeArkSend(
 
     console.log('[Ark send]', dest.kind, 'resolved id=', id.slice(0, 16) + '…');
 
+    // Slow-broadcast hint for `onchain` direction. The ASP sets the round's
+    // on-chain fee rate at construction; empirically it picks at-or-below
+    // mempool's economyFee floor to maximise its margin (the user paid Y
+    // sats but only ~45% of that hit miners; rest is server margin). This
+    // routinely lands withdrawals at ~2 sat/vb, meaning hours of mempool
+    // wait. Fire off a non-blocking mempool fee-rate fetch + warn-log if
+    // the resulting tx is well below current `fastestFee`. Pre-broadcast
+    // disclosure already exists on ArkWithdrawReviewScreen; this log is
+    // the breadcrumb a downstream auto-CPFP-prompt feature would key on.
+    //
+    // Fire-and-forget so we don't add latency to the send return path.
+    // 2-second budget on the mempool fetch; bail silently on error or
+    // timeout. Only runs for 'onchain' direction since LN sends route off
+    // chain and the rate concept doesn't apply.
+    if (dest.kind === 'onchain') {
+        const onchainTxid = id;
+        void (async () => {
+            try {
+                const controller = new AbortController();
+                const t = setTimeout(() => controller.abort(), 2000);
+                const [txRes, feeRes] = await Promise.all([
+                    fetch(`https://mempool.space/api/tx/${onchainTxid}`, { signal: controller.signal }),
+                    fetch('https://mempool.space/api/v1/fees/recommended', { signal: controller.signal }),
+                ]);
+                clearTimeout(t);
+                if (!txRes.ok || !feeRes.ok) return;
+                const tx = await txRes.json();
+                const feeRecs = await feeRes.json();
+                const vsize = (tx?.weight ?? 0) / 4;
+                const fee = tx?.fee ?? 0;
+                if (!vsize || !fee) return;
+                const broadcastRate = fee / vsize;
+                const fastest = Number(feeRecs?.fastestFee ?? 1);
+                if (broadcastRate < fastest / 2) {
+                    console.warn(
+                        '[Ark send] onchain broadcast at ' + broadcastRate.toFixed(1) +
+                        ' sat/vb (current fastestFee=' + fastest + ' sat/vb). ' +
+                        'Tx ' + onchainTxid.slice(0, 12) + '… may take hours to confirm. ' +
+                        'User can speed up via CPFP on the receiving wallet (see Hot Vault → tap pending → "Accelerate transaction").',
+                    );
+                }
+            } catch {
+                /* swallow — best-effort breadcrumb only */
+            }
+        })();
+    }
+
     // Re-read local state so the UI reflects the send before the 30s poll.
     //
     // CRITICAL: `handle.sync()` MUST run before the balance/vtxo refetch.

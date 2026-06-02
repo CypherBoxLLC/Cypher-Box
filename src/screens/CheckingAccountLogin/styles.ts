@@ -71,6 +71,10 @@ export default StyleSheet.create({
     backgroundColor: '#2A2A2A',
     marginLeft: 12,
   },
+  helpIcon: {
+    marginLeft: 6,
+    padding: 2,
+  },
   sectionDividerArk: {
     backgroundColor: '#3A2D0F',
   },
