@@ -38,7 +38,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accou
         id: number;
         name: string;
         icon?: any;
-        iconElement?: React.ReactNode;
+        ionicon?: string;
     };
     const tabs: TabDef[] = useMemo(() => [
         {
@@ -50,7 +50,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accou
             ? {
                 id: 1,
                 name: 'Vault',
-                iconElement: <Ionicons name="boat-outline" size={32} color="#FFFFFF" />,
+                ionicon: 'boat-outline',
             }
             : { id: 1, name: 'Threshold', icon: Threshold },
         { id: 2, name: 'History', icon: Time },
@@ -86,18 +86,25 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accou
                         }
                         onPress={() => tabClickListener(tab.id)}
                     >
-                        {tab.iconElement ? (
-                            // Vector-icon tab (currently only the Ark
-                            // Vault tab's boat-outline). Ionicons sizes
-                            // itself via its own `size` prop, so we skip
-                            // the per-id image-style switch.
-                            tab.iconElement
+                        {tab.ionicon ? (
+                            // Vector-icon tab (the Ark Vault boat-outline).
+                            // Black on the selected tab (its fill is the
+                            // light Ark color) and white on the dark
+                            // unselected fill, so the icon always contrasts.
+                            <Ionicons
+                                name={tab.ionicon}
+                                size={32}
+                                color={selectedTab === tab.id ? '#000000' : '#FFFFFF'}
+                            />
                         ) : (
                             <Image
                                 source={tab.icon}
                                 style={[
                                     tab.id === 1 ? styles.coinos : tab.id === 0 ? styles.key : tab.id === 3 ? styles.key : styles.icon,
-                                    // { tintColor: getTabStyle(tab.id).tintColor }
+                                    // Ark tabs: black icon on the selected (light) fill,
+                                    // white on the dark unselected fill. Non-Ark tabs keep
+                                    // their native artwork untinted.
+                                    isArk ? { tintColor: selectedTab === tab.id ? '#000000' : '#FFFFFF' } : null,
                                 ]}
                                 resizeMode="contain"
                             />
