@@ -287,7 +287,7 @@ export default function HomeScreen({ route }: Props) {
 
       // Subscribe vault addresses to GroundControl for push notifications
       try {
-        const Notifications = require('../../../blue_modules/notifications');
+        const Notifications = require('../../../blue_modules/notifications').default;
         const pushTokenData = await Notifications.getPushToken();
         if (__DEV__) console.log('[GroundControl] Push token:', pushTokenData);
         
@@ -347,7 +347,7 @@ export default function HomeScreen({ route }: Props) {
 
       // Subscribe cold storage addresses to GroundControl for push notifications
       try {
-        const Notifications = require('../../../blue_modules/notifications');
+        const Notifications = require('../../../blue_modules/notifications').default;
         const pushTokenData = await Notifications.getPushToken();
         
         if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
@@ -551,8 +551,8 @@ export default function HomeScreen({ route }: Props) {
 
         // Register push token for background notifications (with fresh token)
         try {
-          const Notifications = require('../../../blue_modules/notifications');
-          const pushTokenData = await Notifications.default.getPushToken();
+          const Notifications = require('../../../blue_modules/notifications').default;
+          const pushTokenData = await Notifications.getPushToken();
           if (pushTokenData?.token && user) {
             registerPushToken(user?.username || user, pushTokenData.token);
           }
