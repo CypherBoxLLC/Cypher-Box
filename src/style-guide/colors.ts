@@ -50,20 +50,27 @@ const colors = {
   yellow: '#FFF500',
   yellow2: '#FFD600',
   // Ark (experimental non-custodial Lightning via Second.tech).
-  // Yellow palette to visually distinguish from pink custodial Lightning (Strike / CoinOS).
+  // EXPERIMENT (2026-06): flipped the yellow palette to white to evaluate a
+  // white Ark UI. Solids are white; shadow/gradient/dark keys kept as light
+  // greys so depth + gradients do not fully flatten on the dark background.
+  // To REVERT: git checkout src/style-guide/colors.ts (original gold palette
+  // was default rgba(255,198,0,.9), light #FFD93D, extralight #FFE259,
+  // main #F5B301, shadowBottom #6B4A00, shadowTop #FFD93D, dark #E6A700,
+  // shadowTopNew #FFCF2F, gradient1 #FFE259, gradient2 #F5B301,
+  // progress #FFD93D, stop #FFF5B8).
   ark: {
-    default: 'rgba(255, 198, 0, 0.9)',
-    light: '#FFD93D',
-    extralight: '#FFE259',
-    main: '#F5B301',
-    shadowBottom: '#6B4A00',
-    shadowTop: '#FFD93D',
-    dark: '#E6A700',
-    shadowTopNew: '#FFCF2F',
-    gradient1: '#FFE259',
-    gradient2: '#F5B301',
-    progress: '#FFD93D',
-    stop: '#FFF5B8',
+    default: 'rgba(255, 255, 255, 0.92)',
+    light: '#FFFFFF',
+    extralight: '#FFFFFF',
+    main: '#FFFFFF',
+    shadowBottom: '#9A9A9A',
+    shadowTop: '#FFFFFF',
+    dark: '#E8E8E8',
+    shadowTopNew: '#FFFFFF',
+    gradient1: '#FFFFFF',
+    gradient2: '#E6E6E6',
+    progress: '#FFFFFF',
+    stop: '#F2F2F2',
   },
   white: '#FFFFFF',
   whiteText: '#F1F1F1',
