@@ -85,8 +85,12 @@ export interface LightningSwapProvider {
      * best-effort — Strike accepts it, Coinos uses it as the description,
      * Ark currently ignores it for invoice receive (the SDK doesn't
      * thread comments through `bolt11Invoice` yet).
+     *
+     * `sourceId` is the rail that will PAY this invoice. Providers that set
+     * an invoice TTL widen it for slow sources: an Ark send takes minutes
+     * (HTLC + ASP round-trip), so a short TTL expires before it settles.
      */
-    createInvoice(amountSats: number, memo?: string): Promise<string>;
+    createInvoice(amountSats: number, memo?: string, sourceId?: LightningSwapProviderId): Promise<string>;
 
     /**
      * Pay a BOLT11 invoice from this rail. The optional `amountSats` is

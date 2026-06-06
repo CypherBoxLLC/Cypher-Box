@@ -2317,10 +2317,10 @@
   resolved "https://registry.npmjs.org/@rtsao/scc/-/scc-1.1.0.tgz"
   integrity sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==
 
-"@secondts/bark-react-native@0.4.1":
-  version "0.4.1"
-  resolved "https://registry.npmjs.org/@secondts/bark-react-native/-/bark-react-native-0.4.1.tgz"
-  integrity sha512-jo1N4bIyo9xSgpC0dTwVRo8/zHrcrSkDNnqQnHSBgoJxNOpYO2iPTyY0h+13HlhMqfqw6bby7k74UB6Vf9Ze1g==
+"@secondts/bark-react-native@0.6.3":
+  version "0.6.3"
+  resolved "https://registry.npmjs.org/@secondts/bark-react-native/-/bark-react-native-0.6.3.tgz"
+  integrity sha512-jmXUsNGBFy2NqmNMUgdvf40v9O2gXddRbNC8Xmt6NxslI/CqJ7HXzif97cZMSBgS3Vtb72kgdEloiZ8Wr8STyw==
   dependencies:
     uniffi-bindgen-react-native "0.31.0-2"
 

@@ -159,6 +159,88 @@ function lightningSendId(send: LightningSend): string {
     return '(lightning send — no id returned)';
 }
 
+/**
+ * Wait for an Ark Lightning send to reach a terminal state.
+ *
+ * `payLightning*` returns once the HTLC is DISPATCHED, not once it settles, so
+ * a returned LightningSend WITHOUT a `preimage` is not proof of payment. We
+ * poll the local movement history for the `send` movement matching this invoice
+ * and report its outcome so callers never declare a false success:
+ *   - 'settled' — movement status `successful`
+ *   - 'failed'  — movement status `failed` / `canceled` (the HTLC was refunded)
+ *   - 'pending' — still pending when the timeout elapsed (do NOT claim success)
+ *
+ * Matching is by the resolved bolt11 appearing in the movement's
+ * `sentToAddresses` (the SDK stores it as `{"type":"invoice","value":"<bolt11>"}`).
+ * The background sync loop + notification watcher advance the movement's status
+ * in the local DB while we await between polls.
+ */
+async function waitForArkLightningSettlement(
+    handle: ReturnType<typeof requireHandle>,
+    invoice: string,
+    opts: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<'settled' | 'failed' | 'pending'> {
+    const timeoutMs = opts.timeoutMs ?? 75_000;
+    const pollMs = opts.pollMs ?? 3_000;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+        try {
+            const movements = await handle.history();
+            const m = movements
+                .filter(
+                    (mv) =>
+                        String(mv.subsystemKind).toLowerCase() === 'send' &&
+                        !!invoice &&
+                        mv.sentToAddresses.some(
+                            (a) => typeof a === 'string' && a.includes(invoice),
+                        ),
+                )
+                .sort((a, b) => b.id - a.id)[0];
+            if (m) {
+                const st = String(m.status).toLowerCase();
+                if (__DEV__) console.log('[Ark send] settlement poll: movement', m.id, 'status=', st);
+                if (st === 'successful') return 'settled';
+                if (st === 'failed' || st === 'canceled') return 'failed';
+            }
+        } catch (err) {
+            if (__DEV__) console.warn('[Ark send] settlement poll error (continuing):', err);
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+    if (__DEV__) console.log('[Ark send] settlement wait timed out — reporting pending');
+    return 'pending';
+}
+
+/**
+ * Dispatch the correct payLightning* call for an LN destination kind. Extracted
+ * so the dispatch + settlement-wait can run inside a retry loop.
+ */
+async function dispatchLnSend(
+    handle: ReturnType<typeof requireHandle>,
+    dest: ArkDestination,
+    amount: bigint,
+    comment?: string,
+): Promise<LightningSend> {
+    switch (dest.kind) {
+        case 'ln-invoice':
+            return handle.payLightningInvoice(dest.value, amount);
+        case 'ln-offer':
+            return handle.payLightningOffer(dest.value, amount);
+        case 'ln-address':
+            return handle.payLightningAddress(dest.value, amount, comment);
+        default:
+            throw new Error('dispatchLnSend called with a non-Lightning destination');
+    }
+}
+
+/**
+ * Max attempts for an Ark->Lightning send. The ASP's route to the destination
+ * settles intermittently; a failed HTLC is fully refunded, so re-attempting is
+ * safe. ~50% per-attempt failure -> ~94% success over 4 attempts.
+ */
+const MAX_LN_SEND_ATTEMPTS = 4;
+
 export async function executeArkSend(
     dest: ArkDestination,
     amountSats: number,
@@ -167,36 +249,100 @@ export async function executeArkSend(
     const handle = requireHandle();
     const amount = BigInt(amountSats);
 
+    // Reconcile VTXO state with the ASP before sending. bark's coin-selection
+    // can otherwise pick a locally-"spendable" but ASP-"unregistered" VTXO
+    // (e.g. orphaned arkoor change), making the send fail with BarkError.Internal:
+    // "vtxo <id> is not spendable (state: unregistered)". maintenance() reconciles
+    // such VTXOs; the app otherwise only runs the lightweight sync(), which does
+    // not clear this. Non-fatal: if maintenance throws we still attempt the send.
+    if (__DEV__) console.log('[Ark send] pre-send maintenance: reconciling VTXO state…');
+    try {
+        await handle.maintenance();
+        if (__DEV__) console.log('[Ark send] pre-send maintenance done');
+    } catch (e) {
+        if (__DEV__) console.warn('[Ark send] pre-send maintenance failed (continuing):', e);
+    }
+
     // Pre-compute fee view so the result can carry it — useful for the
     // success screen so users see what they paid without re-estimating
     // against a now-spent VTXO set.
     const fee = await estimateArkSendFee(dest, amountSats);
 
     let kind: ArkDestinationKind = dest.kind;
-    let id: string;
+    let id!: string;
+    // Holds the most recent LightningSend (the last attempt) for LN kinds so the
+    // result can carry its id. Non-LN kinds leave this undefined.
+    let lnSend: LightningSend | undefined;
 
     console.log('[Ark send] executing', dest.kind, 'amount=', amountSats, 'sats');
 
-    switch (dest.kind) {
-        case 'ln-invoice':
-            id = lightningSendId(await handle.payLightningInvoice(dest.value, amount));
-            break;
-        case 'ln-offer':
-            id = lightningSendId(await handle.payLightningOffer(dest.value, amount));
-            break;
-        case 'ln-address':
-            id = lightningSendId(
-                await handle.payLightningAddress(dest.value, amount, comment),
+    const isLn =
+        dest.kind === 'ln-invoice' ||
+        dest.kind === 'ln-offer' ||
+        dest.kind === 'ln-address';
+
+    if (isLn) {
+        // --- LN send with settlement-confirmed retry ------------------------
+        //
+        // Two facts drive this loop:
+        //  1. payLightning* returns at DISPATCH, not settlement. The returned
+        //     LightningSend only carries a `preimage` once settled; without one
+        //     the payment may still fail and refund, so the return is NOT proof
+        //     of payment. We always wait for the movement to reach a terminal
+        //     state rather than trusting the call returning.
+        //  2. The ASP's route to the destination settles INTERMITTENTLY
+        //     (confirmed: two identical 500-sat sends 12s apart, one settled and
+        //     one failed; a 7,890-sat send succeeded while a 53k one failed). A
+        //     FAILED HTLC is fully refunded, so re-attempting is safe and turns
+        //     ~50% per-attempt into ~90%+ over a few tries.
+        //
+        // We retry ONLY on a confirmed `failed` (refunded, so safe). We never
+        // retry on `pending` (it might still settle, a double-pay risk); that
+        // throws so the user checks Activity instead of being silently re-sent.
+        let settled = false;
+        for (let attempt = 1; attempt <= MAX_LN_SEND_ATTEMPTS; attempt++) {
+            lnSend = await dispatchLnSend(handle, dest, amount, comment);
+            id = lightningSendId(lnSend);
+            if (__DEV__) {
+                console.log(
+                    '[Ark send] LN attempt', attempt, 'of', MAX_LN_SEND_ATTEMPTS,
+                    'htlcVtxoCount=', (lnSend as { htlcVtxoCount?: number }).htlcVtxoCount,
+                    'preimage=', lnSend.preimage ? 'present (settled at dispatch)' : 'absent',
+                );
+            }
+            // Fast path: bark already holds the preimage -> settled.
+            if (lnSend.preimage) { settled = true; break; }
+
+            const outcome = await waitForArkLightningSettlement(handle, lnSend.invoice ?? dest.value);
+            if (outcome === 'settled') { settled = true; break; }
+            if (outcome === 'pending') {
+                throw new Error(
+                    'Lightning payment is still confirming. Check Activity before retrying so you do not send twice.',
+                );
+            }
+            // outcome === 'failed' -> HTLC refunded, funds back. Retry if attempts remain.
+            console.log(
+                '[Ark send] LN attempt', attempt, 'failed and refunded;',
+                attempt < MAX_LN_SEND_ATTEMPTS ? 'retrying' : 'no attempts left',
             );
-            break;
-        case 'ark':
-            id = await handle.sendArkoorPayment(dest.value, amount);
-            break;
-        case 'onchain':
-            id = await handle.sendOnchain(dest.value, amount);
-            break;
-        case 'unknown':
-            throw new Error('Cannot send to an unrecognised destination');
+        }
+        if (!settled) {
+            throw new Error(
+                'Lightning payment failed after several attempts and was refunded. Your Ark funds are safe, nothing was sent.',
+            );
+        }
+    } else {
+        switch (dest.kind) {
+            case 'ark':
+                id = await handle.sendArkoorPayment(dest.value, amount);
+                break;
+            case 'onchain':
+                id = await handle.sendOnchain(dest.value, amount);
+                break;
+            case 'unknown':
+            default:
+                throw new Error('Cannot send to an unrecognised destination');
+        }
     }
 
     console.log('[Ark send]', dest.kind, 'resolved id=', id.slice(0, 16) + '…');

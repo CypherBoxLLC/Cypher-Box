@@ -200,7 +200,27 @@ export default function SwapAmount() {
             if (error instanceof InvoiceCreationFailedError) {
                 message = `${toProvider?.displayName ?? sendTo} couldn't create an invoice — ${(error.cause as Error)?.message ?? error.message}`;
             } else if (error instanceof PaymentFailedError) {
-                message = `${fromProvider?.displayName ?? swapFrom} payment failed — ${(error.cause as Error)?.message ?? error.message}`;
+                // A VTXO the Ark server reports as "unregistered" is a stuck
+                // capsule that blocks EVERY Ark send until it's cleared. The raw
+                // error is the opaque tag "BarkError.Internal"; the real reason
+                // lives in cause.inner.errorMessage. Detect it and show a clear,
+                // blocking message instead of a useless 2s toast.
+                // (Recovery action is TBD pending whether a batch-refresh can
+                // evict such a VTXO; if it can't, this needs an SDK-level
+                // vtxo-drop from Second.tech.)
+                const cause: any = error.cause;
+                const inner: string = cause?.inner?.errorMessage ?? cause?.message ?? '';
+                if (/not spendable.*unregistered|state:\s*unregistered/i.test(inner)) {
+                    Alert.alert(
+                        'A capsule is stuck',
+                        "One of your Ark capsules is in a state the Ark server won't spend, so payments from Ark keep failing. Try sending from a different wallet for now.",
+                        [{ text: 'OK', style: 'default' }],
+                        { cancelable: true },
+                    );
+                    setLoading(false);
+                    return;
+                }
+                message = `${fromProvider?.displayName ?? swapFrom} payment failed, ${cause?.message ?? error.message}`;
             } else if (error instanceof LightningSwapError) {
                 message = error.message;
             } else if (error instanceof Error) {

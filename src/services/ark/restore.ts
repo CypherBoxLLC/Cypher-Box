@@ -7,6 +7,19 @@ import { getArkWalletHandle, openArkWallet } from './walletHandle';
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
 /**
+ * The ASP gRPC connection in `Wallet.open` fails intermittently on mobile
+ * (`BarkError.ServerConnection`) even when the network is healthy , it
+ * succeeds on a retry seconds later (confirmed across this session). The boot
+ * previously tried exactly once and then bricked the handle until a manual
+ * relaunch. Since the keychain seed is already in hand when the open throws, we
+ * re-attempt the OPEN (never the keychain read, so no repeat FaceID prompt) a
+ * few times before giving up. Only transient connection errors are retried; a
+ * genuine seed/datadir mismatch fails fast.
+ */
+const OPEN_ATTEMPTS = 5;
+const OPEN_RETRY_DELAY_MS = 6000;
+
+/**
  * Outcome of a restore attempt.
  *
  *   restored: true         — `openArkWallet` succeeded; caller should flip zustand.
@@ -61,10 +74,29 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
         return { restored: false, reason: 'no-keychain' };
     }
 
-    try {
-        await openArkWallet(creds.password);
-        return { restored: true };
-    } catch (err) {
-        return { restored: false, reason: 'open-failed', error: err as Error };
+    // Retry the open (seed already read above, so no repeat FaceID) to ride out
+    // the intermittent ASP ServerConnection failures.
+    const seed = creds.password;
+    let lastErr: Error | undefined;
+    for (let attempt = 1; attempt <= OPEN_ATTEMPTS; attempt++) {
+        try {
+            await openArkWallet(seed);
+            if (__DEV__ && attempt > 1) {
+                console.log(`[Ark restore] open succeeded on attempt ${attempt}/${OPEN_ATTEMPTS}`);
+            }
+            return { restored: true };
+        } catch (err) {
+            lastErr = err as Error;
+            const detail = `${(err as { tag?: string })?.tag ?? ''} ${(err as Error)?.message ?? ''}`;
+            const transient = /ServerConnection|Connection|timeout|timed out|network/i.test(detail);
+            if (!transient || attempt === OPEN_ATTEMPTS) break;
+            if (__DEV__) {
+                console.log(
+                    `[Ark restore] open attempt ${attempt}/${OPEN_ATTEMPTS} failed (${detail.trim()}); retrying in ${OPEN_RETRY_DELAY_MS}ms`,
+                );
+            }
+            await new Promise((r) => setTimeout(r, OPEN_RETRY_DELAY_MS));
+        }
     }
+    return { restored: false, reason: 'open-failed', error: lastErr };
 }

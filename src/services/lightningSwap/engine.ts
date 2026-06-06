@@ -54,7 +54,7 @@ export async function swap(
     // Step 1: destination creates the invoice.
     let bolt11: string;
     try {
-        bolt11 = await to.createInvoice(amountSats, opts?.memo);
+        bolt11 = await to.createInvoice(amountSats, opts?.memo, fromId);
     } catch (err) {
         if (__DEV__) console.log('[lightningSwap] createInvoice failed on', toId, err);
         throw new InvoiceCreationFailedError(toId, err);
@@ -78,7 +78,19 @@ export async function swap(
             if (__DEV__) console.log('[lightningSwap] payInvoice PENDING on', fromId, '— propagating, not a failure');
             throw err;
         }
-        if (__DEV__) console.log('[lightningSwap] payInvoice failed on', fromId, err);
+        if (__DEV__) {
+            // BarkError variants carry the real bark-side reason in
+            // `err.inner.errorMessage`; `err.message` is only the variant tag
+            // (e.g. "BarkError.Internal"). Surface the inner detail so swap
+            // failures are diagnosable (same pattern as ark/refresh.ts).
+            const e = err as any;
+            console.log(
+                '[lightningSwap] payInvoice failed on', fromId,
+                'tag=', e?.tag ?? null,
+                'inner=', e?.inner?.errorMessage ?? e?.inner?.message ?? null,
+                'message=', e?.message ?? String(err),
+            );
+        }
         throw new PaymentFailedError(fromId, err);
     }
 }

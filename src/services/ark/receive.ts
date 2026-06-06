@@ -17,7 +17,9 @@ export async function createArkLightningInvoice(amountSats: number): Promise<str
     if (!Number.isFinite(amountSats) || amountSats <= 0) {
         throw new Error('Invalid invoice amount');
     }
-    const { invoice } = await handle.bolt11Invoice(BigInt(Math.floor(amountSats)));
+    // bark 0.2.x: bolt11Invoice gained a second `description` arg (optional).
+    // Pass undefined to preserve the prior no-description behavior.
+    const { invoice } = await handle.bolt11Invoice(BigInt(Math.floor(amountSats)), undefined);
     return invoice;
 }
 

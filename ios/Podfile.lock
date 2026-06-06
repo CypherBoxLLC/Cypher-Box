@@ -5,7 +5,7 @@ PODS:
   - AppAuth/Core (1.7.6)
   - AppAuth/ExternalUserAgent (1.7.6):
     - AppAuth/Core
-  - BarkReactNative (0.4.1):
+  - BarkReactNative (0.6.3):
     - DoubleConversion
     - glog
     - hermes-engine
@@ -2813,7 +2813,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   AppAuth: d4f13a8fe0baf391b2108511793e4b479691fb73
-  BarkReactNative: 39e091c6da1e8b6c29c165ac9ae921fccab67d67
+  BarkReactNative: b1bfe8b0f8c25e7d4c33f9e3def70d1ab4d33757
   BEMCheckBox: 5ba6e37ade3d3657b36caecc35c8b75c6c2b1a4e
   boost: 1dca942403ed9342f98334bf4c3621f011aa7946
   BugsnagReactNative: bb71fbfae639cf9b9ed93809e4b0e86f2c562596

@@ -1,17 +1,18 @@
 /**
  * Strike lightning swap provider.
  *
- * Strike's API is fiat-denominated for invoice creation: callers ask
- * for "X USD/EUR" and Strike returns a BOLT11 that settles whatever
- * sats that fiat amount is worth at quote time. The swap engine talks
- * in sats, so this provider converts sats → fiat using the cached
- * `matchedRateStrike` (USD per BTC) before calling Strike.
+ * Invoice creation is BTC-denominated. A swap is sats -> sats, so we ask
+ * Strike for a bolt11 worth exactly `amountSats` and let Strike convert it
+ * to the user's fiat balance on receipt (`targetCurrency`). We deliberately
+ * do NOT round-trip through fiat to build the invoice: doing so made Strike
+ * re-derive the sat amount at its own rate, landing a few sats ABOVE the
+ * request and overshooting the source rail's spendable balance near MAX.
+ * See `createInvoice` for the full rationale.
  *
- * Payment uses the existing `sendStrikeLightningPayment(bolt11, amount)`
- * helper, which already does the two-step Strike quote → execute
- * dance. We pass `amountSats` so amount-less invoices still get paid
- * correctly — Strike's quote endpoint accepts an optional `amount`
- * override.
+ * Payment (only used when Strike is the SOURCE of a swap) goes through the
+ * existing `sendStrikeLightningPayment(bolt11)` helper, which does the
+ * two-step Strike quote -> execute dance against the destination's
+ * amount-encoded bolt11.
  */
 
 import { StrikeFull } from '@Cypher/assets/images';
@@ -31,23 +32,17 @@ import { PaymentPendingError } from '../types';
 import { register } from '../registry';
 
 /**
- * Convert sats → fiat using the user's matched BTC rate. Strike's
- * invoice endpoint requires a fiat-denominated amount; we feed it the
- * fiat equivalent of the sats the user requested.
+ * Format an integer sats amount as a BTC decimal string for Strike's
+ * invoice endpoint (e.g. 53032 -> "0.00053032").
  *
- * Rounded to 2 decimals — Strike rejects more-precise fiat amounts on
- * its bolt11 endpoint, and the rounding error (≤ 1 cent) is borne by
- * the swap engine's amountSats vs the eventual settled amount.
+ * String, not number: `JSON.stringify` renders small floats in scientific
+ * notation (0.0000001 -> "1e-7"), which Strike rejects. `toFixed(8)` pins
+ * exactly one sat of resolution and always recovers the integer sat count
+ * (the float error is ~1e-19, far below 1e-8), so there is no rounding
+ * drift and the encoded invoice amount equals `amountSats` exactly.
  */
-function satsToFiat(sats: number, rateUsdPerBtc: number): number {
-    if (!rateUsdPerBtc || rateUsdPerBtc <= 0) {
-        throw new Error(
-            'Strike rate not yet hydrated — wait a moment after login and retry',
-        );
-    }
-    const btc = sats / 1e8;
-    const fiat = btc * rateUsdPerBtc;
-    return Math.round(fiat * 100) / 100;
+function satsToBtcString(sats: number): string {
+    return (sats / 1e8).toFixed(8);
 }
 
 const strikeProvider: LightningSwapProvider = {
@@ -59,24 +54,43 @@ const strikeProvider: LightningSwapProvider = {
         return Boolean(useAuthStore.getState().isStrikeAuth);
     },
 
-    async createInvoice(amountSats /* memo unused — Strike's bolt11 endpoint doesn't accept a description field */) {
-        const { strikeUser, matchedRateStrike } = useAuthStore.getState();
-        const currency = strikeUser?.[1]?.currency || 'USD';
-        const fiatAmount = satsToFiat(amountSats, Number(matchedRateStrike || 0));
+    async createInvoice(amountSats, _memo, sourceId /* _memo unused: Strike's bolt11 endpoint takes no description field */) {
+        const { strikeUser } = useAuthStore.getState();
+        // The currency Strike credits the user in on receipt (their account
+        // balance currency). This is NOT the invoice denomination — see below.
+        const targetCurrency = strikeUser?.[1]?.currency || 'USD';
+
+        // Denominate the invoice in BTC, not fiat.
+        //
+        // A swap is sats -> sats: the user picks an exact sats amount and the
+        // source rail pays exactly that. The old path converted sats -> fiat
+        // HERE and asked Strike for a fiat-denominated bolt11; Strike then
+        // re-derived the sat amount at ITS OWN rate, landing a few sats ABOVE
+        // the request (observed: 53,032 requested -> 53,076 encoded). That
+        // drift overshot the source's spendable balance and broke swaps at or
+        // near MAX with "not enough balance".
+        //
+        // Encoding in BTC removes the round-trip entirely: the bolt11 carries
+        // exactly `amountSats`. `targetCurrency` stays the user's account
+        // currency, so Strike still converts to fiat and credits their fiat
+        // balance on receipt (its core feature). Only the denomination the
+        // payer settles is changing, not what the user ends up holding.
+        const amountBtc = satsToBtcString(amountSats);
 
         const response = await strikeCreateInvoice({
             bolt11: {
                 amount: {
-                    amount: fiatAmount,
-                    currency,
+                    amount: amountBtc,
+                    currency: 'BTC',
                 },
-                // 60s matches the rest of the app's invoice TTL. Long
-                // enough for the source provider to pay, short enough
-                // that a stale invoice can't be paid much later by a
-                // user who walked away mid-flow.
-                expiryInSeconds: 60,
+                // Source-aware TTL. Fast custodial sources (Coinos) pay in
+                // seconds, so 60s is fine and limits how long a stale
+                // invoice stays payable. But an Ark send takes MINUTES
+                // (HTLC build + ASP round-trip), so 60s expires before it
+                // can settle, give Ark-sourced swaps 10 minutes.
+                expiryInSeconds: sourceId === 'ark' ? 600 : 60,
             },
-            targetCurrency: currency,
+            targetCurrency,
         });
 
         const bolt11 = response?.bolt11?.invoice;

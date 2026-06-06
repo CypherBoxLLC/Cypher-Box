@@ -45,7 +45,7 @@ export default function CreateInvoice({navigation, route}: any) {
                         amount: isSats ? Number(usd) : Number(sats),
                         currency: currency || "USD"
                     },
-                    expiryInSeconds: 60
+                    expiryInSeconds: 3600 // 1h: a receive invoice a human must scan + pay; 60s was far too short (LN norm is ~1h)
                 },
                 targetCurrency: currency || "USD"
               });

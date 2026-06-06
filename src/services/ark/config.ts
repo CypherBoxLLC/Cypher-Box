@@ -85,9 +85,15 @@ export const ARK_SERVER_URL = 'https://ark.second.tech';
 // the catch upstream collapsed every wallet-open failure into one error
 // string). See .claude/OPEN_BUGS.md for the full diagnosis trail.
 //
-// `https://mempool.space/api` is the same Esplora-spec API and currently
-// serves unauthenticated traffic without per-IP throttling at our scale.
-export const ESPLORA_URL = 'https://mempool.space/api';
+// 2026-06-03: switched BACK to blockstream. mempool.space started timing out
+// on the exact endpoints `Wallet.open` needs (`/blocks/tip/height`,
+// `/block-height/0`) — the open's blockhash query hung (no throw, so no
+// `Wallet.create` fallback), and the Ark wallet handle never became ready
+// ("[ArkSync] skipped — wallet handle not ready yet" forever). blockstream was
+// healthy (~0.5s) on the same endpoints at the time. Both public esploras
+// throttle under load and trade places; the durable fix is a dedicated /
+// authenticated esplora endpoint.
+export const ESPLORA_URL = 'https://blockstream.info/api';
 
 export function createArkConfig(overrides?: Partial<Parameters<typeof Config.create>[0]>) {
     return Config.create({
@@ -104,8 +110,12 @@ export function createArkConfig(overrides?: Partial<Parameters<typeof Config.cre
         htlcRecvClaimDelta: undefined,
         fallbackFeeRate: undefined,
         roundTxRequiredConfirmations: undefined,
-        daemonFastSyncIntervalSecs: undefined,
-        daemonSlowSyncIntervalSecs: undefined,
+        // bark 0.2.x merged the two daemon sync intervals into one and added
+        // a few optional knobs. All optional; left at server defaults.
+        daemonSyncIntervalSecs: undefined,
+        offboardRequiredConfirmations: undefined,
+        daemonManualSync: undefined,
+        lightningReceiveClaimRetries: undefined,
         ...overrides,
     });
 }
