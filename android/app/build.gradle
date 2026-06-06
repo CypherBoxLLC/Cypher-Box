@@ -99,8 +99,8 @@ android {
         applicationId "io.cypherbox.btc"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 15
-        versionName "0.0.9"
+        versionCode 16
+        versionName "0.1.0"
         testBuildType System.getProperty('testBuildType', 'debug')
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         missingDimensionStrategy 'react-native-camera', 'general' //add this line
@@ -135,7 +135,14 @@ android {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
             minifyEnabled enableProguardInReleaseBuilds
-            signingConfig signingConfigs.release
+            // Sign only when keystore.properties is present (local/manual release
+            // signing per security-plan §4.2). CI, container, and reproducible
+            // builds run WITHOUT it and emit an UNSIGNED aab/apk, keeping the
+            // upload key out of the build path (§5). Signing is then a separate
+            // manual step with the YubiKey-protected age-encrypted key.
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             proguardFile "${rootProject.projectDir}/../node_modules/detox/android/detox/proguard-rules-app.pro"
         }
