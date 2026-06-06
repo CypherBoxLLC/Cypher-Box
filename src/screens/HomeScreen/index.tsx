@@ -358,18 +358,22 @@ export default function HomeScreen({ route }: Props) {
         const pushTokenData = await Notifications.getPushToken();
         if (__DEV__) console.log('[GroundControl] Push token:', pushTokenData);
         
-        if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
-          console.warn('[GroundControl] No push token - notifications not enabled');
-          return;
-        }
-        
-        const externalAddresses = typeof walletTemp.getAllExternalAddresses === 'function' ? walletTemp.getAllExternalAddresses() : [];
-        const internalAddresses = typeof walletTemp.getAllInternalAddresses === 'function' ? walletTemp.getAllInternalAddresses() : [];
-        const allAddresses = [...externalAddresses, ...internalAddresses];
-        if (__DEV__) console.log('[GroundControl] Subscribing addresses:', allAddresses.length, allAddresses.slice(0, 2));
-        if (allAddresses.length > 0) {
-          await Notifications.majorTomToGroundControl(allAddresses, [], []);
-          if (__DEV__) console.log('[GroundControl] Subscribed hot vault addresses:', allAddresses.length);
+        // Best-effort subscription. A missing push token must NEVER gate vault
+        // rendering -- it only skips this subscription. This block used to
+        // `return` on a missing token, which left every user without
+        // notifications stuck on "Unlock Hot Vault" even though the wallet was
+        // resolved. setWallet / setHasSavingVault below now always run.
+        if (pushTokenData?.token && pushTokenData?.os) {
+          const externalAddresses = typeof walletTemp.getAllExternalAddresses === 'function' ? walletTemp.getAllExternalAddresses() : [];
+          const internalAddresses = typeof walletTemp.getAllInternalAddresses === 'function' ? walletTemp.getAllInternalAddresses() : [];
+          const allAddresses = [...externalAddresses, ...internalAddresses];
+          if (__DEV__) console.log('[GroundControl] Subscribing addresses:', allAddresses.length, allAddresses.slice(0, 2));
+          if (allAddresses.length > 0) {
+            await Notifications.majorTomToGroundControl(allAddresses, [], []);
+            if (__DEV__) console.log('[GroundControl] Subscribed hot vault addresses:', allAddresses.length);
+          }
+        } else if (__DEV__) {
+          console.log('[GroundControl] No push token - skipping subscription (vault still renders)');
         }
       } catch (notifyErr) {
         console.warn('[GroundControl] Failed to subscribe addresses:', notifyErr);
@@ -417,18 +421,20 @@ export default function HomeScreen({ route }: Props) {
         const Notifications = require('../../../blue_modules/notifications').default;
         const pushTokenData = await Notifications.getPushToken();
         
-        if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
-          console.warn('[GroundControl] No push token - notifications not enabled');
-          return;
-        }
-        
-        const externalAddresses = walletTemp.getAllExternalAddresses ? walletTemp.getAllExternalAddresses() : [];
-        const internalAddresses = walletTemp.getAllInternalAddresses ? walletTemp.getAllInternalAddresses() : [];
-        const allAddresses = [...externalAddresses, ...internalAddresses];
-        if (__DEV__) console.log('[GroundControl] Subscribing cold storage addresses:', allAddresses.length);
-        if (allAddresses.length > 0) {
-          await Notifications.majorTomToGroundControl(allAddresses, [], []);
-          if (__DEV__) console.log('[GroundControl] Subscribed cold storage addresses:', allAddresses.length);
+        // Best-effort subscription; a missing push token must NEVER gate vault
+        // rendering (see getWallet). setColdStorageWallet / setHasColdStorage
+        // below now always run.
+        if (pushTokenData?.token && pushTokenData?.os) {
+          const externalAddresses = walletTemp.getAllExternalAddresses ? walletTemp.getAllExternalAddresses() : [];
+          const internalAddresses = walletTemp.getAllInternalAddresses ? walletTemp.getAllInternalAddresses() : [];
+          const allAddresses = [...externalAddresses, ...internalAddresses];
+          if (__DEV__) console.log('[GroundControl] Subscribing cold storage addresses:', allAddresses.length);
+          if (allAddresses.length > 0) {
+            await Notifications.majorTomToGroundControl(allAddresses, [], []);
+            if (__DEV__) console.log('[GroundControl] Subscribed cold storage addresses:', allAddresses.length);
+          }
+        } else if (__DEV__) {
+          console.log('[GroundControl] No push token - skipping cold subscription (vault still renders)');
         }
       } catch (notifyErr) {
         console.warn('[GroundControl] Failed to subscribe cold storage addresses:', notifyErr);
@@ -1052,14 +1058,20 @@ export default function HomeScreen({ route }: Props) {
                 `onBarScanned` prop is kept as a fallback for the default
                 branch in handleWalletPicked.
               */}
-              <Header
-                onBarScanned={onBarScanned}
-                matchedRate={matchedRate}
-                matchedRateBTC={matchedRateBTC}
-                currency={currency}
-                wallet={wallet}
-                coldStorageWallet={coldStorageWallet}
-              />
+              {/* Ark-only: lift the "Total Assets" header row (title + scan/
+                  settings/activity icons) up a bit. translateY only moves it
+                  visually (no reflow), so the balance box below stays put -- we
+                  move the header, NOT the box. Other combos keep 0 (unchanged). */}
+              <View style={{ transform: [{ translateY: (!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? -20 : 0 }] }}>
+                <Header
+                  onBarScanned={onBarScanned}
+                  matchedRate={matchedRate}
+                  matchedRateBTC={matchedRateBTC}
+                  currency={currency}
+                  wallet={wallet}
+                  coldStorageWallet={coldStorageWallet}
+                />
+              </View>
               {/* All-three nudge: when CoinOS + Strike + Ark are all
                   connected, the BalanceView grows taller (extra
                   carousel content + ark-balance line). The catch-all
@@ -1077,7 +1089,7 @@ export default function HomeScreen({ route }: Props) {
                   against the header in those configurations. Strike-
                   included cases stay at their existing translateY
                   values — that layout was already tuned correctly. */}
-              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -25 /* lift Total Balance card 25pt up */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -33 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -18 : (!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? -38 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -38 : -53 }, { translateY: enterTranslate }] }}>
+              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -25 /* lift Total Balance card 25pt up */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? 2 /* no LN wallet: +30 vs prior -28, drop the Total Balance box + Unlock-Lightning card + send/receive so they stop overlapping the "Total Assets" header */ : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -33 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -18 : (!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? -38 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -38 : -53 }, { translateY: enterTranslate }] }}>
                 <BalanceView
                   // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                   // Ark balance is stored in zustand as plain sats (see
@@ -1119,7 +1131,7 @@ export default function HomeScreen({ route }: Props) {
               the prior layout — paired with the BalanceView shift above
               so the gap between them stays the same. Strike-included
               cases stay at their existing translateY values. */}
-          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -30 /* lift wallet cards + circular view + send/receive group 30pt up */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -28 : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -45 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -25 : (!isLoading && isStrikeAuth && isArkAuth) ? -30 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -13 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 2 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -38 : -68 }, { translateY: enterTranslate }] }}>
+          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -30 /* lift wallet cards + circular view + send/receive group 30pt up */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? 2 /* no LN wallet: +30 vs prior -28, drop the Total Balance box + Unlock-Lightning card + send/receive so they stop overlapping the "Total Assets" header */ : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -45 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -25 : (!isLoading && isStrikeAuth && isArkAuth) ? -30 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -13 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 2 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -38 : -68 }, { translateY: enterTranslate }] }}>
             {/*
               Carousel-vs-CTA gate. Falls through to CreateLightningAccount only
               when NO Lightning provider (CoinOS / Strike / Ark) is connected.
