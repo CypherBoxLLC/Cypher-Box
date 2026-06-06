@@ -120,13 +120,66 @@ function formatStrikeNumber(num: number) {
   return `${millions.toFixed(1)}M`;
 }
 
+/**
+ * Find the hot Bitcoin wallet that should back the Hot Vault when the saved
+ * `walletID` pointer no longer resolves to a wallet (an orphaned vault).
+ *
+ * Background: Cypher Box exposes a single hot vault, but it's stored as an
+ * ordinary BlueWallet wallet and tracked only by `walletID` in the persisted
+ * auth store. If that pointer drifts out of sync with the wallet that's still
+ * in BlueApp (a `getID()` change across an app update, or any error that
+ * re-points/blanks it), the home screen finds nothing and drops the user on
+ * the empty "Create/Unlock Hot Vault" card even though the wallet, and its
+ * funds, are right there. This re-discovers it so the UI can self-heal.
+ *
+ * Selection:
+ *  - type must be the one Cypher Box creates for a hot vault
+ *    (HDSegwitBech32Wallet / BIP84). This cleanly excludes the cold vault,
+ *    which is a watch-only wallet (watch-only stores its xpub in `secret`,
+ *    so filtering on `secret` would NOT exclude it — type is the right key).
+ *  - never the cold-storage wallet id.
+ *  - normally exactly one candidate. If an error left several, prefer one
+ *    with a balance or transaction history; otherwise the first.
+ *
+ * Returns undefined when there's genuinely no hot wallet to adopt — the
+ * "Create Hot Vault" card is then correct.
+ */
+function findOrphanHotVaultWallet(
+  allWallets: AbstractWallet[],
+  coldStorageID: string | undefined,
+): AbstractWallet | undefined {
+  const candidates = (allWallets || []).filter((w) => {
+    try {
+      return !!w && w.type === HDSegwitBech32Wallet.type && w.getID() !== coldStorageID;
+    } catch {
+      return false;
+    }
+  });
+  if (candidates.length <= 1) return candidates[0];
+  // Multiple hot wallets — only reachable through an error path. Prefer the
+  // one that actually holds/held funds so we don't surface an empty stray.
+  const used = candidates.find((w) => {
+    try {
+      const bal = Number((w as any).getBalance?.() ?? 0);
+      const txs =
+        typeof (w as any).getTransactions === 'function'
+          ? (w as any).getTransactions().length
+          : 0;
+      return bal > 0 || txs > 0;
+    } catch {
+      return false;
+    }
+  });
+  return used ?? candidates[0];
+}
+
 export default function HomeScreen({ route }: Props) {
   const { navigate } = useNavigation();
   const routeName = useRoute().name;
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
+  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
   // Ark boot restore: reopens the wallet from on-disk state (datadir +
   // Keychain mnemonic) once per mount, and reconciles zustand so the
   // carousel reflects reality. Handles Metro reload + zustand/disk drift.
@@ -273,14 +326,28 @@ export default function HomeScreen({ route }: Props) {
 
   const getWallet = async () => {
     try {
-      if (!walletID) {
-        setIsAllDone(false);
-        return;
-      }
-      // const allWallets = wallets.concat(false);
-      const walletTemp = wallets.find((w: AbstractWallet) => w.getID() === walletID);
+      // Resolve the hot vault by its saved pointer. If the pointer is missing
+      // or no longer matches any wallet (orphaned vault — see
+      // findOrphanHotVaultWallet), self-heal by adopting the hot wallet that's
+      // still in BlueApp instead of dropping the user on the empty "create"
+      // card. setWalletID persists the re-link and re-fires this effect; we
+      // also keep the adopted wallet for this pass so the card fills now.
+      let walletTemp = walletID
+        ? wallets.find((w: AbstractWallet) => w.getID() === walletID)
+        : undefined;
       if (!walletTemp) {
-        console.warn('Wallet not found for ID:', walletID);
+        const adopted = findOrphanHotVaultWallet(wallets, coldStorageWalletID);
+        if (adopted) {
+          console.log(
+            '[HotVault adopt] walletID', walletID || '(none)',
+            'did not resolve; adopting orphaned hot wallet', adopted.getID(),
+          );
+          setWalletID(adopted.getID());
+          walletTemp = adopted;
+        }
+      }
+      if (!walletTemp) {
+        if (walletID) console.warn('Wallet not found for ID:', walletID);
         setIsAllDone(false);
         return;
       }
@@ -524,6 +591,33 @@ export default function HomeScreen({ route }: Props) {
     // subscribe, CoinOS token refresh, etc.). Remove once the slow path
     // is identified and addressed.
     if (__DEV__) console.log('[HomeMount] effect fire', Date.now(), { isAuth: !!isAuth, hasToken: !!token, hasWallet: !!walletID, hasCold: !!coldStorageWalletID });
+    // DIAGNOSTIC: dump the full BlueApp wallet list vs the saved vault
+    // pointers, so an orphaned-vault report ("hot vault shows the Create card
+    // but the wallet still exists") can be confirmed: is there an
+    // HDsegwitBech32 wallet whose id does NOT equal walletID? Remove once the
+    // adopt fix is verified in the field.
+    if (__DEV__) {
+      try {
+        console.log(
+          '[Wallets dump] count=', wallets?.length ?? 0,
+          '| walletID=', walletID || '(none)',
+          '| coldStorageWalletID=', coldStorageWalletID || '(none)',
+        );
+        (wallets || []).forEach((w: any, i: number) => {
+          const safe = (fn: () => any) => { try { return fn(); } catch { return '?'; } };
+          console.log(
+            '[Wallets dump]  #' + i,
+            'id=', safe(() => w.getID()),
+            'type=', w?.type,
+            'label=', safe(() => w.getLabel?.()),
+            'hasSecret=', !!w?.secret,
+            'balance=', safe(() => w.getBalance?.()),
+          );
+        });
+      } catch (e) {
+        console.log('[Wallets dump] failed:', e);
+      }
+    }
     const _t0 = Date.now();
     Promise.resolve(getWallet()).finally(() => __DEV__ && console.log('[HomeMount] getWallet done +', Date.now() - _t0, 'ms'));
     if (coldStorageWalletID) {

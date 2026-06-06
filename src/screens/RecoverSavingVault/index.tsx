@@ -30,7 +30,7 @@ interface Props {
 
 export default function RecoverSavingVault({ route }: Props) {
     const [secretWords, setSecretWords] = useState<string[]>(Array(inputs.length).fill(''));
-    const { addAndSaveWallet } = useContext(BlueStorageContext);
+    const { addAndSaveWallet, wallets } = useContext(BlueStorageContext);
     const { setWalletID, setHotVaultKeychainBackup } = useAuthStore();
 
     const [loading, setLoading] = useState(false);
@@ -73,6 +73,20 @@ export default function RecoverSavingVault({ route }: Props) {
     const saveWallet = (wallet: any) => {
         if (importing.current) return;
         importing.current = true;
+        // If this wallet is already in BlueApp, the user isn't importing a new
+        // wallet — they're restoring a hot vault the UI lost track of (the
+        // pointer drifted while the wallet stayed in storage). Don't dead-end
+        // on addAndSaveWallet's "This wallet has been previously imported"
+        // alert: re-point walletID to the existing wallet so the home screen
+        // resolves it, and let the caller navigate. The seed match guarantees
+        // this is the right wallet (getID == sha256(seed)), so re-adopting it
+        // can't surface someone else's wallet. (fastImportHotVault also sets
+        // walletID, but doing it here keeps every saveWallet caller healing.)
+        const existing = wallets.find((i: any) => i.getID() === wallet.getID());
+        if (existing) {
+            setWalletID(existing.getID());
+            return;
+        }
         addAndSaveWallet(wallet);
     };
 
