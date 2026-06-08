@@ -597,7 +597,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
             setMatchedRate(matched || 0)
             console.log('converter: ', (matched || 0) * currency * response.balance);
             setConvertedRate((matched || 0) * currency * response.balance)
-            setCurrency("USD")
+            // Removed bogus `setCurrency("USD")`: there is no currency state setter on this
+            // screen (currency comes from route.params with 'USD' fallbacks), so the call threw
+            // `ReferenceError: Property 'setCurrency' doesn't exist`, which aborted this try block
+            // before setBalance() ran — leaving the screen's balance unset and the loader hung.
             console.log('currency: ', currency)
             if (response?.balance) {
                 setBalance(response?.balance || 0);
@@ -1123,7 +1126,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     const response = await getPaymentQouteByOnChain(payload, paymentQuoteData?.paymentQuoteId);
                     if(response?.amount){
                         console.log('responserresponse: ', response)
-                        dispatchNavigate('TransactionBroadCast', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: response });
+                        dispatchNavigate('TransactionBroadCast', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: response, strikePending: true });
                     } else if(response?.data?.message) {
                         SimpleToast.show(response?.data?.message, SimpleToast.SHORT)
                     } else {

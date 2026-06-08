@@ -125,6 +125,7 @@ export {
     estimateArkRefreshFee,
     fetchArkPendingRoundStates,
     fetchArkRoundIntervalSecs,
+    fetchArkMinBoardSats,
     progressArkPendingRounds,
     refreshArkVtxos,
     refreshArkVtxosAndSync,

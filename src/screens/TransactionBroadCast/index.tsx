@@ -19,7 +19,7 @@ import { resetAndNavigate } from "@Cypher/helpers/navigation";
 import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 export default function TransactionBroadCast({navigation, route}: any) {
-    const {matchedRate, type, value, converted, isSats, item, receiveType, currency = 'USD' } = route?.params;
+    const {matchedRate, type, value, converted, isSats, item, receiveType, currency = 'USD', strikePending = false } = route?.params;
     const amountSat = isSats ? value : converted;
     const amountUSD = isSats ? converted : value
     const [response, setResponse] = useState(false);
@@ -83,14 +83,14 @@ export default function TransactionBroadCast({navigation, route}: any) {
                 <View style={styles.container}>
                     {response &&
                         <>
-                            <Text h1 bold center style={styles.title}>Transaction Broadcasted...</Text>
+                            <Text h1 bold center style={styles.title}>{strikePending ? 'Withdrawal Submitted' : 'Transaction Broadcasted...'}</Text>
                             <Animated.View style={animatedStyle}>
                                 <Text semibold center style={styles.sats}>{amountSat} sats</Text>
                                 <View style={styles.extra} />
                                 <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                                 <View style={styles.extra} />
                                 <Text h2 bold center>{to}</Text>
-                                <GradientText style={styles.gradientText}>Estimated time: ~2hr</GradientText>
+                                <GradientText style={styles.gradientText}>{strikePending ? 'Strike is sending this on-chain. Arrives in about an hour.' : 'Estimated time: ~2hr'}</GradientText>
                             </Animated.View>
                         </>
                         // :

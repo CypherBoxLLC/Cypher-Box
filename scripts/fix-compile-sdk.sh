@@ -70,4 +70,86 @@ if [ -f "$NITRO_KT" ] && grep -q "canOverrideExistingModule = false," "$NITRO_KT
   echo "  Fixed react-native-nitro-modules: ReactModuleInfo named -> positional args"
 fi
 
+# lottie-react-native 6.6.0 on RN 0.77 + Kotlin 2.0: ReadableArray.getMap(int)
+# became @Nullable in RN 0.77, and Kotlin 2.0 enforces the annotation. The two
+# getMap(i) call sites in LottieAnimationViewPropertyManager.kt feed the result
+# straight into current.getString(...) (line ~107/108) and parseColorFilter(
+# current, ...) (line ~217), both of which want a non-null ReadableMap -> hard
+# Kotlin compile errors. Append !! at each getMap(i) site to assert non-null.
+# This preserves the EXACT pre-0.77 behavior: the old non-null getMap would have
+# thrown NPE on a null array element too, so no semantics change, only the type.
+# Idempotent: the `.getMap(i)$` end-of-line anchor stops matching once !! is
+# appended (the line then ends in `)!!`, not `)`).
+LOTTIE_KT="node_modules/lottie-react-native/android/src/main/java/com/airbnb/android/react/lottie/LottieAnimationViewPropertyManager.kt"
+if [ -f "$LOTTIE_KT" ] && grep -qE '\.getMap\(i\)$' "$LOTTIE_KT"; then
+  sed -i '' -E 's/\.getMap\(i\)$/.getMap(i)!!/' "$LOTTIE_KT"
+  echo "  Fixed lottie-react-native: getMap(i) -> getMap(i)!! (RN 0.77 nullable)"
+fi
+
+# react-native-webview 13.6.4 on RN 0.77 + Kotlin 2.0: ReadableArray.getString(int)
+# became @Nullable in RN 0.77. RNCWebViewManagerImpl.kt's "loadUrl" command feeds
+# args.getString(0) straight into Android's WebView.loadUrl(@NonNull String) ->
+# String? vs String mismatch (line ~340). Assert non-null with !!. Same semantics
+# as before: a null URL would have crashed loadUrl at runtime anyway, and in
+# practice JS always supplies a URL string. Scoped to the loadUrl call ONLY (the
+# evaluateJavascriptWithFallback call on the line above takes String? and compiles
+# fine, so it must NOT get !!). Idempotent: once rewritten to `(0)!!)` the search
+# pattern `(0))` no longer matches.
+WEBVIEW_KT="node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt"
+if [ -f "$WEBVIEW_KT" ] && grep -q "webView.loadUrl(args.getString(0))" "$WEBVIEW_KT"; then
+  sed -i '' 's/webView\.loadUrl(args\.getString(0))/webView.loadUrl(args.getString(0)!!)/' "$WEBVIEW_KT"
+  echo "  Fixed react-native-webview: loadUrl(getString(0)) -> getString(0)!! (RN 0.77 nullable)"
+fi
+
+# react-native-modal 13.0.1 (latest published; unmaintained) on RN 0.77: modal.js
+# componentWillUnmount calls BackHandler.removeEventListener (REMOVED in RN 0.77) ->
+# "TypeError: undefined is not a function" the instant any <Modal>/<BottomModal> closes,
+# crashing every screen that opens a modal (Hot Vault tabs, etc.). Keep the subscription
+# from addEventListener and call .remove(). No newer version exists -> patch the dist JS.
+# Idempotent: guarded on the removeEventListener line, which is gone after the first run.
+RNMODAL="node_modules/react-native-modal/dist/modal.js"
+if [ -f "$RNMODAL" ] && grep -q "BackHandler.removeEventListener('hardwareBackPress', this.onBackButtonPress);" "$RNMODAL"; then
+  sed -i '' \
+    -e "s/        BackHandler.addEventListener('hardwareBackPress', this.onBackButtonPress);/        this.backButtonSubscription = BackHandler.addEventListener('hardwareBackPress', this.onBackButtonPress);/" \
+    -e "s/        BackHandler.removeEventListener('hardwareBackPress', this.onBackButtonPress);/        if (this.backButtonSubscription) this.backButtonSubscription.remove();/" \
+    "$RNMODAL"
+  echo "  Fixed react-native-modal: BackHandler.removeEventListener -> subscription.remove() (RN 0.77)"
+fi
+
+# react-native-share 10.2.1 ShareSheet: same BackHandler.removeEventListener removal ->
+# crash when the share sheet opens. JS-only bug, so patch both built outputs (module +
+# commonjs) instead of bumping the native dep. Idempotent via the removeEventListener guard.
+RNSHARE_M="node_modules/react-native-share/lib/module/components/ShareSheet.js"
+if [ -f "$RNSHARE_M" ] && grep -q "BackHandler.removeEventListener('hardwareBackPress', backButtonHandler);" "$RNSHARE_M"; then
+  sed -i '' \
+    -e "s/    BackHandler.addEventListener('hardwareBackPress', backButtonHandler);/    const _rnsBackSub = BackHandler.addEventListener('hardwareBackPress', backButtonHandler);/" \
+    -e "s/      BackHandler.removeEventListener('hardwareBackPress', backButtonHandler);/      _rnsBackSub.remove();/" \
+    "$RNSHARE_M"
+  echo "  Fixed react-native-share (module): BackHandler.removeEventListener -> subscription.remove()"
+fi
+RNSHARE_C="node_modules/react-native-share/lib/commonjs/components/ShareSheet.js"
+if [ -f "$RNSHARE_C" ] && grep -q "_reactNative.BackHandler.removeEventListener('hardwareBackPress', backButtonHandler);" "$RNSHARE_C"; then
+  sed -i '' \
+    -e "s/    _reactNative.BackHandler.addEventListener('hardwareBackPress', backButtonHandler);/    const _rnsBackSub = _reactNative.BackHandler.addEventListener('hardwareBackPress', backButtonHandler);/" \
+    -e "s/      _reactNative.BackHandler.removeEventListener('hardwareBackPress', backButtonHandler);/      _rnsBackSub.remove();/" \
+    "$RNSHARE_C"
+  echo "  Fixed react-native-share (commonjs): BackHandler.removeEventListener -> subscription.remove()"
+fi
+
+# react-native-push-notification 8.1.1 on targetSdk 35 (API 31+): scheduled local
+# notifications use AlarmManager.setExact* which now require SCHEDULE_EXACT_ALARM /
+# USE_EXACT_ALARM. We hold neither (both Play-restricted, not auto-granted on API
+# 33+), so every scheduled notification threw SecurityException and crashed the
+# process (surfaced live by a Strike->Ark swap success notification). These are
+# reminders, not alarm-clock events, so fall back to an inexact alarm when
+# canScheduleExactAlarms() is false. Idempotent: guarded on the canScheduleExactAlarms marker.
+RNPUSH="node_modules/react-native-push-notification/android/src/main/java/com/dieam/reactnativepushnotification/modules/RNPushNotificationHelper.java"
+if [ -f "$RNPUSH" ] && ! grep -q "canScheduleExactAlarms" "$RNPUSH"; then
+  sed -i '' \
+    -e 's/                getAlarmManager().setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent);/                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || getAlarmManager().canScheduleExactAlarms()) { getAlarmManager().setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); } else { getAlarmManager().setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); }/' \
+    -e 's/                getAlarmManager().setExact(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent);/                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || getAlarmManager().canScheduleExactAlarms()) { getAlarmManager().setExact(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); } else { getAlarmManager().set(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); }/' \
+    "$RNPUSH"
+  echo "  Fixed react-native-push-notification: exact-alarm SecurityException (targetSdk 35) -> inexact fallback"
+fi
+
 echo "=== Done ==="

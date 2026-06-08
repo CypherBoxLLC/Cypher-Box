@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Image, View } from "react-native";
 
 import { LeftArrow } from "@Cypher/assets/images";
@@ -6,6 +6,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientCard } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import {
+    fetchArkMinBoardSats,
     getArkAddress,
     getArkOnchainAddress,
 } from "@Cypher/services/ark";
@@ -48,6 +49,18 @@ export default function ArkReceiveScreen() {
     const { isStrikeAuth, strikeUser } = useAuthStore();
     const [loading, setLoading] = useState<null | "ark" | "onchain">(null);
     const [error, setError] = useState<string | null>(null);
+    // Live server minimum board amount, for the on-chain deposit warning. A
+    // deposit below this confirms on-chain but can never be boarded into a
+    // VTXO (the ASP rejects it), so warn the user before they share the
+    // boarding address. 50k sats fallback if arkInfo is unreachable.
+    const [minBoardSats, setMinBoardSats] = useState(50000);
+    useEffect(() => {
+        let cancelled = false;
+        fetchArkMinBoardSats().then(min => {
+            if (!cancelled && typeof min === 'number' && min > 0) setMinBoardSats(min);
+        });
+        return () => { cancelled = true; };
+    }, []);
 
     const handleArkAddress = async () => {
         setLoading("ark");
@@ -174,6 +187,9 @@ export default function ArkReceiveScreen() {
                                     <Text h4 bold style={styles.desc}>
                                         Deposit to a bitcoin address, then board the funds
                                         into your Ark balance.
+                                    </Text>
+                                    <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 6, fontWeight: '600' }}>
+                                        Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Ark and would have to be recovered on-chain.
                                     </Text>
                                 </View>
                                 <Image source={LeftArrow} style={styles.image} resizeMode="contain" />

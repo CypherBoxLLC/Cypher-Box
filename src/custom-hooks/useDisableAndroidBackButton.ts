@@ -8,10 +8,10 @@ export default function useDisableAndroidBackButton() {
   const doNothing = () => true;
 
   useEffect(() => {
-    BackHandler.addEventListener('hardwareBackPress', doNothing);
+    const subscription = BackHandler.addEventListener('hardwareBackPress', doNothing);
 
     return () => {
-      BackHandler.removeEventListener('hardwareBackPress', doNothing);
+      subscription.remove();
     };
   }, []);
 }

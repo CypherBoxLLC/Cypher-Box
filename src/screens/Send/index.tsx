@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Image, TouchableOpacity, StyleSheet, TextInput, View, Clipboard, Platform, PermissionsAndroid } from "react-native";
+import { Image, TouchableOpacity, StyleSheet, TextInput, View, Platform, PermissionsAndroid } from "react-native";
+import Clipboard from "@react-native-clipboard/clipboard";
 import SimpleToast from "react-native-simple-toast";
 import { PERMISSIONS, request } from "react-native-permissions";
 import QRCodeScanner from 'react-native-qrcode-scanner';

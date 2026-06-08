@@ -1,4 +1,4 @@
-import { getArkWalletHandle } from './walletHandle';
+import { getArkOnchainHandle, getArkWalletHandle } from './walletHandle';
 import type { ArkVtxoView } from './vtxos';
 
 /**
@@ -44,6 +44,16 @@ export type ArkBalanceSummary = {
      * Always 0 when the filter wasn't applied (no vtxo list / no chain tip).
      */
     expiredUnrecoverableSats: number;
+    /**
+     * Confirmed sats sitting in bark's on-chain (BDK) wallet that haven't been
+     * boarded into a VTXO yet. Below the server's minBoardAmountSats this is
+     * stuck (can never board); at/above it, a board is in progress. Surfaced
+     * separately so the UI can show a "Boarding (on-chain)" row + recovery.
+     * See .claude/ARK_STUCK_UTXO_UX_SPEC.md.
+     */
+    onchainBoardingSats: number;
+    /** Unconfirmed on-chain boarding sats (still gaining confirmations). */
+    onchainConfirmingSats: number;
 };
 
 function toNum(b: bigint): number {
@@ -88,6 +98,23 @@ export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
         'pendingBoard=', pendingBoard,
     );
 
+    // Un-boarded on-chain (boarding) balance — funds in bark's onchain (BDK)
+    // wallet not yet converted to a VTXO. Use the non-spawning getter so we
+    // never force a biometric Keychain read just to render a balance; if the
+    // onchain handle isn't up yet, treat as 0. Non-fatal on error.
+    let onchainBoardingSats = 0;
+    let onchainConfirmingSats = 0;
+    try {
+        const onchain = getArkOnchainHandle();
+        if (onchain) {
+            const ob = await onchain.balance();
+            onchainBoardingSats = toNum(ob.confirmedSats);
+            onchainConfirmingSats = toNum(ob.pendingSats);
+        }
+    } catch {
+        // leave both 0
+    }
+
     return {
         totalSats: spendable,
         spendableSats: spendable,
@@ -97,6 +124,8 @@ export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
         claimableLightningReceiveSats: claimableLnRecv,
         pendingBoardSats: pendingBoard,
         expiredUnrecoverableSats: 0,
+        onchainBoardingSats,
+        onchainConfirmingSats,
     };
 }
 

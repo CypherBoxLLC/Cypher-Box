@@ -2,7 +2,7 @@ import { Text } from "@Cypher/component-library";
 import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
-import { ARK_VTXO_DUST_SATS, blocksToDays, cancelArkPendingRound } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, blocksToDays, cancelArkPendingRound, fetchArkMinBoardSats } from "@Cypher/services/ark";
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -60,6 +60,7 @@ export default function ArkWallet({
         arkIosBackupReminderActive,
         arkRefreshStuck,
         setArkRefreshStuck,
+        arkBalanceDetail,
     } = useAuthStore();
 
     // Recovery handler for "stuck refresh" — fired when the user taps the
@@ -83,6 +84,45 @@ export default function ArkWallet({
         }
         setArkRefreshStuck(null);
     }, [arkRefreshStuck, setArkRefreshStuck]);
+
+    // Live server minimum board amount, for classifying the un-boarded
+    // on-chain (boarding) balance below.
+    const [minBoardSats, setMinBoardSats] = React.useState(50000);
+    React.useEffect(() => {
+        let cancelled = false;
+        fetchArkMinBoardSats().then((min) => {
+            if (!cancelled && typeof min === 'number' && min > 0) setMinBoardSats(min);
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    // Un-boarded on-chain "boarding" funds → a status row in the card.
+    //   confirmed < min  → STUCK (can never board; recover) [amber]
+    //   confirmed >= min → boarding in progress [green]
+    //   only unconfirmed → still confirming [green]
+    // Null = nothing to show (happy path). See .claude/ARK_STUCK_UTXO_UX_SPEC.md.
+    // (Recover tap is wired in F3.)
+    const boardingView = useMemo(() => {
+        const confirmed = arkBalanceDetail?.onchainBoardingSats ?? 0;
+        const confirming = arkBalanceDetail?.onchainConfirmingSats ?? 0;
+        if (confirmed <= 0 && confirming <= 0) return null;
+        if (confirmed > 0 && confirmed < minBoardSats) {
+            return {
+                sats: confirmed, color: '#FFD54F', stuck: true,
+                label: `Boarding (on-chain): ${confirmed} sats. Too small to board (min ${minBoardSats} sats).`,
+            };
+        }
+        if (confirmed >= minBoardSats) {
+            return {
+                sats: confirmed, color: colors.green, stuck: false,
+                label: `Boarding (on-chain): ${confirmed} sats. Joining the next round.`,
+            };
+        }
+        return {
+            sats: confirming, color: colors.green, stuck: false,
+            label: `Boarding (on-chain): ${confirming} sats. Confirming.`,
+        };
+    }, [arkBalanceDetail, minBoardSats]);
 
     // Strike + CoinOS + Ark: this combination pulls the Ark card up out
     // of position. Bump it down 10pt for this specific 3-Lightning combo
@@ -450,6 +490,11 @@ export default function ArkWallet({
                                         Refresh stuck · {arkRefreshStuck.stuckSats} sats — tap to recover
                                     </Text>
                                 </TouchableOpacity>
+                            )}
+                            {!isLoading && boardingView && (
+                                <Text h4 style={[styles.alert, { color: boardingView.color }]}>
+                                    {boardingView.label}
+                                </Text>
                             )}
                             {!isLoading && !arkRefreshStuck && bgRefreshStatus && (() => {
                                 const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
