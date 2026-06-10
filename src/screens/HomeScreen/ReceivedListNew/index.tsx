@@ -164,7 +164,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       }) : await createInvoiceStrike({
         onchain: {
         },
-        targetCurrency: strikeUser?.[1]?.currency || "USD"
+        targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
       });
       const hash = selectedItem == 2 ? response.hash : response.onchain?.address
       if (type == 'bitcoin') {

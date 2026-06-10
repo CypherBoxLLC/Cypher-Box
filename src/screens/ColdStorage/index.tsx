@@ -497,7 +497,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         setChangeFetchLoading(true);
         try {
             if (destination === 'STRIKE') {
-                const response = await createInvoiceStrike({ onchain: {} });
+                const response = await createInvoiceStrike({ onchain: {}, targetCurrency: "BTC" }); // Cypher Box: receive as Bitcoin, no auto-convert to fiat
                 if (response?.onchain?.address) {
                     setChangeDepositAddress(response.onchain.address);
                 } else {

@@ -211,7 +211,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
       } else if (selectedAccount === 4 && isStrikeAuth) {
         const responseStrike = await createInvoiceStrike({
           onchain: {},
-          targetCurrency: strikeUser?.[1]?.currency || "USD"
+          targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
         });
         toStrikeAddress = responseStrike?.onchain?.address || null;
       } else if (selectedAccount === 5 && isArkAuth) {
