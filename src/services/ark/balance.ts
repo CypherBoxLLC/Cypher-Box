@@ -1,4 +1,4 @@
-import { getArkOnchainHandle, getArkWalletHandle } from './walletHandle';
+import { getArkWalletHandle, getLastOnchainBalanceSats } from './walletHandle';
 import type { ArkVtxoView } from './vtxos';
 
 /**
@@ -99,20 +99,16 @@ export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
     );
 
     // Un-boarded on-chain (boarding) balance — funds in bark's onchain (BDK)
-    // wallet not yet converted to a VTXO. Use the non-spawning getter so we
-    // never force a biometric Keychain read just to render a balance; if the
-    // onchain handle isn't up yet, treat as 0. Non-fatal on error.
-    let onchainBoardingSats = 0;
-    let onchainConfirmingSats = 0;
-    try {
-        const onchain = getArkOnchainHandle();
-        if (onchain) {
-            const ob = await onchain.balance();
-            onchainBoardingSats = toNum(ob.confirmedSats);
-            onchainConfirmingSats = toNum(ob.pendingSats);
-        }
-    } catch {
-        // leave both 0
+    // wallet not yet converted to a VTXO. Read the value syncArkWallet cached
+    // right after its onchain.sync() (setLastOnchainBalanceSats): a direct
+    // onchain.balance() call here races syncArkWallet's concurrent sync/board
+    // ops on the same UniFFI handle and intermittently returns 0, which hid
+    // the boarding bucket from the UI. 0 until the first sync populates it.
+    const { confirmedSats: onchainBoardingSats, pendingSats: onchainConfirmingSats } =
+        getLastOnchainBalanceSats();
+
+    if (onchainBoardingSats > 0 || onchainConfirmingSats > 0) {
+        console.log('[Ark balance] onchainBoarding(confirmed)=', onchainBoardingSats, 'onchainConfirming=', onchainConfirmingSats);
     }
 
     return {

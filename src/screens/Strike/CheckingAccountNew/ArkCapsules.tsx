@@ -39,6 +39,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
 import rowStyles from "../../HotStorageVault/ListView/styles";
+import ArkOnchainRecoverSection from "./ArkOnchainRecoverSection";
 
 /**
  * ArkCapsules — VTXO management surface for the Ark wallet menu.
@@ -1560,6 +1561,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         </View>
                     )
                 }
+                // Stuck on-chain (boarding) funds capsule + recover action,
+                // rendered under the last VTXO so it scrolls with the list.
+                ListFooterComponent={<ArkOnchainRecoverSection />}
                 style={{ marginTop: 10 }}
             />
 

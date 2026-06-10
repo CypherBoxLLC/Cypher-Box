@@ -26,6 +26,24 @@ let uniffiReady: Promise<void> | null = null;
 // string can't outlive its wallet.
 let cachedMnemonic: string | null = null;
 
+// Last on-chain (BDK) balance observed by syncArkWallet, in sats. fetchArkBalance
+// reads THIS instead of making its own onchain.balance() call: that call races
+// with syncArkWallet's concurrent sync/board operations on the same UniFFI
+// handle and intermittently returns 0 (or throws), which hid the boarding
+// bucket from the UI. syncArkWallet's read is taken right after onchain.sync()
+// and is reliable, so we cache it as the single source of truth.
+let lastOnchainConfirmedSats = 0;
+let lastOnchainPendingSats = 0;
+
+export function setLastOnchainBalanceSats(confirmedSats: number, pendingSats: number): void {
+    lastOnchainConfirmedSats = confirmedSats;
+    lastOnchainPendingSats = pendingSats;
+}
+
+export function getLastOnchainBalanceSats(): { confirmedSats: number; pendingSats: number } {
+    return { confirmedSats: lastOnchainConfirmedSats, pendingSats: lastOnchainPendingSats };
+}
+
 // Lazy-require avoids the import cycle with `./movementWatcher`, which itself
 // imports `getArkWalletHandle` from this file (and transitively
 // `runBackgroundRefresh` whose dependency tree also walks back through here).
@@ -244,6 +262,8 @@ export async function clearArkWalletHandle(): Promise<void> {
     handle = null;
     onchainHandle = null;
     cachedMnemonic = null;
+    lastOnchainConfirmedSats = 0;
+    lastOnchainPendingSats = 0;
 }
 
 export function getArkOnchainHandle(): OnchainWalletInterface | null {
