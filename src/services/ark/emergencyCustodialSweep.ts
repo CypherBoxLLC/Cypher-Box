@@ -458,8 +458,8 @@ export async function runEmergencyCustodialSweep(
                 'imminent_ids=', idPrefixes.join(','),
             );
             pushSweepAlert(
-                'Ark VTXO at risk',
-                `${imminent.length} VTXO${imminent.length === 1 ? '' : 's'} expiring within ~12h and no custodial wallet is connected. Open Cypher Box to act.`,
+                'Act now or you may lose Bitcoin 🚨',
+                'Some of your Ark vault balance expires in about 12 hours and there is no connected wallet to move it to. Open Cypher Box now to keep it safe.',
             );
             return {
                 outcome: 'no_custodian',
@@ -483,8 +483,8 @@ export async function runEmergencyCustodialSweep(
             'failures=', JSON.stringify(failures),
         );
         pushSweepAlert(
-            'Ark VTXO refresh failed',
-            `Emergency sweep tried but every connected wallet refused. ${imminent.length} VTXO${imminent.length === 1 ? '' : 's'} still at risk — open Cypher Box.`,
+            'Act now or you may lose Bitcoin 🚨',
+            'Some of your Ark vault balance expires in about 12 hours and an automatic transfer failed. Open Cypher Box now to keep it safe.',
         );
         return {
             outcome: 'all_custodians_failed',
