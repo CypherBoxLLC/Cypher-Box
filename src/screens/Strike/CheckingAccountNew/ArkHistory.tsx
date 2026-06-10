@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Image,
+    Linking,
     RefreshControl,
     SectionList,
     StyleSheet,
@@ -25,6 +26,7 @@ import {
 import { colors } from '@Cypher/style-guide';
 import screenHeight from '@Cypher/style-guide/screenHeight';
 import useAuthStore from '@Cypher/stores/authStore';
+import useEventLogStore, { type AppEvent } from '@Cypher/stores/eventLogStore';
 
 import itemStyles from './Items/styles';
 import Header from './Header';
@@ -60,6 +62,15 @@ interface ArkHistoryProps {
     currency: any;
 }
 
+// One row in the merged history timeline: either an Ark movement (from bark's
+// local SQLite history) or an on-chain recovery (F3 — a below-min boarding
+// deposit drained back out on-chain, which bark's Ark history never returns
+// because it's a BDK transaction, not an Ark/VTXO movement).
+type RecoverEvent = Extract<AppEvent, { kind: 'ark-onchain-recovered' }>;
+type HistoryEntry =
+    | { type: 'movement'; key: string; sortTs: number; movement: ArkMovementView }
+    | { type: 'recover'; key: string; sortTs: number; recover: RecoverEvent };
+
 export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
     const [movements, setMovements] = useState<ArkMovementView[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -85,6 +96,15 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
     const pendingLnInvoices = React.useMemo(
         () => new Set(arkPendingLnReceives.map((r) => r.invoice)),
         [arkPendingLnReceives],
+    );
+
+    // On-chain recoveries (F3) are recorded in the event log, not bark's Ark
+    // history. Pull them out and merge them into the timeline below. Subscribing
+    // to the store means the list updates the instant a recovery is broadcast.
+    const allEvents = useEventLogStore((s) => s.events);
+    const recoverEvents = React.useMemo(
+        () => allEvents.filter((e): e is RecoverEvent => e.kind === 'ark-onchain-recovered'),
+        [allEvents],
     );
 
     const load = useCallback(async (showSpinner = true) => {
@@ -152,15 +172,31 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
     // Group by local-day string — matches how the Strike/CoinOS History tab
     // formats its section headers (Date.toDateString(), e.g. "Fri Apr 24 2026").
     const sections = React.useMemo(() => {
-        const byDay: Record<string, ArkMovementView[]> = {};
-        for (const m of visibleMovements) {
-            const day = new Date(m.timestamp).toDateString();
-            (byDay[day] ??= []).push(m);
+        // Merge Ark movements and on-chain recoveries into one timeline.
+        const entries: HistoryEntry[] = [
+            ...visibleMovements.map((m) => ({
+                type: 'movement' as const,
+                key: `m-${m.id}`,
+                sortTs: m.timestamp,
+                movement: m,
+            })),
+            ...recoverEvents.map((r) => ({
+                type: 'recover' as const,
+                key: `r-${r.id}`,
+                sortTs: r.ts,
+                recover: r,
+            })),
+        ];
+        // Both inputs are newest-first on their own, but interleaving two
+        // streams needs an explicit timestamp sort to stay newest-first.
+        entries.sort((a, b) => b.sortTs - a.sortTs);
+        const byDay: Record<string, HistoryEntry[]> = {};
+        for (const e of entries) {
+            const day = new Date(e.sortTs).toDateString();
+            (byDay[day] ??= []).push(e);
         }
-        // Entries preserve insertion order, and movements are already sorted
-        // newest-first, so the day keys naturally come out newest-first too.
         return Object.entries(byDay).map(([title, data]) => ({ title, data }));
-    }, [visibleMovements]);
+    }, [visibleMovements, recoverEvents]);
 
     if (isLoading && !isRefreshing) {
         return (
@@ -190,32 +226,36 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
                             <Text style={refreshToggleStyles.text}>
                                 {showRefreshes
                                     ? `Hide ${refreshCount} capsule refresh${refreshCount === 1 ? '' : 'es'}`
-                                    : `${refreshCount} capsule refresh${refreshCount === 1 ? '' : 'es'} hidden — show`}
+                                    : `${refreshCount} capsule refresh${refreshCount === 1 ? '' : 'es'} hidden, tap to show`}
                             </Text>
                         </TouchableOpacity>
                     ) : null
                 }
-                keyExtractor={(item, index) => `${item.id}-${item.timestamp}-${index}`}
+                keyExtractor={(item, index) => `${item.key}-${index}`}
                 renderSectionHeader={({ section: { title } }) => (
                     <Header title={title} />
                 )}
-                renderItem={({ item }) => (
-                    <ArkHistoryRow
-                        movement={item}
-                        matchedRate={Number(matchedRate) || 0}
-                        currency={currency}
-                        // True when this is a Lightning receive whose
-                        // payment has landed but whose VTXO hasn't
-                        // materialised yet. Drives a "Claiming via round"
-                        // badge that overrides the SDK's "successful"
-                        // pill so users don't think it's fully done.
-                        isClaimingLn={
-                            item.kind === 'lightning' &&
-                            item.amountSats > 0 &&
-                            item.receivedOn.some((addr) => pendingLnInvoices.has(addr))
-                        }
-                    />
-                )}
+                renderItem={({ item }) =>
+                    item.type === 'recover' ? (
+                        <RecoverHistoryRow recover={item.recover} />
+                    ) : (
+                        <ArkHistoryRow
+                            movement={item.movement}
+                            matchedRate={Number(matchedRate) || 0}
+                            currency={currency}
+                            // True when this is a Lightning receive whose
+                            // payment has landed but whose VTXO hasn't
+                            // materialised yet. Drives a "Claiming via round"
+                            // badge that overrides the SDK's "successful"
+                            // pill so users don't think it's fully done.
+                            isClaimingLn={
+                                item.movement.kind === 'lightning' &&
+                                item.movement.amountSats > 0 &&
+                                item.movement.receivedOn.some((addr) => pendingLnInvoices.has(addr))
+                            }
+                        />
+                    )
+                }
                 refreshControl={
                     <RefreshControl
                         refreshing={isRefreshing}
@@ -430,6 +470,77 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
         </TouchableOpacity>
     );
 }
+
+/**
+ * Row for an on-chain recovery (F3): a below-minimum boarding deposit that was
+ * too small to ever board into a VTXO, drained back out on-chain. It's a BDK
+ * transaction (carries a txid, not a vtxo id) and bark's Ark history never
+ * returns it, so it comes from the event log. Tapping the row opens the tx in
+ * a block explorer. Visual structure mirrors ArkHistoryRow for list parity.
+ */
+function RecoverHistoryRow({ recover }: { recover: RecoverEvent }) {
+    const detail =
+        recover.dest === 'hot-vault'
+            ? 'Too small to onboard to Ark. Sent back to your Hot Vault.'
+            : 'Too small to onboard to Ark. Sent on-chain to the address you entered.';
+    const openExplorer = () => {
+        const url = `https://mempool.space/tx/${recover.txid}#details`;
+        Linking.openURL(url).catch((err) => console.error('[Ark history] explorer open failed', err));
+    };
+    return (
+        <TouchableOpacity activeOpacity={0.85} onPress={openExplorer} style={itemStyles.shadowView}>
+            <Shadow style={itemStyles.shadowTop} inner useArt>
+                <View style={itemStyles.inner}>
+                    <View style={itemStyles.main}>
+                        <View style={itemStyles.imageView}>
+                            <Image source={Bitcoin} />
+                        </View>
+                        <View style={[itemStyles.des, rowStyles.descCol]}>
+                            <Text bold h4 numberOfLines={1}>
+                                On-chain recovery
+                            </Text>
+                            <View style={rowStyles.subRow}>
+                                <View style={[rowStyles.pill, { borderColor: colors.gray.light }]}>
+                                    <Text style={[rowStyles.pillText, { color: colors.gray.light }]}>
+                                        On-chain
+                                    </Text>
+                                </View>
+                                {recover.feeSats > 0 && (
+                                    <Text style={rowStyles.feeText}>fee {recover.feeSats} sats</Text>
+                                )}
+                            </View>
+                        </View>
+                        <Text h3 style={{ color: '#4FBF67' }}>
+                            +{recover.sats} sats
+                        </Text>
+                    </View>
+                    <Text style={recoverRowStyles.detail} numberOfLines={2}>
+                        {detail}
+                    </Text>
+                    <Text style={recoverRowStyles.explorerLink}>
+                        View in Bitcoin network explorer
+                    </Text>
+                    <Shadow inner useArt style={itemStyles.shadowBottom} />
+                </View>
+            </Shadow>
+        </TouchableOpacity>
+    );
+}
+
+const recoverRowStyles = StyleSheet.create({
+    detail: {
+        marginTop: 8,
+        fontSize: 12,
+        color: colors.gray.light,
+        lineHeight: 17,
+    },
+    explorerLink: {
+        marginTop: 6,
+        fontSize: 12,
+        color: '#4FBF67',
+        fontFamily: 'Lato-Bold',
+    },
+});
 
 // Local styles for the sub-label row (kind pill + optional fee text). We
 // bolt these on top of the shared Items/styles rather than editing that

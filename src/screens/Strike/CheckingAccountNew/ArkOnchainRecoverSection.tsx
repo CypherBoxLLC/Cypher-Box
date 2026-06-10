@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect, useState } from "react";
 import {
     Alert,
+    Linking,
     Modal,
     Text as RNText,
     TextInput,
@@ -19,6 +20,7 @@ import {
 } from "@Cypher/services/ark";
 import type { ArkOnchainRecoverEstimate } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
 import { colors } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 
@@ -86,6 +88,23 @@ export default function ArkOnchainRecoverSection() {
         }
     }, [wallets, walletID]);
 
+    // Whether `address` belongs to the user's Hot Vault, so the recorded event
+    // (and its history copy) can say "back to your Hot Vault" vs "to the address
+    // you entered" honestly. weOwnAddress checks the wallet's derived address
+    // set, so it's correct whether the user used the prefill, tapped "Use Hot
+    // Vault", or pasted one of their own addresses. Degrades to false (external)
+    // if the wallet lacks the method or the check throws.
+    const isHotVaultAddress = useCallback((address: string): boolean => {
+        const hv: any = (wallets || []).find(
+            (w: any) => typeof w?.getID === "function" && w.getID() === walletID,
+        );
+        try {
+            return !!hv && typeof hv.weOwnAddress === "function" && !!hv.weOwnAddress(address);
+        } catch {
+            return false;
+        }
+    }, [wallets, walletID]);
+
     const openRecover = useCallback(async () => {
         if (busy) return;
         setBusy(true);
@@ -136,6 +155,16 @@ export default function ArkOnchainRecoverSection() {
                 // balance drops on the next sync).
                 setRecoverFromSats(est.confirmedSats);
                 setRecoverTxid(res.txid);
+                // Persist a history/activity record. The recover is an on-chain
+                // BDK tx, not an Ark movement, so it never appears in bark's
+                // history; this event is its only durable trace.
+                recordEvent({
+                    kind: "ark-onchain-recovered",
+                    sats: res.sentSats,
+                    feeSats: res.feeSats,
+                    txid: res.txid,
+                    dest: isHotVaultAddress(dest) ? "hot-vault" : "external",
+                });
                 Alert.alert(
                     "Recovery broadcast",
                     `${res.sentSats.toLocaleString()} sats sent on-chain. It is pending confirmation and will appear at the destination shortly.\n\nTxid:\n${res.txid}`,
@@ -149,7 +178,7 @@ export default function ArkOnchainRecoverSection() {
         } finally {
             setBusy(false);
         }
-    }, [addr, est]);
+    }, [addr, est, isHotVaultAddress]);
 
     // --- Post-broadcast pending state (takes priority over the normal capsule) ---
     if (recoverTxid) {
@@ -180,6 +209,27 @@ export default function ArkOnchainRecoverSection() {
                             <Text style={{ color: colors.gray.light, fontSize: 11 }}>Transaction id (tap to copy)</Text>
                             <RNText style={{ color: "#FFF", fontSize: 12 }} numberOfLines={1} ellipsizeMode="middle">
                                 {recoverTxid}
+                            </RNText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => {
+                                const url = `https://mempool.space/tx/${recoverTxid}#details`;
+                                Linking.openURL(url).catch(() =>
+                                    SimpleToast.show("Could not open the explorer.", SimpleToast.SHORT),
+                                );
+                            }}
+                            activeOpacity={0.7}
+                            style={{
+                                marginTop: 14,
+                                paddingVertical: 9,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: colors.green,
+                                alignItems: "center",
+                            }}
+                        >
+                            <RNText style={{ color: colors.green, fontSize: 12, fontWeight: "700" }}>
+                                View in Bitcoin network explorer
                             </RNText>
                         </TouchableOpacity>
                     </LinearGradient>

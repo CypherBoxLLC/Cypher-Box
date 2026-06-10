@@ -40,6 +40,21 @@ export type AppEvent =
     | (EventBase & { kind: "ark-created" })
     | (EventBase & { kind: "ark-recovered" })
     | (EventBase & {
+        // A below-minimum on-chain boarding deposit (too small to ever board
+        // into a VTXO) was drained back out on-chain via the F3 recover flow.
+        // Not an Ark/VTXO movement, so it never appears in bark's history —
+        // this event is the only record of it for the history/activity UIs.
+        kind: "ark-onchain-recovered";
+        /** Sats that landed at the destination (confirmed minus on-chain fee). */
+        sats: number;
+        /** On-chain fee paid for the drain. */
+        feeSats: number;
+        /** Drain txid, for the mempool.space explorer link in history. */
+        txid: string;
+        /** Where it went: the user's Hot Vault (prefilled) or a pasted address. */
+        dest: "hot-vault" | "external";
+    })
+    | (EventBase & {
         kind: "ark-exit-started";
         sats: number;
         correlationId: string;
