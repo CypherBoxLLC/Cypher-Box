@@ -356,10 +356,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    if (!arkBgRefreshEnabled) {
-      setBatteryNotExempt(null);
-      return;
-    }
+    // Probe regardless of the auto-refresh toggle. The battery-Unrestricted
+    // setting also gates the scheduled expiry-warning notifications (which
+    // fire whether or not auto-refresh is on), so the banner must show
+    // whenever the app isn't battery-exempt, not only while auto-refresh runs.
     let cancelled = false;
     const probe = async () => {
       try {
@@ -379,7 +379,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       cancelled = true;
       sub.remove();
     };
-  }, [arkBgRefreshEnabled]);
+  }, []);
 
   const handleToggleBgRefresh = async (next: boolean) => {
     if (togglingBgRefresh) return;
@@ -1527,10 +1527,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 : '⚠ Auto-refresh is OFF — open Cypher Box once in a while and refresh Ark capsules before they expire. After expiry, the ASP can sweep them.'}
             </Text>
 
-            {/* Battery-exemption drift banner. Only shows on Android, only
-                when bg-refresh is on, and only after the probe has actually
-                returned a "not exempt" reading. */}
-            {arkBgRefreshEnabled && batteryNotExempt === true && (
+            {/* Battery-exemption banner. Shows on Android whenever the app is
+                NOT battery-exempt (i.e. not set to Unrestricted), regardless of
+                the auto-refresh toggle, because the battery setting also gates
+                the scheduled expiry-warning notifications. Hidden once the
+                probe reads "exempt" (Unrestricted). */}
+            {batteryNotExempt === true && (
               <TouchableOpacity
                 onPress={() => {
                   // Deep-link to this app's own settings page
