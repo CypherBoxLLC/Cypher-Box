@@ -152,7 +152,6 @@ export default function CheckingAccountLogin() {
   const handleStrikeLogin = async () => {
     try {
       const result = await authorize(config);
-      console.log("Access Token:", result);
       const reStrikeTokenExchange = await strikeTokenExchange(result.authorizationCode, result.codeVerifier || '');
       setStrikeToken(reStrikeTokenExchange.access_token);
       setStrikeAuth(true);
@@ -162,8 +161,6 @@ export default function CheckingAccountLogin() {
       const payload = Buffer.from(tokenParts[1], "base64").toString("utf8");
       const signature = tokenParts[2];
       const decoded = JSON.parse(payload);
-      console.log("decoded", decoded);
-      console.log("signature: ", signature);
       setStrikeMe(decoded);
       setAllBTCWallets([...temp, "STRIKE"]);
       if(FirstTimeLightning){
@@ -192,7 +189,6 @@ export default function CheckingAccountLogin() {
         code: code,
         verifier: verifier,
       };      
-      console.log('details to send:', details);
       const response = await fetch('https://cypherbox-backend.onrender.com/oauth/start', {
         method: 'POST',
         headers: {
@@ -204,7 +200,6 @@ export default function CheckingAccountLogin() {
 
       const responseJSON = await response.json();
       if (responseJSON.success) {
-        console.log("Response Body:", responseJSON);
         return responseJSON.data;
       } else {
         SimpleToast.show('Strike authentication failed.', SimpleToast.SHORT);
