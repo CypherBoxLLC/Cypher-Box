@@ -1533,7 +1533,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             {arkBgRefreshEnabled && batteryNotExempt === true && (
               <TouchableOpacity
                 onPress={() => {
-                  openBatteryOptimizationSettings().catch((err) => {
+                  // Deep-link to this app's own settings page
+                  // (Settings > Apps > Cypher Box), where the user reaches
+                  // Battery > Unrestricted. Linking.openSettings() opens
+                  // ACTION_APPLICATION_DETAILS_SETTINGS, which is universal
+                  // across Android versions/OEMs. (The native
+                  // openBatteryOptimizationSettings landed on the generic
+                  // battery-optimisation allow-list, not this app's Battery
+                  // screen, which is what we actually want the user on.)
+                  Linking.openSettings().catch((err) => {
                     console.warn('[Ark bg refresh banner] open settings failed:', err);
                   });
                 }}
@@ -1548,10 +1556,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 }}
               >
                 <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
-                  ⚠ Battery optimisation is on for Cypher Box
+                  ⚠ Set Cypher Box battery to Unrestricted
                 </Text>
                 <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
-                  Auto-refresh may not run reliably until you exempt Cypher Box from battery optimisation. Tap to open Settings.
+                  Auto-refresh and capsule expiry alerts may not run reliably while battery optimisation is on. Tap here to open Cypher Box settings, then choose Battery and set it to Unrestricted.
                 </Text>
               </TouchableOpacity>
             )}
