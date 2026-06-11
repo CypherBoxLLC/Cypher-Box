@@ -68,6 +68,7 @@ export {
     getActiveBackupFingerprint,
     getAutoBackupPath,
     getCachedArkBackupFingerprint,
+    getLastLocalBackupNote,
     getICloudBackupPath,
     getICloudBackupPathForFingerprint,
     isICloudBackupAvailable,

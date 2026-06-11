@@ -41,6 +41,7 @@ import {
   getDriveBackupInfo,
   getICloudBackupPath,
   getICloudBackupPathForFingerprint,
+  getLastLocalBackupNote,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
   isIgnoringBatteryOptimizations,
@@ -331,6 +332,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // Errors are swallowed; UI shows the loading or "no backup yet" state.
   type BackupInfo = { modifiedAt: number; sizeBytes: number };
   const [localBackup, setLocalBackup] = useState<BackupInfo | null | undefined>(null);
+  // Diagnostic note from the most recent local-backup write (e.g. "saved via
+  // direct write", or a failure reason). Surfaces the otherwise-silent local
+  // write outcome so a New-Arch RNFS regression can't hide as "Not yet".
+  const [localNote, setLocalNote] = useState<string | null>(null);
   const [iCloudAvailable, setICloudAvailable] = useState<boolean | null>(null);
   const [iCloudBackup, setICloudBackup] = useState<BackupInfo | null | undefined>(null);
   const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
@@ -483,6 +488,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       } catch (e: any) {
         if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
       }
+      if (!cancelled) setLocalNote(getLastLocalBackupNote());
 
       // iCloud Drive (iOS only) — independent probe of the ubiquity
       // container. `isICloudBackupAvailable()` answers the gate question
@@ -1342,6 +1348,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   ? 'Files → On My iPhone → Cypher Box'
                   : 'Inside the app\'s private storage'}
               </Text>
+              {localNote && (
+                <Text style={{ fontSize: 11, color: localNote.startsWith('Local save failed') ? '#E85C5A' : '#888', marginTop: 2 }}>
+                  {localNote}
+                </Text>
+              )}
             </View>
 
             {/* iCloud Drive row (iOS) — independent probe of the ubiquity

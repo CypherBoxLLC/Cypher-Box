@@ -75,6 +75,69 @@ async function atomicWriteFile(
     }
 }
 
+/**
+ * Outcome note from the most recent local backup write, surfaced read-only in
+ * the Ark Settings backup panel. Without it a local-write failure is
+ * indistinguishable from "never backed up" (both render "Not yet"), which is
+ * exactly how the New-Architecture RNFS `moveFile` regression hid: Drive kept
+ * working (it uploads the in-memory blob) while the on-device copy silently
+ * never landed. `null` = healthy / nothing to show.
+ */
+let _lastLocalBackupNote: string | null = null;
+
+/** Read the most recent local-backup write note (see `_lastLocalBackupNote`). */
+export function getLastLocalBackupNote(): string | null {
+    return _lastLocalBackupNote;
+}
+
+/**
+ * Write the encrypted backup blob to a local path, resilient to the New
+ * Architecture RNFS interop breaking `moveFile`.
+ *
+ * Tries the crash-safe atomic tmp+rename first. If it throws — seen on RN 0.77
+ * with `newArchEnabled=true` where react-native-fs 2.20.0 (an old-arch module)
+ * fails `moveFile` through the bridgeless interop layer while `readFile` /
+ * `writeFile` still work — it falls back to a direct overwrite write. The
+ * direct path gives up the rename's mid-write crash safety, but the blob is
+ * re-written every sync tick and the create flow read-back-verifies, so the
+ * exposure is one tick wide. That beats no local copy at all (the only
+ * on-device recovery source when Google Drive is off).
+ *
+ * Never throws: returns a structured outcome so the caller keeps the Drive and
+ * SAF mirrors running even when the local copy can't be written.
+ */
+async function writeLocalBackupResilient(
+    targetPath: string,
+    blob: string,
+): Promise<
+    | { ok: true; via: 'atomic' | 'direct' }
+    | { ok: false; atomicError: string; directError: string }
+> {
+    try {
+        await atomicWriteFile(targetPath, blob, 'utf8');
+        _lastLocalBackupNote = null;
+        return { ok: true, via: 'atomic' };
+    } catch (atomicErr: any) {
+        const atomicError = atomicErr?.message ?? String(atomicErr);
+        try {
+            // Direct overwrite — no tmp file, no moveFile.
+            await RNFS.writeFile(targetPath, blob, 'utf8');
+            _lastLocalBackupNote = 'Saved via direct write (atomic move unavailable on this build).';
+            if (__DEV__) {
+                console.log('[Ark backup] atomic move failed, direct write OK:', atomicError);
+            }
+            return { ok: true, via: 'direct' };
+        } catch (directErr: any) {
+            const directError = directErr?.message ?? String(directErr);
+            _lastLocalBackupNote = `Local save failed: ${directError}`;
+            if (__DEV__) {
+                console.warn('[Ark backup] local write failed (atomic + direct):', atomicError, directError);
+            }
+            return { ok: false, atomicError, directError };
+        }
+    }
+}
+
 import { deriveBackupFingerprint, normalizeMnemonic } from './backupFingerprint';
 import { ARK_DATADIR, ensureArkDatadir } from './datadir';
 import {
@@ -1013,7 +1076,18 @@ export async function writeArkAutoBackup(
     // Same blob is written to both locations in the same tick — no drift
     // risk because each tick is an atomic re-pack-and-write.
     const localPath = getAutoBackupPath(fingerprint);
-    await atomicWriteFile(localPath, blob, 'utf8');
+    // Best-effort, MUST NOT throw: a local-write failure used to abort this
+    // whole tick before the Drive/SAF mirrors ran (the one unguarded await in
+    // the pipeline). The resilient writer falls back to a direct write when the
+    // atomic move breaks under the New Architecture RNFS interop.
+    const localWrite = await writeLocalBackupResilient(localPath, blob);
+    if (!localWrite.ok && __DEV__) {
+        console.warn(
+            '[Ark auto-backup] local write failed (continuing to Drive/SAF):',
+            localWrite.atomicError,
+            localWrite.directError,
+        );
+    }
 
     // iCloud mirror — silent-fail per the auto-backup contract (next sync
     // tick retries). The local copy already succeeded so the wallet is
@@ -1174,13 +1248,14 @@ export async function writeAndVerifyArkBackup(
     // the iCloud container immediately, then uploads asynchronously — so
     // even an offline iOS device gets a usable local copy from this write).
     const activePath = await getActiveAutoBackupPath(fingerprint);
-    let local: VerifiedBackupResult['local'];
-    try {
-        await atomicWriteFile(activePath, blob, 'utf8');
-        local = { ok: true, path: activePath };
-    } catch (err: any) {
-        local = { ok: false, error: err?.message ?? String(err) };
-    }
+    // Resilient local write (atomic, falling back to direct overwrite when
+    // moveFile breaks under the New Architecture RNFS interop). Same policy as
+    // the auto-backup tick so the create flow's on-device copy survives the
+    // same regression instead of silently landing only on Drive.
+    const localWrite = await writeLocalBackupResilient(activePath, blob);
+    const local: VerifiedBackupResult['local'] = localWrite.ok
+        ? { ok: true, path: activePath }
+        : { ok: false, error: `atomic: ${localWrite.atomicError}; direct: ${localWrite.directError}` };
 
     // Drive — Android-only. iOS short-circuits with `skipped-platform`;
     // Android short-circuits with `skipped-not-connected` when the user
