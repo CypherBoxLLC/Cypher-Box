@@ -21,16 +21,21 @@
 #   * Node 22.22.3, not 18.x - Node 18 reached EOL (2025-04); RN 0.76's hermes
 #     post-build tooling is validated on node@22 in this repo (CLAUDE.md).
 #
-# HARDENING TODO before this is the canonical release path (needs a Docker host,
-# which the §11.1 work deferred):
-#   1. Pin the base image by digest:
-#        docker buildx imagetools inspect eclipse-temurin:17-jdk-jammy
-#        -> FROM eclipse-temurin@sha256:<digest>
-#   2. Verify the cmdline-tools zip sha256 (see the commented check below).
-#   3. Snapshot/pin the apt repo (snapshot.debian.org) for full determinism;
-#      apt is the one mirror not yet digest-pinned here.
+# HARDENING STATUS:
+#   1. [DONE] Base image pinned by manifest-list digest (the FROM below).
+#   2. [DONE] cmdline-tools zip sha256 pinned + verified at build (ARG below).
+#   3. [TODO, needs a Docker host] Snapshot/pin the apt repo (snapshot.debian.org)
+#      for full determinism; apt is the one mirror not yet digest-pinned here.
+#   Validate end-to-end with `make repro-verify` on a Docker host (two builds ->
+#   identical SHA-256) before treating this as the canonical release path.
 # ---------------------------------------------------------------------------
-FROM --platform=linux/amd64 eclipse-temurin:17-jdk-jammy
+# Base image pinned by digest (manifest list) for supply-chain reproducibility.
+# Digest captured 2026-06-11 from eclipse-temurin:17-jdk-jammy (Docker Hub
+# last_updated 2026-05-15). The tag is kept for readability; the digest is what
+# resolves, and --platform selects the linux/amd64 variant from the list.
+# Re-pin per release on the build host:
+#   docker buildx imagetools inspect eclipse-temurin:17-jdk-jammy --format '{{.Manifest.Digest}}'
+FROM --platform=linux/amd64 eclipse-temurin:17-jdk-jammy@sha256:beabb759e6f9653c843958d1d1f5cecb881dfb85aa6081e2bef099ab1260344e
 
 # Determinism knobs: fixed locale + timezone so any locale-dependent ordering
 # (zip entry order, resource merge) is stable; SOURCE_DATE_EPOCH zeroes embedded
@@ -59,11 +64,12 @@ RUN curl -fsSLO https://nodejs.org/dist/v22.22.3/node-v22.22.3-linux-x64.tar.xz 
 
 # Android command-line tools (the sdkmanager bootstrapper). The exact SDK
 # *packages* below are integrity-checked by sdkmanager; this zip only bootstraps
-# it. Pin the version; enable the sha256 check once verified on a Docker host
-# (obtain the value from developer.android.com/studio#command-line-tools-only,
-# cross-checked against Google's repository2 XML).
+# it. Pinned version + sha256 of Google's immutable versioned artifact
+# (commandlinetools-linux-11076708_latest.zip), cross-checked against
+# cashapp/hermit-packages. The check below fails the build on mismatch, so this
+# is self-verifying on any Docker host. Override with --build-arg to re-pin.
 ARG CMDLINE_TOOLS_VERSION=11076708
-ARG CMDLINE_TOOLS_SHA256=
+ARG CMDLINE_TOOLS_SHA256=2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
 RUN curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip \
     && if [ -n "${CMDLINE_TOOLS_SHA256}" ]; then \
          echo "${CMDLINE_TOOLS_SHA256}  commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" | sha256sum -c - ; \
