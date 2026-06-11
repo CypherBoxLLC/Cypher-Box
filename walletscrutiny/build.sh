@@ -99,19 +99,36 @@ echo "==> [1/4] building image with ${ENGINE}"
 "$ENGINE" build -f "$REPO_DIR/Dockerfile.build" -t "$IMAGE" "$REPO_DIR" \
   || die_ftbfs "container image build failed."
 
-# ---- 2/4 build the unsigned release AAB (mirrors Makefile CONTAINER_BUILD) ----
+# ---- 2/4 build the unsigned release AAB (keep in sync with Makefile CONTAINER_BUILD) ----
+# Fresh clones have no gitignored secrets.ts / .env; fall back to the committed
+# .example templates so the build always completes. An auditor who wants a
+# FUNCTIONAL Ark build inserts their own Second.tech token into
+# src/services/ark/secrets.ts before running (see README.md, "Inlined config
+# inputs"). The codegen prestep avoids RN's cold-build CMake race.
 echo "==> [2/4] building unsigned release AAB"
 "$ENGINE" run --rm -v "$REPO_DIR":/src:ro -v "$WORK":/out "$IMAGE" \
   bash -euo pipefail -c '
     cp -a /src /build/repo && cd /build/repo
+    SRC=""
+    if [ -f blue_modules/secrets.ts ]; then SRC="$SRC blue_modules/secrets.ts:provided"; else cp blue_modules/secrets.example.ts blue_modules/secrets.ts; SRC="$SRC blue_modules/secrets.ts:example"; fi
+    if [ -f src/services/ark/secrets.ts ]; then SRC="$SRC ark/secrets.ts:provided"; else cp src/services/ark/secrets.example.ts src/services/ark/secrets.ts; SRC="$SRC ark/secrets.ts:example"; fi
+    if [ -f .env ]; then SRC="$SRC .env:provided"; else cp .env.example .env; SRC="$SRC .env:example"; fi
+    echo "$SRC" > /out/inlined-inputs.txt
     rm -rf node_modules android/app/build android/build android/.gradle
     npm ci
+    ./android/gradlew -p android :app:generateCodegenArtifactsFromSchema
     ./android/gradlew -p android :app:bundleRelease -PreactNativeArchitectures=arm64-v8a
     cp android/app/build/outputs/bundle/release/app-release.aab /out/app-release.aab
   ' || die_ftbfs "gradle :app:bundleRelease failed in container."
 
 AAB_SHA="$("$ENGINE" run --rm -v "$WORK":/out "$IMAGE" sha256sum /out/app-release.aab | awk '{print $1}')"
 add_note "Built unsigned AAB sha256: ${AAB_SHA}"
+add_note "Inlined config inputs:$(cat "$WORK/inlined-inputs.txt" 2>/dev/null || echo ' unknown')"
+add_note "The app compiles config values into the binary (Second.tech bark access"
+add_note "token + push-relay key in the JS bundle, .env web client ID in BuildConfig)."
+add_note "If those inputs differ from the production build's values, the bundle"
+add_note "differs by exactly those constants even when the toolchain output is"
+add_note "otherwise reproducible. See walletscrutiny/README.md."
 
 # ---- 3/4 AAB -> universal APK via pinned bundletool (inside the image) ----
 echo "==> [3/4] deriving universal APK via bundletool ${BT_VER}"
