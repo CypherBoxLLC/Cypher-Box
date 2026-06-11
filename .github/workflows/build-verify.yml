@@ -12,6 +12,7 @@ on:
   push:
     branches:
       - main # verify reproducibility on each release-integration push to main
+      - 16kb-migration # TEMP: one-off CI validation before merge; reverted right after
   workflow_dispatch: {} # manual run for ad-hoc determinism checks
 
 # Least privilege: read the repo and nothing else. No write, no id-token, no
