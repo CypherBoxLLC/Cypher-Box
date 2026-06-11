@@ -24,6 +24,7 @@ CONTAINER_BUILD := set -euo pipefail; \
   cd /build/repo; \
   rm -rf node_modules android/app/build android/build android/.gradle; \
   npm ci; \
+  ./android/gradlew -p android :app:generateCodegenArtifactsFromSchema; \
   ./android/gradlew -p android :app:bundleRelease -PreactNativeArchitectures=arm64-v8a; \
   mkdir -p /out; \
   cp android/app/build/outputs/bundle/release/app-release.aab /out/app-release.aab; \
