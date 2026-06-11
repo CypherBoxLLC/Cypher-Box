@@ -11,8 +11,11 @@
 
 IMAGE   := cypherbox-build:repro
 OUT     := $(CURDIR)/out
-# Pass-through for the cmdline-tools sha once verified on a Docker host (TODO 2
-# in Dockerfile.build): `make repro-image CMDLINE_TOOLS_SHA256=<sha>`
+# The cmdline-tools sha256 is pinned in Dockerfile.build (ARG default). Set this
+# only to OVERRIDE it, e.g. when bumping CMDLINE_TOOLS_VERSION:
+#   make repro-image CMDLINE_TOOLS_SHA256=<new-sha>
+# When unset, no --build-arg is passed at all - passing an empty value would
+# override the pinned default and silently skip the integrity check.
 CMDLINE_TOOLS_SHA256 ?=
 
 # The build steps run INSIDE the container. The repo (incl. .git, so the
@@ -37,7 +40,7 @@ CONTAINER_BUILD := set -euo pipefail; \
 
 repro-image:
 	docker build -f Dockerfile.build \
-	  --build-arg CMDLINE_TOOLS_SHA256=$(CMDLINE_TOOLS_SHA256) \
+	  $(if $(CMDLINE_TOOLS_SHA256),--build-arg CMDLINE_TOOLS_SHA256=$(CMDLINE_TOOLS_SHA256)) \
 	  -t $(IMAGE) .
 
 # One reproducible build -> ./out/app-release.aab (+ printed SHA-256).
