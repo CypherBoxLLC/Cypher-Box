@@ -12,9 +12,9 @@ buildscript {
         firebaseVersion = "17.3.4"
         firebaseMessagingVersion = "21.1.0"
 
-        ndkVersion = "26.1.10909125"
-        kotlinVersion = "1.9.25"
-        kotlin_version = "1.9.25"
+        ndkVersion = "27.1.12297006"
+        kotlinVersion = "2.0.21"
+        kotlin_version = "2.0.21"
     }
     repositories {
         google()
@@ -41,10 +41,43 @@ allprojects {
         maven { url 'https://www.jitpack.io' }
         maven { url "$rootDir/libs" }
     }
+
+    // 16 KB page-size (Android 15 / Play requirement). react-native-camera-kit pins
+    // androidx.camera 1.1.0 via a LOCAL `def camerax_version` in its own build.gradle,
+    // so it can't be overridden through rootProject.ext. CameraX 1.1.0 ships a 4 KB-aligned
+    // libimage_processing_util_jni.so; 1.4.0 is the first to ship it 16 KB-aligned (verified:
+    // LOAD align 0x4000). Force the whole camera set to 1.4.0 so the packaged .so complies.
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.camera:camera-core:1.4.0'
+            force 'androidx.camera:camera-camera2:1.4.0'
+            force 'androidx.camera:camera-lifecycle:1.4.0'
+            force 'androidx.camera:camera-view:1.4.0'
+        }
+    }
 }
 
 subprojects { subproject ->
     if(subproject.name == 'react-native-widget-center') {
         subproject.configurations { compile { } }
+    }
+    // 16 KB page-size alignment (Android 15 / Play requirement, Phase 1).
+    // Force every native module we compile here to link its .so with 16 KB-aligned
+    // LOAD segments. NDK r26 does not do this by default (r28 would); this flag
+    // makes it explicit without an NDK bump. NOTE: this does NOT cover prebuilt
+    // libs (Hermes / RN core / Realm) or the NDK's own libc++_shared -- those
+    // need the RN 0.77 + realm 12.15.0 + NDK r27/r28 bumps (Phase 2/3).
+    ['com.android.library', 'com.android.application'].each { pid ->
+        subproject.plugins.withId(pid) {
+            subproject.android {
+                defaultConfig {
+                    externalNativeBuild {
+                        cmake {
+                            arguments "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

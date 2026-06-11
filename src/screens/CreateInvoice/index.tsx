@@ -47,7 +47,7 @@ export default function CreateInvoice({navigation, route}: any) {
                     },
                     expiryInSeconds: 3600 // 1h: a receive invoice a human must scan + pay; 60s was far too short (LN norm is ~1h)
                 },
-                targetCurrency: currency || "USD"
+                targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
               });
             const hash = receiveType ? response.hash : response.bolt11?.invoice
             console.log('hash: ', hash)

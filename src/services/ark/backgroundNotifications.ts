@@ -158,9 +158,9 @@ export function scheduleVtxoExpiryWarnings(
         PushNotification.localNotificationSchedule({
             id: notificationIdFor(vtxoId, 'warn24h'),
             channelId: CHANNEL_ID,
-            title: 'Capsule expiring soon',
+            title: 'Open Cypher Box to protect your Bitcoin ⚠️',
             message:
-                'A capsule will expire within 24 hours. Open Cypher Box to refresh.',
+                'Some of your Ark vault balance expires in about 24 hours! Open the app to keep it, or it may be lost.',
             date: new Date(warn24hAt),
             priority: 'high',
             importance: 'high',
@@ -174,9 +174,9 @@ export function scheduleVtxoExpiryWarnings(
         PushNotification.localNotificationSchedule({
             id: notificationIdFor(vtxoId, 'warn2h'),
             channelId: CHANNEL_ID,
-            title: 'Capsule expiring NOW',
+            title: 'Act now or you may lose Bitcoin 🚨',
             message:
-                'A capsule will expire within 2 hours. Open Cypher Box immediately to refresh.',
+                'Your Ark vault balance expires in about 2 hours. Open Cypher Box now to keep it safe.',
             date: new Date(warn2hAt),
             priority: 'high',
             importance: 'high',

@@ -99,7 +99,7 @@ android {
         applicationId "io.cypherbox.btc"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 17
+        versionCode 18
         versionName "0.1.0"
         testBuildType System.getProperty('testBuildType', 'debug')
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
@@ -113,7 +113,10 @@ android {
 
     packagingOptions {
         jniLibs {
-            useLegacyPackaging = true
+            // 16 KB (Android 15): false => native libs stored UNCOMPRESSED and
+            // page-aligned in the APK so they can be mmap'd directly. Required
+            // for 16 KB page-size support (was true / legacy-compressed).
+            useLegacyPackaging = false
         }
         // Pick first on duplicate resources (fixes RN 0.72 bundler conflict)
         resources {
@@ -156,8 +159,14 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
-    implementation files("../../node_modules/rn-ldk/android/libs/LDK-release.aar")
-    implementation 'com.facebook.fresco:animated-gif:2.5.0' // Enables GIF support
+    // rn-ldk (LDK Lightning) removed for Google Play 16 KB page-size compliance.
+    // It is a deprecated, unused BlueWallet feature (Cypher Box Lightning is Strike /
+    // Coinos / Ark; its add-wallet button is backdoor-gated and unreachable in normal
+    // UI). The vendored LDK-release.aar shipped a 4 KB-aligned liblightningjni.so (a
+    // 2021 prebuilt with no 16 KB build available), which was the last lib blocking the
+    // Play requirement. Android autolinking for rn-ldk is also disabled in
+    // react-native.config.js. (Was: implementation files(".../rn-ldk/.../LDK-release.aar"))
+    implementation 'com.facebook.fresco:animated-gif:3.4.0' // Enables GIF support (3.4.0 matches RN 0.77 Fresco; ships 16 KB-aligned libgifimage.so for Play)
     // implementation 'com.github.uccmawei:FingerprintIdentify:1.2.6'
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

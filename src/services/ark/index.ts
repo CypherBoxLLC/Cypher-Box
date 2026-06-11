@@ -38,6 +38,9 @@ export {
 export { fetchArkBalance, applyExpiredVtxoFilter } from './balance';
 export type { ArkBalanceSummary } from './balance';
 
+export { estimateArkOnchainRecover, recoverArkOnchainBoard } from './recoverOnchainBoard';
+export type { ArkOnchainRecoverEstimate, ArkOnchainRecoverResult } from './recoverOnchainBoard';
+
 export { fetchArkVtxos } from './vtxos';
 export type { ArkVtxoView, ArkVtxoList } from './vtxos';
 
@@ -65,6 +68,7 @@ export {
     getActiveBackupFingerprint,
     getAutoBackupPath,
     getCachedArkBackupFingerprint,
+    getLastLocalBackupNote,
     getICloudBackupPath,
     getICloudBackupPathForFingerprint,
     isICloudBackupAvailable,
@@ -125,6 +129,7 @@ export {
     estimateArkRefreshFee,
     fetchArkPendingRoundStates,
     fetchArkRoundIntervalSecs,
+    fetchArkMinBoardSats,
     progressArkPendingRounds,
     refreshArkVtxos,
     refreshArkVtxosAndSync,

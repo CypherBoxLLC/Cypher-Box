@@ -62,6 +62,12 @@ const describe = (ev: AppEvent): RowMeta => {
             return { icon: "boat-outline", line1: "Ark wallet created", walletLabel: WALLET_LABEL["ark"] };
         case "ark-recovered":
             return { icon: "boat-outline", line1: "Ark wallet recovered", walletLabel: WALLET_LABEL["ark"] };
+        case "ark-onchain-recovered":
+            return {
+                icon: "arrow-undo-outline",
+                line1: `Recovered ${formatSats(ev.sats)} on-chain`,
+                walletLabel: WALLET_LABEL["ark"],
+            };
         case "ark-exit-started":
             return {
                 icon: "exit-outline",

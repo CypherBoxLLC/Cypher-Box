@@ -1,4 +1,4 @@
-import { getArkWalletHandle } from './walletHandle';
+import { getArkWalletHandle, getLastOnchainBalanceSats } from './walletHandle';
 import type { ArkVtxoView } from './vtxos';
 
 /**
@@ -44,6 +44,16 @@ export type ArkBalanceSummary = {
      * Always 0 when the filter wasn't applied (no vtxo list / no chain tip).
      */
     expiredUnrecoverableSats: number;
+    /**
+     * Confirmed sats sitting in bark's on-chain (BDK) wallet that haven't been
+     * boarded into a VTXO yet. Below the server's minBoardAmountSats this is
+     * stuck (can never board); at/above it, a board is in progress. Surfaced
+     * separately so the UI can show a "Boarding (on-chain)" row + recovery.
+     * See .claude/ARK_STUCK_UTXO_UX_SPEC.md.
+     */
+    onchainBoardingSats: number;
+    /** Unconfirmed on-chain boarding sats (still gaining confirmations). */
+    onchainConfirmingSats: number;
 };
 
 function toNum(b: bigint): number {
@@ -88,6 +98,19 @@ export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
         'pendingBoard=', pendingBoard,
     );
 
+    // Un-boarded on-chain (boarding) balance — funds in bark's onchain (BDK)
+    // wallet not yet converted to a VTXO. Read the value syncArkWallet cached
+    // right after its onchain.sync() (setLastOnchainBalanceSats): a direct
+    // onchain.balance() call here races syncArkWallet's concurrent sync/board
+    // ops on the same UniFFI handle and intermittently returns 0, which hid
+    // the boarding bucket from the UI. 0 until the first sync populates it.
+    const { confirmedSats: onchainBoardingSats, pendingSats: onchainConfirmingSats } =
+        getLastOnchainBalanceSats();
+
+    if (onchainBoardingSats > 0 || onchainConfirmingSats > 0) {
+        console.log('[Ark balance] onchainBoarding(confirmed)=', onchainBoardingSats, 'onchainConfirming=', onchainConfirmingSats);
+    }
+
     return {
         totalSats: spendable,
         spendableSats: spendable,
@@ -97,6 +120,8 @@ export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
         claimableLightningReceiveSats: claimableLnRecv,
         pendingBoardSats: pendingBoard,
         expiredUnrecoverableSats: 0,
+        onchainBoardingSats,
+        onchainConfirmingSats,
     };
 }
 

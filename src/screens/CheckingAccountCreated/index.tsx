@@ -264,7 +264,10 @@ export default function CheckingAccountCreated() {
             <Button text="Home"
                 onPress={nextClickHandler}
                 style={{...styles.button, ...{ backgroundColor: accentColor, marginTop: vaultTab ? 30 : 0 , marginBottom: 15} }}
-                textStyle={styles.btnText}
+                // Ark's accent moved yellow -> white, so white btnText blends
+                // into the white Ark button. Use black text for the Ark case;
+                // Strike/CoinOS keep white text on their pink button.
+                textStyle={isArk ? { ...styles.btnText, color: '#000000' } : styles.btnText}
             />
         </ScreenLayout>
     )

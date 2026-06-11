@@ -28,7 +28,7 @@ import {
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { FEATURE_ARK_ENABLED, getArkAddress, getArkOnchainAddress } from "@Cypher/services/ark";
+import { FEATURE_ARK_ENABLED, fetchArkMinBoardSats, getArkAddress, getArkOnchainAddress } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import Clipboard from "@react-native-clipboard/clipboard";
@@ -87,6 +87,17 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   // from the local Bark wallet handle — instant, no network.
   const [arkAddress, setArkAddress] = useState('');
   const [arkOnchainAddress, setArkOnchainAddress] = useState('');
+  // Live server minimum board amount for the on-chain receive warning (Ark
+  // tab 1). A deposit below this confirms on-chain but never boards into a
+  // VTXO. 50k sats fallback when the bark handle isn't open.
+  const [minBoardSats, setMinBoardSats] = useState(50000);
+  useEffect(() => {
+    let cancelled = false;
+    fetchArkMinBoardSats().then((min) => {
+      if (!cancelled && typeof min === 'number' && min > 0) setMinBoardSats(min);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const qrCode = useRef();
   const base64QrCodeRef = useRef('');
 
@@ -153,7 +164,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       }) : await createInvoiceStrike({
         onchain: {
         },
-        targetCurrency: strikeUser?.[1]?.currency || "USD"
+        targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
       });
       const hash = selectedItem == 2 ? response.hash : response.onchain?.address
       if (type == 'bitcoin') {
@@ -875,6 +886,9 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     </View>
                     <Text semibold style={styles.bitcoinAddressText}>
                       Deposit Bitcoin here to board funds into Ark on the next round
+                    </Text>
+                    <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 8, textAlign: 'center', fontWeight: '600' }}>
+                      Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Ark and would have to be recovered on-chain.
                     </Text>
                   </>
                 )}

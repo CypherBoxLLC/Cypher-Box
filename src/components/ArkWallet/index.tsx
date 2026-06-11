@@ -2,13 +2,21 @@ import { Text } from "@Cypher/component-library";
 import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
-import { ARK_VTXO_DUST_SATS, blocksToDays, cancelArkPendingRound } from "@Cypher/services/ark";
+import {
+    ARK_VTXO_DUST_SATS,
+    blocksToDays,
+    cancelArkPendingRound,
+    estimateArkOnchainRecover,
+    fetchArkMinBoardSats,
+    recoverArkOnchainBoard,
+} from "@Cypher/services/ark";
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
-import React, { useMemo } from "react";
-import { Image, Platform, TouchableOpacity, View } from "react-native";
+import React, { useContext, useMemo } from "react";
+import { Alert, Image, Platform, TouchableOpacity, View } from "react-native";
+import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import styles from "./styles";
 
 interface Props {
@@ -60,7 +68,15 @@ export default function ArkWallet({
         arkIosBackupReminderActive,
         arkRefreshStuck,
         setArkRefreshStuck,
+        arkBalanceDetail,
+        walletID,
     } = useAuthStore();
+
+    // Wallets list — used to resolve the active Hot Vault (an
+    // HDSegwitBech32Wallet keyed by `walletID`) for the F3 "Recover" flow,
+    // which drains a stuck on-chain boarding deposit back to a fresh Hot
+    // Vault change address. Same source HomeScreen uses to find the vault.
+    const { wallets } = useContext(BlueStorageContext);
 
     // Recovery handler for "stuck refresh" — fired when the user taps the
     // banner that surfaces when expired-on-chain VTXOs are still Locked in
@@ -83,6 +99,154 @@ export default function ArkWallet({
         }
         setArkRefreshStuck(null);
     }, [arkRefreshStuck, setArkRefreshStuck]);
+
+    // Live server minimum board amount, for classifying the un-boarded
+    // on-chain (boarding) balance below.
+    const [minBoardSats, setMinBoardSats] = React.useState(50000);
+    React.useEffect(() => {
+        let cancelled = false;
+        fetchArkMinBoardSats().then((min) => {
+            if (!cancelled && typeof min === 'number' && min > 0) setMinBoardSats(min);
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    // F3 recover state. `recovering` disables the row + relabels it while the
+    // drain tx is being built/broadcast. `boardingHiddenAfterRecover` hides
+    // the row optimistically the instant a recover succeeds, since the funds
+    // are leaving — the next balance write (each useArkSync tick replaces the
+    // object) is the source of truth and the effect below drops the optimistic
+    // hide so the row reflects reality again (stays gone if the drain cleared
+    // it, reappears honestly if a change UTXO remained).
+    const [recovering, setRecovering] = React.useState(false);
+    const [boardingHiddenAfterRecover, setBoardingHiddenAfterRecover] = React.useState(false);
+    React.useEffect(() => {
+        setBoardingHiddenAfterRecover(false);
+    }, [arkBalanceDetail]);
+
+    // Un-boarded on-chain "boarding" funds → a status row in the card.
+    //   confirmed < min  → STUCK (can never board; recover) [amber]
+    //   confirmed >= min → boarding in progress [green]
+    //   only unconfirmed → still confirming [green]
+    // Null = nothing to show (happy path). See .claude/ARK_STUCK_UTXO_UX_SPEC.md.
+    // The STUCK (below-min) row is tappable -> handleRecoverBoard (F3).
+    const boardingView = useMemo(() => {
+        // Optimistically suppressed right after a successful recover, until the
+        // next sync writes the real (cleared) balance.
+        if (boardingHiddenAfterRecover) return null;
+        const confirmed = arkBalanceDetail?.onchainBoardingSats ?? 0;
+        const confirming = arkBalanceDetail?.onchainConfirmingSats ?? 0;
+        if (confirmed <= 0 && confirming <= 0) return null;
+        if (confirmed > 0 && confirmed < minBoardSats) {
+            return {
+                sats: confirmed, color: '#FFD54F', stuck: true,
+                label: `Boarding (on-chain): ${confirmed} sats. Too small to board (min ${minBoardSats} sats).`,
+            };
+        }
+        if (confirmed >= minBoardSats) {
+            return {
+                sats: confirmed, color: colors.green, stuck: false,
+                label: `Boarding (on-chain): ${confirmed} sats. Joining the next round.`,
+            };
+        }
+        return {
+            sats: confirming, color: colors.green, stuck: false,
+            label: `Boarding (on-chain): ${confirming} sats. Confirming.`,
+        };
+    }, [arkBalanceDetail, minBoardSats, boardingHiddenAfterRecover]);
+
+    /**
+     * F3 — drain a stuck on-chain boarding deposit back to the Hot Vault.
+     *
+     * Shown only for the STUCK_BELOW_MIN row (a sub-50k deposit the ASP will
+     * never board). Resolves a fresh Hot Vault change address (the on-chain
+     * wallet the funds came from for in-app top-ups), confirms amount + fee in
+     * a modal, then calls the recover service. The bark SDK's OnchainWallet has
+     * no utxos()/drain(), so the destination is a Hot Vault address rather than
+     * the esplora-resolved original sender (see ARK_STUCK_UTXO_UX_SPEC.md).
+     */
+    const handleRecoverBoard = React.useCallback(async () => {
+        if (recovering) return;
+
+        // Resolve the active Hot Vault (HDSegwitBech32Wallet) by walletID.
+        const hotVault: any = (wallets || []).find(
+            (w: any) => typeof w?.getID === 'function' && w.getID() === walletID,
+        );
+        if (!hotVault || typeof hotVault._getInternalAddressByIndex !== 'function') {
+            Alert.alert('No Hot Vault found', 'Open or create your Hot Vault first, then try again.');
+            return;
+        }
+
+        let est;
+        try {
+            est = await estimateArkOnchainRecover(arkBalanceDetail?.onchainBoardingSats ?? 0);
+        } catch {
+            Alert.alert(
+                'Recovery unavailable',
+                'Could not read the on-chain balance right now. Check your connection and try again.',
+            );
+            return;
+        }
+
+        if (est.confirmedSats <= 0) {
+            // Already boarded / left in the meantime — nothing to do.
+            setBoardingHiddenAfterRecover(true);
+            return;
+        }
+        if (!est.economical) {
+            Alert.alert(
+                'Too small to recover',
+                'The network fee would be larger than the stuck amount, so recovering it on-chain would cost more than it returns.',
+            );
+            return;
+        }
+
+        // Fresh Hot Vault change address (no Electrum round-trip needed).
+        let destAddress: string;
+        try {
+            destAddress = hotVault._getInternalAddressByIndex(hotVault.getNextFreeChangeAddressIndex());
+        } catch {
+            Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to recover to.');
+            return;
+        }
+        if (!destAddress) {
+            Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to recover to.');
+            return;
+        }
+
+        Alert.alert(
+            'Recover stuck funds',
+            `Send ${est.recoverableSats} sats back to your Hot Vault? This is an on-chain transaction. The network fee is about ${est.feeSats} sats.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Recover',
+                    onPress: async () => {
+                        setRecovering(true);
+                        try {
+                            const res = await recoverArkOnchainBoard(destAddress, est.confirmedSats, est.feeRateSatPerVb);
+                            setBoardingHiddenAfterRecover(true);
+                            if (res.status === 'already-cleared') {
+                                Alert.alert('Nothing to recover', 'These funds already cleared.');
+                            } else {
+                                Alert.alert(
+                                    'Recovery sent',
+                                    `${res.sentSats} sats are on the way to your Hot Vault. They will appear there as a pending transaction.`,
+                                );
+                            }
+                        } catch (e: any) {
+                            Alert.alert(
+                                'Recovery failed',
+                                String(e?.message || '') || 'The recovery transaction could not be sent. Your funds are unchanged.',
+                            );
+                        } finally {
+                            setRecovering(false);
+                        }
+                    },
+                },
+            ],
+        );
+    }, [recovering, wallets, walletID, arkBalanceDetail]);
 
     // Strike + CoinOS + Ark: this combination pulls the Ark card up out
     // of position. Bump it down 10pt for this specific 3-Lightning combo
@@ -450,6 +614,31 @@ export default function ArkWallet({
                                         Refresh stuck · {arkRefreshStuck.stuckSats} sats — tap to recover
                                     </Text>
                                 </TouchableOpacity>
+                            )}
+                            {!isLoading && boardingView && (
+                                boardingView.stuck ? (
+                                    <TouchableOpacity
+                                        onPress={handleRecoverBoard}
+                                        disabled={recovering}
+                                        activeOpacity={0.7}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Recover stuck on-chain funds to your Hot Vault"
+                                    >
+                                        <Text h4 style={[styles.alert, { color: boardingView.color }]}>
+                                            {boardingView.label}{' '}
+                                            <Text
+                                                bold
+                                                style={{ color: boardingView.color, textDecorationLine: 'underline' }}
+                                            >
+                                                {recovering ? 'Recovering…' : 'Recover'}
+                                            </Text>
+                                        </Text>
+                                    </TouchableOpacity>
+                                ) : (
+                                    <Text h4 style={[styles.alert, { color: boardingView.color }]}>
+                                        {boardingView.label}
+                                    </Text>
+                                )
                             )}
                             {!isLoading && !arkRefreshStuck && bgRefreshStatus && (() => {
                                 const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;

@@ -573,7 +573,17 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // beneath the carousel for configs without a fiat slide (Coinos+Ark)
     // where the carousel auto-sizes to the short lightning/ark card.
     const BUTTON_ROW_HEIGHT = 47;
-    const BUTTONS_TOP = SHARED_SLIDE_HEIGHT + 20; // gap below card — bumped from 10pt to 20pt to drop the row 10pt lower
+    // Single custodial Lightning (Coinos XOR Strike) + Ark renders as 2 plain
+    // boxes, not the circular 2-custodial shape, so the gap reserved below the
+    // card is excess for this combo. Pull the shared Receive/Send row up to hug
+    // the card bottom here only. minHeight below stays on BUTTONS_TOP_BASE so
+    // ONLY the buttons rise — the vault block underneath keeps its position.
+    const custodialCount =
+        ((allBTCWallets as string[]).includes('STRIKE') ? 1 : 0) +
+        ((allBTCWallets as string[]).includes('COINOS') ? 1 : 0);
+    const oneCustodialPlusArk = custodialCount === 1 && hasArkWallet;
+    const BUTTONS_TOP_BASE = SHARED_SLIDE_HEIGHT + 20; // 153 — row 20pt below the card
+    const BUTTONS_TOP = oneCustodialPlusArk ? SHARED_SLIDE_HEIGHT + 12 : BUTTONS_TOP_BASE; // combo: row sits ~12pt below the card (some breathing room, less than the 20pt base)
     return (
         <View style={{
             width: screenWidth,
@@ -596,7 +606,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // Don't gate on which slide is active — keeping the container
             // size stable across swipes avoids layout jitter when the
             // user pages between Ark and Lightning.
-            ...(useSharedButtons ? { minHeight: BUTTONS_TOP + BUTTON_ROW_HEIGHT + (iosBackupReminderVisible ? 56 : 32) } : {}),
+            ...(useSharedButtons ? { minHeight: BUTTONS_TOP_BASE + BUTTON_ROW_HEIGHT + (iosBackupReminderVisible ? 56 : 32) } : {}),
         }}>
             <Animated.FlatList
                 ref={flatListRef}

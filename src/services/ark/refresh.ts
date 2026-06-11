@@ -233,6 +233,30 @@ export async function fetchArkRoundIntervalSecs(): Promise<number | null> {
 }
 
 /**
+ * Fetch the ASP's minimum board amount in sats. A top-up below this confirms
+ * on-chain but the server rejects `boardAll()` with BarkError.Internal
+ * ("board amount ... is less than minimum board amount required by server"),
+ * so the deposit never becomes a VTXO and the app retries forever. The UI
+ * gates Ark top-ups on this value. Returns `null` on any error / no handle so
+ * callers can fall back to a sane constant.
+ */
+export async function fetchArkMinBoardSats(): Promise<number | null> {
+    const handle = getArkWalletHandle();
+    if (!handle) return null;
+    try {
+        const info = await handle.arkInfo();
+        if (!info) return null;
+        return Number(info.minBoardAmountSats);
+    } catch (err: any) {
+        console.warn(
+            '[Ark] arkInfo (minBoard) threw:',
+            err?.message ?? err,
+        );
+        return null;
+    }
+}
+
+/**
  * Cancel a specific pending round. Wraps the SDK call to give callers a
  * uniform error-shape and keep the import surface consistent with the
  * other refresh helpers.

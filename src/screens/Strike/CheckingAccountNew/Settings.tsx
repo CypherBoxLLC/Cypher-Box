@@ -41,6 +41,7 @@ import {
   getDriveBackupInfo,
   getICloudBackupPath,
   getICloudBackupPathForFingerprint,
+  getLastLocalBackupNote,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
   isIgnoringBatteryOptimizations,
@@ -331,6 +332,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // Errors are swallowed; UI shows the loading or "no backup yet" state.
   type BackupInfo = { modifiedAt: number; sizeBytes: number };
   const [localBackup, setLocalBackup] = useState<BackupInfo | null | undefined>(null);
+  // Diagnostic note from the most recent local-backup write (e.g. "saved via
+  // direct write", or a failure reason). Surfaces the otherwise-silent local
+  // write outcome so a New-Arch RNFS regression can't hide as "Not yet".
+  const [localNote, setLocalNote] = useState<string | null>(null);
   const [iCloudAvailable, setICloudAvailable] = useState<boolean | null>(null);
   const [iCloudBackup, setICloudBackup] = useState<BackupInfo | null | undefined>(null);
   const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
@@ -356,10 +361,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    if (!arkBgRefreshEnabled) {
-      setBatteryNotExempt(null);
-      return;
-    }
+    // Probe regardless of the auto-refresh toggle. The battery-Unrestricted
+    // setting also gates the scheduled expiry-warning notifications (which
+    // fire whether or not auto-refresh is on), so the banner must show
+    // whenever the app isn't battery-exempt, not only while auto-refresh runs.
     let cancelled = false;
     const probe = async () => {
       try {
@@ -379,7 +384,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       cancelled = true;
       sub.remove();
     };
-  }, [arkBgRefreshEnabled]);
+  }, []);
 
   const handleToggleBgRefresh = async (next: boolean) => {
     if (togglingBgRefresh) return;
@@ -483,6 +488,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       } catch (e: any) {
         if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
       }
+      if (!cancelled) setLocalNote(getLastLocalBackupNote());
 
       // iCloud Drive (iOS only) — independent probe of the ubiquity
       // container. `isICloudBackupAvailable()` answers the gate question
@@ -1342,6 +1348,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   ? 'Files → On My iPhone → Cypher Box'
                   : 'Inside the app\'s private storage'}
               </Text>
+              {localNote && (
+                <Text style={{ fontSize: 11, color: localNote.startsWith('Local save failed') ? '#E85C5A' : '#888', marginTop: 2 }}>
+                  {localNote}
+                </Text>
+              )}
             </View>
 
             {/* iCloud Drive row (iOS) — independent probe of the ubiquity
@@ -1527,13 +1538,23 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 : '⚠ Auto-refresh is OFF — open Cypher Box once in a while and refresh Ark capsules before they expire. After expiry, the ASP can sweep them.'}
             </Text>
 
-            {/* Battery-exemption drift banner. Only shows on Android, only
-                when bg-refresh is on, and only after the probe has actually
-                returned a "not exempt" reading. */}
-            {arkBgRefreshEnabled && batteryNotExempt === true && (
+            {/* Battery-exemption banner. Shows on Android whenever the app is
+                NOT battery-exempt (i.e. not set to Unrestricted), regardless of
+                the auto-refresh toggle, because the battery setting also gates
+                the scheduled expiry-warning notifications. Hidden once the
+                probe reads "exempt" (Unrestricted). */}
+            {batteryNotExempt === true && (
               <TouchableOpacity
                 onPress={() => {
-                  openBatteryOptimizationSettings().catch((err) => {
+                  // Deep-link to this app's own settings page
+                  // (Settings > Apps > Cypher Box), where the user reaches
+                  // Battery > Unrestricted. Linking.openSettings() opens
+                  // ACTION_APPLICATION_DETAILS_SETTINGS, which is universal
+                  // across Android versions/OEMs. (The native
+                  // openBatteryOptimizationSettings landed on the generic
+                  // battery-optimisation allow-list, not this app's Battery
+                  // screen, which is what we actually want the user on.)
+                  Linking.openSettings().catch((err) => {
                     console.warn('[Ark bg refresh banner] open settings failed:', err);
                   });
                 }}
@@ -1548,10 +1569,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 }}
               >
                 <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
-                  ⚠ Battery optimisation is on for Cypher Box
+                  ⚠ Set Cypher Box battery to Unrestricted
                 </Text>
                 <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
-                  Auto-refresh may not run reliably until you exempt Cypher Box from battery optimisation. Tap to open Settings.
+                  Auto-refresh and capsule expiry alerts may not run reliably while battery optimisation is on. Tap here to open Cypher Box settings, then choose Battery and set it to Unrestricted.
                 </Text>
               </TouchableOpacity>
             )}

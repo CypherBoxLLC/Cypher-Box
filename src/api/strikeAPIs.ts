@@ -90,7 +90,7 @@ export const getStrikeDepositAddress = async (): Promise<{ bitcoinAddress: strin
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ onchain: {} }),
+      body: JSON.stringify({ onchain: {}, targetCurrency: 'BTC' }), // Cypher Box: receive as Bitcoin, no auto-convert to fiat
     });
     
 if (__DEV__) console.log('>>> API response status:', response.status);

@@ -42,7 +42,7 @@ export default function QrScreen({ route }: Props) {
             }) : await createInvoiceStrike({
                 onchain: {
                 },
-                targetCurrency: strikeUser?.[1]?.currency || "USD"
+                targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
             });
             const hash = receiveType ? response.hash : response.onchain?.address
             setHash(hash);

@@ -1,4 +1,4 @@
-import { getArkOnchainHandle, getArkWalletHandle } from './walletHandle';
+import { getArkOnchainHandle, getArkWalletHandle, setLastOnchainBalanceSats } from './walletHandle';
 
 /**
  * Pull round finalizations, incoming payments, and blockchain state from
@@ -64,6 +64,9 @@ export async function syncArkWallet(): Promise<boolean> {
             }
 
             const onchainBal = await onchain.balance();
+            // Cache this reliable post-sync read so fetchArkBalance can surface
+            // the on-chain (boarding) bucket without its own racy balance() call.
+            setLastOnchainBalanceSats(Number(onchainBal.confirmedSats), Number(onchainBal.pendingSats));
             const arkBal = await handle.balance();
 
             // Auto-board guard: only initiate if BDK sees confirmed funds

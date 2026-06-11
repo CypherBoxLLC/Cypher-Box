@@ -1,0 +1,86 @@
+name: Reproducible build verify
+
+# Security plan §11.8 / §5: prove the release AAB is byte-for-byte reproducible
+# from public source. UNSIGNED, NO secrets, hosted runner. The build runs
+# entirely inside the pinned Dockerfile.build image, so nothing here touches a
+# signing key or any project infrastructure (§0, §5.2). `make repro-verify`
+# builds the unsigned release AAB twice and asserts the two SHA-256s match; a
+# mismatch fails the job. The AAB + its SHA-256 are published as an artifact so
+# anyone can compare it against the Play binary (see walletscrutiny/).
+
+on:
+  push:
+    branches:
+      - main # verify reproducibility on each release-integration push to main
+  workflow_dispatch: {} # manual run for ad-hoc determinism checks
+
+# Least privilege: read the repo and nothing else. No write, no id-token, no
+# packages/deploy scope. Artifact upload uses the Actions runtime token, not
+# GITHUB_TOKEN, so this restriction does not block it.
+permissions:
+  contents: read
+
+concurrency:
+  group: build-verify-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repro-verify:
+    # Linux runner so the pinned linux/amd64 image runs NATIVELY (no emulation;
+    # the canonical arch the build targets). Reproducibility comes from the
+    # container toolchain, not the runner OS.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Free runner disk
+        # The repro image (Android SDK + NDK, several GB) plus two clean
+        # RN/Gradle builds need more than the ~14 GB a hosted runner ships free.
+        # Drop preinstalled toolchains this job never uses (it builds in Docker).
+        run: |
+          set -eux
+          df -h /
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/local/share/boost \
+            "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}" || true
+          sudo apt-get clean || true
+          df -h /
+
+      - name: Checkout the tagged commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Full history so the build's generated current-branch.json /
+          # release-notes.json are deterministic for the tag.
+          fetch-depth: 0
+
+      - name: Reproducible build x2 + assert identical SHA-256
+        # `make repro-verify` builds the unsigned AAB twice in the pinned
+        # container and exits non-zero on any byte difference. docker + make are
+        # preinstalled on the runner; no host JDK / SDK / node is used.
+        run: make repro-verify
+
+      - name: Record the unsigned AAB SHA-256
+        run: |
+          set -eux
+          shasum -a 256 out/app-release.aab | tee out/app-release.aab.sha256
+          {
+            echo '### Reproducible build verified'
+            echo
+            echo 'Unsigned release AAB SHA-256:'
+            echo '```'
+            cat out/app-release.aab.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish unsigned AAB + SHA-256
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: cypherbox-unsigned-aab-${{ github.sha }}
+          path: |
+            out/app-release.aab
+            out/app-release.aab.sha256
+          if-no-files-found: error
+          retention-days: 90

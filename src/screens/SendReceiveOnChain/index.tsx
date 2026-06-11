@@ -277,6 +277,13 @@ export default function SendReceiveOnChain({ route }: Props) {
                 </View>
                 <TextView keytext="Sent from: " text={`Bitcoin Address: ${shortenAddress(transaction?.inputs[0].addresses[0])}`} />
                 <TextView keytext="Received to: " text={`Bitcoin Address: ${shortenAddress(transaction?.outputs[0].scriptPubKey.addresses[0])}`} />
+                {/* Confirmation count, shown for every on-chain tx (sent or
+                    received). Mirrors transactionStatus.js's "6+" cap so the
+                    two detail screens read consistently. Uses the static
+                    transaction.confirmations (same value the Status row uses);
+                    it refreshes when the History list re-fetches and the user
+                    reopens the tx. */}
+                <TextView keytext="Confirmations: " text={(transaction?.confirmations ?? 0) > 6 ? '6+' : `${transaction?.confirmations ?? 0}`} />
                 {isSent &&
                     <>
                         <TextView keytext="Status: " text={

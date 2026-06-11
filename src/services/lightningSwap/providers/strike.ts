@@ -2,8 +2,9 @@
  * Strike lightning swap provider.
  *
  * Invoice creation is BTC-denominated. A swap is sats -> sats, so we ask
- * Strike for a bolt11 worth exactly `amountSats` and let Strike convert it
- * to the user's fiat balance on receipt (`targetCurrency`). We deliberately
+ * Strike for a bolt11 worth exactly `amountSats`, and it lands in the user's
+ * Strike Bitcoin balance as BTC (`targetCurrency: 'BTC'`; Cypher Box keeps
+ * received funds as Bitcoin, no fiat conversion). We deliberately
  * do NOT round-trip through fiat to build the invoice: doing so made Strike
  * re-derive the sat amount at its own rate, landing a few sats ABOVE the
  * request and overshooting the source rail's spendable balance near MAX.
@@ -55,10 +56,10 @@ const strikeProvider: LightningSwapProvider = {
     },
 
     async createInvoice(amountSats, _memo, sourceId /* _memo unused: Strike's bolt11 endpoint takes no description field */) {
-        const { strikeUser } = useAuthStore.getState();
-        // The currency Strike credits the user in on receipt (their account
-        // balance currency). This is NOT the invoice denomination — see below.
-        const targetCurrency = strikeUser?.[1]?.currency || 'USD';
+        // Cypher Box: land the swapped funds in the user's Strike Bitcoin
+        // balance as BTC/sats, not fiat. Strike's receive-side fiat
+        // auto-conversion is intentionally not used anywhere in Cypher Box.
+        const targetCurrency = 'BTC';
 
         // Denominate the invoice in BTC, not fiat.
         //
@@ -71,10 +72,8 @@ const strikeProvider: LightningSwapProvider = {
         // near MAX with "not enough balance".
         //
         // Encoding in BTC removes the round-trip entirely: the bolt11 carries
-        // exactly `amountSats`. `targetCurrency` stays the user's account
-        // currency, so Strike still converts to fiat and credits their fiat
-        // balance on receipt (its core feature). Only the denomination the
-        // payer settles is changing, not what the user ends up holding.
+        // exactly `amountSats`, and with `targetCurrency: 'BTC'` Strike credits
+        // the user's Bitcoin balance with those sats (no fiat conversion).
         const amountBtc = satsToBtcString(amountSats);
 
         const response = await strikeCreateInvoice({

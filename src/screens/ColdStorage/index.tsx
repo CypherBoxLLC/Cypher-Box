@@ -497,7 +497,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         setChangeFetchLoading(true);
         try {
             if (destination === 'STRIKE') {
-                const response = await createInvoiceStrike({ onchain: {} });
+                const response = await createInvoiceStrike({ onchain: {}, targetCurrency: "BTC" }); // Cypher Box: receive as Bitcoin, no auto-convert to fiat
                 if (response?.onchain?.address) {
                     setChangeDepositAddress(response.onchain.address);
                 } else {
@@ -1182,7 +1182,22 @@ export default function ColdStorage({ route, navigation }: Props) {
                                         { marginTop: 0, marginBottom: 5, gap: 12, paddingHorizontal: 4 },
                                       ]}
                                     >
-                                      {data?.map((item) => {
+                                      {data?.filter((item) => {
+                                        // When a single destination was committed upstream
+                                        // (e.g. the home Top-up flow, where the account is
+                                        // chosen on the prior screen, so only one of
+                                        // to/toStrike/toArk is passed), hide the non-chosen
+                                        // provider cards rather than greying them. When 2+
+                                        // destinations are passed (the capsule flow lets the
+                                        // user pick the provider on this screen), keep all
+                                        // cards visible. Presentation-only: does not change
+                                        // selectedItem / destinationAddress routing.
+                                        if ([to, toStrike, toArk].filter(Boolean).length > 1) return true;
+                                        if (item.id === 1) return !!toStrike; // Strike
+                                        if (item.id === 2) return !!to;       // CoinOS
+                                        if (item.id === 3) return !!toArk;    // Ark Vault
+                                        return true;
+                                      }).map((item) => {
                                         const isSelected = selectedItem === item?.id;
                                         return (
                                           <GradientView
@@ -1312,13 +1327,18 @@ export default function ColdStorage({ route, navigation }: Props) {
                                           Clipboard.setString(fullAddr);
                                           SimpleToast.show('Address copied', SimpleToast.SHORT);
                                         }}
-                                        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}
+                                        // Stack the address over the copy link instead of
+                                        // sharing a row. A P2TR (bc1p, 62-char) boarding
+                                        // address competing with the copy link for row width
+                                        // wrapped to 3 lines with "copy" stranded mid-address.
+                                        // Full-width address wraps to ~2 lines; copy sits below.
+                                        style={{ marginTop: 4 }}
                                       >
-                                        <Text style={{ fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888', flex: 1 }}>
+                                        <Text style={{ fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888' }}>
                                           {vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(fullAddr)}
                                         </Text>
                                         {!!fullAddr &&
-                                          <Text style={{ fontSize: 10, color: '#888', marginLeft: 8, textDecorationLine: 'underline' }}>copy</Text>
+                                          <Text style={{ fontSize: 10, color: '#888', marginTop: 3, alignSelf: 'flex-end', textDecorationLine: 'underline' }}>copy</Text>
                                         }
                                       </TouchableOpacity>
                                     );

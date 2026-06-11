@@ -1,0 +1,16 @@
+# gitleaks config for Cypher Box.
+#
+# Extends the built-in ruleset and allowlists self-documenting template files
+# that intentionally carry placeholder "secrets". The real secrets are never
+# committed (gitignored): .env, blue_modules/secrets.ts, src/services/ark/secrets.ts.
+title = "Cypher Box gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Template / example files with placeholder values"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''\.example\.(ts|js|json)$''',
+]

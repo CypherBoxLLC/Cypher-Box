@@ -6,7 +6,13 @@ module.exports = {
     'rn-ldk': {
       platforms: {
         ios: null, // Disable autolinking for ios
-        // android: null, // Uncomment if you also want to disable autolinking for Android
+        // LDK is a deprecated, unused BlueWallet feature (Cypher Box Lightning is
+        // Strike / Coinos / Ark; the LDK wallet button is backdoor-gated and never
+        // reachable in normal UI). Disable Android autolinking too so the dead RnLdk
+        // native module isn't built or registered. Combined with dropping the
+        // LDK-release.aar from app/build.gradle, this removes the 4 KB-aligned
+        // liblightningjni.so that blocked Google Play's 16 KB page-size requirement.
+        android: null, // Disable autolinking for android (16 KB page-size; LDK unused)
       },
     },
     '@react-native-community/art': {

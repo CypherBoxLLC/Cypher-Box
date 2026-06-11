@@ -109,3 +109,7 @@ artifacts/
 # Local-only TS secrets module (relay API key etc). Per-developer / per-CI;
 # never committed. The .example.ts template DOES live in git.
 blue_modules/secrets.ts
+
+# Reproducible-build outputs: `make repro-build` AAB + walletscrutiny verdict file
+/out/
+walletscrutiny/COMPARISON_RESULTS.yaml

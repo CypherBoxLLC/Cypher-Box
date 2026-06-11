@@ -174,7 +174,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                     const responseStrike = await createInvoiceStrike({
                         onchain: {
                         },
-                        targetCurrency: strikeUser?.[1].currency || "USD"
+                        targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
                     });
                     console.warn('responseStrike: ', responseStrike)
                     setBitcoinStrikeHash(responseStrike.onchain?.address)

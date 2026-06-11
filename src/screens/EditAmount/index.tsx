@@ -8,6 +8,8 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import VaultCapsules from "../../components/VaultCapsules";
 import Capsule from "../HotStorageVault/Capsule";
 import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
+import SimpleToast from "react-native-simple-toast";
+import { fetchArkMinBoardSats } from "@Cypher/services/ark";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const SATS = 100_000_000;
@@ -34,12 +36,37 @@ export default function SendScreen({ route, navigation }: Props) {
         }
     }, [total, inUSD, isEdit])
 
+    // Ark boarding has a server-enforced minimum. A top-up below it confirms
+    // on-chain but never boards into a VTXO (the ASP rejects boardAll with
+    // "board amount ... less than minimum board amount required by server"),
+    // leaving the funds stuck and the app retrying forever. Gate the home
+    // Top-up -> Ark flow here (single Ark destination: toArk set, no
+    // Strike/CoinOS rail). Live minimum from arkInfo; 50k sats fallback.
+    const isArkDest = !!toArk && !to && !toStrike;
+    const [minBoardSats, setMinBoardSats] = useState(50000);
+    useEffect(() => {
+        if (!isArkDest) return;
+        let cancelled = false;
+        fetchArkMinBoardSats().then(min => {
+            if (!cancelled && typeof min === 'number' && min > 0) setMinBoardSats(min);
+        });
+        return () => { cancelled = true; };
+    }, [isArkDest])
+
     const nextClickHandler = () => {
+        if (isArkDest && currentSatsAmount < minBoardSats) {
+            SimpleToast.show(`Ark needs at least ${minBoardSats} sats to board. This top-up is ${currentSatsAmount} sats.`, SimpleToast.LONG);
+            return;
+        }
         setSatsEdit && setSatsEdit();
         dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, toStrike, toArk, to, title, isBatch, capsuleTotal });
     }
 
     const maxSendClickHandler = () => {
+        if (isArkDest && totalSelectedSats < minBoardSats) {
+            SimpleToast.show(`Ark needs at least ${minBoardSats} sats to board. Your selected total is ${totalSelectedSats} sats.`, SimpleToast.LONG);
+            return;
+        }
         setSatsEdit && setSatsEdit();
         dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, isMaxEdit: true, matchedRate, capsulesData, vaultSend, to, toStrike, toArk, title, isBatch, capsuleTotal });
     }
