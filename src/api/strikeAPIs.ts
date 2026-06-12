@@ -90,7 +90,7 @@ export const getStrikeDepositAddress = async (): Promise<{ bitcoinAddress: strin
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ onchain: {} }),
+      body: JSON.stringify({ onchain: {}, targetCurrency: 'BTC' }), // Cypher Box: receive as Bitcoin, no auto-convert to fiat
     });
     
 if (__DEV__) console.log('>>> API response status:', response.status);
@@ -111,9 +111,19 @@ if (__DEV__) console.log('>>> API response data:', JSON.stringify(data));
 export const sendStrikeLightningPayment = async (invoice: string, amount?: number): Promise<any> => {
   try {
     const idempotencyKey = uuidv4();
-    
+
     // Step 1: Create Lightning payment quote
-    const quoteData: any = { invoice };
+    //
+    // Strike's `/payment-quotes/lightning` endpoint REQUIRES the BOLT11
+    // to be passed as `lnInvoice` (not `invoice`). The previous shape
+    // here always 400'd with:
+    //   validationErrors.lnInvoice = "The field lnInvoice is required"
+    // The helper had this wrong field name from day one — the only
+    // pre-existing call site (ConfirmTransction) had never actually
+    // succeeded against the Strike API. Don't rename the *parameter*
+    // (callers still pass it as a positional arg called "invoice"); only
+    // the request body field needs to match Strike's contract.
+    const quoteData: any = { lnInvoice: invoice };
     if (amount) {
       quoteData.amount = amount;
     }
@@ -128,12 +138,28 @@ export const sendStrikeLightningPayment = async (invoice: string, amount?: numbe
     }));
     
     if (!quoteResponse.ok) {
-      throw new Error(`Strike quote error: ${quoteResponse.status}`);
+      // Surface Strike's error body so callers can show the user what
+      // actually went wrong (e.g. "INVALID_INVOICE" / "ROUTE_NOT_FOUND")
+      // instead of just an opaque HTTP status.
+      let body = '';
+      try { body = await quoteResponse.text(); } catch { /* ignore */ }
+      // 401 = Strike OAuth token expired. Strike's tokens are not
+      // auto-refreshed (unlike CoinOS) — the user has to re-login.
+      // Clear the stored auth so the next render redirects them to
+      // CheckingAccountLogin instead of leaving them stuck on a
+      // wallet card whose balance reads now-stale data.
+      if (quoteResponse.status === 401) {
+        useAuthStore.getState().clearStrikeAuth();
+        throw new Error('Strike session expired — please log into Strike again.');
+      }
+      throw new Error(
+        `Strike quote error: ${quoteResponse.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+      );
     }
-    
+
     const quoteDataResponse = await quoteResponse.json();
     const paymentQuoteId = quoteDataResponse.paymentQuoteId;
-if (__DEV__) console.log('Lightning payment quote ID:', paymentQuoteId);
+    if (__DEV__) console.log('Lightning payment quote ID:', paymentQuoteId, 'full response:', JSON.stringify(quoteDataResponse));
     
     // Step 2: Execute the Lightning payment
     const executeResponse = await fetch(`${BASE_URL}/payment-quotes/${paymentQuoteId}/execute`, await withAuthToken({
@@ -144,7 +170,15 @@ if (__DEV__) console.log('Lightning payment quote ID:', paymentQuoteId);
     }));
     
     if (!executeResponse.ok) {
-      throw new Error(`Strike execute error: ${executeResponse.status}`);
+      let body = '';
+      try { body = await executeResponse.text(); } catch { /* ignore */ }
+      if (executeResponse.status === 401) {
+        useAuthStore.getState().clearStrikeAuth();
+        throw new Error('Strike session expired — please log into Strike again.');
+      }
+      throw new Error(
+        `Strike execute error: ${executeResponse.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+      );
     }
     
     const executeData = await executeResponse.json();
@@ -355,6 +389,76 @@ export const getInvoices = async () => {
         console.error('Error fetching invoices by strike:', error);
         throw error;
     }
+};
+
+/**
+ * Poll Strike for the terminal state of a Lightning payment that came back
+ * from `/payment-quotes/{id}/execute` as `PENDING`. The execute endpoint
+ * returns immediately once Strike accepts the invoice into its routing
+ * queue — the payment then takes a few seconds to settle on the Lightning
+ * network. Callers that need a definitive success/failure signal must poll
+ * `GET /payments/{paymentId}` until the state transitions to one of:
+ *   - `COMPLETED` → settled, funds left Strike
+ *   - `FAILED`    → LN routing gave up; funds returned to Strike balance
+ *   - `REVERSED`  → settled then refunded (rare; treat as failure)
+ *
+ * Polls every `intervalMs` for at most `timeoutMs`. Returns the final
+ * payment record; caller decides how to react to the terminal state.
+ * If the timeout elapses while still PENDING/NEW, returns the last
+ * observed record with state intact — caller can decide whether to
+ * treat that as a soft failure or keep waiting in the background.
+ *
+ * Why polling and not webhooks: Strike's webhook delivery requires a
+ * public HTTPS endpoint we don't have for the mobile client. Polling
+ * is the canonical approach for mobile-only Strike integrations.
+ */
+export const getStrikePaymentStatus = async (paymentId: string): Promise<any> => {
+    try {
+        const response = await fetch(`${BASE_URL}/payments/${paymentId}`, await withAuthToken({
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+        }));
+        if (response.status === 401) {
+            useAuthStore.getState().clearStrikeAuth();
+            throw new Error('Strike session expired — please log into Strike again.');
+        }
+        if (!response.ok) {
+            let body = '';
+            try { body = await response.text(); } catch { /* ignore */ }
+            throw new Error(
+                `Strike payment-status error: ${response.status}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+            );
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching Strike payment status:', error);
+        throw error;
+    }
+};
+
+export const pollStrikePaymentUntilTerminal = async (
+    paymentId: string,
+    opts: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<any> => {
+    const timeoutMs = opts.timeoutMs ?? 30_000;
+    const intervalMs = opts.intervalMs ?? 1_000;
+    const start = Date.now();
+    let last: any = null;
+    while (Date.now() - start < timeoutMs) {
+        last = await getStrikePaymentStatus(paymentId);
+        const state = String(last?.state ?? '').toUpperCase();
+        if (__DEV__) {
+            console.log('[Strike] poll payment', paymentId.slice(0, 8), 'state=', state);
+        }
+        if (state === 'COMPLETED' || state === 'FAILED' || state === 'REVERSED') {
+            return last;
+        }
+        await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    if (__DEV__) {
+        console.log('[Strike] poll payment', paymentId.slice(0, 8), 'TIMEOUT after', timeoutMs, 'ms; last state=', last?.state);
+    }
+    return last;
 };
 
 // ===== Account Profile & Limits =====

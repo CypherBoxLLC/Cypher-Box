@@ -1,0 +1,22 @@
+# gitleaks config for Cypher Box.
+#
+# Extends the built-in ruleset and allowlists self-documenting template files
+# that intentionally carry placeholder "secrets". The real secrets are never
+# committed (gitignored): .env, blue_modules/secrets.ts, src/services/ark/secrets.ts.
+title = "Cypher Box gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Template / example files with placeholder values; lockfiles with package integrity hashes"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''\.example\.(ts|js|json)$''',
+  # Podfile.lock entries like `AppAuth: <sha1>` are CocoaPods pod-tarball
+  # integrity checksums, not secrets. Same for package-lock.json's `integrity`
+  # fields (sha512 of npm tarballs). Both are deterministic, regenerable, and
+  # have no secret value, but match the generic-api-key heuristic.
+  '''(^|/)Podfile\.lock$''',
+  '''(^|/)package-lock\.json$''',
+]

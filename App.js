@@ -35,6 +35,13 @@ import triggerHapticFeedback, { HapticFeedbackTypes } from './blue_modules/hapti
 import MenuElements from './components/MenuElements';
 import PaymentNotification from './src/components/PaymentNotification';
 import { updateExchangeRate } from './blue_modules/currency';
+// Side-effect import: configures the Google Drive OAuth client at app
+// startup using the GOOGLE_WEB_CLIENT_ID from .env (via react-native-
+// config). No-op on iOS and on Android if the env var is unset; we
+// fall through silently to "Drive backup disabled" rather than crash.
+// Source of truth for the env-pull lives in the bootstrap file — this
+// is the single import that activates it.
+import './src/services/ark/googleDriveBootstrap';
 const A = require('./blue_modules/analytics');
 
 const eventEmitter = Platform.OS === 'ios' ? new NativeEventEmitter(NativeModules.EventEmitter) : undefined;
@@ -243,16 +250,21 @@ const App = () => {
       const isLightningInvoice = DeeplinkSchemaMatch.isLightningInvoice(clipboard);
       const isLNURL = DeeplinkSchemaMatch.isLnUrl(clipboard);
       const isBothBitcoinAndLightning = DeeplinkSchemaMatch.isBothBitcoinAndLightning(clipboard);
+      // Cypher Box: BlueWallet's "You have a Lightning invoice on your
+      // clipboard" prompt is suppressed — the Send screen now decodes
+      // pasted BOLT11 invoices locally (see src/screens/Send), so the
+      // OS-level prompt is redundant and was firing even when the user
+      // had no actionable Lightning rail. Bitcoin / both-rail prompts
+      // still surface (Bam hasn't asked to remove those).
       if (
         !isAddressFromStoredWallet &&
         clipboardContent.current !== clipboard &&
-        (isBitcoinAddress || isLightningInvoice || isLNURL || isBothBitcoinAndLightning)
+        (isBitcoinAddress || isBothBitcoinAndLightning) &&
+        !(isLightningInvoice || isLNURL)
       ) {
         let contentType;
         if (isBitcoinAddress) {
           contentType = ClipboardContentType.BITCOIN;
-        } else if (isLightningInvoice || isLNURL) {
-          contentType = ClipboardContentType.LIGHTNING;
         } else if (isBothBitcoinAndLightning) {
           contentType = ClipboardContentType.BITCOIN;
         }

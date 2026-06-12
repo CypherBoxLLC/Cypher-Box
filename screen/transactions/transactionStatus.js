@@ -165,10 +165,10 @@ const TransactionsStatus = () => {
   };
 
   useEffect(() => {
-    BackHandler.addEventListener('hardwareBackPress', handleBackButton);
+    const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackButton);
 
     return () => {
-      BackHandler.removeEventListener('hardwareBackPress', handleBackButton);
+      subscription.remove();
       clearInterval(fetchTxInterval.current);
       fetchTxInterval.current = undefined;
     };
@@ -361,7 +361,7 @@ const TransactionsStatus = () => {
       <HandoffComponent
         title={loc.transactions.details_title}
         type={HandoffComponent.activityTypes.ViewInBlockExplorer}
-        url={`https://mempool.space/tx/${tx.hash}`}
+        url={`https://mempool.space/tx/${tx.hash}#details`}
       />
 
       <View style={styles.container}>

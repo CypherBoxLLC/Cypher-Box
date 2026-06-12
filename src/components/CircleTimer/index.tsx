@@ -16,6 +16,11 @@ type CircleTimerProps = {
   convertedValue?: string;
   image?: ImageSourcePropType;
   type?: string
+  /** Raw sat balance for the percentage calc. Prefer this over
+   *  re-parsing the formatted `value` string — once the display
+   *  switches to K/M (`"5.86K sats"`), the split-parse returns NaN
+   *  and the SVG arc renders fully filled. */
+  balanceSats?: number;
 };
 
 const COLORS = {
@@ -34,6 +39,7 @@ const CircleTimer = ({
   convertedValue,
   image,
   type,
+  balanceSats,
 }: CircleTimerProps) => {
   const {withdrawStrikeThreshold, withdrawThreshold, reserveAmount, reserveStrikeAmount} = useAuthStore()
   const radius = (size - strokeWidth) / 2;
@@ -67,8 +73,14 @@ const CircleTimer = ({
   const thresholdX = centerX + radius * Math.cos(thresholdAngleRad);
   const thresholdY = centerY + radius * Math.sin(thresholdAngleRad);
 
+  // Prefer the explicit numeric prop; fall back to parsing `value` for
+  // legacy callers that haven't been migrated. Anything that produces
+  // NaN (e.g. "5.86K sats") would otherwise fill the arc completely.
+  const parsedBalance = balanceSats !== undefined
+    ? Number(balanceSats)
+    : Number(value?.split(' ')[0]);
   const balancePercentage = calculateBalancePercentage(
-    Number(value?.split(' ')[0]), // or parseFloat(value) if it's string
+    Number.isFinite(parsedBalance) ? parsedBalance : 0,
     Number(type == "STRIKE" ? withdrawStrikeThreshold : withdrawThreshold),
     Number(type == "STRIKE" ? reserveStrikeAmount : reserveAmount)
   );
@@ -80,7 +92,7 @@ const CircleTimer = ({
   const thresholdMet = balancePercentage >= 100;
 
   return (
-    <View style={[styles.container, { width: size, height: size / 2 }]}>
+    <View style={[styles.container, { width: size, height: size / 2 + 2, marginTop: -2 }]}>
       <View style={thresholdMet ? {
         shadowColor: '#e84393',
         shadowOffset: { width: 0, height: 0 },

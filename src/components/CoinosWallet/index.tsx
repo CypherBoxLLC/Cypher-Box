@@ -17,6 +17,7 @@ interface Props {
     refSendRBSheet: any;
     setReceiveType: any;
     homeMessage?: string | null;
+    hideActionButtons?: boolean;
 }
 
 export default function CoinosWallet({
@@ -30,6 +31,7 @@ export default function CoinosWallet({
     refSendRBSheet,
     setReceiveType,
     homeMessage,
+    hideActionButtons = false,
 }: Props) {
     const { isAuth, withdrawThreshold, reserveAmount, clearAuth } = useAuthStore();
 
@@ -75,18 +77,25 @@ export default function CoinosWallet({
                         withdrawThreshold={withdrawThreshold}
                         onPress={checkingAccountClickHandler}
                         isShowButtons
+                        hideActionButtons={hideActionButtons}
                         matchedRate={matchedRate}
                         currency={currency}
                         receiveClickHandler={receiveClickHandler}
                         sendClickHandler={sendClickHandler}
                     />
-                    <View style={{ minHeight: 40, justifyContent: 'center' }}>
-                        {!isLoading && homeMessage &&
-                            <Text h4 style={styles.alert}>
-                                {homeMessage}
-                            </Text>
-                        }
-                    </View>
+                    {/* When shared buttons are active (`hideActionButtons`),
+                        skip this minHeight-40 reserve so the shared row can
+                        sit flush below the card. Otherwise it left a 40px
+                        gap that Bam called "way below". */}
+                    {!hideActionButtons && (
+                        <View style={{ minHeight: 40, justifyContent: 'center' }}>
+                            {!isLoading && homeMessage &&
+                                <Text h4 style={styles.alert}>
+                                    {homeMessage}
+                                </Text>
+                            }
+                        </View>
+                    )}
                 </>
             }
 

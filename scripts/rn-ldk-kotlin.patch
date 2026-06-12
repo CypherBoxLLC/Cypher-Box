@@ -1,0 +1,11 @@
+--- a/node_modules/rn-ldk/android/src/main/java/com/rnldk/RnLdkModule.kt
++++ b/node_modules/rn-ldk/android/src/main/java/com/rnldk/RnLdkModule.kt
+@@ -301,7 +301,7 @@
+       promise.resolve("hello ldk");
+     } catch (e: Exception) {
+       println("ReactNativeLDK: can't start, " + e.message);
+-      promise.reject(e.message);
++      promise.reject(e.message ?: "Unknown error");
+     }
+   }
+

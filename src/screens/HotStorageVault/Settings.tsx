@@ -14,12 +14,19 @@ import * as bitcoin from 'bitcoinjs-lib';
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
 
+import SimpleToast from "react-native-simple-toast";
+
 import { PrivateKeyGenerater, Tips } from "@Cypher/components";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { AbstractHDElectrumWallet } from "../../../class/wallets/abstract-hd-electrum-wallet";
 import { dispatchNavigate } from "@Cypher/helpers";
 import Biometric from "../../../class/biometrics";
+import {
+    backupHotVaultSeedWithMeta,
+    resetHotVaultBackupFully,
+} from "@Cypher/services/hotVaultKeychain";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
 import loc from "../../../loc";
 import Notifications from "../../../blue_modules/notifications";
@@ -39,7 +46,20 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
     const [right] = useState(new RNAnimated.Value(0));
     const [viewType, setViewType] = useState(0);
     const { wallets, isAdvancedModeEnabled, saveToDisk, deleteWallet } = useContext(BlueStorageContext);
-    const { setWalletID, setColdStorageWalletID, vaultTab, walletID, coldStorageWalletID } = useAuthStore()
+    const {
+        setWalletID,
+        setColdStorageWalletID,
+        vaultTab,
+        walletID,
+        coldStorageWalletID,
+        hotVaultKeychainBackups,
+        setHotVaultKeychainBackup,
+    } = useAuthStore();
+    const [keychainBusy, setKeychainBusy] = useState(false);
+    const thisWalletID = wallet?.getID?.();
+    const isKeychainBackedUp = thisWalletID
+        ? !!hotVaultKeychainBackups?.[thisWalletID]
+        : false;
     // const wallet = vaultTab ? useRef(wallets.find(w => w.getID() === coldStorageWalletID)).current : useRef(wallets.find(w => w.getID() === walletID)).current;
     const routeName = useRoute().name;
     const navigation = useNavigation();
@@ -126,6 +146,82 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
         // });
     }
 
+    /**
+     * Retroactive "save seed to Keychain" for an existing hot vault.
+     *
+     * Distinct from the creation-time opt-in on SavingVault: this path is for
+     * users who either declined the Switch at creation, or existed before
+     * Keychain backup shipped. Reads the mnemonic directly from the in-memory
+     * wallet object (already decrypted by BlueApp on launch), so no extra
+     * biometric prompt — the write itself is silent with our access-control
+     * settings; only the future READ will prompt FaceID/passcode.
+     */
+    const handleKeychainBackup = async () => {
+        if (keychainBusy) return;
+        const mnemonic = wallet?.getSecret?.();
+        if (!thisWalletID || !mnemonic) {
+            SimpleToast.show("Could not read vault seed", SimpleToast.SHORT);
+            return;
+        }
+        setKeychainBusy(true);
+        // Retroactive backup from vault Settings — stamp `createdAt` with
+        // "now" so the row in the Recover picker reflects when the user
+        // actually chose to back this vault up, not when the wallet
+        // itself was generated. Same helper as the create flow so both
+        // paths end up with a matching meta sidecar.
+        const result = await backupHotVaultSeedWithMeta(
+            thisWalletID,
+            mnemonic,
+            { createdAt: Date.now() },
+        );
+        setKeychainBusy(false);
+        if (result.ok) {
+            setHotVaultKeychainBackup(thisWalletID, true);
+            triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
+            SimpleToast.show("Seed backed up to Keychain", SimpleToast.SHORT);
+        } else {
+            console.warn("[HotVault] Keychain save failed:", result.error);
+            SimpleToast.show("Keychain save failed", SimpleToast.LONG);
+        }
+    };
+
+    const handleKeychainRemove = () => {
+        if (keychainBusy || !thisWalletID) return;
+        Alert.alert(
+            "Remove Keychain backup?",
+            "The 12 words will be removed from this device's Keychain. Your wallet and its paper backup are not affected. You can re-enable this anytime.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Remove",
+                    style: "destructive",
+                    onPress: async () => {
+                        setKeychainBusy(true);
+                        // Full wipe — seed + meta sidecar. Leaving a meta
+                        // orphan would make the Recover screen render a
+                        // legacy-looking row for a vault the user just
+                        // asked to remove; `resetHotVaultBackupFully`
+                        // tears down both atomically (from caller POV).
+                        const ok = await resetHotVaultBackupFully(
+                            thisWalletID,
+                        );
+                        setKeychainBusy(false);
+                        // Clear the zustand hint either way — if the Keychain
+                        // call failed, the entry may or may not still exist,
+                        // but the user asked to forget about it and we'd
+                        // rather be optimistic than leave a stale "✓".
+                        setHotVaultKeychainBackup(thisWalletID, false);
+                        if (ok) {
+                            triggerHapticFeedback(
+                                HapticFeedbackTypes.NotificationSuccess,
+                            );
+                        }
+                    },
+                },
+            ],
+        );
+    };
+
     const backClickHandler = () => {
         // secondView.value = withTiming(0, {
         //     duration: 1000,
@@ -201,8 +297,25 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
             externalAddresses = wallet.getAllExternalAddresses();
         } catch (_) { }
         Notifications.unsubscribe(externalAddresses, [], []);
+
+        // DO NOT wipe the Keychain backup on wallet delete. The whole point
+        // of the Keychain backup is to survive wallet deletion and app
+        // reinstall so the user can recover via the "Recover from Keychain"
+        // flow. Tearing it down here would make that flow useless in the
+        // most common recovery scenario (user deletes a vault they meant to
+        // keep, or wipes app data). The Recover screen's enumeration is the
+        // canonical UI path to surface any retained backups. Explicit
+        // "remove backup" still exists in vault Settings for users who want
+        // to purge the Keychain entry while keeping the wallet.
+
         deleteWallet(wallet);
         vaultTab ? setColdStorageWalletID(undefined) : setWalletID(undefined);
+        // Activity log: only emit for cold-vault deletions; hot-vault
+        // deletions are intentionally not logged (Bam's call — symmetry
+        // isn't a strong enough reason to ship an unrequested event kind).
+        if (vaultTab) {
+            recordEvent({ kind: 'cold-vault-deleted' });
+        }
         dispatchReset('HomeScreen');
         saveToDisk(true);
         triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
@@ -404,7 +517,21 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
                     <ActivityIndicator color={'white'} />
                 </View>
             :
-                <RNAnimated.View style={[styles.main, { right: right }]}>
+                // Animation target: slide the row container left to
+                // expose the second panel (settingView2). Originally
+                // used `style={{ right: <Animated.Value> }}`, which
+                // iOS honored as a layout offset on a non-positioned
+                // View but Android (and especially Fabric under RN
+                // 0.76 New Arch) silently ignored — the seed-reveal
+                // button appeared to do nothing. translateX is the
+                // portable equivalent: `right` increasing by N is the
+                // same as `translateX` of -N.
+                <RNAnimated.View
+                    style={[
+                        styles.main,
+                        { transform: [{ translateX: RNAnimated.multiply(right, -1) }] },
+                    ]}
+                >
                     <View style={styles.settingView}>
                         {/* <View style={styles.rowview}>
                             <Text bold style={styles.text}>Name Your Vault</Text>
@@ -416,7 +543,30 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
                                 <TouchableOpacity onPress={backupSeedPhraseClickHandler}>
                                     <Text bold style={styles.text}>Backup Seed Phrase</Text>
                                 </TouchableOpacity>
-                                <View style={styles.line} />                        
+                                <View style={styles.line} />
+                                {/*
+                                  Keychain backup tile. Hidden on cold vault
+                                  (!vaultTab) because cold vaults are typed-in
+                                  watch-only xpubs with no on-device secret to
+                                  back up — the seed lives on the signing device.
+                                */}
+                                <TouchableOpacity
+                                    onPress={
+                                        isKeychainBackedUp
+                                            ? handleKeychainRemove
+                                            : handleKeychainBackup
+                                    }
+                                    disabled={keychainBusy}
+                                >
+                                    <Text bold style={styles.text}>
+                                        {keychainBusy
+                                            ? "Updating Keychain…"
+                                            : isKeychainBackedUp
+                                            ? "Seed saved to Keychain ✓ — Remove"
+                                            : "Back up seed to iPhone Keychain"}
+                                    </Text>
+                                </TouchableOpacity>
+                                <View style={styles.line} />
                             </>
                         }
                         {wallet instanceof AbstractHDElectrumWallet && (

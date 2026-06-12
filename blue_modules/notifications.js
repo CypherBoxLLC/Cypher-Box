@@ -16,8 +16,6 @@ let alreadyConfigured = false;
 let baseURI = constants.groundControlUri;
 
 function Notifications(props) {
-  console.log('[Notifications] Function called, props:', !!props);
-  console.log('[Notifications] Notifications.getPushToken BEFORE:', typeof Notifications.getPushToken);
   async function _setPushToken(token) {
     token = JSON.stringify(token);
     return AsyncStorage.setItem(PUSH_TOKEN, token);
@@ -456,7 +454,7 @@ function Notifications(props) {
     }
   })();
 
-  return Notifications;
+  return null;
 }
 
 export default Notifications;

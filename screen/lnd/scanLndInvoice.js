@@ -84,7 +84,13 @@ const ScanLndInvoice = () => {
       if (!wallet) {
         triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
         goBack();
-        setTimeout(() => alert(loc.wallets.no_ln_wallet_error), 500);
+        // Cypher Box: BlueWallet's "no LN wallet" alert was firing for
+        // Strike / CoinOS users because their custodial Lightning rails
+        // aren't registered as BlueWallet LightningCustodianWallet
+        // instances. The alert wrongly told users to "add a Lightning
+        // wallet" when they already had one connected. Suppressed —
+        // routing to Strike/CoinOS handlers happens upstream.
+        // setTimeout(() => alert(loc.wallets.no_ln_wallet_error), 500);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wallet]),

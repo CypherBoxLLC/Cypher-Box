@@ -32,7 +32,10 @@ interface Style {
 export default StyleSheet.create<Style>({
     container: {
         flex: 1,
-        paddingBottom: 40,
+        // +30 (was 40) to clear the Android 15 edge-to-edge system nav bar
+        // (targetSdk 35). recipientView above is flex:1/greedy, so growing
+        // the container's bottom padding lifts the bottom slider up 30.
+        paddingBottom: 70,
     },
     title: {
         fontSize: 18,

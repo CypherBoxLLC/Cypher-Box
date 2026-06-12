@@ -84,7 +84,10 @@ export default StyleSheet.create<Style>({
         backgroundColor: colors.primary,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 30
+        // +30 to clear the Android 15 edge-to-edge system nav bar
+        // (targetSdk 35). topView is flex:1/greedy, so growing the slider
+        // wrapper's bottom margin lifts the slider + Add note cluster up 30.
+        marginBottom: 60
     },
     invoiceButton: {
         width: '90%',

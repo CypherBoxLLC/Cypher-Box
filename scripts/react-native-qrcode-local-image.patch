@@ -1,0 +1,12 @@
+--- ../node_modules/@flyskywhy/react-native-qrcode-local-image/android/build.gradle
++++ ../node_modules/@flyskywhy/react-native-qrcode-local-image/android/build.gradle
+@@ -1,7 +1,7 @@
+ apply plugin: 'com.android.library'
+ 
+ android {
+-    compileSdkVersion 23
+-    buildToolsVersion "23.0.1"
++    compileSdkVersion 35
++    buildToolsVersion "35.0.0"
+ 
+     defaultConfig {

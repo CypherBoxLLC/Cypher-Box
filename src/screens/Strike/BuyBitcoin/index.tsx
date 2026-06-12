@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Clipboard, Image, PermissionsAndroid, Platform, TextInput, TouchableOpacity, View } from "react-native";
+import { Image, PermissionsAndroid, Platform, TextInput, TouchableOpacity, View } from "react-native";
+import Clipboard from "@react-native-clipboard/clipboard";
 import { RNCamera } from 'react-native-camera';
 import { PERMISSIONS, request } from "react-native-permissions";
 import QRCodeScanner from 'react-native-qrcode-scanner';

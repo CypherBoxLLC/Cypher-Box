@@ -411,10 +411,6 @@ export default StyleSheet.create<Style>({
         paddingEnd: 10,
     },
     shadowTopBottom2: {
-        shadowOffset: { width: 2, height: 2 },
-        shadowRadius: 2,
-        shadowOpacity: 1,
-        shadowColor: '#ffffff',
         borderRadius: 25,
         width: widths - 40,
         height: 128,
@@ -699,6 +695,7 @@ export default StyleSheet.create<Style>({
     },
     savingVault: {
         width: widths - 40,
+        alignSelf: 'center',
     },
     savingHeight: {
         height: 200

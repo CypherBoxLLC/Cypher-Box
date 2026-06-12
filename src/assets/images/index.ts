@@ -59,6 +59,7 @@ export { default as StrikeFull } from './strikeFull.png';
 export { default as Plus } from './plus.png';
 export { default as Minus } from './minus.png';
 export { default as Strike2 } from './strike2.png';
+export { default as Second } from './second.png';
 export { default as Refresh } from './refresh.png';
 export { default as Threshold } from './threshold.png';
 export { default as PlusNew } from './plus2.png';

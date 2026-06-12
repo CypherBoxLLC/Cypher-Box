@@ -354,16 +354,28 @@ export default StyleSheet.create<Style>({
         ...shadow.text25,
     },
     shadowTop: {
-        shadowOffset: { width: 2, height: 2 },
-        shadowOpacity: 1,
-        shadowColor: colors.white,
-        shadowRadius: 2,
         borderRadius: 24,
         width: widths - 40,
         height: 128,
         backgroundColor: colors.primary,
         padding: 15,
         paddingHorizontal: 30,
+    },
+    // 1.5px-padding wrapper for the Strike Lightning card. Mirrors the
+    // CoinOS Card's pink-gradient outline (Card/styles.ts) so Strike's
+    // custodial Lightning rail has the same pink-ringed identity.
+    shadowTopGradientOutline: {
+        borderRadius: 24,
+        width: widths - 40,
+        height: 128,
+        padding: 1.5,
+    },
+    shadowTopInner: {
+        flex: 1,
+        borderRadius: 22.5,
+        backgroundColor: colors.primary,
+        paddingHorizontal: 30,
+        padding: 0,
     },
     shadow10: {
         // shadowOffset: { width: 3, height: 4 },
@@ -444,7 +456,15 @@ export default StyleSheet.create<Style>({
         height: 128,
         marginTop: 0,
         borderColor: "transparent",
-        backgroundColor: colors.white,
+        // colors.primary (dark) instead of colors.white — under
+        // Fabric the 1pt borderRadius mismatch between this wrapper
+        // (25) and the pink-gradient outline inside it (24) leaks
+        // the wrapper's background as a faint ring at the corners.
+        // White was visible as a "white border" reading; primary
+        // matches the inner card surface so any leak is invisible.
+        // Can't use transparent — Android needs a non-transparent
+        // backgroundColor for elevation shadows to paint.
+        backgroundColor: colors.primary,
     },
     shadowViewBottom: {
         shadowOffset: { width: 8, height: 8 },
