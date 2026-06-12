@@ -191,9 +191,19 @@ these still need closing:
 
 ## 9. Verifying a published Android build
 
-Once `make repro-verify` reports `MATCH` and the determinism items in §7 are
-closed, a third party can rebuild a tag and compare against the Play Store APK
-(modulo the signature block, which `apksigner verify` / `diffoscope` strip).
-The walletscrutiny verifier for this lives at `walletscrutiny/build.sh`
-(see `walletscrutiny/README.md`).
-(security-plan §11.2).
+End-to-end verification has two halves: that the APK was signed by us
+(signature check) and that its bytes come from the source in this repo
+(reproducibility check). The full procedure, including the Play App Signing
+SHA-256 to verify against, lives in [`SECURITY.md`](SECURITY.md), section
+"Verifying a published Android release".
+
+In short:
+
+1. `apksigner verify --print-certs` on the Play APK must report the
+   app-signing certificate SHA-256 published in `SECURITY.md`.
+2. `walletscrutiny/build.sh` rebuilds the unsigned AAB in a pinned Docker
+   image and compares it against the Play binary, ignoring the signature
+   block (see [`walletscrutiny/README.md`](walletscrutiny/README.md) and
+   security-plan §11.2). `make repro-verify` first proves the build is
+   deterministic; closing the open items in §7 above is what gets a full
+   walletscrutiny `reproducible` verdict.
