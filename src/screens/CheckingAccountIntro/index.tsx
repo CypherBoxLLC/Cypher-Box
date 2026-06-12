@@ -1,21 +1,24 @@
 import React from "react";
 import { View, Image} from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
-import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
-import useAuthStore from "@Cypher/stores/authStore";
 
+// On-demand explainer about custodial Lightning risk. Previously this
+// screen was a one-time gate on the way to CheckingAccountLogin — gated
+// by `hasSeenCustodialWarning` in authStore. That coupling was removed
+// (see HomeScreen.loginClickHandler) so the screen is now reached only
+// via the "?" icon next to the CUSTODIAL section header in
+// CheckingAccountLogin. The CTA accordingly just dismisses (goBack)
+// instead of advancing the user.
 export default function CheckingAccountIntro() {
-    const { setHasSeenCustodialWarning } = useAuthStore();
+    const navigation = useNavigation();
 
-    const nextClickHandler = () => {
-        console.log('next click');
-        setHasSeenCustodialWarning(true);
-        dispatchNavigate('CheckingAccountLogin');
-    }
+    const closeHandler = () => {
+        navigation.goBack();
+    };
 
-  
     return (
         <ScreenLayout showToolbar progress={0} color={[colors.pink.light, colors.pink.light]}>
             <View style={styles.container}>
@@ -39,7 +42,7 @@ export default function CheckingAccountIntro() {
                         />
                     </View>
                 </View>
-                <Button text="I understand" onPress={nextClickHandler} style={styles.button} textStyle={styles.btnText} />
+                <Button text="Got it" onPress={closeHandler} style={styles.button} textStyle={styles.btnText} />
             </View>
         </ScreenLayout>
     )

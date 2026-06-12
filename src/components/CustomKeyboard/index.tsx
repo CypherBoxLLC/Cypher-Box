@@ -23,9 +23,16 @@ interface Props {
     colors_?: string[];
     isGradient?: boolean;
     maxBalance?: number;
+    /**
+     * Hide the MAX shortcut. Used by surfaces where "max" doesn't make
+     * semantic sense (e.g. setting a withdrawal threshold or reserve floor —
+     * those aren't bounded by a balance). Empty placeholder slot keeps the
+     * 4×3 grid layout intact so neighbouring keys don't reflow.
+     */
+    hideMax?: boolean;
 }
 
-export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], isGradient = true, maxBalance }: Props) {
+export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], isGradient = true, maxBalance, hideMax = false }: Props) {
     const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'MAX', '0'];
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState(prevSats || '');
@@ -112,15 +119,19 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
             <View style={styles.keypad}>
                 {KEYSARRAY.map((key) => (
                     key === 'MAX' ? (
-                        <TouchableOpacity key={key} style={styles.key} onPress={handleMax}>
-                            <LinearGradient
-                                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                                colors={colors_}
-                                style={styles.maxButton}
-                            >
-                                <Text bold style={styles.maxText}>MAX</Text>
-                            </LinearGradient>
-                        </TouchableOpacity>
+                        hideMax ? (
+                            <View key={key} style={styles.key} />
+                        ) : (
+                            <TouchableOpacity key={key} style={styles.key} onPress={handleMax}>
+                                <LinearGradient
+                                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                                    colors={colors_}
+                                    style={styles.maxButton}
+                                >
+                                    <Text bold style={styles.maxText}>MAX</Text>
+                                </LinearGradient>
+                            </TouchableOpacity>
+                        )
                     ) : (
                         <TouchableOpacity key={key} style={styles.key} onPress={() => handlePress(key)}>
                             <Text style={styles.keyText}>{key}</Text>
@@ -136,6 +147,7 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
                     title={title}
                     disabled={disabled}
                     isError={isError}
+                    colors_={colors_}
                     onPress={onPress} />
                 :
                 <TouchableOpacity onPress={onPress} disabled={disabled} style={{ width: '90%', opacity: disabled ? 0.5 : 1 }}>

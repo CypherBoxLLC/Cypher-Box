@@ -68,20 +68,28 @@ const QRCodeComponent: React.FC<QRCodeComponentProps> = ({
   const { colors } = useTheme();
 
   const handleShareQRCode = () => {
-    qrCode.current.toDataURL((data: string) => {
-      data = data.replace(/(\r\n|\n|\r)/gm, '');
-      const shareImageBase64 = {
-        url: `data:image/png;base64,${data}`,
-      };
-      Share.open(shareImageBase64).catch((error: Error) => console.log(error));
-    });
+    try {
+      qrCode.current?.toDataURL((data: string) => {
+        data = data.replace(/(\r\n|\n|\r)/gm, '');
+        const shareImageBase64 = {
+          url: `data:image/png;base64,${data}`,
+        };
+        Share.open(shareImageBase64).catch((error: Error) => console.log(error));
+      });
+    } catch (e) {
+      console.warn('toDataURL not supported under Fabric/New Arch:', e);
+    }
   };
 
   const onPressMenuItem = (id: string) => {
     if (id === actionKeys.Share) {
       handleShareQRCode();
     } else if (id === actionKeys.Copy) {
-      qrCode.current.toDataURL(Clipboard.setImage);
+      try {
+        qrCode.current?.toDataURL(Clipboard.setImage);
+      } catch (e) {
+        console.warn('toDataURL not supported under Fabric/New Arch:', e);
+      }
     }
   };
 

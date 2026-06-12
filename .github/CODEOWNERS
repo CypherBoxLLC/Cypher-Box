@@ -1,0 +1,49 @@
+# Code owners for security-critical paths (security plan §11.7).
+#
+# Both maintainer accounts are listed; either one's review satisfies a
+# code-owner requirement, so the effective rule is "the account that did
+# NOT author the PR approves it."
+#
+# NOTE: this file has no enforcement effect until "Require review from
+# Code Owners" is enabled in the branch-protection ruleset for
+# main / CB-Production. GitHub evaluates the CODEOWNERS file on the
+# PR's base branch.
+
+# Wallet / key / signing code
+/class/wallets/                 @Bamskki @CypherBoxLLC
+/screen/wallets/                @Bamskki @CypherBoxLLC
+/screen/send/                   @Bamskki @CypherBoxLLC
+/screen/receive/                @Bamskki @CypherBoxLLC
+/src/services/ark/              @Bamskki @CypherBoxLLC
+/src/services/lightningSwap/    @Bamskki @CypherBoxLLC
+/src/api/                       @Bamskki @CypherBoxLLC
+/src/stores/                    @Bamskki @CypherBoxLLC
+blue_modules/*ark*              @Bamskki @CypherBoxLLC
+blue_modules/*coinos*           @Bamskki @CypherBoxLLC
+blue_modules/*strike*           @Bamskki @CypherBoxLLC
+blue_modules/*relay*            @Bamskki @CypherBoxLLC
+blue_modules/secrets*           @Bamskki @CypherBoxLLC
+blue_modules/analytics.js       @Bamskki @CypherBoxLLC
+
+# Dependencies / build / supply chain
+package.json                    @Bamskki @CypherBoxLLC
+package-lock.json               @Bamskki @CypherBoxLLC
+*.gradle                        @Bamskki @CypherBoxLLC
+Podfile*                        @Bamskki @CypherBoxLLC
+/Dockerfile.build               @Bamskki @CypherBoxLLC
+/Makefile                       @Bamskki @CypherBoxLLC
+/scripts/                       @Bamskki @CypherBoxLLC
+/patches/                       @Bamskki @CypherBoxLLC
+/.github/                       @Bamskki @CypherBoxLLC
+/.gitleaks.toml                 @Bamskki @CypherBoxLLC
+
+# Network / transport config
+/android/app/src/main/res/xml/network_security_config.xml  @Bamskki @CypherBoxLLC
+.env*                           @Bamskki @CypherBoxLLC
+
+# Public security docs + verification path
+/SECURITY.md                    @Bamskki @CypherBoxLLC
+/BUILD.md                       @Bamskki @CypherBoxLLC
+/RELEASE.md                     @Bamskki @CypherBoxLLC
+/THREAT_MODEL.md                @Bamskki @CypherBoxLLC
+/walletscrutiny/                @Bamskki @CypherBoxLLC

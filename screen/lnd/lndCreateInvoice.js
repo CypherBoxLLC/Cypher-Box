@@ -132,7 +132,11 @@ const LNDCreateInvoice = () => {
         }
       } else {
         triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
-        alert(loc.wallets.add_ln_wallet_first);
+        // Cypher Box: see scanLndInvoice.js for the same suppression —
+        // Strike / CoinOS users already have Lightning rails connected,
+        // they're just not BlueWallet-native LightningCustodianWallet
+        // instances, so this BlueWallet alert is a false positive.
+        // alert(loc.wallets.add_ln_wallet_first);
         goBack();
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,7 +237,11 @@ const LNDCreateInvoice = () => {
     setIsLoading(true);
     if (!wallet.current) {
       triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
-      alert(loc.wallets.no_ln_wallet_error);
+      // Cypher Box: BlueWallet doesn't recognize Strike / CoinOS as LN
+      // wallets, so this alert misleads users who already have one of
+      // those connected. Suppressed — see the matching changes in
+      // scanLndInvoice.js + the wallet-fallback branch above.
+      // alert(loc.wallets.no_ln_wallet_error);
       return goBack();
     }
 

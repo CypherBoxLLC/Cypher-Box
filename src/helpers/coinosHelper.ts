@@ -1,7 +1,18 @@
-export let SATS = 100000000;
-export let sats = (n: number) => Math.round(n * SATS);
-export let btc = (n: number) => parseFloat((n / SATS).toFixed(8));
-export let fiat = (n: number, r: number) => (n * r) / SATS;
+// Backwards-compat shim. The Bitcoin unit-conversion + display helpers
+// (SATS, sats, btc, fiat, formatSats, formatCapsuleAmount) used to live
+// in this file but are universal across every wallet kind in Cypher Box,
+// so they moved to `./bitcoinUnits`. Existing imports keep working
+// through this re-export; new code should import directly from
+// `@Cypher/helpers/bitcoinUnits`.
+//
+// The Strike-currency helpers (getStrikeCurrency, SUPPORTED_STRIKE_CURRENCIES,
+// DEFAULT_STRIKE_CURRENCY) and the generic format/lookup utilities
+// (formatNumber, matchKeyAndValue) stay here for now — the former are
+// Strike-specific and could move to a Strike helper, the latter could move
+// to a generic format helper. Out of scope for the bitcoin-units split.
+
+export { SATS, sats, btc, fiat, formatSats, formatCapsuleAmount } from './bitcoinUnits';
+
 export let getStrikeCurrency = (currency: string) => {
     switch (currency) {
             case 'USD':

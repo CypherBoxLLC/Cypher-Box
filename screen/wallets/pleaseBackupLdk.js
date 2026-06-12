@@ -43,10 +43,10 @@ const PleaseBackupLdk = () => {
 
   useEffect(() => {
     Privacy.enableBlur();
-    BackHandler.addEventListener('hardwareBackPress', handleBackButton);
+    const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackButton);
     return () => {
       Privacy.disableBlur();
-      BackHandler.removeEventListener('hardwareBackPress', handleBackButton);
+      subscription.remove();
     };
   }, [handleBackButton]);
 

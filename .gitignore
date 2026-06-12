@@ -21,6 +21,10 @@ DerivedData
 *.ipa
 *.xcuserstate
 ios/.xcode.env.local
+
+# Local secrets (copy from *.example.ts and fill in)
+src/services/ark/secrets.ts
+
 *.hprof
 .cxx/
 *.keystore
@@ -84,6 +88,28 @@ artifacts/
 .vscode/
 /.vs
 
+# Claude Code — local-only LLM tooling. Project-level guidance lives in
+# AGENTS.md (the tool-agnostic convention). Anything under .claude/ is
+# either local config (settings.local.json) or ephemeral worktrees, and
+# never belongs in the public repo.
+/CLAUDE.md
+/.claude/
+
 *.mx
 *.realm
 *.realm.lock
+
+# react-native-config — runtime env (OAuth client IDs etc). Per-developer
+# / per-CI; never committed. The .env.example template DOES live in git
+# as a self-documenting list of expected keys.
+.env
+.env.local
+.env.*.local
+
+# Local-only TS secrets module (relay API key etc). Per-developer / per-CI;
+# never committed. The .example.ts template DOES live in git.
+blue_modules/secrets.ts
+
+# Reproducible-build outputs: `make repro-build` AAB + walletscrutiny verdict file
+/out/
+walletscrutiny/COMPARISON_RESULTS.yaml

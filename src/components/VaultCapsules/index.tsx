@@ -4,7 +4,7 @@ import styles from "./styles";
 import { Text } from "@Cypher/component-library";
 import { Barcode, ProgressBar5, Tag, Transaction, TransactionBlue, Yes} from "@Cypher/assets/images";
 import { colors } from "@Cypher/style-guide";
-import { btc, sats } from "@Cypher/helpers/coinosHelper";
+import { formatCapsuleAmount } from "@Cypher/helpers/bitcoinUnits";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { blue } from "react-native-reanimated/lib/typescript/reanimated2/Colors";
 
@@ -51,7 +51,7 @@ const VaultCapsules = ({ item, isPending = false, isVault = false }: Props) => {
             glowAnim.setValue(0);
         }
     }, [isPending]);
-    const BTCAmount = btc(item?.value) + " BTC";
+    const BTCAmount = formatCapsuleAmount(item?.value);
     const SATsAmount = item;
     //const SATsAmount = 1_100_000_000
     //const { memo } = wallet.getUTXOMetadata(item.txid, item.vout);

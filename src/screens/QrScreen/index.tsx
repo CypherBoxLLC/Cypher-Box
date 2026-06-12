@@ -42,7 +42,7 @@ export default function QrScreen({ route }: Props) {
             }) : await createInvoiceStrike({
                 onchain: {
                 },
-                targetCurrency: strikeUser?.[1]?.currency || "USD"
+                targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
             });
             const hash = receiveType ? response.hash : response.onchain?.address
             setHash(hash);
@@ -107,12 +107,6 @@ export default function QrScreen({ route }: Props) {
 
                         <View style={{ margin: 20, padding: 30, backgroundColor: 'white', borderRadius: 30 }}>
                             <QRCode
-                                getRef={c => {
-                                    if (!c?.toDataURL) return;
-                                        c?.toDataURL((base64Image: string) => {
-                                        base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                                    });
-                                }}
                                 value={hash}
                                     size={250}
                                     color="black"

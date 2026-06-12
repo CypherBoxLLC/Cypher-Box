@@ -45,7 +45,7 @@ class DeeplinkSchemaMatch {
     }
 
     if (event.url.toLowerCase().startsWith('cypherbox:bitcoin:') || event.url.toLowerCase().startsWith('cypherbox:lightning:')) {
-      event.url = event.url.substring(11);
+      event.url = event.url.substring('cypherbox:'.length);
     } else if (event.url.toLocaleLowerCase().startsWith('cypherbox://widget?action=')) {
       event.url = event.url.substring('cypherbox://'.length);
     }

@@ -77,7 +77,7 @@ export default StyleSheet.create<Style>({
     gradient: {
         top: '9%',
         backgroundColor: 'red',
-
+        marginTop: 25,
     },
 
 })

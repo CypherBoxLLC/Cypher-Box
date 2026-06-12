@@ -1,5 +1,21 @@
 # How to make a release
 
+## Build log
+
+Maps every public (TestFlight / App Store) build to the commit it was built
+from. Apple assigns the build number at upload time (Xcode "Automatically
+manage version and build number"), so it is never written back to the repo, and
+this table is the only record of which commit a build came from. Add a row on
+every upload, and tag the commit `tf-<version>-b<build>`.
+
+| Build | Version | Commit | Date (UTC) | Branch | Notes |
+|------:|---------|--------|------------|--------|-------|
+| 15 | 0.0.10 | `50a0ced` | 2026-06-06 | `bark-0.6.3-upgrade` | bark 0.6.3 upgrade + ark->LN swap fixes; hot-vault orphan auto-adopt |
+
+Builds before 15 (including 0.0.10 (12) and (14), seen in a user report) predate
+this log and were uploaded without committing the build number, so their commits
+can't be recovered. Closing that gap is exactly why this log exists.
+
 ## Apple
 
 - test the build on a real device. It is imperative that you run selftest and it gives you OK

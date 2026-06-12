@@ -1,0 +1,97 @@
+# syntax=docker/dockerfile:1.7
+# ---------------------------------------------------------------------------
+# Cypher Box - reproducible Android build image (security-plan §11.1)
+#
+# Produces a deterministic, UNSIGNED release AAB. No signing key ever enters
+# this image or the build (security-plan §5.2). Signing is a separate manual
+# step on the release machine with the YubiKey-protected upload key (§4.2).
+#
+# Pinned toolchain (must match android/build.gradle + gradle-wrapper.properties):
+#   JDK ........ Temurin 17 (LTS)         android/* is compiled with 17
+#   Gradle ..... 8.10.2 (via ./gradlew)   android/gradle/wrapper/*.properties
+#   SDK ........ platforms;android-35, build-tools;35.0.0   android/build.gradle
+#   NDK ........ 26.1.10909125            android/build.gradle ext.ndkVersion
+#   CMake ...... 3.22.1                   RN 0.76 default
+#   Node ....... 22.22.3 (LTS)            matches the dev pin (CLAUDE.md node@22)
+#   AGP ........ 8.6.0                    resolved via the RN gradle plugin
+#   Kotlin ..... 1.9.25                   android/build.gradle
+#
+# DEVIATIONS from the literal §11.1 prompt, intentional (see BUILD.md):
+#   * build-tools 35.0.0, not 34.0.0 - the project compiles against SDK 35.
+#   * Node 22.22.3, not 18.x - Node 18 reached EOL (2025-04); RN 0.76's hermes
+#     post-build tooling is validated on node@22 in this repo (CLAUDE.md).
+#
+# HARDENING STATUS:
+#   1. [DONE] Base image pinned by manifest-list digest (the FROM below).
+#   2. [DONE] cmdline-tools zip sha256 pinned + verified at build (ARG below).
+#   3. [TODO, needs a Docker host] Snapshot/pin the apt repo (snapshot.debian.org)
+#      for full determinism; apt is the one mirror not yet digest-pinned here.
+#   Validate end-to-end with `make repro-verify` on a Docker host (two builds ->
+#   identical SHA-256) before treating this as the canonical release path.
+# ---------------------------------------------------------------------------
+# Base image pinned by digest (manifest list) for supply-chain reproducibility.
+# Digest captured 2026-06-11 from eclipse-temurin:17-jdk-jammy (Docker Hub
+# last_updated 2026-05-15). The tag is kept for readability; the digest is what
+# resolves, and --platform selects the linux/amd64 variant from the list.
+# Re-pin per release on the build host:
+#   docker buildx imagetools inspect eclipse-temurin:17-jdk-jammy --format '{{.Manifest.Digest}}'
+FROM --platform=linux/amd64 eclipse-temurin:17-jdk-jammy@sha256:beabb759e6f9653c843958d1d1f5cecb881dfb85aa6081e2bef099ab1260344e
+
+# Determinism knobs: fixed locale + timezone so any locale-dependent ordering
+# (zip entry order, resource merge) is stable; SOURCE_DATE_EPOCH zeroes embedded
+# build timestamps for toolchains that honour it; no Gradle daemon / no machine
+# state in the build.
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    TZ=UTC \
+    SOURCE_DATE_EPOCH=0 \
+    ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk \
+    GRADLE_USER_HOME=/build/.gradle \
+    GRADLE_OPTS="-Dorg.gradle.daemon=false -Dfile.encoding=UTF-8"
+
+# Minimal OS deps. (apt is the one weak link in full digest-pinning; see TODO 3.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl unzip git xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 22.22.3, sha256-pinned (x64 because we target linux/amd64).
+RUN curl -fsSLO https://nodejs.org/dist/v22.22.3/node-v22.22.3-linux-x64.tar.xz \
+    && echo "2e5d13569282d016861fae7c8f935e741693c269101a5bebcf761a5376d1f99f  node-v22.22.3-linux-x64.tar.xz" | sha256sum -c - \
+    && tar -xJf node-v22.22.3-linux-x64.tar.xz -C /usr/local --strip-components=1 \
+    && rm node-v22.22.3-linux-x64.tar.xz \
+    && node --version && npm --version
+
+# Android command-line tools (the sdkmanager bootstrapper). The exact SDK
+# *packages* below are integrity-checked by sdkmanager; this zip only bootstraps
+# it. Pinned version + sha256 of Google's immutable versioned artifact
+# (commandlinetools-linux-11076708_latest.zip), cross-checked against
+# cashapp/hermit-packages. The check below fails the build on mismatch, so this
+# is self-verifying on any Docker host. Override with --build-arg to re-pin.
+ARG CMDLINE_TOOLS_VERSION=11076708
+ARG CMDLINE_TOOLS_SHA256=2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
+RUN curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip \
+    && if [ -n "${CMDLINE_TOOLS_SHA256}" ]; then \
+         echo "${CMDLINE_TOOLS_SHA256}  commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" | sha256sum -c - ; \
+       else echo "WARNING: CMDLINE_TOOLS_SHA256 unset - not verifying cmdline-tools integrity (see TODO 2)"; fi \
+    && mkdir -p ${ANDROID_HOME}/cmdline-tools \
+    && unzip -q commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip -d ${ANDROID_HOME}/cmdline-tools \
+    && mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest \
+    && rm commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip
+ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:/usr/local/bin:${PATH}"
+
+# Accept licenses + install the exact pinned SDK packages. sdkmanager verifies
+# each package's checksum against Google's repository manifest.
+RUN yes | sdkmanager --licenses >/dev/null \
+    && sdkmanager --install \
+       "platform-tools" \
+       "platforms;android-35" \
+       "build-tools;35.0.0" \
+       "ndk;26.1.10909125" \
+       "cmake;3.22.1" >/dev/null \
+    && echo "sdk.dir=${ANDROID_HOME}" # informational
+
+WORKDIR /build
+# No source is baked into the image. `make repro-build` copies the repo in at
+# run time so the image stays generic and the build inputs are explicit.
+CMD ["bash"]

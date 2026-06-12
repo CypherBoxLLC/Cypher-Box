@@ -1,21 +1,23 @@
 package io.cypherbox.btc;
 
 import android.app.Application;
-import android.content.Context;
+import androidx.annotation.NonNull;
+import androidx.work.Configuration;
 import com.facebook.react.PackageList;
 import com.facebook.react.ReactApplication;
-import com.facebook.react.ReactInstanceManager;
+import com.facebook.react.ReactHost;
 import com.facebook.react.ReactNativeHost;
 import com.facebook.react.ReactPackage;
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint;
+import com.facebook.react.defaults.DefaultReactHost;
 import com.facebook.react.defaults.DefaultReactNativeHost;
+import com.facebook.react.soloader.OpenSourceMergedSoMapping;
 import com.facebook.soloader.SoLoader;
-import java.lang.reflect.InvocationTargetException;
 import com.facebook.react.modules.i18nmanager.I18nUtil;
 import java.util.List;
 import com.bugsnag.android.Bugsnag;
 
-public class MainApplication extends Application implements ReactApplication {
+public class MainApplication extends Application implements ReactApplication, Configuration.Provider {
 
   private final ReactNativeHost mReactNativeHost =
       new DefaultReactNativeHost(this) {
@@ -26,10 +28,11 @@ public class MainApplication extends Application implements ReactApplication {
 
         @Override
         protected List<ReactPackage> getPackages() {
-          @SuppressWarnings("UnnecessaryLocalVariable")
           List<ReactPackage> packages = new PackageList(this).getPackages();
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // packages.add(new MyReactNativePackage());
+          // Hand-registered: not auto-linked because the package lives in
+          // app/src/main/java rather than a published RN module.
+          packages.add(new ArkBackgroundSchedulerPackage());
+          packages.add(new ArkSafBackupPackage());
           return packages;
         }
 
@@ -38,15 +41,15 @@ public class MainApplication extends Application implements ReactApplication {
           return "index";
         }
 
-           @Override
-	        protected boolean isNewArchEnabled() {
-	          return BuildConfig.IS_NEW_ARCHITECTURE_ENABLED;
-	        }
-	
-	        @Override
-	        protected Boolean isHermesEnabled() {
-	          return BuildConfig.IS_HERMES_ENABLED;
-	        }
+        @Override
+        protected boolean isNewArchEnabled() {
+          return BuildConfig.IS_NEW_ARCHITECTURE_ENABLED;
+        }
+
+        @Override
+        protected Boolean isHermesEnabled() {
+          return BuildConfig.IS_HERMES_ENABLED;
+        }
       };
 
   @Override
@@ -55,15 +58,42 @@ public class MainApplication extends Application implements ReactApplication {
   }
 
   @Override
+  public ReactHost getReactHost() {
+    return null;
+  }
+
+  @Override
   public void onCreate() {
     super.onCreate();
     Bugsnag.start(this);
+
     I18nUtil sharedI18nUtilInstance = I18nUtil.getInstance();
     sharedI18nUtilInstance.allowRTL(getApplicationContext(), true);
-    SoLoader.init(this, /* native exopackage */ false);
-      if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
-	      // If you opted-in for the New Architecture, we load the native entry point for this app.
-	      DefaultNewArchitectureEntryPoint.load();
-	    }
+
+    try {
+      SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);
+    } catch (java.io.IOException e) {
+      throw new RuntimeException(e);
+    }
+
+    if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
+      DefaultNewArchitectureEntryPoint.load(true, true, false);
+    }
+  }
+
+  // On-demand WorkManager initialization. Paired with the
+  // tools:node="remove" of androidx.work.WorkManagerInitializer in
+  // AndroidManifest.xml, this prevents WM from initializing eagerly via
+  // androidx.startup's ContentProvider. WM is no longer used for the Ark
+  // background-refresh scheduler (now AlarmManager-based), but keeping
+  // on-demand init is defensive against any other dep that pulls WM in:
+  // eager init can race with cold-spawn JobScheduler dispatches, see
+  // issuetracker.google.com/170529030.
+  @NonNull
+  @Override
+  public Configuration getWorkManagerConfiguration() {
+    return new Configuration.Builder()
+        .setMinimumLoggingLevel(android.util.Log.INFO)
+        .build();
   }
 }

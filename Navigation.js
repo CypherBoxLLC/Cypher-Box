@@ -101,8 +101,56 @@ import ColdVaultIntro2 from '@Cypher/screens/ColdVaultIntro2';
 import CheckingAccountIntro from '@Cypher/screens/CheckingAccountIntro';
 import CheckingAccountLogin from '@Cypher/screens/CheckingAccountLogin';
 import CheckingAccountCreated from '@Cypher/screens/CheckingAccountCreated';
+import Activity from '@Cypher/screens/Activity';
+import CreateArkScreen from '@Cypher/screens/Account/CreateArkScreen';
+import ArkSeedPhraseScreen from '@Cypher/screens/Account/ArkSeedPhraseScreen';
+import RecoverArkScreen from '@Cypher/screens/Account/RecoverArkScreen';
+import ArkReceiveScreen from '@Cypher/screens/Ark/ArkReceiveScreen';
+import ArkInvoiceScreen from '@Cypher/screens/Ark/ArkInvoiceScreen';
+import ArkTransactionDetailsScreen from '@Cypher/screens/Ark/ArkTransactionDetailsScreen';
+import ArkSendScreen from '@Cypher/screens/Ark/ArkSendScreen';
+import ArkWithdrawReviewScreen from '@Cypher/screens/Ark/ArkWithdrawReviewScreen';
+import ArkCapsulesInfoScreen from '@Cypher/screens/Ark/ArkCapsulesInfoScreen';
 
 const WalletsStack = createStackNavigator();
+
+// Hot-vault creation flow lives in its own native-stack. Background:
+// `@react-navigation/stack` wraps every screen in an Animated.View driven
+// by reanimated — fine on Paper, but under RN 0.76 New Arch (Fabric) that
+// wrapper costs ~3.5s on first mount. Bisection confirmed the cost isn't
+// in our screen bodies: it persists even when SavingVault renders a bare
+// <View>. `createNativeStackNavigator` uses react-native-screens (which
+// IS codegen/Fabric-compatible) and skips the reanimated card, so screens
+// in here mount in the commit phase like they should.
+//
+// We nest rather than migrate the whole WalletsStack because several
+// other routes rely on stack-specific options (CardStyleInterpolators,
+// forFade, animationEnabled). Keeping the blast radius to the 3 screens
+// that actually need the fix.
+const HotVaultStack = createNativeStackNavigator();
+const HotVaultFlow = () => (
+  <HotVaultStack.Navigator screenOptions={{ headerShown: false }}>
+    <HotVaultStack.Screen name="SavingVaultIntro" component={SavingVaultIntro} />
+    <HotVaultStack.Screen
+      name="SavingVault"
+      component={SavingVault}
+      options={{
+        // Let the default iOS push slide play. Why we're NOT disabling
+        // animation (as the `@react-navigation/stack` config did):
+        // that `animationEnabled: false` was a workaround for the 3.5s
+        // black-flash during the card wrapper's first mount under
+        // Fabric. Native-stack doesn't have that problem — the slide is
+        // driven by native UIKit, starts immediately, and gives the
+        // destination screen ~300ms to finish mounting under cover of
+        // the transition itself. Popping the screen in instantly (as
+        // `animation: 'none'` did) leaks any remaining mount time as a
+        // visible freeze and loses the iOS push affordance.
+        contentStyle: { backgroundColor: '#1E1E1E' },
+      }}
+    />
+    <HotVaultStack.Screen name="SavingVaultCreated" component={SavingVaultCreated} />
+  </HotVaultStack.Navigator>
+);
 
 const WalletsRoot = () => {
   const theme = useTheme();
@@ -141,6 +189,30 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="LoginBlink" component={LoginBlink} options={{ headerShown: false }} />
       <WalletsStack.Screen name="RecoverSavingVault" component={RecoverSavingVault} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CreateCoinOSScreen" component={CreateCoinOSScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="CreateArkScreen" component={CreateArkScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="ArkSeedPhraseScreen" component={ArkSeedPhraseScreen} options={{ headerShown: false }} />
+      {/* Use platform-default animation (forFadeFromBottomAndroid on
+          Android) so the transition doesn't depend on the JS thread.
+          The previous `cardStyleInterpolator: forHorizontalIOS` was a
+          JS-driven horizontal slide that stalled mid-flight on slower
+          Android devices because the destination's first render +
+          effect chain stole the same frames the interpolator needed
+          to compute its translateX values. The destination is now
+          progressive-disclosed (a tiny ChooseView mounts first), so
+          we don't need detachPreviousScreen workarounds either. */}
+      <WalletsStack.Screen
+        name="RecoverArkScreen"
+        component={RecoverArkScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <WalletsStack.Screen name="ArkReceiveScreen" component={ArkReceiveScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="ArkInvoiceScreen" component={ArkInvoiceScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="ArkCapsulesInfoScreen" component={ArkCapsulesInfoScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="ArkTransactionDetailsScreen" component={ArkTransactionDetailsScreen} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="ArkSendScreen" component={ArkSendScreen} options={{ headerShown: false, gestureEnabled: true }} />
+      <WalletsStack.Screen name="ArkWithdrawReviewScreen" component={ArkWithdrawReviewScreen} options={{ headerShown: false, gestureEnabled: true }} />
       <WalletsStack.Screen name="ForgotCoinOSScreen" component={ForgetPassword} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ChangeUsername" component={ChangeUsername} options={{ headerShown: false }} />
       <WalletsStack.Screen name="LoginCoinOSScreen" component={LoginCoinOSScreen} options={{ headerShown: false }} />
@@ -196,12 +268,18 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="GetAddressScreen" component={GetAddressScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="SendScreen" component={SendScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="BuyBitcoin" component={BuyBitcoin} options={{ headerShown: false }} />
-      <WalletsStack.Screen name="SavingVaultIntro" component={SavingVaultIntro} options={{ headerShown: false }} />
+      {/*
+        SavingVaultIntro / SavingVault / SavingVaultCreated are nested inside
+        HotVaultFlow (native-stack) defined above. Existing call sites of
+        the form `dispatchNavigate('SavingVaultIntro' | 'SavingVault' |
+        'SavingVaultCreated')` are transparently rewritten to
+        `navigate('HotVaultFlow', { screen: <child>, params })` inside
+        src/helpers/navigation.ts via NESTED_ROUTE_PARENT.
+      */}
+      <WalletsStack.Screen name="HotVaultFlow" component={HotVaultFlow} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ColdVaultIntro" component={ColdVaultIntro} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ColdVaultIntro2" component={ColdVaultIntro2} options={{ headerShown: false }} />
       <WalletsStack.Screen name="SavingVaultIntroNew" component={SavingVaultIntroNew} options={{ headerShown: false }} />
-      <WalletsStack.Screen name="SavingVault" component={SavingVault} options={{ headerShown: false }} />
-      <WalletsStack.Screen name="SavingVaultCreated" component={SavingVaultCreated} options={{ headerShown: false }} />
       <WalletsStack.Screen name="HotStorageVault" component={HotStorageVault} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CreateVault" component={CreateVault} options={{ headerShown: false }} />
       <WalletsStack.Screen name="AdjustHotThreshold" component={AdjustHotThreshold} options={{ headerShown: false }} />
@@ -228,6 +306,7 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="CPFP" component={CPFP} options={CPFP.navigationOptions(theme)} />
       <WalletsStack.Screen name="RBFBumpFee" component={RBFBumpFee} options={RBFBumpFee.navigationOptions(theme)} />
       <WalletsStack.Screen name="RBFCancel" component={RBFCancel} options={RBFCancel.navigationOptions(theme)} />
+      <WalletsStack.Screen name="Activity" component={Activity} options={{ headerShown: false }} />
       <WalletsStack.Screen name="Settings" component={Settings} options={Settings.navigationOptions(theme)} />
       <WalletsStack.Screen name="Security" component={Security} options={Security.navigationOptions(theme)} />
       <WalletsStack.Screen name="SelectWallet" component={SelectWallet} options={SelectWallet.navigationOptions(theme)} />

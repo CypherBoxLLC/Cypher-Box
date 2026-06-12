@@ -3,6 +3,7 @@ import { CustomTabView, GradientCard, GradientView } from "@Cypher/components";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -18,13 +19,16 @@ import {
   CoinOS,
   Cold1,
   Copy,
+  Electricity,
   Electrik,
   Hot,
   Socked,
+  Second,
   Strike,
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { FEATURE_ARK_ENABLED, fetchArkMinBoardSats, getArkAddress, getArkOnchainAddress } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import Clipboard from "@react-native-clipboard/clipboard";
@@ -52,13 +56,21 @@ interface Props {
 
 
 export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency, vaultAddress = '', coldStorageAddress = '', initialVaultType = null }: Props) {
-  const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
+  const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
 
   const getInitialSelectedItem = () => {
     if (initialVaultType === 'hot') return 3;
     if (initialVaultType === 'cold') return 4;
     if (allBTCWallets.length == 1 && (!coldStorageWalletID && !walletID) && allBTCWallets[0] == "STRIKE") return 1;
     if (allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "COINOS") return 2;
+    // Ark-only case: jump straight to the Ark sub-menu (onchain / lightning
+    // / Ark address tabs) instead of falling through to the Strike-default
+    // create-invoice path, which tries Strike's API and fails for
+    // unauthenticated users (loss of UX path: ark-only users were taken to
+    // an invoice screen that errored on the create call). selectedItem === 5
+    // is the Ark tile in the wallet picker; setting it here makes the
+    // single-wallet auto-show pick the right submenu.
+    if (allBTCWallets.length == 1 && !coldStorageWalletID && !walletID && allBTCWallets[0] == "ARK") return 5;
     return null;
   };
 
@@ -69,6 +81,23 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   const [showSecondView, setShowSecondView] = useState(initialVaultType !== null || allBTCWallets.length == 1 ? true : false);
   const [hashLiquid, setHashLiquid] = useState('');
   const [hashBitcoin, setHashBitcoin] = useState('');
+  // Ark sub-menu addresses. Generated when the Ark tile is opened
+  // (selectedItem === 5) so they're ready for the corresponding tab
+  // without an extra round-trip when the user switches tabs. Both come
+  // from the local Bark wallet handle — instant, no network.
+  const [arkAddress, setArkAddress] = useState('');
+  const [arkOnchainAddress, setArkOnchainAddress] = useState('');
+  // Live server minimum board amount for the on-chain receive warning (Ark
+  // tab 1). A deposit below this confirms on-chain but never boards into a
+  // VTXO. 50k sats fallback when the bark handle isn't open.
+  const [minBoardSats, setMinBoardSats] = useState(50000);
+  useEffect(() => {
+    let cancelled = false;
+    fetchArkMinBoardSats().then((min) => {
+      if (!cancelled && typeof min === 'number' && min > 0) setMinBoardSats(min);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const qrCode = useRef();
   const base64QrCodeRef = useRef('');
 
@@ -79,6 +108,40 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   const hasColdVault = !!coldStorageWalletID;
 
   useEffect(() => {
+    // Ark uses the local Bark wallet handle — fetch Ark + on-chain
+    // addresses up front so both the Bitcoin and Ark-address tabs
+    // render instantly when the user switches. CoinOS / Strike still
+    // hit the network per-tab below; Ark is local-only so no need to
+    // gate by tab.
+    //
+    // Mounted-ref guard: the Bark SDK calls below complete on the
+    // native thread and bounce back to JS to set state. Under Fabric
+    // (RN 0.76 New Arch), a `setState` that lands after the surface
+    // is torn down triggers `react_native_assert(uiManager.get() !=
+    // nil)` on the JS thread → SIGABRT. The cleanup flag below is
+    // flipped synchronously when the effect re-runs or the component
+    // unmounts, so trailing setState calls become no-ops.
+    if (selectedItem === 5) {
+      let mounted = true;
+      void (async () => {
+        try {
+          const [arkAddr, onchainAddr] = await Promise.all([
+            getArkAddress(),
+            getArkOnchainAddress(),
+          ]);
+          if (!mounted) return;
+          setArkAddress(arkAddr);
+          setArkOnchainAddress(onchainAddr);
+        } catch (err) {
+          if (!mounted) return;
+          console.warn('[Receive] Ark address fetch failed:', err);
+          SimpleToast.show('Failed to fetch Ark addresses', SimpleToast.SHORT);
+        }
+      })();
+      return () => {
+        mounted = false;
+      };
+    }
     if (tab == 1) {
       handleCreateInvoice('bitcoin');
     } else if (tab == 2) {
@@ -101,7 +164,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       }) : await createInvoiceStrike({
         onchain: {
         },
-        targetCurrency: strikeUser?.[1]?.currency || "USD"
+        targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
       });
       const hash = selectedItem == 2 ? response.hash : response.onchain?.address
       if (type == 'bitcoin') {
@@ -143,7 +206,14 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
   }));
 
   const onPress = (item: any) => {
-    if (item?.id == 1 || item?.id == 2 || item?.id == 3 || item?.id == 4) {
+    // All wallet tiles (Strike, CoinOS, Hot Vault, Cold Vault, Ark)
+    // now route to the in-sheet second view. Ark used to break out
+    // to its own ArkReceiveScreen, but the three options it exposed
+    // (Lightning / Bitcoin / Ark address) map cleanly onto a tabbed
+    // sub-menu — same shape CoinOS uses for Lightning/Bitcoin/Liquid —
+    // so the cross-rail receive UX stays consistent and the user
+    // never leaves the sheet.
+    if (item?.id == 1 || item?.id == 2 || item?.id == 3 || item?.id == 4 || item?.id == 5) {
       setSelectedItem(item.id);
       setTab(0);
       animateToSecondView();
@@ -224,6 +294,39 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
           icon: Socked,
         },
       ];
+    } else if (selectedItem === 5) {
+      // Ark: same three-tab shape as CoinOS, with the Liquid slot
+      // replaced by "Ark" (the user's VTXO recipient address). Order
+      // matches CoinOS — Lightning / Bitcoin / specialist-rail — so
+      // muscle memory carries between the two cards. The Ark tab
+      // uses an Ionicons boat glyph rather than a PNG asset because
+      // the project ships no ark/ship icon today; a vector icon is
+      // crisper, scales freely with tab size, and avoids adding a
+      // new image asset for a single use site.
+      return [
+        {
+          id: 0,
+          name: "Lightning",
+          icon: Electrik,
+        },
+        {
+          id: 1,
+          name: "Bitcoin",
+          icon: Bitcoin,
+        },
+        {
+          id: 2,
+          name: "Ark",
+          iconElement: (
+            <Ionicons
+              name="boat-outline"
+              size={20}
+              color="#FFFFFF"
+              style={{ marginRight: 6 }}
+            />
+          ),
+        },
+      ];
     }
     return [];
   };
@@ -249,10 +352,18 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     isEnabled: boolean,
     accentColor: string,
     shadowColor: string,
+    textLabel?: string, // For providers without a logo asset (e.g. Ark) — shown inline
   ) => {
     const isLogo = id === 1 || id === 2; // Strike/CoinOS use logo images
+    // Hide tiles for wallets that aren't created / aren't logged in.
+    // Render an invisible spacer of the same width so the surviving tile
+    // in the row keeps its grid position (justifyContent: space-between
+    // would otherwise pull a single visible tile to flex-start).
+    if (!isEnabled) {
+      return <View style={{ width: TILE_WIDTH }} />;
+    }
     return (
-      <View style={{ width: TILE_WIDTH, opacity: isEnabled ? 1 : 0.3 }} pointerEvents={isEnabled ? 'auto' : 'none'}>
+      <View style={{ width: TILE_WIDTH }} pointerEvents={'auto'}>
         <GradientView
           onPress={() => isEnabled && onPress({ id })}
           style={{
@@ -309,6 +420,20 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 style={{ width: 90, height: 32, marginBottom: 6 }}
                 resizeMode="contain"
               />
+            ) : textLabel ? (
+              // White at 16pt — matches the other tile labels' visual
+              // weight. Was 22pt + accentColor (yellow for Ark) which read
+              // as a brand wordmark instead of a label. The lightning bolt
+              // (white) sits to the left so the row mirrors the icon+label
+              // layout of the Vault tiles below.
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Image
+                  source={Electricity}
+                  style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
+                  resizeMode="contain"
+                />
+                <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>{textLabel}</Text>
+              </View>
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                 <Image source={icon} style={iconStyle} resizeMode="contain" />
@@ -354,52 +479,65 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 RECEIVE TO
               </Text>
 
-              {/* Top row: Lightning custodians */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-                {renderGridTile(
-                  1,
-                  'Strike',
-                  'Small–medium amounts',
-                  StrikeFull,
-                  {},
-                  isStrikeAuth,
-                  '#FF65D4',
-                  colors.pink.shadowTopNew,
-                )}
-                {renderGridTile(
-                  2,
-                  'CoinOS',
-                  'Small–medium amounts',
-                  CoinOS,
-                  {},
-                  isAuth,
-                  '#FF65D4',
-                  colors.pink.shadowTopNew,
-                )}
-              </View>
+              {/* Modular 2-column adaptive grid. Only tiles for connected
+                  wallets render; the grid wraps so empty slots aren't
+                  reserved. Order is Strike → CoinOS → Ark → Hot Vault →
+                  Cold Vault — e.g. Strike+Ark+Hot Vault flows as
+                  [Strike, Ark] / [Hot Vault]; all five flows as
+                  [Strike, CoinOS] / [Ark, Hot] / [Cold]. The previous
+                  fixed row grouping (Lightning row / Vault row / Ark row)
+                  left greyed gaps for missing rails. */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                {(() => {
+                  type TileDef = {
+                    id: number;
+                    label: string;
+                    subtitle: string;
+                    icon: any;
+                    iconStyle: any;
+                    isEnabled: boolean;
+                    accent: string;
+                    shadowColor: string;
+                    textLabel?: string;
+                  };
+                  const tiles: TileDef[] = [];
+                  if (isStrikeAuth) tiles.push({
+                    id: 1, label: 'Strike', subtitle: 'Small–medium amounts',
+                    icon: StrikeFull, iconStyle: {}, isEnabled: true,
+                    accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
+                  });
+                  if (!!isAuth) tiles.push({
+                    id: 2, label: 'CoinOS', subtitle: 'Small–medium amounts',
+                    icon: CoinOS, iconStyle: {}, isEnabled: true,
+                    accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
+                  });
+                  if (FEATURE_ARK_ENABLED && isArkAuth) tiles.push({
+                    id: 5, label: 'Ark', subtitle: 'Small–medium amounts',
+                    icon: null, iconStyle: {}, isEnabled: true,
+                    accent: colors.ark.light, shadowColor: colors.ark.shadowTopNew,
+                    textLabel: 'Ark Vault',
+                  });
+                  if (hasHotVault) tiles.push({
+                    id: 3, label: 'Hot Vault', subtitle: 'Medium–large amounts',
+                    icon: Hot, iconStyle: { width: 22, height: 30, marginEnd: 2 },
+                    isEnabled: true, accent: colors.green, shadowColor: colors.greenShadow,
+                  });
+                  if (hasColdVault) tiles.push({
+                    id: 4, label: 'Cold Vault', subtitle: 'Medium–large amounts',
+                    icon: Cold1, iconStyle: { width: 30, height: 22, marginEnd: 2 },
+                    isEnabled: true, accent: colors.coldGreen, shadowColor: colors.blueText,
+                  });
 
-              {/* Bottom row: Vaults */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                {renderGridTile(
-                  3,
-                  'Hot Vault',
-                  'Medium–large amounts',
-                  Hot,
-                  { width: 22, height: 30, marginEnd: 2 },
-                  hasHotVault,
-                  colors.green,
-                  colors.greenShadow,
-                )}
-                {renderGridTile(
-                  4,
-                  'Cold Vault',
-                  'Medium–large amounts',
-                  Cold1,
-                  { width: 30, height: 22, marginEnd: 2 },
-                  hasColdVault,
-                  colors.coldGreen,
-                  colors.blueText,
-                )}
+                  // Render each tile wrapped in a 12pt-bottom-margin View so
+                  // wrapped rows have consistent vertical gap. Trailing odd
+                  // tile in a row pins to the left via space-between's
+                  // single-child behavior — matches Bam's spec.
+                  return tiles.map(t => (
+                    <View key={t.id} style={{ marginBottom: 12 }}>
+                      {renderGridTile(t.id, t.label, t.subtitle, t.icon, t.iconStyle, t.isEnabled, t.accent, t.shadowColor, t.textLabel)}
+                    </View>
+                  ));
+                })()}
               </View>
             </View>
           </Animated.View>
@@ -420,20 +558,41 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 </TouchableOpacity>
               )}
               <View style={{ flex: 1, alignItems: 'center', marginRight: showBackButton ? 30 : 0 }}>
-                <Image
-                  source={
-                    selectedItem === 1 ? StrikeFull
-                    : selectedItem === 2 ? CoinOS
-                    : selectedItem === 3 ? Hot
-                    : Cold1
-                  }
-                  style={
-                    (selectedItem === 1 || selectedItem === 2)
-                      ? { width: 100, height: 32 }
-                      : { width: 28, height: 28 }
-                  }
-                  resizeMode="contain"
-                />
+                {selectedItem === 5 ? (
+                  // Second.tech ASP identifier — rendered as Text
+                  // rather than an Image because the bundled
+                  // `second.png` is an 8-bit colormap PNG without
+                  // a clean alpha channel; tintColor whitening
+                  // didn't take effect across iOS's image loader.
+                  // A text label is the more reliable cross-platform
+                  // path, and is always white regardless of how the
+                  // sheet's dark gradient background is rendered.
+                  <Text
+                    bold
+                    style={{
+                      fontSize: 22,
+                      color: '#FFFFFF',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    second.tech
+                  </Text>
+                ) : (
+                  <Image
+                    source={
+                      selectedItem === 1 ? StrikeFull
+                      : selectedItem === 2 ? CoinOS
+                      : selectedItem === 3 ? Hot
+                      : Cold1
+                    }
+                    style={
+                      (selectedItem === 1 || selectedItem === 2)
+                        ? { width: 100, height: 32 }
+                        : { width: 28, height: 28 }
+                    }
+                    resizeMode="contain"
+                  />
+                )}
                 {(selectedItem === 3 || selectedItem === 4) && (
                   <Text bold style={{ fontSize: 14, marginTop: 2 }}>
                     {selectedItem === 3 ? 'Hot Vault' : 'Cold Vault'}
@@ -526,7 +685,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             )}
 
             {/* ---- Strike/CoinOS Lightning Tab ---- */}
-            {selectedItem !== 3 && selectedItem !== 4 && tab === 0 ? (
+            {selectedItem !== 3 && selectedItem !== 4 && selectedItem !== 5 && tab === 0 ? (
               <View style={styles.lightningTabContent}>
                 <View style={styles.addressRow}>
                   <Text bold h2 style={styles.addressText} numberOfLines={1}>
@@ -534,7 +693,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       ? user + "@coinos.io"
                       : strikeMe?.username + "@strike.me"}
                   </Text>
-                  <TouchableOpacity onPress={() => onPressNew(data[0])}>
+                  <TouchableOpacity onPress={() => onPressNew({ id: 1 })}>
                     <Image source={Copy} style={styles.copyIconImage} />
                   </TouchableOpacity>
                 </View>
@@ -565,7 +724,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   </View>
                 </GradientCard>
               </View>
-            ) : selectedItem !== 3 && selectedItem !== 4 && tab === 1 ? (
+            ) : selectedItem !== 3 && selectedItem !== 4 && selectedItem !== 5 && tab === 1 ? (
               <View style={styles.bitcoinTabContent}>
                 <Text h2 bold>
                   Bitcoin Network Address
@@ -587,12 +746,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     {hashBitcoin &&
                       <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
                         <QRCode
-                          getRef={c => {
-                            if (!c?.toDataURL) return;
-                            c?.toDataURL((base64Image: string) => {
-                              base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                            });
-                          }}
                           value={hashBitcoin}
                           size={50}
                           color="black"
@@ -603,7 +756,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   </>
                 }
               </View>
-            ) : selectedItem !== 3 && selectedItem !== 4 && (
+            ) : selectedItem !== 3 && selectedItem !== 4 && selectedItem !== 5 && (
               <View style={styles.liquidTabContent}>
                 <Text h2 bold>
                   Liquid Federation Address
@@ -626,12 +779,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     {hashLiquid &&
                       <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
                         <QRCode
-                          getRef={c => {
-                            if (!c?.toDataURL) return;
-                            c?.toDataURL((base64Image: string) => {
-                              base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                            });
-                          }}
                           value={hashLiquid}
                           size={50}
                           color="black"
@@ -644,6 +791,151 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 <Text semibold style={styles.bitcoinAddressText}>
                   Receive from wallets and exchanges that support the Liquid Federation
                 </Text>
+              </View>
+            )}
+
+            {/* ---- Ark sub-menu (Lightning / Bitcoin / Ark address) ----
+                Mirrors CoinOS's three-tab shape so muscle memory carries
+                between the two custodial-Lightning-ish cards. The
+                differences from CoinOS:
+                  - Lightning → no static @-address (Ark has no Lightning
+                    address concept), just a card-button into
+                    ArkInvoiceScreen for amount entry
+                  - Bitcoin → on-chain board address (deposit funds that
+                    later board into Ark via the next round)
+                  - Ark    → user's VTXO recipient identifier; for
+                    instant off-chain transfers from another Ark user
+                Lives inline so the user never leaves the receive
+                bottom sheet — used to navigate to ArkReceiveScreen,
+                which broke the consistent in-sheet UX. */}
+            {selectedItem === 5 && tab === 0 && (
+              <View style={styles.lightningTabContent}>
+                <GradientCard
+                  colors_={[colors.gray.light, colors.white]}
+                  style={styles.invoiceCardContainer}
+                  linearStyle={styles.invoiceCardHeight}
+                  onPress={() => {
+                    refRBSheet?.current?.close();
+                    setReceivedListSecondTab(false);
+                    setTimeout(() => {
+                      dispatchNavigate('ArkInvoiceScreen', {
+                        matchedRate,
+                        currency,
+                      });
+                    }, 150);
+                  }}
+                >
+                  <View style={styles.invoiceCardBackground}>
+                    <View style={styles.invoiceCardContentRow}>
+                      <View style={styles.invoiceCardTextContainer}>
+                        <Text subHeader bold style={styles.invoiceCardTitle}>
+                          Lightning invoice
+                        </Text>
+                        <Text h4 bold style={styles.invoiceCardDescription}>
+                          Receive Lightning payments into Ark — paid out as a VTXO once the next round commits.
+                        </Text>
+                      </View>
+                      <View style={styles.socketIconContainer}>
+                        <Image
+                          source={Electrik}
+                          style={styles.vaultIconImage}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </GradientCard>
+              </View>
+            )}
+
+            {selectedItem === 5 && tab === 1 && (
+              // Lift the Bitcoin-tab content (header text, address +
+              // QR, footer caption) up 10pt via a paint-only
+              // translateY. Bam's call: the tab body sat too low
+              // relative to the sibling Lightning / Ark tabs after
+              // the sub-menu was inlined — a small upward nudge
+              // visually centers the QR within the sheet. Using
+              // transform (not marginTop) so the layout flow
+              // beneath isn't shifted with it.
+              <View style={[styles.bitcoinTabContent, { transform: [{ translateY: -10 }] }]}>
+                <Text h2 bold>
+                  Bitcoin Network Address
+                </Text>
+                {!arkOnchainAddress ? (
+                  <ActivityIndicator size="large" color="#ffffff" />
+                ) : (
+                  <>
+                    <View style={styles.addressRow}>
+                      <Text semibold style={styles.bitcoinAddressText}>
+                        {arkOnchainAddress}
+                      </Text>
+                      <TouchableOpacity onPress={() => {
+                        Clipboard.setString(arkOnchainAddress);
+                        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+                      }}>
+                        <Image source={Copy} style={styles.copyIconImage} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
+                      <QRCode
+                        value={arkOnchainAddress}
+                        size={50}
+                        color="black"
+                        backgroundColor="white"
+                      />
+                    </View>
+                    <Text semibold style={styles.bitcoinAddressText}>
+                      Deposit Bitcoin here to board funds into Ark on the next round
+                    </Text>
+                    <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 8, textAlign: 'center', fontWeight: '600' }}>
+                      Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Ark and would have to be recovered on-chain.
+                    </Text>
+                  </>
+                )}
+              </View>
+            )}
+
+            {selectedItem === 5 && tab === 2 && (
+              <View style={styles.liquidTabContent}>
+                <Text h2 bold>
+                  Ark Address
+                </Text>
+                {!arkAddress ? (
+                  <ActivityIndicator size="large" color="#ffffff" />
+                ) : (
+                  <>
+                    <View style={styles.addressRow}>
+                      {/* Ark addresses are long opaque pubkey hex; the
+                          full string isn't human-verifiable anyway, so
+                          show first 6 + last 6 chars (e.g.
+                          "ark1ab…xyz999") to keep the row tidy. The
+                          tap-to-copy button below ships the full
+                          address to clipboard, unchanged. */}
+                      <Text semibold style={styles.bitcoinAddressText}>
+                        {arkAddress.length > 13
+                          ? `${arkAddress.slice(0, 6)}…${arkAddress.slice(-6)}`
+                          : arkAddress}
+                      </Text>
+                      <TouchableOpacity onPress={() => {
+                        Clipboard.setString(arkAddress);
+                        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+                      }}>
+                        <Image source={Copy} style={styles.copyIconImage} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
+                      <QRCode
+                        value={arkAddress}
+                        size={50}
+                        color="black"
+                        backgroundColor="white"
+                      />
+                    </View>
+                    <Text semibold style={styles.bitcoinAddressText}>
+                      Receive instant VTXO transfers from another Ark user — no fees, no confirmations
+                    </Text>
+                  </>
+                )}
               </View>
             )}
           </Animated.View>
