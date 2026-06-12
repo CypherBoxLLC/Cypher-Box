@@ -9,8 +9,14 @@ title = "Cypher Box gitleaks"
 useDefault = true
 
 [allowlist]
-description = "Template / example files with placeholder values"
+description = "Template / example files with placeholder values; lockfiles with package integrity hashes"
 paths = [
   '''(^|/)\.env\.example$''',
   '''\.example\.(ts|js|json)$''',
+  # Podfile.lock entries like `AppAuth: <sha1>` are CocoaPods pod-tarball
+  # integrity checksums, not secrets. Same for package-lock.json's `integrity`
+  # fields (sha512 of npm tarballs). Both are deterministic, regenerable, and
+  # have no secret value, but match the generic-api-key heuristic.
+  '''(^|/)Podfile\.lock$''',
+  '''(^|/)package-lock\.json$''',
 ]
