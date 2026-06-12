@@ -552,7 +552,33 @@ const createAuthStore = (
 const useAuthStore = create<AuthStateType>()(
     persist(createAuthStore, {
         name: 'Auth',
-        storage: createJSONStorage(() => zustandStorage)
+        storage: createJSONStorage(() => zustandStorage),
+        // v1: invalidate the persisted Strike OAuth token + auth slice so
+        // any token captured by the prior console.log/Bugsnag-breadcrumb
+        // leak is flushed on first launch of the patched build. Users
+        // re-OAuth Strike on next open. Mirrors `clearStrikeAuth` (kept
+        // fields: reserveStrikeAmount, withdrawStrikeThreshold — user
+        // preferences, not auth state).
+        version: 1,
+        migrate: (persistedState, version) => {
+            const state = (persistedState ?? {}) as Record<string, unknown>;
+            if (version < 1) {
+                return {
+                    ...state,
+                    strikeToken: null,
+                    strikeMe: null,
+                    strikeUser: null,
+                    strikeCurrency: 'USD',
+                    walletTab: false,
+                    matchedRateStrike: 0,
+                    isStrikeAuth: undefined,
+                    allBTCWallets: Array.isArray(state.allBTCWallets)
+                        ? (state.allBTCWallets as string[]).filter(w => w !== 'STRIKE')
+                        : [],
+                };
+            }
+            return state;
+        },
     })
 );
 
