@@ -11,8 +11,11 @@
 
 IMAGE   := cypherbox-build:repro
 OUT     := $(CURDIR)/out
-# Pass-through for the cmdline-tools sha once verified on a Docker host (TODO 2
-# in Dockerfile.build): `make repro-image CMDLINE_TOOLS_SHA256=<sha>`
+# The cmdline-tools sha256 is pinned in Dockerfile.build (ARG default). Set this
+# only to OVERRIDE it, e.g. when bumping CMDLINE_TOOLS_VERSION:
+#   make repro-image CMDLINE_TOOLS_SHA256=<new-sha>
+# When unset, no --build-arg is passed at all - passing an empty value would
+# override the pinned default and silently skip the integrity check.
 CMDLINE_TOOLS_SHA256 ?=
 
 # The build steps run INSIDE the container. The repo (incl. .git, so the
@@ -22,8 +25,12 @@ CMDLINE_TOOLS_SHA256 ?=
 CONTAINER_BUILD := set -euo pipefail; \
   cp -a /src /build/repo; \
   cd /build/repo; \
+  [ -f blue_modules/secrets.ts ] || cp blue_modules/secrets.example.ts blue_modules/secrets.ts; \
+  [ -f src/services/ark/secrets.ts ] || cp src/services/ark/secrets.example.ts src/services/ark/secrets.ts; \
+  [ -f .env ] || cp .env.example .env; \
   rm -rf node_modules android/app/build android/build android/.gradle; \
   npm ci; \
+  ./android/gradlew -p android :app:generateCodegenArtifactsFromSchema; \
   ./android/gradlew -p android :app:bundleRelease -PreactNativeArchitectures=arm64-v8a; \
   mkdir -p /out; \
   cp android/app/build/outputs/bundle/release/app-release.aab /out/app-release.aab; \
@@ -33,7 +40,7 @@ CONTAINER_BUILD := set -euo pipefail; \
 
 repro-image:
 	docker build -f Dockerfile.build \
-	  --build-arg CMDLINE_TOOLS_SHA256=$(CMDLINE_TOOLS_SHA256) \
+	  $(if $(CMDLINE_TOOLS_SHA256),--build-arg CMDLINE_TOOLS_SHA256=$(CMDLINE_TOOLS_SHA256)) \
 	  -t $(IMAGE) .
 
 # One reproducible build -> ./out/app-release.aab (+ printed SHA-256).

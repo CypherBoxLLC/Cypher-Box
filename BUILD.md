@@ -158,6 +158,16 @@ these still need closing:
   per-machine and gitignored, so a third-party rebuild without it differs. The
   web client ID is non-secret; commit a deterministic `.env` (or hardcode the
   constant) for release builds so this field is stable.
+- **Inlined secrets (`secrets.ts` x2).** The JS bundle inlines the Second.tech
+  bark access token (`src/services/ark/secrets.ts`) and the push-relay key
+  (`blue_modules/secrets.ts`), both gitignored. Fresh checkouts fall back to
+  the committed `.example` placeholders (Makefile `CONTAINER_BUILD` and
+  `walletscrutiny/build.sh`), so the build completes and determinism is
+  checkable with no secret present. An auditor can insert their own
+  Second.tech token for a *functional* mainnet build - see
+  `walletscrutiny/README.md`, "Inlined config inputs". A byte-match against
+  the Play binary additionally requires the production values in the rebuild;
+  whether to publish them is an open release decision.
 - **`current-branch.json` / `release-notes.json`** are generated from git at
   `postinstall` and bundled (consumed by `screen/settings/about.js`). They are
   deterministic only when the build runs from the **exact signed tag** (with
@@ -184,5 +194,6 @@ these still need closing:
 Once `make repro-verify` reports `MATCH` and the determinism items in §7 are
 closed, a third party can rebuild a tag and compare against the Play Store APK
 (modulo the signature block, which `apksigner verify` / `diffoscope` strip).
-The walletscrutiny test harness for this lives at `walletscrutiny/test.sh`
+The walletscrutiny verifier for this lives at `walletscrutiny/build.sh`
+(see `walletscrutiny/README.md`).
 (security-plan §11.2).

@@ -4,12 +4,22 @@
 
 echo "=== Fixing low compileSdkVersion in node_modules ==="
 
+# Portable in-place sed. These patches must apply on dev Macs AND in the Linux
+# build container (reproducible build / CI). GNU sed (Linux) uses `sed -i`;
+# BSD/macOS sed uses `sed -i ''`. The wrong form silently no-ops, which is how
+# the Linux CI build kept hitting unpatched (Gradle-8-incompatible) node_modules.
+if sed --version >/dev/null 2>&1; then
+  sedi() { sed -i "$@"; }     # GNU / Linux
+else
+  sedi() { sed -i '' "$@"; }  # BSD / macOS
+fi
+
 find node_modules/*/android/build.gradle node_modules/@*/*/android/build.gradle -maxdepth 0 2>/dev/null | while read f; do
   if grep -q "compileSdkVersion [0-9]" "$f" 2>/dev/null; then
     ver=$(grep -o "compileSdkVersion [0-9]*" "$f" | head -1 | awk '{print $2}')
     if [ -n "$ver" ] && [ "$ver" -lt 30 ]; then
       mod=$(echo "$f" | sed 's|node_modules/||' | sed 's|/android/build.gradle||')
-      sed -i '' "s/compileSdkVersion $ver/compileSdkVersion 35/" "$f"
+      sedi "s/compileSdkVersion $ver/compileSdkVersion 35/" "$f"
       echo "  Fixed $mod: $ver -> 35"
     fi
   fi
@@ -27,7 +37,7 @@ done
 # the only change widget-center actually needs for Gradle 8.
 WIDGET_GRADLE="node_modules/react-native-widget-center/android/build.gradle"
 if [ -f "$WIDGET_GRADLE" ] && grep -qE "^[[:space:]]*classifier = '" "$WIDGET_GRADLE"; then
-  sed -i '' -E "s/^([[:space:]]*)classifier = '([^']*)'/\1archiveClassifier.set('\2')/" "$WIDGET_GRADLE"
+  sedi -E "s/^([[:space:]]*)classifier = '([^']*)'/\1archiveClassifier.set('\2')/" "$WIDGET_GRADLE"
   echo "  Fixed react-native-widget-center: classifier -> archiveClassifier.set()"
 fi
 
@@ -39,12 +49,12 @@ fi
 #       here via sed so it survives `npm ci` without patch-package.
 RNLDK_PROPS="node_modules/rn-ldk/android/gradle.properties"
 if [ -f "$RNLDK_PROPS" ] && grep -q "^RnLdk_kotlinVersion=1.3.50" "$RNLDK_PROPS"; then
-  sed -i '' "s/^RnLdk_kotlinVersion=1.3.50/RnLdk_kotlinVersion=1.6.0/" "$RNLDK_PROPS"
+  sedi "s/^RnLdk_kotlinVersion=1.3.50/RnLdk_kotlinVersion=1.6.0/" "$RNLDK_PROPS"
   echo "  Fixed rn-ldk: kotlinVersion 1.3.50 -> 1.6.0"
 fi
 RNLDK_KT="node_modules/rn-ldk/android/src/main/java/com/rnldk/RnLdkModule.kt"
 if [ -f "$RNLDK_KT" ] && grep -q "promise.reject(e.message);" "$RNLDK_KT"; then
-  sed -i '' "s/promise.reject(e.message);/promise.reject(e);/" "$RNLDK_KT"
+  sedi "s/promise.reject(e.message);/promise.reject(e);/" "$RNLDK_KT"
   echo "  Fixed rn-ldk: promise.reject(e.message) -> reject(e)"
 fi
 
@@ -61,7 +71,7 @@ fi
 # compiles cleanly against RN 0.76, so this Kotlin call is the only change.
 NITRO_KT="node_modules/react-native-nitro-modules/android/src/main/java/com/margelo/nitro/NitroModulesPackage.kt"
 if [ -f "$NITRO_KT" ] && grep -q "canOverrideExistingModule = false," "$NITRO_KT"; then
-  sed -i '' \
+  sedi \
     -e "s/          canOverrideExistingModule = false,/          false,/" \
     -e "s/          needsEagerInit = false,/          false,/" \
     -e "s/          isCxxModule = false,/          false,/" \
@@ -82,7 +92,7 @@ fi
 # appended (the line then ends in `)!!`, not `)`).
 LOTTIE_KT="node_modules/lottie-react-native/android/src/main/java/com/airbnb/android/react/lottie/LottieAnimationViewPropertyManager.kt"
 if [ -f "$LOTTIE_KT" ] && grep -qE '\.getMap\(i\)$' "$LOTTIE_KT"; then
-  sed -i '' -E 's/\.getMap\(i\)$/.getMap(i)!!/' "$LOTTIE_KT"
+  sedi -E 's/\.getMap\(i\)$/.getMap(i)!!/' "$LOTTIE_KT"
   echo "  Fixed lottie-react-native: getMap(i) -> getMap(i)!! (RN 0.77 nullable)"
 fi
 
@@ -97,7 +107,7 @@ fi
 # pattern `(0))` no longer matches.
 WEBVIEW_KT="node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewManagerImpl.kt"
 if [ -f "$WEBVIEW_KT" ] && grep -q "webView.loadUrl(args.getString(0))" "$WEBVIEW_KT"; then
-  sed -i '' 's/webView\.loadUrl(args\.getString(0))/webView.loadUrl(args.getString(0)!!)/' "$WEBVIEW_KT"
+  sedi 's/webView\.loadUrl(args\.getString(0))/webView.loadUrl(args.getString(0)!!)/' "$WEBVIEW_KT"
   echo "  Fixed react-native-webview: loadUrl(getString(0)) -> getString(0)!! (RN 0.77 nullable)"
 fi
 
@@ -109,7 +119,7 @@ fi
 # Idempotent: guarded on the removeEventListener line, which is gone after the first run.
 RNMODAL="node_modules/react-native-modal/dist/modal.js"
 if [ -f "$RNMODAL" ] && grep -q "BackHandler.removeEventListener('hardwareBackPress', this.onBackButtonPress);" "$RNMODAL"; then
-  sed -i '' \
+  sedi \
     -e "s/        BackHandler.addEventListener('hardwareBackPress', this.onBackButtonPress);/        this.backButtonSubscription = BackHandler.addEventListener('hardwareBackPress', this.onBackButtonPress);/" \
     -e "s/        BackHandler.removeEventListener('hardwareBackPress', this.onBackButtonPress);/        if (this.backButtonSubscription) this.backButtonSubscription.remove();/" \
     "$RNMODAL"
@@ -121,7 +131,7 @@ fi
 # commonjs) instead of bumping the native dep. Idempotent via the removeEventListener guard.
 RNSHARE_M="node_modules/react-native-share/lib/module/components/ShareSheet.js"
 if [ -f "$RNSHARE_M" ] && grep -q "BackHandler.removeEventListener('hardwareBackPress', backButtonHandler);" "$RNSHARE_M"; then
-  sed -i '' \
+  sedi \
     -e "s/    BackHandler.addEventListener('hardwareBackPress', backButtonHandler);/    const _rnsBackSub = BackHandler.addEventListener('hardwareBackPress', backButtonHandler);/" \
     -e "s/      BackHandler.removeEventListener('hardwareBackPress', backButtonHandler);/      _rnsBackSub.remove();/" \
     "$RNSHARE_M"
@@ -129,7 +139,7 @@ if [ -f "$RNSHARE_M" ] && grep -q "BackHandler.removeEventListener('hardwareBack
 fi
 RNSHARE_C="node_modules/react-native-share/lib/commonjs/components/ShareSheet.js"
 if [ -f "$RNSHARE_C" ] && grep -q "_reactNative.BackHandler.removeEventListener('hardwareBackPress', backButtonHandler);" "$RNSHARE_C"; then
-  sed -i '' \
+  sedi \
     -e "s/    _reactNative.BackHandler.addEventListener('hardwareBackPress', backButtonHandler);/    const _rnsBackSub = _reactNative.BackHandler.addEventListener('hardwareBackPress', backButtonHandler);/" \
     -e "s/      _reactNative.BackHandler.removeEventListener('hardwareBackPress', backButtonHandler);/      _rnsBackSub.remove();/" \
     "$RNSHARE_C"
@@ -145,7 +155,7 @@ fi
 # canScheduleExactAlarms() is false. Idempotent: guarded on the canScheduleExactAlarms marker.
 RNPUSH="node_modules/react-native-push-notification/android/src/main/java/com/dieam/reactnativepushnotification/modules/RNPushNotificationHelper.java"
 if [ -f "$RNPUSH" ] && ! grep -q "canScheduleExactAlarms" "$RNPUSH"; then
-  sed -i '' \
+  sedi \
     -e 's/                getAlarmManager().setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent);/                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || getAlarmManager().canScheduleExactAlarms()) { getAlarmManager().setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); } else { getAlarmManager().setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); }/' \
     -e 's/                getAlarmManager().setExact(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent);/                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || getAlarmManager().canScheduleExactAlarms()) { getAlarmManager().setExact(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); } else { getAlarmManager().set(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); }/' \
     "$RNPUSH"
