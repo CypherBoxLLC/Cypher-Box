@@ -171,6 +171,35 @@ export function registerArkBackgroundRefreshHandlers(): void {
                 // see the notification at this layer for content-available
                 // pushes — included here as defensive code in case the
                 // routing changes.
+            } else if (
+                notification &&
+                notification.userInteraction === true &&
+                (data.source === 'ark-vtxo-expiry-warn24h' ||
+                    data.source === 'ark-vtxo-expiry-warn2h')
+            ) {
+                // User tapped a pre-scheduled VTXO expiry warning. Whether
+                // the toggle is on or off, the user has now signalled
+                // intent by opening the notification — fire a refresh
+                // round immediately rather than waiting for them to find
+                // a button in the UI. Cross-platform: the JS-side handler
+                // fires on both iOS and Android for local-notification
+                // taps (unlike the silent-push path above, which iOS
+                // routes through AppDelegate.mm).
+                //
+                // runBackgroundRefresh hydrates the wallet handle if the
+                // process is fresh (cold-start from a tapped
+                // notification), then refreshes every eligible VTXO in
+                // one round — not just the one the warning was scoped to
+                // — since other near-expiry VTXOs benefit from riding
+                // the same round.
+                require('./backgroundRefresh')
+                    .runBackgroundRefresh('foreground')
+                    .catch((err: unknown) => {
+                        console.warn(
+                            '[Ark scheduler] expiry-warning tap refresh threw:',
+                            err,
+                        );
+                    });
             }
         },
     });
