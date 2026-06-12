@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Image, ImageBackground, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Image, ImageBackground, Linking, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput, GradientText } from "@Cypher/components";
@@ -19,7 +19,7 @@ import { resetAndNavigate } from "@Cypher/helpers/navigation";
 import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 export default function TransactionBroadCast({navigation, route}: any) {
-    const {matchedRate, type, value, converted, isSats, item, receiveType, currency = 'USD' } = route?.params;
+    const {matchedRate, type, value, converted, isSats, item, receiveType, currency = 'USD', strikePending = false } = route?.params;
     const amountSat = isSats ? value : converted;
     const amountUSD = isSats ? converted : value
     const [response, setResponse] = useState(false);
@@ -83,14 +83,14 @@ export default function TransactionBroadCast({navigation, route}: any) {
                 <View style={styles.container}>
                     {response &&
                         <>
-                            <Text h1 bold center style={styles.title}>Transaction Broadcasted...</Text>
+                            <Text h1 bold center style={styles.title}>{strikePending ? 'Withdrawal Submitted' : 'Transaction Broadcasted...'}</Text>
                             <Animated.View style={animatedStyle}>
                                 <Text semibold center style={styles.sats}>{amountSat} sats</Text>
                                 <View style={styles.extra} />
                                 <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                                 <View style={styles.extra} />
                                 <Text h2 bold center>{to}</Text>
-                                <GradientText style={styles.gradientText}>Estimated time: ~2hr</GradientText>
+                                <GradientText style={styles.gradientText}>{strikePending ? 'Strike is sending this on-chain. Arrives in about an hour.' : 'Estimated time: ~2hr'}</GradientText>
                             </Animated.View>
                         </>
                         // :
@@ -178,6 +178,32 @@ export default function TransactionBroadCast({navigation, route}: any) {
                     </ImageBackground>
                 } */}
                 {/* <View style={styles.extra} /> */}
+                {response && item?.txid &&
+                    <TouchableOpacity
+                        style={{
+                            alignSelf: 'center',
+                            marginTop: 12,
+                            paddingHorizontal: 16,
+                            paddingVertical: 8,
+                        }}
+                        onPress={() => {
+                            // #details auto-expands the inputs/outputs panel on
+                            // mempool.space — same fragment used by the parent
+                            // tx detail explorer button in SendReceiveOnChain.
+                            const url = `https://mempool.space/tx/${item.txid}#details`;
+                            Linking.openURL(url).catch(err => console.error('mempool open failed:', err));
+                        }}
+                    >
+                        <Text semibold center style={{ color: colors.white, textDecorationLine: 'underline' }}>
+                            View transaction in Bitcoin Network Explorer
+                        </Text>
+                        {item?.originalTxid &&
+                            <Text center style={{ color: colors.gray.light, fontSize: 11, marginTop: 4 }}>
+                                {type === 'cpfp' ? 'Child of' : 'Replaces'} {String(item.originalTxid).substring(0, 8)}…
+                            </Text>
+                        }
+                    </TouchableOpacity>
+                }
                 {response &&
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
                         title={receiveType ? 'Transaction Details' : 'Home'}

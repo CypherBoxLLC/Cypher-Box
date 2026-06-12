@@ -1,0 +1,23 @@
+diff --git a/node_modules/rn-ldk/android/gradle.properties b/node_modules/rn-ldk/android/gradle.properties
+index 3bb1b73..c4747f3 100644
+--- a/node_modules/rn-ldk/android/gradle.properties
++++ b/node_modules/rn-ldk/android/gradle.properties
+@@ -1,4 +1,4 @@
+-RnLdk_kotlinVersion=1.3.50
++RnLdk_kotlinVersion=1.6.0
+ RnLdk_compileSdkVersion=29
+ RnLdk_buildToolsVersion=29.0.2
+ RnLdk_targetSdkVersion=29
+diff --git a/node_modules/rn-ldk/android/src/main/java/com/rnldk/RnLdkModule.kt b/node_modules/rn-ldk/android/src/main/java/com/rnldk/RnLdkModule.kt
+index fdab263..1e0cca4 100644
+--- a/node_modules/rn-ldk/android/src/main/java/com/rnldk/RnLdkModule.kt
++++ b/node_modules/rn-ldk/android/src/main/java/com/rnldk/RnLdkModule.kt
+@@ -301,7 +301,7 @@ class RnLdkModule(private val reactContext: ReactApplicationContext) : ReactCont
+       promise.resolve("hello ldk");
+     } catch (e: Exception) {
+       println("ReactNativeLDK: can't start, " + e.message);
+-      promise.reject(e.message);
++      promise.reject(e);
+     }
+   }
+ 

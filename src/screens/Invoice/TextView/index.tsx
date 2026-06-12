@@ -1,16 +1,21 @@
 import { Text } from "@Cypher/component-library";
 import React from "react";
-import { StyleSheet, TextStyle, View } from "react-native";
+import { StyleSheet, TextStyle, View, ViewStyle } from "react-native";
 
 interface Props {
     keytext: string;
     text: string;
     textStyle?: TextStyle;
+    /** Optional override for the row's outer container style. Used to
+     * collapse the default `marginBottom: 30` on rows that need to sit
+     * tight against their neighbour (e.g. amount / spent-from / trading
+     * fees on the BUY review). */
+    containerStyle?: ViewStyle;
 }
 
-export default function TextView({ keytext, text, textStyle }: Props) {
+export default function TextView({ keytext, text, textStyle, containerStyle }: Props) {
     return (
-        <View style={styles.container}>
+        <View style={StyleSheet.flatten([styles.container, containerStyle])}>
             <Text bold style={{fontSize: 18}}>{keytext}</Text>
             <Text italic style={StyleSheet.flatten([styles.text,textStyle && textStyle])}>{text}</Text>
         </View>

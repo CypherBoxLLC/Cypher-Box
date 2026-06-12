@@ -295,11 +295,11 @@ export default class Browser extends Component {
       pageIsLoading: false,
       stateURL: url || 'https://www.duckduckgo.com/',
     };
-    BackHandler.addEventListener('hardwareBackPress', this.handleBackButton.bind(this));
+    this.backHandlerSub = BackHandler.addEventListener('hardwareBackPress', this.handleBackButton.bind(this));
   }
 
   componentWillUnmount = () => {
-    BackHandler.removeEventListener('hardwareBackPress', this.handleBackButton.bind(this));
+    this.backHandlerSub?.remove();
   };
 
   handleBackButton() {

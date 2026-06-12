@@ -1,10 +1,15 @@
 import useAuthStore from '@Cypher/stores/authStore';
 import { Platform } from 'react-native';
 import { triggerPaymentNotification } from '@Cypher/components/PaymentNotification';
+import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 // Connect to our relay instead of directly to CoinOS (Cloudflare blocks direct WS)
 const RELAY_WS_URL = 'wss://notifications.cypherbox.io:3003';
-const { coinosRelayUri, RELAY_API_KEY } = require('../../blue_modules/constants');
+const { coinosRelayUri } = require('../../blue_modules/constants');
+// RELAY_API_KEY lives in a gitignored secrets module so it never enters
+// repo history. Bootstrap with `cp blue_modules/secrets.example.ts
+// blue_modules/secrets.ts` on a fresh checkout.
+const { RELAY_API_KEY } = require('../../blue_modules/secrets');
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -58,6 +63,13 @@ if (__DEV__) console.log('[CoinOS WS] Payment received:', data.amount, 'sats');
 
           // Show in-app banner
           triggerPaymentNotification(data.amount, data.confirmed, 'coinos', 'CoinOS');
+
+          // Activity log: only emit on confirmed=true to avoid double-
+          // counting the unconfirmed → confirmed transition for the
+          // same invoice. Iid is intentionally NOT logged (privacy).
+          if (data.confirmed) {
+            recordEvent({ kind: 'ln-received', wallet: 'coinos', sats: data.amount });
+          }
 
           if (onPaymentReceived) {
             onPaymentReceived(data);
@@ -199,5 +211,65 @@ export const unregisterPushToken = async (username: string, pushToken: string) =
 if (__DEV__) console.log('[CoinOS Relay] Push unregistered');
   } catch (e) {
     console.warn('[CoinOS Relay] Push unregister failed:', e);
+  }
+};
+
+/**
+ * Toggle the per-device Ark refresh opt-in on the relay. Called from
+ * setArkBackgroundRefreshEnabled when the user flips the toggle.
+ *
+ * The relay's silent-push scanner only targets devices with
+ * ark_refresh_opt_in = 1, so this call is the gating signal — without
+ * it, the client may have written its background-readable seed locally
+ * but the relay won't ever wake the device via push.
+ *
+ * Failure does not block the toggle from succeeding. Scheduled wakes
+ * (BGProcessingTask / WorkManager) still fire either way; the silent
+ * push is the safety-net path.
+ */
+export const setArkRefreshSubscription = async (
+  username: string,
+  pushToken: string,
+  optIn: boolean,
+): Promise<boolean> => {
+  if (!username || !pushToken || !coinosRelayUri) return false;
+  try {
+    const response = await fetch(`${coinosRelayUri}/ark-refresh/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': RELAY_API_KEY },
+      body: JSON.stringify({ username, pushToken, optIn }),
+    });
+    if (__DEV__) console.log('[CoinOS Relay] ark-refresh/subscribe', { optIn, status: response.status });
+    return response.ok;
+  } catch (e) {
+    console.warn('[CoinOS Relay] ark-refresh/subscribe failed:', e);
+    return false;
+  }
+};
+
+/**
+ * Fire-and-forget. Tells the relay the unix-seconds at which the
+ * soonest-expiring spendable VTXO will become unrecoverable, so its
+ * scanner can decide when to fire a silent push wake. `null` means
+ * the wallet currently has no spendable VTXOs whose expiry is
+ * computable (or no spendable VTXOs at all) — the relay should
+ * suppress pushes for the device until a non-null value lands.
+ *
+ * Called from useArkSync after each successful foreground sync.
+ * Errors are swallowed; the next sync (30s later) retries.
+ */
+export const postArkRefreshExpiry = async (
+  username: string,
+  soonestExpiryAt: number | null,
+): Promise<void> => {
+  if (!username || !coinosRelayUri) return;
+  try {
+    await fetch(`${coinosRelayUri}/ark-refresh/expiry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': RELAY_API_KEY },
+      body: JSON.stringify({ username, soonestExpiryAt }),
+    });
+  } catch (e) {
+    if (__DEV__) console.log('[CoinOS Relay] ark-refresh/expiry failed (will retry next sync):', (e as Error)?.message);
   }
 };

@@ -9,7 +9,9 @@
 #import <UserNotifications/UserNotifications.h>
 #import <RNCPushNotificationIOS.h>
 #import "EventEmitter.h"
+#import "ArkBackgroundScheduler.h"
 #import <React/RCTRootView.h>
+#import <React/RCTLegacyViewManagerInteropComponentView.h>
 
 @interface AppDelegate() <UNUserNotificationCenterDelegate>
 
@@ -21,6 +23,15 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+  // Register legacy Paper view managers (react-native-camera) with Fabric's interop layer.
+  [RCTLegacyViewManagerInteropComponentView supportLegacyViewManagerWithName:@"RNCamera"];
+
+  // Register Ark background-refresh task identifier. Must run synchronously
+  // BEFORE didFinishLaunchingWithOptions returns — registering after the
+  // launch path closes triggers a BGTaskScheduler runtime crash on the
+  // next submit.
+  [ArkBackgroundScheduler registerTaskIdentifiers];
+
   [Bugsnag start];
   [self copyDeviceUID];
   
@@ -64,6 +75,11 @@
 }
 
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
+{
+  return [self bundleURL];
+}
+
+- (NSURL *)bundleURL
 {
 #if DEBUG
   return [[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"index"];
@@ -193,6 +209,17 @@
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
 fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler
 {
+  // Intercept Ark silent-refresh wakes BEFORE the existing
+  // re-post-as-local logic. Silent pushes from the relay carry
+  // type="ark.refresh.due" and no user-visible content — re-posting
+  // them as a local notification would surface a confusing empty
+  // banner. handlePushNotification: also captures the completion
+  // handler, so we return early.
+  if ([ArkBackgroundScheduler handlePushNotification:userInfo
+                                      withCompletion:completionHandler]) {
+    return;
+  }
+
   // When app is in background/inactive, re-post as local notification so iOS shows the banner
   if (application.applicationState != UIApplicationStateActive) {
     NSDictionary *aps = userInfo[@"aps"];

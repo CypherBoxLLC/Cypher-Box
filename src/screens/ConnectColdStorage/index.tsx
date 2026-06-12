@@ -20,6 +20,7 @@ import createHash from "create-hash";
 import { BlueURDecoder, decodeUR, extractSingleWorkload } from "../../../blue_modules/ur";
 import { BlueText } from "BlueComponents";
 import { extractXpub, isValidXpub } from "@Cypher/helpers/bbqrHelper";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
 const fs = require('../../../blue_modules/fs');
 const Base43 = require('../../../blue_modules/base43');
 const bitcoin = require('bitcoinjs-lib');
@@ -111,6 +112,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             const id = wallet.getID();
             setColdStorageWalletID(id)
+            recordEvent({ kind: 'cold-vault-created' });
             let subtitle: any;
             try {
                 subtitle = wallet.getDerivationPath?.();

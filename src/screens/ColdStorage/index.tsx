@@ -1,5 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Alert, Image, Keyboard, LayoutAnimation, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from "react-native";
+import MaskedView from "@react-native-masked-view/masked-view";
 import { Icon } from 'react-native-elements';
 import SimpleToast from "react-native-simple-toast";
 
@@ -8,6 +9,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import Clipboard from '@react-native-clipboard/clipboard'
 import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
 import { BitcoinUnit, Chain } from "../../../models/bitcoinUnits";
@@ -24,7 +26,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { scanQrHelper } from "../../../helpers/scan-qr";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
-import { Check, Edit, StrikeFull, CoinOS, Hot, Cold1 } from "@Cypher/assets/images";
+import { Check, Edit, StrikeFull, CoinOS, Hot, Cold1, Second } from "@Cypher/assets/images";
 import { getStrikeDepositAddress, createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import { createInvoice as createInvoiceCoinos } from "@Cypher/api/coinOSApis";
 
@@ -43,7 +45,7 @@ export const shortenAddress = (address: string) => {
 
 
 export default function ColdStorage({ route, navigation }: Props) {
-    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
+    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, toArk = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
     const [feePrecalc, setFeePrecalc] = useState({ current: null, slowFee: null, mediumFee: null, fastestFee: null });
     const [usd, setUSD] = useState(inUSD);
     const [sats, setSats] = useState('100K sats  ~$' + usd);
@@ -85,7 +87,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [changeDepositAddress, setChangeDepositAddress] = useState<string | null>(null);
     const [changeFetchLoading, setChangeFetchLoading] = useState(false);
     const { wallets, setSelectedWalletID, sleep, txMetadata, saveToDisk, isElectrumDisabled } = useContext(BlueStorageContext);
-    const { walletID, coldStorageWalletID, isStrikeAuth, isAuth } = useAuthStore();
+    const { walletID, coldStorageWalletID, isStrikeAuth, isAuth, isArkAuth } = useAuthStore();
     const { navigate } = useNavigation();
     console.log('inUSDinUSD: ', usd, inUSD)
 
@@ -99,14 +101,37 @@ export default function ColdStorage({ route, navigation }: Props) {
     const balanceWallet = !wallet?.hideBalance && formatBalance(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const balanceWithoutSuffix = !wallet?.hideBalance && formatBalanceWithoutSuffix(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const primaryColor = vaultTab ? colors.coldGreen : colors.green
-    const [selectedItem, setSelectedItem] = useState(isStrikeAuth ? 1 : 2);
+    // Default selection: prefer the rail the user actually has an address
+    // for. We pick the FIRST authed-and-addressed account in priority
+    // Strike → CoinOS → Ark, so existing Strike/CoinOS users see no
+    // behavior change. CoinOS is skipped entirely when the feature flag
+    // disables it (e.g. iOS in EU on production builds), so the default
+    // doesn't land on a hidden card.
+    const coinosOk = isCoinosAllowed();
+    const initialSelectedItem = (() => {
+      if (isStrikeAuth && toStrike) return 1;
+      if (isAuth && to && coinosOk) return 2;
+      if (isArkAuth && toArk) return 3;
+      // Fall back to whichever rail is authed even if address isn't
+      // ready yet — the existing useEffect will hook the address up
+      // when it arrives.
+      if (isStrikeAuth) return 1;
+      if (isAuth && coinosOk) return 2;
+      if (isArkAuth) return 3;
+      return 2;
+    })();
+    const [selectedItem, setSelectedItem] = useState(initialSelectedItem);
     const [data, setData] = useState([
       {
         id: 1,
         name: "Strike",
         type: 0,
         icon: StrikeFull,
-        enabled: isStrikeAuth,
+        // We disable the card when the user isn't authed for the rail OR
+        // when the address fetch hasn't returned yet. The latter prevents
+        // the user from selecting Strike, hitting Next, and then sending
+        // to `undefined`. Same gate now on Ark below.
+        enabled: isStrikeAuth && !!toStrike,
         navigation: {
           screen: "SendScreen",
           params: {
@@ -121,13 +146,37 @@ export default function ColdStorage({ route, navigation }: Props) {
         name: "CoinOS",
         type: 0,
         icon: CoinOS,
-        enabled: isAuth,
+        // Region/platform gate: same isCoinosAllowed() helper used by
+        // the home screen popups so the construct-tx card list stays in
+        // sync. Production iOS in EU never sees this card; dev / non-EU
+        // / Android always do.
+        enabled: isAuth && !!to && isCoinosAllowed(),
         navigation: {
           screen: "SendScreen",
           params: {
             matchedRate,
             currency: 'USD',
             receiveType: true
+          },
+        },
+      },
+      // Ark destination — funds the Ark vault by sending the picked
+      // hot/cold-vault UTXOs to its on-chain "boarding" address. The
+      // ASP boards the funds in the next round; the Ark balance updates
+      // after sync. Same construct-tx flow as Strike/CoinOS, just a
+      // different destination address.
+      {
+        id: 3,
+        name: "Ark Vault",
+        type: 0,
+        icon: Second,
+        enabled: isArkAuth && !!toArk,
+        navigation: {
+          screen: "SendScreen",
+          params: {
+            matchedRate,
+            currency: 'USD',
+            receiveType: false,
           },
         },
       },
@@ -164,14 +213,22 @@ export default function ColdStorage({ route, navigation }: Props) {
     }, [isBatch])
 
     useEffect(() => {
-      if(selectedItem == 1 && toStrike){
-        setDestinationAddress(toStrike)
-      } else if (selectedItem == 2 && to){
-        setDestinationAddress(to)
+      if (selectedItem == 1 && toStrike) {
+        setDestinationAddress(toStrike);
+      } else if (selectedItem == 2 && to) {
+        setDestinationAddress(to);
+      } else if (selectedItem == 3 && toArk) {
+        // Ark on-chain boarding address — the construct-tx send flow
+        // (same one used for Strike/CoinOS top-ups) treats it as a
+        // standard Bitcoin address; the ASP-side boarding is invisible
+        // to the broadcaster.
+        setDestinationAddress(toArk);
       } else if (to) {
-        setDestinationAddress(to)
+        setDestinationAddress(to);
+      } else if (toArk) {
+        setDestinationAddress(toArk);
       }
-    }, [to, selectedItem])
+    }, [to, toStrike, toArk, selectedItem])
 
     useEffect(() => {
         if (!wallet) return;
@@ -440,7 +497,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         setChangeFetchLoading(true);
         try {
             if (destination === 'STRIKE') {
-                const response = await createInvoiceStrike({ onchain: {} });
+                const response = await createInvoiceStrike({ onchain: {}, targetCurrency: "BTC" }); // Cypher Box: receive as Bitcoin, no auto-convert to fiat
                 if (response?.onchain?.address) {
                     setChangeDepositAddress(response.onchain.address);
                 } else {
@@ -883,7 +940,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         <ScreenLayout showToolbar>
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
-                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to && toStrike ? "Top-up Transaction" : vaultSend ? (vaultTab ? "Move to Hot Vault" : "Move to Cold Vault") : "Construct transaction"}</Text>
+                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to || toStrike || toArk ? "Top-up Transaction" : vaultSend ? (vaultTab ? "Move to Hot Vault" : "Move to Cold Vault") : "Construct transaction"}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -913,7 +970,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 </Text>
                               </View>
                             ))}
-                            {(to || toStrike) && capsuleTotal > 0 && (
+                            {(to || toStrike || toArk) && capsuleTotal > 0 && (
                               <Text bold style={[styles.coinselected, { fontSize: 12, marginTop: 4 }]}>Total: {formatBalance(capsuleTotal, BitcoinUnit.BTC, true)}</Text>
                             )}
                           </View>
@@ -974,7 +1031,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                     :
                       <View style={styles.priceView}>
                           <View>
-                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike ? "Top-up amount" : vaultSend ? "Amount moved" : "Recipient will get:"}</Text>
+                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike || toArk ? "Top-up amount" : vaultSend ? "Amount moved" : "Recipient will get:"}</Text>
                               <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
                               <View style={{flexDirection: 'row', marginTop: 8}}>
                                   <View style={styles.tabs}>
@@ -1084,7 +1141,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                                 {changeDestination === 'STRIKE' && <Icon name="check" type="font-awesome" color="#FF65D4" size={12} containerStyle={{marginLeft: 'auto'}} />}
                                                             </TouchableOpacity>
                                                         )}
-                                                        {isAuth && (
+                                                        {isAuth && coinosOk && (
                                                             <TouchableOpacity
                                                                 onPress={() => { handleChangeDestination('COINOS'); setShowChangeMenu(false); }}
                                                                 style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10}}
@@ -1104,47 +1161,124 @@ export default function ColdStorage({ route, navigation }: Props) {
                         })()
                     }
                     {/* Send-from address removed — now shown per-capsule below */}
-                    {to || toStrike ?
+                    {to || toStrike || toArk ?
                         <View style={[styles.priceView, { marginTop: 0 }]}>
                           <View>
                               {!isBatch &&
                                 <>
                                   {!vaultSend &&
-                                    <View style={[styles.cardListContainer, type === 'TOPUP' && { justifyContent: 'center' }, { marginTop: 0, marginBottom: 5, gap: 20 }]}>
-                                      {data?.map((item) => (
-                                        <GradientView
-                                          key={item.id}
-                                          onPress={() => {
-                                            if (item.enabled) setSelectedItem(item.id);
-                                          }}
-                                          style={[styles.cardGradientStyle, !item.enabled && { opacity: 0.35 }]}
-                                          linearGradientStyle={styles.cardOuterShadow}
-                                          topShadowStyle={[
-                                            styles.cardTopShadow,
-                                            (selectedItem == null || selectedItem != item?.id) && { shadowColor : colors.gray.disable }
-                                          ]}
-                                          bottomShadowStyle={[
-                                            styles.cardInnerShadow,
-                                            (selectedItem == null || selectedItem != item?.id) && { shadowColor : colors.gray.disable }
-                                          ]}
-                                          linearGradientStyleMain={styles.cardGradientMainStyle}
-                                          gradiantColors={[colors.black.bg, colors.black.bg]}
-                                        >
-                                          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
-                                            <Image
-                                              source={item?.icon}
-                                              style={styles.logoImage}
-                                              resizeMode="contain"
-                                            />
-                                          </View>
-                                        </GradientView>
-                                      ))}
-                                    </View>
+                                    <ScrollView
+                                      horizontal
+                                      showsHorizontalScrollIndicator={false}
+                                      // Cards used to wrap a plain row View. With three providers
+                                      // (Strike + CoinOS + Ark Vault) on a 393pt iPhone the math
+                                      // already overflows (3 × widths*0.3 + 2 × 20pt gap ≈ 394pt),
+                                      // cropping the Second card on the right. Future providers
+                                      // (e.g. another Lightning rail) would compound. Horizontal
+                                      // ScrollView gracefully degrades regardless of N cards.
+                                      contentContainerStyle={[
+                                        styles.cardListContainer,
+                                        type === 'TOPUP' && { justifyContent: 'center' },
+                                        { marginTop: 0, marginBottom: 5, gap: 12, paddingHorizontal: 4 },
+                                      ]}
+                                    >
+                                      {data?.filter((item) => {
+                                        // When a single destination was committed upstream
+                                        // (e.g. the home Top-up flow, where the account is
+                                        // chosen on the prior screen, so only one of
+                                        // to/toStrike/toArk is passed), hide the non-chosen
+                                        // provider cards rather than greying them. When 2+
+                                        // destinations are passed (the capsule flow lets the
+                                        // user pick the provider on this screen), keep all
+                                        // cards visible. Presentation-only: does not change
+                                        // selectedItem / destinationAddress routing.
+                                        if ([to, toStrike, toArk].filter(Boolean).length > 1) return true;
+                                        if (item.id === 1) return !!toStrike; // Strike
+                                        if (item.id === 2) return !!to;       // CoinOS
+                                        if (item.id === 3) return !!toArk;    // Ark Vault
+                                        return true;
+                                      }).map((item) => {
+                                        const isSelected = selectedItem === item?.id;
+                                        return (
+                                          <GradientView
+                                            key={item.id}
+                                            // Honour the enabled gate at the TouchableOpacity layer
+                                            // (was previously only checked inside onPress, leaving
+                                            // disabled cards visually identical to enabled ones —
+                                            // user taps, nothing happens, looks broken). Now disabled
+                                            // cards get GradientView's grey-on-grey treatment so the
+                                            // affordance matches reality.
+                                            disabled={!item.enabled}
+                                            onPress={() => {
+                                              if (item.enabled) setSelectedItem(item.id);
+                                            }}
+                                            style={[
+                                              styles.cardGradientStyle,
+                                              !item.enabled && { opacity: 0.35 },
+                                              // Yellow Ark-accent outline on the selected card so
+                                              // the selection is unmistakable. The previous design
+                                              // relied on the inner/outer shadow swapping color
+                                              // when selected, which is subtle to the point of
+                                              // invisibility on this dark background.
+                                              isSelected && { borderWidth: 2, borderColor: '#FFD54F', borderRadius: 20 },
+                                            ]}
+                                            linearGradientStyle={styles.cardOuterShadow}
+                                            topShadowStyle={[
+                                              styles.cardTopShadow,
+                                              !isSelected && { shadowColor: colors.gray.disable },
+                                            ]}
+                                            bottomShadowStyle={[
+                                              styles.cardInnerShadow,
+                                              !isSelected && { shadowColor: colors.gray.disable },
+                                            ]}
+                                            linearGradientStyleMain={styles.cardGradientMainStyle}
+                                            gradiantColors={[colors.black.bg, colors.black.bg]}
+                                          >
+                                            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+                                              {item.id === 3 ? (
+                                                // second.png ships as a multi-color (not a flat alpha
+                                                // mask), so `tintColor: '#FFFFFF'` does NOT visibly
+                                                // tint it — confirmed empirically and noted in
+                                                // src/components/Card/index.tsx:257. MaskedView is the
+                                                // working pattern: use the PNG as an alpha mask and
+                                                // fill it with a solid white. Other providers (Strike,
+                                                // CoinOS) ship as white-on-transparent PNGs already
+                                                // and render fine with plain <Image>.
+                                                <MaskedView
+                                                  style={styles.logoImage}
+                                                  maskElement={
+                                                    <Image
+                                                      source={item?.icon}
+                                                      style={styles.logoImage}
+                                                      resizeMode="contain"
+                                                    />
+                                                  }
+                                                >
+                                                  <View style={[styles.logoImage, { backgroundColor: '#FFFFFF' }]} />
+                                                </MaskedView>
+                                              ) : (
+                                                <Image
+                                                  source={item?.icon}
+                                                  style={styles.logoImage}
+                                                  resizeMode="contain"
+                                                />
+                                              )}
+                                            </View>
+                                          </GradientView>
+                                        );
+                                      })}
+                                    </ScrollView>
                                   }
                                 </>
                               }
                               {!vaultSend &&
-                                <Text style={{fontSize: 12, color: '#AAAAAA'}}>{selectedItem == 1 ? "Strike Lightning account deposit address" : "CoinOS Lightning account deposit address"}</Text>
+                                <Text style={{fontSize: 12, color: '#AAAAAA'}}>
+                                  {selectedItem == 1
+                                    ? "Strike Lightning account deposit address"
+                                    : selectedItem == 3
+                                      ? "Ark Vault boarding address (P2TR)"
+                                      : "CoinOS Lightning account deposit address"}
+                                </Text>
                               }
                               {type !== 'TOPUP' && (
                                 isBatch ?
@@ -1173,7 +1307,42 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     </TouchableOpacity>
                                   </View>
                                   :
-                                    <Text style={{fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888', marginTop: 4}}>{vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(selectedItem == 1 ? (toStrike || '') : (to || ''))}</Text>
+                                  (() => {
+                                    // Resolve the actual address shown next to the destination
+                                    // label so the user can verify + copy what's going to be
+                                    // signed. CoinOS used to be hardcoded when multiple LN
+                                    // wallets existed; now it follows selectedItem.
+                                    const fullAddr = vaultSend
+                                      ? to
+                                      : selectedItem == 1
+                                        ? (toStrike || '')
+                                        : selectedItem == 3
+                                          ? (toArk || '')
+                                          : (to || '');
+                                    return (
+                                      <TouchableOpacity
+                                        activeOpacity={0.6}
+                                        onPress={() => {
+                                          if (!fullAddr) return;
+                                          Clipboard.setString(fullAddr);
+                                          SimpleToast.show('Address copied', SimpleToast.SHORT);
+                                        }}
+                                        // Stack the address over the copy link instead of
+                                        // sharing a row. A P2TR (bc1p, 62-char) boarding
+                                        // address competing with the copy link for row width
+                                        // wrapped to 3 lines with "copy" stranded mid-address.
+                                        // Full-width address wraps to ~2 lines; copy sits below.
+                                        style={{ marginTop: 4 }}
+                                      >
+                                        <Text style={{ fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888' }}>
+                                          {vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(fullAddr)}
+                                        </Text>
+                                        {!!fullAddr &&
+                                          <Text style={{ fontSize: 10, color: '#888', marginTop: 3, alignSelf: 'flex-end', textDecorationLine: 'underline' }}>copy</Text>
+                                        }
+                                      </TouchableOpacity>
+                                    );
+                                  })()
                               )}
                           </View>
                         </View>
@@ -1262,7 +1431,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                         <Text style={{ color: bridgeProvider === 'STRIKE' ? '#FF65D4' : '#fff', fontSize: 14, fontWeight: '600' }}>Strike</Text>
                                                     </TouchableOpacity>
                                                 )}
-                                                {isAuth && (
+                                                {isAuth && coinosOk && (
                                                     <TouchableOpacity
                                                         style={{ borderRadius: 12, borderWidth: 1, borderColor: bridgeProvider === 'COINOS' ? '#FF65D4' : '#444', backgroundColor: bridgeProvider === 'COINOS' ? '#FF65D433' : '#1a1a1a', paddingVertical: 10, paddingHorizontal: 24, alignItems: 'center' }}
                                                         onPress={() => setBridgeProvider('COINOS')}

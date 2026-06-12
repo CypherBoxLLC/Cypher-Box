@@ -44,7 +44,21 @@ export default function GradientButtonWithShadow({
 }: Props) {
   return (
     <TouchableOpacity
-      style={[styles.linearGradient, isShadow && shadow.shadow25, style]}
+      // `shadow25` sets backgroundColor: white so iOS has an opaque layer
+      // to cast the drop shadow from. That white bg antialiases ~1–2px
+      // past the LinearGradient child's matching borderRadius, producing
+      // a faint white halo at the rounded corners — most visible against
+      // the Ark card's darker canvas but present on every tile. Re-assert
+      // a dark bg AFTER shadow25 to eliminate the bleed while keeping
+      // opacity so the shadow still renders on iOS. `#2D2D2D` sits
+      // between the gradient stops (#333333 → #282727) so even if the bg
+      // does peek it reads as part of the button.
+      style={[
+        styles.linearGradient,
+        isShadow && shadow.shadow25,
+        isShadow && { backgroundColor: '#2D2D2D' },
+        style,
+      ]}
       onPress={onPress}
       disabled={disabled}
     >

@@ -22,6 +22,7 @@ import { btcToSatoshi } from "../../../blue_modules/currency";
 const BlueElectrum = require('../../../blue_modules/BlueElectrum');
 import { sendLightningPayment } from "@Cypher/api/coinOSApis";
 import { sendStrikeLightningPayment } from "@Cypher/api/strikeAPIs";
+import { recordEvent } from "@Cypher/stores/eventLogStore";
 const bitcoin = require('bitcoinjs-lib');
 
 interface Props {
@@ -127,7 +128,15 @@ export default function ConfirmTransction({ route }: Props) {
             for (const recipient of recipients) {
               amount += recipient.value;
             }
-      
+
+            // Activity log: capture sats BEFORE the BTC-string reformat below.
+            // recipients[].value is in satoshis (BlueWallet convention).
+            // ConfirmTransction is the Hot Vault broadcast screen — Cold
+            // Vault sends route through ConfirmHardwareTransaction instead.
+            if (amount > 0) {
+                recordEvent({ kind: 'onchain-sent', wallet: 'hot-vault', sats: amount });
+            }
+
             amount = formatBalanceWithoutSuffix(amount, BitcoinUnit.BTC, false);
       
             // let amount = 0;

@@ -21,7 +21,6 @@ import { satoshiToBTC } from '../../blue_modules/currency';
 const bitcoin = require('bitcoinjs-lib');
 
 const SendCreate = ({navigation, route}) => {
-  console.log('fee: ', route?.params)
   const { fee, recipients, memo = '', satoshiPerByte, psbt, showAnimatedQr, tx } = route?.params || {};
   const transaction = bitcoin.Transaction.fromHex(tx);
   const size = transaction.virtualSize();

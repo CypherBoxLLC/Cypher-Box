@@ -35,7 +35,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
     const { wallets, saveToDisk, sleep, isElectrumDisabled } = useContext(BlueStorageContext);
     const [address, setAddress] = useState();
     const [refreshing, setRefreshing] = useState(false);
-    const base64QrCodeRef = useRef('');
+    // const base64QrCodeRef = useRef(''); // disabled: toDataURL broken under Fabric/New Arch
 
     const obtainWalletAddress = async () => {
         let newAddress;
@@ -190,12 +190,6 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                         >
                             <View style={{ alignItems:'center', justifyContent: 'center', width: "100%", height: "100%", margin: 0, padding: 20, backgroundColor: 'white', borderRadius: 28 }}>
                                 <QRCode
-                                    getRef={c => {
-                                        if (!c?.toDataURL) return;
-                                        c?.toDataURL((base64Image: string) => {
-                                            base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                                        });
-                                    }}
                                     value={address}
                                     size={175}
                                     color="black"
@@ -207,12 +201,6 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                         <View style={styles.qrcode}>
                             <View style={{ alignItems:'center', justifyContent: 'center', width: "100%", height: "100%", margin: 0, padding: 20, backgroundColor: 'white', borderRadius: 30 }}>
                                 <QRCode
-                                    getRef={c => {
-                                        if (!c?.toDataURL) return;
-                                        c?.toDataURL((base64Image: string) => {
-                                            base64QrCodeRef.current = base64Image?.replace(/(\r\n|\n|\r)/gm, '');
-                                        });
-                                    }}
                                     value={address}
                                     size={175}
                                     color="black"
