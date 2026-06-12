@@ -22,7 +22,7 @@ Why this is in big text at the top: most of this document's pre-May history is w
 | `ARK_NETWORK` | `Network.Bitcoin` |
 | `ARK_SERVER_URL` | `https://ark.second.tech` |
 | `ESPLORA_URL` | `https://blockstream.info/api` |
-| ASP auth | `BARK_ACCESS_TOKEN` from gitignored `src/services/ark/secrets.ts` |
+| ASP auth | none (`serverAccessToken` omitted; the prior `BARK_ACCESS_TOKEN` beta gate at ark.second.tech was removed server-side on 2026-06-12) |
 | `ARK_VTXO_DUST_SATS` | `330` (mirrors Bitcoin standard dust) |
 | `ARK_REFRESH_MIN_SATS` | `500` (empirical ASP minimum for round participation) |
 
