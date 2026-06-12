@@ -54,16 +54,15 @@ matching git tag inside a pinned Docker image, derives a universal APK, and
 compares it against the Play binary, ignoring signature blocks and zip
 compression. See [`walletscrutiny/README.md`](walletscrutiny/README.md).
 
-Three configuration inputs are compiled into the binary at build time: the
-Second.tech bark access token (`src/services/ark/secrets.ts`), the
-push-relay API key (`blue_modules/secrets.ts`), and the Google Drive web
+Two configuration inputs are compiled into the binary at build time: the
+push-relay API key (`blue_modules/secrets.ts`) and the Google Drive web
 client ID (`.env`). Fresh clones build with committed `.example`
 placeholders, so the toolchain's determinism is fully verifiable with no
 secret in the tree (`make repro-verify`). A byte-match against the Play
-binary additionally requires the production values for those three
-constants, which is the current open item for a full walletscrutiny
-verdict; see [`BUILD.md`](BUILD.md) §7 and §9.
+binary additionally requires the production values for those two constants,
+which is the current open item for a full walletscrutiny verdict; see
+[`BUILD.md`](BUILD.md) §7 and §9.
 
-An auditor who wants a *functional* mainnet Ark build can insert their own
-Second.tech access token into `src/services/ark/secrets.ts` before building
-(the file documents how to obtain one).
+The Ark wallet itself needs no inlined credential. An earlier
+`BARK_ACCESS_TOKEN` was a beta-only gate at `ark.second.tech` and was
+removed server-side on 2026-06-12.

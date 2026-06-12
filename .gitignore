@@ -22,7 +22,10 @@ DerivedData
 *.xcuserstate
 ios/.xcode.env.local
 
-# Local secrets (copy from *.example.ts and fill in)
+# Defense-in-depth: keep this path gitignored even though no source file
+# imports from it any more, in case a dev still has a real value at this
+# path. The constant was removed in the BARK_ACCESS_TOKEN cleanup
+# (Second.tech removed the gate beta-only on 2026-06-12).
 src/services/ark/secrets.ts
 
 *.hprof

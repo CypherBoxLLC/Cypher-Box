@@ -1,5 +1,4 @@
 import { Config, Network } from '@secondts/bark-react-native';
-import { BARK_ACCESS_TOKEN } from './secrets';
 
 /**
  * Master kill-switch for the Ark feature.
@@ -98,7 +97,10 @@ export const ESPLORA_URL = 'https://blockstream.info/api';
 export function createArkConfig(overrides?: Partial<Parameters<typeof Config.create>[0]>) {
     return Config.create({
         serverAddress: ARK_SERVER_URL,
-        serverAccessToken: BARK_ACCESS_TOKEN,
+        // serverAccessToken was the beta-only gate at ark.second.tech (removed
+        // server-side per Second.tech, 2026-06-12). Field is optional in the
+        // SDK; omitting it lets the ASP authenticate the wallet by mnemonic-
+        // derived identity alone, same as any other bark client.
         esploraAddress: ESPLORA_URL,
         bitcoindAddress: undefined,
         bitcoindCookiefile: undefined,
