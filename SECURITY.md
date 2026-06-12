@@ -6,7 +6,10 @@ Email **info@cypherbox.io** with details. Please don't open a public GitHub
 issue for an unpatched vulnerability; we'll coordinate disclosure.
 
 Expected response: initial reply within 5 business days, then weekly progress
-updates until resolved. We don't currently run a paid bounty program.
+updates until resolved.
+
+We pay bounties for valid vulnerability reports. Amounts are determined by
+severity and impact; reach out to info@cypherbox.io to discuss.
 
 Safe harbour: we will not pursue legal action against good-faith research
 that respects user funds and data and discloses responsibly.
