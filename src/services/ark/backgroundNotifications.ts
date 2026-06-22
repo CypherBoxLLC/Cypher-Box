@@ -97,16 +97,16 @@ export function notifyExpiryWarning24h(): void {
     );
 }
 
-export function notifyExpiryWarning2h(): void {
+export function notifyExpiryWarning6h(): void {
     fire(
         'Capsule expiring NOW',
-        'A capsule will expire within 2 hours. Open Cypher Box immediately to refresh.',
+        'A capsule will expire within 6 hours. Open Cypher Box immediately to refresh.',
         'high',
     );
 }
 
 /**
- * Schedule the 24h + 2h expiry-warning notifications for a specific VTXO.
+ * Schedule the 24h + 6h expiry-warning notifications for a specific VTXO.
  *
  * These are queued in the OS notification scheduler (UNUserNotificationCenter
  * on iOS, AlarmManager on Android) at the moment the VTXO is observed. They
@@ -132,12 +132,27 @@ export function notifyExpiryWarning2h(): void {
  * wallet is statistically negligible; if it ever bites we'll switch
  * to a longer hash + a numeric-namespace map.
  */
-function notificationIdFor(vtxoId: string, kind: 'warn24h' | 'warn2h'): string {
+function notificationIdFor(vtxoId: string, kind: 'warn24h' | 'warn6h'): string {
     // FNV-1a 32-bit hash, then mask to 31 bits and prefix-tag by kind so the
-    // 24h and 2h alerts for the same VTXO get distinct IDs. Stable across
-    // app restarts — same input always produces same id, so cancel works.
+    // 24h and 6h alerts for the same VTXO get distinct IDs. Stable across
+    // app restarts: same input always produces same id, so cancel works.
     let h = 2166136261;
     const tagged = `${kind}:${vtxoId}`;
+    for (let i = 0; i < tagged.length; i++) {
+        h ^= tagged.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return String(h & 0x7fffffff);
+}
+
+// Migration: prior to the 2h -> 6h rollout the second warning was tagged
+// `warn2h`, which produces a different hash. We need to cancel those legacy
+// IDs explicitly during the first sync after the upgrade so the old alarms
+// don't fire phantom "expires in 2 hours" notifications. Safe to keep around
+// indefinitely: a no-op once every device has migrated through one sync tick.
+function legacyWarn2hNotificationId(vtxoId: string): string {
+    let h = 2166136261;
+    const tagged = `warn2h:${vtxoId}`;
     for (let i = 0; i < tagged.length; i++) {
         h ^= tagged.charCodeAt(i);
         h = Math.imul(h, 16777619);
@@ -152,7 +167,16 @@ export function scheduleVtxoExpiryWarnings(
     ensureInit();
     const now = Date.now();
     const warn24hAt = expiryAtMs - 24 * 60 * 60 * 1000;
-    const warn2hAt = expiryAtMs - 2 * 60 * 60 * 1000;
+    const warn6hAt = expiryAtMs - 6 * 60 * 60 * 1000;
+
+    // Migration: drop any pre-upgrade `warn2h` alarm for this VTXO so it
+    // doesn't fire two hours before expiry alongside the new six-hour one.
+    try {
+        PushNotification.cancelLocalNotification(legacyWarn2hNotificationId(vtxoId));
+    } catch {
+        // never throws meaningfully; library has been known to no-op-warn on
+        // stale ids. Ignore.
+    }
 
     if (warn24hAt > now) {
         PushNotification.localNotificationSchedule({
@@ -170,19 +194,19 @@ export function scheduleVtxoExpiryWarnings(
             allowWhileIdle: true,
         });
     }
-    if (warn2hAt > now) {
+    if (warn6hAt > now) {
         PushNotification.localNotificationSchedule({
-            id: notificationIdFor(vtxoId, 'warn2h'),
+            id: notificationIdFor(vtxoId, 'warn6h'),
             channelId: CHANNEL_ID,
             title: 'Act now or you may lose Bitcoin 🚨',
             message:
-                'Your Ark vault balance expires in about 2 hours. Open Cypher Box now to keep it safe.',
-            date: new Date(warn2hAt),
+                'Your Ark vault balance expires in about 6 hours. Open Cypher Box now to keep it safe.',
+            date: new Date(warn6hAt),
             priority: 'high',
             importance: 'high',
             playSound: true,
             soundName: 'default',
-            userInfo: { source: 'ark-vtxo-expiry-warn2h', vtxoId },
+            userInfo: { source: 'ark-vtxo-expiry-warn6h', vtxoId },
             allowWhileIdle: true,
         });
     }
@@ -191,7 +215,9 @@ export function scheduleVtxoExpiryWarnings(
 export function cancelVtxoExpiryWarnings(vtxoId: string): void {
     try {
         PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, 'warn24h'));
-        PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, 'warn2h'));
+        PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, 'warn6h'));
+        // Migration: also clear the pre-upgrade 2h alarm if still queued.
+        PushNotification.cancelLocalNotification(legacyWarn2hNotificationId(vtxoId));
     } catch (err) {
         // Cancellation should never throw, but the library has been
         // observed to no-throw-but-warn on stale ids. Swallow.

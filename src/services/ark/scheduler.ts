@@ -175,6 +175,7 @@ export function registerArkBackgroundRefreshHandlers(): void {
                 notification &&
                 notification.userInteraction === true &&
                 (data.source === 'ark-vtxo-expiry-warn24h' ||
+                    data.source === 'ark-vtxo-expiry-warn6h' ||
                     data.source === 'ark-vtxo-expiry-warn2h')
             ) {
                 // User tapped a pre-scheduled VTXO expiry warning. Whether

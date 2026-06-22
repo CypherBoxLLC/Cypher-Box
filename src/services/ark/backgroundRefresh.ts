@@ -24,7 +24,7 @@ import {
     notifyDustStranded,
     notifyDustUneconomic,
     notifyExpiryWarning24h,
-    notifyExpiryWarning2h,
+    notifyExpiryWarning6h,
     notifyFeeGated,
     notifyStuckRefresh,
 } from './backgroundNotifications';
@@ -602,7 +602,7 @@ export async function runBackgroundRefresh(
         const longExpiryNonDust: Candidate[] = []; // ≥ batchDays AND > dust — usable as filler
         let triggerCount = 0;
         let imminent24h = false;
-        let imminent2h = false;
+        let imminent6h = false;
         let deferredSkipped = 0;
         for (const v of vtxos.spendable) {
             // Honour user-deferred VTXOs (Arkoor-receive popup "Use
@@ -626,7 +626,7 @@ export async function runBackgroundRefresh(
             // not just the batch-eligible set.
             const hoursLeft = daysLeft * 24;
             if (hoursLeft < 24) imminent24h = true;
-            if (hoursLeft < 2) imminent2h = true;
+            if (hoursLeft < 6) imminent6h = true;
             const cand: Candidate = { id: v.id, sats: v.sats, daysLeft };
             if (daysLeft < BG_REFRESH_TUNABLES.batchDays) {
                 shortExpiry.push(cand);
@@ -699,11 +699,11 @@ export async function runBackgroundRefresh(
         // even if we exit on `rate_limited` or `no_eligible_vtxos`, the
         // user still needs to know. Dedupe per-window so a 6h scheduler
         // cadence doesn't spam.
-        if (imminent2h) {
+        if (imminent6h) {
             const last2h = useAuthStore.getState().arkBgRefreshLastWarn2hAt;
             if (last2h === null || Date.now() - last2h > BG_REFRESH_TUNABLES.warn2hDedupeWindowMs) {
                 try {
-                    notifyExpiryWarning2h();
+                    notifyExpiryWarning6h();
                     useAuthStore.getState().setArkBgRefreshLastWarn2hAt(Date.now());
                 } catch (notifErr) {
                     console.warn('[Ark bg refresh] 2h warning threw:', notifErr);
