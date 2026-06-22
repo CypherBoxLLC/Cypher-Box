@@ -22,7 +22,9 @@ import {
     fetchArkPendingRoundStates,
     fetchArkVtxos,
     getArkCancelling,
+    getArkWalletHandle,
     refreshArkVtxosAndSync,
+    restoreArkWalletFromDisk,
     setArkCancelling,
     syncArkWallet,
     useArkCancelling,
@@ -964,6 +966,26 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const refreshIds = async (ids: string[]) => {
         if (refreshing) return;
         if (ids.length === 0) return;
+
+        // Hard gate: the SDK throws "Ark wallet not open" if `getArkWalletHandle()`
+        // is null. That happens on a cold launch when the user dismissed (or never
+        // saw) the boot-time biometric prompt that `useArkRestoreOnBoot` fires.
+        // The capsule rows render fine off zustand-persisted state, so the user
+        // can reach Refresh before the handle is ready. Re-attempt the restore
+        // here so we re-prompt biometric and recover transparently.
+        if (!getArkWalletHandle()) {
+            const result = await restoreArkWalletFromDisk();
+            if (!result.restored && result.reason !== "already-open") {
+                const detail =
+                    result.reason === "no-keychain"
+                        ? "Unlock prompt was declined. Restart the app and confirm the biometric prompt to unlock the Ark wallet."
+                        : result.reason === "no-datadir"
+                            ? "Ark wallet data is missing on this device. Use Recover from the home screen to restore it."
+                            : "Could not open the Ark wallet right now. Try again in a few seconds.";
+                SimpleToast.show(detail, SimpleToast.LONG);
+                return;
+            }
+        }
 
         // Refusing to refresh a VTXO that's already Locked in a pending
         // round — the SDK will just block waiting on the same round, and
