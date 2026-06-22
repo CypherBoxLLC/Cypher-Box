@@ -1,10 +1,10 @@
 import { Text } from "@Cypher/component-library";
-import { GradientButtonWithShadow, GradientCardWithShadow } from "@Cypher/components";
-import { calculateBalancePercentage, calculatePercentage, dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
+import { GradientButtonWithShadow, GradientCardWithShadow, StrikeSignupSheet, type StrikeSignupSheetRef } from "@Cypher/components";
+import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
 import { formatNumber, formatSats, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
-import React from "react";
+import React, { useRef } from "react";
 import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import { authorize } from "react-native-app-auth";
 import LinearGradient from "react-native-linear-gradient";
@@ -67,6 +67,7 @@ export default function StrikeWallet({
     hideActionButtons = false,
 }: Props) {
     const { isStrikeAuth, isArkAuth, isAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
+    const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
 
     // Strike + Ark (no CoinOS): the Strike Lightning card sits a bit
     // too high in the carousel slot for this combination. Bump it down
@@ -110,7 +111,7 @@ export default function StrikeWallet({
     };
 
     const createStrikeAccountClickHandler = () => {
-        openInAppBrowser('https://dashboard.strike.me/signup')
+        strikeSignupSheetRef.current?.open()
     };
 
     return (
@@ -241,6 +242,7 @@ export default function StrikeWallet({
                     </View>
                 </View>
             }
+            <StrikeSignupSheet ref={strikeSignupSheetRef} />
         </>
     )
 }

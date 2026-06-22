@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import styles from "./styles";
@@ -16,6 +16,8 @@ import {
   RegisterPrompt,
   HeaderWithLine,
   CreateButton,
+  StrikeSignupSheet,
+  type StrikeSignupSheetRef,
 } from "@Cypher/components";
 import accountStyles from "@Cypher/components/CheckingAccount/styles";
 import LinearGradient from "react-native-linear-gradient";
@@ -66,6 +68,7 @@ export default function CheckingAccountLogin() {
   const [strikeLoading, setStrikeLoading] = React.useState(false);
   const [CoinosException, setCoinosException] = React.useState(false);
   const [pageLoading, setPageLoading] = React.useState(true);
+  const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
 
   useEffect(() => {
     // Geo-gate temporarily disabled per Bam's intermediate phase: ship
@@ -114,7 +117,7 @@ export default function CheckingAccountLogin() {
   };
 
   const createStrikeAccountClickHandler = () => {
-    openInAppBrowser("https://dashboard.strike.me/signup");
+    strikeSignupSheetRef.current?.open();
   };
 
   const handleCoinosLogin = () => {
@@ -362,6 +365,7 @@ export default function CheckingAccountLogin() {
           )}
         </View>
       </View>
+      <StrikeSignupSheet ref={strikeSignupSheetRef} />
     </ScreenLayout>
   );
 }
