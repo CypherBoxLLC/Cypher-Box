@@ -90,10 +90,13 @@ export function notifyFeeGated(feeSats: number, maxSats: number): void {
 }
 
 export function notifyExpiryWarning24h(): void {
+    // Source override routes the tap through the same deep-link path as
+    // the scheduled warnings: ArkCapsules tab + auto-refresh on arrival.
     fire(
         'Capsule expiring soon',
         'A capsule will expire within 24 hours and auto-refresh has not run. Open Cypher Box to refresh.',
         'high',
+        { source: 'ark-vtxo-expiry-warn24h' },
     );
 }
 
@@ -102,40 +105,122 @@ export function notifyExpiryWarning6h(): void {
         'Capsule expiring NOW',
         'A capsule will expire within 6 hours. Open Cypher Box immediately to refresh.',
         'high',
+        { source: 'ark-vtxo-expiry-warn6h' },
     );
 }
 
+type WarnKind = 'warn96h' | 'warn48h' | 'warn24h' | 'warn12h' | 'warn6h';
+
 /**
- * Schedule the 24h + 6h expiry-warning notifications for a specific VTXO.
- *
- * These are queued in the OS notification scheduler (UNUserNotificationCenter
- * on iOS, AlarmManager on Android) at the moment the VTXO is observed. They
- * fire even if the app process is killed, the device sleeps for days, no
- * background-refresh task ever wakes, and no silent push lands — as long as
- * the device clock is running and notifications are permitted.
- *
- * That's the whole point: this path is the only mitigation for the
- * "user receives via Lightning while online, then goes offline indefinitely"
- * edge case. Background refresh and silent push both need the device to
- * have signal + battery + OS goodwill. Pre-scheduled local notifications
- * just need the clock to tick.
- *
- * Idempotent on re-schedule with the same `vtxoId` — the OS replaces the
- * existing entry. The caller is responsible for canceling on VTXO state
- * change (refreshed / spent / exited) via {@link cancelVtxoExpiryWarnings}
- * so users don't get phantom alerts about funds that already moved.
- *
- * vtxoId is hashed to a 31-bit signed integer because the underlying
- * library (react-native-push-notification 8.1.1) treats `id` as a
- * positive int on iOS — VTXO IDs are 64-char hex+colon which the
- * library can't handle natively. Collision risk across a 50-VTXO
- * wallet is statistically negligible; if it ever bites we'll switch
- * to a longer hash + a numeric-namespace map.
+ * Source IDs that identify a scheduled Ark VTXO expiry warning. Both the
+ * scheduler that emits them and the tap handler in `scheduler.ts` reference
+ * this list, so adding a new warning is a single edit. The legacy `warn2h`
+ * entry is retained so a pre-upgrade alarm that survives the migration
+ * cancel still drives the same deep-link path if it ever fires.
  */
-function notificationIdFor(vtxoId: string, kind: 'warn24h' | 'warn6h'): string {
-    // FNV-1a 32-bit hash, then mask to 31 bits and prefix-tag by kind so the
-    // 24h and 6h alerts for the same VTXO get distinct IDs. Stable across
-    // app restarts: same input always produces same id, so cancel works.
+export const ARK_EXPIRY_WARNING_SOURCES = [
+    'ark-vtxo-expiry-warn96h',
+    'ark-vtxo-expiry-warn48h',
+    'ark-vtxo-expiry-warn24h',
+    'ark-vtxo-expiry-warn12h',
+    'ark-vtxo-expiry-warn6h',
+    'ark-vtxo-expiry-warn2h',
+] as const;
+
+export type ArkExpiryWarningSource = (typeof ARK_EXPIRY_WARNING_SOURCES)[number];
+
+export function isArkExpiryWarningSource(s: unknown): s is ArkExpiryWarningSource {
+    return typeof s === 'string'
+        && (ARK_EXPIRY_WARNING_SOURCES as readonly string[]).includes(s);
+}
+
+/**
+ * Pre-expiry warning schedule. Each row defines one OS-level alarm that
+ * fires `offsetMs` before a VTXO's expiry timestamp. Add a row to add a
+ * warning; the schedule + cancel loops adapt automatically. Order matters
+ * only for readability — the loop skips entries whose target time is
+ * already past.
+ *
+ * Five-step escalation by design: the earliest warnings (4d, 48h) read
+ * informational; the middle warnings (24h, 12h) call out the deadline
+ * directly; the final warning (6h) is the urgent last reminder. 1h or
+ * shorter was rejected because an Ark refresh round can itself take ten
+ * to thirty minutes — a late ping wouldn't leave room to act.
+ */
+const WARN_SCHEDULE: ReadonlyArray<{
+    kind: WarnKind;
+    source: ArkExpiryWarningSource;
+    offsetMs: number;
+    title: string;
+    message: string;
+}> = [
+    {
+        kind: 'warn96h',
+        source: 'ark-vtxo-expiry-warn96h',
+        offsetMs: 96 * 60 * 60 * 1000,
+        title: 'Capsule expiring in 4 days',
+        message:
+            'Some of your Ark vault balance expires in about 4 days. Open Cypher Box and refresh to keep it.',
+    },
+    {
+        kind: 'warn48h',
+        source: 'ark-vtxo-expiry-warn48h',
+        offsetMs: 48 * 60 * 60 * 1000,
+        title: 'Capsule expiring in 2 days',
+        message:
+            'Some of your Ark vault balance expires in about 48 hours. Open Cypher Box and refresh to keep it.',
+    },
+    {
+        kind: 'warn24h',
+        source: 'ark-vtxo-expiry-warn24h',
+        offsetMs: 24 * 60 * 60 * 1000,
+        title: 'Open Cypher Box to protect your Bitcoin ⚠️',
+        message:
+            'Some of your Ark vault balance expires in about 24 hours! Open the app to keep it, or it may be lost.',
+    },
+    {
+        kind: 'warn12h',
+        source: 'ark-vtxo-expiry-warn12h',
+        offsetMs: 12 * 60 * 60 * 1000,
+        title: 'Capsule expiring in 12 hours ⚠️',
+        message:
+            'Your Ark vault balance expires in about 12 hours. Open Cypher Box now and refresh to keep it safe.',
+    },
+    {
+        kind: 'warn6h',
+        source: 'ark-vtxo-expiry-warn6h',
+        offsetMs: 6 * 60 * 60 * 1000,
+        title: 'Act now or you may lose Bitcoin 🚨',
+        message:
+            'Your Ark vault balance expires in about 6 hours. Open Cypher Box now to keep it safe.',
+    },
+];
+
+/**
+ * Hash a VTXO id + kind to a stable 31-bit signed integer.
+ *
+ * react-native-push-notification 8.1.1 treats `id` as a positive int on iOS,
+ * and VTXO ids are 64-char hex+colon which the library cannot handle
+ * natively. The hash is FNV-1a, stable across app restarts so cancellation
+ * works against the same id we scheduled with. Collision risk across a
+ * 50-VTXO wallet is statistically negligible.
+ *
+ * Pre-scheduled OS-level alarms (UNUserNotificationCenter on iOS,
+ * AlarmManager on Android) fire even if the app is killed, the device
+ * sleeps for days, no background-refresh task wakes, and no silent push
+ * lands — as long as the device clock is running and notifications are
+ * permitted. That's the whole point: this path is the only mitigation for
+ * the "user receives via Lightning while online, then goes offline
+ * indefinitely" edge case. Pre-scheduled local notifications just need
+ * the clock to tick.
+ *
+ * Schedule is idempotent on re-schedule with the same `vtxoId` — the OS
+ * replaces the existing entry. The caller is responsible for canceling on
+ * VTXO state change (refreshed / spent / exited) via
+ * {@link cancelVtxoExpiryWarnings} so users don't get phantom alerts about
+ * funds that already moved.
+ */
+function notificationIdFor(vtxoId: string, kind: WarnKind): string {
     let h = 2166136261;
     const tagged = `${kind}:${vtxoId}`;
     for (let i = 0; i < tagged.length; i++) {
@@ -166,11 +251,9 @@ export function scheduleVtxoExpiryWarnings(
 ): void {
     ensureInit();
     const now = Date.now();
-    const warn24hAt = expiryAtMs - 24 * 60 * 60 * 1000;
-    const warn6hAt = expiryAtMs - 6 * 60 * 60 * 1000;
 
     // Migration: drop any pre-upgrade `warn2h` alarm for this VTXO so it
-    // doesn't fire two hours before expiry alongside the new six-hour one.
+    // doesn't fire alongside the new schedule.
     try {
         PushNotification.cancelLocalNotification(legacyWarn2hNotificationId(vtxoId));
     } catch {
@@ -178,35 +261,20 @@ export function scheduleVtxoExpiryWarnings(
         // stale ids. Ignore.
     }
 
-    if (warn24hAt > now) {
+    for (const w of WARN_SCHEDULE) {
+        const at = expiryAtMs - w.offsetMs;
+        if (at <= now) continue;
         PushNotification.localNotificationSchedule({
-            id: notificationIdFor(vtxoId, 'warn24h'),
+            id: notificationIdFor(vtxoId, w.kind),
             channelId: CHANNEL_ID,
-            title: 'Open Cypher Box to protect your Bitcoin ⚠️',
-            message:
-                'Some of your Ark vault balance expires in about 24 hours! Open the app to keep it, or it may be lost.',
-            date: new Date(warn24hAt),
+            title: w.title,
+            message: w.message,
+            date: new Date(at),
             priority: 'high',
             importance: 'high',
             playSound: true,
             soundName: 'default',
-            userInfo: { source: 'ark-vtxo-expiry-warn24h', vtxoId },
-            allowWhileIdle: true,
-        });
-    }
-    if (warn6hAt > now) {
-        PushNotification.localNotificationSchedule({
-            id: notificationIdFor(vtxoId, 'warn6h'),
-            channelId: CHANNEL_ID,
-            title: 'Act now or you may lose Bitcoin 🚨',
-            message:
-                'Your Ark vault balance expires in about 6 hours. Open Cypher Box now to keep it safe.',
-            date: new Date(warn6hAt),
-            priority: 'high',
-            importance: 'high',
-            playSound: true,
-            soundName: 'default',
-            userInfo: { source: 'ark-vtxo-expiry-warn6h', vtxoId },
+            userInfo: { source: w.source, vtxoId },
             allowWhileIdle: true,
         });
     }
@@ -214,8 +282,9 @@ export function scheduleVtxoExpiryWarnings(
 
 export function cancelVtxoExpiryWarnings(vtxoId: string): void {
     try {
-        PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, 'warn24h'));
-        PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, 'warn6h'));
+        for (const w of WARN_SCHEDULE) {
+            PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, w.kind));
+        }
         // Migration: also clear the pre-upgrade 2h alarm if still queued.
         PushNotification.cancelLocalNotification(legacyWarn2hNotificationId(vtxoId));
     } catch (err) {

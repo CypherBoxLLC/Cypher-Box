@@ -771,6 +771,16 @@ interface ArkCapsulesProps {
     currency: any;
 }
 
+/**
+ * Threshold (days-until-expiry) for the auto-refresh-on-notification-tap
+ * path. Any VTXO at or below this many days gets included in the round
+ * that fires when the user lands here from a tapped warning. Mirrors
+ * BG_REFRESH_TUNABLES.batchDays in src/services/ark/backgroundRefresh.ts;
+ * kept inline to avoid pulling the full bg-refresh module into the render
+ * hot path. Update both if either changes.
+ */
+const TAP_REFRESH_IMMINENT_DAYS = 14;
+
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
@@ -800,6 +810,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // alongside the rest of the wallet's read state without spinning up a
     // separate poll.
     const arkLastSyncedAt = useAuthStore((s) => s.arkLastSyncedAt);
+    // One-shot flag set by the notification tap handler in
+    // src/services/ark/scheduler.ts. Drives the auto-refresh effect below
+    // so the user lands on this tab with refresh already running, without
+    // having to find a button.
+    const arkPendingTapRefresh = useAuthStore((s) => s.arkPendingTapRefresh);
+    const setArkPendingTapRefresh = useAuthStore((s) => s.setArkPendingTapRefresh);
 
     // Block-height the wallet's policy says we need to refresh by, or null
     // when nothing's in scope (no spendable VTXOs / all already refreshed
@@ -934,6 +950,44 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         });
     }, [arkVtxos, chainTipHeight, arkLastBackupAt]);
 
+    // Auto-refresh when the user landed here from a tapped expiry-warning
+    // notification. The scheduler's tap handler set arkPendingTapRefresh
+    // and dispatched the navigation; this effect picks it up on mount.
+    //
+    // Wait for `rows` to populate (zustand rehydrates arkVtxos before
+    // React mounts, but on a fresh install or an Ark wallet that hasn't
+    // synced yet, rows can briefly be empty). The effect re-runs when
+    // rows changes, so we'll naturally pick it up once the sync tick
+    // lands. Flag is cleared synchronously so a re-render mid-effect
+    // can't double-fire the refresh.
+    useEffect(() => {
+        if (!arkPendingTapRefresh) return;
+        if (rows.length === 0) return;
+        setArkPendingTapRefresh(false);
+        const ids = rows
+            .filter(
+                (r) =>
+                    !r.pendingRound
+                    && !r.unknownExpiry
+                    && r.daysLeft > 0
+                    && r.daysLeft <= TAP_REFRESH_IMMINENT_DAYS
+                    && r.sats >= ARK_REFRESH_MIN_SATS,
+            )
+            .map((r) => r.id);
+        if (ids.length === 0) {
+            SimpleToast.show('No capsules need refreshing right now.', SimpleToast.SHORT);
+            return;
+        }
+        void refreshIds(ids, { skipConfirm: true });
+        // refreshIds is defined later in component scope and is stable
+        // for the lifetime of the screen (no closure-captured changing
+        // deps that matter for this single-shot fire), so excluding it
+        // here is intentional. The eslint rule is disabled per-line
+        // rather than at the file level so other effects in this screen
+        // still get the lint guard.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [arkPendingTapRefresh, rows, setArkPendingTapRefresh]);
+
     const toggle = (id: string) => {
         setSelectedIds((prev) =>
             prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
@@ -959,11 +1013,16 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     /**
      * Refresh a specific set of VTXO ids. Reused by the bottom Refresh
-     * button (passes selectedIds) and the per-row icon (passes a single
-     * vtxo.id). Same fee preview + watchdog + selection-clear semantics
-     * either way.
+     * button (passes selectedIds), the per-row icon (passes a single
+     * vtxo.id), and the auto-refresh-on-tap effect above
+     * (passes the imminent set + `skipConfirm: true`). Same fee
+     * preview + watchdog + selection-clear semantics either way; only
+     * the confirmation dialog is conditional.
      */
-    const refreshIds = async (ids: string[]) => {
+    const refreshIds = async (
+        ids: string[],
+        opts: { skipConfirm?: boolean } = {},
+    ) => {
         if (refreshing) return;
         if (ids.length === 0) return;
 
@@ -1027,19 +1086,25 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const fee = await estimateArkRefreshFee(ids);
             // Present fee preview + confirmation before committing. Round is
             // blocking and can take seconds-to-minutes, so the user should
-            // opt in explicitly rather than have it happen silently.
-            const confirmed = await new Promise<boolean>((resolve) => {
-                Alert.alert(
-                    "Refresh capsules?",
-                    `Re-board ${ids.length} capsule(s) into a new Ark round for ~${fee.feeSats} sats. ` +
-                    `This extends their expiry by another full lifetime and may take up to a minute.`,
-                    [
-                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                        { text: "Refresh", onPress: () => resolve(true) },
-                    ],
-                    { cancelable: true, onDismiss: () => resolve(false) },
-                );
-            });
+            // opt in explicitly rather than have it happen silently. The
+            // notification-tap path skips this dialog: the user already
+            // signalled intent by tapping the warning and the deep-link
+            // would be pointless if we then asked them to tap Refresh
+            // again. They still see the "Refreshing…" UI immediately.
+            const confirmed = opts.skipConfirm
+                ? true
+                : await new Promise<boolean>((resolve) => {
+                    Alert.alert(
+                        "Refresh capsules?",
+                        `Re-board ${ids.length} capsule(s) into a new Ark round for ~${fee.feeSats} sats. ` +
+                        `This extends their expiry by another full lifetime and may take up to a minute.`,
+                        [
+                            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                            { text: "Refresh", onPress: () => resolve(true) },
+                        ],
+                        { cancelable: true, onDismiss: () => resolve(false) },
+                    );
+                });
             if (!confirmed) {
                 setRefreshing(false);
                 return;

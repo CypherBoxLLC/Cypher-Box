@@ -1,6 +1,11 @@
 import { AppRegistry, NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 
+import useAuthStore from '@Cypher/stores/authStore';
+
+import { navigationRef } from '../../../NavigationService';
+import { isArkExpiryWarningSource } from './backgroundNotifications';
+
 /**
  * JS-side wrapper around the native ArkBackgroundScheduler module.
  *
@@ -116,6 +121,54 @@ export async function getDeviceManufacturer(): Promise<string> {
 }
 
 /**
+ * Deep-link the user to the Ark Capsules tab and signal it to auto-refresh
+ * on mount. Called from the notification tap handler — both for live taps
+ * (app already running) and cold-start taps. The cold-start case is
+ * delivered through the same `onNotification` callback because
+ * react-native-push-notification's `configure()` default
+ * `popInitialNotification: true` auto-pops the initial notification once
+ * the JS bridge is ready.
+ *
+ * On cold-start the JS bundle is loaded but NavigationContainer may not
+ * have mounted yet. We poll `navigationRef.isReady()` for up to
+ * `NAV_WAIT_MS` before giving up. If the timeout fires the zustand flag
+ * stays set, so an eventual manual navigation to Capsules will still
+ * consume it and trigger refresh — the user just doesn't get the
+ * automatic routing on this launch.
+ */
+const NAV_WAIT_MS = 8000;
+
+async function dispatchArkExpiryTapRefresh(): Promise<void> {
+    try {
+        useAuthStore.getState().setArkPendingTapRefresh(true);
+    } catch (err) {
+        console.warn('[Ark scheduler] could not set tap-refresh flag:', err);
+    }
+
+    const wallet = useAuthStore.getState().arkWallet;
+    if (!wallet) {
+        // No Ark wallet on this install — the notification shouldn't have
+        // fired in the first place. Bail rather than navigate to a screen
+        // whose other tabs would dereference a null wallet.
+        return;
+    }
+
+    const start = Date.now();
+    while (!navigationRef.isReady() && Date.now() - start < NAV_WAIT_MS) {
+        await new Promise<void>(resolve => setTimeout(resolve, 100));
+    }
+    if (!navigationRef.isReady()) {
+        return;
+    }
+
+    navigationRef.current?.navigate('CheckingAccountNew', {
+        wallet,
+        accountType: 'ark',
+        initialTab: 0,
+    });
+}
+
+/**
  * One-time registration of platform task handlers. Must run from
  * index.js so both Android's AppRegistry-based headless task lookup
  * and iOS's BGTask event listener are attached before the OS routes
@@ -174,33 +227,24 @@ export function registerArkBackgroundRefreshHandlers(): void {
             } else if (
                 notification &&
                 notification.userInteraction === true &&
-                (data.source === 'ark-vtxo-expiry-warn24h' ||
-                    data.source === 'ark-vtxo-expiry-warn6h' ||
-                    data.source === 'ark-vtxo-expiry-warn2h')
+                isArkExpiryWarningSource(data.source)
             ) {
-                // User tapped a pre-scheduled VTXO expiry warning. Whether
-                // the toggle is on or off, the user has now signalled
-                // intent by opening the notification — fire a refresh
-                // round immediately rather than waiting for them to find
-                // a button in the UI. Cross-platform: the JS-side handler
-                // fires on both iOS and Android for local-notification
-                // taps (unlike the silent-push path above, which iOS
-                // routes through AppDelegate.mm).
+                // User tapped a pre-scheduled VTXO expiry warning (or one
+                // of the live equivalents fired from a bg-refresh tick).
+                // The earlier design ran `runBackgroundRefresh` inside
+                // this handler, which had no UI signal and could fail
+                // silently when the wallet handle was null at tap time.
                 //
-                // runBackgroundRefresh hydrates the wallet handle if the
-                // process is fresh (cold-start from a tapped
-                // notification), then refreshes every eligible VTXO in
-                // one round — not just the one the warning was scoped to
-                // — since other near-expiry VTXOs benefit from riding
-                // the same round.
-                require('./backgroundRefresh')
-                    .runBackgroundRefresh('foreground')
-                    .catch((err: unknown) => {
-                        console.warn(
-                            '[Ark scheduler] expiry-warning tap refresh threw:',
-                            err,
-                        );
-                    });
+                // The new path is deterministic: set a one-shot zustand
+                // flag, then deep-link to the Capsules tab. ArkCapsules
+                // consumes the flag on mount, hydrates the wallet
+                // (re-prompts Keychain biometric if needed), and fires
+                // `refreshIds` against every imminent VTXO with the
+                // existing "Refreshing…" indicator visible from the
+                // moment the screen renders. Works on cold/background/
+                // foreground because configure() auto-pops the initial
+                // notification on cold launches.
+                void dispatchArkExpiryTapRefresh();
             }
         },
     });

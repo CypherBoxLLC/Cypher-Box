@@ -248,6 +248,16 @@ export type AuthStateType = {
     arkBgRefreshLastStuckWarnAt: number | null;
     /** User-configurable upper bound on the fee a background refresh round can auto-pay (sats). Default 5000. */
     arkBgRefreshMaxFeeSats: number;
+    /**
+     * One-shot signal from the notification tap handler to the Capsules
+     * tab. Set when a user taps a VTXO expiry-warning notification (cold,
+     * background, or foreground). ArkCapsules consumes it on mount: it
+     * hydrates the wallet if needed and auto-fires `refreshIds` against
+     * all imminent VTXOs, then clears the flag. Persisted by zustand so
+     * a crash between tap and consumption still triggers refresh on
+     * next mount, which is the safer failure mode.
+     */
+    arkPendingTapRefresh: boolean;
 
     /**
      * Per-VTXO state for the "Arkoor receive" prompt feature.
@@ -325,6 +335,7 @@ export type AuthStateType = {
     setArkBgRefreshLastWarn2hAt: (state: number | null) => void;
     setArkBgRefreshLastStuckWarnAt: (state: number | null) => void;
     setArkBgRefreshMaxFeeSats: (state: number) => void;
+    setArkPendingTapRefresh: (state: boolean) => void;
     setArkIosBackupReminderActive: (state: boolean) => void;
     setArkArkoorPromptState: (
         state: Record<string, {
@@ -401,6 +412,7 @@ const createAuthStore = (
     arkBgRefreshLastWarn2hAt: null,
     arkBgRefreshLastStuckWarnAt: null,
     arkBgRefreshMaxFeeSats: 5000,
+    arkPendingTapRefresh: false,
     arkIosBackupReminderActive: false,
     arkArkoorPromptState: {},
     arkArkoorPromptEnabled: true,
@@ -460,6 +472,7 @@ const createAuthStore = (
     setArkBgRefreshLastWarn2hAt: (state: number | null) => set({ arkBgRefreshLastWarn2hAt: state }),
     setArkBgRefreshLastStuckWarnAt: (state: number | null) => set({ arkBgRefreshLastStuckWarnAt: state }),
     setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
+    setArkPendingTapRefresh: (state: boolean) => set({ arkPendingTapRefresh: state }),
     setArkIosBackupReminderActive: (state: boolean) => set({ arkIosBackupReminderActive: state }),
     setArkArkoorPromptState: (state) => set({ arkArkoorPromptState: state }),
     setArkArkoorPromptEnabled: (state: boolean) => set({ arkArkoorPromptEnabled: state }),
@@ -499,6 +512,7 @@ const createAuthStore = (
             arkBgRefreshLastWarn24hAt: null,
             arkBgRefreshLastWarn2hAt: null,
             arkBgRefreshLastStuckWarnAt: null,
+            arkPendingTapRefresh: false,
             arkIosBackupReminderActive: false,
             // Per-VTXO Arkoor-prompt state is wallet-scoped — clear on
             // disconnect so the next wallet doesn't inherit prior prompts.
