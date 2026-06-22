@@ -121,7 +121,8 @@ export default function GetStartedScreen({ route }: Props) {
     const handleStartClick = () => {
         if (hasAcceptedTermsOfService) {
             AsyncStorage.setItem('hasAcceptedTermsOfService', JSON.stringify(true))
-            AsyncStorage.setItem('acceptedTosVersion', '2026-04')
+            // Keep in sync with CURRENT_TOS_VERSION in SplashScreen.
+            AsyncStorage.setItem('acceptedTosVersion', '2026-06')
             const routeName = isHandset ? 'Navigation' : 'DrawerRoot'
 
             dispatchNavigate(routeName)
@@ -167,11 +168,14 @@ export default function GetStartedScreen({ route }: Props) {
                 </View>
                 {returningUser ? (
                     <View style={[styles.textContainer, { alignItems: 'center', marginTop: 20 }]}>
-                        <Text style={{ fontSize: 28, fontWeight: '900', color: '#fff', fontFamily: 'Archivo-Black', letterSpacing: 1, textAlign: 'center' }}>
-                            Ready to play again?
-                        </Text>
-                        <Text h3 style={{ color: '#888', marginTop: 10, textAlign: 'center' }}>
+                        <Text h3 style={{ color: '#888', textAlign: 'center' }}>
                             We've updated our Terms of Service{'\n'}& Privacy Policy
+                        </Text>
+                        <Text style={{ color: '#ddd', marginTop: 28, marginHorizontal: 24, textAlign: 'center', fontStyle: 'italic', fontSize: 15, lineHeight: 22 }}>
+                            "It might make sense just to get some in case it catches on."
+                        </Text>
+                        <Text style={{ color: '#888', marginTop: 10, textAlign: 'center', fontSize: 12 }}>
+                            - Satoshi Nakamoto
                         </Text>
                     </View>
                 ) : (
