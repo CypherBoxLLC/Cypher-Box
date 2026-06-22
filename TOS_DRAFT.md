@@ -1,5 +1,5 @@
 # TERMS OF SERVICE & PRIVACY POLICY — DRAFT
-# Last Updated: April 2026
+# Last Updated: June 2026
 
 ---
 
@@ -36,7 +36,7 @@ Cypher Box LLC is not liable for any financial losses due to a failure or error 
 
 ### 3. Self-Custodial Vault(s)
 
-Cypher Box enables you to create single, hierarchical deterministic (HD), non-custodial wallet(s) (referred to as "Vault(s)") for Bitcoin. You can use these Vaults to withdraw from your Lightning Account(s), store, send, and receive the digital asset Bitcoin only (BTC).
+Cypher Box enables you to create single, hierarchical deterministic (HD), non-custodial wallet(s) (referred to as "Vault(s)") for Bitcoin. You can use these Vaults to withdraw from your Lightning Account(s), store, send, and receive the digital asset Bitcoin only (BTC). Section 5 below describes a separate non-custodial Lightning offering, the Ark Vault, which uses its own seedphrase and refresh mechanism.
 
 In order to use the hot or cold storage Vault(s) you are expected to be fully aware of the dangers associated with securing your 12-word backup seedphrase. You are expected to know that: you should never lose access to your seedphrase(s); you should write the words in their correct order on a physical medium such as paper or a metallic plate; you should make multiple physical copies and store them in secure locations; you should never share them with anyone including us; and you should never ask us to recover your Vault(s) funds because the only entity capable of doing so is the one that holds the private keys represented in the form of a 12-word seedphrase, which is YOU, NOT US.
 
@@ -52,15 +52,35 @@ You may configure automated withdrawal thresholds that trigger withdrawals from 
 
 Cypher Box LLC is not liable for any financial loss arising from incorrectly constructed transactions, incorrect Capsule selection, misconfigured thresholds, or network fee miscalculations associated with these functions.
 
-### 5. Supported Digital Assets
+### 5. Non-Custodial Lightning Vault (Ark Vault)
+
+Cypher Box enables you to create a non-custodial Lightning wallet (the "Ark Vault") that participates in a shared-signing Bitcoin protocol coordinated by a third-party Ark Service Provider ("ASP"). Unlike the third-party custodian Lightning Accounts described in Section 1, funds held in your Ark Vault remain under your unilateral control: the ASP cannot move, freeze, or seize your funds without your cooperation.
+
+The Ark Vault relies on the ASP's software development kit ("ASP's SDK") to construct co-signed virtual transaction outputs ("VTXOs") that represent your balance. The ASP serves as a coordinator and liquidity provider for these VTXOs but never holds custody of your private keys. Cypher Box LLC is not affiliated with the ASP and has no control over its operations, uptime, availability, fees, or decision to continue providing service.
+
+**Seedphrase generation and backup.** When you create an Ark Vault, the application generates a 12-word backup seedphrase locally on your device. The seedphrase is stored in encrypted local storage. You may optionally enable an additional encrypted backup file to be stored in your device's cloud storage service (iCloud on iOS, Google Drive on Android), at your configuration. The backup file is encrypted on your device before upload. Cypher Box LLC does not have access to your seedphrase, your encrypted backup file, or the encryption key. The ASP does not have access either. If you lose access to your seedphrase and all backup copies, your Ark Vault funds will be irrecoverable.
+
+**VTXO expiry and refresh.** Funds in an Ark Vault are organized as VTXOs, each with an expiry timestamp set by the ASP when the VTXO is created. Before a VTXO expires, you must either refresh it into a new VTXO (which extends its expiry) or perform an on-chain exit. To assist you, Cypher Box:
+
+- Schedules local device notifications to alert you approximately twenty-four (24) hours and six (6) hours before any of your VTXOs are due to expire;
+- Offers an optional auto-refresh function that attempts to refresh VTXOs in the background, subject to your device's operating-system constraints including battery optimization, background-task scheduling, network availability, and similar limitations outside our control;
+- Provides a manual refresh action accessible from the Ark Vault interface.
+
+You are responsible for periodically opening the application and acting on expiry notifications. If you do not refresh a VTXO before its expiry and do not perform an on-chain exit, the funds it represents may become inaccessible or subject to forfeiture under the ASP's protocol rules. Cypher Box LLC has no responsibility and will not be liable for any loss arising from a missed refresh, an unacknowledged notification, a disabled notification, or any other failure on your part to act on an expiry warning.
+
+**Trustless on-chain exit.** At any time, you may initiate an on-chain exit through the application. This process broadcasts the Bitcoin transactions necessary to move your Ark Vault funds to a regular on-chain Bitcoin address that you control, without requiring the cooperation of the ASP or Cypher Box LLC. The exit is subject to Bitcoin Network fees and confirmation times. The same option is available as an emergency recourse if the ASP becomes unavailable, refuses to cooperate, or discontinues its service.
+
+**ASP dependency for day-to-day operations.** Although the ASP cannot take custody of your funds, the ASP's availability is necessary for ordinary Ark Vault operations including receives, sends, refreshes, and Lightning routing. If the ASP becomes unavailable, unreliable, or chooses to discontinue service, you may temporarily lose the ability to transact through the Ark Vault and may need to perform an on-chain exit to retain access to your funds. Cypher Box LLC is not liable for any loss, inability to transact, or any inconvenience arising from the ASP's operational decisions, downtime, fees, or discontinuation of service.
+
+### 6. Supported Digital Assets
 
 Our Services are for use with Bitcoin (BTC) only and any other digital assets we may explicitly decide to support in the future at our discretion ("Digital Assets"). We have no obligation to support any digital assets (including but not limited to any forkcoins, altcoins, airdrops, or any other digital assets however named) other than Bitcoin or any other digital asset we may explicitly decide to support in the future at our discretion. We assume no responsibility or liability in connection with any attempt to use your Vault for digital assets that we do not support.
 
-### 6. Responsibility for Lightning Account(s) Credentials, Vault(s) Backup Seedphrases, Passwords, and Other Authentication Means
+### 7. Responsibility for Lightning Account(s) Credentials, Vault(s) Backup Seedphrases, Passwords, and Other Authentication Means
 
 Our Services provide a number of ways for you to secure your funds and help ensure you, and only you, are able to access and transact through Lightning Accounts and Vaults. These features include API authentication tokens, backup seedphrases, passwords, biometrics, among other features.
 
-### 7. Mnemonics and Catastrophic Impact of Their Loss or Misappropriation
+### 8. Mnemonics and Catastrophic Impact of Their Loss or Misappropriation
 
 If you use our Services to create a Vault, the software will use an algorithm to generate a random 12-word phrase as a seed to a BIP39 hierarchical wallet. This 12-word phrase is called a backup seedphrase, and if reproduced exactly, stores all the information needed to recover your Vault(s) if access through the App or phone password, Face ID, or other authentication means is lost or otherwise not available.
 
@@ -70,25 +90,27 @@ It is your responsibility to keep your seedphrase secure. You should not provide
 
 If you permanently forget or lose your backup seedphrase, you will NEVER be able to recover any cryptocurrency in your Vault, and you will suffer a complete, irrecoverable, and catastrophic loss of all Digital Assets in your Vault. It is your responsibility to safeguard and retain your backup seedphrase. Cypher Box has no responsibility and will not be liable for any loss or damage you suffer from the loss or misappropriation of your seedphrases.
 
-### 8. Third-Party Integrations
+The same risks and responsibilities apply to the seedphrase of any Ark Vault you create under Section 5. The Ark Vault seedphrase is generated and stored separately from your other Vault seedphrases. The optional encrypted cloud backup described in Section 5 is provided for your convenience and does not change the foregoing: Cypher Box LLC does not have access to the backup file or the encryption key, and is not liable for any loss arising from the loss of access to your cloud storage account, the loss of the encryption material protecting the backup, or any failure of the cloud storage service.
 
-Our Services support or are integrated with third-party services, including but not limited to CoinOS, Strike, and Google reCAPTCHA (used during CoinOS authentication). We are not responsible for any third-party services and will not be liable for any loss or damage caused by third-party services. Your use of third-party services through our app is also subject to those services' own terms of service and privacy policies.
+### 9. Third-Party Integrations
 
-### 9. Exchange Rates and Price Display
+Our Services support or are integrated with third-party services, including but not limited to CoinOS, Strike, the Ark Service Provider used by the Ark Vault, the ASP's SDK that runs locally on your device, and Google reCAPTCHA (used during CoinOS authentication). We are not responsible for any third-party services and will not be liable for any loss or damage caused by third-party services. Your use of third-party services through our app is also subject to those services' own terms of service and privacy policies.
+
+### 10. Exchange Rates and Price Display
 
 Our Services display bitcoin-to-fiat exchange rates obtained from third-party sources including our integrated custodians. These rates are provided for informational purposes only and may not reflect real-time market prices. Cypher Box LLC makes no guarantees regarding the accuracy, timeliness, or completeness of any displayed exchange rates. Rates used in automated threshold calculations, transaction previews, or balance displays may differ from rates available elsewhere. Cypher Box LLC is not liable for any financial loss arising from reliance on displayed exchange rates or from discrepancies between displayed rates and actual transaction rates applied by custodians.
 
-### 10. Changes to or Termination of Our Services
+### 11. Changes to or Termination of Our Services
 
 We may add or remove functions or features of our Services. You can stop using our Services at any time. We may stop providing our Services at any time at our discretion. If we stop providing our Services, for whatever reason, we will endeavor to provide advance notice to you. However, we will have no obligation to do so.
 
 If our Services are terminated abruptly without notice, for whatever reason, you should still be able to login to your Lightning Account(s) from your custodian(s) through their website(s) or mobile application(s) if they are available, and you should be able to recover the funds stored in your hot and cold Vaults' addresses using your backup seedphrase(s). Cypher Box LLC has no responsibility and will not be liable for any loss or damage you suffer from the loss of access to or use of your Vault(s) during any termination of our Services.
 
-### 11. Your Compliance with Applicable Laws
+### 12. Your Compliance with Applicable Laws
 
 You represent and warrant that you are using the Services, including any non-custodial Vault, in accordance with applicable law, and not for any purpose not in compliance with applicable law, including but not limited to illegal gambling, fraud, money laundering, or terrorist activities.
 
-### 12. Limitation of Liability
+### 13. Limitation of Liability
 
 In no event will Cypher Box LLC, its directors, officers, employees, suppliers, agents, or affiliates be liable for any loss or damages, including without limitation direct, indirect, special, consequential, exemplary, or punitive loss or damages, arising from or related to your use of the Services or a Vault, including but not limited to loss of or inability to access or transact data, profit, Digital Assets, or other digital assets or cryptocurrency.
 
@@ -109,12 +131,16 @@ Without limiting the generality of the foregoing, Cypher Box LLC and its third-p
 - Financial loss due to phishing or other websites masquerading as Cypher Box LLC.
 - Financial loss due to inaccurate exchange rate data from third-party sources.
 - Financial loss due to misconfigured automated withdrawal thresholds.
+- Financial loss due to a VTXO expiring before refresh or on-chain exit.
+- Financial loss due to a missed, dismissed, disabled, or otherwise unacknowledged Ark Vault expiry notification.
+- Financial loss due to the Ark Service Provider's unavailability, fee changes, protocol changes, or discontinuation of service.
+- Financial loss due to loss of access to your Ark Vault seedphrase, the encrypted local backup, or the encrypted cloud backup, or to your iCloud or Google Drive account.
 
-### 13. Indemnification
+### 14. Indemnification
 
 You will hold harmless and indemnify Cypher Box LLC, its directors, officers, employees, suppliers, agents, or affiliates from and against any claim, suit, or action arising from or related to your use of the Services, including Lightning Account(s) and Vault(s), or violation of this Agreement, including any liability arising from claims, losses, damages, suits, judgments, litigation costs, and attorneys' fees.
 
-### 14. What Cypher Box LLC Does Not Do
+### 15. What Cypher Box LLC Does Not Do
 
 We do not issue or put into circulation a digital currency or redeem or withdraw from circulation digital currency. We do not have access to your Lightning Account(s), your Vault(s), or any Digital Assets stored in them. Any Digital Assets stored using the Services are not in our control.
 
@@ -124,11 +150,11 @@ Our Services are for supported Digital Assets only. Any prices displayed are pro
 
 We have no control over and do not make any representations regarding the value of Digital Assets or the operation of the underlying software protocols which govern the operation of Digital Assets supported on our platform. We assume no responsibility for the operation of the underlying protocols and we are not able to guarantee their functionality, security, or availability.
 
-### 15. Information on Our Website
+### 16. Information on Our Website
 
 The information contained on our website is for general information purposes only. The information is provided by Cypher Box LLC and while we endeavor to keep the information up to date and correct, we make no representations or warranties of any kind, express or implied, about the completeness, accuracy, reliability, suitability, or availability with respect to the website or the information, products, services, or related graphics contained on the website for any purpose. Any reliance you place on such information is therefore strictly at your own risk.
 
-### 16. Governing Law and Dispute Resolution
+### 17. Governing Law and Dispute Resolution
 
 This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware, USA, without regard to its conflict of law provisions.
 
@@ -138,7 +164,7 @@ This Agreement shall be governed by and construed in accordance with the laws of
 
 **Small Claims Exception:** Notwithstanding the above, either party may bring an individual action in small claims court for disputes within the court's jurisdictional limits.
 
-### 17. Miscellaneous
+### 18. Miscellaneous
 
 No action or inaction by Cypher Box LLC will be considered a waiver of any right or obligation by Cypher Box LLC.
 
@@ -152,7 +178,7 @@ All provisions of this Agreement which by their nature extend beyond the expirat
 
 ## PRIVACY POLICY
 
-**Last Updated: April 2026**
+**Last Updated: June 2026**
 
 Cypher Box LLC ("Cypher Box," "we," "us") is committed to transparency about how data is handled when you use our app. This Privacy Policy describes what data is collected, by whom, and for what purpose.
 
@@ -171,7 +197,11 @@ The following data is stored locally on your device using encrypted storage and/
 - **CoinOS credentials** (username and password) — stored in the iOS Keychain / Android Keystore
 - **Authentication tokens** for CoinOS and Strike — stored in encrypted local storage
 - **Vault private keys and seedphrases** — stored in encrypted local storage
+- **Ark Vault private keys and seedphrase** — stored in the iOS Keychain / Android Keystore
+- **Ark Vault wallet state** (signed VTXOs, refresh history, ASP coordination data needed by the ASP's SDK to operate) — stored in encrypted local storage
 - **App preferences and settings** — such as withdrawal thresholds, reserve amounts, and UI state
+
+**Optional cloud backup of the Ark Vault.** If you opt in, an encrypted backup file containing your Ark Vault state is uploaded to your device's iCloud (iOS) or Google Drive (Android) account. The file is encrypted on your device before upload using a key derived from your Ark Vault seedphrase. Neither Cypher Box LLC nor the cloud storage provider can read the contents of this file without your seedphrase. You can disable cloud backup at any time from the Ark Vault settings. The local backup remains on your device regardless of whether cloud backup is enabled.
 
 ### 3. Data Collected by Cypher Box Services (Optional)
 
@@ -201,6 +231,9 @@ Strike may collect personal and financial data in accordance with their regulato
 **Google reCAPTCHA (during CoinOS login):**
 CoinOS requires Google reCAPTCHA verification for authentication. When this occurs, Google may collect device identifiers, IP addresses, browser/device fingerprints, and interaction data. This data is collected and processed by Google according to Google's Privacy Policy. Cypher Box does not have access to the data Google collects through reCAPTCHA.
 
+**Ark Service Provider (when you use the Ark Vault):**
+The Ark Vault communicates with an ASP to coordinate VTXO creation, refresh rounds, Lightning routing, and on-chain exit. The ASP receives the cryptographic data necessary to construct and co-sign these transactions, including pubkeys, signatures, VTXO structures, and protocol-level coordination messages. The ASP does not require an account, username, email address, or other personal identifier from you, and Cypher Box does not transmit any personal information about you to the ASP. Network-level metadata such as your IP address may be visible to the ASP unless you route your connection through a privacy network. Please refer to the ASP's own terms and privacy policy for details.
+
 ### 5. Data Collected via the Bitcoin Network
 
 Due to the transparent nature of the Bitcoin blockchain, when you use the "Withdraw" or "Top-up" functions, your Vault addresses and the balances they contain may become visible to your custodian(s) and to any party that monitors the Bitcoin Network. Neither Cypher Box nor its third-party custodians can have access to your 12-word seedphrase(s) that protect your Vault(s).
@@ -227,4 +260,4 @@ If you have questions about this Privacy Policy, you may contact us at: info@cyp
 
 ---
 
-*This Agreement and Privacy Policy were last updated in April 2026.*
+*This Agreement and Privacy Policy were last updated in June 2026.*
