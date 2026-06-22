@@ -3,7 +3,7 @@ import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -110,11 +110,11 @@ export default function CheckingAccountLogin() {
   }, []);
 
   const createCheckingAccountClickHandler = () => {
-    Linking.openURL("https://coinos.io/register");
+    openInAppBrowser("https://coinos.io/register");
   };
 
   const createStrikeAccountClickHandler = () => {
-    Linking.openURL("https://dashboard.strike.me/signup");
+    openInAppBrowser("https://dashboard.strike.me/signup");
   };
 
   const handleCoinosLogin = () => {

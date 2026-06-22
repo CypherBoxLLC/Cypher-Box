@@ -1,11 +1,11 @@
 import { Text } from "@Cypher/component-library";
 import { GradientButtonWithShadow, GradientCardWithShadow } from "@Cypher/components";
-import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
+import { calculateBalancePercentage, calculatePercentage, dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
 import { formatNumber, formatSats, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import React from "react";
-import { Image, Linking, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import { authorize } from "react-native-app-auth";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "./styles";
@@ -110,7 +110,7 @@ export default function StrikeWallet({
     };
 
     const createStrikeAccountClickHandler = () => {
-        Linking.openURL('https://dashboard.strike.me/signup')
+        openInAppBrowser('https://dashboard.strike.me/signup')
     };
 
     return (

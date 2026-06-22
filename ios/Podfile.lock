@@ -2086,6 +2086,8 @@ PODS:
     - Yoga
   - RNHandoff (0.0.3):
     - React
+  - RNInAppBrowser (3.7.1):
+    - React-Core
   - RNKeychain (8.1.2):
     - React-Core
   - RNLocalize (3.0.6):
@@ -2481,6 +2483,7 @@ DEPENDENCIES:
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - "RNGoogleSignin (from `../node_modules/@react-native-google-signin/google-signin`)"
   - RNHandoff (from `../node_modules/react-native-handoff`)
+  - RNInAppBrowser (from `../node_modules/react-native-inappbrowser-reborn`)
   - RNKeychain (from `../node_modules/react-native-keychain`)
   - RNLocalize (from `../node_modules/react-native-localize`)
   - RNPermissions (from `../node_modules/react-native-permissions`)
@@ -2729,6 +2732,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-google-signin/google-signin"
   RNHandoff:
     :path: "../node_modules/react-native-handoff"
+  RNInAppBrowser:
+    :path: "../node_modules/react-native-inappbrowser-reborn"
   RNKeychain:
     :path: "../node_modules/react-native-keychain"
   RNLocalize:
@@ -2875,6 +2880,7 @@ SPEC CHECKSUMS:
   RNGestureHandler: 657b9ff1f40ee3ace3de2bcf467f86d9a6874197
   RNGoogleSignin: 857a975c3cc5cefd1a9b13c2213ed879b3b5fd36
   RNHandoff: bc8af5a86853ff13b033e7ba1114c3c5b38e6385
+  RNInAppBrowser: 904d24dc75e8e6c6c98a3160329192608946f9df
   RNKeychain: df33ae4d27df06622fc14190b790ba8749f6be76
   RNLocalize: 3beddcb518b1d5de24414efe86fa888ef7d4d759
   RNPermissions: b66c8550e5daf958e4b59532cdbf71db5d03e48e

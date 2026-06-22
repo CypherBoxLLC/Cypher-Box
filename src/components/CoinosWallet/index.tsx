@@ -1,9 +1,9 @@
 import { Text } from "@Cypher/component-library";
 import { Card, GradientCardWithShadow } from "@Cypher/components";
-import { calculateBalancePercentage, dispatchNavigate } from "@Cypher/helpers";
+import { calculateBalancePercentage, dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import React from "react";
-import { Image, Linking, TouchableOpacity, View } from "react-native";
+import { Image, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 
 interface Props {
@@ -62,7 +62,7 @@ export default function CoinosWallet({
     };
 
     const createChekingAccountClickHandler = () => {
-        Linking.openURL('https://coinos.io/register')
+        openInAppBrowser('https://coinos.io/register')
         // dispatchNavigate("CheckAccount");
     };
 
