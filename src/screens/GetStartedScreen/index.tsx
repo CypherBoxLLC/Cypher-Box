@@ -168,14 +168,14 @@ export default function GetStartedScreen({ route }: Props) {
                 </View>
                 {returningUser ? (
                     <View style={[styles.textContainer, { alignItems: 'center', marginTop: 20 }]}>
-                        <Text h3 style={{ color: '#888', textAlign: 'center' }}>
-                            We've updated our Terms of Service{'\n'}& Privacy Policy
-                        </Text>
-                        <Text style={{ color: '#ddd', marginTop: 28, marginHorizontal: 24, textAlign: 'center', fontStyle: 'italic', fontSize: 15, lineHeight: 22 }}>
+                        <Text style={{ color: '#ddd', marginHorizontal: 24, textAlign: 'center', fontStyle: 'italic', fontSize: 15, lineHeight: 22 }}>
                             "It might make sense just to get some in case it catches on."
                         </Text>
                         <Text style={{ color: '#888', marginTop: 10, textAlign: 'center', fontSize: 12 }}>
                             - Satoshi Nakamoto
+                        </Text>
+                        <Text h3 style={{ color: '#888', marginTop: 28, textAlign: 'center' }}>
+                            We've updated our Terms of Service{'\n'}& Privacy Policy
                         </Text>
                     </View>
                 ) : (
