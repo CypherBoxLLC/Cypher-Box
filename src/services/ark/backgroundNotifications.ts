@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 
+import useAuthStore from '@Cypher/stores/authStore';
+
 /**
  * Local OS-level notifications for the background-refresh feature.
  *
@@ -249,6 +251,17 @@ export function scheduleVtxoExpiryWarnings(
     vtxoId: string,
     expiryAtMs: number,
 ): void {
+    // The user-facing toggle (label: "Capsule expiry reminders") gates
+    // every part of this feature: when off we skip queueing new alarms,
+    // and the OFF path in setArkBackgroundRefreshEnabled also cancels
+    // anything previously queued so existing notifications die within
+    // seconds of the toggle flip. The field name (`arkBgRefreshEnabled`)
+    // is legacy from when the toggle gated only the silent bg-refresh
+    // task; renaming the persist field requires a zustand version bump
+    // and is deferred. The user-facing copy never references the field
+    // name, so the cosmetic drift is contained.
+    if (!useAuthStore.getState().arkBgRefreshEnabled) return;
+
     ensureInit();
     const now = Date.now();
 

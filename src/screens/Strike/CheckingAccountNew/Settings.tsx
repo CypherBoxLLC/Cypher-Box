@@ -394,13 +394,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
         if (!creds || !creds.password) {
           SimpleToast.show(
-            "Can't enable — seed not in Keychain. Use Recover to type it in first.",
+            "Can't enable. Seed is not in Keychain. Use Recover to type it in first.",
             SimpleToast.LONG,
           );
           return;
         }
         await setArkBackgroundRefreshEnabled(true, creds.password);
-        SimpleToast.show("Background refresh enabled", SimpleToast.SHORT);
+        SimpleToast.show("Reminders enabled", SimpleToast.SHORT);
 
         // Battery onboarding nudge. AlarmManager fires can be deferred
         // indefinitely under Doze + vendor battery managers; probing on
@@ -411,7 +411,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
           const manufacturer = await getDeviceManufacturer();
           const guidance = vendorGuidance(manufacturer);
           const body = [
-            "Android sleeps apps to save battery. Without this, auto-refresh becomes unreliable — you'll need to open Cypher Box manually to keep your VTXO capsules current.",
+            "Android sleeps apps to save battery. Without this, expiry reminders can fire late or not at all. You'll need to open Cypher Box yourself to refresh your capsules before they expire.",
             "",
             ...guidance.steps,
           ].join("\n");
@@ -434,7 +434,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         }
       } else {
         await setArkBackgroundRefreshEnabled(false);
-        SimpleToast.show("Background refresh disabled", SimpleToast.SHORT);
+        SimpleToast.show("Reminders disabled", SimpleToast.SHORT);
       }
     } catch (err: any) {
       console.warn("[Ark bg refresh toggle] failed:", err);
@@ -1489,7 +1489,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             Seed Phrase + Ark backup file — true one-time setup. */}
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Auto-refresh capsules
+            Capsule expiry reminders
           </Text>
           <View
             style={{
@@ -1515,7 +1515,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   marginRight: 12,
                 }}
               >
-                Refresh Ark capsules in background
+                Notify me before capsules expire
               </RNText>
               <Switch
                 value={arkBgRefreshEnabled}
@@ -1534,8 +1534,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               {arkBgRefreshEnabled
-                ? 'Cypher Box refreshes capsules approaching expiry without you opening the app.'
-                : '⚠ Auto-refresh is OFF — open Cypher Box once in a while and refresh Ark capsules before they expire. After expiry, the ASP can sweep them.'}
+                ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, expired capsules cannot be recovered.'
+                : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Expired capsules cannot be recovered.'}
             </Text>
 
             {/* Battery-exemption banner. Shows on Android whenever the app is

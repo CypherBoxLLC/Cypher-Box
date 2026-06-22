@@ -49,7 +49,7 @@ export default function CheckingAccountCreated() {
                 const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
                 if (!creds || !creds.password) {
                     SimpleToast.show(
-                        "Can't enable — seed not in Keychain. Re-enable from Ark Settings later.",
+                        "Can't enable. Seed is not in Keychain. Re-enable from Ark Settings later.",
                         SimpleToast.LONG,
                     );
                     return;
@@ -182,7 +182,7 @@ export default function CheckingAccountCreated() {
                                 <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, padding: 14, marginTop: 12, marginHorizontal: 10 }}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <RNText style={{ fontSize: 14, fontWeight: '700', color: colors.white, flex: 1, marginRight: 12 }}>
-                                            Auto-refresh v-capsules
+                                            Capsule expiry reminders
                                         </RNText>
                                         <Switch
                                             value={arkBgRefreshEnabled}
@@ -194,8 +194,8 @@ export default function CheckingAccountCreated() {
                                     </View>
                                     <Text style={{ fontSize: 12, color: arkBgRefreshEnabled ? '#888' : colors.redLight, marginTop: 6, lineHeight: 16 }}>
                                         {arkBgRefreshEnabled
-                                            ? 'Recommended. Cypher Box refreshes v-capsules approaching expiry without you opening the app. (no data is collected)'
-                                            : '⚠ Auto-refresh is OFF. Open Cypher Box regularly and refresh v-capsules before they expire, or the ASP can sweep them.'}
+                                            ? 'Recommended. Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, expired capsules cannot be recovered.'
+                                            : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Expired capsules cannot be recovered.'}
                                     </Text>
                                 </View>
 

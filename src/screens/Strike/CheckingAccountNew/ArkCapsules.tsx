@@ -1461,7 +1461,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 the Ark Settings tab. */}
             <View style={{ marginHorizontal: 20, marginTop: 14, marginBottom: 8, alignItems: 'flex-start' }}>
                 <Text bold style={{ fontSize: 16, color: '#FFF', marginBottom: 6 }}>
-                    Auto-refresh:{' '}
+                    Reminders:{' '}
                     <Text
                         bold
                         style={{ color: arkBgRefreshEnabled ? colors.green : colors.redLight, fontSize: 16 }}
@@ -1490,7 +1490,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                        Keep your virtual capsules (VTXOs) refreshed.{' '}
+                        Your virtual capsules (VTXOs) must be refreshed before they expire, or they are lost forever.{' '}
                         <Text
                             bold
                             style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}

@@ -19,6 +19,7 @@ import {
     writeBackgroundArkSeed,
 } from './backgroundKeychain';
 import {
+    cancelVtxoExpiryWarnings,
     ensureBgNotificationPermission,
     notifyConsecutiveFailures,
     notifyDustStranded,
@@ -225,6 +226,16 @@ export async function setArkBackgroundRefreshEnabled(
     }
     await syncArkRefreshSubscriptionToRelay(false);
     await deleteBackgroundArkSeed();
+    // Drop any queued VTXO expiry warnings so the OS doesn't fire reminders
+    // for a user who just turned them off. iterate the persisted map of
+    // (vtxoId -> expiryMs) the sync loop maintains; cancelVtxoExpiryWarnings
+    // is per-id and swallows stale-id errors. Clear the map after so the
+    // next sync tick (post-toggle-on) re-populates from a clean slate.
+    const scheduled = store.arkScheduledExpiryNotifs ?? {};
+    for (const id of Object.keys(scheduled)) {
+        cancelVtxoExpiryWarnings(id);
+    }
+    store.setArkScheduledExpiryNotifs({});
     store.setArkBgRefreshEnabled(false);
     store.setArkBgRefreshLastSuccessAt(null);
     store.setArkBgRefreshLastAttempt(null);
