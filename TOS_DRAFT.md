@@ -9,11 +9,11 @@ This is a contract (the "Agreement") between you and Cypher Box LLC ("Cypher Box
 
 By checking the box, clicking on "Start," "I understand," "Next," or similar terms when you open the application and go through the instructions and warnings with regards to using our integrated third-party APIs and Vaults (all referred to as "Services"), or by proceeding with a download or update when offered a choice of proceeding or not, you are agreeing to be bound by the terms and conditions found in this Agreement. You represent and warrant that you have the power and capacity to enter into this Agreement.
 
-### 1. Third-Party Custodian Lightning Account(s)
+### 1. Third-Party Lightning Account(s)
 
 Cypher Box lets you connect through API(s) (create account and/or login) to one or more Bitcoin custodians that (if benevolent) allow you to request sending and receiving payments quickly and cheaply in Bitcoin (BTC) through their Lightning Network infrastructure. Currently integrated custodians include:
 
-- **CoinOS** — A Lightning Network custodian accessible via username and password authentication.
+- **CoinOS** — A Lightning Network service provider accessible via username and password authentication.
 - **Strike** — A regulated cryptocurrency exchange accessible via OAuth 2.0 authentication.
 
 A custodian is an entity that allows you to transact and accumulate bitcoin (up to a certain subjective threshold) quickly and cheaply depending on your jurisdiction. The funds stored on your custodian Lightning Account(s) are technically under the full control of the custodian, NOT OURS, NOT YOURS. The balance shown on your Lightning Account(s) may or may not be real Bitcoin.
