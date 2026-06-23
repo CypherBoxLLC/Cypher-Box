@@ -1588,7 +1588,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               <TouchableOpacity
                 onPress={async () => {
                   try {
-                    const PushNotification = require('react-native-push-notification').default;
+                    // react-native-push-notification ships a CJS module.exports
+                    // (no default export), so require() returns the module
+                    // object directly. Don't tag `.default` here.
+                    const PushNotification = require('react-native-push-notification');
                     const { ensureBgNotificationPermission } = require('@Cypher/services/ark');
                     await ensureBgNotificationPermission();
                     // Title/body deliberately mirror the live 24h warning so
