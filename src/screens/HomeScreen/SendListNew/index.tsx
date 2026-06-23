@@ -346,7 +346,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                     id: 5, label: 'Ark', subtitle: 'Small–medium amounts',
                     icon: null, iconStyle: {}, isEnabled: true,
                     accent: colors.ark.light, shadowColor: colors.ark.shadowTopNew,
-                    textLabel: 'Ark Vault',
+                    textLabel: 'Bark Vault',
                   });
                   if (hasHotVault) tiles.push({
                     id: 3, label: 'Hot Vault', subtitle: 'On-chain capsules',

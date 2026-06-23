@@ -213,7 +213,7 @@ export default function SwapAmount() {
                 if (/not spendable.*unregistered|state:\s*unregistered/i.test(inner)) {
                     Alert.alert(
                         'A capsule is stuck',
-                        "One of your Ark capsules is in a state the Ark server won't spend, so payments from Ark keep failing. Try sending from a different wallet for now.",
+                        "One of your Bark capsules is in a state the Bark server won't spend, so payments from Bark keep failing. Try sending from a different wallet for now.",
                         [{ text: 'OK', style: 'default' }],
                         { cancelable: true },
                     );

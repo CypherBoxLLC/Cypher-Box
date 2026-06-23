@@ -810,7 +810,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     isSats: true,
                     to: toAddress,
                     item: result,
-                    swappedTo: dest === 'coinos' ? 'CoinOS' : 'Ark Vault',
+                    swappedTo: dest === 'coinos' ? 'CoinOS' : 'Bark Vault',
                 });
             } catch (error) {
                 console.error(`[BUY → ${dest}] swap failed:`, error);
@@ -1642,7 +1642,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 )}
                                 {canDestArk && (
                                     <DestPickerTile
-                                        label="Ark Vault"
+                                        label="Bark Vault"
                                         arkBolt
                                         // Gray ring when unselected, bright
                                         // yellow when selected — matches the

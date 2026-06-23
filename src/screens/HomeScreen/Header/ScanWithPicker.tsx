@@ -80,7 +80,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
         },
         {
             key: 'ark',
-            label: 'Ark Vault',
+            label: 'Bark Vault',
             subtitle: 'Lightning · self-custodial',
             icon: null,
             textLabel: 'ARK',

@@ -119,11 +119,11 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
     // the chosen destination tile.
     ...(isArkAuth ? [{
       id: 5,
-      name: "Ark Vault",
+      name: "Bark Vault",
       type: 0,
       icon: Second,
       description:
-        "Withdraw from your non-custodial Ark vault to a hot or cold vault",
+        "Withdraw from your non-custodial Bark vault to a hot or cold vault",
       navigation: {
         screen: "ArkWithdrawReviewScreen",
         params: {
@@ -493,7 +493,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                           resizeMode="contain"
                         />
                         <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>
-                          Ark Vault
+                          Bark Vault
                         </Text>
                       </View>
                     ) : item?.type === 0 ? (

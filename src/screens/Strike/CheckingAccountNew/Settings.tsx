@@ -1134,10 +1134,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 not seed-derivable, the .cbark backup file is also
                 required and equally critical. */}
             <Text style={{ fontSize: 13, color: '#AAA', marginBottom: 6 }}>
-              Write these 12 words on paper and store them somewhere safe — we cannot recover them for you.
+              Write these 12 words on paper and store them somewhere safe. We cannot recover them for you.
             </Text>
             <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 12 }}>
-              You also need the Ark backup file (2/2) below to recover your funds. The seed alone is not enough.
+              You also need the Bark backup file (2/2) below to recover your funds. The seed alone is not enough.
             </Text>
             {words ? (
               <>
@@ -1204,7 +1204,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             digging into a file manager or the Drive web UI. */}
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Ark backup file (2/2)
+            Bark backup file (2/2)
           </Text>
 
           {/* iOS backup-snapshot reminder. Active whenever the user
@@ -1315,7 +1315,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               symmetric pair (seed alone insufficient, backup alone
               insufficient) makes the (1/2) + (2/2) labels honest. */}
           <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 10, lineHeight: 17 }}>
-            You also need your seed phrase (1/2) above. The Ark backup file alone is not enough.
+            You also need your seed phrase (1/2) above. The Bark backup file alone is not enough.
           </Text>
           <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
             {/* Local file row — always probes Documents/ark-backup.cbark

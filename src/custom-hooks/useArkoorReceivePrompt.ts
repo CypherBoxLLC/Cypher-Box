@@ -243,7 +243,7 @@ export default function useArkoorReceivePrompt(): void {
             : '';
         const amountPhrase = sats != null ? `${sats.toLocaleString()} sats` : `sats`;
         const body =
-            `You just received ${amountPhrase} to your Ark Vault.\n\n` +
+            `You just received ${amountPhrase} to your Bark Vault.\n\n` +
             `These sats expire in about ${ARK_ARKOOR_ASSUMED_DAYS} days unless they're refreshed into a long-life capsule. ` +
             `Refreshing takes up to an hour, during which the sats can't be spent.` +
             autoRefreshNote;
@@ -253,7 +253,7 @@ export default function useArkoorReceivePrompt(): void {
                 : `Don't refresh — I'll spend them now`;
 
         Alert.alert(
-            'New sats in your Ark Vault',
+            'New sats in your Bark Vault',
             body,
             [
                 {

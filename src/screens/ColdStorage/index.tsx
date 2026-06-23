@@ -167,7 +167,7 @@ export default function ColdStorage({ route, navigation }: Props) {
       // different destination address.
       {
         id: 3,
-        name: "Ark Vault",
+        name: "Bark Vault",
         type: 0,
         icon: Second,
         enabled: isArkAuth && !!toArk,
@@ -1276,7 +1276,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                   {selectedItem == 1
                                     ? "Strike Lightning account deposit address"
                                     : selectedItem == 3
-                                      ? "Ark Vault boarding address (P2TR)"
+                                      ? "Bark Vault boarding address (P2TR)"
                                       : "CoinOS Lightning account deposit address"}
                                 </Text>
                               }

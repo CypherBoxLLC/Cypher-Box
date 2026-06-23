@@ -120,7 +120,7 @@ export default function Transaction({navigation, route}: any) {
                                     paddingHorizontal: 14,
                                     borderRadius: 14,
                                     borderWidth: 1.5,
-                                    borderColor: swappedTo === 'Ark Vault' ? '#FFD93D' : '#FF65D4',
+                                    borderColor: swappedTo === 'Bark Vault' ? '#FFD93D' : '#FF65D4',
                                 }}>
                                     <Text bold center style={{ color: '#fff', fontSize: 16 }}>
                                         {`→ Swapped to ${swappedTo}`}

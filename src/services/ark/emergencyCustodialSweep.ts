@@ -166,9 +166,9 @@ function pushSweepAlert(title: string, message: string): void {
             PushNotification.createChannel(
                 {
                     channelId: 'ark-bg-refresh',
-                    channelName: 'Ark capsule refresh',
+                    channelName: 'Bark capsule refresh',
                     channelDescription:
-                        'Alerts about Ark capsule auto-refresh outcomes (failures, expiring capsules, unusual fees).',
+                        'Alerts about Bark capsule auto-refresh outcomes (failures, expiring capsules, unusual fees).',
                     importance: 4,
                     vibrate: true,
                 },

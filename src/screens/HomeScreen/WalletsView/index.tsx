@@ -768,7 +768,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         }}
                     >
                         <Text bold style={{ fontSize: 12, color: '#FB923C', textAlign: 'center' }}>
-                            ⚠ Re-export Ark backup after every receive — tap to manage
+                            ⚠ Re-export Bark backup after every receive. Tap to manage.
                         </Text>
                     </TouchableOpacity>
                 </Animated.View>

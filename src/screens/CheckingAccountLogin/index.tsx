@@ -274,7 +274,7 @@ export default function CheckingAccountLogin() {
                   tab and home Card use, so the brand is consistent. */}
               <View style={accountStyles.providerRow}>
                 <LoginOption
-                  label="Create Ark Vault"
+                  label="Create Bark Vault"
                   labelColor={colors.white}
                   iconPrefixIonicon="boat-outline"
                   iconPrefixTint={colors.white}

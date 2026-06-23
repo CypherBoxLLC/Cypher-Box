@@ -21,9 +21,9 @@ function ensureInit(): void {
         PushNotification.createChannel(
             {
                 channelId: CHANNEL_ID,
-                channelName: 'Ark capsule refresh',
+                channelName: 'Bark capsule refresh',
                 channelDescription:
-                    'Alerts about Ark capsule auto-refresh outcomes (failures, expiring capsules, unusual fees).',
+                    'Alerts about Bark capsule auto-refresh outcomes (failures, expiring capsules, unusual fees).',
                 importance: 4, // HIGH — covers both high- and low-priority notifications
                 vibrate: true,
             },
@@ -100,7 +100,7 @@ export function notifyFeeGated(feeSats: number, maxSats: number): void {
  */
 function fmtSatsSubject(satsAmount: number | undefined): string {
     if (satsAmount == null || !Number.isFinite(satsAmount) || satsAmount <= 0) {
-        return 'your Ark vault balance';
+        return 'your Bark Vault balance';
     }
     return `${Math.round(satsAmount).toLocaleString()} sats`;
 }
@@ -384,8 +384,8 @@ export function notifyDustStranded(
 export function notifyArkReceived(sats?: number): void {
     const body =
         typeof sats === 'number' && sats > 0
-            ? `You received ${sats.toLocaleString()} sats in your Ark Vault.`
-            : 'You received a payment in your Ark Vault.';
+            ? `You received ${sats.toLocaleString()} sats in your Bark Vault.`
+            : 'You received a payment in your Bark Vault.';
     fire('Payment received', body, 'high', { sats });
 }
 

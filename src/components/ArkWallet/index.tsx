@@ -547,7 +547,7 @@ export default function ArkWallet({
                 <View style={allThreeLightning ? { transform: [{ translateY: 10 }] } : undefined}>
                     <Card
                         wallet="ARK"
-                        title="Ark Vault"
+                        title="Bark Vault"
                         balance={arkBalance}
                         // See `arkConvertedRate` above — the parent's
                         // `convertedRate` prop is the CoinOS figure, not ours.

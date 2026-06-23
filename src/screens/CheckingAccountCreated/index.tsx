@@ -77,7 +77,7 @@ export default function CheckingAccountCreated() {
         ? colors.ark.light
         : colors.pink.light;
     const titleText = isArk
-        ? 'Ark Vault Created!'
+        ? 'Bark Vault Created!'
         : 'Lightning Account Created!';
 
     const initialThreshold = isArk
@@ -143,7 +143,7 @@ export default function CheckingAccountCreated() {
                             <View style={{ marginTop: 8, alignItems: 'center' }}>
                                 <Card
                                     wallet="ARK"
-                                    title="Ark Vault"
+                                    title="Bark Vault"
                                     balance={0}
                                     currency="USD"
                                     matchedRate={0}
@@ -207,11 +207,11 @@ export default function CheckingAccountCreated() {
                                     • Your 12-word seed phrase. Write it down somewhere only you can access.
                                 </Text>
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 6 }]}>
-                                    • Your encrypted backup file (.cbark). Periodically check on it via Ark Vault → Settings → Ark Backup. Both the seed AND the backup file are required to recover funds.
+                                    • Your encrypted backup file (.cbark). Periodically check on it via Bark Vault → Settings. Both the seed AND the backup file are required to recover funds.
                                 </Text>
 
                                 <Text h4 style={[styles.descption, { fontSize: 13, marginTop: 18, color: accentColor }]}>
-                                    ⚠ Experimental — use as a novel hot wallet software.
+                                    ⚠ Experimental, use as novel hot wallet software.
                                 </Text>
                             </ScrollView>
                         </>

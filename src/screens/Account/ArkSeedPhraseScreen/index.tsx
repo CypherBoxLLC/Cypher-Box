@@ -418,7 +418,7 @@ export default function ArkSeedPhraseScreen() {
                 const saved = await new Promise<boolean>((resolve) => {
                     Alert.alert(
                         "Did you save the backup file?",
-                        "The .cbark file is encrypted with your seed phrase — safe to keep in iCloud Drive, email to yourself, or any cloud storage. Without this file plus your seed, your Ark balance can't be fully recovered.\n\nThe best path is to enable iCloud Drive for Cypher Box (iOS Settings → [your name] → iCloud → iCloud Drive → Cypher Box) — Cypher Box will then keep an encrypted copy current in your iCloud Drive automatically. Until you do that, re-export from the reminder banner in Ark Settings → Ark Backup after every Lightning receive.",
+                        "The .cbark file is encrypted with your seed phrase, safe to keep in iCloud Drive, email to yourself, or any cloud storage. Without this file plus your seed, your Bark balance can't be fully recovered.\n\nThe best path is to enable iCloud Drive for Cypher Box (iOS Settings → [your name] → iCloud → iCloud Drive → Cypher Box). Cypher Box will then keep an encrypted copy current in your iCloud Drive automatically. Until you do that, re-export from the reminder banner in Bark Settings → Bark Backup after every Lightning receive.",
                         [
                             { text: "Not yet", style: "cancel", onPress: () => resolve(false) },
                             { text: "Yes, I saved it", onPress: () => resolve(true) },
@@ -849,8 +849,8 @@ export default function ArkSeedPhraseScreen() {
                         <Text style={styles.headerNote}>
                             Note: even with the seed, full balance recovery on a new device
                             also requires your{' '}
-                            <Text style={{ color: '#FF5A5A' }}>Ark backup file</Text>
-                            {' '}— set the destination below.
+                            <Text style={{ color: '#FF5A5A' }}>Bark backup file</Text>
+                            . Set the destination below.
                         </Text>
 
                         <View style={styles.gridWrap}>
@@ -913,7 +913,7 @@ export default function ArkSeedPhraseScreen() {
                             The cloud option below is the opt-in for device-loss
                             protection — without it, losing the phone loses the
                             local file too, and seed alone can't restore VTXOs. */}
-                        <Text style={styles.sectionTitle}>2/2 — Ark backup file</Text>
+                        <Text style={styles.sectionTitle}>2/2: Bark backup file</Text>
                         <Text style={styles.sectionSub}>
                             Can be stored and auto-updated on this device and on your cloud.
                             Each time you send or receive, an encrypted snapshot updates in{' '}

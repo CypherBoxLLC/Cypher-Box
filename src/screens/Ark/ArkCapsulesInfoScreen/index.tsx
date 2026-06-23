@@ -16,16 +16,16 @@ import { colors } from "@Cypher/style-guide";
  */
 export default function ArkCapsulesInfoScreen() {
     return (
-        <ScreenLayout showToolbar isBackButton title="About your Ark capsules">
+        <ScreenLayout showToolbar isBackButton title="About your Bark capsules">
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 40 }}
             >
                 <Section title="Why your capsules need refreshing">
                     <Body>
-                        Your Ark balance is held as a collection of small "capsules". Each
+                        Your Bark balance is held as a collection of small "capsules". Each
                         capsule has an expiry date. To keep your funds fully self-custodial,
-                        meaning you can always recover them yourself without needing the Ark
+                        meaning you can always recover them yourself without needing the Bark
                         server's permission, each capsule must be refreshed before it expires.
                     </Body>
                     <Body>
@@ -46,9 +46,9 @@ export default function ArkCapsulesInfoScreen() {
                         confirm an amount, or unlock anything beyond your usual biometric.
                     </Body>
                     <Body>
-                        The Reminders toggle lives in two places: at the bottom of the Ark
+                        The Reminders toggle lives in two places: at the bottom of the Bark
                         Vault Created screen when you first create your wallet, and on the
-                        Vault tab inside the Ark vault menu. Default is on. If you turn it
+                        Vault tab inside the Bark vault menu. Default is on. If you turn it
                         off, no reminders fire and you alone are responsible for opening the
                         app and refreshing your capsules before they expire.
                     </Body>
@@ -117,16 +117,16 @@ export default function ArkCapsulesInfoScreen() {
 
                 <Section title="Fees">
                     <Body>
-                        These are the fees the Ark server (operated by Second) charges. They
-                        vary with how old the capsule is — younger capsules cost less.
+                        These are the fees the Bark server charges. They vary with how old
+                        the capsule is. Younger capsules cost less.
                     </Body>
                     <FeeRow
                         title="Receiving from Lightning"
-                        body="0% — free."
+                        body="0%, free."
                     />
                     <FeeRow
-                        title="Sending Ark-to-Ark"
-                        body="0% — free."
+                        title="Sending Bark-to-Bark"
+                        body="0%, free."
                     />
                     <FeeRow
                         title="Refreshing"

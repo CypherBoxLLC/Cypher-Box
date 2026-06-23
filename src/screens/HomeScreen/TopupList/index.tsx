@@ -99,7 +99,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
     // generation in the address-fetch step below.
     ...(isArkAuth ? [{
       id: 5,
-      name: "Ark Vault",
+      name: "Bark Vault",
       icon: Second,
       isLogo: true,
     }] : []),
@@ -266,7 +266,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
   const accountLabel =
     selectedAccount === 3 ? 'CoinOS'
     : selectedAccount === 4 ? 'Strike'
-    : selectedAccount === 5 ? 'Ark Vault'
+    : selectedAccount === 5 ? 'Bark Vault'
     : 'Strike';
 
   // Get memo/label for a UTXO
@@ -432,7 +432,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                           style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
                           resizeMode="contain"
                         />
-                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>Ark Vault</Text>
+                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>Bark Vault</Text>
                       </>
                     ) : (
                       <Image

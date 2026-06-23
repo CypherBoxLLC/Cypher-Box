@@ -1030,7 +1030,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             SimpleToast.show(
                 `Your imminent capsules total ${batch.totalSats.toLocaleString()} sats, ` +
                 `below the ${ARK_REFRESH_MIN_SATS}-sat round minimum. Receive more sats ` +
-                `into your Ark Vault to combine them before they expire.`,
+                `into your Bark Vault to combine them before they expire.`,
                 SimpleToast.LONG,
             );
             return;
