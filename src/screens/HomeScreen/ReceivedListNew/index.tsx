@@ -316,7 +316,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
         },
         {
           id: 2,
-          name: "Ark",
+          name: "Bark",
           iconElement: (
             <Ionicons
               name="boat-outline"
@@ -575,7 +575,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       letterSpacing: 0.5,
                     }}
                   >
-                    second.tech
+                    Bark Vault
                   </Text>
                 ) : (
                   <Image
@@ -885,10 +885,10 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       />
                     </View>
                     <Text semibold style={styles.bitcoinAddressText}>
-                      Deposit Bitcoin here to board funds into Ark on the next round
+                      Deposit Bitcoin here to board funds into Bark on the next round
                     </Text>
                     <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 8, textAlign: 'center', fontWeight: '600' }}>
-                      Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Ark and would have to be recovered on-chain.
+                      Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Bark and would have to be recovered on-chain.
                     </Text>
                   </>
                 )}
@@ -898,7 +898,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             {selectedItem === 5 && tab === 2 && (
               <View style={styles.liquidTabContent}>
                 <Text h2 bold>
-                  Ark Address
+                  Bark Address
                 </Text>
                 {!arkAddress ? (
                   <ActivityIndicator size="large" color="#ffffff" />
@@ -932,7 +932,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       />
                     </View>
                     <Text semibold style={styles.bitcoinAddressText}>
-                      Receive instant VTXO transfers from another Ark user — no fees, no confirmations
+                      Receive 0% fee payments from another Bark user
                     </Text>
                   </>
                 )}
