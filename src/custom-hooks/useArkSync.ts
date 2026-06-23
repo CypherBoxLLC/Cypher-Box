@@ -457,7 +457,12 @@ export default function useArkSync(): UseArkSync {
                     nextScheduled[v.id] = expiryAtMs;
                     if (needsScheduleMigration || prevScheduled[v.id] == null) {
                         try {
-                            scheduleVtxoExpiryWarnings(v.id, expiryAtMs);
+                            // Pass per-VTXO sats so the notification title
+                            // carries "{N} sats" instead of the generic
+                            // "your Ark vault balance" fallback. Cancellation
+                            // on state change (above) keeps the baked-in
+                            // amount from going stale.
+                            scheduleVtxoExpiryWarnings(v.id, expiryAtMs, v.sats);
                             if (__DEV__) {
                                 console.log(
                                     '[Ark sync] scheduled expiry warnings for',

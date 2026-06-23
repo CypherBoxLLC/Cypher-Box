@@ -91,21 +91,52 @@ export function notifyFeeGated(feeSats: number, maxSats: number): void {
     );
 }
 
-export function notifyExpiryWarning24h(): void {
+/**
+ * Format the subject of the title — "{N} sats" when an amount is known,
+ * "your Ark vault balance" as the generic fallback. Older alarms scheduled
+ * before the sats parameter existed and arkoor-receive flows that don't
+ * have sats at schedule time both fall back gracefully without breaking
+ * the user-facing string.
+ */
+function fmtSatsSubject(satsAmount: number | undefined): string {
+    if (satsAmount == null || !Number.isFinite(satsAmount) || satsAmount <= 0) {
+        return 'your Ark vault balance';
+    }
+    return `${Math.round(satsAmount).toLocaleString()} sats`;
+}
+
+/**
+ * Body line shared across the warning schedule. Two variants: an
+ * informational nudge for the early warnings (4d/48h) and an urgent
+ * call-to-action for the late warnings (24h/12h/6h) that surfaces the
+ * upper-bound round duration so the user knows refresh isn't instant.
+ */
+function fmtBody(urgent: boolean, satsKnown: boolean): string {
+    if (urgent) {
+        return 'Tap to refresh. Refresh takes up to an hour.';
+    }
+    return satsKnown
+        ? 'Tap to refresh, or these sats may be lost.'
+        : 'Tap to refresh, or these funds may be lost.';
+}
+
+export function notifyExpiryWarning24h(satsAmount?: number): void {
     // Source override routes the tap through the same deep-link path as
     // the scheduled warnings: ArkCapsules tab + auto-refresh on arrival.
+    const subject = fmtSatsSubject(satsAmount);
     fire(
-        'Capsule expiring soon',
-        'A capsule will expire within 24 hours and auto-refresh has not run. Open Cypher Box to refresh.',
+        `24 hours left to refresh ${subject} ⚠️`,
+        fmtBody(true, satsAmount != null && satsAmount > 0),
         'high',
         { source: 'ark-vtxo-expiry-warn24h' },
     );
 }
 
-export function notifyExpiryWarning6h(): void {
+export function notifyExpiryWarning6h(satsAmount?: number): void {
+    const subject = fmtSatsSubject(satsAmount);
     fire(
-        'Capsule expiring NOW',
-        'A capsule will expire within 6 hours. Open Cypher Box immediately to refresh.',
+        `6 hours left to refresh ${subject} 🚨`,
+        fmtBody(true, satsAmount != null && satsAmount > 0),
         'high',
         { source: 'ark-vtxo-expiry-warn6h' },
     );
@@ -148,53 +179,61 @@ export function isArkExpiryWarningSource(s: unknown): s is ArkExpiryWarningSourc
  * directly; the final warning (6h) is the urgent last reminder. 1h or
  * shorter was rejected because an Ark refresh round can itself take ten
  * to thirty minutes — a late ping wouldn't leave room to act.
+ *
+ * Title/body are computed at schedule time from `label` + the per-VTXO
+ * `satsAmount`, so users can see both the time-left and the value at
+ * risk on the lock screen without opening the app. `urgent` flips the
+ * body to the "Refresh takes up to an hour" wording so the late
+ * warnings tell the user that tapping kicks off a round that needs
+ * time to settle.
  */
 const WARN_SCHEDULE: ReadonlyArray<{
     kind: WarnKind;
     source: ArkExpiryWarningSource;
     offsetMs: number;
-    title: string;
-    message: string;
+    label: string;
+    suffix: string;
+    urgent: boolean;
 }> = [
     {
         kind: 'warn96h',
         source: 'ark-vtxo-expiry-warn96h',
         offsetMs: 96 * 60 * 60 * 1000,
-        title: 'Capsule expiring in 4 days',
-        message:
-            'Some of your Ark vault balance expires in about 4 days. Open Cypher Box and refresh to keep it.',
+        label: '4 days',
+        suffix: '',
+        urgent: false,
     },
     {
         kind: 'warn48h',
         source: 'ark-vtxo-expiry-warn48h',
         offsetMs: 48 * 60 * 60 * 1000,
-        title: 'Capsule expiring in 2 days',
-        message:
-            'Some of your Ark vault balance expires in about 48 hours. Open Cypher Box and refresh to keep it.',
+        label: '2 days',
+        suffix: '',
+        urgent: false,
     },
     {
         kind: 'warn24h',
         source: 'ark-vtxo-expiry-warn24h',
         offsetMs: 24 * 60 * 60 * 1000,
-        title: 'Open Cypher Box to protect your Bitcoin ⚠️',
-        message:
-            'Some of your Ark vault balance expires in about 24 hours! Open the app to keep it, or it may be lost.',
+        label: '24 hours',
+        suffix: ' ⚠️',
+        urgent: true,
     },
     {
         kind: 'warn12h',
         source: 'ark-vtxo-expiry-warn12h',
         offsetMs: 12 * 60 * 60 * 1000,
-        title: 'Capsule expiring in 12 hours ⚠️',
-        message:
-            'Your Ark vault balance expires in about 12 hours. Open Cypher Box now and refresh to keep it safe.',
+        label: '12 hours',
+        suffix: ' ⚠️',
+        urgent: true,
     },
     {
         kind: 'warn6h',
         source: 'ark-vtxo-expiry-warn6h',
         offsetMs: 6 * 60 * 60 * 1000,
-        title: 'Act now or you may lose Bitcoin 🚨',
-        message:
-            'Your Ark vault balance expires in about 6 hours. Open Cypher Box now to keep it safe.',
+        label: '6 hours',
+        suffix: ' 🚨',
+        urgent: true,
     },
 ];
 
@@ -250,6 +289,7 @@ function legacyWarn2hNotificationId(vtxoId: string): string {
 export function scheduleVtxoExpiryWarnings(
     vtxoId: string,
     expiryAtMs: number,
+    satsAmount?: number,
 ): void {
     // The user-facing toggle (label: "Capsule expiry reminders") gates
     // every part of this feature: when off we skip queueing new alarms,
@@ -274,14 +314,16 @@ export function scheduleVtxoExpiryWarnings(
         // stale ids. Ignore.
     }
 
+    const subject = fmtSatsSubject(satsAmount);
+    const satsKnown = satsAmount != null && Number.isFinite(satsAmount) && satsAmount > 0;
     for (const w of WARN_SCHEDULE) {
         const at = expiryAtMs - w.offsetMs;
         if (at <= now) continue;
         PushNotification.localNotificationSchedule({
             id: notificationIdFor(vtxoId, w.kind),
             channelId: CHANNEL_ID,
-            title: w.title,
-            message: w.message,
+            title: `${w.label} left to refresh ${subject}${w.suffix}`,
+            message: fmtBody(w.urgent, satsKnown),
             date: new Date(at),
             priority: 'high',
             importance: 'high',

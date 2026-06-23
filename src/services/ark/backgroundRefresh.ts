@@ -614,6 +614,13 @@ export async function runBackgroundRefresh(
         let triggerCount = 0;
         let imminent24h = false;
         let imminent6h = false;
+        // Aggregate sats at risk inside each imminent window — the user-facing
+        // notification surfaces the value so they can gauge "is this worth my
+        // attention right now". 24h aggregate includes the 6h slice (a 6h-imminent
+        // VTXO is also 24h-imminent), which matches the notification dedupe
+        // logic below: when the 6h notif fires we suppress the 24h one.
+        let imminent24hSats = 0;
+        let imminent6hSats = 0;
         let deferredSkipped = 0;
         for (const v of vtxos.spendable) {
             // Honour user-deferred VTXOs (Arkoor-receive popup "Use
@@ -645,8 +652,14 @@ export async function runBackgroundRefresh(
             // Imminent-expiry warning observation runs across ALL spendable VTXOs,
             // not just the batch-eligible set.
             const hoursLeft = daysLeft * 24;
-            if (hoursLeft < 24) imminent24h = true;
-            if (hoursLeft < 6) imminent6h = true;
+            if (hoursLeft < 24) {
+                imminent24h = true;
+                imminent24hSats += v.sats;
+            }
+            if (hoursLeft < 6) {
+                imminent6h = true;
+                imminent6hSats += v.sats;
+            }
             const cand: Candidate = { id: v.id, sats: v.sats, daysLeft };
             if (daysLeft < BG_REFRESH_TUNABLES.batchDays) {
                 shortExpiry.push(cand);
@@ -723,7 +736,7 @@ export async function runBackgroundRefresh(
             const last2h = useAuthStore.getState().arkBgRefreshLastWarn2hAt;
             if (last2h === null || Date.now() - last2h > BG_REFRESH_TUNABLES.warn2hDedupeWindowMs) {
                 try {
-                    notifyExpiryWarning6h();
+                    notifyExpiryWarning6h(imminent6hSats);
                     useAuthStore.getState().setArkBgRefreshLastWarn2hAt(Date.now());
                 } catch (notifErr) {
                     console.warn('[Ark bg refresh] 2h warning threw:', notifErr);
@@ -734,7 +747,7 @@ export async function runBackgroundRefresh(
             const last24h = useAuthStore.getState().arkBgRefreshLastWarn24hAt;
             if (last24h === null || Date.now() - last24h > BG_REFRESH_TUNABLES.warn24hDedupeWindowMs) {
                 try {
-                    notifyExpiryWarning24h();
+                    notifyExpiryWarning24h(imminent24hSats);
                     useAuthStore.getState().setArkBgRefreshLastWarn24hAt(Date.now());
                 } catch (notifErr) {
                     console.warn('[Ark bg refresh] 24h warning threw:', notifErr);

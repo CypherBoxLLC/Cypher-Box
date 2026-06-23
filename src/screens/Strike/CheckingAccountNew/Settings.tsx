@@ -1591,11 +1591,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     const PushNotification = require('react-native-push-notification').default;
                     const { ensureBgNotificationPermission } = require('@Cypher/services/ark');
                     await ensureBgNotificationPermission();
+                    // Title/body deliberately mirror the live 24h warning so
+                    // QA on this button reflects what production users see.
+                    // The "1,234 sats" amount is illustrative; the tap-effect
+                    // in ArkCapsules recomputes the imminent set from real
+                    // VTXOs regardless of this string.
                     PushNotification.localNotificationSchedule({
                       id: '999999',
                       channelId: 'ark-bg-refresh',
-                      title: 'TEST: Capsule expiring',
-                      message: 'Tap to test deep-link auto-refresh',
+                      title: '24 hours left to refresh 1,234 sats ⚠️',
+                      message: 'Tap to refresh. Refresh takes up to an hour.',
                       date: new Date(Date.now() + 5000),
                       priority: 'high',
                       importance: 'high',

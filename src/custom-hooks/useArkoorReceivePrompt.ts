@@ -105,8 +105,15 @@ export default function useArkoorReceivePrompt(): void {
             if (scheduledRef.current.has(id)) continue;
             const assumedExpiryAtMs =
                 entry.observedAt + ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
+            // Sats may not be populated on legacy entries; fall back to the
+            // arkVtxos read for the live record. Either way the notification
+            // formatter handles the undefined path gracefully.
+            const satsForNotif =
+                entry.sats ??
+                arkVtxos.find((v) => v.id === id)?.sats ??
+                undefined;
             try {
-                scheduleVtxoExpiryWarnings(id, assumedExpiryAtMs);
+                scheduleVtxoExpiryWarnings(id, assumedExpiryAtMs, satsForNotif);
                 scheduledRef.current.add(id);
                 if (__DEV__) {
                     console.log(
@@ -280,7 +287,7 @@ export default function useArkoorReceivePrompt(): void {
                             const exp = (existing?.observedAt ?? Date.now()) +
                                 ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
                             try {
-                                scheduleVtxoExpiryWarnings(firstId, exp);
+                                scheduleVtxoExpiryWarnings(firstId, exp, sats ?? undefined);
                             } catch (err) {
                                 console.warn(
                                     '[useArkoorReceivePrompt] re-schedule on dismiss threw:',
