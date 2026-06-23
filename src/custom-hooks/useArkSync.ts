@@ -374,14 +374,34 @@ export default function useArkSync(): UseArkSync {
                 setArkBalanceDetail(filteredBalance);
             }
             if (vtxos) {
+                // Filter past-expiry VTXOs out of the live capsule list.
+                // The SDK reports them as Spendable until the ASP actually
+                // sweeps them, but they cannot participate in a refresh
+                // round (the ASP rejects expired inputs) and surfacing
+                // them as actionable capsules misleads users: the funds
+                // are already lost. Arkoor (expiryHeight === 0) stay,
+                // they inherit expiry from their parent and the SDK
+                // hasn't resolved it yet. The History tab still shows
+                // their lifecycle as a record, so the loss is visible
+                // there instead of cluttering the active capsule list.
+                const visibleSpendable =
+                    typeof tip === 'number'
+                        ? vtxos.spendable.filter(
+                              (v) => v.expiryHeight === 0 || v.expiryHeight > tip,
+                          )
+                        : vtxos.spendable;
                 console.log(
                     '[Ark sync] writing',
-                    vtxos.spendable.length,
+                    visibleSpendable.length,
                     'vtxos to store (of',
+                    vtxos.spendable.length,
+                    'spendable,',
                     vtxos.all.length,
-                    'total)',
+                    'total;',
+                    vtxos.spendable.length - visibleSpendable.length,
+                    'past-expiry hidden)',
                 );
-                setArkVtxos(vtxos.spendable);
+                setArkVtxos(visibleSpendable);
             } else {
                 console.log('[Ark sync] fetchArkVtxos returned null (no handle)');
             }

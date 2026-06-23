@@ -631,6 +631,15 @@ export async function runBackgroundRefresh(
             // populate it. Arkoor VTXOs refresh independently via
             // refreshVtxos(), they don't piggyback on the source.
             if (v.expiryHeight === 0) continue;
+            // Skip past-expiry VTXOs. Including them in a round poisons it:
+            // the ASP rejects expired inputs and the entire round fails with
+            // outputs=0 effectiveSats=-2, leaving healthy non-expired inputs
+            // stuck locked alongside the dead one. Filtering here lets the
+            // batch progress with the recoverable subset. The expired VTXO
+            // is also hidden from the capsule list (see useArkSync) so the
+            // user isn't shown an actionable capsule that can't actually
+            // be refreshed.
+            if (v.expiryHeight <= tip) continue;
             const blocksLeft = v.expiryHeight - tip;
             const daysLeft = blocksToDays(Math.max(0, blocksLeft));
             // Imminent-expiry warning observation runs across ALL spendable VTXOs,
