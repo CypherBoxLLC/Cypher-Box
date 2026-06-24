@@ -3,6 +3,7 @@ import { CustomTabView, GradientCard, GradientView } from "@Cypher/components";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -18,7 +19,6 @@ import {
   CoinOS,
   Cold1,
   Copy,
-  Electricity,
   Electrik,
   Hot,
   Second,
@@ -483,14 +483,16 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                       />
                     )}
                     {item?.id === 5 ? (
-                      // Ark tile uses the lightning-bolt + "Ark Vault"
-                      // text pattern (matches the Receive/Send sheets)
-                      // instead of the Second wordmark logo, per Bam.
+                      // Bark tile uses the boat-outline + "Bark Vault"
+                      // text pattern (matches the Receive/Send sheets,
+                      // homescreen wallet card, Vault tab, and Create
+                      // Bark login row) instead of the Second wordmark.
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Image
-                          source={Electricity}
-                          style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
-                          resizeMode="contain"
+                        <Ionicons
+                          name="boat-outline"
+                          size={20}
+                          color="#FFFFFF"
+                          style={{ marginRight: 6 }}
                         />
                         <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>
                           Bark Vault

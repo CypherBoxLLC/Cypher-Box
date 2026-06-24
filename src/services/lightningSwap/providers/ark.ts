@@ -55,7 +55,7 @@ function decodeBolt11Sats(invoice: string): number | null {
 
 const arkProvider: LightningSwapProvider = {
     id: 'ark',
-    displayName: 'Ark',
+    displayName: 'Bark Vault',
     // No icon — SwapSheet renders the displayName as a text badge.
 
     isAvailable() {

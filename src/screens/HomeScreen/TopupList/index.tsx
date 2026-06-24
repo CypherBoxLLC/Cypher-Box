@@ -3,6 +3,7 @@ import { GradientView } from "@Cypher/components";
 import React, { useContext, useMemo, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -14,7 +15,6 @@ import {
   Back,
   CoinOS,
   Cold1,
-  Electricity,
   Hot,
   Second,
   StrikeFull,
@@ -424,13 +424,16 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
                     {item.id === 5 ? (
-                      // Ark tile — lightning bolt + "Ark Vault" text,
-                      // matching the Receive/Send/Withdraw sheets.
+                      // Bark tile — boat-outline + "Bark Vault" text,
+                      // matching the Receive/Send/Withdraw sheets, the
+                      // homescreen wallet card, the Vault tab, and the
+                      // Create Bark login row.
                       <>
-                        <Image
-                          source={Electricity}
-                          style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
-                          resizeMode="contain"
+                        <Ionicons
+                          name="boat-outline"
+                          size={20}
+                          color="#FFFFFF"
+                          style={{ marginRight: 6 }}
                         />
                         <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>Bark Vault</Text>
                       </>

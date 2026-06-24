@@ -1577,62 +1577,6 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               </TouchableOpacity>
             )}
 
-            {/* DEV-only: fire a synthetic expiry-warning notification 5s
-                from now so the tap-refresh deep-link path can be exercised
-                without waiting for a real alarm. The fake vtxoId doesn't
-                need to map to a real VTXO; ArkCapsules' auto-effect
-                recomputes the imminent set from arkVtxos on arrival, so the
-                refresh runs against the user's real capsules. Stripped
-                from production via __DEV__. */}
-            {__DEV__ && (
-              <TouchableOpacity
-                onPress={async () => {
-                  try {
-                    // react-native-push-notification ships a CJS module.exports
-                    // (no default export), so require() returns the module
-                    // object directly. Don't tag `.default` here.
-                    const PushNotification = require('react-native-push-notification');
-                    const { ensureBgNotificationPermission } = require('@Cypher/services/ark');
-                    await ensureBgNotificationPermission();
-                    // Title/body deliberately mirror the live 24h warning so
-                    // QA on this button reflects what production users see.
-                    // The "1,234 sats" amount is illustrative; the tap-effect
-                    // in ArkCapsules recomputes the imminent set from real
-                    // VTXOs regardless of this string.
-                    PushNotification.localNotificationSchedule({
-                      id: '999999',
-                      channelId: 'ark-bg-refresh',
-                      title: '24 hours left to refresh 1,234 sats ⚠️',
-                      message: 'Tap to refresh. Refresh takes up to an hour.',
-                      date: new Date(Date.now() + 5000),
-                      priority: 'high',
-                      importance: 'high',
-                      playSound: true,
-                      soundName: 'default',
-                      userInfo: { source: 'ark-vtxo-expiry-warn24h', vtxoId: '__test__' },
-                      allowWhileIdle: true,
-                    });
-                    SimpleToast.show('Test notification scheduled (5s). Lock screen or background app to see it.', SimpleToast.LONG);
-                  } catch (err: any) {
-                    SimpleToast.show(`Test notification failed: ${err?.message ?? err}`, SimpleToast.LONG);
-                  }
-                }}
-                style={{
-                  marginTop: 10,
-                  paddingVertical: 8,
-                  paddingHorizontal: 12,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(96, 165, 250, 0.15)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(96, 165, 250, 0.45)',
-                  alignSelf: 'flex-start',
-                }}
-              >
-                <Text style={{ fontSize: 12, color: '#60a5fa' }}>
-                  [DEV] Fire test notification in 5s
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
 

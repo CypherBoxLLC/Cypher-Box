@@ -106,7 +106,8 @@ export default StyleSheet.create<Style>({
         backgroundColor: colors.green,
         borderWidth: 0,
         marginHorizontal: 40,
-        top: heights * 0.32
+        marginTop: 'auto',
+        marginBottom: 50,
     },
     btnText: {
         fontFamily: 'Archivo-Bold',

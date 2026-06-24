@@ -3,6 +3,7 @@ import { GradientView } from "@Cypher/components";
 import React, { useContext, useMemo, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -14,7 +15,6 @@ import {
   Back,
   CoinOS,
   Cold1,
-  Electricity,
   Hot,
   StrikeFull,
 } from "@Cypher/assets/images";
@@ -208,15 +208,16 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
               <Image source={icon} style={{ width: 90, height: 32, marginBottom: 6 }} resizeMode="contain" />
             ) : textLabel ? (
               // White at 16pt — matches the other tile labels' visual
-              // weight. Was 22pt + accentColor (yellow for Ark) which
-              // read as a brand wordmark instead of a label. Lightning
-              // bolt (white) on the left mirrors the Vault tiles' icon
-              // layout below.
+              // weight. Boat-outline (white) on the left mirrors the
+              // glyph used on the homescreen wallet card, Vault tab,
+              // Create Bark login row, and the receive / withdraw /
+              // top-up sheets, so the Bark identity reads consistently.
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                <Image
-                  source={Electricity}
-                  style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
-                  resizeMode="contain"
+                <Ionicons
+                  name="boat-outline"
+                  size={20}
+                  color="#FFFFFF"
+                  style={{ marginRight: 6 }}
                 />
                 <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>{textLabel}</Text>
               </View>
@@ -343,7 +344,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                     accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
                   });
                   if (FEATURE_ARK_ENABLED && isArkAuth) tiles.push({
-                    id: 5, label: 'Ark', subtitle: 'Small–medium amounts',
+                    id: 5, label: 'Bark', subtitle: 'Small–medium amounts',
                     icon: null, iconStyle: {}, isEnabled: true,
                     accent: colors.ark.light, shadowColor: colors.ark.shadowTopNew,
                     textLabel: 'Bark Vault',
