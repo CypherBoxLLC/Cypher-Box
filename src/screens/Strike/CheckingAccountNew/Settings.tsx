@@ -35,6 +35,7 @@ import {
   disconnectGoogleDrive,
   fetchPendingExitsTotalSats,
   findAutoBackupForRecovery,
+  areBgNotificationsEnabled,
   getAutoBackupPath,
   getCachedArkBackupFingerprint,
   getDeviceManufacturer,
@@ -358,6 +359,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
   const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
   const [batteryNotExempt, setBatteryNotExempt] = useState<boolean | null>(null);
+  // `notificationsBlocked`: null = unprobed (don't render banner yet),
+  // true = OS notifications disabled for Cypher Box (banner shown),
+  // false = allowed. Probed on mount + on app foreground, mirroring the
+  // battery banner so the banner self-clears as soon as the user grants
+  // POST_NOTIFICATIONS in Settings without needing to relaunch the app.
+  const [notificationsBlocked, setNotificationsBlocked] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -374,6 +381,31 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // Native bridge hiccup — leave the previous value alone rather
         // than flipping the banner state on a transient.
         if (__DEV__) console.warn('[ArkSettings] battery probe failed:', err);
+      }
+    };
+    void probe();
+    const sub = AppState.addEventListener('change', (status: AppStateStatus) => {
+      if (status === 'active') void probe();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
+  // Notification-permission drift probe. The expiry-reminder toggle in
+  // this app is independent of the OS-level notification permission, so
+  // the user can have reminders "on" in-app while the phone silently
+  // blocks them. Probe non-prompting on mount + on foreground to surface
+  // a fix-it banner when this drift exists.
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async () => {
+      try {
+        const enabled = await areBgNotificationsEnabled();
+        if (!cancelled) setNotificationsBlocked(!enabled);
+      } catch (err) {
+        if (__DEV__) console.warn('[ArkSettings] notification probe failed:', err);
       }
     };
     void probe();
@@ -1537,6 +1569,51 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, expired capsules cannot be recovered.'
                 : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Expired capsules cannot be recovered.'}
             </Text>
+
+            {/* OS-notification-permission banner. Distinct from the toggle
+                above: the toggle is the in-app preference, but Android 13+
+                ALSO requires POST_NOTIFICATIONS at the OS level. If the OS
+                blocks notifications, the toggle silently produces no
+                visible alerts. Surfaced only when the OS reading is
+                "blocked" (notificationsBlocked === true). On Android we
+                deep-link straight to Settings > Apps > Cypher Box >
+                Notifications via APP_NOTIFICATION_SETTINGS; on iOS we
+                fall back to the app's general settings page. */}
+            {notificationsBlocked === true && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (Platform.OS === 'android') {
+                    Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
+                      { key: 'android.provider.extra.APP_PACKAGE', value: 'io.cypherbox.btc' },
+                    ]).catch(() => {
+                      Linking.openSettings().catch((err) => {
+                        if (__DEV__) console.warn('[ArkSettings] open notif settings failed:', err);
+                      });
+                    });
+                  } else {
+                    Linking.openSettings().catch((err) => {
+                      if (__DEV__) console.warn('[ArkSettings] open notif settings failed:', err);
+                    });
+                  }
+                }}
+                style={{
+                  marginTop: 10,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  borderRadius: 8,
+                  backgroundColor: 'rgba(251, 146, 60, 0.12)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(251, 146, 60, 0.45)',
+                }}
+              >
+                <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
+                  ⚠ Turn on Bark Vault notifications
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
+                  Reminders are turned on in Cypher Box, but your phone is blocking notifications for the app. Tap here to allow them in system settings.
+                </Text>
+              </TouchableOpacity>
+            )}
 
             {/* Battery-exemption banner. Shows on Android whenever the app is
                 NOT battery-exempt (i.e. not set to Unrestricted), regardless of

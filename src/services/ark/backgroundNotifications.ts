@@ -49,6 +49,36 @@ export async function ensureBgNotificationPermission(): Promise<boolean> {
     return Boolean(result?.alert);
 }
 
+/**
+ * Non-prompting check of the current OS notification permission state.
+ *
+ * Used by the Settings banner that nudges the user into Settings → Apps →
+ * Cypher Box → Notifications when reminders are toggled on in-app but the
+ * OS has notifications blocked. Distinct from `ensureBgNotificationPermission`
+ * which surfaces the OS prompt; this one must NEVER prompt because it runs
+ * on Settings mount.
+ *
+ * Returns true when alerts can be shown, false otherwise. Errors resolve
+ * to true (don't show a misleading "blocked" banner if the bridge hiccups).
+ */
+export async function areBgNotificationsEnabled(): Promise<boolean> {
+    return new Promise((resolve) => {
+        try {
+            // `checkPermissions` exists at runtime but is missing from the
+            // shipped @types for react-native-push-notification 8.1.1, so
+            // cast through `any` rather than carry a project-local type
+            // augmentation just for one method.
+            (PushNotification as any).checkPermissions(
+                (perms: { alert?: boolean }) => {
+                    resolve(Boolean(perms?.alert));
+                },
+            );
+        } catch {
+            resolve(true);
+        }
+    });
+}
+
 type Priority = 'low' | 'high';
 
 function fire(

@@ -176,6 +176,7 @@ export {
 
 export {
     ensureBgNotificationPermission,
+    areBgNotificationsEnabled,
     scheduleVtxoExpiryWarnings,
     cancelVtxoExpiryWarnings,
 } from './backgroundNotifications';
