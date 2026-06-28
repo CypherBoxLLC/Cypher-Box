@@ -35,18 +35,14 @@ import {
   disconnectGoogleDrive,
   fetchPendingExitsTotalSats,
   findAutoBackupForRecovery,
-  areBgNotificationsEnabled,
   getAutoBackupPath,
   getCachedArkBackupFingerprint,
-  getDeviceManufacturer,
   getDriveBackupInfo,
   getICloudBackupPath,
   getICloudBackupPathForFingerprint,
   getLastLocalBackupNote,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
-  isIgnoringBatteryOptimizations,
-  openBatteryOptimizationSettings,
   readArkSeedPhrase,
   resetArkWalletState,
   setArkBackgroundRefreshEnabled,
@@ -358,65 +354,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // true there.
   const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
   const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
-  const [batteryNotExempt, setBatteryNotExempt] = useState<boolean | null>(null);
-  // `notificationsBlocked`: null = unprobed (don't render banner yet),
-  // true = OS notifications disabled for Cypher Box (banner shown),
-  // false = allowed. Probed on mount + on app foreground, mirroring the
-  // battery banner so the banner self-clears as soon as the user grants
-  // POST_NOTIFICATIONS in Settings without needing to relaunch the app.
-  const [notificationsBlocked, setNotificationsBlocked] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    // Probe regardless of the auto-refresh toggle. The battery-Unrestricted
-    // setting also gates the scheduled expiry-warning notifications (which
-    // fire whether or not auto-refresh is on), so the banner must show
-    // whenever the app isn't battery-exempt, not only while auto-refresh runs.
-    let cancelled = false;
-    const probe = async () => {
-      try {
-        const ignoring = await isIgnoringBatteryOptimizations();
-        if (!cancelled) setBatteryNotExempt(!ignoring);
-      } catch (err) {
-        // Native bridge hiccup — leave the previous value alone rather
-        // than flipping the banner state on a transient.
-        if (__DEV__) console.warn('[ArkSettings] battery probe failed:', err);
-      }
-    };
-    void probe();
-    const sub = AppState.addEventListener('change', (status: AppStateStatus) => {
-      if (status === 'active') void probe();
-    });
-    return () => {
-      cancelled = true;
-      sub.remove();
-    };
-  }, []);
-
-  // Notification-permission drift probe. The expiry-reminder toggle in
-  // this app is independent of the OS-level notification permission, so
-  // the user can have reminders "on" in-app while the phone silently
-  // blocks them. Probe non-prompting on mount + on foreground to surface
-  // a fix-it banner when this drift exists.
-  useEffect(() => {
-    let cancelled = false;
-    const probe = async () => {
-      try {
-        const enabled = await areBgNotificationsEnabled();
-        if (!cancelled) setNotificationsBlocked(!enabled);
-      } catch (err) {
-        if (__DEV__) console.warn('[ArkSettings] notification probe failed:', err);
-      }
-    };
-    void probe();
-    const sub = AppState.addEventListener('change', (status: AppStateStatus) => {
-      if (status === 'active') void probe();
-    });
-    return () => {
-      cancelled = true;
-      sub.remove();
-    };
-  }, []);
+  // Dropped in v0.1.1 alongside FGS_DATA_SYNC:
+  // - batteryNotExempt state + probe effect + banner (battery Unrestricted
+  //   only mattered for the FGS-driven alarm cadence; the surviving
+  //   PushNotification.localNotificationSchedule path is allowWhileIdle).
+  // - notificationsBlocked state + probe effect + banner (the banner
+  //   nudged users to grant POST_NOTIFICATIONS specifically so the FGS
+  //   notification would render; without the FGS the toggle alone is the
+  //   user's signal, and the OS prompt fires on enable).
+  // - [DEMO] Fire refresh alarm now button (Play submission demo).
 
   const handleToggleBgRefresh = async (next: boolean) => {
     if (togglingBgRefresh) return;
@@ -433,37 +380,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         }
         await setArkBackgroundRefreshEnabled(true, creds.password);
         SimpleToast.show("Reminders enabled", SimpleToast.SHORT);
-
-        // Battery onboarding nudge. AlarmManager fires can be deferred
-        // indefinitely under Doze + vendor battery managers; probing on
-        // toggle-on is the right moment for a one-time setup walkthrough.
-        // iOS resolves true and skips this entirely.
-        const ignoring = await isIgnoringBatteryOptimizations();
-        if (!ignoring) {
-          const manufacturer = await getDeviceManufacturer();
-          const guidance = vendorGuidance(manufacturer);
-          const body = [
-            "Android sleeps apps to save battery. Without this, expiry reminders can fire late or not at all. You'll need to open Cypher Box yourself to refresh your capsules before they expire.",
-            "",
-            ...guidance.steps,
-          ].join("\n");
-          Alert.alert(
-            guidance.headline,
-            body,
-            [
-              { text: "Skip for now", style: "cancel" },
-              {
-                text: "Open Settings",
-                onPress: () => {
-                  openBatteryOptimizationSettings().catch((err) => {
-                    console.warn("[Ark bg refresh toggle] open settings failed:", err);
-                  });
-                },
-              },
-            ],
-            { cancelable: true },
-          );
-        }
+        // Battery-Unrestricted onboarding nudge removed in v0.1.1: it was
+        // specifically about preventing AlarmManager wakes from being
+        // deferred under Doze. The 5 PushNotification.localNotificationSchedule
+        // warnings use allowWhileIdle and fire regardless of battery state.
       } else {
         await setArkBackgroundRefreshEnabled(false);
         SimpleToast.show("Reminders disabled", SimpleToast.SHORT);
@@ -1569,90 +1489,6 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, expired capsules cannot be recovered.'
                 : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Expired capsules cannot be recovered.'}
             </Text>
-
-            {/* OS-notification-permission banner. Distinct from the toggle
-                above: the toggle is the in-app preference, but Android 13+
-                ALSO requires POST_NOTIFICATIONS at the OS level. If the OS
-                blocks notifications, the toggle silently produces no
-                visible alerts. Surfaced only when the OS reading is
-                "blocked" (notificationsBlocked === true). On Android we
-                deep-link straight to Settings > Apps > Cypher Box >
-                Notifications via APP_NOTIFICATION_SETTINGS; on iOS we
-                fall back to the app's general settings page. */}
-            {notificationsBlocked === true && (
-              <TouchableOpacity
-                onPress={() => {
-                  if (Platform.OS === 'android') {
-                    Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
-                      { key: 'android.provider.extra.APP_PACKAGE', value: 'io.cypherbox.btc' },
-                    ]).catch(() => {
-                      Linking.openSettings().catch((err) => {
-                        if (__DEV__) console.warn('[ArkSettings] open notif settings failed:', err);
-                      });
-                    });
-                  } else {
-                    Linking.openSettings().catch((err) => {
-                      if (__DEV__) console.warn('[ArkSettings] open notif settings failed:', err);
-                    });
-                  }
-                }}
-                style={{
-                  marginTop: 10,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(251, 146, 60, 0.12)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(251, 146, 60, 0.45)',
-                }}
-              >
-                <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
-                  ⚠ Turn on Bark Vault notifications
-                </Text>
-                <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
-                  Reminders are turned on in Cypher Box, but your phone is blocking notifications for the app. Tap here to allow them in system settings.
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Battery-exemption banner. Shows on Android whenever the app is
-                NOT battery-exempt (i.e. not set to Unrestricted), regardless of
-                the auto-refresh toggle, because the battery setting also gates
-                the scheduled expiry-warning notifications. Hidden once the
-                probe reads "exempt" (Unrestricted). */}
-            {batteryNotExempt === true && (
-              <TouchableOpacity
-                onPress={() => {
-                  // Deep-link to this app's own settings page
-                  // (Settings > Apps > Cypher Box), where the user reaches
-                  // Battery > Unrestricted. Linking.openSettings() opens
-                  // ACTION_APPLICATION_DETAILS_SETTINGS, which is universal
-                  // across Android versions/OEMs. (The native
-                  // openBatteryOptimizationSettings landed on the generic
-                  // battery-optimisation allow-list, not this app's Battery
-                  // screen, which is what we actually want the user on.)
-                  Linking.openSettings().catch((err) => {
-                    console.warn('[Ark bg refresh banner] open settings failed:', err);
-                  });
-                }}
-                style={{
-                  marginTop: 10,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(251, 146, 60, 0.12)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(251, 146, 60, 0.45)',
-                }}
-              >
-                <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
-                  ⚠ Set Cypher Box battery to Unrestricted
-                </Text>
-                <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
-                  Auto-refresh and capsule expiry alerts may not run reliably while battery optimisation is on. Tap here to open Cypher Box settings, then choose Battery and set it to Unrestricted.
-                </Text>
-              </TouchableOpacity>
-            )}
 
           </View>
         </View>
