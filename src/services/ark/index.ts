@@ -188,6 +188,7 @@ export {
     isIgnoringBatteryOptimizations,
     openBatteryOptimizationSettings,
     getDeviceManufacturer,
+    debugFireRefresh,
 } from './scheduler';
 
 export { vendorGuidance } from './batteryGuidance';

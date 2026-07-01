@@ -4,6 +4,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import {
     ARK_VTXO_DUST_SATS,
+    areBgNotificationsEnabled,
     blocksToDays,
     cancelArkPendingRound,
     estimateArkOnchainRecover,
@@ -14,8 +15,8 @@ import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
-import React, { useContext, useMemo } from "react";
-import { Alert, Image, Platform, TouchableOpacity, View } from "react-native";
+import React, { useContext, useEffect, useMemo, useState } from "react";
+import { Alert, AppState, Image, Platform, TouchableOpacity, View } from "react-native";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import styles from "./styles";
 
@@ -77,6 +78,31 @@ export default function ArkWallet({
     // which drains a stuck on-chain boarding deposit back to a fresh Hot
     // Vault change address. Same source HomeScreen uses to find the vault.
     const { wallets } = useContext(BlueStorageContext);
+
+    // OS notification permission state for the bgRefreshStatus pill.
+    // Drives the "Notifications off" branch that replaced the v0.1.1-dropped
+    // "Auto-refresh off" branch — the 5 capsule-expiry warning notifications
+    // are now the only sync-cadence safety net, so an OS-blocked permission
+    // is the equivalent loss of protection. Probe on mount + every time the
+    // app foregrounds so the pill clears immediately when the user grants
+    // the permission in iOS/Android Settings and switches back to us.
+    // `null` = unprobed (hide pill), `false` = blocked (show pill).
+    const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        const probe = () => {
+            areBgNotificationsEnabled().then((enabled) => {
+                if (!cancelled) setNotificationsEnabled(enabled);
+            }).catch(() => {
+                if (!cancelled) setNotificationsEnabled(true); // treat probe error as "ok"
+            });
+        };
+        probe();
+        const sub = AppState.addEventListener('change', (next) => {
+            if (next === 'active') probe();
+        });
+        return () => { cancelled = true; sub.remove(); };
+    }, []);
 
     // Recovery handler for "stuck refresh" — fired when the user taps the
     // banner that surfaces when expired-on-chain VTXOs are still Locked in
@@ -411,19 +437,14 @@ export default function ArkWallet({
             return null;
         }
 
-        // 2. Auto-refresh errored — only when nothing is currently in
-        //    flight, otherwise the active refresh above takes precedence.
-        if (arkBgRefreshEnabled && arkBgRefreshLastAttempt?.outcome === 'error') {
-            const d = new Date(arkBgRefreshLastAttempt.at);
-            const hh = String(d.getHours()).padStart(2, '0');
-            const mm = String(d.getMinutes()).padStart(2, '0');
-            return {
-                text: `Auto-refresh failed at ${hh}:${mm} — tap to retry`,
-                error: true,
-            };
-        }
+        // (Removed v0.1.1) Auto-refresh failure branch. The FGS_DATA_SYNC
+        // worker was dropped in favour of 5 local-notification reminders
+        // (4d / 2d / 24h / 12h / 6h before expiry). There's no longer an
+        // "auto-refresh" subsystem that can fail asynchronously, so this
+        // pill could only fire from stale `arkBgRefreshLastAttempt` state
+        // and would tell the user about a system that no longer exists.
 
-        // 3. Dust capsules present — can't be refreshed individually
+        // 2. Dust capsules present — can't be refreshed individually
         //    (refresh fee > value). Needs batch refresh on the Capsules
         //    tab. Render "here" as an underlined link to invite the tap.
         if (dustCapsuleCount > 0) {
@@ -435,20 +456,26 @@ export default function ArkWallet({
             };
         }
 
-        // 4. Non-dust capsule near expiry (oldest spendable VTXO < 7d)
+        // 3. Non-dust capsule near expiry (oldest spendable VTXO < 7d)
         if (expiryWarning) {
             return { text: expiryWarning, error: true };
         }
 
-        // 5. Auto-refresh toggle off
-        if (!arkBgRefreshEnabled) {
+        // 4. OS notifications blocked. The 5 expiry-warning notifications
+        //    are the only sync-cadence safety net post-FGS removal, so a
+        //    revoked OS permission means the user could miss the expiry
+        //    window entirely. Replaces the v0.1.1-dropped "Auto-refresh:
+        //    off" branch. Probe is initialised to null and only flips to
+        //    false after a real `checkPermissions` callback, so this never
+        //    fires until we actually know the answer.
+        if (notificationsEnabled === false) {
             return {
-                text: 'Auto-refresh: off — capsules will expire without manual refresh',
+                text: 'Notifications off. Capsules can expire without warning. Enable in Settings.',
                 error: true,
             };
         }
 
-        // 6. iOS backup not synced (iCloud Drive off for Cypher Box, or
+        // 5. iOS backup not synced (iCloud Drive off for Cypher Box, or
         //    user created via the manual share+confirm path without yet
         //    enabling iCloud Drive). Android never sets this flag.
         if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
@@ -458,16 +485,15 @@ export default function ArkWallet({
             };
         }
 
-        // 7. All clear — no pill. Bam's call: the homescreen stays quiet
+        // 6. All clear — no pill. Bam's call: the homescreen stays quiet
         //    when there's nothing the user needs to act on. The Card's
         //    own balance line + the in-card refreshing animation (when
         //    a round is in flight) are signal enough.
         return null;
     }, [
-        arkBgRefreshEnabled,
-        arkBgRefreshLastAttempt,
         expiryWarning,
         dustCapsuleCount,
+        notificationsEnabled,
         arkIosBackupReminderActive,
         pendingRoundCount,
         pendingRoundSats,

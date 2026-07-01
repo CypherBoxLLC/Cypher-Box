@@ -13,7 +13,7 @@
  */
 
 import React, { useState } from "react";
-import { View, TouchableOpacity, Image, Dimensions } from "react-native";
+import { View, TouchableOpacity, Image, Dimensions, Platform } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { Text } from "@Cypher/component-library";
@@ -139,16 +139,16 @@ export default function SwapSheet({
                     styles.cardInnerShadow,
                     !selected && { shadowColor: colors.gray.disable },
                 ]}
-                // Real 2px border when selected — RN 0.76 dropped the
-                // native ART module so the GradientView shadow-glow is
-                // a no-op on Android. A border on the inner gradient
-                // gives a visible selection cue cross-platform. Color
-                // tracks the provider's wallet-card theme: pink for the
-                // custodial-lightning rails (Strike/CoinOS), white for
-                // Bark.
+                // Border on Android only — RN 0.76 dropped the ART module
+                // there so the GradientView shadow-glow is a no-op, and the
+                // border is the only selection cue. iOS gets the shadow
+                // rim (which renders correctly post RNCMaskedView +
+                // RCTComponentViewRegistry patches); adding a border on
+                // top of it produced the visible double-outline Bam
+                // flagged on the Top-up / Withdraw / Swap tiles.
                 linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
-                    selected && {
+                    Platform.OS === 'android' && selected && {
                         borderWidth: 2,
                         borderColor: provider.id === 'ark'
                             ? colors.ark.shadowTopNew

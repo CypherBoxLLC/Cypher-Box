@@ -316,6 +316,35 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
   const { wallets } = useContext(BlueStorageContext) as any;
   const navigation = useNavigation();
+
+  // Find the most recent `ark-backup-*.cbark` in a directory. Used as a
+  // fallback after the per-fingerprint stat probe to (a) survive RN 0.77
+  // Fabric / RNFS interop quirks where exists() can return false for a
+  // present file, and (b) display ANY existing backup even when the
+  // fingerprint cache is cold or mismatched (legacy v1 backup, recovered-
+  // with-new-seed flow). The user's safety perception depends on the UI
+  // truthfully reflecting "a backup exists at this rail" — surfacing the
+  // wrong "Not yet" while a real backup sits next to it in Files is the
+  // bug this fixes.
+  const findLatestArkBackup = async (dirPath: string) => {
+    try {
+      const entries = await RNFS.readDir(dirPath);
+      const matches = entries
+        .filter((e: any) => e.isFile() && /^ark-backup-.*\.cbark$/.test(e.name))
+        .map((e: any) => ({
+          name: e.name,
+          mtime: e.mtime ? new Date(e.mtime as any).getTime() : 0,
+          size: Number(e.size) || 0,
+        }))
+        .sort((a: any, b: any) => b.mtime - a.mtime);
+      if (matches.length === 0) return null;
+      const top = matches[0];
+      return { modifiedAt: top.mtime, sizeBytes: top.size, filename: top.name };
+    } catch (e: any) {
+      if (__DEV__) console.log('[Ark settings] findLatestArkBackup failed:', e?.message ?? e);
+      return null;
+    }
+  };
   const [words, setWords] = useState<string[] | null>(null);
   const [revealing, setRevealing] = useState(false);
 
@@ -327,7 +356,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // last-modified time, not just an "available?" state.
   // `null` = unknown / probing, `undefined` = no backup at this rail.
   // Errors are swallowed; UI shows the loading or "no backup yet" state.
-  type BackupInfo = { modifiedAt: number; sizeBytes: number };
+  // `filename` is the actual on-disk name found during the probe so the
+  // UI can surface the real per-wallet backup file (e.g.
+  // `ark-backup-318f4a6a.cbark`) instead of hardcoding the legacy name.
+  // Users were panicking when the UI said "No copy yet" while a real
+  // backup sat next to it in Files; surfacing the filename closes that gap.
+  type BackupInfo = { modifiedAt: number; sizeBytes: number; filename?: string };
   const [localBackup, setLocalBackup] = useState<BackupInfo | null | undefined>(null);
   // Diagnostic note from the most recent local-backup write (e.g. "saved via
   // direct write", or a failure reason). Surfaces the otherwise-silent local
@@ -427,15 +461,24 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       try {
         const exists = await RNFS.exists(localPath);
         if (cancelled) return { cacheWarm: !!fp };
-        if (!exists) {
-          setLocalBackup(undefined);
-        } else {
+        if (exists) {
           const stat = await RNFS.stat(localPath);
           if (cancelled) return { cacheWarm: !!fp };
           setLocalBackup({
             modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
             sizeBytes: Number(stat.size) || 0,
+            filename: localPath.split('/').pop(),
           });
+        } else {
+          // Fallback: enumerate Documents and pick the latest
+          // `ark-backup-*.cbark`. Under RN 0.77 Fabric, RNFS.exists has
+          // occasionally returned false for an actually-present file
+          // (interop quirk + iCloud-evicted local copies). Without this
+          // fallback the UI says "Not yet" while the user can see the
+          // file in Files app, which scares them about funds safety.
+          const found = await findLatestArkBackup(RNFS.DocumentDirectoryPath);
+          if (cancelled) return { cacheWarm: !!fp };
+          setLocalBackup(found ?? undefined);
         }
       } catch (e: any) {
         if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
@@ -471,9 +514,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             } else {
               const exists = await RNFS.exists(iCloudPath);
               if (cancelled) return { cacheWarm: !!fp };
-              if (!exists) {
-                setICloudBackup(undefined);
-              } else {
+              if (exists) {
                 const stat = await RNFS.stat(iCloudPath);
                 if (cancelled) return { cacheWarm: !!fp };
                 setICloudBackup({
@@ -482,7 +523,19 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       ? stat.mtime
                       : new Date(stat.mtime as any).getTime(),
                   sizeBytes: Number(stat.size) || 0,
+                  filename: iCloudPath.split('/').pop(),
                 });
+              } else {
+                // Same fallback rationale as the local probe — enumerate
+                // the iCloud Documents directory and pick the latest
+                // ark-backup-*.cbark. This catches both the
+                // wrong-fingerprint case (cache cold or wallet recovered
+                // with a new seed) and the RNFS.exists-returns-false-on-
+                // iCloud-evicted-files case.
+                const iCloudDir = iCloudPath.substring(0, iCloudPath.lastIndexOf('/'));
+                const found = await findLatestArkBackup(iCloudDir);
+                if (cancelled) return { cacheWarm: !!fp };
+                setICloudBackup(found ?? undefined);
               }
             }
           }
@@ -1292,7 +1345,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               </View>
               {localBackup && (
                 <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                  {`${formatSize(localBackup.sizeBytes)} · ark-backup.cbark`}
+                  {`${formatSize(localBackup.sizeBytes)} · ${localBackup.filename ?? 'ark-backup.cbark'}`}
                 </Text>
               )}
               <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
@@ -1342,7 +1395,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               </View>
               {Platform.OS === 'ios' && iCloudBackup && (
                 <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                  {`${formatSize(iCloudBackup.sizeBytes)} · ark-backup.cbark`}
+                  {`${formatSize(iCloudBackup.sizeBytes)} · ${iCloudBackup.filename ?? 'ark-backup.cbark'}`}
                 </Text>
               )}
               {Platform.OS === 'ios' && (

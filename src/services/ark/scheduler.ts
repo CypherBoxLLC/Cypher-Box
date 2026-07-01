@@ -27,7 +27,24 @@ type SchedulerNative = {
     isIgnoringBatteryOptimizations?: () => Promise<boolean>;
     openBatteryOptimizationSettings?: () => Promise<void>;
     getDeviceManufacturer?: () => Promise<string>;
+    // DEMO-ONLY: synthesise the alarm-fire broadcast from inside the app's
+    // UID for the Play Console FGS_DATA_SYNC video. Remove before next
+    // release. See ArkBackgroundSchedulerModule.debugFireRefresh.
+    debugFireRefresh?: () => Promise<void>;
 };
+
+/**
+ * DEMO-ONLY: trigger the AlarmManager -> Receiver -> startForegroundService
+ * path on demand so the persistent FGS notification appears for the Play
+ * Console submission video. Returns false if the native bridge is
+ * unavailable (iOS, simulator, JS-only test runs).
+ */
+export async function debugFireRefresh(): Promise<boolean> {
+    const native = getNative();
+    if (!native?.debugFireRefresh) return false;
+    await native.debugFireRefresh();
+    return true;
+}
 
 function getNative(): SchedulerNative | null {
     return (NativeModules.ArkBackgroundScheduler as SchedulerNative | undefined) ?? null;

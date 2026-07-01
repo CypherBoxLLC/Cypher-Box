@@ -66,7 +66,13 @@ export default function Transaction({navigation, route}: any) {
     }, [progress]);
 
     const onPressClickHandler = () => {
-        if(startsWithLn(to) || to.includes("@") || to.length == 0) {
+        // `swappedTo` is set when this success screen was reached via a
+        // BUY-then-swap (Strike → CoinOS or Strike → Bark Vault). In that
+        // case the destination string passed via `to` is a sentinel like
+        // 'Ark' or 'coinos', not a real address — sending the user to the
+        // Invoice screen produces an empty review-payment view (no item
+        // shape it can render). Always reset to HomeScreen for swap flows.
+        if(swappedTo || startsWithLn(to) || to.includes("@") || to.length == 0) {
             dispatchReset("HomeScreen")
         } else {
             resetAndNavigate('HomeScreen', 'Invoice', {
@@ -74,7 +80,6 @@ export default function Transaction({navigation, route}: any) {
                 matchedRate
             })
         }
-        // dispatchNavigate('CheckingAccount', {matchedRate});
     }
 
     const shortenAddress = (address: string) => {

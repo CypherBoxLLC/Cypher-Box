@@ -5,28 +5,28 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
 
 /**
- * Plain-language "what you need to know about your Ark capsules" surface.
+ * Plain-language "what you need to know about your lightning capsules" surface.
  *
- * Reached from the circular "?" button on the V-capsules tab. Pure
- * educational content — no actions, no state. Copy written for a normal
- * user, not someone who knows the protocol terms. Fees in the bottom
- * section are quoted directly from Second's published Ark fee schedule
- * (https://second.tech/docs/learn/fees) so they stay honest rather than
- * estimated.
+ * Reached from the circular "?" button on the Capsules tab. Pure educational
+ * content — no actions, no state. Copy written for a normal user, not someone
+ * who knows the protocol terms. Fees in the bottom section are quoted directly
+ * from Second's published Ark fee schedule (https://second.tech/docs/learn/fees)
+ * so they stay honest rather than estimated.
  */
 export default function ArkCapsulesInfoScreen() {
     return (
-        <ScreenLayout showToolbar isBackButton title="About your Bark capsules">
+        <ScreenLayout showToolbar isBackButton title="About your lightning capsules">
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 40 }}
             >
                 <Section title="Why your capsules need refreshing">
                     <Body>
-                        Your Bark balance is held as a collection of small "capsules". Each
-                        capsule has an expiry date. To keep your funds fully self-custodial,
-                        meaning you can always recover them yourself without needing the Bark
-                        server's permission, each capsule must be refreshed before it expires.
+                        Your Bark balance is held as a collection of small lightning capsules
+                        (VTXOs). Each capsule has an expiry date. To keep your funds fully
+                        self-custodial, meaning you can always recover them yourself without
+                        needing the Bark server's permission, each capsule must be refreshed
+                        before it expires.
                     </Body>
                     <Body>
                         If a capsule expires without being refreshed, the funds inside are lost
@@ -36,9 +36,9 @@ export default function ArkCapsulesInfoScreen() {
 
                 <Section title="How reminders keep your capsules safe">
                     <Body>
-                        Cypher Box sends up to 5 reminder notifications before any capsule
-                        expires. The schedule is fixed: 4 days, 2 days, 24 hours, 12 hours,
-                        and 6 hours before expiry. Each one escalates in urgency.
+                        Cypher Box sends up to 5 reminder notifications before any lightning
+                        capsule expires. The schedule is fixed: 4 days, 2 days, 24 hours, 12
+                        hours, and 6 hours before expiry. Each one escalates in urgency.
                     </Body>
                     <Body>
                         Tap any reminder and Cypher Box opens directly on the Capsules tab

@@ -1,7 +1,7 @@
 import { Text } from "@Cypher/component-library";
 import { CustomTabView, GradientCard, GradientView } from "@Cypher/components";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Dimensions, Image, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
@@ -457,7 +457,9 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                   ]}
                   linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
-                    selectedItem === item?.id && {
+                    // Android-only border — iOS gets the shadow rim, see
+                    // TopupList HOT/COLD comment for the full rationale.
+                    Platform.OS === 'android' && selectedItem === item?.id && {
                       borderWidth: 2,
                       borderColor: outlineColor(item?.id),
                     },
@@ -599,7 +601,8 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                   ]}
                   linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
-                    selectedWallet === item?.id && {
+                    // Android-only border — see HOT/COLD card above.
+                    Platform.OS === 'android' && selectedWallet === item?.id && {
                       borderWidth: 2,
                       borderColor: item?.id === 3 ? colors.green
                                  : item?.id === 4 ? colors.blueText

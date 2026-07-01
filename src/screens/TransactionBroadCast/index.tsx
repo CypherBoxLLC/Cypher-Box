@@ -15,7 +15,7 @@ import Animated, {
     Easing,
     useAnimatedStyle,
 } from "react-native-reanimated";
-import { resetAndNavigate } from "@Cypher/helpers/navigation";
+import { dispatchReset } from "@Cypher/helpers/navigation";
 import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 
 export default function TransactionBroadCast({navigation, route}: any) {
@@ -52,16 +52,11 @@ export default function TransactionBroadCast({navigation, route}: any) {
     }, [progress]);
 
     const onPressClickHandler = () => {
-        if(receiveType == true || receiveType == false){
-            dispatchNavigate('HomeScreen');            
-        } else {
-            resetAndNavigate('HomeScreen', 'Invoice', {
-                item: item,
-                matchedRate,
-                currency,
-            })
-        }
-        // dispatchNavigate('CheckingAccount', {matchedRate});
+        // Reset the WalletsStack back to HomeScreen instead of CommonActions.navigate.
+        // navigate() leaves intermediate screens (ReviewPayment / SendScreen) mounted
+        // under HomeScreen, which on iOS Fabric (RN 0.77 New Arch) renders as the
+        // half-mounted HomeScreen overlay or pops the user back to ReviewPayment.
+        dispatchReset('HomeScreen');
     }
 
     const fadeIn = () => {

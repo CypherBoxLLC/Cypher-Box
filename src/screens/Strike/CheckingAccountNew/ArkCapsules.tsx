@@ -1776,7 +1776,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                        Your virtual capsules (VTXOs) must be refreshed before they expire, or they are lost forever.{' '}
+                        Your lightning capsules (VTXOs) must be refreshed before they expire, or they are lost forever.{' '}
                         <Text
                             bold
                             style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
@@ -1866,7 +1866,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
             {/* Column header row — matches Hot Vault's layout */}
             <View style={vaultStyles.titleStyle}>
-                <Text bold style={vaultStyles.coin}>VTXOs</Text>
+                <Text bold style={vaultStyles.coin}>Capsules</Text>
                 <Text bold style={vaultStyles.size}>Size</Text>
                 <Text
                     bold
@@ -1929,7 +1929,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     arkPendingLnReceives.length > 0 ? null : (
                         <View style={{ alignItems: "center", marginTop: 40 }}>
                             <Text style={{ color: colors.gray.light, fontSize: 13 }}>
-                                No VTXOs yet. Receive Bitcoin via Ark to populate.
+                                No lightning capsules yet. Receive Bitcoin via Ark to populate.
                             </Text>
                         </View>
                     )

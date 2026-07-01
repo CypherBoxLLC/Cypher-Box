@@ -169,14 +169,47 @@ export default function StrikeWallet({
                                         {formatNumber(Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount))} sats
                                     </Text>
                                 </View>
-                                <View>
+                                {/* Reserve a 25pt slot for the threshold-bar
+                                    trio. All three children are absolutely
+                                    positioned (see styles.showLine /
+                                    linearGradient2 / box), so without an
+                                    explicit height this parent collapses to
+                                    0 and the bars float over the balance
+                                    row above. */}
+                                <View style={{ height: 25 }}>
                                     <View style={styles.showLine} />
                                     <View style={[styles.box, { left: `${calculatePercentage(Number(withdrawStrikeThreshold), (Number(reserveStrikeAmount)))}%` }]} />
-                                    <LinearGradient
-                                        start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-                                        colors={[colors.white, colors.pink.dark]}
-                                        style={[styles.linearGradient2, { width: `${calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount))}%` }]}>
-                                    </LinearGradient>
+                                    {/* LinearGradient wrapped in an absolute
+                                        View. Under RN 0.77 Fabric the paper-
+                                        only react-native-linear-gradient@2.8.3
+                                        view doesn't honor position:absolute
+                                        through the legacy interop layer — pink
+                                        rendered but was offset / clipped /
+                                        invisible. Wrapping in a Fabric-native
+                                        View handles positioning; LinearGradient
+                                        just fills its parent as a flex child.
+                                        Inner copy of the CheckingAccountNew
+                                        screen renders the same bar fine because
+                                        its parent layout doesn't depend on
+                                        absolute positioning. */}
+                                    {/* Solid pink fill, no LinearGradient. The
+                                        original white→pink gradient stopped
+                                        rendering under RN 0.77 Fabric/Paper
+                                        interop when wrapped in a percent-width
+                                        absolute parent (LinearGradient with
+                                        absoluteFill inside the wrapper drew
+                                        nothing). Solid color renders reliably
+                                        and the visual result is cleaner. The
+                                        `minWidth: 6` guarantees a visible
+                                        sliver of pink for any non-zero balance,
+                                        so users see "yes, balance is loading
+                                        toward the threshold" even at <1%. */}
+                                    {(() => {
+                                        const pct = calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount));
+                                        return (
+                                            <View style={[styles.linearGradient2, { width: `${pct}%`, backgroundColor: colors.pink.dark, minWidth: pct > 0 ? 6 : 0 }]} />
+                                        );
+                                    })()}
                                 </View>
                             </View>
                         </LinearGradient>

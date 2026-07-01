@@ -21,9 +21,9 @@ function ensureInit(): void {
         PushNotification.createChannel(
             {
                 channelId: CHANNEL_ID,
-                channelName: 'Bark capsule refresh',
+                channelName: 'Lightning capsule reminders',
                 channelDescription:
-                    'Alerts about Bark capsule auto-refresh outcomes (failures, expiring capsules, unusual fees).',
+                    'Reminders to refresh your lightning capsules (VTXOs) before they expire.',
                 importance: 4, // HIGH — covers both high- and low-priority notifications
                 vibrate: true,
             },

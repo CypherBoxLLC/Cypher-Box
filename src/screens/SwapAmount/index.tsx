@@ -213,7 +213,7 @@ export default function SwapAmount() {
                 if (/not spendable.*unregistered|state:\s*unregistered/i.test(inner)) {
                     Alert.alert(
                         'A capsule is stuck',
-                        "One of your Bark capsules is in a state the Bark server won't spend, so payments from Bark keep failing. Try sending from a different wallet for now.",
+                        "One of your lightning capsules is in a state the Bark server won't spend, so payments from Bark keep failing. Try sending from a different wallet for now.",
                         [{ text: 'OK', style: 'default' }],
                         { cancelable: true },
                     );
@@ -320,14 +320,26 @@ export default function SwapAmount() {
                     <Text semibold style={styles.successTitle}>Swap Sent ⚡</Text>
                     <Text semibold style={styles.successValue}>{swappedSats} sats</Text>
                     <Text semibold style={styles.successFiat}>{currency === 'EUR' ? '€' : '$'}{swappedFiat}</Text>
-                    {feeSats !== null && feeSats > 0 && (
+                    {feeSats !== null && feeSats > 0 && (() => {
                         // Surface the realised network fee under the fiat
                         // line. Only providers that report it (Ark) reach
-                        // this branch — custodial swaps just hide the row.
-                        <Text style={styles.successFee}>
-                            Network fee: {feeSats} sats{feeNote ? ` · ${feeNote}` : ''}
-                        </Text>
-                    )}
+                        // this branch — custodial swaps hide the row.
+                        // Percentage matches the pre-swap preview formula
+                        // and the ArkSendScreen Fee % row for consistency.
+                        const swappedSatsNum = Number(swappedSats) || 0;
+                        const gross = swappedSatsNum + feeSats;
+                        const feePct = gross > 0 ? Math.min(999, (feeSats / gross) * 100) : null;
+                        const pctStr = feePct === null
+                            ? ''
+                            : feePct < 0.01
+                                ? ' (< 0.01%)'
+                                : ` (${feePct.toFixed(feePct < 1 ? 2 : 1)}%)`;
+                        return (
+                            <Text style={styles.successFee}>
+                                Network fee: {feeSats} sats{pctStr}{feeNote ? ` · ${feeNote}` : ''}
+                            </Text>
+                        );
+                    })()}
                     <View style={styles.animationContainer}>
                         <Animated.View style={[styles.ring, { transform: [{ scale: ring1Scale }], opacity: ring1Opacity }]}>
                             <Image source={GradientShock} style={styles.ringImage} />
@@ -367,15 +379,29 @@ export default function SwapAmount() {
                     <Text style={styles.arrow}>→</Text>
                     {renderProviderBadge(toProvider, sendTo, 'inline')}
                 </View>
-                {feeSats !== null && feeSats > 0 && (
+                {feeSats !== null && feeSats > 0 && (() => {
                     // Pre-swap fee preview. Shown when the source rail's
                     // estimateFee() returned a value (Ark via the Bark SDK).
-                    // Custodial sources skip this row entirely so the
-                    // layout doesn't reserve empty space.
-                    <Text style={styles.feePreview}>
-                        Estimated network fee: {feeSats} sats{feeNote ? ` · ${feeNote}` : ''}
-                    </Text>
-                )}
+                    // Custodial sources skip this row entirely so the layout
+                    // doesn't reserve empty space.
+                    // Fee % of total debited (sats + feeSats) — matches the
+                    // ArkSendScreen Fee % row so the user gets the same
+                    // signal across regular send and swap surfaces. Capped
+                    // at 999% so tiny-amount swaps don't break layout.
+                    const amountSats = Number(sats) || 0;
+                    const gross = amountSats + feeSats;
+                    const feePct = gross > 0 ? Math.min(999, (feeSats / gross) * 100) : null;
+                    const pctStr = feePct === null
+                        ? ''
+                        : feePct < 0.01
+                            ? ' (< 0.01%)'
+                            : ` (${feePct.toFixed(feePct < 1 ? 2 : 1)}%)`;
+                    return (
+                        <Text style={styles.feePreview}>
+                            Estimated network fee: {feeSats} sats{pctStr}{feeNote ? ` · ${feeNote}` : ''}
+                        </Text>
+                    );
+                })()}
             </View>
             {loading ? (
                 <View style={styles.loadingView}>

@@ -173,7 +173,7 @@ export default function CheckingAccountCreated() {
                                     Capsules must be refreshed
                                 </Text>
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 6 }]}>
-                                    To keep your balance available and self-custodial, your virtual capsules (VTXOs) need to be refreshed.
+                                    To keep your balance available and self-custodial, your lightning capsules (VTXOs) need to be refreshed.
                                 </Text>
 
                                 {/* Toggle. Default ON (armed during create);

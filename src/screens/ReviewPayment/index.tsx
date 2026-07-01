@@ -1337,8 +1337,15 @@ export default function ReviewPayment({ navigation, route }: Props) {
     }
 
     const handleWithdrawalFee = (fee: number) => {
-        const temp = ((Number(fee || 0) / Number(value || 0)) || 0) * 100
-        return temp;
+        // Fee is always in sats. `value` may be sats OR fiat depending on
+        // `isSats` (set by the dispatcher screen): WithdrawList passes
+        // value=sats/isSats=true, but the Strike post-purchase route and
+        // some BUY paths pass value=USD/isSats=false with converted=sats.
+        // Always reduce to sats so the percentage is meaningful, otherwise
+        // dividing sats by USD produces nonsense (e.g. 1701 sats / $5 → 34020%).
+        const amountSats = isSats ? Number(value || 0) : Number(converted || 0);
+        if (!amountSats) return 0;
+        return (Number(fee || 0) / amountSats) * 100;
     }
 
     console.log('strikeFees: ', value, to, type, recommendedFee)
@@ -1558,7 +1565,20 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                         </View>
                                     </View>
                                     <View style={{ marginTop: 15, marginStart: 15, height: 30 }}>
-                                        {selectedStrikeFee && <Text bold style={{ fontSize: 18 }}>Fee: <Text italic style={{ fontSize: 16, fontWeight: 'normal' }}>{`~ ${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000).toFixed(0)} sats (~${getStrikeCurrency(currency || 'USD')}${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * (matchedRate || 0)).toFixed(2)}) (${value > 0 ? ((Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000 / Number(value)) * 100).toFixed(1) : '0'}%)`}</Text></Text>}
+                                        {selectedStrikeFee && (() => {
+                                // See handleWithdrawalFee above for why we reduce
+                                // to sats. `value` can be USD when the dispatcher
+                                // passes isSats=false (Strike fiat→BTC review etc.),
+                                // and dividing sats-fee by USD-amount yields the
+                                // 34020%-style nonsense Bam reported.
+                                const feeSats = Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000;
+                                const amountSats = isSats ? Number(value || 0) : Number(converted || 0);
+                                const pct = amountSats > 0 ? ((feeSats / amountSats) * 100).toFixed(1) : '0';
+                                const usdAmt = (Number(selectedStrikeFee?.estimatedFee?.amount || 0) * (matchedRate || 0)).toFixed(2);
+                                return (
+                                    <Text bold style={{ fontSize: 18 }}>Fee: <Text italic style={{ fontSize: 16, fontWeight: 'normal' }}>{`~ ${feeSats.toFixed(0)} sats (~${getStrikeCurrency(currency || 'USD')}${usdAmt}) (${pct}%)`}</Text></Text>
+                                );
+                            })()}
                                     </View>
                                 </View>
                             }

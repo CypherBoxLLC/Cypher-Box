@@ -1,13 +1,14 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
-import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, blocksToDays } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Animated, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Animated, AppState, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 
 interface Props {
     balance: any;
@@ -187,29 +188,38 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
      *     user taps the pill. Defaults to the Account tab (0); the dust
      *     warning passes 1 (Capsules) to land on the batch-refresh UI.
      */
+    // Mirrors ArkWallet's bgRefreshStatus, plus the same notifications-off
+    // probe replaces the v0.1.1-dropped auto-refresh branches.
+    const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        const probe = () => {
+            areBgNotificationsEnabled().then((enabled) => {
+                if (!cancelled) setNotificationsEnabled(enabled);
+            }).catch(() => {
+                if (!cancelled) setNotificationsEnabled(true);
+            });
+        };
+        probe();
+        const sub = AppState.addEventListener('change', (next) => {
+            if (next === 'active') probe();
+        });
+        return () => { cancelled = true; sub.remove(); };
+    }, []);
+
     const bgRefreshStatus = useMemo(() => {
         // Refresh in flight: short-circuit to all-clear. The Ark Card
         // itself surfaces the live "Refreshing N capsules · X sats" line
         // inside its balance area (see Card's `refreshingInfo` prop) so
         // a duplicate message in the shared-row status pill would be
-        // redundant. Also suppresses the failure-record branch below
-        // because `finalize` only writes 'success' after the round
-        // commits server-side (up to 1h on mainnet) — a stale failure
-        // record would otherwise linger underneath the in-card live
-        // status for an hour.
+        // redundant.
         if (pendingRound.count > 0) {
             return null;
         }
 
-        if (arkBgRefreshEnabled && arkBgRefreshLastAttempt?.outcome === 'error') {
-            const d = new Date(arkBgRefreshLastAttempt.at);
-            const hh = String(d.getHours()).padStart(2, '0');
-            const mm = String(d.getMinutes()).padStart(2, '0');
-            return {
-                text: `Auto-refresh failed at ${hh}:${mm} — tap to retry`,
-                error: true,
-            };
-        }
+        // (Removed v0.1.1) Auto-refresh failure branch — see ArkWallet
+        // for the rationale. FGS_DATA_SYNC dropped, no auto-refresh
+        // subsystem to fail.
 
         if (dustCapsuleCount > 0) {
             return {
@@ -224,9 +234,13 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             return { text: expiryWarning, error: true };
         }
 
-        if (!arkBgRefreshEnabled) {
+        // Notifications-off branch replaces the v0.1.1-dropped
+        // "Auto-refresh: off" branch. The 5 capsule-expiry warning
+        // notifications are now the only sync-cadence safety net, so a
+        // revoked OS permission is the equivalent loss of protection.
+        if (notificationsEnabled === false) {
             return {
-                text: 'Auto-refresh: off — capsules will expire without manual refresh',
+                text: 'Notifications off. Capsules can expire without warning. Enable in Settings.',
                 error: true,
             };
         }
@@ -240,10 +254,9 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
 
         return null;
     }, [
-        arkBgRefreshEnabled,
-        arkBgRefreshLastAttempt,
         expiryWarning,
         dustCapsuleCount,
+        notificationsEnabled,
         arkIosBackupReminderActive,
         pendingRound,
     ]);
@@ -495,13 +508,39 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // its internal `_scrollPos`. Both the carousel's own animations and
     // our row read from the same native-driven value — no JS-thread hops,
     // no lag.
-    const scrollX = useRef(new Animated.Value(0)).current;
+    // Seed scrollX to match the carousel's restored page on mount. Without
+    // this, scrollX starts at 0 (fiat-offset) even when the FlatList is
+    // restored to lightning via initialScrollIndex, causing the
+    // native-driven translateX/opacity to lag the actual scroll position.
+    const scrollX = useRef(new Animated.Value(indexStrike * screenWidth)).current;
     const scrollHandler = useRef(
         Animated.event(
             [{ nativeEvent: { contentOffset: { x: scrollX } } }],
             { useNativeDriver: true }
         )
     ).current;
+
+    // Resync scrollX on focus restore. Symptom this fixes: navigating away
+    // from HomeScreen and back, then tapping the shared Receive/Send/Swap
+    // row, did nothing. Swiping to another wallet card and back made the
+    // taps work again.
+    //
+    // Cause: the row's translateX/opacity are driven by scrollX via
+    // Animated.event with useNativeDriver:true. On a normal swipe, native
+    // onScroll updates scrollX, native render moves the row, JS layout
+    // tracks. On focus restore, the FlatList's initialScrollIndex jumps
+    // the carousel visually but under RN 0.77 Fabric this jump doesn't
+    // always fire a native onScroll, so scrollX drifts out of sync with
+    // the actual page. The native transform then puts the row at one
+    // pixel position while RN's JS-thread hit-testing thinks it's at
+    // another — taps land on empty space.
+    //
+    // The first manual swipe fires real native onScroll events that
+    // rewrite scrollX, which is why the workaround (swipe away and back)
+    // works.
+    useFocusEffect(useCallback(() => {
+        scrollX.setValue(indexStrike * screenWidth);
+    }, [indexStrike, scrollX]));
 
     // Find the fiat slide and the lightning slide in `wTabs`. The
     // interpolation is anchored on the fiat → lightning transition; ark is
