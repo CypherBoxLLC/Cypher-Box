@@ -158,7 +158,7 @@ export default function CheckingAccountLogin() {
       const reStrikeTokenExchange = await strikeTokenExchange(result.authorizationCode, result.codeVerifier || '');
       setStrikeToken(reStrikeTokenExchange.access_token);
       setStrikeAuth(true);
-      const temp = [...allBTCWallets];
+      const temp = (allBTCWallets as string[]).filter(w => w !== "STRIKE");
       const tokenParts = reStrikeTokenExchange.access_token.split(".");
       const header = Buffer.from(tokenParts[0], "base64").toString("utf8");
       const payload = Buffer.from(tokenParts[1], "base64").toString("utf8");

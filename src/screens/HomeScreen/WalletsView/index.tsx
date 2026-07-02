@@ -288,9 +288,11 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         //     never collapsed into CircularView (which has no Ark support).
         //   - StrikeDollarWallet (USD shadow balance) tags along whenever Strike
         //     is connected — same as the original behavior.
-        const custodialLightning = (allBTCWallets as WalletName[]).filter(
-            w => w === 'STRIKE' || w === 'COINOS'
-        );
+        const custodialLightning = Array.from(new Set(
+            (allBTCWallets as WalletName[]).filter(
+                w => w === 'STRIKE' || w === 'COINOS'
+            )
+        )) as WalletName[];
         // Ark is feature-flagged off until Second.tech's mainnet ASP launches.
         // Even if zustand still has 'ARK' in allBTCWallets from a previous
         // session, we never render the carousel card while the flag is false.
