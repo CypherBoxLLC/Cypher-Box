@@ -33,7 +33,7 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
+import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkoorReceivePrompt, useIncomingUtxoDetector } from "@Cypher/custom-hooks";
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
@@ -259,6 +259,12 @@ export default function HomeScreen({ route }: Props) {
   const [isColdWalletLoaded, setIsColdWalletLoaded] = useState(true);
   const [receiveType, setReceiveType] = useState(false);
   const [strikeConvertedBalance, setStrikeConvertedBalance] = useState(0);
+  // Incoming on-chain UTXO detector: polls the Hot Vault + Cold Storage
+  // wallets, diffs against a persisted seen-set, and fires the
+  // PaymentNotification banner (with an inline VaultCapsules) once per
+  // new inbound tx at 0 confirmations. Placed after wallet + coldStorage
+  // useStates so their current refs flow into the hook.
+  useIncomingUtxoDetector({ hot: wallet, cold: coldStorageWallet });
   const refRBSheet = useRef<any>(null);
   const refSendRBSheet = useRef<any>(null);
   const reopenSendSheet = useRef(false);

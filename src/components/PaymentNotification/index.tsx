@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View, Vibration } from 'react-native';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
+import VaultCapsules from '../VaultCapsules';
 
 type WalletType = 'coinos' | 'hot' | 'cold' | 'lightning';
 
@@ -9,6 +10,11 @@ interface NotificationData {
   confirmed: boolean;
   walletType: WalletType;
   walletName?: string;
+  // When set, the banner renders an inline VaultCapsules (color/fill by
+  // sats) in place of the ⚡️ icon. Used by the on-chain incoming-UTXO
+  // detector so a BTC receive reads as capsule vocabulary; Lightning /
+  // CoinOS receives leave this unset and keep the emoji.
+  capsuleValue?: number;
 }
 
 const WALLET_THEMES: Record<WalletType, { bg: string; border: string; accent: string; label: string }> = {
@@ -53,8 +59,9 @@ export const triggerPaymentNotification = (
   confirmed: boolean,
   walletType: WalletType = 'coinos',
   walletName?: string,
+  capsuleValue?: number,
 ) => {
-  const data: NotificationData = { amount, confirmed, walletType, walletName };
+  const data: NotificationData = { amount, confirmed, walletType, walletName, capsuleValue };
   if (showNotification) {
     notificationQueue.push(data);
     if (notificationQueue.length === 1) {
@@ -135,7 +142,10 @@ const PaymentNotification: React.FC = () => {
 
   const theme = WALLET_THEMES[data.walletType] || WALLET_THEMES.coinos;
   const formatted = formatSats(data.amount);
-  const label = data.confirmed ? 'Received' : 'Incoming';
+  const isCapsule = typeof data.capsuleValue === 'number';
+  const label = isCapsule
+    ? (data.confirmed ? 'Bitcoin capsule received' : 'Incoming Bitcoin capsule')
+    : (data.confirmed ? 'Received' : 'Incoming');
   const walletLabel = data.walletName || theme.label;
 
   return (
@@ -149,7 +159,13 @@ const PaymentNotification: React.FC = () => {
       ]}
     >
       <View style={[styles.banner, { backgroundColor: theme.bg, borderColor: theme.border, shadowColor: theme.accent }]}>
-        <Text style={styles.icon}>⚡️</Text>
+        {isCapsule ? (
+          <View style={styles.capsuleSlot}>
+            <VaultCapsules item={data.capsuleValue} isPending={!data.confirmed} />
+          </View>
+        ) : (
+          <Text style={styles.icon}>⚡️</Text>
+        )}
         <View style={styles.textContainer}>
           <Text style={[styles.title, { color: theme.accent }]}>{label} · {walletLabel}</Text>
           <Text style={styles.amount}>{formatted}</Text>
@@ -182,6 +198,12 @@ const styles = StyleSheet.create({
   icon: {
     fontSize: 32,
     marginRight: 12,
+  },
+  capsuleSlot: {
+    width: 52,
+    height: 28,
+    marginRight: 12,
+    justifyContent: 'center',
   },
   textContainer: {
     flex: 1,
