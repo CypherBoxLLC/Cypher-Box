@@ -20,6 +20,7 @@ import type {
     LightningSwapProvider,
     LightningSwapResult,
 } from '../types';
+import { PaymentPendingError } from '../types';
 import { register } from '../registry';
 
 /**
@@ -85,9 +86,32 @@ const coinosProvider: LightningSwapProvider = {
         // amount-less invoices. We pass `amountSats` defensively even
         // when the bolt11 already encodes the amount — the API ignores
         // the override in that case.
-        const raw = await coinosSendLightning(bolt11, memo ?? '', amountSats);
+        let raw: unknown;
+        try {
+            raw = await coinosSendLightning(bolt11, memo ?? '', amountSats);
+        } catch (err) {
+            // Client-side timeout on the HTTP call (see sendLightningPayment).
+            // The Coinos backend may still be routing the LN payment, so this
+            // is PENDING, not a retryable failure. A retry could double-charge.
+            if ((err as any)?.name === 'AbortError') {
+                throw new PaymentPendingError(
+                    'coinos',
+                    "Coinos didn't confirm the payment in time. It may still complete. Check your Coinos balance in a moment before retrying.",
+                );
+            }
+            throw err;
+        }
         const parsed = parsePayResponse(raw);
         if (!parsed.ok) {
+            // Cloudflare / upstream gateway timeouts. Same PENDING semantics
+            // as the AbortError above: Coinos backend may still route the
+            // payment after CF gives up on the response.
+            if (parsed.message && /error code:\s*(502|503|504|524)/i.test(parsed.message)) {
+                throw new PaymentPendingError(
+                    'coinos',
+                    "Coinos didn't confirm the payment in time. It may still complete. Check your Coinos balance in a moment before retrying.",
+                );
+            }
             // Coinos returns the literal string `"Insufficient funds ⚡️X / Y"`
             // where X is the user's balance and Y is the required total
             // (amount + routing fee). The fee can't be quoted ahead of

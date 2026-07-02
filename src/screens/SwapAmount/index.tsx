@@ -183,13 +183,30 @@ export default function SwapAmount() {
             // wallet" before tapping anything. See the 2026-05-31 incident
             // where retrying a PENDING Strike swap reserved it three times.
             if (error instanceof PaymentPendingError) {
+                // Clear the "Processing swap..." view first so the screen
+                // isn't visibly stuck behind the alert while React flushes
+                // — under a busy JS thread that flush was landing seconds
+                // after the alert appeared, reading as a spinner hang.
+                setLoading(false);
                 Alert.alert(
                     'Payment submitted, not yet confirmed',
                     error.message,
-                    [{ text: 'OK, I will check', style: 'default' }],
+                    [
+                        {
+                            text: 'OK, I will check',
+                            style: 'default',
+                            // Close the swap flow entirely once the user
+                            // acknowledges. Staying on SwapAmount with a
+                            // stale amount pre-filled invites the retry
+                            // this alert exists to prevent. Home shows
+                            // the real balance state; if the destination
+                            // eventually settles, the balance updates
+                            // there naturally.
+                            onPress: () => dispatchReset('HomeScreen'),
+                        },
+                    ],
                     { cancelable: false },
                 );
-                setLoading(false);
                 return;
             }
 
