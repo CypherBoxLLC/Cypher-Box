@@ -634,43 +634,51 @@ export default function HomeScreen({ route }: Props) {
     Promise.resolve(handleToken()).finally(() => __DEV__ && console.log('[HomeMount] handleToken done +', Date.now() - _t0, 'ms'));
   }, [isAuth, token, wallets, walletID, coldStorageWalletID]);
 
-  // CoinOS WebSocket for real-time payment notifications
-  useEffect(() => {
-    if (isAuth && token) {
-      if (__DEV__) console.log('[CoinOS WS] Auth detected, connecting...');
+  // CoinOS WebSocket for real-time payment notifications.
+  //
+  // Scoped to HomeScreen *focus*, not just mount: navigating away (Hot Vault
+  // flow, Ark screens, Settings) tears the socket down so the WS reconnect
+  // loop never runs during unrelated flows. Background push notifications
+  // (registered in the effect below) still deliver payments while off-screen.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuth || !token) {
+        disconnectCoinosSocket();
+        setOnPaymentReceived(null);
+        return;
+      }
+      if (__DEV__) console.log('[CoinOS WS] HomeScreen focused, connecting...');
       setCoinosUsername(user?.username || user);
       setOnPaymentReceived((data) => {
         if (__DEV__) console.log('[CoinOS WS] Payment callback, refreshing balance...');
         handleUser();
         loadPayments();
       });
-
-      // Connect WS and register push — token already refreshed in handleToken
-      const initCoinosConnection = async () => {
-        connectCoinosSocket();
-
-        // Register push token for background notifications (with fresh token)
-        try {
-          const Notifications = require('../../../blue_modules/notifications').default;
-          const pushTokenData = await Notifications.getPushToken();
-          if (pushTokenData?.token && user) {
-            registerPushToken(user?.username || user, pushTokenData.token);
-          }
-        } catch (error) {
-          console.warn('[Push Token] Registration failed:', error);
-        }
+      connectCoinosSocket();
+      return () => {
+        if (__DEV__) console.log('[CoinOS WS] HomeScreen unfocused, disconnecting');
+        disconnectCoinosSocket();
+        setOnPaymentReceived(null);
       };
+    }, [isAuth, token, user])
+  );
 
-      initCoinosConnection();
-    } else {
-      disconnectCoinosSocket();
-      setOnPaymentReceived(null);
-    }
-    return () => {
-      disconnectCoinosSocket();
-      setOnPaymentReceived(null);
-    };
-  }, [isAuth, token]);
+  // Push token registration is session-scoped, not screen-scoped: only re-run
+  // when auth changes, so navigating between screens doesn't re-register.
+  useEffect(() => {
+    if (!isAuth || !token || !user) return;
+    (async () => {
+      try {
+        const Notifications = require('../../../blue_modules/notifications').default;
+        const pushTokenData = await Notifications.getPushToken();
+        if (pushTokenData?.token) {
+          registerPushToken(user?.username || user, pushTokenData.token);
+        }
+      } catch (error) {
+        console.warn('[Push Token] Registration failed:', error);
+      }
+    })();
+  }, [isAuth, token, user]);
 
   useEffect(() => {
     if (isAuth && token && ((!vaultAddress.startsWith('ln') && !vaultAddress.includes('@')) || (!coldStorageAddress.startsWith('ln') && !coldStorageAddress.includes('@'))) && !recommendedFee) {
