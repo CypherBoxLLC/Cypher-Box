@@ -50,6 +50,11 @@ local.properties
 node_modules/
 npm-debug.log
 yarn-error.log
+# yarn.lock is a stale BlueWallet-fork artifact. Cypher Box uses npm ci
+# (see CLAUDE.md). Keeping this ignored blocks an accidental
+# `yarn install` from re-committing it and re-importing the 56 alerts
+# that came with it.
+yarn.lock
 
 # BUCK
 buck-out/
