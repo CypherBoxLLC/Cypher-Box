@@ -109,6 +109,14 @@ export default function ReviewWithdrawal({ route }: Props) {
     };
 
     const handleFeeEstimate = async (fee: string) => {
+        // recommendedFee starts as [] and is populated by the mount-time
+        // fetch; if that failed (offline, mempool.space down) indexing it
+        // yields undefined and the estimate call gets a NaN fee rate.
+        if (recommendedFee?.[fee] == null) {
+            SimpleToast.show('Network fees unavailable. Please try again.', SimpleToast.SHORT);
+            setFeeLoading(false);
+            return;
+        }
         setFeeLoading(true);
         const amount = isSats ? value : converted;
         if (to.startsWith('bc')) {
@@ -353,7 +361,7 @@ export default function ReviewWithdrawal({ route }: Props) {
     const increaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
         const currentIndex = feeKeys.indexOf(selectedFeeName !== 'Select Fee' ? selectedFeeName : '');
-        const fromFeeKeys = Object.keys(recommendedFee);
+        const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === feeKeys.length - 1) {
             SimpleToast.show('You have reached the end of the fee list.', SimpleToast.SHORT);
             return;
@@ -366,7 +374,7 @@ export default function ReviewWithdrawal({ route }: Props) {
     const decreaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
         const currentIndex = feeKeys.indexOf(selectedFeeName !== 'Select Fee' ? selectedFeeName : '');
-        const fromFeeKeys = Object.keys(recommendedFee);
+        const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === 0) {
             SimpleToast.show('You have reached the start of the fee list.', SimpleToast.SHORT);
             return;
@@ -521,7 +529,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     <View>
                         <GradientCard disabled style={styles.modal} linearStyle={styles.linearGradient4}>
                             <ScrollView style={styles.background2}>
-                                {Object.entries(recommendedFee).map(
+                                {Object.entries(recommendedFee ?? {}).map(
                                     ([feeKey, feeValue], index) =>
                                         feeKey !== 'minimumFee' && (
                                             <TouchableOpacity

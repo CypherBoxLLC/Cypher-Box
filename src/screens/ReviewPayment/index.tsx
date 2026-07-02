@@ -15,7 +15,7 @@ import LinearGradient from "react-native-linear-gradient";
 import TextView from "./TextView";
 import TextViewV2 from "../Invoice/TextView"
 import useAuthStore from "@Cypher/stores/authStore";
-import { bitcoinSendFee, getCurrencyRates, getMe, sendBitcoinPayment, sendCoinsViaUsername, sendLightningPayment } from "@Cypher/api/coinOSApis";
+import { bitcoinRecommendedFee, bitcoinSendFee, getCurrencyRates, getMe, sendBitcoinPayment, sendCoinsViaUsername, sendLightningPayment } from "@Cypher/api/coinOSApis";
 import { btc, formatNumber, getStrikeCurrency, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
 import { FeeSelection } from "./FeeSelection/FeeSelection";
 import bolt11 from "bolt11";
@@ -158,7 +158,27 @@ function buildTradingFeeText(
 }
 
 export default function ReviewPayment({ navigation, route }: Props) {
-    const { value, converted, isSats, isMaxUSDSelected = false, to, type, recommendedFee, currency, isWithdrawal = false, wallet = null, description, receiveType, vaultTab, total } = route?.params;
+    const { value, converted, isSats, isMaxUSDSelected = false, to, type, recommendedFee: recommendedFeeParam, currency, isWithdrawal = false, wallet = null, description, receiveType, vaultTab, total } = route?.params;
+    // Fee rates arrive as a route param from HomeScreen, but that fetch is
+    // conditional and network-dependent, so the param can be undefined when
+    // the user navigates here quickly after app start (or mempool.space was
+    // unreachable). Rendering the fee dropdown off an undefined object was
+    // a hard crash in release builds. Self-heal: seed from the param, fetch
+    // fresh rates if missing.
+    const [recommendedFee, setRecommendedFee] = useState<any>(recommendedFeeParam);
+    useEffect(() => {
+        if (recommendedFee?.fastestFee != null) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const fees = await bitcoinRecommendedFee();
+                if (!cancelled && fees?.fastestFee != null) setRecommendedFee(fees);
+            } catch {
+                // Dropdown stays empty; handleFeeEstimate's guard toasts on tap.
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
     const { withdrawThreshold, reserveAmount, strikeUser, isAuth, isArkAuth, walletID: hotVaultWalletID, coldStorageWalletID, user, strikeMe } = useAuthStore();
     const { wallets } = useContext(BlueStorageContext);
 
@@ -613,6 +633,14 @@ export default function ReviewPayment({ navigation, route }: Props) {
     }
 
     const handleFeeEstimate = async (fee: string) => {
+        // recommendedFee self-heals from a mount-time fetch, but if that
+        // failed (offline, mempool.space down) it can still be nullish here.
+        // Bail with a toast instead of indexing into undefined.
+        if (recommendedFee?.[fee] == null) {
+            SimpleToast.show('Network fees unavailable. Please try again.', SimpleToast.SHORT);
+            setFeeLoading(false);
+            return;
+        }
         setFeeLoading(true);
         const amount = isSats ? value : converted;
         if (to.startsWith('bc')) { //bitcoin onchain
@@ -1241,7 +1269,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const increaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
         const currentIndex = feeKeys.indexOf(selectedFeeName !== "Select Fee" ? selectedFeeName : '');
-        const fromFeeKeys = Object.keys(recommendedFee);
+        const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === feeKeys.length - 1) {
             SimpleToast.show('You have reached the end of the fee list.', SimpleToast.SHORT);
             return;
@@ -1254,7 +1282,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const decreaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
         const currentIndex = feeKeys.indexOf(selectedFeeName !== "Select Fee" ? selectedFeeName : '');
-        const fromFeeKeys = Object.keys(recommendedFee);
+        const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === 0) {
             SimpleToast.show('You have reached the start of the fee list.', SimpleToast.SHORT);
             return;
@@ -1509,11 +1537,11 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                             </TouchableOpacity>
                                             {isModalVisible && (
                                                 <View style={{ backgroundColor: colors.gray.dark, borderWidth: 1, borderTopWidth: 0, borderColor: '#333', borderBottomLeftRadius: 10, borderBottomRightRadius: 10, overflow: 'hidden', position: 'absolute', top: 40, left: 0, right: 0, zIndex: 30, elevation: 10 }}>
-                                                    {Object.entries(recommendedFee).map(([feeKey, feeValue], index) => (
+                                                    {Object.entries(recommendedFee ?? {}).map(([feeKey, feeValue], index) => (
                                                         feeKey !== 'minimumFee' && (
                                                             <TouchableOpacity
                                                                 key={feeKey}
-                                                                style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: index < Object.keys(recommendedFee).length - 2 ? 1 : 0, borderBottomColor: '#333', backgroundColor: selectedFeeName === feeKey ? colors.primary : 'transparent' }}
+                                                                style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: index < Object.keys(recommendedFee ?? {}).length - 2 ? 1 : 0, borderBottomColor: '#333', backgroundColor: selectedFeeName === feeKey ? colors.primary : 'transparent' }}
                                                                 onPress={() => handleFeeSelect(feeKey as Fee)}>
                                                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                                                     <Text bold style={{ fontSize: 13 }}>{feeNames[feeKey as Fee]}</Text>
