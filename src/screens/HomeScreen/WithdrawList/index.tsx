@@ -457,9 +457,10 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                   ]}
                   linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
-                    // Android-only border — iOS gets the shadow rim, see
-                    // TopupList HOT/COLD comment for the full rationale.
-                    Platform.OS === 'android' && selectedItem === item?.id && {
+                    // Border is the selection cue on BOTH platforms — the
+                    // iOS neomorph rim is a no-op under Fabric's useArt
+                    // fallback, so without this iOS shows no highlight.
+                    selectedItem === item?.id && {
                       borderWidth: 2,
                       borderColor: outlineColor(item?.id),
                     },
@@ -601,8 +602,8 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                   ]}
                   linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
-                    // Android-only border — see HOT/COLD card above.
-                    Platform.OS === 'android' && selectedWallet === item?.id && {
+                    // Both platforms — see HOT/COLD card above.
+                    selectedWallet === item?.id && {
                       borderWidth: 2,
                       borderColor: item?.id === 3 ? colors.green
                                  : item?.id === 4 ? colors.blueText

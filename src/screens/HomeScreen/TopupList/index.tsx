@@ -360,16 +360,14 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   ]}
                   linearGradientStyleMain={[
                     withdrawStyles.cardGradientMainStyle,
-                    // Android-only border: the GradientView's shadow rim
-                    // is a no-op on Android (RN 0.76 dropped the ART
-                    // module). On iOS the rim renders correctly post
-                    // RNCMaskedView+RCTComponentViewRegistry patches, so
-                    // adding a borderWidth there caused a visible double
-                    // outline (selected tile showed both the shadow rim
-                    // and the explicit border). Gate the border on
-                    // Android so each platform gets exactly one selection
-                    // cue.
-                    Platform.OS === 'android' && selectedVault === item.id && {
+                    // Border is the selection cue on BOTH platforms. This
+                    // was Android-only for a while (iOS deferred to the
+                    // GradientView shadow rim, and border + rim doubled
+                    // up), but the iOS rim stopped rendering under
+                    // Fabric's useArt fallback, leaving selected tiles
+                    // with no highlight at all on iOS. If the rim ever
+                    // comes back, re-check for the double outline.
+                    selectedVault === item.id && {
                       borderWidth: 2,
                       borderColor: item.id === 1 ? colors.green
                                  : item.id === 2 ? colors.blueText
@@ -424,8 +422,8 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   ]}
                   linearGradientStyleMain={[
                     withdrawStyles.cardGradientMainStyle,
-                    // See HOT/COLD card above — Android-only border.
-                    Platform.OS === 'android' && selectedAccount === item.id && {
+                    // See HOT/COLD card above — border on both platforms.
+                    selectedAccount === item.id && {
                       borderWidth: 2,
                       borderColor: accountOutline(item.id),
                     },

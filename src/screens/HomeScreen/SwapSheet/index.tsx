@@ -148,7 +148,11 @@ export default function SwapSheet({
                 // flagged on the Top-up / Withdraw / Swap tiles.
                 linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
-                    Platform.OS === 'android' && selected && {
+                    // Border is the selection cue on BOTH platforms: the
+                    // neomorph rim this used to defer to on iOS is a no-op
+                    // under Fabric's useArt fallback, leaving selected tiles
+                    // with no highlight at all.
+                    selected && {
                         borderWidth: 2,
                         borderColor: provider.id === 'ark'
                             ? colors.ark.shadowTopNew
