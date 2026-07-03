@@ -111,7 +111,7 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
         <View style={{ marginTop: 20, alignItems: 'center' }}>
           <Card
             wallet="ARK"
-            title="Ark Vault"
+            title="Bark Vault"
             balance={Number(balance)}
             currency={currency}
             matchedRate={Number(matchedRate)}

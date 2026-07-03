@@ -162,4 +162,24 @@ if [ -f "$RNPUSH" ] && ! grep -q "canScheduleExactAlarms" "$RNPUSH"; then
   echo "  Fixed react-native-push-notification: exact-alarm SecurityException (targetSdk 35) -> inexact fallback"
 fi
 
+# react-native 0.77.3 Fabric leak-tolerance patch: the upstream
+# RCTAssert(view.superview == nil) in RCTComponentViewRegistry hard-crashes
+# with SIGABRT when any paper-only third-party native view manager attaches
+# subviews via `addSubview:` under the Fabric legacy interop. Replace with
+# NSLog + Bugsnag notify + skip so users don't crash mid-transaction and we
+# still get alerts about future leaking modules. Applied via `patch` rather
+# than sed because the change spans multiple lines with special characters.
+# Idempotent: `patch --dry-run` first, only apply if it hasn't been applied
+# yet. `patch -R --dry-run` would detect already-applied state too.
+RNREG="node_modules/react-native/React/Fabric/Mounting/RCTComponentViewRegistry.mm"
+RNREG_PATCH="patches/react-native+0.77.3.patch"
+if [ -f "$RNREG" ] && [ -f "$RNREG_PATCH" ] && ! grep -q "CypherBox.FabricViewLeak" "$RNREG"; then
+  if patch --dry-run -s -p1 < "$RNREG_PATCH" > /dev/null 2>&1; then
+    patch -s -p1 < "$RNREG_PATCH"
+    echo "  Applied react-native+0.77.3 Fabric leak-tolerance patch"
+  else
+    echo "  WARN: patches/react-native+0.77.3.patch did not apply cleanly — inspect manually"
+  fi
+fi
+
 echo "=== Done ==="

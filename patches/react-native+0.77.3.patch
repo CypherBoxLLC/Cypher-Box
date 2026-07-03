@@ -1,0 +1,46 @@
+diff --git a/node_modules/react-native/React/Fabric/Mounting/RCTComponentViewRegistry.mm b/node_modules/react-native/React/Fabric/Mounting/RCTComponentViewRegistry.mm
+--- a/node_modules/react-native/React/Fabric/Mounting/RCTComponentViewRegistry.mm
++++ b/node_modules/react-native/React/Fabric/Mounting/RCTComponentViewRegistry.mm
+@@ -111,8 +111,40 @@
+     return;
+   }
+ 
+-  RCTAssert(
+-      componentViewDescriptor.view.superview == nil, @"RCTComponentViewRegistry: Attempt to recycle a mounted view.");
++  // PATCHED (Cypher Box): the upstream RCTAssert hard-crashes when a
++  // paper-only third-party view manager manually attached subviews via
++  // `addSubview:` and never detached them before unmount. Replace the
++  // assert with a NSLog + Bugsnag notify + skip so (a) users survive the
++  // leak instead of hitting SIGABRT mid-transaction, (b) we still get
++  // an alert with the offending class name so future paper-only leaks
++  // don't hide silently, and (c) the leaked view drops out of the recycle
++  // pool (small memory cost, cleared on next app launch) rather than
++  // being re-mounted in a broken state. See patches/react-native+*.patch
++  // for the persisted diff. Remove once every leaking module is fixed.
++  if (componentViewDescriptor.view.superview != nil) {
++    UIView *leaked = componentViewDescriptor.view;
++    NSString *leakedClass = NSStringFromClass([leaked class]);
++    NSString *parentClass = NSStringFromClass([leaked.superview class]);
++    NSLog(@"[CypherBox][LEAK] cannot recycle view class=%@ superview=%@ handle=%lld",
++          leakedClass, parentClass, (long long)componentHandle);
++    // Dynamic Bugsnag lookup — avoids importing Bugsnag.h into
++    // node_modules code. No-ops silently if the framework isn't linked
++    // (e.g. debug tools stripped in a special build).
++    Class BugsnagClass = NSClassFromString(@"Bugsnag");
++    SEL notifyErrorSel = NSSelectorFromString(@"notifyError:");
++    if (BugsnagClass && [BugsnagClass respondsToSelector:notifyErrorSel]) {
++      NSError *leakError = [NSError errorWithDomain:@"CypherBox.FabricViewLeak"
++                                               code:1
++                                           userInfo:@{
++        NSLocalizedDescriptionKey: [NSString stringWithFormat:
++          @"Paper-only native view leaked on recycle: %@ (superview=%@)",
++          leakedClass, parentClass],
++      }];
++      IMP notifyImp = [BugsnagClass methodForSelector:notifyErrorSel];
++      ((void (*)(id, SEL, NSError *))notifyImp)(BugsnagClass, notifyErrorSel, leakError);
++    }
++    return;
++  }
+   [componentViewDescriptor.view prepareForRecycle];
+ 
+   recycledViews.push_back(componentViewDescriptor);

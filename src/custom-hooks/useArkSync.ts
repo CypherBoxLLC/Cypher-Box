@@ -97,6 +97,17 @@ const URGENCY_THRESHOLD_BLOCKS = Math.round(
 const FOREGROUND_SWEEP_MIN_GAP_MS = 5 * 60 * 1000;
 let lastForegroundSweepAt = 0;
 
+/**
+ * Schedule version of the OS-level expiry-warning queue. Bumped when the
+ * warning schedule changes (e.g. moving from 24h+6h to 4d/2d/24h/12h/6h).
+ * The sync loop reads the persisted authStore value; if behind AND the
+ * reminders toggle is on, it force-calls scheduleVtxoExpiryWarnings on
+ * every spendable VTXO so existing alarms catch up with the new schedule,
+ * then sets the persisted version. Idempotent: the OS replaces alarms
+ * with the same id, and new alarms get added.
+ */
+const CURRENT_EXPIRY_NOTIFS_SCHEDULE_VERSION = 1;
+
 export type UseArkSync = {
     isSyncing: boolean;
     lastError: Error | null;
@@ -363,14 +374,34 @@ export default function useArkSync(): UseArkSync {
                 setArkBalanceDetail(filteredBalance);
             }
             if (vtxos) {
+                // Filter past-expiry VTXOs out of the live capsule list.
+                // The SDK reports them as Spendable until the ASP actually
+                // sweeps them, but they cannot participate in a refresh
+                // round (the ASP rejects expired inputs) and surfacing
+                // them as actionable capsules misleads users: the funds
+                // are already lost. Arkoor (expiryHeight === 0) stay,
+                // they inherit expiry from their parent and the SDK
+                // hasn't resolved it yet. The History tab still shows
+                // their lifecycle as a record, so the loss is visible
+                // there instead of cluttering the active capsule list.
+                const visibleSpendable =
+                    typeof tip === 'number'
+                        ? vtxos.spendable.filter(
+                              (v) => v.expiryHeight === 0 || v.expiryHeight > tip,
+                          )
+                        : vtxos.spendable;
                 console.log(
                     '[Ark sync] writing',
-                    vtxos.spendable.length,
+                    visibleSpendable.length,
                     'vtxos to store (of',
+                    vtxos.spendable.length,
+                    'spendable,',
                     vtxos.all.length,
-                    'total)',
+                    'total;',
+                    vtxos.spendable.length - visibleSpendable.length,
+                    'past-expiry hidden)',
                 );
-                setArkVtxos(vtxos.spendable);
+                setArkVtxos(visibleSpendable);
             } else {
                 console.log('[Ark sync] fetchArkVtxos returned null (no handle)');
             }
@@ -398,6 +429,19 @@ export default function useArkSync(): UseArkSync {
             // and racy with the OS scheduler.
             if (vtxos && typeof tip === 'number') {
                 const prevScheduled = useAuthStore.getState().arkScheduledExpiryNotifs;
+                // First-sync-after-upgrade migration: if the persisted
+                // schedule version trails the current one AND reminders
+                // are on, force-call scheduleVtxoExpiryWarnings for every
+                // spendable VTXO so the OS alarm queue matches the new
+                // schedule (4d/2d/24h/12h/6h). Gated on the toggle so an
+                // OFF user doesn't burn the migration tick on no-ops; the
+                // migration retries next sync once they flip it on.
+                const persistedScheduleVersion =
+                    useAuthStore.getState().arkExpiryNotifsScheduleVersion ?? 0;
+                const remindersOn = useAuthStore.getState().arkBgRefreshEnabled;
+                const needsScheduleMigration =
+                    persistedScheduleVersion < CURRENT_EXPIRY_NOTIFS_SCHEDULE_VERSION
+                    && remindersOn;
                 const nextScheduled: Record<string, number> = {};
                 const blockMs = AVG_BLOCK_MINUTES * 60 * 1000;
                 const nowMs = Date.now();
@@ -411,9 +455,14 @@ export default function useArkSync(): UseArkSync {
                     if (blocksLeft <= 0) continue;
                     const expiryAtMs = nowMs + blocksLeft * blockMs;
                     nextScheduled[v.id] = expiryAtMs;
-                    if (prevScheduled[v.id] == null) {
+                    if (needsScheduleMigration || prevScheduled[v.id] == null) {
                         try {
-                            scheduleVtxoExpiryWarnings(v.id, expiryAtMs);
+                            // Pass per-VTXO sats so the notification title
+                            // carries "{N} sats" instead of the generic
+                            // "your Ark vault balance" fallback. Cancellation
+                            // on state change (above) keeps the baked-in
+                            // amount from going stale.
+                            scheduleVtxoExpiryWarnings(v.id, expiryAtMs, v.sats);
                             if (__DEV__) {
                                 console.log(
                                     '[Ark sync] scheduled expiry warnings for',
@@ -460,6 +509,17 @@ export default function useArkSync(): UseArkSync {
                     prevKeys.length !== nextKeys.length ||
                     nextKeys.some((k) => prevScheduled[k] !== nextScheduled[k]);
                 if (changed) setArkScheduledExpiryNotifs(nextScheduled);
+
+                // Mark the migration as done so subsequent ticks skip it.
+                // Bumped only if we actually ran the migration this tick
+                // (so an OFF-toggle user retries next sync).
+                if (needsScheduleMigration) {
+                    useAuthStore
+                        .getState()
+                        .setArkExpiryNotifsScheduleVersion(
+                            CURRENT_EXPIRY_NOTIFS_SCHEDULE_VERSION,
+                        );
+                }
             }
 
             // Stuck-refresh detection — TIME-based.

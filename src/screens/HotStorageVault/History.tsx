@@ -22,6 +22,10 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
     const [isLoading, setIsLoading] = useState(false);
     const [itemPriceUnit, setItemPriceUnit] = useState(wallet.getPreferredBalanceUnit());
     const [timeElapsed, setTimeElapsed] = useState(0);
+    // Surfaces "Network slow, pull to retry" when a fetch hits the 20s
+    // timeout (Electrum unreachable / address-discovery hang). Cleared on
+    // any successful fetch.
+    const [didTimeout, setDidTimeout] = useState(false);
 
     // const handleCoinControl = () => {
     //     const walletID = wallet.getID()
@@ -54,10 +58,14 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
         setIsLoading(false);
         setSelectedWalletID(wallet.getID());
         setDataSource([...getTransactionsSliced(limit)]);
+        // Always refresh on mount, not just first-time. Restored wallets
+        // that fetched once but then sat on stale state (e.g. an empty
+        // first fetch, or the user navigated away mid-sync) never re-queried
+        // because the previous `getLastTxFetch() === 0` gate evaluated false
+        // after that first attempt. Electrum returns quickly when nothing
+        // has changed, so this is cheap.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        if (wallet.getLastTxFetch() === 0) {
-            refreshTransactions();
-        }
+        refreshTransactions();
       }, [wallet]);
 
     const refreshTransactions = async () => {
@@ -66,7 +74,21 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
         setIsLoading(true);
         let noErr = true;
         let smthChanged = false;
-        try {
+        // 20s ceiling on the whole fetch pipeline. The deep slowness is
+        // BlueWallet's Electrum address-discovery; we can't speed it up
+        // here, but we can stop the UI from getting stuck in `isLoading`
+        // forever when Electrum is unreachable. Hitting the timeout
+        // surfaces a "Network slow" hint via `didTimeout` so the user
+        // knows their pull-to-refresh actually ran but couldn't complete.
+        const FETCH_TIMEOUT_MS = 20000;
+        let timedOut = false;
+        const timeout = new Promise<void>((_, reject) =>
+          setTimeout(() => {
+            timedOut = true;
+            reject(new Error('fetch timeout'));
+          }, FETCH_TIMEOUT_MS),
+        );
+        const fetchPipeline = (async () => {
           // await BlueElectrum.ping();
           if (wallet.allowBIP47() && wallet.isBIP47Enabled()) {
             const pcStart = +new Date();
@@ -103,9 +125,16 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
           }
           const end = +new Date();
           console.log(wallet.getLabel(), 'fetch tx took', (end - start) / 1000, 'sec');
+        })();
+        try {
+          await Promise.race([fetchPipeline, timeout]);
+          setDidTimeout(false);
         } catch (err) {
           noErr = false;
-          // alert(err.message);
+          if (timedOut) {
+            console.log(wallet.getLabel(), 'fetch tx timed out after', FETCH_TIMEOUT_MS, 'ms');
+            setDidTimeout(true);
+          }
           setIsLoading(false);
           setTimeElapsed(prev => prev + 1);
         }
@@ -213,8 +242,24 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
                     return (wallet.getTransactions().length > limit && <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />) || null;
                 }}
                 ListEmptyComponent={() => (
+                    // Three states, distinct copy for each — the empty
+                    // list used to flatly say "No Transactions History"
+                    // during the initial Electrum scan, which read as a
+                    // broken wallet for users restoring an account that
+                    // actually had history.
                     <View style={{ height: screenHeight / 2, justifyContent: 'center', alignItems: 'center', marginTop: 30 }}>
-                        <Text white h3 bold>No Transactions History</Text>
+                        {isLoading || isRefreshing ? (
+                            <>
+                                <ActivityIndicator color={colors.white} />
+                                <Text white h4 style={{ marginTop: 12 }}>Loading transactions...</Text>
+                            </>
+                        ) : didTimeout ? (
+                            <Text white h4 center style={{ marginHorizontal: 30 }}>
+                                Network slow. Pull down to retry.
+                            </Text>
+                        ) : (
+                            <Text white h3 bold>No Transactions History</Text>
+                        )}
                     </View>
                 )}
                 refreshControl={

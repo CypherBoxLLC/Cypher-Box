@@ -86,7 +86,7 @@ export default function CheckingAccountNew({ navigation, route }: any) {
     }, [selectedTab, vaultTab, wallet, effMatchedRate, receiveType, effCurrency, isArk]);
 
     return (
-        <ScreenLayout showToolbar disableScroll title={isArk ? 'Ark Vault' : 'Lightning Account'}>
+        <ScreenLayout showToolbar disableScroll title={isArk ? 'Bark Vault' : 'Lightning Account'}>
             <View style={styles.container}>
                 <Tabs onChangeSelectedTab={onChangeSelectedTab} selectedTab={selectedTab} vaultTab={vaultTab} accountType={accountType} />
                 {renderView()}

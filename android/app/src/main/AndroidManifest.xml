@@ -18,19 +18,15 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- WorkManager runs the Ark background-refresh worker as a foreground
-         service so its process boots at IMPORTANCE_FOREGROUND_SERVICE. RN
-         0.76 New Arch's DefaultNewArchitectureEntryPoint.load() init does
-         not complete in a no-Activity service-only process — the worker's
-         brief foreground status (~10-30s while a refresh round is in flight)
-         lets that init complete and the headless JS task start. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <!-- BOOT_COMPLETED + MY_PACKAGE_REPLACED are sent by the system so the
-         Ark background-refresh AlarmManager alarm can be re-armed after
-         a reboot or app update. Without this permission the receiver
-         won't fire and the cadence dies on the first reboot. See
-         ArkRefreshBootCompletedReceiver. -->
+    <!-- Auto-refresh while-app-closed (FGS_DATA_SYNC) was dropped in v0.1.1:
+         the 5 scheduled local-notification warnings (4d/2d/24h/12h/6h before
+         expiry) survive without any foreground service, and Play submission
+         for FGS_DATA_SYNC requires a manual-review video that we don't have
+         enough demo value to justify. The Java/JS scheduler code is left in
+         place but is inert without the service+receiver declarations below.
+         RECEIVE_BOOT_COMPLETED is kept because react-native-push-notification
+         (RNPushNotificationBootEventReceiver) uses it to re-arm scheduled
+         local notifications after reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.ACTION_OPEN_DOCUMENT" />
@@ -90,66 +86,20 @@
             </intent-filter>
         </service>
 
-        <!-- Headless JS task host for the Ark background-refresh.
-             Started from ArkRefreshAlarmReceiver via startForegroundService
-             and promoted to FGS in onStartCommand. dataSync
-             foregroundServiceType pairs with the FOREGROUND_SERVICE_DATA_SYNC
-             permission and is required on Android 14+ to call
-             startForeground. Not exported — only our own receiver triggers
-             it. -->
-        <service
-            android:name=".ArkRefreshHeadlessTaskService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
+        <!-- Ark background-refresh services and receivers (FGS_DATA_SYNC)
+             were removed in v0.1.1. The Java classes
+             (ArkRefreshHeadlessTaskService, ArkRefreshAlarmReceiver,
+             ArkRefreshBootCompletedReceiver, ArkBackgroundSchedulerModule)
+             remain in the source tree but are inert because they are no
+             longer declared here. The 5 capsule-expiry warning
+             notifications fire via PushNotification.localNotificationSchedule
+             which is independent of these services. -->
 
-        <!-- Alarm-fired receiver that hosts the actual cold-process wake.
-             AlarmManager-fired receivers get a brief allowlist exemption
-             that lets them call startForegroundService(). See receiver
-             class doc + ArkBackgroundSchedulerModule for the full
-             rationale (Android 14 FGS-from-background restrictions). -->
-        <receiver
-            android:name=".ArkRefreshAlarmReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="io.cypherbox.btc.ARK_REFRESH_ALARM" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Re-arm the Ark refresh alarm after device boot or app
-             upgrade. AlarmManager state lives only in RAM, so a reboot
-             would otherwise silently kill the cadence. exported="true"
-             is required: BOOT_COMPLETED + MY_PACKAGE_REPLACED are
-             system-broadcast and the system delivers them only to
-             receivers visible across the package boundary. The receiver
-             is a no-op when the SharedPreferences flag says the user
-             hasn't enabled auto-refresh. See receiver class doc. -->
-        <receiver
-            android:name=".ArkRefreshBootCompletedReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Declare foregroundServiceType on WM's SystemForegroundService
-             so ArkRefreshWorker.setForegroundAsync() can elevate the
-             worker to a foreground service. Without this Android 14+
-             throws IllegalArgumentException ("foregroundServiceType
-             0x00000001 is not a subset of foregroundServiceType
-             attribute 0x00000000") because WM's library manifest
-             declares the service with no type. -->
-        <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge" />
-
-        <!-- Disable WorkManager's eager auto-initialization via
-             androidx.startup. Pairs with MainApplication implementing
-             Configuration.Provider for on-demand init. Without this,
-             cold-process wakes spawned for SystemJobService have WM's
-             reconciliation cancel the very dispatch that woke us. See
-             MainApplication.getWorkManagerConfiguration() comment. -->
+        <!-- WorkManager auto-initialization is still disabled. We don't
+             currently use WM for Ark refresh, but other libraries may
+             schedule background work; leaving the on-demand init
+             pattern in place keeps that pluggable without surprising
+             eager-init behaviour. -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

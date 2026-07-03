@@ -1,0 +1,46 @@
+diff --git a/node_modules/@react-native-masked-view/masked-view/ios/RNCMaskedView.m b/node_modules/@react-native-masked-view/masked-view/ios/RNCMaskedView.m
+--- a/node_modules/@react-native-masked-view/masked-view/ios/RNCMaskedView.m
++++ b/node_modules/@react-native-masked-view/masked-view/ios/RNCMaskedView.m
+@@ -13,6 +13,21 @@
+ 
+ - (void)didUpdateReactSubviews
+ {
++  // Detach manually-added subviews that are no longer in reactSubviews.
++  // Without this, removing a child from React's tree leaves it attached
++  // to the UIKit view hierarchy via the `[self addSubview:]` call below.
++  // Under RN Fabric this leak triggers
++  //   RCTAssert(componentViewDescriptor.view.superview == nil,
++  //     @"RCTComponentViewRegistry: Attempt to recycle a mounted view.")
++  // in RCTComponentViewRegistry when the leaked view is later recycled.
++  // Patched by Cypher Box — upstream package (@react-native-masked-view
++  // /masked-view@0.3.2) is paper-only and unmaintained for Fabric.
++  for (UIView *subview in [self.subviews copy]) {
++    if (subview != self.maskView && ![self.reactSubviews containsObject:subview]) {
++      [subview removeFromSuperview];
++    }
++  }
++
+   // RNCMaskedView expects that the first subview rendered is the mask.
+   UIView *maskView = [self.reactSubviews firstObject];
+   self.maskView = maskView;
+@@ -24,6 +39,20 @@
+   }
+ }
+ 
++- (void)removeFromSuperview
++{
++  // When the MaskedView itself is unmounted, detach every manually-added
++  // child so Fabric's recycle pool finds them with superview=nil. Without
++  // this, the SIGABRT in _enqueueComponentViewWithComponentHandle fires
++  // (same root cause as the didUpdateReactSubviews cleanup above, but
++  // covers the whole-MaskedView-unmount path that the per-child diff
++  // never hits).
++  for (UIView *subview in [self.subviews copy]) {
++    [subview removeFromSuperview];
++  }
++  [super removeFromSuperview];
++}
++
+ - (void)displayLayer:(CALayer *)layer
+ {
+   // RCTView uses displayLayer to do border rendering.

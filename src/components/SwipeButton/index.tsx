@@ -2,8 +2,19 @@ import React, { forwardRef, useEffect, useImperativeHandle } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import LinearGradient from 'react-native-linear-gradient';
-import MaskedView from '@react-native-masked-view/masked-view';
 
+// MaskedView removed: under RN 0.77 Fabric, @react-native-masked-view/masked-view
+// (0.3.2, paper-only — no codegenConfig, .m files only) leaks its manually-
+// attached children through the legacy interop layer. When ReviewPayment
+// unmounted (e.g. after the user swipes to SELL and we navigate to the
+// success screen), Fabric's recycle pool tried to enqueue a still-mounted
+// child of MaskedView and hit
+//   RCTAssert(componentViewDescriptor.view.superview == nil,
+//     @"RCTComponentViewRegistry: Attempt to recycle a mounted view.")
+// in node_modules/react-native/React/Fabric/Mounting/RCTComponentViewRegistry.mm,
+// producing the SIGABRT seen on every Strike sell confirmation.
+// The shimmer text-mask effect is replaced with a pure Reanimated opacity
+// pulse below — same "alive" feel, no native dependency.
 import { PanGestureHandler } from 'react-native-gesture-handler';
 import Animated, {
     useAnimatedGestureHandler,
@@ -32,50 +43,23 @@ const H_SWIPE_RANGE = BUTTON_WIDTH - 2 * BUTTON_PADDING - SWIPEABLE_DIMENSIONS;
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
 const ShimmerText = ({ text, shimmer }: { text: string; shimmer: Animated.SharedValue<number> }) => {
+    // Opacity pulse replaces the previous MaskedView + horizontal gradient
+    // sweep. The old effect needed MaskedView to confine the gradient to
+    // the text's glyph shape; under Fabric that library crashed the app
+    // (see import-block comment). This pulse runs purely on the native
+    // Reanimated thread, no extra native modules involved.
     const shimmerStyle = useAnimatedStyle(() => {
         return {
-            transform: [
-                {
-                    translateX: interpolate(
-                        shimmer.value,
-                        [0, 1],
-                        [-BUTTON_WIDTH, BUTTON_WIDTH],
-                    ),
-                },
-            ],
+            opacity: interpolate(
+                shimmer.value,
+                [0, 0.5, 1],
+                [0.55, 1, 0.55],
+                Extrapolate.CLAMP,
+            ),
         };
     });
 
-    return (
-        <MaskedView
-            maskElement={
-                <Text style={[styles.swipeText, { opacity: 1, backgroundColor: 'transparent' }]}>
-                    {text}
-                </Text>
-            }
-        >
-            <Text style={[styles.swipeText, { opacity: 0.4 }]}>{text}</Text>
-            <Animated.View
-                style={[
-                    {
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                    },
-                    shimmerStyle,
-                ]}
-            >
-                <LinearGradient
-                    colors={['transparent', '#FFFFFF', 'transparent']}
-                    start={{ x: 0, y: 0.5 }}
-                    end={{ x: 1, y: 0.5 }}
-                    style={{ flex: 1, width: 80 }}
-                />
-            </Animated.View>
-        </MaskedView>
-    );
+    return <Animated.Text style={[styles.swipeText, shimmerStyle]}>{text}</Animated.Text>;
 };
 
 const SwipeButton = forwardRef(({ onToggle, isLoading, title = "Slide to Send" }: {title: string, onToggle: Function, isLoading: boolean}, ref) => {

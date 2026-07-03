@@ -259,28 +259,31 @@ export default StyleSheet.create<Style>({
         // paddingHorizontal: 20,
         justifyContent: 'space-between',
     },
+    // Threshold-bar trio (showLine / linearGradient2 / box) are all
+    // absolutely positioned within their parent View so they overlap
+    // pixel-perfectly. Previously linearGradient2 was in-flow with
+    // marginVertical:10 and relied on Old-Arch quirks to overlap the
+    // others; under RN 0.77 Fabric (Yoga 3) the in-flow LinearGradient
+    // detached and rendered at top:0 of the parent slot, which then
+    // visually landed at the top of the Strike card instead of inside
+    // the grey placeholder bar.
     showLine: {
-        // borderWidth: 1,
-        // borderColor: colors.white,
         position: 'absolute',
+        top: 10,
+        left: 0,
         width: '100%',
         backgroundColor: '#5F5F5F',
         height: 5,
-        // padding: 5,
         borderRadius: 5,
-        marginVertical: 10,
-        // marginStart: 25,
-        // marginHorizontal: 20
     },
     linearGradient2: {
+        position: 'absolute',
+        top: 10,
+        left: 0,
         width: '100%',
-        // paddingLeft: 15,
-        // paddingRight: 15,
         borderRadius: 5,
         height: 5,
-        alignSelf: 'flex-start',
-        marginVertical: 10,
-        zIndex: 99
+        zIndex: 99,
     },
     box: {
         position: 'absolute',

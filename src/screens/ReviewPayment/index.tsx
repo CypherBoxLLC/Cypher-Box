@@ -15,7 +15,7 @@ import LinearGradient from "react-native-linear-gradient";
 import TextView from "./TextView";
 import TextViewV2 from "../Invoice/TextView"
 import useAuthStore from "@Cypher/stores/authStore";
-import { bitcoinSendFee, getCurrencyRates, getMe, sendBitcoinPayment, sendCoinsViaUsername, sendLightningPayment } from "@Cypher/api/coinOSApis";
+import { bitcoinRecommendedFee, bitcoinSendFee, getCurrencyRates, getMe, sendBitcoinPayment, sendCoinsViaUsername, sendLightningPayment } from "@Cypher/api/coinOSApis";
 import { btc, formatNumber, getStrikeCurrency, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
 import { FeeSelection } from "./FeeSelection/FeeSelection";
 import bolt11 from "bolt11";
@@ -158,7 +158,27 @@ function buildTradingFeeText(
 }
 
 export default function ReviewPayment({ navigation, route }: Props) {
-    const { value, converted, isSats, isMaxUSDSelected = false, to, type, recommendedFee, currency, isWithdrawal = false, wallet = null, description, receiveType, vaultTab, total } = route?.params;
+    const { value, converted, isSats, isMaxUSDSelected = false, to, type, recommendedFee: recommendedFeeParam, currency, isWithdrawal = false, wallet = null, description, receiveType, vaultTab, total } = route?.params;
+    // Fee rates arrive as a route param from HomeScreen, but that fetch is
+    // conditional and network-dependent, so the param can be undefined when
+    // the user navigates here quickly after app start (or mempool.space was
+    // unreachable). Rendering the fee dropdown off an undefined object was
+    // a hard crash in release builds. Self-heal: seed from the param, fetch
+    // fresh rates if missing.
+    const [recommendedFee, setRecommendedFee] = useState<any>(recommendedFeeParam);
+    useEffect(() => {
+        if (recommendedFee?.fastestFee != null) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const fees = await bitcoinRecommendedFee();
+                if (!cancelled && fees?.fastestFee != null) setRecommendedFee(fees);
+            } catch {
+                // Dropdown stays empty; handleFeeEstimate's guard toasts on tap.
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
     const { withdrawThreshold, reserveAmount, strikeUser, isAuth, isArkAuth, walletID: hotVaultWalletID, coldStorageWalletID, user, strikeMe } = useAuthStore();
     const { wallets } = useContext(BlueStorageContext);
 
@@ -613,6 +633,14 @@ export default function ReviewPayment({ navigation, route }: Props) {
     }
 
     const handleFeeEstimate = async (fee: string) => {
+        // recommendedFee self-heals from a mount-time fetch, but if that
+        // failed (offline, mempool.space down) it can still be nullish here.
+        // Bail with a toast instead of indexing into undefined.
+        if (recommendedFee?.[fee] == null) {
+            SimpleToast.show('Network fees unavailable. Please try again.', SimpleToast.SHORT);
+            setFeeLoading(false);
+            return;
+        }
         setFeeLoading(true);
         const amount = isSats ? value : converted;
         if (to.startsWith('bc')) { //bitcoin onchain
@@ -810,7 +838,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     isSats: true,
                     to: toAddress,
                     item: result,
-                    swappedTo: dest === 'coinos' ? 'CoinOS' : 'Ark Vault',
+                    swappedTo: dest === 'coinos' ? 'CoinOS' : 'Bark Vault',
                 });
             } catch (error) {
                 console.error(`[BUY → ${dest}] swap failed:`, error);
@@ -1241,7 +1269,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const increaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
         const currentIndex = feeKeys.indexOf(selectedFeeName !== "Select Fee" ? selectedFeeName : '');
-        const fromFeeKeys = Object.keys(recommendedFee);
+        const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === feeKeys.length - 1) {
             SimpleToast.show('You have reached the end of the fee list.', SimpleToast.SHORT);
             return;
@@ -1254,7 +1282,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const decreaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
         const currentIndex = feeKeys.indexOf(selectedFeeName !== "Select Fee" ? selectedFeeName : '');
-        const fromFeeKeys = Object.keys(recommendedFee);
+        const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === 0) {
             SimpleToast.show('You have reached the start of the fee list.', SimpleToast.SHORT);
             return;
@@ -1337,8 +1365,15 @@ export default function ReviewPayment({ navigation, route }: Props) {
     }
 
     const handleWithdrawalFee = (fee: number) => {
-        const temp = ((Number(fee || 0) / Number(value || 0)) || 0) * 100
-        return temp;
+        // Fee is always in sats. `value` may be sats OR fiat depending on
+        // `isSats` (set by the dispatcher screen): WithdrawList passes
+        // value=sats/isSats=true, but the Strike post-purchase route and
+        // some BUY paths pass value=USD/isSats=false with converted=sats.
+        // Always reduce to sats so the percentage is meaningful, otherwise
+        // dividing sats by USD produces nonsense (e.g. 1701 sats / $5 → 34020%).
+        const amountSats = isSats ? Number(value || 0) : Number(converted || 0);
+        if (!amountSats) return 0;
+        return (Number(fee || 0) / amountSats) * 100;
     }
 
     console.log('strikeFees: ', value, to, type, recommendedFee)
@@ -1502,11 +1537,11 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                             </TouchableOpacity>
                                             {isModalVisible && (
                                                 <View style={{ backgroundColor: colors.gray.dark, borderWidth: 1, borderTopWidth: 0, borderColor: '#333', borderBottomLeftRadius: 10, borderBottomRightRadius: 10, overflow: 'hidden', position: 'absolute', top: 40, left: 0, right: 0, zIndex: 30, elevation: 10 }}>
-                                                    {Object.entries(recommendedFee).map(([feeKey, feeValue], index) => (
+                                                    {Object.entries(recommendedFee ?? {}).map(([feeKey, feeValue], index) => (
                                                         feeKey !== 'minimumFee' && (
                                                             <TouchableOpacity
                                                                 key={feeKey}
-                                                                style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: index < Object.keys(recommendedFee).length - 2 ? 1 : 0, borderBottomColor: '#333', backgroundColor: selectedFeeName === feeKey ? colors.primary : 'transparent' }}
+                                                                style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: index < Object.keys(recommendedFee ?? {}).length - 2 ? 1 : 0, borderBottomColor: '#333', backgroundColor: selectedFeeName === feeKey ? colors.primary : 'transparent' }}
                                                                 onPress={() => handleFeeSelect(feeKey as Fee)}>
                                                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                                                     <Text bold style={{ fontSize: 13 }}>{feeNames[feeKey as Fee]}</Text>
@@ -1558,7 +1593,20 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                         </View>
                                     </View>
                                     <View style={{ marginTop: 15, marginStart: 15, height: 30 }}>
-                                        {selectedStrikeFee && <Text bold style={{ fontSize: 18 }}>Fee: <Text italic style={{ fontSize: 16, fontWeight: 'normal' }}>{`~ ${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000).toFixed(0)} sats (~${getStrikeCurrency(currency || 'USD')}${(Number(selectedStrikeFee?.estimatedFee?.amount || 0) * (matchedRate || 0)).toFixed(2)}) (${value > 0 ? ((Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000 / Number(value)) * 100).toFixed(1) : '0'}%)`}</Text></Text>}
+                                        {selectedStrikeFee && (() => {
+                                // See handleWithdrawalFee above for why we reduce
+                                // to sats. `value` can be USD when the dispatcher
+                                // passes isSats=false (Strike fiat→BTC review etc.),
+                                // and dividing sats-fee by USD-amount yields the
+                                // 34020%-style nonsense Bam reported.
+                                const feeSats = Number(selectedStrikeFee?.estimatedFee?.amount || 0) * 100000000;
+                                const amountSats = isSats ? Number(value || 0) : Number(converted || 0);
+                                const pct = amountSats > 0 ? ((feeSats / amountSats) * 100).toFixed(1) : '0';
+                                const usdAmt = (Number(selectedStrikeFee?.estimatedFee?.amount || 0) * (matchedRate || 0)).toFixed(2);
+                                return (
+                                    <Text bold style={{ fontSize: 18 }}>Fee: <Text italic style={{ fontSize: 16, fontWeight: 'normal' }}>{`~ ${feeSats.toFixed(0)} sats (~${getStrikeCurrency(currency || 'USD')}${usdAmt}) (${pct}%)`}</Text></Text>
+                                );
+                            })()}
                                     </View>
                                 </View>
                             }
@@ -1642,7 +1690,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 )}
                                 {canDestArk && (
                                     <DestPickerTile
-                                        label="Ark Vault"
+                                        label="Bark Vault"
                                         arkBolt
                                         // Gray ring when unselected, bright
                                         // yellow when selected — matches the

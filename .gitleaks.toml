@@ -2,7 +2,7 @@
 #
 # Extends the built-in ruleset and allowlists self-documenting template files
 # that intentionally carry placeholder "secrets". The real secrets are never
-# committed (gitignored): .env, blue_modules/secrets.ts, src/services/ark/secrets.ts.
+# committed (gitignored): .env, blue_modules/secrets.ts.
 title = "Cypher Box gitleaks"
 
 [extend]

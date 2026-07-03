@@ -514,7 +514,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                             : ''}
                     </Text>
 
-                    <TextViewV2 keytext="Sent from: " text="Ark Vault" />
+                    <TextViewV2 keytext="Sent from: " text="Bark Vault" />
 
                     {/* Address card. Same shape as ReviewPayment's
                         `isWithdrawal && to.length > 0` branch: bordered

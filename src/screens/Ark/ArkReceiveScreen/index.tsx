@@ -68,13 +68,13 @@ export default function ArkReceiveScreen() {
         try {
             const address = await getArkAddress();
             dispatchNavigate("CopyInvoice", {
-                value: "Ark address",
+                value: "Bark address",
                 converted: "",
                 hash: address,
                 receiveType: false,
             });
         } catch (err) {
-            setError((err as Error)?.message ?? "Failed to get Ark address");
+            setError((err as Error)?.message ?? "Failed to get Bark address");
         } finally {
             setLoading(null);
         }
@@ -87,7 +87,7 @@ export default function ArkReceiveScreen() {
             const address = await getArkOnchainAddress();
             dispatchNavigate("CopyInvoice", {
                 value: "Bitcoin address",
-                converted: "Board funds into Ark",
+                converted: "Board funds into Bark",
                 hash: address,
                 receiveType: false,
             });
@@ -132,7 +132,7 @@ export default function ArkReceiveScreen() {
         <ScreenLayout showToolbar isBackButton>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text subHeader bold>Receive to Ark</Text>
+                    <Text subHeader bold>🐶 Receive to Bark</Text>
 
                     <View style={styles.extra} />
                     <GradientCard
@@ -143,9 +143,9 @@ export default function ArkReceiveScreen() {
                         <View style={styles.background}>
                             <View style={styles.view}>
                                 <View style={styles.container2}>
-                                    <Text subHeader bold style={styles.title}>Ark address</Text>
+                                    <Text subHeader bold style={styles.title}>Bark address</Text>
                                     <Text h4 bold style={styles.desc}>
-                                        Instant VTXO capsule transfer from another Ark user.
+                                        Instant VTXO capsule transfer from another Bark user.
                                         No fees, no confirmations.
                                     </Text>
                                 </View>
@@ -165,7 +165,7 @@ export default function ArkReceiveScreen() {
                                 <View style={styles.container2}>
                                     <Text subHeader bold style={styles.title}>Lightning invoice</Text>
                                     <Text h4 bold style={styles.desc}>
-                                        BOLT11 invoice via the Ark server. Works with any
+                                        BOLT11 invoice via the Bark server. Works with any
                                         Lightning wallet.
                                     </Text>
                                 </View>
@@ -186,10 +186,10 @@ export default function ArkReceiveScreen() {
                                     <Text subHeader bold style={styles.title}>Bitcoin on-chain</Text>
                                     <Text h4 bold style={styles.desc}>
                                         Deposit to a bitcoin address, then board the funds
-                                        into your Ark balance.
+                                        into your Bark balance.
                                     </Text>
                                     <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 6, fontWeight: '600' }}>
-                                        Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Ark and would have to be recovered on-chain.
+                                        Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Bark and would have to be recovered on-chain.
                                     </Text>
                                 </View>
                                 <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
@@ -205,7 +205,7 @@ export default function ArkReceiveScreen() {
                         <ActivityIndicator size="large" color={colors.ark.light} />
                         <Text style={styles.loadingText}>
                             {loading === "ark"
-                                ? "Generating Ark address…"
+                                ? "Generating Bark address…"
                                 : "Generating Bitcoin address…"}
                         </Text>
                     </View>
