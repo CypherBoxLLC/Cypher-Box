@@ -4,7 +4,7 @@ import styles from "./styles";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput } from "@Cypher/components";
 import { colors, widths, } from "@Cypher/style-guide";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { dispatchReset } from "@Cypher/helpers/navigation";
 import * as Progress from 'react-native-progress';
 // import { Ring, Ring3, } from "@Cypher/assets/gif";
 import { Electrik } from "@Cypher/assets/images";
@@ -62,7 +62,10 @@ export default function Transaction() {
     });
 
     const generateKeyClickHandler = () => {
-        dispatchNavigate('HomeScreen');
+        // Reset stack — PurchaseVault → TransactionNew left under HomeScreen
+        // on iOS Fabric otherwise. See TransactionBroadCast for the full
+        // explanation of the half-mount symptom.
+        dispatchReset('HomeScreen');
     }
 
     return (

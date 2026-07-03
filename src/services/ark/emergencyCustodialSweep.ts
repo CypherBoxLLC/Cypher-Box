@@ -166,9 +166,9 @@ function pushSweepAlert(title: string, message: string): void {
             PushNotification.createChannel(
                 {
                     channelId: 'ark-bg-refresh',
-                    channelName: 'Ark capsule refresh',
+                    channelName: 'Lightning capsule reminders',
                     channelDescription:
-                        'Alerts about Ark capsule auto-refresh outcomes (failures, expiring capsules, unusual fees).',
+                        'Reminders to refresh your lightning capsules (VTXOs) before they expire.',
                     importance: 4,
                     vibrate: true,
                 },

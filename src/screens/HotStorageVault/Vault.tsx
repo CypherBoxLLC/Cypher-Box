@@ -9,7 +9,6 @@ import QRCode from "react-native-qrcode-svg";
 import Clipboard from "@react-native-clipboard/clipboard";
 
 import { GradientView, SavingVault } from "@Cypher/components";
-import LinearGradient from "react-native-linear-gradient";
 import styles from "./styles";
 
 import { colors, heights, widths } from "@Cypher/style-guide";
@@ -181,34 +180,25 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     {!vaultTab &&
                         <Text h4 style={styles.infoText}>You can use this vault address to receive sizable coins from another vault on the Bitcoin Network</Text>
                     }
-                    {vaultTab ? (
-                        <LinearGradient
-                            colors={[colors.cold.gradient1, colors.cold.gradient2]}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 0, y: 1 }}
-                            style={[styles.qrcode, { height: "40%", width: "60%", padding: 2 }]}
-                        >
-                            <View style={{ alignItems:'center', justifyContent: 'center', width: "100%", height: "100%", margin: 0, padding: 20, backgroundColor: 'white', borderRadius: 28 }}>
-                                <QRCode
-                                    value={address}
-                                    size={175}
-                                    color="black"
-                                    backgroundColor="white"
-                                />
-                            </View>
-                        </LinearGradient>
-                    ) : (
-                        <View style={styles.qrcode}>
-                            <View style={{ alignItems:'center', justifyContent: 'center', width: "100%", height: "100%", margin: 0, padding: 20, backgroundColor: 'white', borderRadius: 30 }}>
-                                <QRCode
-                                    value={address}
-                                    size={175}
-                                    color="black"
-                                    backgroundColor="white"
-                                />
-                            </View>
+                    {/* Solid borderColor (no LinearGradient wrapper) — the
+                        previous Cold Vault path stacked greenShadow from
+                        styles.qrcode UNDER a blue→teal gradient ring, which
+                        under RN 0.77 Fabric renders as a smeared teal halo
+                        with the green outer border showing through. Hot Vault
+                        keeps its solid mint border via styles.qrcode default;
+                        Cold Vault overrides borderColor to match the cold
+                        button glow (colors.coldGreen, which is actually cyan
+                        blue #21C7FB despite the name). */}
+                    <View style={[styles.qrcode, vaultTab && { borderColor: colors.coldGreen }]}>
+                        <View style={{ alignItems:'center', justifyContent: 'center', width: "100%", height: "100%", margin: 0, padding: 20, backgroundColor: 'white', borderRadius: 30 }}>
+                            <QRCode
+                                value={address}
+                                size={175}
+                                color="black"
+                                backgroundColor="white"
+                            />
                         </View>
-                    )}
+                    </View>
                     <View style={styles.codeViewMain}>
                         {vaultTab ? (
                             <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15, height: 44, width: widths - 80 }}>

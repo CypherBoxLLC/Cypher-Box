@@ -13,15 +13,14 @@
  */
 
 import React, { useState } from "react";
-import { View, TouchableOpacity, Image, Dimensions } from "react-native";
+import { View, TouchableOpacity, Image, Dimensions, Platform } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import { Text } from "@Cypher/component-library";
 import { GradientView } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { StyleSheet } from "react-native";
-
-import { Electricity } from "@Cypher/assets/images";
 import {
     listLightningSwapProviders,
     type LightningSwapProvider,
@@ -140,15 +139,24 @@ export default function SwapSheet({
                     styles.cardInnerShadow,
                     !selected && { shadowColor: colors.gray.disable },
                 ]}
-                // Real 2px pink border when selected — RN 0.76 dropped
-                // the native ART module so the GradientView shadow-glow
-                // is a no-op on Android. A border on the inner gradient
-                // gives a visible selection cue cross-platform.
+                // Border on Android only — RN 0.76 dropped the ART module
+                // there so the GradientView shadow-glow is a no-op, and the
+                // border is the only selection cue. iOS gets the shadow
+                // rim (which renders correctly post RNCMaskedView +
+                // RCTComponentViewRegistry patches); adding a border on
+                // top of it produced the visible double-outline Bam
+                // flagged on the Top-up / Withdraw / Swap tiles.
                 linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
+                    // Border is the selection cue on BOTH platforms: the
+                    // neomorph rim this used to defer to on iOS is a no-op
+                    // under Fabric's useArt fallback, leaving selected tiles
+                    // with no highlight at all.
                     selected && {
                         borderWidth: 2,
-                        borderColor: colors.pink.shadowTopNew,
+                        borderColor: provider.id === 'ark'
+                            ? colors.ark.shadowTopNew
+                            : colors.pink.shadowTopNew,
                     },
                 ]}
                 gradiantColors={[colors.black.bg, colors.black.bg]}
@@ -161,16 +169,18 @@ export default function SwapSheet({
                             resizeMode="contain"
                         />
                     ) : (
-                        // Lightning-bolt + displayName fallback for
-                        // icon-less providers (Ark) — matches the same
-                        // pattern used across the receive / send /
-                        // withdraw / top-up sheets so the Ark identity
-                        // reads consistently throughout the app.
+                        // Boat-outline + displayName fallback for
+                        // icon-less providers (Bark). Matches the same
+                        // glyph used on the homescreen wallet card,
+                        // Vault tab, Create-Bark login row, and the
+                        // receive / send / withdraw / top-up sheets so
+                        // the Bark identity reads consistently.
                         <View style={styles.iconLabelRow}>
-                            <Image
-                                source={Electricity}
-                                style={styles.iconLabelBolt}
-                                resizeMode="contain"
+                            <Ionicons
+                                name="boat-outline"
+                                size={20}
+                                color="#FFFFFF"
+                                style={styles.iconLabelBoat}
                             />
                             <Text bold style={styles.iconLabelText}>
                                 {provider.displayName}
@@ -336,11 +346,8 @@ const styles = StyleSheet.create({
         // vertically aligned with the icon-bearing providers.
         height: 35,
     },
-    iconLabelBolt: {
-        width: 14,
-        height: 18,
+    iconLabelBoat: {
         marginRight: 6,
-        tintColor: "#FFFFFF",
     },
     iconLabelText: {
         fontSize: 16,

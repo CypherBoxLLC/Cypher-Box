@@ -22,7 +22,9 @@ import {
     fetchArkPendingRoundStates,
     fetchArkVtxos,
     getArkCancelling,
+    getArkWalletHandle,
     refreshArkVtxosAndSync,
+    restoreArkWalletFromDisk,
     setArkCancelling,
     syncArkWallet,
     useArkCancelling,
@@ -35,6 +37,7 @@ import {
     fetchArkNextRequiredRefreshHeight,
     formatBlocksUntil,
 } from "@Cypher/services/ark/expiry";
+import { buildRefreshBatch } from "@Cypher/services/ark/refreshBatch";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
@@ -769,6 +772,16 @@ interface ArkCapsulesProps {
     currency: any;
 }
 
+/**
+ * Threshold (days-until-expiry) for the auto-refresh-on-notification-tap
+ * path. Any VTXO at or below this many days gets included in the round
+ * that fires when the user lands here from a tapped warning. Mirrors
+ * BG_REFRESH_TUNABLES.batchDays in src/services/ark/backgroundRefresh.ts;
+ * kept inline to avoid pulling the full bg-refresh module into the render
+ * hot path. Update both if either changes.
+ */
+const TAP_REFRESH_IMMINENT_DAYS = 14;
+
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
@@ -798,6 +811,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // alongside the rest of the wallet's read state without spinning up a
     // separate poll.
     const arkLastSyncedAt = useAuthStore((s) => s.arkLastSyncedAt);
+    // One-shot flag set by the notification tap handler in
+    // src/services/ark/scheduler.ts. Drives the auto-refresh effect below
+    // so the user lands on this tab with refresh already running, without
+    // having to find a button.
+    const arkPendingTapRefresh = useAuthStore((s) => s.arkPendingTapRefresh);
+    const setArkPendingTapRefresh = useAuthStore((s) => s.setArkPendingTapRefresh);
 
     // Block-height the wallet's policy says we need to refresh by, or null
     // when nothing's in scope (no spendable VTXOs / all already refreshed
@@ -932,6 +951,116 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         });
     }, [arkVtxos, chainTipHeight, arkLastBackupAt]);
 
+    // Auto-refresh when the user landed here from a tapped expiry-warning
+    // notification. The scheduler's tap handler set arkPendingTapRefresh
+    // and dispatched the navigation; this effect picks it up on mount.
+    //
+    // Wait for `rows` to populate (zustand rehydrates arkVtxos before
+    // React mounts, but on a fresh install or an Ark wallet that hasn't
+    // synced yet, rows can briefly be empty). The effect re-runs when
+    // rows changes, so we'll naturally pick it up once the sync tick
+    // lands. Flag is cleared synchronously so a re-render mid-effect
+    // can't double-fire the refresh.
+    //
+    // Three decision branches once the batch is built:
+    //   1. Imminent VTXOs are Locked in a round → check whether the
+    //      round is stuck. If yes, prompt user to cancel & retry; if no,
+    //      inform and queue whatever IS spendable. The user tapped a
+    //      warning notification — silently failing because of a stuck
+    //      round is the worst possible outcome (memorialised in
+    //      ark-arkoor-change-returns-unregistered + the open thread #3
+    //      handover note).
+    //   2. Imminent capsules total below the round minimum even with
+    //      every filler → dust-stranded toast that names the shortfall.
+    //   3. Otherwise → fire the batch with skipConfirm so the refresh
+    //      starts immediately. Selection + fee preview don't add safety
+    //      here: the user already opted in by tapping the warning.
+    useEffect(() => {
+        if (!arkPendingTapRefresh) return;
+        if (rows.length === 0) return;
+        setArkPendingTapRefresh(false);
+
+        // Honour user-deferred VTXOs ("Use immediately" from the arkoor
+        // receive popup). Mirrors the deferred-set logic in
+        // src/services/ark/backgroundRefresh.ts so the tap and bg paths
+        // agree on what's off-limits.
+        const promptState =
+            useAuthStore.getState().arkArkoorPromptState ?? {};
+        const deferredIds = new Set<string>();
+        for (const [id, entry] of Object.entries(promptState)) {
+            if (entry.status === 'pending' || entry.status === 'dismissed') {
+                deferredIds.add(id);
+            }
+        }
+
+        const batch = buildRefreshBatch({
+            vtxos: rows.map((r) => ({
+                id: r.id,
+                sats: r.sats,
+                daysLeft: r.daysLeft,
+                pendingRound: r.pendingRound,
+                unknownExpiry: r.unknownExpiry,
+            })),
+            deferredIds,
+            batchDays: TAP_REFRESH_IMMINENT_DAYS,
+            minBatchSats: ARK_REFRESH_MIN_SATS,
+            dustThresholdSats: ARK_VTXO_DUST_SATS,
+        });
+
+        // Imminent (≤14d) VTXOs that are currently Locked. They're the
+        // ones at acute risk: the helper skipped them from the batch
+        // because a Locked input would just bounce the round, but
+        // ignoring them entirely would leak the funds to expiry. Need
+        // to distinguish "normal in-flight" from "stuck" before deciding
+        // what to do.
+        const lockedImminent = rows.filter(
+            (r) =>
+                r.pendingRound
+                && !r.unknownExpiry
+                && r.daysLeft > 0
+                && r.daysLeft <= TAP_REFRESH_IMMINENT_DAYS,
+        );
+
+        if (lockedImminent.length > 0) {
+            void handleStuckRoundOnTap(batch, lockedImminent);
+            return;
+        }
+
+        if (batch.stranded) {
+            SimpleToast.show(
+                `Your imminent capsules total ${batch.totalSats.toLocaleString()} sats, ` +
+                `below the ${ARK_REFRESH_MIN_SATS}-sat round minimum. Receive more sats ` +
+                `into your Bark Vault to combine them before they expire.`,
+                SimpleToast.LONG,
+            );
+            return;
+        }
+
+        if (batch.ids.length === 0) {
+            SimpleToast.show('No capsules need refreshing right now.', SimpleToast.SHORT);
+            return;
+        }
+
+        if (__DEV__) {
+            console.log(
+                '[Ark tap-refresh] firing batch:',
+                'ids=', batch.ids.length,
+                'totalSats=', batch.totalSats,
+                'triggerCount=', batch.triggerCount,
+                'fillerCount=', batch.fillerCount,
+                'skippedPending=', batch.skippedPendingCount,
+                'skippedDeferred=', batch.skippedDeferredCount,
+            );
+        }
+
+        void refreshIds(batch.ids, { skipConfirm: true });
+        // refreshIds + handleStuckRoundOnTap are defined later in
+        // component scope and stable for the lifetime of the screen.
+        // The eslint rule is disabled per-line rather than at the file
+        // level so other effects keep the lint guard.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [arkPendingTapRefresh, rows, setArkPendingTapRefresh]);
+
     const toggle = (id: string) => {
         setSelectedIds((prev) =>
             prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
@@ -957,13 +1086,38 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     /**
      * Refresh a specific set of VTXO ids. Reused by the bottom Refresh
-     * button (passes selectedIds) and the per-row icon (passes a single
-     * vtxo.id). Same fee preview + watchdog + selection-clear semantics
-     * either way.
+     * button (passes selectedIds), the per-row icon (passes a single
+     * vtxo.id), and the auto-refresh-on-tap effect above
+     * (passes the imminent set + `skipConfirm: true`). Same fee
+     * preview + watchdog + selection-clear semantics either way; only
+     * the confirmation dialog is conditional.
      */
-    const refreshIds = async (ids: string[]) => {
+    const refreshIds = async (
+        ids: string[],
+        opts: { skipConfirm?: boolean } = {},
+    ) => {
         if (refreshing) return;
         if (ids.length === 0) return;
+
+        // Hard gate: the SDK throws "Ark wallet not open" if `getArkWalletHandle()`
+        // is null. That happens on a cold launch when the user dismissed (or never
+        // saw) the boot-time biometric prompt that `useArkRestoreOnBoot` fires.
+        // The capsule rows render fine off zustand-persisted state, so the user
+        // can reach Refresh before the handle is ready. Re-attempt the restore
+        // here so we re-prompt biometric and recover transparently.
+        if (!getArkWalletHandle()) {
+            const result = await restoreArkWalletFromDisk();
+            if (!result.restored && result.reason !== "already-open") {
+                const detail =
+                    result.reason === "no-keychain"
+                        ? "Unlock prompt was declined. Restart the app and confirm the biometric prompt to unlock the Ark wallet."
+                        : result.reason === "no-datadir"
+                            ? "Ark wallet data is missing on this device. Use Recover from the home screen to restore it."
+                            : "Could not open the Ark wallet right now. Try again in a few seconds.";
+                SimpleToast.show(detail, SimpleToast.LONG);
+                return;
+            }
+        }
 
         // Refusing to refresh a VTXO that's already Locked in a pending
         // round — the SDK will just block waiting on the same round, and
@@ -1005,19 +1159,25 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const fee = await estimateArkRefreshFee(ids);
             // Present fee preview + confirmation before committing. Round is
             // blocking and can take seconds-to-minutes, so the user should
-            // opt in explicitly rather than have it happen silently.
-            const confirmed = await new Promise<boolean>((resolve) => {
-                Alert.alert(
-                    "Refresh capsules?",
-                    `Re-board ${ids.length} capsule(s) into a new Ark round for ~${fee.feeSats} sats. ` +
-                    `This extends their expiry by another full lifetime and may take up to a minute.`,
-                    [
-                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                        { text: "Refresh", onPress: () => resolve(true) },
-                    ],
-                    { cancelable: true, onDismiss: () => resolve(false) },
-                );
-            });
+            // opt in explicitly rather than have it happen silently. The
+            // notification-tap path skips this dialog: the user already
+            // signalled intent by tapping the warning and the deep-link
+            // would be pointless if we then asked them to tap Refresh
+            // again. They still see the "Refreshing…" UI immediately.
+            const confirmed = opts.skipConfirm
+                ? true
+                : await new Promise<boolean>((resolve) => {
+                    Alert.alert(
+                        "Refresh capsules?",
+                        `Re-board ${ids.length} capsule(s) into a new Ark round for ~${fee.feeSats} sats. ` +
+                        `This extends their expiry by another full lifetime and may take up to a minute.`,
+                        [
+                            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                            { text: "Refresh", onPress: () => resolve(true) },
+                        ],
+                        { cancelable: true, onDismiss: () => resolve(false) },
+                    );
+                });
             if (!confirmed) {
                 setRefreshing(false);
                 return;
@@ -1106,6 +1266,219 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             return;
         }
         void refreshIds([...selectedIds]);
+    };
+
+    /**
+     * Notification-tap path: an imminent VTXO is Locked in a refresh
+     * round. Distinguish "normal in-flight" from "stuck" and decide what
+     * to do without leaving the user staring at a screen that did nothing.
+     *
+     *   - No ongoing rounds (state has caught up between the row read and
+     *     the SDK probe): kick the regular batch refresh against whatever
+     *     IS spendable; if nothing is, a toast explains.
+     *   - Ongoing rounds, not stuck: surface the in-flight state with a
+     *     toast that names the value at risk + the upper-bound wait;
+     *     still kick the regular batch refresh for the spendable
+     *     remainder so it makes forward progress.
+     *   - Ongoing rounds, STUCK (oldest first-seen > 2× round interval):
+     *     prompt with Wait / Cancel & retry. The cancel path runs the
+     *     same per-round cancel loop handleRowCancel uses, syncs, then
+     *     re-fires refreshIds against the freshly-spendable set
+     *     including what was previously Locked.
+     */
+    const handleStuckRoundOnTap = async (
+        batch: ReturnType<typeof buildRefreshBatch>,
+        lockedImminent: ReadonlyArray<VtxoRowData>,
+    ) => {
+        const lockedImminentSats = lockedImminent.reduce((a, r) => a + r.sats, 0);
+        const lockedImminentCount = lockedImminent.length;
+
+        let states: Awaited<ReturnType<typeof fetchArkPendingRoundStates>>;
+        try {
+            states = await fetchArkPendingRoundStates();
+        } catch (err: any) {
+            console.warn('[Ark tap-refresh] pendingRoundStates threw:', err?.message ?? err);
+            states = [];
+        }
+        const ongoing = states.filter((s) => s.ongoing);
+
+        if (ongoing.length === 0) {
+            // Local row state is stale — no ongoing rounds at the SDK.
+            // Next sync will flip Locked → Spendable. Try the batch we
+            // have; if empty, tell the user to come back in a minute.
+            if (batch.ids.length > 0) {
+                void refreshIds(batch.ids, { skipConfirm: true });
+            } else {
+                SimpleToast.show(
+                    'Your imminent capsules are still settling from a recent refresh. They should be spendable again within a minute.',
+                    SimpleToast.LONG,
+                );
+            }
+            return;
+        }
+
+        const intervalSecs = useAuthStore.getState().arkRoundIntervalSecs;
+        const firstSeen = useAuthStore.getState().arkPendingRoundFirstSeen ?? {};
+        // Mainnet rounds run once per hour; 2× that is the same threshold
+        // useArkSync's "tap to recover" banner uses. When the SDK hasn't
+        // reported a round-interval yet, fall back to 2h so a brand-new
+        // install on a cold-start tap can still detect a stuck round.
+        const stuckThresholdMs =
+            intervalSecs != null ? 2 * intervalSecs * 1000 : 2 * 60 * 60 * 1000;
+        const now = Date.now();
+        const oldestAgeMs = ongoing.reduce((max, s) => {
+            const seen = firstSeen[String(s.id)] ?? now;
+            return Math.max(max, now - seen);
+        }, 0);
+        const stuck = oldestAgeMs > stuckThresholdMs;
+
+        if (!stuck) {
+            SimpleToast.show(
+                `${lockedImminentCount} capsule${lockedImminentCount === 1 ? '' : 's'} ` +
+                `(${lockedImminentSats.toLocaleString()} sats) ${lockedImminentCount === 1 ? 'is' : 'are'} ` +
+                `already in an active refresh round. It should finalise within an hour.`,
+                SimpleToast.LONG,
+            );
+            if (batch.ids.length > 0) {
+                void refreshIds(batch.ids, { skipConfirm: true });
+            }
+            return;
+        }
+
+        // Stuck. Floor at 1 hour for the human-readable copy so we don't
+        // say "in progress for 0 hours" on an edge case where age is
+        // barely over the threshold.
+        const ageHours = Math.max(1, Math.round(oldestAgeMs / (60 * 60 * 1000)));
+        Alert.alert(
+            'Refresh stuck',
+            `A refresh has been in progress for about ${ageHours} hour${ageHours === 1 ? '' : 's'}. ` +
+            `Cancel it and retry now to save your capsules from expiring?`,
+            [
+                { text: 'Wait', style: 'cancel' },
+                {
+                    text: 'Cancel & retry',
+                    style: 'destructive',
+                    onPress: () => {
+                        void cancelOngoingRoundsAndRetry(
+                            ongoing.map((s) => s.id),
+                        );
+                    },
+                },
+            ],
+            { cancelable: true },
+        );
+    };
+
+    /**
+     * Cancel every ongoing round, sync, then re-fire a refresh against
+     * the now-spendable set. Mirrors the cancel loop in handleRowCancel
+     * (retry budget + backoff to dodge bark's internal lock contention)
+     * so the two cancel paths behave the same. After sync we re-read
+     * the store directly to project a fresh batch from the
+     * just-unlocked VTXOs; falling back to closed-over `rows` here
+     * would still see Locked state.
+     */
+    const cancelOngoingRoundsAndRetry = async (roundIds: number[]) => {
+        if (getArkCancelling()) return;
+        setArkCancelling(true);
+        const RETRIES = 3;
+        const BACKOFF_MS = 500;
+        let succeeded = 0;
+        for (const id of roundIds) {
+            for (let attempt = 0; attempt < RETRIES; attempt++) {
+                try {
+                    await cancelArkPendingRound(id);
+                    succeeded++;
+                    break;
+                } catch (err: any) {
+                    if (attempt < RETRIES - 1) {
+                        await new Promise((r) => setTimeout(r, BACKOFF_MS));
+                    } else {
+                        console.warn(
+                            '[Ark tap-refresh] cancel gave up after',
+                            RETRIES, 'attempts: roundId=', id,
+                            'lastErr=', err?.message ?? err,
+                        );
+                    }
+                }
+            }
+        }
+        try {
+            await syncArkWallet();
+            await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+        } catch (syncErr: any) {
+            console.warn(
+                '[Ark tap-refresh] post-cancel sync failed:',
+                syncErr?.message ?? syncErr,
+            );
+        }
+        if (succeeded === 0) {
+            SimpleToast.show(
+                'Cancel held up server-side. The round will settle in about a minute, try the notification tap again after that.',
+                SimpleToast.LONG,
+            );
+            return;
+        }
+
+        // Re-read fresh store state so we pick up VTXOs that just
+        // unlocked. Reproject to row-shaped inputs (mirror of the
+        // `rows` useMemo above) for the helper.
+        const freshVtxos = useAuthStore.getState().arkVtxos;
+        const freshTip = useAuthStore.getState().arkChainTipHeight;
+        const freshPromptState =
+            useAuthStore.getState().arkArkoorPromptState ?? {};
+        const freshDeferredIds = new Set<string>();
+        for (const [id, entry] of Object.entries(freshPromptState)) {
+            if (entry.status === 'pending' || entry.status === 'dismissed') {
+                freshDeferredIds.add(id);
+            }
+        }
+        const projected = freshVtxos.map((v) => {
+            const pending = v.state.toLowerCase() === 'locked';
+            if (v.expiryHeight === 0 || freshTip === null) {
+                return {
+                    id: v.id,
+                    sats: v.sats,
+                    daysLeft: VTXO_MAX_DAYS,
+                    pendingRound: pending,
+                    unknownExpiry: true,
+                };
+            }
+            const blocksLeft = Math.max(0, v.expiryHeight - freshTip);
+            return {
+                id: v.id,
+                sats: v.sats,
+                daysLeft: blocksToDays(Math.min(blocksLeft, VTXO_MAX_BLOCKS)),
+                pendingRound: pending,
+                unknownExpiry: false,
+            };
+        });
+        const freshBatch = buildRefreshBatch({
+            vtxos: projected,
+            deferredIds: freshDeferredIds,
+            batchDays: TAP_REFRESH_IMMINENT_DAYS,
+            minBatchSats: ARK_REFRESH_MIN_SATS,
+            dustThresholdSats: ARK_VTXO_DUST_SATS,
+        });
+
+        if (freshBatch.ids.length === 0) {
+            // All previously-imminent VTXOs were the locked ones AND
+            // they didn't unlock yet (cancel ack'd, sync hasn't caught
+            // up). Toast then bail; the next foreground sync will
+            // refresh them on its own once they're spendable.
+            SimpleToast.show(
+                `Cancelled ${succeeded} stuck round${succeeded === 1 ? '' : 's'}. ` +
+                `Your capsules should be spendable in a moment, then refresh will run on the next sync.`,
+                SimpleToast.LONG,
+            );
+            return;
+        }
+
+        SimpleToast.show(
+            `Cancelled ${succeeded} stuck round${succeeded === 1 ? '' : 's'}, retrying refresh now…`,
+            SimpleToast.SHORT,
+        );
+        void refreshIds(freshBatch.ids, { skipConfirm: true });
     };
 
     /** Per-row icon — refresh just this single VTXO. The fee preview +
@@ -1374,7 +1747,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 the Ark Settings tab. */}
             <View style={{ marginHorizontal: 20, marginTop: 14, marginBottom: 8, alignItems: 'flex-start' }}>
                 <Text bold style={{ fontSize: 16, color: '#FFF', marginBottom: 6 }}>
-                    Auto-refresh:{' '}
+                    Reminders:{' '}
                     <Text
                         bold
                         style={{ color: arkBgRefreshEnabled ? colors.green : colors.redLight, fontSize: 16 }}
@@ -1403,7 +1776,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                        Keep your virtual capsules (VTXOs) refreshed.{' '}
+                        Your lightning capsules (VTXOs) must be refreshed before they expire, or they are lost forever.{' '}
                         <Text
                             bold
                             style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
@@ -1493,7 +1866,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
             {/* Column header row — matches Hot Vault's layout */}
             <View style={vaultStyles.titleStyle}>
-                <Text bold style={vaultStyles.coin}>VTXOs</Text>
+                <Text bold style={vaultStyles.coin}>Capsules</Text>
                 <Text bold style={vaultStyles.size}>Size</Text>
                 <Text
                     bold
@@ -1556,7 +1929,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     arkPendingLnReceives.length > 0 ? null : (
                         <View style={{ alignItems: "center", marginTop: 40 }}>
                             <Text style={{ color: colors.gray.light, fontSize: 13 }}>
-                                No VTXOs yet. Receive Bitcoin via Ark to populate.
+                                No lightning capsules yet. Receive Bitcoin via Ark to populate.
                             </Text>
                         </View>
                     )

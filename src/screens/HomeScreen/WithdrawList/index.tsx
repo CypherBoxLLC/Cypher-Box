@@ -1,8 +1,9 @@
 import { Text } from "@Cypher/component-library";
 import { CustomTabView, GradientCard, GradientView } from "@Cypher/components";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Dimensions, Image, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -18,7 +19,6 @@ import {
   CoinOS,
   Cold1,
   Copy,
-  Electricity,
   Electrik,
   Hot,
   Second,
@@ -119,11 +119,11 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
     // the chosen destination tile.
     ...(isArkAuth ? [{
       id: 5,
-      name: "Ark Vault",
+      name: "Bark Vault",
       type: 0,
       icon: Second,
       description:
-        "Withdraw from your non-custodial Ark vault to a hot or cold vault",
+        "Withdraw from your non-custodial Bark vault to a hot or cold vault",
       navigation: {
         screen: "ArkWithdrawReviewScreen",
         params: {
@@ -457,6 +457,9 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                   ]}
                   linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
+                    // Border is the selection cue on BOTH platforms — the
+                    // iOS neomorph rim is a no-op under Fabric's useArt
+                    // fallback, so without this iOS shows no highlight.
                     selectedItem === item?.id && {
                       borderWidth: 2,
                       borderColor: outlineColor(item?.id),
@@ -483,17 +486,19 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                       />
                     )}
                     {item?.id === 5 ? (
-                      // Ark tile uses the lightning-bolt + "Ark Vault"
-                      // text pattern (matches the Receive/Send sheets)
-                      // instead of the Second wordmark logo, per Bam.
+                      // Bark tile uses the boat-outline + "Bark Vault"
+                      // text pattern (matches the Receive/Send sheets,
+                      // homescreen wallet card, Vault tab, and Create
+                      // Bark login row) instead of the Second wordmark.
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Image
-                          source={Electricity}
-                          style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
-                          resizeMode="contain"
+                        <Ionicons
+                          name="boat-outline"
+                          size={20}
+                          color="#FFFFFF"
+                          style={{ marginRight: 6 }}
                         />
                         <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>
-                          Ark Vault
+                          Bark Vault
                         </Text>
                       </View>
                     ) : item?.type === 0 ? (
@@ -597,6 +602,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                   ]}
                   linearGradientStyleMain={[
                     styles.cardGradientMainStyle,
+                    // Both platforms — see HOT/COLD card above.
                     selectedWallet === item?.id && {
                       borderWidth: 2,
                       borderColor: item?.id === 3 ? colors.green

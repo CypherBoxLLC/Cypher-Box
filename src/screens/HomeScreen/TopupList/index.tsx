@@ -1,8 +1,9 @@
 import { Text } from "@Cypher/component-library";
 import { GradientView } from "@Cypher/components";
 import React, { useContext, useMemo, useState } from "react";
-import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Dimensions, Image, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -14,7 +15,6 @@ import {
   Back,
   CoinOS,
   Cold1,
-  Electricity,
   Hot,
   Second,
   StrikeFull,
@@ -99,7 +99,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
     // generation in the address-fetch step below.
     ...(isArkAuth ? [{
       id: 5,
-      name: "Ark Vault",
+      name: "Bark Vault",
       icon: Second,
       isLogo: true,
     }] : []),
@@ -266,7 +266,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
   const accountLabel =
     selectedAccount === 3 ? 'CoinOS'
     : selectedAccount === 4 ? 'Strike'
-    : selectedAccount === 5 ? 'Ark Vault'
+    : selectedAccount === 5 ? 'Bark Vault'
     : 'Strike';
 
   // Get memo/label for a UTXO
@@ -360,10 +360,17 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   ]}
                   linearGradientStyleMain={[
                     withdrawStyles.cardGradientMainStyle,
+                    // Border is the selection cue on BOTH platforms. This
+                    // was Android-only for a while (iOS deferred to the
+                    // GradientView shadow rim, and border + rim doubled
+                    // up), but the iOS rim stopped rendering under
+                    // Fabric's useArt fallback, leaving selected tiles
+                    // with no highlight at all on iOS. If the rim ever
+                    // comes back, re-check for the double outline.
                     selectedVault === item.id && {
                       borderWidth: 2,
-                      borderColor: item.id === 1 ? colors.green   // Hot
-                                 : item.id === 2 ? colors.blueText // Cold
+                      borderColor: item.id === 1 ? colors.green
+                                 : item.id === 2 ? colors.blueText
                                  : 'transparent',
                     },
                   ]}
@@ -415,6 +422,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   ]}
                   linearGradientStyleMain={[
                     withdrawStyles.cardGradientMainStyle,
+                    // See HOT/COLD card above — border on both platforms.
                     selectedAccount === item.id && {
                       borderWidth: 2,
                       borderColor: accountOutline(item.id),
@@ -424,15 +432,18 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
                     {item.id === 5 ? (
-                      // Ark tile — lightning bolt + "Ark Vault" text,
-                      // matching the Receive/Send/Withdraw sheets.
+                      // Bark tile — boat-outline + "Bark Vault" text,
+                      // matching the Receive/Send/Withdraw sheets, the
+                      // homescreen wallet card, the Vault tab, and the
+                      // Create Bark login row.
                       <>
-                        <Image
-                          source={Electricity}
-                          style={{ width: 14, height: 18, marginRight: 6, tintColor: '#FFFFFF' }}
-                          resizeMode="contain"
+                        <Ionicons
+                          name="boat-outline"
+                          size={20}
+                          color="#FFFFFF"
+                          style={{ marginRight: 6 }}
                         />
-                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>Ark Vault</Text>
+                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>Bark Vault</Text>
                       </>
                     ) : (
                       <Image

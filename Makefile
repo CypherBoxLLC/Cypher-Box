@@ -24,9 +24,9 @@ CMDLINE_TOOLS_SHA256 ?=
 # node_modules + prior build output are dropped so the build starts clean.
 CONTAINER_BUILD := set -euo pipefail; \
   cp -a /src /build/repo; \
+  rm -rf /build/repo/.claude; \
   cd /build/repo; \
   [ -f blue_modules/secrets.ts ] || cp blue_modules/secrets.example.ts blue_modules/secrets.ts; \
-  [ -f src/services/ark/secrets.ts ] || cp src/services/ark/secrets.example.ts src/services/ark/secrets.ts; \
   [ -f .env ] || cp .env.example .env; \
   rm -rf node_modules android/app/build android/build android/.gradle; \
   npm ci; \

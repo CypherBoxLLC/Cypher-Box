@@ -37,15 +37,12 @@ import {
   findAutoBackupForRecovery,
   getAutoBackupPath,
   getCachedArkBackupFingerprint,
-  getDeviceManufacturer,
   getDriveBackupInfo,
   getICloudBackupPath,
   getICloudBackupPathForFingerprint,
   getLastLocalBackupNote,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
-  isIgnoringBatteryOptimizations,
-  openBatteryOptimizationSettings,
   readArkSeedPhrase,
   resetArkWalletState,
   setArkBackgroundRefreshEnabled,
@@ -319,6 +316,35 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
   const { wallets } = useContext(BlueStorageContext) as any;
   const navigation = useNavigation();
+
+  // Find the most recent `ark-backup-*.cbark` in a directory. Used as a
+  // fallback after the per-fingerprint stat probe to (a) survive RN 0.77
+  // Fabric / RNFS interop quirks where exists() can return false for a
+  // present file, and (b) display ANY existing backup even when the
+  // fingerprint cache is cold or mismatched (legacy v1 backup, recovered-
+  // with-new-seed flow). The user's safety perception depends on the UI
+  // truthfully reflecting "a backup exists at this rail" — surfacing the
+  // wrong "Not yet" while a real backup sits next to it in Files is the
+  // bug this fixes.
+  const findLatestArkBackup = async (dirPath: string) => {
+    try {
+      const entries = await RNFS.readDir(dirPath);
+      const matches = entries
+        .filter((e: any) => e.isFile() && /^ark-backup-.*\.cbark$/.test(e.name))
+        .map((e: any) => ({
+          name: e.name,
+          mtime: e.mtime ? new Date(e.mtime as any).getTime() : 0,
+          size: Number(e.size) || 0,
+        }))
+        .sort((a: any, b: any) => b.mtime - a.mtime);
+      if (matches.length === 0) return null;
+      const top = matches[0];
+      return { modifiedAt: top.mtime, sizeBytes: top.size, filename: top.name };
+    } catch (e: any) {
+      if (__DEV__) console.log('[Ark settings] findLatestArkBackup failed:', e?.message ?? e);
+      return null;
+    }
+  };
   const [words, setWords] = useState<string[] | null>(null);
   const [revealing, setRevealing] = useState(false);
 
@@ -330,7 +356,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // last-modified time, not just an "available?" state.
   // `null` = unknown / probing, `undefined` = no backup at this rail.
   // Errors are swallowed; UI shows the loading or "no backup yet" state.
-  type BackupInfo = { modifiedAt: number; sizeBytes: number };
+  // `filename` is the actual on-disk name found during the probe so the
+  // UI can surface the real per-wallet backup file (e.g.
+  // `ark-backup-318f4a6a.cbark`) instead of hardcoding the legacy name.
+  // Users were panicking when the UI said "No copy yet" while a real
+  // backup sat next to it in Files; surfacing the filename closes that gap.
+  type BackupInfo = { modifiedAt: number; sizeBytes: number; filename?: string };
   const [localBackup, setLocalBackup] = useState<BackupInfo | null | undefined>(null);
   // Diagnostic note from the most recent local-backup write (e.g. "saved via
   // direct write", or a failure reason). Surfaces the otherwise-silent local
@@ -357,34 +388,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // true there.
   const arkBgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
   const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
-  const [batteryNotExempt, setBatteryNotExempt] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    // Probe regardless of the auto-refresh toggle. The battery-Unrestricted
-    // setting also gates the scheduled expiry-warning notifications (which
-    // fire whether or not auto-refresh is on), so the banner must show
-    // whenever the app isn't battery-exempt, not only while auto-refresh runs.
-    let cancelled = false;
-    const probe = async () => {
-      try {
-        const ignoring = await isIgnoringBatteryOptimizations();
-        if (!cancelled) setBatteryNotExempt(!ignoring);
-      } catch (err) {
-        // Native bridge hiccup — leave the previous value alone rather
-        // than flipping the banner state on a transient.
-        if (__DEV__) console.warn('[ArkSettings] battery probe failed:', err);
-      }
-    };
-    void probe();
-    const sub = AppState.addEventListener('change', (status: AppStateStatus) => {
-      if (status === 'active') void probe();
-    });
-    return () => {
-      cancelled = true;
-      sub.remove();
-    };
-  }, []);
+  // Dropped in v0.1.1 alongside FGS_DATA_SYNC:
+  // - batteryNotExempt state + probe effect + banner (battery Unrestricted
+  //   only mattered for the FGS-driven alarm cadence; the surviving
+  //   PushNotification.localNotificationSchedule path is allowWhileIdle).
+  // - notificationsBlocked state + probe effect + banner (the banner
+  //   nudged users to grant POST_NOTIFICATIONS specifically so the FGS
+  //   notification would render; without the FGS the toggle alone is the
+  //   user's signal, and the OS prompt fires on enable).
+  // - [DEMO] Fire refresh alarm now button (Play submission demo).
 
   const handleToggleBgRefresh = async (next: boolean) => {
     if (togglingBgRefresh) return;
@@ -394,47 +407,20 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
         if (!creds || !creds.password) {
           SimpleToast.show(
-            "Can't enable — seed not in Keychain. Use Recover to type it in first.",
+            "Can't enable. Seed is not in Keychain. Use Recover to type it in first.",
             SimpleToast.LONG,
           );
           return;
         }
         await setArkBackgroundRefreshEnabled(true, creds.password);
-        SimpleToast.show("Background refresh enabled", SimpleToast.SHORT);
-
-        // Battery onboarding nudge. AlarmManager fires can be deferred
-        // indefinitely under Doze + vendor battery managers; probing on
-        // toggle-on is the right moment for a one-time setup walkthrough.
-        // iOS resolves true and skips this entirely.
-        const ignoring = await isIgnoringBatteryOptimizations();
-        if (!ignoring) {
-          const manufacturer = await getDeviceManufacturer();
-          const guidance = vendorGuidance(manufacturer);
-          const body = [
-            "Android sleeps apps to save battery. Without this, auto-refresh becomes unreliable — you'll need to open Cypher Box manually to keep your VTXO capsules current.",
-            "",
-            ...guidance.steps,
-          ].join("\n");
-          Alert.alert(
-            guidance.headline,
-            body,
-            [
-              { text: "Skip for now", style: "cancel" },
-              {
-                text: "Open Settings",
-                onPress: () => {
-                  openBatteryOptimizationSettings().catch((err) => {
-                    console.warn("[Ark bg refresh toggle] open settings failed:", err);
-                  });
-                },
-              },
-            ],
-            { cancelable: true },
-          );
-        }
+        SimpleToast.show("Reminders enabled", SimpleToast.SHORT);
+        // Battery-Unrestricted onboarding nudge removed in v0.1.1: it was
+        // specifically about preventing AlarmManager wakes from being
+        // deferred under Doze. The 5 PushNotification.localNotificationSchedule
+        // warnings use allowWhileIdle and fire regardless of battery state.
       } else {
         await setArkBackgroundRefreshEnabled(false);
-        SimpleToast.show("Background refresh disabled", SimpleToast.SHORT);
+        SimpleToast.show("Reminders disabled", SimpleToast.SHORT);
       }
     } catch (err: any) {
       console.warn("[Ark bg refresh toggle] failed:", err);
@@ -475,15 +461,24 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       try {
         const exists = await RNFS.exists(localPath);
         if (cancelled) return { cacheWarm: !!fp };
-        if (!exists) {
-          setLocalBackup(undefined);
-        } else {
+        if (exists) {
           const stat = await RNFS.stat(localPath);
           if (cancelled) return { cacheWarm: !!fp };
           setLocalBackup({
             modifiedAt: typeof stat.mtime === 'number' ? stat.mtime : new Date(stat.mtime as any).getTime(),
             sizeBytes: Number(stat.size) || 0,
+            filename: localPath.split('/').pop(),
           });
+        } else {
+          // Fallback: enumerate Documents and pick the latest
+          // `ark-backup-*.cbark`. Under RN 0.77 Fabric, RNFS.exists has
+          // occasionally returned false for an actually-present file
+          // (interop quirk + iCloud-evicted local copies). Without this
+          // fallback the UI says "Not yet" while the user can see the
+          // file in Files app, which scares them about funds safety.
+          const found = await findLatestArkBackup(RNFS.DocumentDirectoryPath);
+          if (cancelled) return { cacheWarm: !!fp };
+          setLocalBackup(found ?? undefined);
         }
       } catch (e: any) {
         if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
@@ -519,9 +514,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             } else {
               const exists = await RNFS.exists(iCloudPath);
               if (cancelled) return { cacheWarm: !!fp };
-              if (!exists) {
-                setICloudBackup(undefined);
-              } else {
+              if (exists) {
                 const stat = await RNFS.stat(iCloudPath);
                 if (cancelled) return { cacheWarm: !!fp };
                 setICloudBackup({
@@ -530,7 +523,19 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       ? stat.mtime
                       : new Date(stat.mtime as any).getTime(),
                   sizeBytes: Number(stat.size) || 0,
+                  filename: iCloudPath.split('/').pop(),
                 });
+              } else {
+                // Same fallback rationale as the local probe — enumerate
+                // the iCloud Documents directory and pick the latest
+                // ark-backup-*.cbark. This catches both the
+                // wrong-fingerprint case (cache cold or wallet recovered
+                // with a new seed) and the RNFS.exists-returns-false-on-
+                // iCloud-evicted-files case.
+                const iCloudDir = iCloudPath.substring(0, iCloudPath.lastIndexOf('/'));
+                const found = await findLatestArkBackup(iCloudDir);
+                if (cancelled) return { cacheWarm: !!fp };
+                setICloudBackup(found ?? undefined);
               }
             }
           }
@@ -1134,10 +1139,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 not seed-derivable, the .cbark backup file is also
                 required and equally critical. */}
             <Text style={{ fontSize: 13, color: '#AAA', marginBottom: 6 }}>
-              Write these 12 words on paper and store them somewhere safe — we cannot recover them for you.
+              Write these 12 words on paper and store them somewhere safe. We cannot recover them for you.
             </Text>
             <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 12 }}>
-              You also need the Ark backup file (2/2) below to recover your funds. The seed alone is not enough.
+              You also need the Bark backup file (2/2) below to recover your funds. The seed alone is not enough.
             </Text>
             {words ? (
               <>
@@ -1204,7 +1209,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             digging into a file manager or the Drive web UI. */}
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Ark backup file (2/2)
+            Bark backup file (2/2)
           </Text>
 
           {/* iOS backup-snapshot reminder. Active whenever the user
@@ -1315,7 +1320,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               symmetric pair (seed alone insufficient, backup alone
               insufficient) makes the (1/2) + (2/2) labels honest. */}
           <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 10, lineHeight: 17 }}>
-            You also need your seed phrase (1/2) above. The Ark backup file alone is not enough.
+            You also need your seed phrase (1/2) above. The Bark backup file alone is not enough.
           </Text>
           <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
             {/* Local file row — always probes Documents/ark-backup.cbark
@@ -1340,7 +1345,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               </View>
               {localBackup && (
                 <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                  {`${formatSize(localBackup.sizeBytes)} · ark-backup.cbark`}
+                  {`${formatSize(localBackup.sizeBytes)} · ${localBackup.filename ?? 'ark-backup.cbark'}`}
                 </Text>
               )}
               <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
@@ -1390,7 +1395,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               </View>
               {Platform.OS === 'ios' && iCloudBackup && (
                 <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                  {`${formatSize(iCloudBackup.sizeBytes)} · ark-backup.cbark`}
+                  {`${formatSize(iCloudBackup.sizeBytes)} · ${iCloudBackup.filename ?? 'ark-backup.cbark'}`}
                 </Text>
               )}
               {Platform.OS === 'ios' && (
@@ -1489,7 +1494,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             Seed Phrase + Ark backup file — true one-time setup. */}
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Auto-refresh capsules
+            Capsule expiry reminders
           </Text>
           <View
             style={{
@@ -1515,7 +1520,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   marginRight: 12,
                 }}
               >
-                Refresh Ark capsules in background
+                Notify me before capsules expire
               </RNText>
               <Switch
                 value={arkBgRefreshEnabled}
@@ -1534,48 +1539,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               {arkBgRefreshEnabled
-                ? 'Cypher Box refreshes capsules approaching expiry without you opening the app.'
-                : '⚠ Auto-refresh is OFF — open Cypher Box once in a while and refresh Ark capsules before they expire. After expiry, the ASP can sweep them.'}
+                ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, expired capsules cannot be recovered.'
+                : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Expired capsules cannot be recovered.'}
             </Text>
 
-            {/* Battery-exemption banner. Shows on Android whenever the app is
-                NOT battery-exempt (i.e. not set to Unrestricted), regardless of
-                the auto-refresh toggle, because the battery setting also gates
-                the scheduled expiry-warning notifications. Hidden once the
-                probe reads "exempt" (Unrestricted). */}
-            {batteryNotExempt === true && (
-              <TouchableOpacity
-                onPress={() => {
-                  // Deep-link to this app's own settings page
-                  // (Settings > Apps > Cypher Box), where the user reaches
-                  // Battery > Unrestricted. Linking.openSettings() opens
-                  // ACTION_APPLICATION_DETAILS_SETTINGS, which is universal
-                  // across Android versions/OEMs. (The native
-                  // openBatteryOptimizationSettings landed on the generic
-                  // battery-optimisation allow-list, not this app's Battery
-                  // screen, which is what we actually want the user on.)
-                  Linking.openSettings().catch((err) => {
-                    console.warn('[Ark bg refresh banner] open settings failed:', err);
-                  });
-                }}
-                style={{
-                  marginTop: 10,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(251, 146, 60, 0.12)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(251, 146, 60, 0.45)',
-                }}
-              >
-                <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
-                  ⚠ Set Cypher Box battery to Unrestricted
-                </Text>
-                <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
-                  Auto-refresh and capsule expiry alerts may not run reliably while battery optimisation is on. Tap here to open Cypher Box settings, then choose Battery and set it to Unrestricted.
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
 

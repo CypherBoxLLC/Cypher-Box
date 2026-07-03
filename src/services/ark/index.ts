@@ -176,6 +176,7 @@ export {
 
 export {
     ensureBgNotificationPermission,
+    areBgNotificationsEnabled,
     scheduleVtxoExpiryWarnings,
     cancelVtxoExpiryWarnings,
 } from './backgroundNotifications';
@@ -187,6 +188,7 @@ export {
     isIgnoringBatteryOptimizations,
     openBatteryOptimizationSettings,
     getDeviceManufacturer,
+    debugFireRefresh,
 } from './scheduler';
 
 export { vendorGuidance } from './batteryGuidance';

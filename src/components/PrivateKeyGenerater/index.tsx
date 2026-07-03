@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Image, TouchableOpacity, View } from "react-native"
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
@@ -15,8 +15,11 @@ interface Props {
 
 export default function PrivateKeyGenerater({ callNext }: Props) {
     const { wallets } = useContext(BlueStorageContext);
-    const { walletID } = useAuthStore();
-    const wallet = wallets.find((w: AbstractWallet) => w.getID() === walletID);
+    const walletID = useAuthStore(s => s.walletID);
+    const wallet = useMemo(
+        () => wallets.find((w: AbstractWallet) => w.getID() === walletID),
+        [wallets, walletID],
+    );
 
     const navigation = useNavigation();
     const { colors } = useTheme();
@@ -41,9 +44,7 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
     }, [])
     const viewClickHandler = () => {
         setIsView(true);
-        setTimeout(() => {
-            callNext();
-        }, 3000);
+        callNext();
     }
 
     const buttons = [

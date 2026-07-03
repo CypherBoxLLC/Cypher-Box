@@ -49,7 +49,7 @@ export default function CheckingAccountCreated() {
                 const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
                 if (!creds || !creds.password) {
                     SimpleToast.show(
-                        "Can't enable — seed not in Keychain. Re-enable from Ark Settings later.",
+                        "Can't enable. Seed is not in Keychain. Re-enable from Ark Settings later.",
                         SimpleToast.LONG,
                     );
                     return;
@@ -77,7 +77,7 @@ export default function CheckingAccountCreated() {
         ? colors.ark.light
         : colors.pink.light;
     const titleText = isArk
-        ? 'Ark Vault Created!'
+        ? 'Bark Vault Created!'
         : 'Lightning Account Created!';
 
     const initialThreshold = isArk
@@ -143,7 +143,7 @@ export default function CheckingAccountCreated() {
                             <View style={{ marginTop: 8, alignItems: 'center' }}>
                                 <Card
                                     wallet="ARK"
-                                    title="Ark Vault"
+                                    title="Bark Vault"
                                     balance={0}
                                     currency="USD"
                                     matchedRate={0}
@@ -173,7 +173,7 @@ export default function CheckingAccountCreated() {
                                     Capsules must be refreshed
                                 </Text>
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 6 }]}>
-                                    To keep your balance available and self-custodial, your virtual capsules (VTXOs) need to be refreshed.
+                                    To keep your balance available and self-custodial, your lightning capsules (VTXOs) need to be refreshed.
                                 </Text>
 
                                 {/* Toggle. Default ON (armed during create);
@@ -182,7 +182,7 @@ export default function CheckingAccountCreated() {
                                 <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, padding: 14, marginTop: 12, marginHorizontal: 10 }}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <RNText style={{ fontSize: 14, fontWeight: '700', color: colors.white, flex: 1, marginRight: 12 }}>
-                                            Auto-refresh v-capsules
+                                            Capsule expiry reminders
                                         </RNText>
                                         <Switch
                                             value={arkBgRefreshEnabled}
@@ -194,8 +194,8 @@ export default function CheckingAccountCreated() {
                                     </View>
                                     <Text style={{ fontSize: 12, color: arkBgRefreshEnabled ? '#888' : colors.redLight, marginTop: 6, lineHeight: 16 }}>
                                         {arkBgRefreshEnabled
-                                            ? 'Recommended. Cypher Box refreshes v-capsules approaching expiry without you opening the app. (no data is collected)'
-                                            : '⚠ Auto-refresh is OFF. Open Cypher Box regularly and refresh v-capsules before they expire, or the ASP can sweep them.'}
+                                            ? 'Recommended. Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, expired capsules cannot be recovered.'
+                                            : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Expired capsules cannot be recovered.'}
                                     </Text>
                                 </View>
 
@@ -207,11 +207,11 @@ export default function CheckingAccountCreated() {
                                     • Your 12-word seed phrase. Write it down somewhere only you can access.
                                 </Text>
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 6 }]}>
-                                    • Your encrypted backup file (.cbark). Periodically check on it via Ark Vault → Settings → Ark Backup. Both the seed AND the backup file are required to recover funds.
+                                    • Your encrypted backup file (.cbark). Periodically check on it via Bark Vault → Settings. Both the seed AND the backup file are required to recover funds.
                                 </Text>
 
                                 <Text h4 style={[styles.descption, { fontSize: 13, marginTop: 18, color: accentColor }]}>
-                                    ⚠ Experimental — use as a novel hot wallet software.
+                                    ⚠ Experimental, use as novel hot wallet software.
                                 </Text>
                             </ScrollView>
                         </>

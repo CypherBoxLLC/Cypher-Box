@@ -262,6 +262,12 @@ export const getInvoiceByHash = async (hash: string) => {
 };
 
 export const sendLightningPayment = async (payreq: string, memo: string, amount?: any) => {
+  // Bound the HTTP call so a stuck backend / Cloudflare 524 can't hang the
+  // caller's UI indefinitely. The Coinos LN payment may still complete on
+  // their side after we abort; the caller must treat AbortError as PENDING
+  // (do not invite a retry — see 2026-05-31 incident notes).
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45_000);
   try {
 if (__DEV__) console.log('sendLightningPayment payload: ', amount, amount && amount !== '' && amount !== 0 ? { payreq: payreq, memo: memo, amount } : { payreq: payreq, memo: memo })
     const response = await fetch(`${BASE_URL}/payments`, await withAuthToken({
@@ -270,6 +276,7 @@ if (__DEV__) console.log('sendLightningPayment payload: ', amount, amount && amo
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(amount && amount !== '' && amount !== 0 ? { payreq: payreq, memo: memo, amount } : { payreq: payreq, memo: memo }),
+      signal: controller.signal,
     }));
 
 if (__DEV__) console.log('response: ', response)
@@ -279,6 +286,8 @@ if (__DEV__) console.log('responseJSON: ', responseJSON)
   } catch (error) {
     console.error('Error sending lightning payment:', error);
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 
