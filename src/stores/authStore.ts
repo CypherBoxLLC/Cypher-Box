@@ -139,6 +139,16 @@ export type AuthStateType = {
      */
     arkScheduledExpiryNotifs: Record<string, number>;
     /**
+     * Version of the expiry-warning schedule reflected in the OS notification
+     * queue. Bumped when the schedule changes (e.g. moving from 24h+6h to
+     * 4d/2d/24h/12h/6h). On the first sync after upgrade, useArkSync compares
+     * persisted vs current; if behind AND the toggle is on, it force-calls
+     * scheduleVtxoExpiryWarnings on every spendable VTXO so OS-level alarms
+     * catch up with the new schedule, then sets the persisted version.
+     * Pre-this-field: implicit 0 (24h+6h or legacy warn2h). Current: 1.
+     */
+    arkExpiryNotifsScheduleVersion: number;
+    /**
      * Pending Lightning receives from `wallet.pendingLightningReceives()`.
      *
      * Why this is separate from arkVtxos: between the moment a counterparty
@@ -210,6 +220,7 @@ export type AuthStateType = {
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => void;
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => void;
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => void;
+    setArkExpiryNotifsScheduleVersion: (state: number) => void;
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setArkChainTipHeight: (state: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
@@ -248,6 +259,16 @@ export type AuthStateType = {
     arkBgRefreshLastStuckWarnAt: number | null;
     /** User-configurable upper bound on the fee a background refresh round can auto-pay (sats). Default 5000. */
     arkBgRefreshMaxFeeSats: number;
+    /**
+     * One-shot signal from the notification tap handler to the Capsules
+     * tab. Set when a user taps a VTXO expiry-warning notification (cold,
+     * background, or foreground). ArkCapsules consumes it on mount: it
+     * hydrates the wallet if needed and auto-fires `refreshIds` against
+     * all imminent VTXOs, then clears the flag. Persisted by zustand so
+     * a crash between tap and consumption still triggers refresh on
+     * next mount, which is the safer failure mode.
+     */
+    arkPendingTapRefresh: boolean;
 
     /**
      * Per-VTXO state for the "Arkoor receive" prompt feature.
@@ -325,6 +346,7 @@ export type AuthStateType = {
     setArkBgRefreshLastWarn2hAt: (state: number | null) => void;
     setArkBgRefreshLastStuckWarnAt: (state: number | null) => void;
     setArkBgRefreshMaxFeeSats: (state: number) => void;
+    setArkPendingTapRefresh: (state: boolean) => void;
     setArkIosBackupReminderActive: (state: boolean) => void;
     setArkArkoorPromptState: (
         state: Record<string, {
@@ -374,6 +396,7 @@ const createAuthStore = (
     arkRefreshStuck: null,
     arkPendingRoundFirstSeen: {},
     arkScheduledExpiryNotifs: {},
+    arkExpiryNotifsScheduleVersion: 0,
     arkPendingLnReceives: [],
     arkChainTipHeight: null,
     arkLastSyncedAt: null,
@@ -401,6 +424,7 @@ const createAuthStore = (
     arkBgRefreshLastWarn2hAt: null,
     arkBgRefreshLastStuckWarnAt: null,
     arkBgRefreshMaxFeeSats: 5000,
+    arkPendingTapRefresh: false,
     arkIosBackupReminderActive: false,
     arkArkoorPromptState: {},
     arkArkoorPromptEnabled: true,
@@ -440,6 +464,7 @@ const createAuthStore = (
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => set({ arkRefreshStuck: state }),
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => set({ arkPendingRoundFirstSeen: state }),
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => set({ arkScheduledExpiryNotifs: state }),
+    setArkExpiryNotifsScheduleVersion: (state: number) => set({ arkExpiryNotifsScheduleVersion: state }),
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => set({ arkPendingLnReceives: state }),
     setArkChainTipHeight: (state: number | null) => set({ arkChainTipHeight: state }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
@@ -460,6 +485,7 @@ const createAuthStore = (
     setArkBgRefreshLastWarn2hAt: (state: number | null) => set({ arkBgRefreshLastWarn2hAt: state }),
     setArkBgRefreshLastStuckWarnAt: (state: number | null) => set({ arkBgRefreshLastStuckWarnAt: state }),
     setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
+    setArkPendingTapRefresh: (state: boolean) => set({ arkPendingTapRefresh: state }),
     setArkIosBackupReminderActive: (state: boolean) => set({ arkIosBackupReminderActive: state }),
     setArkArkoorPromptState: (state) => set({ arkArkoorPromptState: state }),
     setArkArkoorPromptEnabled: (state: boolean) => set({ arkArkoorPromptEnabled: state }),
@@ -473,6 +499,7 @@ const createAuthStore = (
             arkRefreshStuck: null,
             arkPendingRoundFirstSeen: {},
     arkScheduledExpiryNotifs: {},
+            arkExpiryNotifsScheduleVersion: 0,
             arkPendingLnReceives: [],
             arkChainTipHeight: null,
             arkLastSyncedAt: null,
@@ -499,6 +526,7 @@ const createAuthStore = (
             arkBgRefreshLastWarn24hAt: null,
             arkBgRefreshLastWarn2hAt: null,
             arkBgRefreshLastStuckWarnAt: null,
+            arkPendingTapRefresh: false,
             arkIosBackupReminderActive: false,
             // Per-VTXO Arkoor-prompt state is wallet-scoped — clear on
             // disconnect so the next wallet doesn't inherit prior prompts.

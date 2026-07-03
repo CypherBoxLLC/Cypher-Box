@@ -19,12 +19,13 @@ import {
     writeBackgroundArkSeed,
 } from './backgroundKeychain';
 import {
+    cancelVtxoExpiryWarnings,
     ensureBgNotificationPermission,
     notifyConsecutiveFailures,
     notifyDustStranded,
     notifyDustUneconomic,
     notifyExpiryWarning24h,
-    notifyExpiryWarning2h,
+    notifyExpiryWarning6h,
     notifyFeeGated,
     notifyStuckRefresh,
 } from './backgroundNotifications';
@@ -225,6 +226,16 @@ export async function setArkBackgroundRefreshEnabled(
     }
     await syncArkRefreshSubscriptionToRelay(false);
     await deleteBackgroundArkSeed();
+    // Drop any queued VTXO expiry warnings so the OS doesn't fire reminders
+    // for a user who just turned them off. iterate the persisted map of
+    // (vtxoId -> expiryMs) the sync loop maintains; cancelVtxoExpiryWarnings
+    // is per-id and swallows stale-id errors. Clear the map after so the
+    // next sync tick (post-toggle-on) re-populates from a clean slate.
+    const scheduled = store.arkScheduledExpiryNotifs ?? {};
+    for (const id of Object.keys(scheduled)) {
+        cancelVtxoExpiryWarnings(id);
+    }
+    store.setArkScheduledExpiryNotifs({});
     store.setArkBgRefreshEnabled(false);
     store.setArkBgRefreshLastSuccessAt(null);
     store.setArkBgRefreshLastAttempt(null);
@@ -602,7 +613,14 @@ export async function runBackgroundRefresh(
         const longExpiryNonDust: Candidate[] = []; // ≥ batchDays AND > dust — usable as filler
         let triggerCount = 0;
         let imminent24h = false;
-        let imminent2h = false;
+        let imminent6h = false;
+        // Aggregate sats at risk inside each imminent window — the user-facing
+        // notification surfaces the value so they can gauge "is this worth my
+        // attention right now". 24h aggregate includes the 6h slice (a 6h-imminent
+        // VTXO is also 24h-imminent), which matches the notification dedupe
+        // logic below: when the 6h notif fires we suppress the 24h one.
+        let imminent24hSats = 0;
+        let imminent6hSats = 0;
         let deferredSkipped = 0;
         for (const v of vtxos.spendable) {
             // Honour user-deferred VTXOs (Arkoor-receive popup "Use
@@ -620,13 +638,28 @@ export async function runBackgroundRefresh(
             // populate it. Arkoor VTXOs refresh independently via
             // refreshVtxos(), they don't piggyback on the source.
             if (v.expiryHeight === 0) continue;
+            // Skip past-expiry VTXOs. Including them in a round poisons it:
+            // the ASP rejects expired inputs and the entire round fails with
+            // outputs=0 effectiveSats=-2, leaving healthy non-expired inputs
+            // stuck locked alongside the dead one. Filtering here lets the
+            // batch progress with the recoverable subset. The expired VTXO
+            // is also hidden from the capsule list (see useArkSync) so the
+            // user isn't shown an actionable capsule that can't actually
+            // be refreshed.
+            if (v.expiryHeight <= tip) continue;
             const blocksLeft = v.expiryHeight - tip;
             const daysLeft = blocksToDays(Math.max(0, blocksLeft));
             // Imminent-expiry warning observation runs across ALL spendable VTXOs,
             // not just the batch-eligible set.
             const hoursLeft = daysLeft * 24;
-            if (hoursLeft < 24) imminent24h = true;
-            if (hoursLeft < 2) imminent2h = true;
+            if (hoursLeft < 24) {
+                imminent24h = true;
+                imminent24hSats += v.sats;
+            }
+            if (hoursLeft < 6) {
+                imminent6h = true;
+                imminent6hSats += v.sats;
+            }
             const cand: Candidate = { id: v.id, sats: v.sats, daysLeft };
             if (daysLeft < BG_REFRESH_TUNABLES.batchDays) {
                 shortExpiry.push(cand);
@@ -699,11 +732,11 @@ export async function runBackgroundRefresh(
         // even if we exit on `rate_limited` or `no_eligible_vtxos`, the
         // user still needs to know. Dedupe per-window so a 6h scheduler
         // cadence doesn't spam.
-        if (imminent2h) {
+        if (imminent6h) {
             const last2h = useAuthStore.getState().arkBgRefreshLastWarn2hAt;
             if (last2h === null || Date.now() - last2h > BG_REFRESH_TUNABLES.warn2hDedupeWindowMs) {
                 try {
-                    notifyExpiryWarning2h();
+                    notifyExpiryWarning6h(imminent6hSats);
                     useAuthStore.getState().setArkBgRefreshLastWarn2hAt(Date.now());
                 } catch (notifErr) {
                     console.warn('[Ark bg refresh] 2h warning threw:', notifErr);
@@ -714,7 +747,7 @@ export async function runBackgroundRefresh(
             const last24h = useAuthStore.getState().arkBgRefreshLastWarn24hAt;
             if (last24h === null || Date.now() - last24h > BG_REFRESH_TUNABLES.warn24hDedupeWindowMs) {
                 try {
-                    notifyExpiryWarning24h();
+                    notifyExpiryWarning24h(imminent24hSats);
                     useAuthStore.getState().setArkBgRefreshLastWarn24hAt(Date.now());
                 } catch (notifErr) {
                     console.warn('[Ark bg refresh] 24h warning threw:', notifErr);

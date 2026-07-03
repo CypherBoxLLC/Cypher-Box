@@ -22,14 +22,14 @@ interface Props {
 
 export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accountType }: Props) {
     const isArk = accountType === 'ark';
-    // Ark surfaces V-capsules as the FIRST tab — it's the day-to-day VTXO
+    // Ark surfaces Capsules as the FIRST tab — it's the day-to-day VTXO
     // management surface users land on most often. The Vault tab (balance
     // + threshold copy) is second. Strike/CoinOS keep the historical
-    // Account/Threshold ordering since they don't have a V-capsules
+    // Account/Threshold ordering since they don't have a Capsules
     // concept.
     //
     // Ark icons:
-    //   - V-capsules: Electricity (white-tinted lightning bolt) — VTXOs
+    //   - Capsules: Electricity (white-tinted lightning bolt) — VTXOs
     //     are Lightning-native capsules, the bolt signals that lineage.
     //   - Vault: Ionicons "boat-outline" — matches the Ark = boat icon
     //     already used in the receive flow ([ReceivedListNew:310]) so the
@@ -43,7 +43,7 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accou
     const tabs: TabDef[] = useMemo(() => [
         {
             id: 0,
-            name: isArk ? 'V-capsules' : 'Account',
+            name: isArk ? 'Capsules' : 'Account',
             icon: isArk ? Electricity : Bank,
         },
         isArk

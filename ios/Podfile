@@ -127,6 +127,23 @@ post_install do |installer|
           config.build_settings['HEADER_SEARCH_PATHS'] = [existing, added].join(' ')
         end
       end
+
+      # react-native-share 10.2.1 declares `s.dependency "React-Codegen"`
+      # in its podspec under the New Arch branch, but RN 0.77 renamed the
+      # pod to `ReactCodegen` (no hyphen). The dependency silently fails
+      # to resolve, so RNShare's HEADER_SEARCH_PATHS never inherit
+      # Pods/Headers/Public/ReactCodegen/ where the codegen actually
+      # writes <RNShareSpec/RNShareSpec.h>. Add the path explicitly so
+      # the include at node_modules/react-native-share/ios/RNShare.h:12
+      # resolves until react-native-share ships a podspec that names the
+      # post-rename pod.
+      if target.name == 'RNShare'
+        existing = config.build_settings['HEADER_SEARCH_PATHS'] || '$(inherited)'
+        added = '"${PODS_ROOT}/Headers/Public/ReactCodegen"'
+        unless existing.to_s.include?('Headers/Public/ReactCodegen')
+          config.build_settings['HEADER_SEARCH_PATHS'] = [existing, added].join(' ')
+        end
+      end
     end
   end
 end

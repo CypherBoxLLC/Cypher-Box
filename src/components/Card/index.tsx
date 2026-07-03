@@ -5,7 +5,7 @@ import { formatNumber, formatSats, getStrikeCurrency } from "@Cypher/helpers/coi
 import { colors } from "@Cypher/style-guide";
 import MaskedView from "@react-native-masked-view/masked-view";
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Image, TouchableOpacity, View } from "react-native";
+import { Animated, Easing, Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
 import GradientButtonWithShadow from "../GradientButtonWithShadow";
@@ -393,20 +393,31 @@ export default function Card({ onPress,
                 Same self-custody rationale as the reminder above: hidden
                 for Ark, kept for Strike/CoinOS. */}
             {wallet !== 'ARK' && (
-                <View style={thresholdMet ? {
+                // 25pt slot for the threshold-bar trio. All three children
+                // are absolutely positioned (see Card/styles.ts), so without
+                // this height the parent collapses to 0 and the bars float
+                // up over the row above.
+                <View style={[{ height: 25 }, thresholdMet ? {
                     shadowColor: '#e84393',
                     shadowOffset: { width: 0, height: 0 },
                     shadowOpacity: 1,
                     shadowRadius: 16,
                     elevation: 10,
-                } : undefined}>
+                } : undefined]}>
                     <View style={styles.showLine} />
                     <View style={[styles.box, { left: getLineLeft() } as any]} />
-                    <LinearGradient
-                        start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-                        colors={[colors.white, colors.pink.dark]}
-                        style={[styles.linearGradient2, { width: getWidth() } as any]}>
-                    </LinearGradient>
+                    {/* LinearGradient wrapped in an absolute View — see
+                        StrikeWallet/index.tsx for the full explanation.
+                        Paper-only react-native-linear-gradient doesn't
+                        honor position:absolute through the Fabric legacy
+                        interop on RN 0.77, so the pink fill never rendered
+                        on the CoinOS home card either. */}
+                    {/* Solid pink fill — see StrikeWallet for the full
+                        explanation. LinearGradient inside the absolute
+                        wrapper doesn't render under Fabric interop, so we
+                        use a solid color and let the wrapper's percent
+                        width control the fill. */}
+                    <View style={[styles.linearGradient2, { width: getWidth(), backgroundColor: colors.pink.dark, minWidth: 6 } as any]} />
                 </View>
             )}
         </>

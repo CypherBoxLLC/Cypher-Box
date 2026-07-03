@@ -1,9 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -16,6 +16,8 @@ import {
   RegisterPrompt,
   HeaderWithLine,
   CreateButton,
+  StrikeSignupSheet,
+  type StrikeSignupSheetRef,
 } from "@Cypher/components";
 import accountStyles from "@Cypher/components/CheckingAccount/styles";
 import LinearGradient from "react-native-linear-gradient";
@@ -66,6 +68,7 @@ export default function CheckingAccountLogin() {
   const [strikeLoading, setStrikeLoading] = React.useState(false);
   const [CoinosException, setCoinosException] = React.useState(false);
   const [pageLoading, setPageLoading] = React.useState(true);
+  const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
 
   useEffect(() => {
     // Geo-gate temporarily disabled per Bam's intermediate phase: ship
@@ -110,11 +113,11 @@ export default function CheckingAccountLogin() {
   }, []);
 
   const createCheckingAccountClickHandler = () => {
-    Linking.openURL("https://coinos.io/register");
+    openInAppBrowser("https://coinos.io/register");
   };
 
   const createStrikeAccountClickHandler = () => {
-    Linking.openURL("https://dashboard.strike.me/signup");
+    strikeSignupSheetRef.current?.open();
   };
 
   const handleCoinosLogin = () => {
@@ -155,7 +158,7 @@ export default function CheckingAccountLogin() {
       const reStrikeTokenExchange = await strikeTokenExchange(result.authorizationCode, result.codeVerifier || '');
       setStrikeToken(reStrikeTokenExchange.access_token);
       setStrikeAuth(true);
-      const temp = [...allBTCWallets];
+      const temp = (allBTCWallets as string[]).filter(w => w !== "STRIKE");
       const tokenParts = reStrikeTokenExchange.access_token.split(".");
       const header = Buffer.from(tokenParts[0], "base64").toString("utf8");
       const payload = Buffer.from(tokenParts[1], "base64").toString("utf8");
@@ -271,7 +274,7 @@ export default function CheckingAccountLogin() {
                   tab and home Card use, so the brand is consistent. */}
               <View style={accountStyles.providerRow}>
                 <LoginOption
-                  label="Create Ark Vault"
+                  label="Create Bark Vault"
                   labelColor={colors.white}
                   iconPrefixIonicon="boat-outline"
                   iconPrefixTint={colors.white}
@@ -362,6 +365,7 @@ export default function CheckingAccountLogin() {
           )}
         </View>
       </View>
+      <StrikeSignupSheet ref={strikeSignupSheetRef} />
     </ScreenLayout>
   );
 }

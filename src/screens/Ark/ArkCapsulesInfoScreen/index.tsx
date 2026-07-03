@@ -5,59 +5,61 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
 
 /**
- * Plain-language "what you need to know about your Ark capsules" surface.
+ * Plain-language "what you need to know about your lightning capsules" surface.
  *
- * Reached from the circular "?" button on the V-capsules tab. Pure
- * educational content — no actions, no state. Copy written for a normal
- * user, not someone who knows the protocol terms. Fees in the bottom
- * section are quoted directly from Second's published Ark fee schedule
- * (https://second.tech/docs/learn/fees) so they stay honest rather than
- * estimated.
+ * Reached from the circular "?" button on the Capsules tab. Pure educational
+ * content — no actions, no state. Copy written for a normal user, not someone
+ * who knows the protocol terms. Fees in the bottom section are quoted directly
+ * from Second's published Ark fee schedule (https://second.tech/docs/learn/fees)
+ * so they stay honest rather than estimated.
  */
 export default function ArkCapsulesInfoScreen() {
     return (
-        <ScreenLayout showToolbar isBackButton title="About your Ark capsules">
+        <ScreenLayout showToolbar isBackButton title="About your lightning capsules">
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 40 }}
             >
-                <Section title="Why we refresh your balance">
+                <Section title="Why your capsules need refreshing">
                     <Body>
-                        Your Ark balance is held as a collection of small "capsules". To keep
-                        your funds fully self-custodial — meaning you can always recover them
-                        yourself without needing the Ark server's permission — each capsule
-                        needs to be refreshed before it ages out.
+                        Your Bark balance is held as a collection of small lightning capsules
+                        (VTXOs). Each capsule has an expiry date. To keep your funds fully
+                        self-custodial, meaning you can always recover them yourself without
+                        needing the Bark server's permission, each capsule must be refreshed
+                        before it expires.
                     </Body>
                     <Body>
-                        Cypher Box refreshes them in the background as long as the toggle in
-                        Settings is on. If you turn it off, you're responsible for refreshing
-                        them yourself before they expire.
-                    </Body>
-                    <Body>
-                        The capsules tab shows when the next automatic refresh is due, so you
-                        always know whether you need to do anything.
+                        If a capsule expires without being refreshed, the funds inside are lost
+                        forever. There is no recovery.
                     </Body>
                 </Section>
 
-                <Section title="If a capsule can't be refreshed in time">
+                <Section title="How reminders keep your capsules safe">
                     <Body>
-                        Refreshing needs the Ark server to be reachable. If it has trouble and
-                        a capsule keeps failing to refresh as it nears its expiry, Cypher Box
-                        escalates so your money is never lost.
+                        Cypher Box sends up to 5 reminder notifications before any lightning
+                        capsule expires. The schedule is fixed: 4 days, 2 days, 24 hours, 12
+                        hours, and 6 hours before expiry. Each one escalates in urgency.
                     </Body>
                     <Body>
-                        You'll first get a reminder notification around 24 hours, and again
-                        around 2 hours, before a capsule would expire, in case you want to act
-                        yourself (refresh manually, or spend the balance).
+                        Tap any reminder and Cypher Box opens directly on the Capsules tab
+                        with the refresh already running. You do not need to find a button,
+                        confirm an amount, or unlock anything beyond your usual biometric.
+                    </Body>
+                    <Body>
+                        The Reminders toggle lives in two places: at the bottom of the Bark
+                        Vault Created screen when you first create your wallet, and on the
+                        Vault tab inside the Bark vault menu. Default is on. If you turn it
+                        off, no reminders fire and you alone are responsible for opening the
+                        app and refreshing your capsules before they expire.
                     </Body>
                     <StatusRow
                         title="Last-resort rescue to Strike or CoinOS"
                         body="If a capsule is within roughly 12 hours of expiring and still hasn't refreshed, Cypher Box automatically forwards those funds over Lightning to your connected Strike or CoinOS balance (Strike first, CoinOS as backup). Your money is safe there as a custodial balance, which is far better than letting the capsule expire and forcing a costly on-chain recovery. You can move it back into Ark whenever you like."
                     />
                     <Body>
-                        This rescue only runs if you have Strike or CoinOS connected. If neither
-                        is connected, Cypher Box notifies you instead, so you can refresh or
-                        spend the funds yourself before the deadline.
+                        This rescue only runs if you have Strike or CoinOS connected. If
+                        neither is connected, the reminder notifications are your only
+                        safety net.
                     </Body>
                 </Section>
 
@@ -115,16 +117,16 @@ export default function ArkCapsulesInfoScreen() {
 
                 <Section title="Fees">
                     <Body>
-                        These are the fees the Ark server (operated by Second) charges. They
-                        vary with how old the capsule is — younger capsules cost less.
+                        These are the fees the Bark server charges. They vary with how old
+                        the capsule is. Younger capsules cost less.
                     </Body>
                     <FeeRow
                         title="Receiving from Lightning"
-                        body="0% — free."
+                        body="0%, free."
                     />
                     <FeeRow
-                        title="Sending Ark-to-Ark"
-                        body="0% — free."
+                        title="Sending Bark-to-Bark"
+                        body="0%, free."
                     />
                     <FeeRow
                         title="Refreshing"

@@ -7,7 +7,7 @@ import { HDSegwitBech32Wallet } from '../../../class';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
 import useAuthStore from "@Cypher/stores/authStore";
-import { dispatchNavigate } from '@Cypher/helpers';
+import { dispatchReset } from '@Cypher/helpers/navigation';
 import {
     getHotVaultSeedFromKeychain,
     listHotVaultKeychainBackupsWithMeta,
@@ -156,7 +156,10 @@ export default function RecoverSavingVault({ route }: Props) {
             kind: 'hot-vault-recovered',
             source: restoredWalletID ? 'cloud' : 'seed',
         });
-        dispatchNavigate('HomeScreen');
+        // Reset stack — recovery flow has multiple intermediate screens that
+        // stay mounted under HomeScreen on iOS Fabric otherwise. See
+        // TransactionBroadCast for the full half-mount explanation.
+        dispatchReset('HomeScreen');
     };
 
     const handleSecretWordChange = (index: number, value: string) => {

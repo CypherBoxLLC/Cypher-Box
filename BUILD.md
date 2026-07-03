@@ -158,16 +158,15 @@ these still need closing:
   per-machine and gitignored, so a third-party rebuild without it differs. The
   web client ID is non-secret; commit a deterministic `.env` (or hardcode the
   constant) for release builds so this field is stable.
-- **Inlined secrets (`secrets.ts` x2).** The JS bundle inlines the Second.tech
-  bark access token (`src/services/ark/secrets.ts`) and the push-relay key
-  (`blue_modules/secrets.ts`), both gitignored. Fresh checkouts fall back to
-  the committed `.example` placeholders (Makefile `CONTAINER_BUILD` and
+- **Inlined push-relay key (`blue_modules/secrets.ts`).** The JS bundle inlines
+  the push-relay API key, which is gitignored. Fresh checkouts fall back to the
+  committed `.example` placeholder (Makefile `CONTAINER_BUILD` and
   `walletscrutiny/build.sh`), so the build completes and determinism is
-  checkable with no secret present. An auditor can insert their own
-  Second.tech token for a *functional* mainnet build - see
-  `walletscrutiny/README.md`, "Inlined config inputs". A byte-match against
-  the Play binary additionally requires the production values in the rebuild;
-  whether to publish them is an open release decision.
+  checkable with no secret present. A byte-match against the Play binary
+  additionally requires the production value in the rebuild; whether to
+  publish it is an open release decision. (The earlier `BARK_ACCESS_TOKEN`
+  gate at `ark.second.tech` was removed server-side 2026-06-12, so it no
+  longer factors into byte-match parity.)
 - **`current-branch.json` / `release-notes.json`** are generated from git at
   `postinstall` and bundled (consumed by `screen/settings/about.js`). They are
   deterministic only when the build runs from the **exact signed tag** (with

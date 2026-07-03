@@ -125,7 +125,7 @@ export default function LoginCoinOSScreen() {
         setToken(response.token);
         setUser(response.user);
         
-        const temp = [...allBTCWallets];
+        const temp = (allBTCWallets as string[]).filter(w => w !== 'COINOS');
         setAllBTCWallets([...temp, 'COINOS']);
         
         // Save credentials securely in keychain (iOS) / keystore (Android)

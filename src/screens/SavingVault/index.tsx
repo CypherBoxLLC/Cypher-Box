@@ -41,7 +41,8 @@ export default function SavingVault() {
     );
     const [submitting, setSubmitting] = useState(false);
 
-    const { walletID, setHotVaultKeychainBackup } = useAuthStore();
+    const walletID = useAuthStore(s => s.walletID);
+    const setHotVaultKeychainBackup = useAuthStore(s => s.setHotVaultKeychainBackup);
     const { wallets } = useContext(BlueStorageContext);
 
     const nextClickInitiate = () => {

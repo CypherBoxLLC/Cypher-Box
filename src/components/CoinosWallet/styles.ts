@@ -262,28 +262,27 @@ export default StyleSheet.create<Style>({
         // paddingHorizontal: 20,
         justifyContent: 'space-between',
     },
+    // See StrikeWallet/styles.ts for the full explanation. Under RN 0.77
+    // Fabric (Yoga 3) the in-flow LinearGradient detaches from the
+    // absolutely-positioned showLine/box trio and renders at the top of
+    // the parent card.
     showLine: {
-        // borderWidth: 1,
-        // borderColor: colors.white,
         position: 'absolute',
+        top: 10,
+        left: 0,
         width: '100%',
         backgroundColor: '#5F5F5F',
         height: 5,
-        // padding: 5,
         borderRadius: 5,
-        marginVertical: 10,
-        // marginStart: 25,
-        // marginHorizontal: 20
     },
     linearGradient2: {
+        position: 'absolute',
+        top: 10,
+        left: 0,
         width: '100%',
-        // paddingLeft: 15,
-        // paddingRight: 15,
         borderRadius: 5,
         height: 5,
-        alignSelf: 'flex-start',
-        marginVertical: 10,
-        zIndex: 99
+        zIndex: 99,
     },
     box: {
         position: 'absolute',
