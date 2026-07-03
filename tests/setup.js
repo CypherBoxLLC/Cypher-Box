@@ -165,9 +165,12 @@ jest.mock('react-native-idle-timer', () => {
   };
 });
 
+// Package was removed (dead BlueWallet-fork dep); TooltipMenu.ios.js is gone
+// and iOS falls back to the pass-through TooltipMenu.js. Keep a virtual mock
+// so any straggler import in old tests resolves instead of crashing jest.
 jest.mock('react-native-ios-context-menu', () => {
   return {};
-});
+}, { virtual: true });
 
 jest.mock('react-native-haptic-feedback', () => {
   return {

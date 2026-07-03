@@ -1427,8 +1427,6 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - Yoga
-  - react-native-ios-context-menu (1.15.3):
-    - React-Core
   - react-native-mmkv (3.3.3):
     - DoubleConversion
     - glog
@@ -2428,7 +2426,6 @@ DEPENDENCIES:
   - react-native-fingerprint-scanner (from `../node_modules/react-native-fingerprint-scanner`)
   - react-native-idle-timer (from `../node_modules/react-native-idle-timer`)
   - react-native-image-picker (from `../node_modules/react-native-image-picker`)
-  - react-native-ios-context-menu (from `../node_modules/react-native-ios-context-menu`)
   - react-native-mmkv (from `../node_modules/react-native-mmkv`)
   - react-native-pager-view (from `../node_modules/react-native-pager-view`)
   - "react-native-qrcode-local-image (from `../node_modules/@flyskywhy/react-native-qrcode-local-image`)"
@@ -2622,8 +2619,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-idle-timer"
   react-native-image-picker:
     :path: "../node_modules/react-native-image-picker"
-  react-native-ios-context-menu:
-    :path: "../node_modules/react-native-ios-context-menu"
   react-native-mmkv:
     :path: "../node_modules/react-native-mmkv"
   react-native-pager-view:
@@ -2825,7 +2820,6 @@ SPEC CHECKSUMS:
   react-native-fingerprint-scanner: 91bf6825709dd7bd3abc4588a4772eb097a2b2d8
   react-native-idle-timer: eb7608b5bb8384047b48740f587af9681dc4deaa
   react-native-image-picker: ede3b0b991aae11b3c1d61c187a833720e255277
-  react-native-ios-context-menu: 986da6dcba70094bcc2a8049f68410fe7d25aff1
   react-native-mmkv: 2c554a003c78a27f92d6794f1658bbeea37a364a
   react-native-pager-view: ab2ded73ab3700491ba089aa6322adbe65218f32
   react-native-qrcode-local-image: 04e7d0fcfda4ac9b0f7b953e9f38333f98cf7bba
