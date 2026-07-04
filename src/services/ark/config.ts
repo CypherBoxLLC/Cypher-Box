@@ -132,7 +132,8 @@ export function createArkConfig(overrides?: Partial<Parameters<typeof Config.cre
         bitcoindCookiefile: undefined,
         bitcoindUser: undefined,
         bitcoindPass: undefined,
-        network: ARK_NETWORK,
+        // bark 0.11.3: `network` moved out of Config into the Wallet.open /
+        // OnchainWallet.default_ signatures (passed as ARK_NETWORK there).
         vtxoRefreshExpiryThreshold: undefined,
         vtxoExitMargin: undefined,
         htlcRecvClaimDelta: undefined,

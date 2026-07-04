@@ -6,10 +6,11 @@ import {
     OnchainWalletInterface,
     Wallet,
     WalletInterface,
+    WalletOpenArgs,
     uniffiInitAsync,
 } from '@secondts/bark-react-native';
 
-import { createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
+import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
 import { ensureArkDatadir } from './datadir';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
@@ -157,43 +158,37 @@ export async function createArkWallet(
     const datadir = await ensureArkDatadir();
     const config = createArkConfig();
 
-    try {
-        handle = await Wallet.open(mnemonic, config, datadir);
-        cachedMnemonic = mnemonic;
-        if (__DEV__) console.log('[Ark] Opened existing wallet from datadir');
-        startWatcher();
-        await tryEagerSpawnOnchainHandle('createArkWallet open');
-        return handle;
-    } catch (openErr) {
-        if (__DEV__) {
-            console.log('[Ark] Wallet.open failed, falling back to create (forceRescan=' + forceRescan + '):', openErr);
-        }
-        // Bark schema-init bug: `Wallet.open` against a fresh datadir
-        // creates an empty `bark.sqlite` as a side-effect of just
-        // opening the path, then errors with `no such table:
-        // bark_properties` because the migration hasn't run. That
-        // 0-byte file then blocks the `Wallet.create` fallback (bark
-        // sees an existing file and tries to migrate instead of create
-        // fresh). A zero-byte file can't contain real wallet state, so
-        // nuke it before retrying create. See the gitlab draft for the
-        // upstream report.
-        try {
-            const sqlitePath = `${datadir}/bark.sqlite`;
-            const stat = await RNFS.stat(sqlitePath).catch(() => null);
-            if (stat && Number((stat as any).size) === 0) {
-                await RNFS.unlink(sqlitePath);
-                if (__DEV__) console.log('[Ark] cleared 0-byte bark.sqlite trap before create fallback');
-            }
-        } catch (cleanupErr) {
-            console.warn('[Ark] 0-byte sqlite cleanup failed:', cleanupErr);
-        }
+    // bark 0.11.3 consolidated open-or-create into a single `Wallet.open` with
+    // `createIfNotExists`, so the old open-then-catch-then-`Wallet.create`
+    // fallback (and the 0-byte `bark.sqlite` trap that sat between them)
+    // collapse to one call. If the 0-byte-sqlite schema-init bug still occurs
+    // with the consolidated open, re-add a guarded cleanup here — verify during
+    // device testing.
+    //
+    // ⚠ UNRESOLVED — blocks recovery-from-seed. bark 0.11.3 removed the
+    // `forceRescan` argument the old `Wallet.create` took and exposes no rescan
+    // entry point in its type surface. Our recover flow relies on it to
+    // reconstruct VTXOs from the ASP for a restored seed. Until Second.tech
+    // confirms the 0.11.3 rescan path, fail LOUD rather than silently open
+    // without a rescan (which would hide funds).
+    if (forceRescan) {
+        throw new Error(
+            'Ark rescan (forceRescan) is not yet wired for bark 0.11.3 — the SDK ' +
+            'removed the rescan argument. Recovery-from-seed is blocked pending ' +
+            'the Second.tech rescan API. Do not ship this path.',
+        );
     }
 
-    handle = await Wallet.create(mnemonic, config, datadir, forceRescan);
+    handle = await Wallet.open(
+        ARK_NETWORK,
+        mnemonic,
+        config,
+        WalletOpenArgs.create({ datadir, createIfNotExists: true }),
+    );
     cachedMnemonic = mnemonic;
-    if (__DEV__) console.log('[Ark] Created new wallet in datadir (forceRescan=' + forceRescan + ')');
+    if (__DEV__) console.log('[Ark] Opened-or-created wallet in datadir');
     startWatcher();
-    await tryEagerSpawnOnchainHandle('createArkWallet create');
+    await tryEagerSpawnOnchainHandle('createArkWallet open');
     return handle;
 }
 
@@ -209,7 +204,15 @@ export async function openArkWallet(
     // syncs — that's fine, both providers serve the same chain.
     const chosenEsplora = opts?.esploraUrl || ESPLORA_URL;
     const config = createArkConfig({ esploraAddress: chosenEsplora });
-    handle = await Wallet.open(mnemonic, config, datadir);
+    // Open-only (createIfNotExists: false) — this path must not fabricate a
+    // wallet if the datadir is empty; that's createArkWallet's job. bark 0.11.3
+    // Wallet.open signature: (network, mnemonic, config, WalletOpenArgs).
+    handle = await Wallet.open(
+        ARK_NETWORK,
+        mnemonic,
+        config,
+        WalletOpenArgs.create({ datadir, createIfNotExists: false }),
+    );
     // Pin the on-chain (BDK) handle to the SAME provider that just worked, so
     // board detection doesn't fail against a provider that's blocking us.
     sessionEsploraUrl = chosenEsplora;
@@ -353,7 +356,8 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
     for (const esploraUrl of ordered) {
         try {
             const config = createArkConfig({ esploraAddress: esploraUrl });
-            onchainHandle = await OnchainWallet.default_(mnemonic, config, datadir);
+            // bark 0.11.3 OnchainWallet.default_ signature adds a leading network arg.
+            onchainHandle = await OnchainWallet.default_(ARK_NETWORK, mnemonic, config, datadir);
             if (__DEV__) console.log('[Ark] Spawned onchain wallet via', esploraUrl);
             return onchainHandle;
         } catch (err) {
