@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Animated, Easing, Image, Linking, Platform, RefreshControl, StyleSheet, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import {
@@ -33,8 +33,11 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { bitcoinRecommendedFee, createInvoice, getCurrencyRates, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
-import { btc, formatNumber, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
+import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
+import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
+import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
+import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
+import { btc, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
 import loc, { formatBalance, formatBalanceWithoutSuffix } from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
@@ -43,7 +46,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { startsWithLn } from "../Send";
 import screenHeight from "@Cypher/style-guide/screenHeight";
 import { getFiatRate } from "../../../models/fiatUnit";
-import Carousel from "react-native-snap-carousel";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../blue_modules/currency";
 import { authorize } from "react-native-app-auth";
@@ -55,7 +57,7 @@ import BalanceView from "./BalanceView";
 import BottomBar from "./BottomBar";
 const A = require('../../../blue_modules/analytics');
 import CreateLightningAccount from "./CreateLightningAccount";
-import WalletsView from "./WalletsView";
+import WalletsView, { WalletsViewHandle } from "./WalletsView";
 import SendListNew from "./SendListNew";
 import TopupList from "./TopupList";
 import WithdrawList from "./WithdrawList";
@@ -118,15 +120,117 @@ function formatStrikeNumber(num: number) {
   return `${millions.toFixed(1)}M`;
 }
 
+/**
+ * Find the hot Bitcoin wallet that should back the Hot Vault when the saved
+ * `walletID` pointer no longer resolves to a wallet (an orphaned vault).
+ *
+ * Background: Cypher Box exposes a single hot vault, but it's stored as an
+ * ordinary BlueWallet wallet and tracked only by `walletID` in the persisted
+ * auth store. If that pointer drifts out of sync with the wallet that's still
+ * in BlueApp (a `getID()` change across an app update, or any error that
+ * re-points/blanks it), the home screen finds nothing and drops the user on
+ * the empty "Create/Unlock Hot Vault" card even though the wallet, and its
+ * funds, are right there. This re-discovers it so the UI can self-heal.
+ *
+ * Selection:
+ *  - type must be the one Cypher Box creates for a hot vault
+ *    (HDSegwitBech32Wallet / BIP84). This cleanly excludes the cold vault,
+ *    which is a watch-only wallet (watch-only stores its xpub in `secret`,
+ *    so filtering on `secret` would NOT exclude it — type is the right key).
+ *  - never the cold-storage wallet id.
+ *  - normally exactly one candidate. If an error left several, prefer one
+ *    with a balance or transaction history; otherwise the first.
+ *
+ * Returns undefined when there's genuinely no hot wallet to adopt — the
+ * "Create Hot Vault" card is then correct.
+ */
+function findOrphanHotVaultWallet(
+  allWallets: AbstractWallet[],
+  coldStorageID: string | undefined,
+): AbstractWallet | undefined {
+  const candidates = (allWallets || []).filter((w) => {
+    try {
+      return !!w && w.type === HDSegwitBech32Wallet.type && w.getID() !== coldStorageID;
+    } catch {
+      return false;
+    }
+  });
+  if (candidates.length <= 1) return candidates[0];
+  // Multiple hot wallets — only reachable through an error path. Prefer the
+  // one that actually holds/held funds so we don't surface an empty stray.
+  const used = candidates.find((w) => {
+    try {
+      const bal = Number((w as any).getBalance?.() ?? 0);
+      const txs =
+        typeof (w as any).getTransactions === 'function'
+          ? (w as any).getTransactions().length
+          : 0;
+      return bal > 0 || txs > 0;
+    } catch {
+      return false;
+    }
+  });
+  return used ?? candidates[0];
+}
+
 export default function HomeScreen({ route }: Props) {
   const { navigate } = useNavigation();
   const routeName = useRoute().name;
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, hasSeenCustodialWarning } = useAuthStore();
+  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
+  // Ark boot restore: reopens the wallet from on-disk state (datadir +
+  // Keychain mnemonic) once per mount, and reconciles zustand so the
+  // carousel reflects reality. Handles Metro reload + zustand/disk drift.
+  useArkRestoreOnBoot();
+  // Ark sync: starts automatically when isArkAuth flips true. Runs an
+  // initial fetch + 30s interval + foreground-kick for balance / vtxos /
+  // chain tip. No-op when Ark isn't set up.
+  const arkSync = useArkSync();
+  // Ark exit-destination backfill: derives the reserved-slot address from
+  // the Hot Vault and writes it to `arkExitDestinationAddress` if unset.
+  // Reactive so it covers create / recover / existing-user upgrade paths
+  // with a single mount. No-op once the destination is set or when there
+  // is no Hot Vault.
+  useArkExitDestinationBackfill();
+  // Arkoor receive prompt: detects new arkoor VTXOs (Lightning receives
+  // typically materialise as arkoor with a ~3-day TTL the SDK doesn't
+  // surface as expiryHeight) and shows a one-time educational popup +
+  // schedules a 24h-before-expiry OS push. Opt-out via Vault tab toggle.
+  useArkoorReceivePrompt();
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [carouselPage, setCarouselPage] = useState(0);
+  const [carouselTotal, setCarouselTotal] = useState(0);
+  const [carouselKinds, setCarouselKinds] = useState<Array<'fiat' | 'lightning' | 'ark'>>([]);
+  const walletsViewRef = useRef<WalletsViewHandle>(null);
+  // Smooth entrance animation — fires every time HomeScreen gains focus,
+  // not just on first mount. Without this, navigating back from another
+  // screen pops the wallet/vault carousels in instantly which reads as
+  // choppy. Opacity 0→1 + a small upward drift gives an iOS-style fade-in
+  // that takes the edge off the layout settle.
+  //
+  // Uses native driver — opacity + transform are both supported on the
+  // native side, so the animation runs off the JS thread and stays smooth
+  // even while the snap-carousels mount their internal animated values.
+  const enterAnim = useRef(new Animated.Value(0)).current;
+  const enterTranslate = enterAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [12, 0], // 12pt drift up — subtle, matches iOS push transition
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      enterAnim.setValue(0);
+      Animated.timing(enterAnim, {
+        toValue: 1,
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }, [enterAnim])
+  );
   const [balance, setBalance] = useState(0);
   const [strikeBalance, setStrikeBalance] = useState(0);
   const [currency, setCurrency] = useState('USD');
@@ -163,7 +267,6 @@ export default function HomeScreen({ route }: Props) {
   const refSwapRBSheet = useRef<any>(null);
   const [receivedListSecondTab, setReceivedListSecondTab] = useState(false);
   const [initialVaultType, setInitialVaultType] = useState<'hot' | 'cold' | null>(null);
-  const carouselRef = useRef<Carousel<any>>(null);
 
   // Sync local currency state with store's strikeCurrency
   useEffect(() => {
@@ -223,36 +326,54 @@ export default function HomeScreen({ route }: Props) {
 
   const getWallet = async () => {
     try {
-      if (!walletID) {
-        setIsAllDone(false);
-        return;
-      }
-      // const allWallets = wallets.concat(false);
-      const walletTemp = wallets.find((w: AbstractWallet) => w.getID() === walletID);
+      // Resolve the hot vault by its saved pointer. If the pointer is missing
+      // or no longer matches any wallet (orphaned vault — see
+      // findOrphanHotVaultWallet), self-heal by adopting the hot wallet that's
+      // still in BlueApp instead of dropping the user on the empty "create"
+      // card. setWalletID persists the re-link and re-fires this effect; we
+      // also keep the adopted wallet for this pass so the card fills now.
+      let walletTemp = walletID
+        ? wallets.find((w: AbstractWallet) => w.getID() === walletID)
+        : undefined;
       if (!walletTemp) {
-        console.warn('Wallet not found for ID:', walletID);
+        const adopted = findOrphanHotVaultWallet(wallets, coldStorageWalletID);
+        if (adopted) {
+          console.log(
+            '[HotVault adopt] walletID', walletID || '(none)',
+            'did not resolve; adopting orphaned hot wallet', adopted.getID(),
+          );
+          setWalletID(adopted.getID());
+          walletTemp = adopted;
+        }
+      }
+      if (!walletTemp) {
+        if (walletID) console.warn('Wallet not found for ID:', walletID);
         setIsAllDone(false);
         return;
       }
 
       // Subscribe vault addresses to GroundControl for push notifications
       try {
-        const Notifications = require('../../../blue_modules/notifications');
+        const Notifications = require('../../../blue_modules/notifications').default;
         const pushTokenData = await Notifications.getPushToken();
         if (__DEV__) console.log('[GroundControl] Push token:', pushTokenData);
         
-        if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
-          console.warn('[GroundControl] No push token - notifications not enabled');
-          return;
-        }
-        
-        const externalAddresses = typeof walletTemp.getAllExternalAddresses === 'function' ? walletTemp.getAllExternalAddresses() : [];
-        const internalAddresses = typeof walletTemp.getAllInternalAddresses === 'function' ? walletTemp.getAllInternalAddresses() : [];
-        const allAddresses = [...externalAddresses, ...internalAddresses];
-        if (__DEV__) console.log('[GroundControl] Subscribing addresses:', allAddresses.length, allAddresses.slice(0, 2));
-        if (allAddresses.length > 0) {
-          await Notifications.majorTomToGroundControl(allAddresses, [], []);
-          if (__DEV__) console.log('[GroundControl] Subscribed hot vault addresses:', allAddresses.length);
+        // Best-effort subscription. A missing push token must NEVER gate vault
+        // rendering -- it only skips this subscription. This block used to
+        // `return` on a missing token, which left every user without
+        // notifications stuck on "Unlock Hot Vault" even though the wallet was
+        // resolved. setWallet / setHasSavingVault below now always run.
+        if (pushTokenData?.token && pushTokenData?.os) {
+          const externalAddresses = typeof walletTemp.getAllExternalAddresses === 'function' ? walletTemp.getAllExternalAddresses() : [];
+          const internalAddresses = typeof walletTemp.getAllInternalAddresses === 'function' ? walletTemp.getAllInternalAddresses() : [];
+          const allAddresses = [...externalAddresses, ...internalAddresses];
+          if (__DEV__) console.log('[GroundControl] Subscribing addresses:', allAddresses.length, allAddresses.slice(0, 2));
+          if (allAddresses.length > 0) {
+            await Notifications.majorTomToGroundControl(allAddresses, [], []);
+            if (__DEV__) console.log('[GroundControl] Subscribed hot vault addresses:', allAddresses.length);
+          }
+        } else if (__DEV__) {
+          console.log('[GroundControl] No push token - skipping subscription (vault still renders)');
         }
       } catch (notifyErr) {
         console.warn('[GroundControl] Failed to subscribe addresses:', notifyErr);
@@ -265,11 +386,19 @@ export default function HomeScreen({ route }: Props) {
       setBalanceVault(balanceTemp)
       const hasVault = walletTemp.secret ? true : false;
       setHasSavingVault(hasVault)
+      // Activity log: diff the wallet's tx list for new on-chain receives.
+      // Failure is non-fatal — the rest of the home screen renders fine
+      // and the next refresh tick will retry.
+      try {
+        processHotVaultTxsForActivity(walletTemp as any);
+      } catch (diffErr) {
+        if (__DEV__) console.warn('[Activity] hot-vault tx diff failed:', diffErr);
+      }
       if (wallets && walletID) {
         setIsAllDone(!!walletTemp);
       } else {
         setIsAllDone(false)
-      }  
+      }
     } catch (error) {
       console.error('Error getting wallet:', error);
     } finally {
@@ -289,21 +418,23 @@ export default function HomeScreen({ route }: Props) {
 
       // Subscribe cold storage addresses to GroundControl for push notifications
       try {
-        const Notifications = require('../../../blue_modules/notifications');
+        const Notifications = require('../../../blue_modules/notifications').default;
         const pushTokenData = await Notifications.getPushToken();
         
-        if (!pushTokenData || !pushTokenData.token || !pushTokenData.os) {
-          console.warn('[GroundControl] No push token - notifications not enabled');
-          return;
-        }
-        
-        const externalAddresses = walletTemp.getAllExternalAddresses ? walletTemp.getAllExternalAddresses() : [];
-        const internalAddresses = walletTemp.getAllInternalAddresses ? walletTemp.getAllInternalAddresses() : [];
-        const allAddresses = [...externalAddresses, ...internalAddresses];
-        if (__DEV__) console.log('[GroundControl] Subscribing cold storage addresses:', allAddresses.length);
-        if (allAddresses.length > 0) {
-          await Notifications.majorTomToGroundControl(allAddresses, [], []);
-          if (__DEV__) console.log('[GroundControl] Subscribed cold storage addresses:', allAddresses.length);
+        // Best-effort subscription; a missing push token must NEVER gate vault
+        // rendering (see getWallet). setColdStorageWallet / setHasColdStorage
+        // below now always run.
+        if (pushTokenData?.token && pushTokenData?.os) {
+          const externalAddresses = walletTemp.getAllExternalAddresses ? walletTemp.getAllExternalAddresses() : [];
+          const internalAddresses = walletTemp.getAllInternalAddresses ? walletTemp.getAllInternalAddresses() : [];
+          const allAddresses = [...externalAddresses, ...internalAddresses];
+          if (__DEV__) console.log('[GroundControl] Subscribing cold storage addresses:', allAddresses.length);
+          if (allAddresses.length > 0) {
+            await Notifications.majorTomToGroundControl(allAddresses, [], []);
+            if (__DEV__) console.log('[GroundControl] Subscribed cold storage addresses:', allAddresses.length);
+          }
+        } else if (__DEV__) {
+          console.log('[GroundControl] No push token - skipping cold subscription (vault still renders)');
         }
       } catch (notifyErr) {
         console.warn('[GroundControl] Failed to subscribe cold storage addresses:', notifyErr);
@@ -385,6 +516,16 @@ export default function HomeScreen({ route }: Props) {
                   setStrikeConvertedBalance(directRate);
               }
           }
+          // Activity log: best-effort poll of /invoices for newly-paid
+          // Strike LN receives. Strike has no real-time hook, so this
+          // only fires when something else triggers loadStrikeData
+          // (HomeScreen focus / refresh). First-sync suppressed to
+          // avoid backfilling existing receive history.
+          try {
+              await processStrikeInvoicesForActivity();
+          } catch (diffErr) {
+              if (__DEV__) console.warn('[Activity] strike invoice diff failed:', diffErr);
+          }
       } catch (error) {
           console.error('Error loading Strike data:', error);
       }
@@ -425,10 +566,9 @@ export default function HomeScreen({ route }: Props) {
         loadPayments();
       } else {
         // Not logged into Coinos - use BlueWallet's native rate for vaults
-        // Convert from USD-per-BTC to USD-per-sat (matchedRate format used by keyboard)
         try {
           const blueWalletRate = await getFiatRate('USD');
-          setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
+          setMatchedRate(blueWalletRate || 0);
           setMatchedRateBTC(blueWalletRate || 0);
         } catch (err) {
           if (__DEV__) console.log('BlueWallet rate error:', err);
@@ -450,48 +590,95 @@ export default function HomeScreen({ route }: Props) {
     // if(!coldStorageWalletID){
     //   setIsColdWalletLoaded(false)
     // }
-    getWallet();
-    coldStorageWalletID ? getColdStorageWallet() : setIsColdWalletLoaded(false);
-    handleToken();
+    // TEMPORARY: timing telemetry for the cold-load freeze. Bam reported a
+    // 20–30s blank/spinner state on every reload + rebuild. These logs
+    // attribute the wait time to specific awaits in the on-mount chain so
+    // we know which one to optimize (Electrum fetchBalance, GroundControl
+    // subscribe, CoinOS token refresh, etc.). Remove once the slow path
+    // is identified and addressed.
+    if (__DEV__) console.log('[HomeMount] effect fire', Date.now(), { isAuth: !!isAuth, hasToken: !!token, hasWallet: !!walletID, hasCold: !!coldStorageWalletID });
+    // DIAGNOSTIC: dump the full BlueApp wallet list vs the saved vault
+    // pointers, so an orphaned-vault report ("hot vault shows the Create card
+    // but the wallet still exists") can be confirmed: is there an
+    // HDsegwitBech32 wallet whose id does NOT equal walletID? Remove once the
+    // adopt fix is verified in the field.
+    if (__DEV__) {
+      try {
+        console.log(
+          '[Wallets dump] count=', wallets?.length ?? 0,
+          '| walletID=', walletID || '(none)',
+          '| coldStorageWalletID=', coldStorageWalletID || '(none)',
+        );
+        (wallets || []).forEach((w: any, i: number) => {
+          const safe = (fn: () => any) => { try { return fn(); } catch { return '?'; } };
+          console.log(
+            '[Wallets dump]  #' + i,
+            'id=', safe(() => w.getID()),
+            'type=', w?.type,
+            'label=', safe(() => w.getLabel?.()),
+            'hasSecret=', !!w?.secret,
+            'balance=', safe(() => w.getBalance?.()),
+          );
+        });
+      } catch (e) {
+        console.log('[Wallets dump] failed:', e);
+      }
+    }
+    const _t0 = Date.now();
+    Promise.resolve(getWallet()).finally(() => __DEV__ && console.log('[HomeMount] getWallet done +', Date.now() - _t0, 'ms'));
+    if (coldStorageWalletID) {
+      Promise.resolve(getColdStorageWallet()).finally(() => __DEV__ && console.log('[HomeMount] getColdStorageWallet done +', Date.now() - _t0, 'ms'));
+    } else {
+      setIsColdWalletLoaded(false);
+    }
+    Promise.resolve(handleToken()).finally(() => __DEV__ && console.log('[HomeMount] handleToken done +', Date.now() - _t0, 'ms'));
   }, [isAuth, token, wallets, walletID, coldStorageWalletID]);
 
-  // CoinOS WebSocket for real-time payment notifications
-  useEffect(() => {
-    if (isAuth && token) {
-      if (__DEV__) console.log('[CoinOS WS] Auth detected, connecting...');
+  // CoinOS WebSocket for real-time payment notifications.
+  //
+  // Scoped to HomeScreen *focus*, not just mount: navigating away (Hot Vault
+  // flow, Ark screens, Settings) tears the socket down so the WS reconnect
+  // loop never runs during unrelated flows. Background push notifications
+  // (registered in the effect below) still deliver payments while off-screen.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuth || !token) {
+        disconnectCoinosSocket();
+        setOnPaymentReceived(null);
+        return;
+      }
+      if (__DEV__) console.log('[CoinOS WS] HomeScreen focused, connecting...');
       setCoinosUsername(user?.username || user);
       setOnPaymentReceived((data) => {
         if (__DEV__) console.log('[CoinOS WS] Payment callback, refreshing balance...');
         handleUser();
         loadPayments();
       });
-
-      // Connect WS and register push — token already refreshed in handleToken
-      const initCoinosConnection = async () => {
-        connectCoinosSocket();
-
-        // Register push token for background notifications (with fresh token)
-        try {
-          const Notifications = require('../../../blue_modules/notifications');
-          const pushTokenData = await Notifications.default.getPushToken();
-          if (pushTokenData?.token && user) {
-            registerPushToken(user?.username || user, pushTokenData.token);
-          }
-        } catch (error) {
-          console.warn('[Push Token] Registration failed:', error);
-        }
+      connectCoinosSocket();
+      return () => {
+        if (__DEV__) console.log('[CoinOS WS] HomeScreen unfocused, disconnecting');
+        disconnectCoinosSocket();
+        setOnPaymentReceived(null);
       };
+    }, [isAuth, token, user])
+  );
 
-      initCoinosConnection();
-    } else {
-      disconnectCoinosSocket();
-      setOnPaymentReceived(null);
-    }
-    return () => {
-      disconnectCoinosSocket();
-      setOnPaymentReceived(null);
-    };
-  }, [isAuth, token]);
+  // Push token registration is session-scoped, not screen-scoped: only re-run
+  // when auth changes, so navigating between screens doesn't re-register.
+  useEffect(() => {
+    if (!isAuth || !token || !user) return;
+    (async () => {
+      try {
+        const Notifications = require('../../../blue_modules/notifications').default;
+        const pushTokenData = await Notifications.getPushToken();
+        if (pushTokenData?.token) {
+          registerPushToken(user?.username || user, pushTokenData.token);
+        }
+      } catch (error) {
+        console.warn('[Push Token] Registration failed:', error);
+      }
+    })();
+  }, [isAuth, token, user]);
 
   useEffect(() => {
     if (isAuth && token && ((!vaultAddress.startsWith('ln') && !vaultAddress.includes('@')) || (!coldStorageAddress.startsWith('ln') && !coldStorageAddress.includes('@'))) && !recommendedFee) {
@@ -634,61 +821,65 @@ export default function HomeScreen({ route }: Props) {
   );
 
   const handleUser = async () => {
+    // Ark-only users (no CoinOS auth) were hitting `getMe()` on every
+    // pull-to-refresh and tripping the catch block → "Failed to load
+    // balance" toast. The CoinOS-specific work (/user fetch, currency
+    // rates, balance/user state) is now gated behind `isAuth && token`;
+    // the BlueWallet fiat rate still runs for everyone because vault
+    // screens and the Ark card depend on it.
+    const coinosAuthed = !!(isAuth && token);
+    let coinosCallFailed = false;
     try {
-      // Always fetch exchange rates first — needed for vault USD conversion
-      let coinosRate = 0;
-      let blueWalletRate = 0;
-      let blueWalletRateRaw = 0; // USD-per-BTC (for vaults)
-
-      // Try to get Coinos data if logged in (for Coinos-specific balance)
-      const response = await getMe();
-
-      if (response) {
-        // Get Coinos rate for Coinos balance display (PRIMARY source)
-        try {
-          const responsetest = await getCurrencyRates();
-          const currency = btc(1);
-          const matched = matchKeyAndValue(responsetest, 'USD');
-          coinosRate = (matched || 0) * currency;
-          if (__DEV__) console.log('[Coinos] rate from API:', coinosRate);
-        } catch (rateError) {
-          if (__DEV__) console.log('[Coinos] rate API failed, trying BlueWallet fallback');
-        }
-      }
-
-      // Use Coinos rate if available, fallback to BlueWallet
+      // Single source of truth for CoinOS-side rate: BlueWallet's USD/BTC rate.
+      // Stored as USD-per-BTC. Do not use the CoinOS rate API or Strike rate
+      // here — both produced wrong-currency or zero values in past iterations.
+      let finalRate = 0;
       try {
-        blueWalletRateRaw = await getFiatRate('USD') || 0;
-        blueWalletRate = blueWalletRateRaw * btc(1); // Convert USD-per-BTC to USD-per-sat
+        finalRate = (await getFiatRate('USD')) || 0;
       } catch (rateErr) {
         if (__DEV__) console.log('BlueWallet rate error:', rateErr);
       }
-
-      const finalRate = coinosRate || blueWalletRate;
       setMatchedRate(finalRate);
-      setMatchedRateBTC(blueWalletRateRaw || (coinosRate ? coinosRate / btc(1) : 0));
-      if (__DEV__) console.log('[Coinos] matchedRate set to:', finalRate, '(coinos:', coinosRate, ', bluewallet:', blueWalletRate, ')');
+      setMatchedRateBTC(finalRate);
+      if (__DEV__) console.log('[Coinos] matchedRate set to (USD/BTC):', finalRate);
 
+      // CoinOS user/balance fetch is gated on auth so Ark-only users don't
+      // hit a 401 and pollute the error log. The coinosCallFailed flag
+      // distinguishes between "CoinOS-authed user lost their balance fetch"
+      // (toast — they had something to load) and "Ark-only user, no balance
+      // to fetch in the first place" (silent).
+      let response: any = null;
+      if (coinosAuthed) {
+        try {
+          response = await getMe();
+        } catch (coinosErr) {
+          console.error('CoinOS /user fetch failed:', coinosErr);
+          coinosCallFailed = true;
+        }
+      }
       if (response) {
-        // Calculate converted rate using the same rate
-        setConvertedRate(finalRate * response.balance);
+        // convertedRate is the USD value of the CoinOS balance. balance is in sats,
+        // finalRate is USD-per-BTC, so multiply by btc(1) (= 1 / SATS) to get USD.
+        setConvertedRate(finalRate * response.balance * btc(1));
         setCurrency("USD")
         setBalance(response?.balance ?? 0);
         setUser(response?.username);
       }
-    } catch (error) {
-      console.error('error: ', error);
-      // Try BlueWallet's native rate as absolute fallback
-      try {
-        const blueWalletRate = await getFiatRate('USD');
-        setMatchedRate(blueWalletRate ? blueWalletRate * btc(1) : 0);
-        setMatchedRateBTC(blueWalletRate || 0);
-      } catch (bwError) {
-        console.error('BlueWallet rate failed:', bwError);
-        setMatchedRate(0);
-        setMatchedRateBTC(0);
+
+      if (coinosCallFailed) {
+        SimpleToast.show("Failed to load CoinOS balance. Pull to refresh.", SimpleToast.SHORT);
       }
-      SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
+    } catch (error) {
+      console.error('handleUser unexpected error:', error);
+      // No rate-refetch fallback — finalRate is already set in the try
+      // block above (or 0 on its inner catch). Reaching this catch
+      // means a non-rate error fired AFTER setMatchedRate*, so the
+      // rate state is already valid. Toast is gated on coinosAuthed
+      // so Ark-only users don't see a "Failed to load balance" alert
+      // for a balance they don't have.
+      if (coinosAuthed) {
+        SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
+      }
     } finally {
       setIsLoading(false)
       setRefreshing(false);
@@ -706,11 +897,12 @@ export default function HomeScreen({ route }: Props) {
   };
 
   const loginClickHandler = () => {
-    if (hasSeenCustodialWarning) {
-      dispatchNavigate('CheckingAccountLogin');
-    } else {
-      dispatchNavigate('CheckingAccountIntro');
-    }
+    // Custodian warning was previously a one-time gate on the way into
+    // this flow (CheckingAccountIntro -> CheckingAccountLogin). It's now
+    // an on-demand info screen reached via the "?" icon next to the
+    // CUSTODIAL section header in CheckingAccountLogin, so we go straight
+    // to the provider picker.
+    dispatchNavigate('CheckingAccountLogin');
   };
 
   const onBarScanned = (value: any) => {
@@ -751,6 +943,12 @@ export default function HomeScreen({ route }: Props) {
         if (__DEV__) console.log('Error refreshing Strike balance:', e);
         SimpleToast.show("Failed to refresh Strike balance.", SimpleToast.SHORT);
       }
+    }
+    // Pull-to-refresh also kicks an immediate Ark sync. Cheap (SQLite
+    // reads + one esplora call) and in-flight-guarded so repeated pulls
+    // don't stack.
+    if (isArkAuth) {
+      await arkSync.refresh();
     }
   };
 
@@ -860,17 +1058,75 @@ export default function HomeScreen({ route }: Props) {
           :
           (
             <>
-              <View style={{ height: 40 }} />
-              <Header onBarScanned={onBarScanned} />
-              <View style={{ transform: [{ translateY: -20 }] }}>
-                <BalanceView
-                  // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
-                  balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)).toFixed(8)} BTC`}
-                  convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)))).toFixed(2)}`}
-                  showAddAccount={allBTCWallets.length < 2 && !isLoading}
-                  onAddAccount={() => hasSeenCustodialWarning ? dispatchNavigate('CheckingAccountLogin') : dispatchNavigate('CheckingAccountIntro')}
+              <View style={{ height: 50 }} />
+              {/*
+                Header now hosts the "Scan with" picker — left-side scan
+                icon → modal → camera → routes to the chosen wallet's send
+                screen with the scanned destination pre-filled. The legacy
+                `onBarScanned` prop is kept as a fallback for the default
+                branch in handleWalletPicked.
+              */}
+              {/* Ark-only: lift the "Total Assets" header row (title + scan/
+                  settings/activity icons) up a bit. translateY only moves it
+                  visually (no reflow), so the balance box below stays put -- we
+                  move the header, NOT the box. Other combos keep 0 (unchanged). */}
+              <View style={{ transform: [{ translateY: (!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? -20 : 0 }] }}>
+                <Header
+                  onBarScanned={onBarScanned}
+                  matchedRate={matchedRate}
+                  matchedRateBTC={matchedRateBTC}
+                  currency={currency}
+                  wallet={wallet}
+                  coldStorageWallet={coldStorageWallet}
                 />
               </View>
+              {/* All-three nudge: when CoinOS + Strike + Ark are all
+                  connected, the BalanceView grows taller (extra
+                  carousel content + ark-balance line). The catch-all
+                  -53 below was authored for ≤2 wallets and over-pulls
+                  the black box above the "Total Assets" header on iOS,
+                  while also stretching the inner Strike fiat / rate
+                  text down into the Withdraw/Top-up buttons because
+                  the snap-carousel has to fit a 3-dot indicator row
+                  underneath. The previous code had this case Android-
+                  only with -18; iOS fell through to -53 and broke.
+                  Single all-three branch now, platform-agnostic. */}
+              {/* No-Strike combos (CoinOS alone / Ark alone / CoinOS+Ark)
+                  shift Total Balance down 15pt vs the prior layout —
+                  Bam's call (2026-05-10): the BalanceView felt cramped
+                  against the header in those configurations. Strike-
+                  included cases stay at their existing translateY
+                  values — that layout was already tuned correctly. */}
+              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -25 /* lift Total Balance card 25pt up */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? 2 /* no LN wallet: +30 vs prior -28, drop the Total Balance box + Unlock-Lightning card + send/receive so they stop overlapping the "Total Assets" header */ : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? -18 /* Strike+Ark (no Coinos): balance box down 15pt vs prior -33 so the header doesn't crowd the Ark card on this combo */ : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -18 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -18 : (!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? -38 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -30 /* Coinos+Ark: balance box down a touch toward the card, but keep clear space above the cards (tighten the 2-box cluster modestly) */ : -53 }, { translateY: enterTranslate }] }}>
+                <BalanceView
+                  // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
+                  // Ark balance is stored in zustand as plain sats (see
+                  // setArkBalance in useArkSync). Multiply by btc(1) (=1e-8)
+                  // to fold it into the BTC total, and by matchedRate (USD
+                  // per sat) for the fiat total. Gated on isArkAuth so an
+                  // orphaned `arkBalance` state from a previous wallet
+                  // doesn't pollute the headline before the boot-restore
+                  // hook clears it.
+                  balance={`${((btc(1) * (Number(balance) || 0)) + Number(strikeUser?.[0]?.available || 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0) + (isArkAuth ? (Number(arkBalance) || 0) * btc(1) : 0)).toFixed(8)} BTC`}
+                  convertedRate={`$${((strikeConvertedBalance || 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0))) + (isArkAuth ? (Number(arkBalance) || 0) * Number(matchedRate || 0) * btc(1) : 0)).toFixed(2)}`}
+                  // Show "+ Add Account" until the user has all three
+                  // distinct rails connected. The previous `length < 2`
+                  // gate hid the button as soon as any two were added,
+                  // which meant a user who connected CoinOS + Ark
+                  // couldn't reach the Lightning-account menu to add
+                  // Strike. We gate per-rail instead of by raw count
+                  // because the same wallet shouldn't be addable twice.
+                  showAddAccount={(!isAuth || !isStrikeAuth || !isArkAuth) && !isLoading}
+                  // Custodian warning is no longer a creation step — see
+                  // loginClickHandler comment above. Go straight to the
+                  // provider picker on every add-account tap.
+                  onAddAccount={() => dispatchNavigate('CheckingAccountLogin')}
+                  carouselPage={carouselPage}
+                  carouselTotal={carouselTotal}
+                  carouselKinds={carouselKinds}
+                  onDotPress={(i) => walletsViewRef.current?.snapTo(i)}
+                />
+              </Animated.View>
             </>
           )}
 
@@ -879,8 +1135,25 @@ export default function HomeScreen({ route }: Props) {
                     {/* Add Account button moved into BalanceView */}
           {/* Lightning Accounts title moved into WalletsView carousel */}
 
-          <View style={{ transform: [{ translateY: -20 }] }}>
-            {!isAuth && !isLoading && !isStrikeAuth ? (
+          {/* No-Strike combos shift the wallet-cards row down 10pt vs
+              the prior layout — paired with the BalanceView shift above
+              so the gap between them stays the same. Strike-included
+              cases stay at their existing translateY values. */}
+          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -30 /* lift wallet cards + circular view + send/receive group 30pt up */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? 2 /* no LN wallet: +30 vs prior -28, drop the Total Balance box + Unlock-Lightning card + send/receive so they stop overlapping the "Total Assets" header */ : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -45 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -23 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -25 : (!isLoading && isStrikeAuth && isArkAuth) ? -30 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -13 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 2 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -38 : -68 }, { translateY: enterTranslate }] }}>
+            {/*
+              Carousel-vs-CTA gate. Falls through to CreateLightningAccount only
+              when NO Lightning provider (CoinOS / Strike / Ark) is connected.
+              Adding isArkAuth here is what makes a freshly-created Ark wallet
+              actually appear in the carousel — without it, an Ark-only user
+              still sees the "Create Lightning Account" CTA on Home.
+              translateY is -80 for Ark-only (vs -58 for custodial wallets)
+              because the BalanceView's showAddAccount button (~40pt) adds more
+              top-weight to the black box than the page-indicator rows (~17pt)
+              that show when multiple wallet tabs exist, causing snap-carousel
+              to measure a slightly different Y for the active item. The extra
+              22pt compensates for that centroid shift.
+            */}
+            {!isAuth && !isLoading && !isStrikeAuth && !isArkAuth ? (
               <>
                 <CreateLightningAccount onPress={loginClickHandler} />
                 {(hasSavingVault || hasColdStorage) && (
@@ -908,6 +1181,7 @@ export default function HomeScreen({ route }: Props) {
               </>
             ) : !isLoading && (
               <WalletsView
+                ref={walletsViewRef}
                 balance={balance}
                 convertedRate={convertedRate}
                 currency={currency}
@@ -924,19 +1198,29 @@ export default function HomeScreen({ route }: Props) {
                 strikeConvertedBalance={Number(strikeConvertedBalance || 0)}
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
                 homeMessage={homeMessage}
+                onPageChange={(index, total, kinds) => {
+                  setCarouselPage(index);
+                  setCarouselTotal(total);
+                  setCarouselKinds(kinds);
+                }}
               />
             )}
-          </View>
+          </Animated.View>
 
           {/* */}
 
+          {/* Android-only nudge (+20pt): the vaults + withdraw/top-up
+              section sits 20pt too high on Android vs iOS. iOS layout
+              is correct — only Android needs the bump. Applied to both
+              the loading-spinner placeholder and the BottomBar so they
+              stay aligned across the loading transition. */}
           {!isLoading && (isWalletLoaded || isColdWalletLoaded) &&
-            <View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', transform: [{ translateY: (isAuth || isStrikeAuth) ? -20 : -60 }]}}>
+            <Animated.View style={{height: 205, marginTop: 5, marginBottom: 0, justifyContent: 'center', alignItems: 'center', opacity: enterAnim, transform: [{ translateY: ((isAuth || isStrikeAuth || isArkAuth) ? -30 : -70) + (Platform.OS === 'android' ? 20 : 0) }, { translateY: enterTranslate }]}}>
               <ActivityIndicator size="small" color="#23C47F" />
-            </View>
+            </Animated.View>
           }
           {!isLoading && !isWalletLoaded && !isColdWalletLoaded &&
-            <View style={{height: 205, marginBottom: 20, transform: [{ translateY: (isAuth || isStrikeAuth) ? -20 : -60 }]}}>
+            <Animated.View style={{height: 205, marginBottom: 20, opacity: enterAnim, transform: [{ translateY: ((isAuth || isStrikeAuth || isArkAuth) ? -30 : -70) + (Platform.OS === 'android' ? 20 : 0) }, { translateY: enterTranslate }]}}>
               <BottomBar
                 balance={balance}
                 balanceVault={balanceVault}
@@ -959,7 +1243,7 @@ export default function HomeScreen({ route }: Props) {
                 wallet={wallet}
                 refTopupRBSheet={refTopupRBSheet}
               />
-            </View>
+            </Animated.View>
           }
         </View>
       <RBSheet
@@ -997,7 +1281,14 @@ export default function HomeScreen({ route }: Props) {
           setReceivedListSecondTab={setReceivedListSecondTab}
           refRBSheet={refRBSheet}
           receiveType={receiveType}
-          matchedRate={matchedRateStrike}
+          // Rate fallback chain: prefer Strike's rate (drives the EUR
+          // display for EUR Strike accounts), but fall back to the
+          // BlueWallet-derived `matchedRate` when Strike isn't logged
+          // in. Previous version was hard-wired to `matchedRateStrike`,
+          // which is 0 until the Strike rate fetch runs — so the
+          // CoinOS Lightning invoice keyboard displayed "$0.00" for
+          // any sat amount when Strike was logged out.
+          matchedRate={matchedRateStrike || matchedRate}
           currency={strikeUser?.[1]?.currency || 'USD'}
           wallet={wallet}
           coldStorageWallet={coldStorageWallet}
@@ -1037,7 +1328,7 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <SendListNew refRBSheet={refSendRBSheet} reopenSendSheet={reopenSendSheet} receiveType={receiveType} matchedRate={matchedRateStrike || matchedRate} matchedRateBTC={matchedRateBTC} currency={strikeUser?.[1]?.currency || 'USD'} wallet={wallet} coldStorageWallet={coldStorageWallet} />
+        <SendListNew refRBSheet={refSendRBSheet} reopenSendSheet={reopenSendSheet} receiveType={receiveType} matchedRate={matchedRateBTC} matchedRateBTC={matchedRateBTC} currency="USD" wallet={wallet} coldStorageWallet={coldStorageWallet} />
       </RBSheet>
 
       <RBSheet
@@ -1156,14 +1447,21 @@ export default function HomeScreen({ route }: Props) {
           enabled: false,
         }}
       >
-        <SwapSheet 
+        <SwapSheet
           refSwapRBSheet={refSwapRBSheet}
           user={user}
           strikeMe={strikeMe}
-          isAuth={isAuth}
-          isStrikeAuth={isStrikeAuth}
-          coinosBalance={balance}
-          strikeBalance={strikeBalance}
+          // Per-rail balances (sats) — keyed by lightningSwap provider id.
+          // SwapSheet forwards the source-rail's value as `sourceBalance`
+          // to SwapAmount so the keyboard's max-button works regardless
+          // of which provider is selected. Reads `arkBalance` directly
+          // from zustand via getState() since it's not a HomeScreen
+          // useState-owned value like coinos/strike are.
+          balanceByProvider={{
+            coinos: Number(balance) || 0,
+            strike: Number(strikeBalance) || 0,
+            ark: Number(useAuthStore.getState().arkBalance || 0),
+          }}
         />
       </RBSheet>
       

@@ -1,5 +1,9 @@
 import useAuthStore from '@Cypher/stores/authStore';
 import SimpleToast from "react-native-simple-toast";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { updateExchangeRate, EXCHANGE_RATES_STORAGE_KEY } from "../../blue_modules/currency";
+import { getFiatRate } from "../../models/fiatUnit";
 
 const BASE_URL = 'https://coinos.io/api';
 
@@ -66,6 +70,19 @@ if (__DEV__) console.log('Response status:', response.status);
     
     if (response.status === 401) {
       const errorText = await response.text();
+      // Diagnostic — multiple users have reported "Captcha verification
+      // failed" on CoinOS login but our prior throw discarded the raw
+      // response. Log the literal body + response headers so we can tell
+      // apart: "failed captcha" (Google scored low / domain mismatch /
+      // action mismatch), "invalid recaptcha" (siteKey wrong), or anything
+      // else CoinOS might surface. Trim/limit so we don't dump huge bodies.
+      console.log(
+        '[CoinOS login 401]',
+        'bodyLen=', errorText?.length ?? 0,
+        'bodyHead=', JSON.stringify(errorText?.slice?.(0, 300) ?? ''),
+        'contentType=', response.headers.get('content-type'),
+        'recaptchaTokenLen=', recaptchaToken?.length ?? 0,
+      );
       if (errorText === 'failed captcha' || errorText.includes('captcha')) {
         throw new Error('Captcha verification failed. Please try again.');
       }
@@ -94,8 +111,18 @@ if (__DEV__) console.log('Response status:', response.status);
  * Silently refresh CoinOS token using stored Keychain credentials.
  * Returns the new token string on success, or null if refresh fails.
  * Does NOT require captcha — CoinOS allows re-login without it for existing sessions.
+ *
+ * De-duped across the JS bundle lifetime: reading the biometric-protected
+ * keychain entry always shows a FaceID/TouchID prompt, so only do it once
+ * per app launch regardless of how many times HomeScreen mounts.
  */
+let _coinosTokenRefreshAttempted = false;
+export const resetCoinOSTokenRefresh = () => {
+  _coinosTokenRefreshAttempted = false;
+};
 export const refreshCoinOSToken = async (): Promise<string | null> => {
+  if (_coinosTokenRefreshAttempted) return null;
+  _coinosTokenRefreshAttempted = true;
   try {
     const Keychain = require('react-native-keychain');
     const credentials = await Keychain.getGenericPassword({
@@ -125,7 +152,20 @@ if (__DEV__) console.log('[CoinOS] No keychain credentials for token refresh');
     });
 
     if (!response.ok) {
-      console.warn('[CoinOS] Token refresh failed:', response.status);
+      // Diagnostic — when silent token refresh started 401-ing for multiple
+      // users (and persisted across networks), the comment above said
+      // CoinOS "allows re-login without captcha for existing sessions."
+      // That's worth verifying — if CoinOS now requires captcha on EVERY
+      // login including silent refresh, this whole path is broken and we
+      // need to either drive the captcha here too or stop calling refresh
+      // and force a manual login. The body tells us which.
+      const errorText = await response.text().catch(() => '');
+      console.warn(
+        '[CoinOS] Token refresh failed:',
+        response.status,
+        'bodyHead=', JSON.stringify(errorText?.slice?.(0, 300) ?? ''),
+        'contentType=', response.headers.get('content-type'),
+      );
       return null;
     }
 
@@ -222,6 +262,12 @@ export const getInvoiceByHash = async (hash: string) => {
 };
 
 export const sendLightningPayment = async (payreq: string, memo: string, amount?: any) => {
+  // Bound the HTTP call so a stuck backend / Cloudflare 524 can't hang the
+  // caller's UI indefinitely. The Coinos LN payment may still complete on
+  // their side after we abort; the caller must treat AbortError as PENDING
+  // (do not invite a retry — see 2026-05-31 incident notes).
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45_000);
   try {
 if (__DEV__) console.log('sendLightningPayment payload: ', amount, amount && amount !== '' && amount !== 0 ? { payreq: payreq, memo: memo, amount } : { payreq: payreq, memo: memo })
     const response = await fetch(`${BASE_URL}/payments`, await withAuthToken({
@@ -230,6 +276,7 @@ if (__DEV__) console.log('sendLightningPayment payload: ', amount, amount && amo
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(amount && amount !== '' && amount !== 0 ? { payreq: payreq, memo: memo, amount } : { payreq: payreq, memo: memo }),
+      signal: controller.signal,
     }));
 
 if (__DEV__) console.log('response: ', response)
@@ -239,6 +286,8 @@ if (__DEV__) console.log('responseJSON: ', responseJSON)
   } catch (error) {
     console.error('Error sending lightning payment:', error);
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 
@@ -393,18 +442,76 @@ if (__DEV__) console.log('result: ', result)
   }
 };
 
+/**
+ * Currency rates — historically pulled from CoinOS's `/rates` endpoint,
+ * but that source proved unreliable: intermittent 5xx, stale figures
+ * during quoting flows, and outright broken responses that surfaced
+ * as zero-rate displays in the send keyboard, transaction history,
+ * invoice-creation USD preview, and the swap screen.
+ *
+ * Per Bam (May 2026): rates now come from BlueWallet's built-in
+ * currency daemon (`blue_modules/currency`), the same machinery
+ * the vault screens, Ark card, and HomeScreen's `matchedRate` use.
+ * Going through `updateExchangeRate()` means we get:
+ *   - The user's selected fiat source (CoinDesk / Coinbase /
+ *     CoinGecko / Bitstamp / etc., per `FiatUnit[ticker].source`)
+ *   - The 30-minute TTL the daemon enforces — repeated calls don't
+ *     spam any single rate provider
+ *   - Persistence to AsyncStorage so the cache survives app restarts
+ *     and works offline after the first successful fetch
+ *
+ * Flow:
+ *   1. `updateExchangeRate()` — refreshes the cache if stale, no-op
+ *      otherwise. This is BlueWallet's own entrypoint; we never call
+ *      a rate extractor directly. Errors here are non-fatal; the
+ *      daemon stamps `LAST_UPDATED_ERROR: true` and we still try to
+ *      read whatever cached value is left.
+ *   2. Read the cache from AsyncStorage and return the BTC_USD entry.
+ *
+ * Return shape preserved as `{ USD: <USD-per-BTC> }` so existing call
+ * sites that do `matchKeyAndValue(response, 'USD')` keep working
+ * without per-site changes. Auth no longer required (BlueWallet rate
+ * is local) — that's a deliberate side benefit: the rate is now
+ * available even when the CoinOS token has expired.
+ *
+ * EUR / GBP etc. are NOT included in the returned object because
+ * every current call site only matches 'USD'; if a screen ever needs
+ * a different fiat, add it via the same daemon path.
+ */
 export const getCurrencyRates = async () => {
   try {
-    const response = await fetch(`${BASE_URL}/rates`, await withAuthToken({
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    }));
-    return await response.json();
+    // 1) Refresh BlueWallet's daemon cache (no-op if it's been
+    //    called within 10s OR the cache is < 30 min old).
+    await updateExchangeRate();
+
+    // 2) Cache hit path — only works when the user's preferred
+    //    currency is USD. The daemon stores ONE entry, keyed by
+    //    `BTC_<preferredCurrency>`. For USD users this is BTC_USD
+    //    and we get a fast read. For users on EUR / GBP / etc.,
+    //    BTC_USD never lands in the cache so we fall through.
+    const raw = await AsyncStorage.getItem(EXCHANGE_RATES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const cached = parsed?.['BTC_USD'];
+      if (typeof cached === 'number' && cached > 0) {
+        return { USD: cached };
+      }
+    }
+
+    // 3) Fallback: call getFiatRate('USD') — BlueWallet's own
+    //    rate-source dispatcher in models/fiatUnit.ts. It picks
+    //    the extractor configured for the USD FiatUnit (CoinDesk
+    //    by default, configurable via fiatUnits.json) and returns
+    //    USD-per-BTC. Same machinery the daemon uses internally;
+    //    we just skip the daemon's preferred-currency-only cache
+    //    layer because non-USD users would otherwise see $0.00
+    //    on every CoinOS-paid screen (send keyboard, tx history,
+    //    invoice creation, swap).
+    const live = await getFiatRate('USD');
+    return { USD: Number(live) || 0 };
   } catch (error) {
-    console.error('Error getting Rates:', error);
-    throw error;
+    console.error('Error getting BlueWallet rate:', error);
+    return { USD: 0 };
   }
 };
 

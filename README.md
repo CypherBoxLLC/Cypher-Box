@@ -1,67 +1,99 @@
-# Cypher Box - A Fun Way to Play Bitcoin
-Https://Cypherbox.io
+# ⚡ Cypher Box — A Fun Way to Play Bitcoin
 
-**Website:** [cypherbox.io](https://cypherbox.io) | **Community:** [Telegram](https://t.me/BitcoinUserSupport) | **Email:** info@cypherbox.io
+[![Release](https://img.shields.io/github/v/release/CypherBoxLLC/Cypher-Box?color=f7931a&label=release)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
+[![Reproducible build](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml/badge.svg)](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-lightgrey)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
 
-Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) Release 6.5.1, tailored for onboarding newbies to advanced self-custody.
+**Website:** [cypherbox.io](https://cypherbox.io) · **Community:** [Telegram](https://t.me/BitcoinUserSupport) · **Email:** info@cypherbox.io
 
-Built with React Native, Electrum, and powered by **Coinos.io + Strike APIs**
+Cypher Box walks you up the self-custody ladder: start with an easy custodial Lightning account, graduate to a non-custodial Lightning vault on the Ark protocol, and land in full on-chain cold storage. One app, three rails, no lectures.
 
----
-
-# FEATURES
-
-## Lightning Accounts
-* **Multi-currency** — Coinos.io + Strike.me (USD, EUR, GBP, AUD + more)
-* Login via OAuth (Strike) or credentials (Coinos)
-* Send and receive via Lightning Network
-* Send and receive on-chain BTC
-* Receive Liquid assets via Coinos
-* Create and manage Lightning addresses
-* Payment history with withdrawal threshold reminders
-* Swap between Lightning accounts
-* Withdraw to Vault, top-up from Vault
-* Authentication tokens are user-accessible only (Keychain-stored)
-
-## Hot Vault
-* Private keys never leave your device
-* SegWit-first, Bip39, Replace-By-Fee, Child-Pay-For-Parent support
-* Coin control (label UTXOs, consolidate)
-* Top-up Lightning Accounts
-* Send to Cold Vault
-
-## Cold Vault (Watch-Only)
-* Private keys never leave your device
-* SegWit-first, Bip39, RBF + CPFP support
-* Coin control
-* PSBT signing with BBQr animated QR support
-* Send to Hot Vault
-
-## Privacy & Security
-* Plausible deniability
-* UTXO visualization
-* Custom Electrum server connection
+Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built with React Native + Electrum, powered by **Strike**, **Coinos**, and **Second's Bark SDK**.
 
 ---
 
-# BUILD & RUN
+## 🪜 The self-custody ladder
 
-> See the `engines` field in `package.json` for minimum Node/npm versions. Use even-numbered (LTS) versions.
+| Rail | Custody | Network | Best for |
+|---|---|---|---|
+| ⚡ **Lightning Accounts** | Custodial (Strike / Coinos) | Lightning | First sats, everyday spending |
+| ⛵ **Bark Vault** | **Self-custodial** | Ark protocol (L2) | Lightning speed, your keys |
+| 🔥 **Hot Vault** | Self-custodial | Bitcoin on-chain | Savings on your device |
+| 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Hardware-signed savings |
+
+Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, withdraw Lightning to vaults.
+
+---
+
+## ⚡ Lightning Accounts
+
+* **Multi-currency** balances via Strike + Coinos (USD, EUR, GBP, AUD and more)
+* OAuth login (Strike) or credentials (Coinos); tokens live only in your device Keychain
+* Send/receive Lightning and on-chain BTC; Liquid receive via Coinos
+* Lightning addresses, payment history, withdrawal-threshold reminders
+* Real-time payment notifications via a self-hosted relay
+* Swap between accounts, withdraw to vaults, top-up from vaults
+
+## ⛵ Bark Vault — non-custodial Lightning (Ark protocol)
+
+Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). Self-custodial: you can always exit to the chain without the server's permission.
+
+* Send & receive over Lightning, receive on Ark addresses, board from on-chain
+* **Capsule dashboard** with color-coded expiry at a glance:
+
+  | | Capsule age | Meaning |
+  |---|---|---|
+  | 🟢 | 21+ days left | Fresh, nothing to do |
+  | 🟡 | 14–20 days | Past the midpoint |
+  | 🟠 | 7–13 days | Refresh window open |
+  | 🔴 | < 7 days | Refresh now, reminders firing |
+
+* **Tap-to-refresh reminders**: up to 5 escalating notifications (4d/2d/24h/12h/6h) before any capsule expires; tapping one opens the app with the refresh already running
+* **Encrypted backups** (`.cbark`): iCloud Drive on iOS, folder of your choice + Google Drive on Android, verified round-trip at wallet creation
+* **Emergency exit**: unilateral on-chain sweep, no server cooperation needed
+* Transparent fees shown inline before every action
+
+## 🔥 Hot Vault & 🧊 Cold Vault
+
+* Keys generated and stored on-device, never leave it
+* SegWit-first, BIP39, RBF + CPFP
+* **Coin control** with UTXO visualization: label, consolidate, pick coins
+* Cold Vault: watch-only + PSBT signing with **BBQr animated QR** for airgapped hardware
+* Custom Electrum server support, plausible deniability
+
+---
+
+## 🔍 Don't trust, verify
+
+Every release is **reproducible**:
+
+* CI builds the unsigned bundle **twice** in a [pinned container](./Dockerfile.build) and fails on any byte difference
+* Releases ship with the unsigned artifact + SHA-256 and a signed git tag: [releases](https://github.com/CypherBoxLLC/Cypher-Box/releases)
+* Rebuild it yourself: `make repro-verify` at any release tag
+* [walletscrutiny/](./walletscrutiny) contains the verification script for comparing the Play Store binary against this source
+* PRs are gated by dependency review, secret scanning (gitleaks), and unit tests
+
+---
+
+## 🛠 Build & run
+
+> Minimum Node/npm versions: see `engines` in `package.json` (use even-numbered LTS).
+> Toolchain pins, Gradle cache rules, codegen gotchas and other build-environment notes live in [docs/BUILD.md](docs/BUILD.md).
 
 ```bash
 git clone https://github.com/CypherBoxLLC/Cypher-Box.git
 cd Cypher-Box
-npm install
+npm ci   # always ci, never plain install — keeps the lockfile authoritative
 ```
 
 ### Android
 
 1. Open `android/` in Android Studio
-2. Launch an AVD emulator or connect a physical device
+2. Start an AVD or connect a device
 3. `npx react-native run-android`
 
 ### iOS
-In another terminal window within the Cypher-Box folder:
 
 ```bash
 npx pod-install
@@ -70,31 +102,31 @@ npm start
 npx react-native run-ios
 ```
 
-> **Debug on iOS Simulator:** Product → Destination Architectures → Show Both → choose Rosetta-compatible simulator.
+> **iOS Simulator debug:** Product → Destination Architectures → Show Both → pick a Rosetta-compatible simulator.
 
 ### macOS (Catalyst)
 
 ```bash
 npx pod-install
 npm start
-# open ios/BlueWallet.xcworkspace
-# select scheme BlueWallet-NoLDK, click Run
+# open ios/BlueWallet.xcworkspace, scheme BlueWallet-NoLDK, Run
 ```
 
 ---
 
-Upcoming tasks:
-⏱️ CI/CD pipline
-⏱️ Notifications (only for Coinos at the moment)
-⏱️ Lightning Account settings 
-⏱️ BBQr
+## 🗺 Roadmap
 
-# RESPONSIBLE DISCLOSURE
-Found critical bugs/vulnerabilities?
-- Please email info@cypherbox.io
-- Please do not publicly disclose vulnerabilities until they have been resolved.
-- Valid, responsible disclosures may qualify for a bounty reward based on the severity of the issue.
-Thank you for helping us keep our project secure!
+* ⏳ Bark SDK 0.11.x upgrade: offline wallet open, truthful send status, stuck-payment recovery
+* ⏳ iOS TestFlight → App Store release
+* ⏳ Incoming on-chain transaction notifications with capsule visuals
+* ⏳ Revive the e2e test suite on RN 0.77
 
-**License:** [MIT](./LICENSE)  
-**BlueWallet repo:** [github.com/BlueWallet/BlueWallet](https://github.com/BlueWallet/BlueWallet)
+---
+
+## 🛡 Responsible disclosure
+
+Found a vulnerability? Email **info@cypherbox.io** — please don't disclose publicly until it's resolved. Valid, responsible disclosures may qualify for a bounty based on severity. See [SECURITY.md](./SECURITY.md).
+
+---
+
+**License:** [MIT](./LICENSE) · **Upstream:** [BlueWallet](https://github.com/BlueWallet/BlueWallet) · **Bark SDK:** [Second](https://second.tech)

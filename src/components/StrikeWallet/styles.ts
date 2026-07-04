@@ -259,28 +259,31 @@ export default StyleSheet.create<Style>({
         // paddingHorizontal: 20,
         justifyContent: 'space-between',
     },
+    // Threshold-bar trio (showLine / linearGradient2 / box) are all
+    // absolutely positioned within their parent View so they overlap
+    // pixel-perfectly. Previously linearGradient2 was in-flow with
+    // marginVertical:10 and relied on Old-Arch quirks to overlap the
+    // others; under RN 0.77 Fabric (Yoga 3) the in-flow LinearGradient
+    // detached and rendered at top:0 of the parent slot, which then
+    // visually landed at the top of the Strike card instead of inside
+    // the grey placeholder bar.
     showLine: {
-        // borderWidth: 1,
-        // borderColor: colors.white,
         position: 'absolute',
+        top: 10,
+        left: 0,
         width: '100%',
         backgroundColor: '#5F5F5F',
         height: 5,
-        // padding: 5,
         borderRadius: 5,
-        marginVertical: 10,
-        // marginStart: 25,
-        // marginHorizontal: 20
     },
     linearGradient2: {
+        position: 'absolute',
+        top: 10,
+        left: 0,
         width: '100%',
-        // paddingLeft: 15,
-        // paddingRight: 15,
         borderRadius: 5,
         height: 5,
-        alignSelf: 'flex-start',
-        marginVertical: 10,
-        zIndex: 99
+        zIndex: 99,
     },
     box: {
         position: 'absolute',
@@ -354,16 +357,28 @@ export default StyleSheet.create<Style>({
         ...shadow.text25,
     },
     shadowTop: {
-        shadowOffset: { width: 2, height: 2 },
-        shadowOpacity: 1,
-        shadowColor: colors.white,
-        shadowRadius: 2,
         borderRadius: 24,
         width: widths - 40,
         height: 128,
         backgroundColor: colors.primary,
         padding: 15,
         paddingHorizontal: 30,
+    },
+    // 1.5px-padding wrapper for the Strike Lightning card. Mirrors the
+    // CoinOS Card's pink-gradient outline (Card/styles.ts) so Strike's
+    // custodial Lightning rail has the same pink-ringed identity.
+    shadowTopGradientOutline: {
+        borderRadius: 24,
+        width: widths - 40,
+        height: 128,
+        padding: 1.5,
+    },
+    shadowTopInner: {
+        flex: 1,
+        borderRadius: 22.5,
+        backgroundColor: colors.primary,
+        paddingHorizontal: 30,
+        padding: 0,
     },
     shadow10: {
         // shadowOffset: { width: 3, height: 4 },
@@ -444,7 +459,15 @@ export default StyleSheet.create<Style>({
         height: 128,
         marginTop: 0,
         borderColor: "transparent",
-        backgroundColor: colors.white,
+        // colors.primary (dark) instead of colors.white — under
+        // Fabric the 1pt borderRadius mismatch between this wrapper
+        // (25) and the pink-gradient outline inside it (24) leaks
+        // the wrapper's background as a faint ring at the corners.
+        // White was visible as a "white border" reading; primary
+        // matches the inner card surface so any leak is invisible.
+        // Can't use transparent — Android needs a non-transparent
+        // backgroundColor for elevation shadows to paint.
+        backgroundColor: colors.primary,
     },
     shadowViewBottom: {
         shadowOffset: { width: 8, height: 8 },

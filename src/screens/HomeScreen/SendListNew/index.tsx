@@ -3,6 +3,7 @@ import { GradientView } from "@Cypher/components";
 import React, { useContext, useMemo, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -18,6 +19,8 @@ import {
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import styles from "./styles";
@@ -40,7 +43,7 @@ interface Props {
 }
 
 export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, wallet, coldStorageWallet, matchedRate, matchedRateBTC = 0, currency }: Props) {
-  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
+  const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
   const { sleep } = useContext(BlueStorageContext);
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -101,6 +104,15 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
         : { matchedRate, currency, receiveType: true };
       setTimeout(() => {
         dispatchNavigate('SendScreen', params);
+      }, 150);
+    } else if (id === 5) {
+      // Ark has its own send flow (`ArkSendScreen`) — the Strike `SendScreen`
+      // is hard-wired to custodial Lightning APIs and doesn't know how to
+      // pay through the Bark SDK. Classification (ln-invoice / ln-address /
+      // ark / onchain) and fee estimation happen inside ArkSendScreen.
+      refRBSheet?.current?.close();
+      setTimeout(() => {
+        dispatchNavigate('ArkSendScreen', { matchedRate, currency });
       }, 150);
     } else if (id === 3 || id === 4) {
       setSelectedItem(id);
@@ -165,26 +177,50 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
     }, 150);
   };
 
-  // Grid tile
+  // Grid tile. `width` defaults to TILE_WIDTH; pass a larger value (e.g. full-row)
+  // for providers like Ark that sit below the 2×2 grid.
   const renderGridTile = (
     id: number, label: string, subtitle: string, icon: any, iconStyle: any,
     isEnabled: boolean, accentColor: string, shadowColor: string,
+    width: number = TILE_WIDTH,
+    textLabel?: string, // For providers without a logo asset (e.g. Ark) — shown inline
   ) => {
     const isLogo = id === 1 || id === 2;
+    // Hide tiles for wallets that aren't created / aren't logged in. An
+    // invisible spacer keeps the grid aligned when the surviving sibling
+    // in a row is the only visible tile.
+    if (!isEnabled) {
+      return <View style={{ width }} />;
+    }
     return (
-      <View style={{ width: TILE_WIDTH, opacity: isEnabled ? 1 : 0.3 }} pointerEvents={isEnabled ? 'auto' : 'none'}>
+      <View style={{ width }} pointerEvents={'auto'}>
         <GradientView
           onPress={() => isEnabled && onTilePress(id)}
-          style={{ shadowColor: "#040404", shadowOffset: { width: 6, height: 6 }, shadowOpacity: 0.7, shadowRadius: 12, elevation: 6, height: 100, width: TILE_WIDTH }}
-          linearGradientStyle={{ shadowColor: "#27272C", shadowOffset: { width: -6, height: -6 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 6, height: 100, width: TILE_WIDTH }}
-          topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowColor, shadowRadius: 3, borderRadius: 20, width: TILE_WIDTH, height: 100, justifyContent: "center" }}
-          bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 0.5, shadowColor, borderRadius: 20, width: TILE_WIDTH, height: 100, justifyContent: "center", position: "absolute" }}
-          linearGradientStyleMain={{ borderRadius: 20, height: 100, justifyContent: "center", alignItems: "center", width: TILE_WIDTH }}
+          style={{ shadowColor: "#040404", shadowOffset: { width: 6, height: 6 }, shadowOpacity: 0.7, shadowRadius: 12, elevation: 6, height: 100, width }}
+          linearGradientStyle={{ shadowColor: "#27272C", shadowOffset: { width: -6, height: -6 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 6, height: 100, width }}
+          topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowColor, shadowRadius: 3, borderRadius: 20, width, height: 100, justifyContent: "center" }}
+          bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 0.5, shadowColor, borderRadius: 20, width, height: 100, justifyContent: "center", position: "absolute" }}
+          linearGradientStyleMain={{ borderRadius: 20, height: 100, justifyContent: "center", alignItems: "center", width }}
           gradiantColors={[colors.black.bg, colors.black.bg]}
         >
           <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
             {isLogo ? (
               <Image source={icon} style={{ width: 90, height: 32, marginBottom: 6 }} resizeMode="contain" />
+            ) : textLabel ? (
+              // White at 16pt — matches the other tile labels' visual
+              // weight. Boat-outline (white) on the left mirrors the
+              // glyph used on the homescreen wallet card, Vault tab,
+              // Create Bark login row, and the receive / withdraw /
+              // top-up sheets, so the Bark identity reads consistently.
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Ionicons
+                  name="boat-outline"
+                  size={20}
+                  color="#FFFFFF"
+                  style={{ marginRight: 6 }}
+                />
+                <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>{textLabel}</Text>
+              </View>
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                 <Image source={icon} style={iconStyle} resizeMode="contain" />
@@ -277,13 +313,59 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
           <Animated.View style={[{}, view1Style]}>
             <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
               <Text h2 bold style={{ alignSelf: 'center', marginBottom: 16 }}>SEND FROM</Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-                {renderGridTile(1, 'Strike', 'Lightning Network', StrikeFull, {}, isStrikeAuth, '#FF65D4', colors.pink.shadowTopNew)}
-                {renderGridTile(2, 'CoinOS', 'Lightning Network', CoinOS, {}, isAuth, '#FF65D4', colors.pink.shadowTopNew)}
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                {renderGridTile(3, 'Hot Vault', 'On-chain capsules', Hot, { width: 22, height: 30, marginEnd: 2 }, hasHotVault, colors.green, colors.greenShadow)}
-                {renderGridTile(4, 'Cold Vault', 'On-chain capsules', Cold1, { width: 30, height: 22, marginEnd: 2 }, hasColdVault, colors.coldGreen, colors.blueText)}
+              {/* Modular 2-column adaptive grid (mirrors ReceivedListNew).
+                  Only tiles for connected wallets render; the grid wraps
+                  so empty slots aren't reserved. Order: Strike → CoinOS →
+                  Ark → Hot Vault → Cold Vault. */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                {(() => {
+                  type TileDef = {
+                    id: number;
+                    label: string;
+                    subtitle: string;
+                    icon: any;
+                    iconStyle: any;
+                    isEnabled: boolean;
+                    accent: string;
+                    shadowColor: string;
+                    textLabel?: string;
+                  };
+                  const tiles: TileDef[] = [];
+                  if (isStrikeAuth) tiles.push({
+                    id: 1, label: 'Strike', subtitle: 'Lightning Network',
+                    icon: StrikeFull, iconStyle: {}, isEnabled: true,
+                    accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
+                  });
+                  // CoinOS still gated by isCoinosAllowed() — feature flag
+                  // (region/platform) overrides auth state.
+                  if (isCoinosAllowed() && !!isAuth) tiles.push({
+                    id: 2, label: 'CoinOS', subtitle: 'Lightning Network',
+                    icon: CoinOS, iconStyle: {}, isEnabled: true,
+                    accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
+                  });
+                  if (FEATURE_ARK_ENABLED && isArkAuth) tiles.push({
+                    id: 5, label: 'Bark', subtitle: 'Small–medium amounts',
+                    icon: null, iconStyle: {}, isEnabled: true,
+                    accent: colors.ark.light, shadowColor: colors.ark.shadowTopNew,
+                    textLabel: 'Bark Vault',
+                  });
+                  if (hasHotVault) tiles.push({
+                    id: 3, label: 'Hot Vault', subtitle: 'On-chain capsules',
+                    icon: Hot, iconStyle: { width: 22, height: 30, marginEnd: 2 },
+                    isEnabled: true, accent: colors.green, shadowColor: colors.greenShadow,
+                  });
+                  if (hasColdVault) tiles.push({
+                    id: 4, label: 'Cold Vault', subtitle: 'On-chain capsules',
+                    icon: Cold1, iconStyle: { width: 30, height: 22, marginEnd: 2 },
+                    isEnabled: true, accent: colors.coldGreen, shadowColor: colors.blueText,
+                  });
+
+                  return tiles.map(t => (
+                    <View key={t.id} style={{ marginBottom: 12 }}>
+                      {renderGridTile(t.id, t.label, t.subtitle, t.icon, t.iconStyle, t.isEnabled, t.accent, t.shadowColor, TILE_WIDTH, t.textLabel)}
+                    </View>
+                  ));
+                })()}
               </View>
             </View>
           </Animated.View>

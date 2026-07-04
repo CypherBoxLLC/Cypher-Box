@@ -3,7 +3,7 @@ import { Image } from "react-native";
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { Electricity } from "@Cypher/assets/images";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { dispatchReset } from "@Cypher/helpers/navigation";
 
 interface Props {
     route?: any;
@@ -15,7 +15,10 @@ export default function SendReceiveSuccessScreen({ route }: Props) {
 
     useEffect(() => {
         setTimeout(() => {
-            dispatchNavigate('HomeScreen');
+            // Reset stack — Ark send path (ArkSendScreen → SendReceiveSuccessScreen)
+            // left mounted under HomeScreen on iOS Fabric otherwise. See
+            // TransactionBroadCast for the full half-mount explanation.
+            dispatchReset('HomeScreen');
         }, 3000);
     }, []);
 

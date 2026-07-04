@@ -19,9 +19,10 @@ import Animated, {
 import { dispatchReset, resetAndNavigate } from "@Cypher/helpers/navigation";
 import { startsWithLn } from "../Send";
 import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
+import CustomProgressBar from "@Cypher/components/CustomProgressBar";
 
 export default function Transaction({navigation, route}: any) {
-    const {matchedRate, currency = 'USD', type, value, converted, isSats, to, item} = route?.params;
+    const {matchedRate, currency = 'USD', type, value, converted, isSats, to, item, swappedTo} = route?.params;
     const amountSat = isSats ? value : converted;
     const amountUSD = !isSats ? value : converted
     const [response, setResponse] = useState(false);
@@ -35,7 +36,14 @@ export default function Transaction({navigation, route}: any) {
         const intervalId = setInterval(() => {
             setProgress((prevProgress) => {
                 if (prevProgress < 1) {
-                    return prevProgress + 0.1;
+                    // Clamp to 1 — `prev + 0.1` accumulates float drift
+                    // (e.g. 0.9999… + 0.1 = 1.0999…), which made the
+                    // strict `progress == 1` check below never match
+                    // under Hermes after the RN 0.76 upgrade. Result:
+                    // `response` stayed false → rings + success.gif
+                    // never rendered → "lightning check animation not
+                    // playing" per Bam.
+                    return Math.min(1, prevProgress + 0.1);
                 } else {
                     clearInterval(intervalId);
                     return 1;
@@ -49,14 +57,22 @@ export default function Transaction({navigation, route}: any) {
     }, []);
 
     useEffect(() => {
-        if (progress == 1) {
+        // Use `>=` rather than `==` as a belt-and-braces guard against
+        // any future float drift sneaking past the Math.min clamp above.
+        if (progress >= 1) {
             setResponse(true);
             fadeIn();
         }
     }, [progress]);
 
     const onPressClickHandler = () => {
-        if(startsWithLn(to) || to.includes("@") || to.length == 0) {
+        // `swappedTo` is set when this success screen was reached via a
+        // BUY-then-swap (Strike → CoinOS or Strike → Bark Vault). In that
+        // case the destination string passed via `to` is a sentinel like
+        // 'Ark' or 'coinos', not a real address — sending the user to the
+        // Invoice screen produces an empty review-payment view (no item
+        // shape it can render). Always reset to HomeScreen for swap flows.
+        if(swappedTo || startsWithLn(to) || to.includes("@") || to.length == 0) {
             dispatchReset("HomeScreen")
         } else {
             resetAndNavigate('HomeScreen', 'Invoice', {
@@ -64,7 +80,6 @@ export default function Transaction({navigation, route}: any) {
                 matchedRate
             })
         }
-        // dispatchNavigate('CheckingAccount', {matchedRate});
     }
 
     const shortenAddress = (address: string) => {
@@ -97,6 +112,37 @@ export default function Transaction({navigation, route}: any) {
                     {response &&
                         <Animated.View style={animatedStyle}>
                             <Text h1 semibold center>{type == "BUY" ? "Purchase Complete" : type == "SELL" ? "Sale Complete" : "Payment Sent"}</Text>
+                            {/* Swap-destination badge. Renders only when
+                                the BUY auto-routed to a non-Strike rail
+                                (CoinOS or Ark). Bigger + bordered + white
+                                so it can't be missed or hidden behind
+                                the central success visual. */}
+                            {!!swappedTo && (
+                                <View style={{
+                                    alignSelf: 'center',
+                                    marginTop: 10,
+                                    paddingVertical: 6,
+                                    paddingHorizontal: 14,
+                                    borderRadius: 14,
+                                    borderWidth: 1.5,
+                                    borderColor: swappedTo === 'Bark Vault' ? '#FFD93D' : '#FF65D4',
+                                }}>
+                                    <Text bold center style={{ color: '#fff', fontSize: 16 }}>
+                                        {`→ Swapped to ${swappedTo}`}
+                                    </Text>
+                                </View>
+                            )}
+                            {type == "BUY" && (
+                                // UTXO-tier capsule on the success screen
+                                // — same visual the user saw on the Review
+                                // page, so they can confirm the bucket
+                                // they purchased into. Shown for every BUY
+                                // destination (Strike / CoinOS / Ark /
+                                // Hot / Cold).
+                                <View style={{ alignSelf: 'center', marginTop: 10 }}>
+                                    <CustomProgressBar value={Number(amountSat) || 0} />
+                                </View>
+                            )}
                             <Text semibold center style={styles.sats}>{amountSat} sats</Text>
                             <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                             { to?.length > 0 && <View style={styles.extra} /> }
@@ -112,7 +158,15 @@ export default function Transaction({navigation, route}: any) {
                             <Ring delay={2000} isWhite={startsWithLn(to) || to.includes("@")} />
                             <Ring delay={3000} isWhite={startsWithLn(to) || to.includes("@")} />
                         </>
-                        {startsWithLn(to) || to.includes("@") ?
+                        {/* Central success visual. The animated GIF
+                            (success0.gif) doesn't render reliably under
+                            RN 0.76 + Fabric on Android — it gets stuck
+                            on the first frame. Skip it for the
+                            BUY→swap path (where `swappedTo` is set) and
+                            use the static GradientCard + Electrik bolt
+                            that the non-Lightning path already uses
+                            successfully. */}
+                        {(startsWithLn(to) || to.includes("@")) && !swappedTo ?
                             <Image source={require('../../../img/success0.gif')} style={styles.gifImage} resizeMode="contain" />
                         :
                             <GradientCard style={styles.gradient} linearStyle={styles.gradient}
@@ -175,7 +229,7 @@ export default function Transaction({navigation, route}: any) {
                 }
                 {response &&
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
-                        title={startsWithLn(to) || to.includes("@") || to.length == 0 ? 'Home' : 'Payment Details'}
+                        title={type == "BUY" || type == "SELL" || startsWithLn(to) || to.includes("@") || to.length == 0 ? 'Home' : 'Payment Details'}
                         disabled={!response}
                         onPress={onPressClickHandler} />
                     // :

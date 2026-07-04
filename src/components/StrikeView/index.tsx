@@ -1,6 +1,6 @@
 import { Minus, Plus, Strike } from '@Cypher/assets/images'
 import { Text } from '@Cypher/component-library'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Image, LayoutAnimation, TextInput, TouchableOpacity, View } from 'react-native'
 import BlackBGView from '../BlackBGView'
 import CustomProgressBar from '../CustomProgressBar'
@@ -42,6 +42,48 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     const [selectedBank, setSelectedBank] = useState<any>(null);
     const [fiatLoading, setFiatLoading] = useState(false);
     const [bankLoading, setBankLoading] = useState(false);
+
+    /**
+     * Price-direction indicator for the BTC exchange-rate text.
+     *
+     * Compares each new `matchedRate` to the previous reading:
+     *   - new > prev  → green (price went up)
+     *   - new < prev  → red (price went down)
+     *   - equal / first reading → default (white)
+     *
+     * `prevRateRef` holds the last-seen rate WITHOUT triggering a re-render
+     * (a useState would loop with the useEffect that sets it). The colored
+     * state itself uses useState so the Text re-renders when direction
+     * changes. The first non-zero reading establishes a baseline silently
+     * (no green/red flash on cold mount).
+     *
+     * Cadence note: matchedRate updates whenever HomeScreen.handleUser()
+     * runs — that's on Home focus, on auth changes, and after pull-to-
+     * refresh. BlueWallet's underlying `updateExchangeRate` has a 30-min
+     * cache + 10s debounce, but `getFiatRate` (called directly from
+     * HomeScreen) bypasses that cache, so each focus = one fresh API hit.
+     * Net: rate refreshes whenever the user returns to Home.
+     */
+    type RateDirection = 'flat' | 'up' | 'down';
+    const [rateDirection, setRateDirection] = useState<RateDirection>('flat');
+    const prevRateRef = useRef<number | null>(null);
+    useEffect(() => {
+        const next = Number(matchedRate) || 0;
+        if (next <= 0) return; // ignore zero / unset readings
+        const prev = prevRateRef.current;
+        if (prev === null) {
+            prevRateRef.current = next;
+            return; // first non-zero reading sets the baseline silently
+        }
+        if (next === prev) return;
+        setRateDirection(next > prev ? 'up' : 'down');
+        prevRateRef.current = next;
+    }, [matchedRate]);
+
+    const rateColor =
+        rateDirection === 'up' ? colors.green
+            : rateDirection === 'down' ? colors.redLight
+                : '#FFFFFF';
 
     const addClickHandler = () => {
       if (dollarStrikeText >= 1_000_000_000) {
@@ -154,32 +196,36 @@ function StrikeView({ showLogo = false, isShowButtons = false,
             <View style={styles.rowContainer}>
                 <LinearBorderView>
                     <View style={styles.strikeRow}>
+                        {/* Left sideContainer: UTXO capsule + ₿UY.
+                            Swapped with the Fiat Balance side so the capsule
+                            sits in the card's left corner — Bam's request
+                            after the RN 0.76 / Yoga 2 migration pushed the
+                            capsule against the right edge of the
+                            LinearBorderView. The capsule + ₿UY pair stay
+                            together so the user's mental model (adjust
+                            amount → press ₿UY) is preserved; only their
+                            corner of the card changes. */}
                         <View style={styles.sideContainer}>
-                            <View style={styles.fiatBalanceBox}>
-                                <Text h2 bold>Fiat Balance</Text>
-                                <Text h2 bold>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
-                            </View>
-                            <GradientView
-                                style={styles.sellBuyButton}
-                                linearGradientStyle={styles.sellBuyGradient}
-                                topShadowStyle={styles.topShadow}
-                                bottomShadowStyle={styles.bottomShadow}
-                                linearGradientStyleMain={styles.linearGradientStyleMain}
-                                onPress={sellClickHandler}
+                            {/* linearFirstColors flattened to solid black so the
+                                outer gradient layer collapses into the inner
+                                background — visually removes the angular shadow
+                                border around the UTXO capsule per Bam. */}
+                            <BlackBGView
+                                linearFirstStyle={styles.fiatBalanceBox2}
+                                linearSecondStyle={styles.fiatBalanceBox3}
+                                linearFirstColors={[colors.black.default, colors.black.default]}
                             >
-                                <Text h3 bold center>SELL</Text>
-                            </GradientView>
-                        </View>
-
-                        <View style={styles.sideContainer}>
-                            <BlackBGView linearFirstStyle={styles.fiatBalanceBox2}
-                                linearSecondStyle={styles.fiatBalanceBox3}>
                                 <CustomProgressBar value={dollarStrikeText} />
                                 <Text h3 bold >{dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} BTC` : `${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
                                 <Text h4 semibold>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
                             </BlackBGView>
+                            {/* BUY sits 5pt lower than SELL by default —
+                                the capsule's marginTop:45 (vs fiatBalanceBox's
+                                marginTop:40) introduced that gap. -20 here =
+                                -15 (the universal upward shift Bam asked for)
+                                + -5 (alignment correction with SELL). */}
                             <GradientView
-                                style={styles.sellBuyButton}
+                                style={[styles.sellBuyButton, { marginTop: -20 }]}
                                 linearGradientStyle={styles.sellBuyGradient}
                                 topShadowStyle={styles.topShadow}
                                 bottomShadowStyle={styles.bottomShadow}
@@ -187,6 +233,31 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 onPress={buyClickHandler}
                             >
                                 <Text h3 bold center>₿UY</Text>
+                            </GradientView>
+                        </View>
+
+                        {/* Right sideContainer: Fiat Balance + SELL. */}
+                        <View style={styles.sideContainer}>
+                            <View style={styles.fiatBalanceBox}>
+                                {/* Slightly smaller than h2 (20pt) — 17pt
+                                    matches the trimmed visual weight Bam
+                                    asked for after the 10pt up nudge. */}
+                                <Text h2 bold style={{ fontSize: 17 }}>Fiat Balance</Text>
+                                <Text h2 bold style={{ fontSize: 17 }}>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
+                            </View>
+                            {/* fiatBalanceBox.marginTop went 40 → 30 (Fiat
+                                Balance up 10pt), which dragged SELL up 10pt
+                                with it. -15 + 10 = -5 keeps SELL aligned
+                                with BUY at its previous y-position. */}
+                            <GradientView
+                                style={[styles.sellBuyButton, { marginTop: -5 }]}
+                                linearGradientStyle={styles.sellBuyGradient}
+                                topShadowStyle={styles.topShadow}
+                                bottomShadowStyle={styles.bottomShadow}
+                                linearGradientStyleMain={styles.linearGradientStyleMain}
+                                onPress={sellClickHandler}
+                            >
+                                <Text h3 bold center>SELL</Text>
                             </GradientView>
                         </View>
                     </View>
@@ -453,8 +524,12 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                     )}
                 </View>
             )}
-            <BlackBGView linearFirstStyle={styles.bitcoinPriceContainer}>
-                <Text bold style={styles.bitcoinPriceText}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
+            <BlackBGView
+                linearFirstStyle={styles.bitcoinPriceContainer}
+                linearSecondStyle={styles.bitcoinPriceContainerInner}
+                linearFirstColors={[colors.black.default, colors.black.default]}
+            >
+                <Text bold style={[styles.bitcoinPriceText, { color: rateColor }]}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
             </BlackBGView>
             {isShowButtons &&
                 <GradientView

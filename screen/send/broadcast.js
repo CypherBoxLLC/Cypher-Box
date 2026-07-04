@@ -221,7 +221,7 @@ const SuccessScreen = ({ tx }) => {
           <BlueSpacing20 />
           <BlueTextCentered>{loc.settings.success_transaction_broadcasted}</BlueTextCentered>
           <BlueSpacing10 />
-          <BlueButtonLink title={loc.settings.open_link_in_explorer} onPress={() => Linking.openURL(`https://mempool.space/tx/${tx}`)} />
+          <BlueButtonLink title={loc.settings.open_link_in_explorer} onPress={() => Linking.openURL(`https://mempool.space/tx/${tx}#details`)} />
         </View>
       </BlueCard>
     </View>

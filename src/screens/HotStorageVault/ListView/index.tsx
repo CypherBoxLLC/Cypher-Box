@@ -4,7 +4,7 @@ import styles from "./styles";
 import { Text } from "@Cypher/component-library";
 import { ProgressBar5, ProgressBarColdStorage, Tag, Transaction, TransactionBlue, Yes} from "@Cypher/assets/images";
 import { colors } from "@Cypher/style-guide";
-import { btc } from "@Cypher/helpers/coinosHelper";
+import { formatCapsuleAmount } from "@Cypher/helpers/bitcoinUnits";
 import Capsule from "../Capsule";
 import MaskedView from "@react-native-masked-view/masked-view";
 
@@ -22,7 +22,7 @@ const shortenAddress = (address: string) => {
 };
 
 const ListView = ({ wallet, item, onPress, handleChoose, ids, vaultTab }: Props) => {
-    const BTCAmount = btc(item?.value) + " BTC";
+    const BTCAmount = formatCapsuleAmount(item?.value);
     const { memo } = wallet.getUTXOMetadata(item.txid, item.vout);
 
     return (

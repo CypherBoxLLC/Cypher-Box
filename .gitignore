@@ -21,6 +21,13 @@ DerivedData
 *.ipa
 *.xcuserstate
 ios/.xcode.env.local
+
+# Defense-in-depth: keep this path gitignored even though no source file
+# imports from it any more, in case a dev still has a real value at this
+# path. The constant was removed in the BARK_ACCESS_TOKEN cleanup
+# (Second.tech removed the gate beta-only on 2026-06-12).
+src/services/ark/secrets.ts
+
 *.hprof
 .cxx/
 *.keystore
@@ -43,6 +50,11 @@ local.properties
 node_modules/
 npm-debug.log
 yarn-error.log
+# yarn.lock is a stale BlueWallet-fork artifact. Cypher Box uses npm ci
+# (see CLAUDE.md). Keeping this ignored blocks an accidental
+# `yarn install` from re-committing it and re-importing the 56 alerts
+# that came with it.
+yarn.lock
 
 # BUCK
 buck-out/
@@ -84,6 +96,28 @@ artifacts/
 .vscode/
 /.vs
 
+# Claude Code — local-only LLM tooling. Project-level guidance lives in
+# AGENTS.md (the tool-agnostic convention). Anything under .claude/ is
+# either local config (settings.local.json) or ephemeral worktrees, and
+# never belongs in the public repo.
+/CLAUDE.md
+/.claude/
+
 *.mx
 *.realm
 *.realm.lock
+
+# react-native-config — runtime env (OAuth client IDs etc). Per-developer
+# / per-CI; never committed. The .env.example template DOES live in git
+# as a self-documenting list of expected keys.
+.env
+.env.local
+.env.*.local
+
+# Local-only TS secrets module (relay API key etc). Per-developer / per-CI;
+# never committed. The .example.ts template DOES live in git.
+blue_modules/secrets.ts
+
+# Reproducible-build outputs: `make repro-build` AAB + walletscrutiny verdict file
+/out/
+walletscrutiny/COMPARISON_RESULTS.yaml

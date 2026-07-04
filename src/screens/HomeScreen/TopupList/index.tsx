@@ -1,8 +1,9 @@
 import { Text } from "@Cypher/component-library";
 import { GradientView } from "@Cypher/components";
 import React, { useContext, useMemo, useState } from "react";
-import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Dimensions, Image, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -15,9 +16,11 @@ import {
   CoinOS,
   Cold1,
   Hot,
+  Second,
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import withdrawStyles from "../WithdrawList/styles";
@@ -27,6 +30,7 @@ import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
+import { getArkOnchainAddress } from "@Cypher/services/ark/receive";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -39,7 +43,7 @@ interface Props {
 }
 
 export default function TopupList({ refRBSheet, wallet, coldStorageWallet, matchedRateBTC = 0, currency }: Props) {
-  const { vaultTab, setVaultTab, isAuth, isStrikeAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
+  const { vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
   const { sleep } = useContext(BlueStorageContext);
 
   // Selection state
@@ -73,7 +77,9 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
   ];
 
   const accountData = [
-    ...(isAuth ? [{
+    // CoinOS gated by feature flag — see isCoinosAllowed() for the region
+    // / platform rules and the bypass in __DEV__ builds.
+    ...(isAuth && isCoinosAllowed() ? [{
       id: 3,
       name: "CoinOS",
       icon: CoinOS,
@@ -83,6 +89,18 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
       id: 4,
       name: "Strike",
       icon: StrikeFull,
+      isLogo: true,
+    }] : []),
+    // Ark topup destination — funds the Ark vault by sending the picked
+    // hot/cold-vault UTXOs to a fresh on-chain "boarding" address. The
+    // ASP boards the funds in the next round; the user's Ark balance
+    // updates after sync. Same EditAmount → ReviewPayment → broadcast
+    // flow as Strike/CoinOS — the only Ark-specific bit is the address
+    // generation in the address-fetch step below.
+    ...(isArkAuth ? [{
+      id: 5,
+      name: "Bark Vault",
+      icon: Second,
       isLogo: true,
     }] : []),
   ];
@@ -185,6 +203,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
     try {
       let toAddress: string | null = null;
       let toStrikeAddress: string | null = null;
+      let toArkAddress: string | null = null;
 
       if (selectedAccount === 3 && isAuth) {
         const response = await createInvoice({ type: 'bitcoin' });
@@ -192,9 +211,17 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
       } else if (selectedAccount === 4 && isStrikeAuth) {
         const responseStrike = await createInvoiceStrike({
           onchain: {},
-          targetCurrency: strikeUser?.[1]?.currency || "USD"
+          targetCurrency: "BTC" // Cypher Box: receive as Bitcoin, no auto-convert to fiat
         });
         toStrikeAddress = responseStrike?.onchain?.address || null;
+      } else if (selectedAccount === 5 && isArkAuth) {
+        // Ark boarding address — a fresh on-chain Bitcoin address derived
+        // from the Ark wallet's onchain xpub. Sends to it become VTXOs
+        // in the Ark vault after the next ASP round confirms. Goes into
+        // its OWN slot (`toArk`) rather than `toAddress`, so the
+        // construct-tx screen's account-card picker can render Ark as
+        // its own selectable destination instead of impersonating CoinOS.
+        toArkAddress = (await getArkOnchainAddress()) || null;
       }
 
       const isVaultCold = selectedVault === 2;
@@ -222,6 +249,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
           capsulesData,
           to: toAddress,
           toStrike: toStrikeAddress,
+          toArk: toArkAddress,
           type: "TOPUP",
         });
       }, 150);
@@ -235,7 +263,11 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
 
   const isVaultCold = selectedVault === 2;
   const primaryColor = isVaultCold ? colors.coldGreen : colors.green;
-  const accountLabel = selectedAccount === 3 ? 'CoinOS' : 'Strike';
+  const accountLabel =
+    selectedAccount === 3 ? 'CoinOS'
+    : selectedAccount === 4 ? 'Strike'
+    : selectedAccount === 5 ? 'Bark Vault'
+    : 'Strike';
 
   // Get memo/label for a UTXO
   const getMemo = (item: any): string | null => {
@@ -304,8 +336,12 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
               TOP-UP FROM
             </Text>
 
-            {/* Vault cards (source) */}
-            <View style={[withdrawStyles.cardListContainer, vaultData.length === 1 && { justifyContent: 'center' }]}>
+            {/* Vault cards (source) — single row (max 2 vaults).
+                Per-id border outline when selected: green for Hot,
+                blueish for Cold. Border is the visible cue since
+                neomorph-shadows is a no-op shim on Android (RN 0.76
+                dropped the native ART module). */}
+            <View style={[withdrawStyles.cardListContainer, { marginTop: 0 }, vaultData.length === 1 && { justifyContent: 'center' }]}>
               {vaultData.map((item) => (
                 <GradientView
                   key={item.id}
@@ -322,7 +358,22 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                     { shadowColor: item.shadowColor },
                     (selectedVault == null || selectedVault !== item.id) && { shadowColor: colors.gray.disable },
                   ]}
-                  linearGradientStyleMain={withdrawStyles.cardGradientMainStyle}
+                  linearGradientStyleMain={[
+                    withdrawStyles.cardGradientMainStyle,
+                    // Border is the selection cue on BOTH platforms. This
+                    // was Android-only for a while (iOS deferred to the
+                    // GradientView shadow rim, and border + rim doubled
+                    // up), but the iOS rim stopped rendering under
+                    // Fabric's useArt fallback, leaving selected tiles
+                    // with no highlight at all on iOS. If the rim ever
+                    // comes back, re-check for the double outline.
+                    selectedVault === item.id && {
+                      borderWidth: 2,
+                      borderColor: item.id === 1 ? colors.green
+                                 : item.id === 2 ? colors.blueText
+                                 : 'transparent',
+                    },
+                  ]}
                   gradiantColors={[colors.black.bg, colors.black.bg]}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
@@ -341,9 +392,19 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
               TOP-UP TO
             </Text>
 
-            {/* Account cards (destination) */}
-            <View style={[withdrawStyles.cardListContainer, accountData.length === 1 && { justifyContent: 'center' }]}>
-              {accountData.map((item) => (
+            {/* Account cards (Lightning destinations) — 2-col × 2-row
+                grid, paginated horizontally if more than 4 connected
+                rails. Mirrors WithdrawList's WITHDRAW FROM grid. Ark
+                tile (id 5) renders lightning + "Ark Vault" text instead
+                of the Second wordmark. Per-id selection outline: pink
+                for CoinOS/Strike, yellow for Ark. */}
+            {(() => {
+              const accountOutline = (id: number): string => {
+                if (id === 3 || id === 4) return colors.pink.shadowTopNew; // CoinOS / Strike
+                if (id === 5) return colors.ark.shadowTopNew;              // Ark
+                return 'transparent';
+              };
+              const renderAccountTile = (item: any) => (
                 <GradientView
                   key={item.id}
                   onPress={() => onAccountPress(item.id)}
@@ -351,25 +412,106 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   linearGradientStyle={withdrawStyles.cardOuterShadow}
                   topShadowStyle={[
                     withdrawStyles.cardTopShadow,
+                    item.id === 5 && { shadowColor: colors.ark.shadowTopNew },
                     (selectedAccount == null || selectedAccount !== item.id) && { shadowColor: colors.gray.disable },
                   ]}
                   bottomShadowStyle={[
                     withdrawStyles.cardInnerShadow,
+                    item.id === 5 && { shadowColor: colors.ark.shadowBottom },
                     (selectedAccount == null || selectedAccount !== item.id) && { shadowColor: colors.gray.disable },
                   ]}
-                  linearGradientStyleMain={withdrawStyles.cardGradientMainStyle}
+                  linearGradientStyleMain={[
+                    withdrawStyles.cardGradientMainStyle,
+                    // See HOT/COLD card above — border on both platforms.
+                    selectedAccount === item.id && {
+                      borderWidth: 2,
+                      borderColor: accountOutline(item.id),
+                    },
+                  ]}
                   gradiantColors={[colors.black.bg, colors.black.bg]}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
-                    <Image
-                      source={item.icon}
-                      style={withdrawStyles.logoImage}
-                      resizeMode="contain"
-                    />
+                    {item.id === 5 ? (
+                      // Bark tile — boat-outline + "Bark Vault" text,
+                      // matching the Receive/Send/Withdraw sheets, the
+                      // homescreen wallet card, the Vault tab, and the
+                      // Create Bark login row.
+                      <>
+                        <Ionicons
+                          name="boat-outline"
+                          size={20}
+                          color="#FFFFFF"
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>Bark Vault</Text>
+                      </>
+                    ) : (
+                      <Image
+                        source={item.icon}
+                        style={withdrawStyles.logoImage}
+                        resizeMode="contain"
+                      />
+                    )}
                   </View>
                 </GradientView>
-              ))}
-            </View>
+              );
+
+              const PAGE_SIZE = 4; // 2 cols × 2 rows
+              const pages: any[][] = [];
+              for (let i = 0; i < accountData.length; i += PAGE_SIZE) {
+                pages.push(accountData.slice(i, i + PAGE_SIZE));
+              }
+              const isPageable = pages.length > 1;
+              const renderPage = (page: any[], pageIdx: number) => (
+                <View
+                  key={pageIdx}
+                  style={{
+                    width: SCREEN_WIDTH,
+                    paddingHorizontal: 30,
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    justifyContent:
+                      page.length === 1 ? 'center' : 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  {page.map(renderAccountTile)}
+                </View>
+              );
+
+              if (!isPageable) {
+                // marginTop: 20 — pushes the Lightning grid 20pt lower
+                // beneath the TOP-UP TO label, opening up breathing room
+                // between the section title and the tiles.
+                return (
+                  <View
+                    style={{
+                      paddingHorizontal: 30,
+                      marginTop: 20,
+                      flexDirection: 'row',
+                      flexWrap: 'wrap',
+                      justifyContent:
+                        accountData.length === 1 ? 'center' : 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {accountData.map(renderAccountTile)}
+                  </View>
+                );
+              }
+
+              return (
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 20 }}
+                  contentContainerStyle={{ alignItems: 'center' }}
+                >
+                  {pages.map(renderPage)}
+                </ScrollView>
+              );
+            })()}
           </Animated.View>
 
           {/* ======= SECOND VIEW: Capsule Submenu (same as SendListNew) ======= */}

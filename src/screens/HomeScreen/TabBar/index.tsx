@@ -34,9 +34,13 @@ export default function TabBar({ isVault, scrollProgress, coldStorageClickHandle
   };
 
   return (
-    <View style={[styles.container3, { opacity: 1 }]}>
+    <View style={[styles.container3, { opacity: 1, marginTop: 10 }]}>
+      {/* Flat dark backdrop — was [gradientGray, white] which produced a
+          bright sheen on the top-right corner that read as a 3D highlight.
+          Bam wanted that removed; both stops set to the same dark colour
+          flattens the gradient into a uniform tab-bar surface. */}
       <GradientCard
-        colors_={[colors.gradientGray, colors.white]}
+        colors_={[colors.gradientGray, colors.gradientGray]}
         style={styles.container2}
         linearStyle={styles.main}
         disabled

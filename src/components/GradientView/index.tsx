@@ -57,11 +57,20 @@ export default function GradientView({
                         useArt // <- set this prop to use non-native shadow on ios
                         style={StyleSheet.flatten([styles.shadow, topShadowStyle])}
                     >
-                        {children}
+                        {/* Inner Shadow renders BEFORE children so the children
+                            paint on top. Under RN 0.77 Fabric the
+                            react-native-neomorph-shadows `useArt` fallback no
+                            longer renders a vector inset rim (ART module is
+                            gone in New Arch) — instead the Shadow paints a
+                            solid translucent overlay across its bounds.
+                            Painting it before children stops the colored tint
+                            from sitting on top of the button text (the
+                            blueish/greenish glow on the labels). */}
                         <Shadow
                             inner // <- enable inner shadow
                             useArt // <- set this prop to use non-native shadow on ios
                             style={StyleSheet.flatten([styles.innerShadow, bottomShadowStyle])} />
+                        {children}
                     </Shadow>
                 </LinearGradient>
             </View>

@@ -4,7 +4,7 @@ import styles from "./styles";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput, GradientText } from "@Cypher/components";
 import { colors, widths, } from "@Cypher/style-guide";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { dispatchReset } from "@Cypher/helpers/navigation";
 import { Bitcoin, BitcoinTower, Electrik, Socked, Tower } from "@Cypher/assets/images";
 import * as Progress from 'react-native-progress';
 import Ring from "@Cypher/components/RingEffect";
@@ -49,7 +49,13 @@ export default function TransactionBroadCastNew({navigation, route}: any) {
     }, [progress]);
 
     const onPressClickHandler = () => {
-        dispatchNavigate('HomeScreen');
+        // Reset the WalletsStack instead of CommonActions.navigate — the Cold
+        // Vault signing path (ReviewPayment → SendReceiveOnChain → BBQr →
+        // ConfirmHardwareTransaction → TransactionBroadCastNew) leaves all the
+        // intermediate screens mounted under HomeScreen on iOS Fabric (RN 0.77
+        // New Arch), producing half-rendered HomeScreen or back-popping to
+        // ReviewPayment with a blank loading state.
+        dispatchReset('HomeScreen');
     }
 
     const fadeIn = () => {

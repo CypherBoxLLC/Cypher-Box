@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Image, View, TouchableOpacity, Platform, StyleSheet, TextInput, Alert } from 'react-native';
-import { CameraScreen } from 'react-native-camera-kit';
+import { Camera, CameraType } from 'react-native-camera-kit';
 import { Icon } from 'react-native-elements';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { decodeUR, extractSingleWorkload, BlueURDecoder } from '../../blue_modules/ur';
@@ -59,6 +59,16 @@ const styles = StyleSheet.create({
     left: 96,
     bottom: 48,
   },
+  cameraFlipTouch: {
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    borderRadius: 20,
+    position: 'absolute',
+    right: 24,
+    bottom: 48,
+  },
   openSettingsContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -101,6 +111,12 @@ const ScanQRCode = () => {
   const [bbqrHave, setBbqrHave] = useState(0);
   const [bbqrData, setBbqrData] = useState({});
   const [cameraStatusGranted, setCameraStatusGranted] = useState(false);
+  // Pin the camera to the back lens by default. On some devices (observed on
+  // iOS) react-native-camera-kit was preferring the front lens, which is
+  // useless for scanning a QR code on another screen / piece of paper.
+  // Users can flip to the front camera via the on-screen swap button.
+  const [cameraType, setCameraType] = useState(CameraType.Back);
+  const flipCamera = () => setCameraType(prev => (prev === CameraType.Back ? CameraType.Front : CameraType.Back));
   const stylesHook = StyleSheet.create({
     openSettingsContainer: {
       backgroundColor: colors.brandingColor,
@@ -385,7 +401,7 @@ const ScanQRCode = () => {
           <Button title={loc.send.open_settings} onPress={openPrivacyDesktopSettings} />
         </View>
       ) : isFocused ? (
-        <CameraScreen scanBarcode onReadCode={event => onBarCodeRead({ data: event?.nativeEvent?.codeStringValue })} showFrame={false} />
+        <Camera cameraType={cameraType} scanBarcode onReadCode={event => onBarCodeRead({ data: event?.nativeEvent?.codeStringValue })} showFrame={false} style={{ flex: 1 }} />
       ) : null}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={loc._.close} style={styles.closeTouch} onPress={dismiss}>
         <Image style={styles.closeImage} source={require('../../img/close-white.png')} />
@@ -398,6 +414,16 @@ const ScanQRCode = () => {
       >
         <Icon name="image" type="font-awesome" color="#ffffff" />
       </TouchableOpacity>
+      {cameraStatusGranted && isFocused && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Flip camera"
+          style={styles.cameraFlipTouch}
+          onPress={flipCamera}
+        >
+          <Icon name="sync-alt" type="font-awesome-5" color="#ffffff" />
+        </TouchableOpacity>
+      )}
       {showFileImportButton && (
         <TouchableOpacity
           accessibilityRole="button"

@@ -1,24 +1,67 @@
-import React, { useState } from "react";
-import { View, Image, ActivityIndicator, TouchableOpacity, Animated, Easing } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Image, ActivityIndicator, TouchableOpacity, Animated, Easing, Alert } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import LinearGradient from "react-native-linear-gradient";
 import { CustomKeyboard, GradientInput } from "@Cypher/components";
-import { StrikeFull, CoinOS, GradientShock, Electricity } from "@Cypher/assets/images";
+import { GradientShock, Electricity } from "@Cypher/assets/images";
 import { dispatchNavigate, dispatchReset } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
-import { sendLightningPayment } from "@Cypher/api/coinOSApis";
-import { createInvoice as createStrikeInvoice, getPaymentQoute, getPaymentQouteByLightening } from "@Cypher/api/strikeAPIs";
 import useAuthStore from "@Cypher/stores/authStore";
 import SimpleToast from "react-native-simple-toast";
 import { StyleSheet } from "react-native";
+import {
+    swap as runSwap,
+    estimateSwapFee,
+    getLightningSwapProvider,
+    LightningSwapError,
+    InvoiceCreationFailedError,
+    PaymentFailedError,
+    PaymentPendingError,
+    type LightningSwapProvider,
+    type LightningSwapProviderId,
+} from "@Cypher/services/lightningSwap";
+import { getFiatRate } from "../../../models/fiatUnit";
 
 export default function SwapAmount() {
     const navigation = useNavigation();
     const route = useRoute();
-    const { swapFrom, sendTo, fromAddress, toAddress, sourceBalance = 0 } = route.params as any;
+    const { swapFrom, sendTo, fromAddress, toAddress, sourceBalance = 0 } = route.params as {
+        swapFrom: LightningSwapProviderId;
+        sendTo: LightningSwapProviderId;
+        fromAddress?: string;
+        toAddress?: string;
+        sourceBalance?: number;
+    };
     const { matchedRateStrike, strikeUser } = useAuthStore();
+    // Currency and rate are rail-specific. Strike carries the user's
+    // configured fiat currency (e.g. EUR) and a Strike-side rate in that
+    // currency. Every other rail uses USD and BlueWallet's USD/BTC rate
+    // (same source HomeScreen reads). Using Strike's rate as the default
+    // for non-Strike rails was the prior bug — fiat preview stayed blank
+    // whenever Strike wasn't linked.
     const currency = swapFrom === 'strike' ? (strikeUser?.[1]?.currency || 'USD') : 'USD';
+    const [usdRate, setUsdRate] = useState(0);
+    useEffect(() => {
+        if (swapFrom === 'strike') return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = (await getFiatRate('USD')) || 0;
+                if (!cancelled) setUsdRate(r);
+            } catch {}
+        })();
+        return () => { cancelled = true; };
+    }, [swapFrom]);
+    const matchedRate = swapFrom === 'strike' ? matchedRateStrike : usdRate;
+
+    // Resolve provider metadata from the registry once. Fallbacks are
+    // defensive — the navigation should never get here without valid
+    // ids, but a stale deep-link param shouldn't crash the screen.
+    let fromProvider: LightningSwapProvider | null = null;
+    let toProvider: LightningSwapProvider | null = null;
+    try { fromProvider = getLightningSwapProvider(swapFrom); } catch { fromProvider = null; }
+    try { toProvider = getLightningSwapProvider(sendTo); } catch { toProvider = null; }
 
     const [sats, setSats] = useState('');
     const [usd, setUsd] = useState('');
@@ -27,9 +70,81 @@ export default function SwapAmount() {
     const [success, setSuccess] = useState(false);
     const [swappedSats, setSwappedSats] = useState('');
     const [swappedFiat, setSwappedFiat] = useState('');
+    const [feeSats, setFeeSats] = useState<number | null>(null);
+    const [feeNote, setFeeNote] = useState<string | null>(null);
+    /**
+     * Headroom reserved off the Max button so Ark (which charges a
+     * routing fee on top of `amountSats`, not deducted from it) doesn't
+     * fail with "BarkError.Internal" when the user taps Max. We seed
+     * this once on mount with a trial estimate at the full sourceBalance
+     * — providers that don't quote ahead of time return null and we
+     * default to 0 (no reserve, same as before for Coinos/Strike).
+     */
+    const [maxFeeReserve, setMaxFeeReserve] = useState<number>(0);
 
-    const fromLogo = swapFrom === 'strike' ? StrikeFull : CoinOS;
-    const toLogo = sendTo === 'strike' ? StrikeFull : CoinOS;
+    // One-shot Max-button reserve at mount. Two-stage lookup:
+    //   1. Provider's `maxFeeReserve` — explicit headroom buffer (Coinos
+    //      uses this; the buffer isn't accurate enough to display as a
+    //      fee but is a safe Max ceiling).
+    //   2. Provider's `estimateFee` — only if `maxFeeReserve` isn't
+    //      implemented. Ark gets here and reuses its precise quote as
+    //      both display value and Max reserve.
+    // Falls back to 0 (full balance is allowed) when neither exists —
+    // current behavior for Strike.
+    useEffect(() => {
+        if (!swapFrom || !sourceBalance) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const provider = fromProvider;
+                let reserve = 0;
+                if (provider?.maxFeeReserve) {
+                    reserve = Number(await provider.maxFeeReserve(Number(sourceBalance))) || 0;
+                } else {
+                    const est = await estimateSwapFee(swapFrom, Number(sourceBalance));
+                    reserve = est ? Math.max(0, Number(est.feeSats || 0)) : 0;
+                }
+                if (!cancelled) setMaxFeeReserve(Math.max(0, reserve));
+            } catch {
+                // Reserve is best-effort — fall back to 0 (full balance).
+                if (!cancelled) setMaxFeeReserve(0);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [swapFrom, sourceBalance, fromProvider]);
+
+    // Fee preview — only providers that quote ahead of time (Ark)
+    // populate this. Custodial sources (Coinos, Strike) leave it null
+    // and the success view falls back to "—". Debounce-by-cancellation
+    // pattern: keep the latest amount's request, drop earlier ones.
+    useEffect(() => {
+        const amount = Number(sats);
+        if (!swapFrom || !amount || amount <= 0) {
+            setFeeSats(null);
+            setFeeNote(null);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const est = await estimateSwapFee(swapFrom, amount);
+                if (cancelled) return;
+                if (est) {
+                    setFeeSats(est.feeSats);
+                    setFeeNote(est.note ?? null);
+                } else {
+                    setFeeSats(null);
+                    setFeeNote(null);
+                }
+            } catch {
+                if (!cancelled) {
+                    setFeeSats(null);
+                    setFeeNote(null);
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [sats, swapFrom]);
 
     const handleSwap = async () => {
         const amount = Number(sats);
@@ -38,82 +153,97 @@ export default function SwapAmount() {
             return;
         }
 
-        // Get the correct sats and fiat values regardless of input mode
+        // Resolve sats vs fiat from the keyboard's input mode. Display
+        // values for the success screen come from these.
         const satsAmount = isSats ? amount : Number(usd);
         const fiatAmount = isSats ? Number(usd) : amount;
 
         setLoading(true);
         try {
-            if (swapFrom === 'coinos') {
-                // 1. Create invoice on Strike for the amount
-                const strikeCurrency = strikeUser?.[1]?.currency || 'USD';
-                console.log('Creating Strike invoice for:', fiatAmount, strikeCurrency, 'sats:', satsAmount);
-                const invoiceResponse = await createStrikeInvoice({
-                    bolt11: {
-                        amount: {
-                            amount: fiatAmount,
-                            currency: strikeCurrency,
+            const result = await runSwap(swapFrom, sendTo, satsAmount, {
+                memo: `Swap ${swapFrom} → ${sendTo}`,
+            });
+            // Engine returns the source provider's fee if surfaced
+            // (Ark does, others don't). Override our preview with the
+            // realised fee so the success view is accurate even when
+            // the pre-swap estimate was a placeholder.
+            if (typeof result.feeSats === 'number') {
+                setFeeSats(result.feeSats);
+            }
+            setSwappedSats(String(satsAmount));
+            setSwappedFiat(String(fiatAmount));
+            setSuccess(true);
+        } catch (error) {
+            console.error('Swap error:', error);
+
+            // PENDING is NOT a failure and must NOT invite a retry — a
+            // retry re-reserves the source balance for a payment that may
+            // still settle. Surface it as a blocking modal (not a toast)
+            // so the user actually reads "do not retry, check the source
+            // wallet" before tapping anything. See the 2026-05-31 incident
+            // where retrying a PENDING Strike swap reserved it three times.
+            if (error instanceof PaymentPendingError) {
+                // Clear the "Processing swap..." view first so the screen
+                // isn't visibly stuck behind the alert while React flushes
+                // — under a busy JS thread that flush was landing seconds
+                // after the alert appeared, reading as a spinner hang.
+                setLoading(false);
+                Alert.alert(
+                    'Payment submitted, not yet confirmed',
+                    error.message,
+                    [
+                        {
+                            text: 'OK, I will check',
+                            style: 'default',
+                            // Close the swap flow entirely once the user
+                            // acknowledges. Staying on SwapAmount with a
+                            // stale amount pre-filled invites the retry
+                            // this alert exists to prevent. Home shows
+                            // the real balance state; if the destination
+                            // eventually settles, the balance updates
+                            // there naturally.
+                            onPress: () => dispatchReset('HomeScreen'),
                         },
-                        expiryInSeconds: 60,
-                    },
-                    targetCurrency: strikeCurrency,
-                });
-                console.log('Strike invoice response:', invoiceResponse);
-                const bolt11Invoice = invoiceResponse?.bolt11?.invoice;
-                if (!bolt11Invoice) {
-                    SimpleToast.show(invoiceResponse?.data?.message || 'Failed to create Strike invoice', SimpleToast.SHORT);
+                    ],
+                    { cancelable: false },
+                );
+                return;
+            }
+
+            // Tailored toast per failure stage so the user knows whether
+            // the destination's invoice or the source's payment failed.
+            const fallback = 'Swap failed. Please try again.';
+            let message = fallback;
+            if (error instanceof InvoiceCreationFailedError) {
+                message = `${toProvider?.displayName ?? sendTo} couldn't create an invoice — ${(error.cause as Error)?.message ?? error.message}`;
+            } else if (error instanceof PaymentFailedError) {
+                // A VTXO the Ark server reports as "unregistered" is a stuck
+                // capsule that blocks EVERY Ark send until it's cleared. The raw
+                // error is the opaque tag "BarkError.Internal"; the real reason
+                // lives in cause.inner.errorMessage. Detect it and show a clear,
+                // blocking message instead of a useless 2s toast.
+                // (Recovery action is TBD pending whether a batch-refresh can
+                // evict such a VTXO; if it can't, this needs an SDK-level
+                // vtxo-drop from Second.tech.)
+                const cause: any = error.cause;
+                const inner: string = cause?.inner?.errorMessage ?? cause?.message ?? '';
+                if (/not spendable.*unregistered|state:\s*unregistered/i.test(inner)) {
+                    Alert.alert(
+                        'A capsule is stuck',
+                        "One of your lightning capsules is in a state the Bark server won't spend, so payments from Bark keep failing. Try sending from a different wallet for now.",
+                        [{ text: 'OK', style: 'default' }],
+                        { cancelable: true },
+                    );
                     setLoading(false);
                     return;
                 }
-                // 2. Pay the invoice from CoinOS
-                const payResponseText = await sendLightningPayment(bolt11Invoice, 'Swap to Strike', satsAmount);
-                console.log('CoinOS pay response:', payResponseText);
-                let payResponse: any;
-                try {
-                    payResponse = JSON.parse(payResponseText);
-                } catch {
-                    payResponse = payResponseText;
-                }
-                if (payResponse?.confirmed || payResponse?.id) {
-                    setSwappedSats(String(satsAmount));
-                    setSwappedFiat(String(fiatAmount));
-                    setSuccess(true);
-                } else {
-                    SimpleToast.show(typeof payResponse === 'string' ? payResponse : (payResponse?.message || 'Swap failed'), SimpleToast.SHORT);
-                }
-            } else if (swapFrom === 'strike') {
-                const strikeCurrency = strikeUser?.[1]?.currency || 'USD';
-                const payload = {
-                    lnAddressOrUrl: toAddress,
-                    sourceCurrency: 'BTC',
-                    amount: {
-                        amount: String(fiatAmount),
-                        currency: strikeCurrency,
-                    },
-                };
-                const quoteResponse = await getPaymentQoute('lightning/lnurl', payload);
-                console.log('Strike quote response:', quoteResponse);
-
-                if (quoteResponse?.paymentQuoteId) {
-                    const executeResponse = await getPaymentQouteByLightening(
-                        payload,
-                        quoteResponse.paymentQuoteId
-                    );
-                    console.log('Strike execute response:', executeResponse);
-                    if (executeResponse?.state === 'COMPLETED' || executeResponse?.completed) {
-                        setSwappedSats(String(satsAmount));
-                        setSwappedFiat(String(fiatAmount));
-                        setSuccess(true);
-                    } else {
-                        SimpleToast.show(executeResponse?.data?.message || 'Swap failed', SimpleToast.SHORT);
-                    }
-                } else {
-                    SimpleToast.show(quoteResponse?.data?.message || 'Failed to create quote', SimpleToast.SHORT);
-                }
+                message = `${fromProvider?.displayName ?? swapFrom} payment failed, ${cause?.message ?? error.message}`;
+            } else if (error instanceof LightningSwapError) {
+                message = error.message;
+            } else if (error instanceof Error) {
+                message = error.message || fallback;
             }
-        } catch (error) {
-            console.error('Swap error:', error);
-            SimpleToast.show('Swap failed. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(message, SimpleToast.SHORT);
         } finally {
             setLoading(false);
         }
@@ -175,6 +305,31 @@ export default function SwapAmount() {
         }
     }, [success]);
 
+    /**
+     * Render a wallet badge in the from→to direction strip. Uses the
+     * provider's icon when available, falls back to the displayName as
+     * text — matches SwapSheet's tile fallback so Ark (no logo) doesn't
+     * render a broken Image.
+     */
+    const renderProviderBadge = (
+        provider: LightningSwapProvider | null,
+        fallbackId: LightningSwapProviderId,
+        styleVariant: 'inline' | 'success',
+    ) => {
+        const boxStyle = styleVariant === 'success' ? styles.successServiceBox : styles.serviceBox;
+        const logoStyle = styleVariant === 'success' ? styles.successLogo : styles.logo;
+        const labelStyle = styleVariant === 'success' ? styles.successTextBadge : styles.textBadge;
+        return (
+            <View style={boxStyle}>
+                {provider?.icon ? (
+                    <Image source={provider.icon} style={logoStyle} />
+                ) : (
+                    <Text bold style={labelStyle}>{provider?.displayName ?? fallbackId}</Text>
+                )}
+            </View>
+        );
+    };
+
     if (success) {
         return (
             <ScreenLayout showToolbar isBackButton={false}>
@@ -182,6 +337,26 @@ export default function SwapAmount() {
                     <Text semibold style={styles.successTitle}>Swap Sent ⚡</Text>
                     <Text semibold style={styles.successValue}>{swappedSats} sats</Text>
                     <Text semibold style={styles.successFiat}>{currency === 'EUR' ? '€' : '$'}{swappedFiat}</Text>
+                    {feeSats !== null && feeSats > 0 && (() => {
+                        // Surface the realised network fee under the fiat
+                        // line. Only providers that report it (Ark) reach
+                        // this branch — custodial swaps hide the row.
+                        // Percentage matches the pre-swap preview formula
+                        // and the ArkSendScreen Fee % row for consistency.
+                        const swappedSatsNum = Number(swappedSats) || 0;
+                        const gross = swappedSatsNum + feeSats;
+                        const feePct = gross > 0 ? Math.min(999, (feeSats / gross) * 100) : null;
+                        const pctStr = feePct === null
+                            ? ''
+                            : feePct < 0.01
+                                ? ' (< 0.01%)'
+                                : ` (${feePct.toFixed(feePct < 1 ? 2 : 1)}%)`;
+                        return (
+                            <Text style={styles.successFee}>
+                                Network fee: {feeSats} sats{pctStr}{feeNote ? ` · ${feeNote}` : ''}
+                            </Text>
+                        );
+                    })()}
                     <View style={styles.animationContainer}>
                         <Animated.View style={[styles.ring, { transform: [{ scale: ring1Scale }], opacity: ring1Opacity }]}>
                             <Image source={GradientShock} style={styles.ringImage} />
@@ -192,13 +367,9 @@ export default function SwapAmount() {
                         <Image source={Electricity} style={styles.boltImage} />
                     </View>
                     <View style={styles.successDirection}>
-                        <View style={styles.successServiceBox}>
-                            <Image source={fromLogo} style={styles.successLogo} />
-                        </View>
+                        {renderProviderBadge(fromProvider, swapFrom, 'success')}
                         <Text style={styles.successArrow}>→</Text>
-                        <View style={styles.successServiceBox}>
-                            <Image source={toLogo} style={styles.successLogo} />
-                        </View>
+                        {renderProviderBadge(toProvider, sendTo, 'success')}
                     </View>
                     <Text semibold style={styles.successNetwork}>Lightning Network</Text>
                     <TouchableOpacity onPress={() => navigation.popToTop()} style={styles.homeButton}>
@@ -219,16 +390,35 @@ export default function SwapAmount() {
     return (
         <ScreenLayout disableScroll showToolbar isBackButton title="Lightning Swap">
             <View style={styles.main}>
-                <GradientInput isSats={isSats} walletInfo={{ matchedRate: matchedRateStrike, currency }} sats={sats} setSats={setSats} usd={usd} />
+                <GradientInput isSats={isSats} walletInfo={{ matchedRate, currency }} sats={sats} setSats={setSats} usd={usd} />
                 <View style={styles.directionRow}>
-                    <View style={styles.serviceBox}>
-                        <Image source={fromLogo} style={styles.logo} />
-                    </View>
+                    {renderProviderBadge(fromProvider, swapFrom, 'inline')}
                     <Text style={styles.arrow}>→</Text>
-                    <View style={styles.serviceBox}>
-                        <Image source={toLogo} style={styles.logo} />
-                    </View>
+                    {renderProviderBadge(toProvider, sendTo, 'inline')}
                 </View>
+                {feeSats !== null && feeSats > 0 && (() => {
+                    // Pre-swap fee preview. Shown when the source rail's
+                    // estimateFee() returned a value (Ark via the Bark SDK).
+                    // Custodial sources skip this row entirely so the layout
+                    // doesn't reserve empty space.
+                    // Fee % of total debited (sats + feeSats) — matches the
+                    // ArkSendScreen Fee % row so the user gets the same
+                    // signal across regular send and swap surfaces. Capped
+                    // at 999% so tiny-amount swaps don't break layout.
+                    const amountSats = Number(sats) || 0;
+                    const gross = amountSats + feeSats;
+                    const feePct = gross > 0 ? Math.min(999, (feeSats / gross) * 100) : null;
+                    const pctStr = feePct === null
+                        ? ''
+                        : feePct < 0.01
+                            ? ' (< 0.01%)'
+                            : ` (${feePct.toFixed(feePct < 1 ? 2 : 1)}%)`;
+                    return (
+                        <Text style={styles.feePreview}>
+                            Estimated network fee: {feeSats} sats{pctStr}{feeNote ? ` · ${feeNote}` : ''}
+                        </Text>
+                    );
+                })()}
             </View>
             {loading ? (
                 <View style={styles.loadingView}>
@@ -244,10 +434,15 @@ export default function SwapAmount() {
                     setUSD={setUsd}
                     setIsSATS={setIsSats}
                     disabled={!sats || Number(sats) <= 0 || loading}
-                    matchedRate={matchedRateStrike}
+                    matchedRate={matchedRate}
                     currency={currency}
                     colors_={[colors.pink.extralight, colors.pink.default]}
-                    maxBalance={sourceBalance}
+                    // Effective max = balance minus reserved fee headroom.
+                    // Coinos/Strike keep the full balance (their estimate
+                    // returns null → reserve=0). Ark deducts the routing
+                    // fee so the keyboard's Max button stays within the
+                    // SDK's "amount + fee ≤ spendable" constraint.
+                    maxBalance={Math.max(0, Number(sourceBalance) - maxFeeReserve)}
                 />
             )}
         </ScreenLayout>
@@ -276,6 +471,22 @@ const styles = StyleSheet.create({
         height: 24,
         width: 90,
         resizeMode: 'contain',
+    },
+    textBadge: {
+        // Same vertical region as the logo so icon and text providers
+        // sit at identical heights in the directionRow.
+        height: 24,
+        lineHeight: 24,
+        fontSize: 16,
+        color: '#FFFFFF',
+        textAlign: 'center',
+        minWidth: 60,
+    },
+    feePreview: {
+        marginTop: 18,
+        textAlign: 'center',
+        color: '#AAAAAA',
+        fontSize: 13,
     },
     arrow: {
         fontSize: 24,
@@ -351,6 +562,20 @@ const styles = StyleSheet.create({
         height: 30,
         width: 110,
         resizeMode: 'contain',
+    },
+    successTextBadge: {
+        height: 30,
+        lineHeight: 30,
+        fontSize: 18,
+        color: '#FFFFFF',
+        textAlign: 'center',
+        minWidth: 80,
+    },
+    successFee: {
+        marginTop: 6,
+        fontSize: 14,
+        color: '#AAAAAA',
+        textAlign: 'center',
     },
     successArrow: {
         fontSize: 28,

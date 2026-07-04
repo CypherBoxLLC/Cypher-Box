@@ -125,7 +125,7 @@ export default function LoginCoinOSScreen() {
         setToken(response.token);
         setUser(response.user);
         
-        const temp = [...allBTCWallets];
+        const temp = (allBTCWallets as string[]).filter(w => w !== 'COINOS');
         setAllBTCWallets([...temp, 'COINOS']);
         
         // Save credentials securely in keychain (iOS) / keystore (Android)
@@ -205,7 +205,7 @@ export default function LoginCoinOSScreen() {
         setCaptchaToken("");
     };
 
-    console.log('captchaToken: ', captchaToken)
+    if (__DEV__) console.log('captchaToken set:', !!captchaToken, 'len:', captchaToken?.length ?? 0)
     return (
         <ScreenLayout keyboardAware showToolbar>
             <View style={styles.container}>

@@ -21,6 +21,29 @@ if (process.env.NODE_ENV !== 'development') {
 
     Bugsnag.start({
       collectUserIp: false,
+      // Don't record console.* as breadcrumbs (omit 'log'): the app logs
+      // around auth and payment flows, and console breadcrumbs would ship
+      // that context (including tokens) with any later crash report.
+      enabledBreadcrumbTypes: ['navigation', 'request', 'process', 'user', 'state', 'error', 'manual'],
+      // Default redactedKeys is only ['password']; widen it so secret-shaped
+      // keys are scrubbed from metadata and breadcrumbs before upload.
+      redactedKeys: [
+        'password',
+        /token/i,
+        /secret/i,
+        'accessToken',
+        'refreshToken',
+        'codeVerifier',
+        'authorizationCode',
+        'mnemonic',
+        'seed',
+        'privateKey',
+        'xprv',
+        'passphrase',
+        'otp',
+        'apiKey',
+        'authorization',
+      ],
       user: {
         id: uniqueID,
       },
