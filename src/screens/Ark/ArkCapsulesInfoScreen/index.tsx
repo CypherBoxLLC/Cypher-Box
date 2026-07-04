@@ -52,14 +52,10 @@ export default function ArkCapsulesInfoScreen() {
                         off, no reminders fire and you alone are responsible for opening the
                         app and refreshing your capsules before they expire.
                     </Body>
-                    <StatusRow
-                        title="Last-resort rescue to Strike or CoinOS"
-                        body="If a capsule is within roughly 12 hours of expiring and still hasn't refreshed, Cypher Box automatically forwards those funds over Lightning to your connected Strike or CoinOS balance (Strike first, CoinOS as backup). Your money is safe there as a custodial balance, which is far better than letting the capsule expire and forcing a costly on-chain recovery. You can move it back into Ark whenever you like."
-                    />
                     <Body>
-                        This rescue only runs if you have Strike or CoinOS connected. If
-                        neither is connected, the reminder notifications are your only
-                        safety net.
+                        The reminders are your safety net. Refreshing only works while the
+                        app is open, so tapping a reminder is what keeps your capsules
+                        alive.
                     </Body>
                 </Section>
 
@@ -80,23 +76,23 @@ export default function ArkCapsulesInfoScreen() {
                 <Section title="What the capsule colors mean">
                     <ColorRow
                         color="#4ADE80"
-                        label="Green — 21+ days left"
+                        label="Green: 21+ days left"
                         body="Fresh. Nothing to do."
                     />
                     <ColorRow
                         color={colors.ark?.light ?? "#F2C94C"}
-                        label="Yellow — 14–20 days left"
-                        body="Past the midpoint. We'll refresh it before it gets urgent."
+                        label="Yellow: 14-20 days left"
+                        body="Past the midpoint. Worth refreshing next time you're in the app."
                     />
                     <ColorRow
                         color="#FB923C"
-                        label="Orange — 7–13 days left"
-                        body="Within the refresh window. Cypher Box will roll it in on the next refresh."
+                        label="Orange: 7-13 days left"
+                        body="Within the refresh window. Refresh it now, before the reminders start."
                     />
                     <ColorRow
                         color={colors.redLight ?? "#FF6B6B"}
-                        label="Red — less than 7 days left"
-                        body="Needs refresh soon. After it expires, the server can claim the capsule."
+                        label="Red: less than 7 days left"
+                        body="Needs refresh now. Reminders are firing, tap one to refresh. After it expires, the server can claim the capsule."
                     />
                 </Section>
 
@@ -111,7 +107,7 @@ export default function ArkCapsulesInfoScreen() {
                     />
                     <StatusRow
                         title="In-flight"
-                        body="Being used in another operation — an outgoing send, withdrawal, or boarding. Same kind of brief lock as Refreshing."
+                        body="Being used in another operation: an outgoing send, withdrawal, or boarding. Same kind of brief lock as Refreshing."
                     />
                 </Section>
 
