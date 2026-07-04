@@ -64,6 +64,18 @@ import {
 export const CUSTODIAL_SWEEP_THRESHOLD = 72;
 
 /**
+ * HARD KILL-SWITCH. The custodial sweep was an experimental safety net that
+ * never shipped as a product feature: it depends on background execution
+ * windows the OS doesn't reliably grant, and the supported expiry story is
+ * the 5 tap-to-refresh reminder notifications. User-facing docs state that
+ * reminders are the only safety net, so silently moving funds to a
+ * custodian here would contradict what users were told. Disabled at the
+ * entry point (covers all scheduler call sites) pending full removal of
+ * the dead background-refresh machinery.
+ */
+export const CUSTODIAL_SWEEP_ENABLED = false;
+
+/**
  * LN routing fee reserve, subtracted off the gross before sweeping so the
  * Ark `payLightningInvoice` doesn't fail with "not enough balance" (amount
  * + fee > spendable).
@@ -115,6 +127,7 @@ let sweepInFlight = false;
 // ---------------------------------------------------------------------
 
 export type EmergencySweepOutcome =
+    | 'disabled'
     | 'no_handle'
     | 'no_imminent_vtxos'
     | 'pending_round_conflict'
@@ -217,6 +230,10 @@ function pushSweepAlert(title: string, message: string): void {
 export async function runEmergencyCustodialSweep(
     trigger: 'scheduled' | 'push' | 'foreground' | 'manual-test' = 'scheduled',
 ): Promise<EmergencySweepResult> {
+    if (!CUSTODIAL_SWEEP_ENABLED) {
+        console.log('[Ark sweep] disabled by kill-switch (trigger=' + trigger + ')');
+        return { outcome: 'disabled' };
+    }
     if (sweepInFlight) {
         console.log('[Ark sweep] re-entry blocked — previous attempt still in flight');
         return { outcome: 'reentry_blocked' };
