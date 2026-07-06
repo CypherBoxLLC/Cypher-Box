@@ -198,6 +198,21 @@ export function isArkExpiryWarningSource(s: unknown): s is ArkExpiryWarningSourc
 }
 
 /**
+ * Every notification source whose tap should deep-link into the Capsules
+ * tab: the expiry warnings (refresh is the action), payment-received
+ * (see what landed), and refresh-complete (see the fresh capsules; the
+ * visit also reconciles any stale locked/pulsing UI state). The tap
+ * handler in notificationHandler.ts matches against this.
+ */
+export function isArkCapsuleTapSource(s: unknown): boolean {
+    return (
+        isArkExpiryWarningSource(s) ||
+        s === 'ark-received' ||
+        s === 'ark-refresh-complete'
+    );
+}
+
+/**
  * Pre-expiry warning schedule. Each row defines one OS-level alarm that
  * fires `offsetMs` before a VTXO's expiry timestamp. Add a row to add a
  * warning; the schedule + cancel loops adapt automatically. Order matters
@@ -416,7 +431,31 @@ export function notifyArkReceived(sats?: number): void {
         typeof sats === 'number' && sats > 0
             ? `You received ${sats.toLocaleString()} sats in your Bark Vault.`
             : 'You received a payment in your Bark Vault.';
-    fire('Payment received', body, 'high', { sats });
+    // Dedicated source so the tap deep-links to the Capsules tab (see
+    // isArkCapsuleTapSource); the default 'ark-bg-refresh' source is
+    // ignored by the tap handler.
+    fire('Payment received', body, 'high', { source: 'ark-received', sats });
+}
+
+/**
+ * "Refresh done" — fired when a refresh round finalizes while the app is
+ * backgrounded. Complements the in-app refreshing indicator: users who
+ * kicked off a batch refresh (rounds can take up to an hour) and switched
+ * away get a definitive completion signal instead of re-opening the app
+ * to check. Foreground is deliberately not notified; the Capsules UI is
+ * the signal there. Caller dedupes per movement id.
+ */
+export function notifyArkRefreshComplete(capsuleCount?: number): void {
+    const subject =
+        typeof capsuleCount === 'number' && capsuleCount > 0
+            ? `${capsuleCount} capsule${capsuleCount === 1 ? '' : 's'}`
+            : 'Your capsules';
+    fire(
+        'Refresh complete',
+        `${subject} refreshed successfully. Fresh expiry is locked in.`,
+        'low',
+        { source: 'ark-refresh-complete', capsuleCount },
+    );
 }
 
 /**

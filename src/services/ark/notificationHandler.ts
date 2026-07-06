@@ -3,25 +3,24 @@ import PushNotification from 'react-native-push-notification';
 import useAuthStore from '@Cypher/stores/authStore';
 
 import { navigationRef } from '../../../NavigationService';
-import { isArkExpiryWarningSource } from './backgroundNotifications';
+import { isArkCapsuleTapSource, isArkExpiryWarningSource } from './backgroundNotifications';
 
 /**
- * Notification-tap routing for the Ark expiry warnings.
- *
- * This is the surviving piece of the old background-refresh scheduler:
- * the five pre-scheduled local expiry warnings (backgroundNotifications.ts)
- * fire regardless of app state, and tapping one deep-links the user to the
- * Capsules tab with an auto-refresh flag set. The silent-push / scheduled
- * background wake machinery that used to live alongside this handler was
- * removed after being disarmed in v0.1.1 — refresh now only happens with
- * the app in the foreground (sync-tick urgency sweep or user action).
+ * Notification-tap routing for the Ark capsule notifications: the five
+ * pre-scheduled expiry warnings, payment-received alerts, and
+ * refresh-complete notices (all in backgroundNotifications.ts). They fire
+ * regardless of app state; tapping any of them deep-links the user to the
+ * Capsules tab. The silent-push / scheduled background wake machinery that
+ * used to live alongside this handler was removed after being disarmed in
+ * v0.1.1 — refresh now only happens with the app in the foreground
+ * (sync-tick urgency sweep or user action).
  */
 
 /**
- * Deep-link the user to the Ark Capsules tab and signal it to auto-refresh
- * on mount. Called from the notification tap handler — both for live taps
- * (app already running) and cold-start taps. The cold-start case is
- * delivered through the same `onNotification` callback because
+ * Deep-link the user to the Ark Capsules tab, optionally signalling it to
+ * auto-refresh on mount. Called from the notification tap handler — both
+ * for live taps (app already running) and cold-start taps. The cold-start
+ * case is delivered through the same `onNotification` callback because
  * react-native-push-notification's `configure()` default
  * `popInitialNotification: true` auto-pops the initial notification once
  * the JS bridge is ready.
@@ -35,11 +34,17 @@ import { isArkExpiryWarningSource } from './backgroundNotifications';
  */
 const NAV_WAIT_MS = 8000;
 
-async function dispatchArkExpiryTapRefresh(): Promise<void> {
-    try {
-        useAuthStore.getState().setArkPendingTapRefresh(true);
-    } catch (err) {
-        console.warn('[Ark notifications] could not set tap-refresh flag:', err);
+async function dispatchArkCapsuleTap(autoRefresh: boolean): Promise<void> {
+    // Only expiry-warning taps arm the auto-refresh-on-mount flag —
+    // refreshing is the action those notifications ask for. Payment-received
+    // and refresh-complete taps are informational: navigate to Capsules
+    // (whose mount reconciles VTXO state) without spending refresh fees.
+    if (autoRefresh) {
+        try {
+            useAuthStore.getState().setArkPendingTapRefresh(true);
+        } catch (err) {
+            console.warn('[Ark notifications] could not set tap-refresh flag:', err);
+        }
     }
 
     const wallet = useAuthStore.getState().arkWallet;
@@ -83,19 +88,19 @@ export function registerArkNotificationTapHandler(): void {
             if (
                 notification &&
                 notification.userInteraction === true &&
-                isArkExpiryWarningSource(data.source)
+                isArkCapsuleTapSource(data.source)
             ) {
-                // User tapped a pre-scheduled VTXO expiry warning (or one
-                // of the live equivalents fired from a refresh tick).
-                // Deterministic path: set a one-shot zustand flag, then
-                // deep-link to the Capsules tab. ArkCapsules consumes the
-                // flag on mount, hydrates the wallet (re-prompts Keychain
-                // biometric if needed), and fires `refreshIds` against
-                // every imminent VTXO with the existing "Refreshing…"
-                // indicator visible from the moment the screen renders.
+                // User tapped a capsule-related notification: an expiry
+                // warning, a payment-received alert, or a refresh-complete
+                // notice. All deep-link to the Capsules tab; only expiry
+                // warnings arm the one-shot auto-refresh flag, which
+                // ArkCapsules consumes on mount (hydrates the wallet,
+                // re-prompts Keychain biometric if needed, and fires
+                // `refreshIds` against every imminent VTXO with the
+                // "Refreshing…" indicator visible from first render).
                 // Works on cold/background/foreground because configure()
                 // auto-pops the initial notification on cold launches.
-                void dispatchArkExpiryTapRefresh();
+                void dispatchArkCapsuleTap(isArkExpiryWarningSource(data.source));
             }
         },
     });

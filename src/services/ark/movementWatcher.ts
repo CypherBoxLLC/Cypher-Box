@@ -6,7 +6,7 @@ import {
 } from '@secondts/bark-react-native';
 
 import useAuthStore from '@Cypher/stores/authStore';
-import { notifyArkReceived } from './backgroundNotifications';
+import { notifyArkReceived, notifyArkRefreshComplete } from './backgroundNotifications';
 import { getArkWalletHandle } from './walletHandle';
 
 /**
@@ -34,6 +34,11 @@ import { getArkWalletHandle } from './walletHandle';
 let active = false;
 let holder: NotificationHolderInterface | null = null;
 let cancelled = false;
+// Movement ids that already produced a refresh-complete notification.
+// Process-lifetime scope is intentional: a boot-time replay of historical
+// movements happens with the app foregrounded, where the AppState gate
+// suppresses the notification anyway.
+const notifiedRefreshMovementIds = new Set<number>();
 // Promise that resolves when the runLoop has fully torn down — used by
 // `stopArkMovementWatcher` to give callers an awaitable signal that the
 // holder's `uniffiDestroy()` has run and bark's SQLite file descriptors
@@ -174,6 +179,22 @@ function handleNotification(notif: { tag: string; inner?: any }): void {
     if (notif.tag !== WalletNotification_Tags.MovementUpdated) return;
     const subsystem = String(movement.subsystemKind ?? '').toLowerCase();
     const status = String(movement.status ?? '').toLowerCase();
+
+    // Refresh-round completion push. The SDK re-emits movement events on
+    // subsequent syncs (observed live: failed refresh movements re-fire on
+    // every tick), so dedupe on the movement id — one notification per
+    // completed round, ever, for this process. Backgrounded only: with
+    // the app open the Capsules UI is the completion signal.
+    if (subsystem === 'refresh' && status === 'successful') {
+        if (!notifiedRefreshMovementIds.has(movement.id)) {
+            notifiedRefreshMovementIds.add(movement.id);
+            if (AppState.currentState !== 'active') {
+                notifyArkRefreshComplete(movement.outputVtxoIds?.length ?? 0);
+            }
+        }
+        return;
+    }
+
     if (subsystem !== 'receive') return;
     if (status !== 'successful') return;
     const ids: string[] = movement.outputVtxoIds ?? [];
