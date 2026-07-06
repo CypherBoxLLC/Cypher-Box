@@ -87,12 +87,20 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
             return { restored: true };
         } catch (err) {
             lastErr = err as Error;
-            const detail = `${(err as { tag?: string })?.tag ?? ''} ${(err as Error)?.message ?? ''}`;
+            const e = err as { tag?: string; message?: string; inner?: { errorMessage?: string; message?: string } };
+            const detail = `${e?.tag ?? ''} ${e?.message ?? ''}`;
             const transient = /ServerConnection|Connection|timeout|timed out|network/i.test(detail);
             if (!transient || attempt === OPEN_ATTEMPTS) break;
             if (__DEV__) {
+                // Stringify the inner UniFFI payload inline: the tag alone
+                // (BarkError.ServerConnection) hides whether the failure was
+                // DNS, TCP, TLS, or a gRPC status from the ASP, and object
+                // args don't survive log forwarding as text.
                 console.log(
-                    `[Ark restore] open attempt ${attempt}/${OPEN_ATTEMPTS} failed (${detail.trim()}); retrying in ${OPEN_RETRY_DELAY_MS}ms`,
+                    `[Ark restore] open attempt ${attempt}/${OPEN_ATTEMPTS} failed (${detail.trim()}); ` +
+                    `inner=${e?.inner?.errorMessage ?? e?.inner?.message ?? 'n/a'} ` +
+                    `raw=${JSON.stringify(e, Object.getOwnPropertyNames(e ?? {}))}; ` +
+                    `retrying in ${OPEN_RETRY_DELAY_MS}ms`,
                 );
             }
             await new Promise((r) => setTimeout(r, OPEN_RETRY_DELAY_MS));
