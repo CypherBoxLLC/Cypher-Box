@@ -183,35 +183,6 @@ export async function openArkWallet(mnemonic: string): Promise<WalletInterface> 
 }
 
 /**
- * Hydrate the wallet handle from a seed obtained outside any foreground
- * UI flow — e.g. a background-refresh wake on a force-quit app where the
- * JS module was just freshly imported and `cachedMnemonic` is null.
- *
- * No-op if a handle is already open. Otherwise delegates to
- * `createArkWallet(mnemonic, false)` which is open-or-create + populates
- * the in-memory mnemonic cache, so subsequent reads of
- * `getCachedArkMnemonic()` work normally for the rest of this process.
- *
- * Pulled out as a separate symbol so the import surface for background
- * callers is narrow and easy to audit.
- */
-export async function hydrateArkWalletFromBackgroundSeed(
-    mnemonic: string,
-): Promise<WalletInterface> {
-    if (handle) {
-        // Handle survived from a previous foreground session but the onchain
-        // handle may not have been spawned yet. Make sure it is, so the
-        // next syncArkWallet tick covers the boarding-deposit path. We
-        // already have a fresh mnemonic from the caller — bias the cache
-        // to it just in case the previous cache was cleared.
-        if (!cachedMnemonic) cachedMnemonic = mnemonic;
-        await tryEagerSpawnOnchainHandle('hydrateArkWalletFromBackgroundSeed reuse');
-        return handle;
-    }
-    return createArkWallet(mnemonic, false);
-}
-
-/**
  * Synchronously shut down the live Rust handles before nulling our JS refs.
  *
  * Why this matters: setting `handle = null` only drops the JS reference. The
@@ -277,7 +248,7 @@ export function getArkOnchainHandle(): OnchainWalletInterface | null {
  *
  * Mnemonic source preference:
  *   1. The in-process `cachedMnemonic` populated by `createArkWallet` /
- *      `openArkWallet` / `hydrateArkWalletFromBackgroundSeed`. This is the
+ *      `openArkWallet`. This is the
  *      common path: anything happening *during* an open session reuses the
  *      same seed, no Keychain hit, no biometric prompt, works in background.
  *   2. Keychain fallback for the rare case where this is the very first call

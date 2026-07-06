@@ -3,7 +3,7 @@ import './shim.js';
 import { AppRegistry } from 'react-native';
 import App from './App';
 import { BlueStorageProvider } from './blue_modules/storage-context';
-import { registerArkBackgroundRefreshHandlers } from './src/services/ark/scheduler';
+import { registerArkNotificationTapHandler } from './src/services/ark/notificationHandler';
 
 const A = require('./blue_modules/analytics');
 if (!Error.captureStackTrace) {
@@ -11,12 +11,10 @@ if (!Error.captureStackTrace) {
   Error.captureStackTrace = () => { };
 }
 
-// Register Ark background-refresh task handlers BEFORE the app component
-// so Android's headless-task lookup and iOS's BGTask event listener are
-// in place when the OS routes its first scheduled wake into our process.
-// Cheap if the user never opts into the feature — the orchestrator is
-// lazy-required inside the handlers.
-registerArkBackgroundRefreshHandlers();
+// Register the notification tap handler BEFORE the app component so a
+// cold-start tap on an Ark expiry warning is routed once the JS bridge
+// is ready.
+registerArkNotificationTapHandler();
 
 const BlueAppComponent = () => {
   useEffect(() => {

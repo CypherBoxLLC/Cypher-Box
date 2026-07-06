@@ -37,27 +37,14 @@ export default function CheckingAccountCreated() {
     } = useAuthStore();
     const [togglingBgRefresh, setTogglingBgRefresh] = useState(false);
 
-    // Same enable/disable pattern as the Settings tab toggle. Reads the
-    // mnemonic from Keychain on the ON path (required by
-    // setArkBackgroundRefreshEnabled). The OFF path drops the keychain
-    // copy + scheduler subscription with no mnemonic needed.
+    // Same enable/disable pattern as the Settings tab toggle. No seed
+    // needed on either path — enabling just flips the flag and requests
+    // notification permission.
     const handleToggleBgRefresh = async (next: boolean) => {
         if (togglingBgRefresh) return;
         setTogglingBgRefresh(true);
         try {
-            if (next) {
-                const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
-                if (!creds || !creds.password) {
-                    SimpleToast.show(
-                        "Can't enable. Seed is not in Keychain. Re-enable from Ark Settings later.",
-                        SimpleToast.LONG,
-                    );
-                    return;
-                }
-                await setArkBackgroundRefreshEnabled(true, creds.password);
-            } else {
-                await setArkBackgroundRefreshEnabled(false);
-            }
+            await setArkBackgroundRefreshEnabled(next);
         } catch (err: any) {
             console.warn("[Ark vault created] bg-refresh toggle failed:", err);
             SimpleToast.show(

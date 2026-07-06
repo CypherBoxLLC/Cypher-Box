@@ -171,30 +171,13 @@ export type {
 } from './backgroundTelemetry';
 
 export {
-    hasBackgroundArkSeed,
-} from './backgroundKeychain';
-
-export {
     ensureBgNotificationPermission,
     areBgNotificationsEnabled,
     scheduleVtxoExpiryWarnings,
     cancelVtxoExpiryWarnings,
 } from './backgroundNotifications';
 
-export {
-    registerArkBackgroundRefreshHandlers,
-    scheduleArkBackgroundRefresh,
-    cancelArkBackgroundRefresh,
-    isIgnoringBatteryOptimizations,
-    openBatteryOptimizationSettings,
-    getDeviceManufacturer,
-    debugFireRefresh,
-} from './scheduler';
-
-export { vendorGuidance } from './batteryGuidance';
-export type { VendorGuidance } from './batteryGuidance';
-
-export { hydrateArkWalletFromBackgroundSeed } from './walletHandle';
+export { registerArkNotificationTapHandler } from './notificationHandler';
 
 export {
     classifyArkDestination,

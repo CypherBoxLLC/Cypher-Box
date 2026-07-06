@@ -28,7 +28,6 @@ import {
     writeArkAutoBackup,
 } from '@Cypher/services/ark';
 import { processArkMovementsForActivity } from '@Cypher/services/ark/movementsActivity';
-import { postArkRefreshExpiry } from '@Cypher/services/coinosSocket';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import {
@@ -711,25 +710,9 @@ export default function useArkSync(): UseArkSync {
                     // expiry — observed 2026-05-16 on a sim that was offline
                     // for 3+ days). The sweep should react to the
                     // next-most-urgent SPENDABLE-IN-PRACTICE VTXO, not to
-                    // already-lost ones. Same gate is applied to the
-                    // relay-push expiry — no point waking the device for
-                    // funds it can't save anyway.
+                    // already-lost ones.
                     if (blocks <= 0) continue;
                     if (blocks < minBlocks) minBlocks = blocks;
-                }
-            }
-            if (state.arkBgRefreshEnabled && tip !== null && vtxos) {
-                const user = state.user;
-                const username =
-                    (user && (user.username ?? (typeof user === 'string' ? user : null))) || null;
-                if (username) {
-                    const soonestExpiryAt = isFinite(minBlocks)
-                        ? Math.floor(
-                              Date.now() / 1000 +
-                                  Math.max(0, minBlocks) * AVG_BLOCK_MINUTES * 60,
-                          )
-                        : null;
-                    void postArkRefreshExpiry(username, soonestExpiryAt);
                 }
             }
 

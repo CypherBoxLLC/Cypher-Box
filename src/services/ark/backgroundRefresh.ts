@@ -8,16 +8,7 @@ import { fetchChainTipHeight, blocksToDays } from './chainTip';
 import { ARK_REFRESH_MIN_SATS, ARK_VTXO_DUST_SATS } from './config';
 import { estimateArkRefreshFee, fetchArkPendingRoundStates, refreshArkVtxosAndSync } from './refresh';
 import { fetchArkVtxos } from './vtxos';
-import {
-    getArkWalletHandle,
-    getCachedArkMnemonic,
-    hydrateArkWalletFromBackgroundSeed,
-} from './walletHandle';
-import {
-    deleteBackgroundArkSeed,
-    readBackgroundArkSeed,
-    writeBackgroundArkSeed,
-} from './backgroundKeychain';
+import { getArkWalletHandle, getCachedArkMnemonic } from './walletHandle';
 import {
     cancelVtxoExpiryWarnings,
     ensureBgNotificationPermission,
@@ -29,10 +20,6 @@ import {
     notifyFeeGated,
     notifyStuckRefresh,
 } from './backgroundNotifications';
-import {
-    cancelArkBackgroundRefresh,
-    scheduleArkBackgroundRefresh,
-} from './scheduler';
 import {
     recordTelemetry,
     type ArkBgRefreshOutcome,
@@ -160,54 +147,32 @@ export type ArkBgRefreshResult = {
 };
 
 /**
- * Toggle the feature on or off. Atomic with respect to keychain side effects:
+ * Toggle the reminders + foreground auto-refresh feature on or off.
  *
- *   ON  → write a copy of the seed to the background-readable keychain entry
- *         and flip the persisted flag. The mnemonic must be available — the
- *         caller obtains it via the existing biometric-gated read.
+ *   ON  → flip the persisted flag and request notification permission.
+ *         The sync loop starts scheduling the per-VTXO expiry warnings
+ *         and the urgency sweep starts firing runBackgroundRefresh
+ *         ('foreground') on imminent capsules.
  *
- *   OFF → delete the background-readable keychain entry and clear all
- *         derived state (last-success / last-attempt / consecutive-failure /
- *         deferred-backup). Posture is fully restored to pre-feature.
+ *   OFF → clear all derived state (last-success / last-attempt /
+ *         consecutive-failure / deferred-backup) and cancel every queued
+ *         expiry warning. Posture is fully restored to pre-feature.
  *
- * Throws on the ON path if the keychain write fails — the caller should
- * surface the error and leave the toggle visually off, since enabling the
- * flag without the seed in place would just produce `no_seed` outcomes
- * forever. The OFF path is best-effort: keychain delete failures are
- * swallowed, the flag flips to false regardless.
+ * History: this toggle used to also arm the OS background-wake machinery
+ * (BGProcessingTask / AlarmManager), mirror the seed into a background-
+ * readable keychain entry, and subscribe the device to the relay's silent
+ * ark.refresh.due pushes. All three were removed with the background
+ * refresh machinery — refresh only ever runs with the app in the
+ * foreground now, so no seed copy and no wake path are needed.
  */
-export async function setArkBackgroundRefreshEnabled(
-    enabled: boolean,
-    mnemonic?: string,
-): Promise<void> {
+export async function setArkBackgroundRefreshEnabled(enabled: boolean): Promise<void> {
     const store = useAuthStore.getState();
 
     if (enabled) {
-        if (!mnemonic) {
-            throw new Error('mnemonic required to enable background refresh');
-        }
-        await writeBackgroundArkSeed(mnemonic);
         store.setArkBgRefreshEnabled(true);
-        // Submit the first scheduler request so the OS knows to wake us.
-        // If this fails (simulator, low power mode, OS-level disable) we
-        // log and continue — the toggle is still on, the silent-push path
-        // (Phase 3) is the safety net.
-        try {
-            await scheduleArkBackgroundRefresh();
-        } catch (schedErr) {
-            console.warn('[Ark bg refresh] schedule failed:', schedErr);
-        }
-        // Tell the notifications relay to start sending silent
-        // ark.refresh.due pushes. Best-effort: failure here doesn't
-        // block the toggle, but it does mean the user only gets
-        // scheduled wakes (no push safety net) until the next time
-        // the toggle flips on.
-        await syncArkRefreshSubscriptionToRelay(true);
         // Request notification permission so warning notifications can
         // surface. The feature works either way — declining just means
-        // the user relies on the in-app banner as their signal. We do
-        // this AFTER the keychain write so a permission failure (rare)
-        // doesn't leave us in a half-enabled state.
+        // the user relies on the in-app banner as their signal.
         try {
             await ensureBgNotificationPermission();
         } catch (notifErr) {
@@ -216,16 +181,6 @@ export async function setArkBackgroundRefreshEnabled(
         return;
     }
 
-    // Cancel the scheduler FIRST, then delete keychain — if a wake fires
-    // during teardown it'll find no seed and exit cleanly via the
-    // `no_seed` outcome.
-    try {
-        await cancelArkBackgroundRefresh();
-    } catch (schedErr) {
-        console.warn('[Ark bg refresh] cancel failed:', schedErr);
-    }
-    await syncArkRefreshSubscriptionToRelay(false);
-    await deleteBackgroundArkSeed();
     // Drop any queued VTXO expiry warnings so the OS doesn't fire reminders
     // for a user who just turned them off. iterate the persisted map of
     // (vtxoId -> expiryMs) the sync loop maintains; cancelVtxoExpiryWarnings
@@ -244,45 +199,10 @@ export async function setArkBackgroundRefreshEnabled(
 }
 
 /**
- * Push the current opt-in flag to the notifications relay so its
- * silent-push scanner targets (or stops targeting) this device.
+ * Run one refresh attempt.
  *
- * Looks up username from the auth store and the device push token via
- * the existing GroundControl helper. If either is missing we exit
- * silently — Ark-only users (no CoinOS account) and devices without a
- * captured push token can still use scheduled wakes but won't get
- * silent-push wakes.
- *
- * Lazy-required deps so users who never enable the toggle don't pay
- * the import cost at boot.
- */
-async function syncArkRefreshSubscriptionToRelay(optIn: boolean): Promise<void> {
-    try {
-        const user = useAuthStore.getState().user;
-        const username: string | null =
-            (user && (user.username ?? (typeof user === 'string' ? user : null))) || null;
-        if (!username) return;
-
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const NotificationsModule = require('../../../blue_modules/notifications');
-        const Notifications = NotificationsModule.default ?? NotificationsModule;
-        const pushTokenData = await Notifications.getPushToken();
-        const pushToken: string | null = pushTokenData?.token ?? null;
-        if (!pushToken) return;
-
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { setArkRefreshSubscription } = require('@Cypher/services/coinosSocket');
-        await setArkRefreshSubscription(username, pushToken, optIn);
-    } catch (err) {
-        console.warn('[Ark bg refresh] relay subscription sync failed:', err);
-    }
-}
-
-/**
- * Run one background-refresh attempt.
- *
- * Single entry point for both scheduled wakes (BGAppRefreshTask /
- * WorkManager) and silent-push wakes. The trigger argument is purely for
+ * Entry point for the foreground urgency sweep (useArkSync) and
+ * LN-receive arrival triggers. The trigger argument is purely for
  * telemetry — the policy logic is identical either way.
  *
  * This function NEVER throws — every error path is captured in the
@@ -445,22 +365,13 @@ export async function runBackgroundRefresh(
             return finalize('rate_limited');
         }
 
-        // Hydrate the wallet handle if the process is fresh — typical for a
-        // background wake when the app was force-quit. No-op if a handle is
-        // already open (e.g. the user has the app foregrounded and the
-        // silent push fired).
+        // Foreground-only now: the wallet handle must already be open
+        // (boot restore or user action opened it). The old background-wake
+        // path hydrated a fresh process from a background-readable seed
+        // copy here; that machinery is gone. Reuse the `no_seed` outcome
+        // so historical telemetry stays comparable.
         if (!getArkWalletHandle()) {
-            const seed = await readBackgroundArkSeed();
-            if (!seed) {
-                return finalize('no_seed', { errorMsg: 'no background seed in keychain' });
-            }
-            try {
-                await hydrateArkWalletFromBackgroundSeed(seed);
-            } catch (err: any) {
-                return finalize('error', {
-                    errorMsg: `hydrate failed: ${err?.message ?? err}`,
-                });
-            }
+            return finalize('no_seed', { errorMsg: 'wallet handle not open' });
         }
 
         // Pending-round-state pre-check. If the ASP / SDK is still working
