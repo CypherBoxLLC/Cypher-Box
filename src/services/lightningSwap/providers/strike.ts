@@ -226,6 +226,24 @@ const strikeProvider: LightningSwapProvider = {
     // want to surface a pre-swap fee for Strike, the right approach
     // is to merge quote+execute into payInvoice (it already is) and
     // expose a `dry-run` quote here.
+
+    /**
+     * Max-button headroom only (same contract as the Coinos provider's
+     * reserve). Strike rejects a payment quote outright with
+     * `422 BALANCE_TOO_LOW` when `amount + routing fee` exceeds the
+     * balance, so a Max swap with zero headroom fails before anything
+     * is attempted (observed live 2026-07-06: balance 22,642, Max
+     * quote refused). Strike doesn't expose the fee pre-quote, so this
+     * is a calibrated buffer, not a price: 1% with a 10-sat floor —
+     * deliberately fatter than Coinos's 0.6% because we have no
+     * empirical fee data for Strike yet, and the unspent remainder
+     * stays in the user's Strike balance rather than being lost. If
+     * live QA shows Strike's realised fees are consistently smaller,
+     * tighten this the same way the Coinos reserve was calibrated.
+     */
+    async maxFeeReserve(amountSats) {
+        return Math.max(10, Math.ceil(amountSats * 0.01));
+    },
 };
 
 register(strikeProvider);
