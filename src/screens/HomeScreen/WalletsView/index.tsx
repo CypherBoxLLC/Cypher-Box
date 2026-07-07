@@ -304,6 +304,11 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         snapTo: (i: number) => flatListRef.current?.scrollToIndex?.({ index: i, animated: true }),
     }), []);
 
+    // Signature of the last carousel COMPOSITION (which wallets/kinds exist),
+    // so the effect below can rebuild wTabs on every balance tick (to keep the
+    // card closures' balances fresh) WITHOUT resetting the user's current page.
+    const prevCompositionRef = useRef<string>('');
+
     useEffect(() => {
         if (!allBTCWallets || isLoading) return;
 
@@ -402,9 +407,20 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             tabs.push(walletTabsMap.ARK);
         }
 
-        setIndexStrike(defaultIndex);
+        // Always rebuild wTabs so the card closures capture fresh balances.
+        // But only reset the page index (+ notify the indicator) when the
+        // COMPOSITION actually changed — otherwise a routine balance update
+        // yanked the carousel back to page 0, which desynced indexStrike from
+        // the visible slide and blanked the scroll-opacity-driven shared
+        // Send/Receive row until the user manually swiped. (The row reappearing
+        // after a swipe was the tell: a real onScroll rewrote scrollX.)
+        const compositionKey = `${custodialLightning.join(',')}|ark:${hasArk}`;
         setWTabs(tabs);
-        onPageChange?.(defaultIndex, tabs.length, tabs.map(kindFromTab));
+        if (compositionKey !== prevCompositionRef.current) {
+            prevCompositionRef.current = compositionKey;
+            setIndexStrike(defaultIndex);
+            onPageChange?.(defaultIndex, tabs.length, tabs.map(kindFromTab));
+        }
     }, [allBTCWallets, isLoading, matchedRateStrike, strikeBalance, convertedRate]);
 
     // Maps a tab's `key` to the wallet "kind" used to color the page-indicator
