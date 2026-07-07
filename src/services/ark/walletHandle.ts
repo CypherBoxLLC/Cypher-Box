@@ -9,7 +9,7 @@ import {
     uniffiInitAsync,
 } from '@secondts/bark-react-native';
 
-import { createArkConfig } from './config';
+import { createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
 import { ensureArkDatadir } from './datadir';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
@@ -17,6 +17,16 @@ const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 let handle: WalletInterface | null = null;
 let onchainHandle: OnchainWalletInterface | null = null;
 let uniffiReady: Promise<void> | null = null;
+
+// The esplora endpoint the main wallet successfully opened against this
+// session. The boot retry loop (restore.ts) rotates providers on bot-block,
+// so this is NOT necessarily the default — and the on-chain (BDK) handle
+// must use the SAME one, or it gets pinned to a provider that's currently
+// blocking us and every board-detection sync fails with BarkError.Network
+// while the main wallet is perfectly healthy on the other provider.
+// (Observed live 2026-07-07: wallet opened via mempool.space after
+// blockstream blocked it, but the onchain handle still hit blockstream.)
+let sessionEsploraUrl: string = ESPLORA_URL;
 
 // In-memory mnemonic cache. Populated whenever the wallet is opened/created
 // so other modules (e.g. the auto-backup routine) can read the seed without
@@ -181,10 +191,12 @@ export async function openArkWallet(
     // when the primary serves a bot-block page instead of chain data
     // (see restore.ts). The chosen endpoint sticks for this session's
     // syncs — that's fine, both providers serve the same chain.
-    const config = createArkConfig(
-        opts?.esploraUrl ? { esploraAddress: opts.esploraUrl } : undefined,
-    );
+    const chosenEsplora = opts?.esploraUrl || ESPLORA_URL;
+    const config = createArkConfig({ esploraAddress: chosenEsplora });
     handle = await Wallet.open(mnemonic, config, datadir);
+    // Pin the on-chain (BDK) handle to the SAME provider that just worked, so
+    // board detection doesn't fail against a provider that's blocking us.
+    sessionEsploraUrl = chosenEsplora;
     cachedMnemonic = mnemonic;
     startWatcher();
     await tryEagerSpawnOnchainHandle('openArkWallet');
@@ -251,6 +263,30 @@ export function getArkOnchainHandle(): OnchainWalletInterface | null {
 }
 
 /**
+ * Drop the on-chain handle and rotate to the next esplora provider, so the
+ * next `ensureArkOnchainHandle` re-spawns against a different endpoint.
+ * Called by the sync loop when the on-chain sync fails with a network error
+ * (the pinned provider started bot-blocking mid-session). No-op if there's
+ * only one provider configured. Destroys the old handle to release its
+ * SQLite FDs before nulling the ref.
+ */
+export function rotateArkOnchainEsplora(): void {
+    const idx = ESPLORA_URLS.indexOf(sessionEsploraUrl);
+    const next = ESPLORA_URLS[(idx + 1) % ESPLORA_URLS.length];
+    if (next === sessionEsploraUrl) return; // single provider — nothing to rotate to
+    if (onchainHandle && typeof (onchainHandle as any).uniffiDestroy === 'function') {
+        try {
+            (onchainHandle as any).uniffiDestroy();
+        } catch (err) {
+            if (__DEV__) console.log('[Ark] onchain rotate destroy threw:', err);
+        }
+    }
+    onchainHandle = null;
+    sessionEsploraUrl = next;
+    if (__DEV__) console.log('[Ark] rotated onchain esplora ->', next);
+}
+
+/**
  * Lazily spawn the BDK-backed on-chain wallet that sits alongside the Ark
  * wallet (shared seed + datadir). Used for boarding funds into Ark and for
  * the "receive on-chain" address in the Ark receive flow.
@@ -284,11 +320,26 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
 
     await ensureUniffi();
     const datadir = await ensureArkDatadir();
-    const config = createArkConfig();
 
-    onchainHandle = await OnchainWallet.default_(mnemonic, config, datadir);
-    if (__DEV__) console.log('[Ark] Spawned onchain wallet');
-    return onchainHandle;
+    // Spawn against the session esplora first (the provider that opened the
+    // main wallet), then any others in the rotation. A provider that's
+    // bot-blocking us surfaces at spawn or first sync as a network error;
+    // trying the alternate keeps board detection alive instead of pinning
+    // to a dead endpoint for the whole session.
+    const ordered = [sessionEsploraUrl, ...ESPLORA_URLS.filter((u) => u !== sessionEsploraUrl)];
+    let lastErr: unknown;
+    for (const esploraUrl of ordered) {
+        try {
+            const config = createArkConfig({ esploraAddress: esploraUrl });
+            onchainHandle = await OnchainWallet.default_(mnemonic, config, datadir);
+            if (__DEV__) console.log('[Ark] Spawned onchain wallet via', esploraUrl);
+            return onchainHandle;
+        } catch (err) {
+            lastErr = err;
+            if (__DEV__) console.log('[Ark] onchain spawn failed via', esploraUrl, '-', (err as any)?.message ?? err);
+        }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('Failed to spawn onchain wallet');
 }
 
 /**
