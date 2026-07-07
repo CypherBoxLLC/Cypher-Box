@@ -4,11 +4,14 @@ import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } fro
 import { formatNumber, formatSats, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
-import React, { useRef } from "react";
+import React, { useContext, useRef } from "react";
 import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import { authorize } from "react-native-app-auth";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "./styles";
+import { CarouselPageVisibilityContext, useEasedProgress } from "@Cypher/custom-hooks";
+import { useIsFocused } from "@react-navigation/native";
+import Reanimated, { useAnimatedStyle } from "react-native-reanimated";
 
 
 interface Props {
@@ -92,6 +95,16 @@ export default function StrikeWallet({
     };
 
     const hasFilledTheBar = calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount)) === 100
+
+    // Eased fill for the threshold bar (mirrors Card): plays only while
+    // visible, holds while unseen so the sweep replays on arrival.
+    const cardPageVisible = useContext(CarouselPageVisibilityContext);
+    const cardFocused = useIsFocused();
+    const fillPct = calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount));
+    const fillAnim = useEasedProgress(fillPct, cardPageVisible && cardFocused);
+    const fillStyle = useAnimatedStyle(() => ({
+        width: `${Math.min(Math.max(fillAnim.value, 0), 100)}%`,
+    }));
 
     const checkingAccountClickHandler = (walletType: boolean) => {
         const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
@@ -204,12 +217,7 @@ export default function StrikeWallet({
                                         sliver of pink for any non-zero balance,
                                         so users see "yes, balance is loading
                                         toward the threshold" even at <1%. */}
-                                    {(() => {
-                                        const pct = calculateBalancePercentage(Number(strikeBalance), Number(withdrawStrikeThreshold), Number(reserveStrikeAmount));
-                                        return (
-                                            <View style={[styles.linearGradient2, { width: `${pct}%`, backgroundColor: colors.pink.dark, minWidth: pct > 0 ? 6 : 0 }]} />
-                                        );
-                                    })()}
+                                    <Reanimated.View style={[styles.linearGradient2, { backgroundColor: colors.pink.dark, minWidth: fillPct > 0 ? 6 : 0 } as any, fillStyle]} />
                                 </View>
                             </View>
                         </LinearGradient>

@@ -6,6 +6,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { CarouselPageVisibilityContext } from "@Cypher/custom-hooks";
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Animated, AppState, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -483,10 +484,16 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // inactiveSlideScale=0.94 used to produce. Mirrors BottomBar's
     // FlatList renderItem after the same migration.
     const SHARED_SLIDE_HEIGHT = 133;
-    const renderWalletItem = ({ item }: any) => (
+    // Per-page visibility for the balance-fill animations: FlatList keeps
+    // neighbor pages mounted, so without this the eased threshold fills
+    // (Card / StrikeWallet / CircleTimer via useEasedProgress) animate
+    // while their page is off screen and the user never sees the sweep.
+    const renderWalletItem = ({ item, index }: any) => (
         <View style={{ width: screenWidth }}>
             <View style={{ width: screenWidth * 0.905 }}>
-                {item.component()}
+                <CarouselPageVisibilityContext.Provider value={index === indexStrike}>
+                    {item.component()}
+                </CarouselPageVisibilityContext.Provider>
             </View>
         </View>
     );
