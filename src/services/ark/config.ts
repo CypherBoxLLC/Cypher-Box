@@ -89,26 +89,36 @@ export const ARK_SERVER_URL = 'https://ark.second.tech';
 // `/block-height/0`) — the open's blockhash query hung (no throw, so no
 // `Wallet.create` fallback), and the Ark wallet handle never became ready
 // ("[ArkSync] skipped — wallet handle not ready yet" forever). blockstream was
-// healthy (~0.5s) on the same endpoints at the time. Both public esploras
-// throttle under load and trade places; the durable fix is a dedicated /
-// authenticated esplora endpoint.
-export const ESPLORA_URL = 'https://blockstream.info/api';
+// healthy (~0.5s) on the same endpoints at the time.
+//
+// 2026-07-07: switched to MEMPOOL primary, blockstream fallback. Across a full
+// day of on-device QA blockstream's Cloudflare bot-blocked the client on iOS
+// boot, Android boot, the LN-receive claim path, AND the chain-tip fetch
+// (serving a 337/338-byte block page in place of chain data), while
+// mempool.space served every request cleanly. The provider ROTATION added the
+// same day (restore.ts open loop, ensureArkOnchainHandle, chainTip) means this
+// is just an ordering preference now, not a hard dependency — if mempool has a
+// bad day, every path falls back to blockstream. The durable fix remains a
+// dedicated / authenticated esplora endpoint. Flip this pair back if
+// mempool's open-endpoint hang (see 2026-06-03) recurs.
+export const ESPLORA_URL = 'https://mempool.space/api';
 
 /**
- * Esplora rotation order for the wallet-open retry loop (restore.ts).
- * Both public esploras intermittently refuse bark's mobile client —
- * blockstream's Cloudflare serves a bot-block page instead of chain data
- * (observed on BOTH platforms 2026-07-07 as "not a blockhash ... invalid
- * hex string length 338"), and mempool.space has hung outright before
- * (2026-06-03 note above). Rotating across attempts means one provider's
- * throttle no longer bricks wallet startup. Primary stays blockstream.
+ * Esplora rotation order for the wallet-open retry loop (restore.ts), the
+ * on-chain handle spawn (ensureArkOnchainHandle), and the JS chain-tip fetch
+ * (chainTip.ts). Both public esploras intermittently refuse bark's mobile
+ * client — blockstream's Cloudflare serves a bot-block page instead of chain
+ * data (the recurring 2026-07-07 failure), and mempool.space has hung outright
+ * before (2026-06-03 note above). Rotating across attempts means one provider's
+ * throttle no longer bricks startup. Primary is now mempool (blockstream is the
+ * daily offender); the fallback covers mempool's rarer hang.
  *
  * Deliberately no per-attempt watchdog for the mempool hang mode: a hung
  * `Wallet.open` cannot be cancelled, and racing a second open against it
  * targets the same datadir (BarkError.Database or worse). A hang behaves
  * exactly as it did before this list existed.
  */
-export const ESPLORA_URLS = [ESPLORA_URL, 'https://mempool.space/api'];
+export const ESPLORA_URLS = [ESPLORA_URL, 'https://blockstream.info/api'];
 
 export function createArkConfig(overrides?: Partial<Parameters<typeof Config.create>[0]>) {
     return Config.create({
