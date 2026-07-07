@@ -123,17 +123,42 @@ const TRANSFER_TOAST_DEDUPE_MS = 15_000;
 export function maybeShowForegroundTransferBanner(payload: any): void {
     if (AppState.currentState !== 'active') return;
     if (!payload || payload.userInteraction === true) return;
-    const message: unknown = payload.message;
-    const address: unknown = payload.address;
-    if (typeof message !== 'string' || !message || typeof address !== 'string') return;
-    const key = `${address}:${message}`;
+
+    // Two push shapes are handled here, both otherwise invisible while
+    // foregrounded (the OS shows no banner for a data push handed to JS):
+    //   1. GroundControl onchain/coinos transfers — carry `message` + `address`.
+    //   2. Ark mailbox pushes (type='ark_mailbox') from our bark relay —
+    //      carry `title` + `body` + optional `sats`. The old handler
+    //      dropped these as "could not find wallet, NOP".
+    let text: string | null = null;
+    let dedupeKey: string | null = null;
+
+    if (payload.type === 'ark_mailbox') {
+        const body: unknown = payload.body;
+        const title: unknown = payload.title;
+        text = typeof body === 'string' && body ? body
+            : typeof title === 'string' && title ? title
+            : null;
+        // sats (when present) is the natural per-receive key; fall back to
+        // the text so refresh/arkoor pushes without an amount still dedupe.
+        dedupeKey = `ark:${payload.sats ?? text ?? ''}`;
+    } else {
+        const message: unknown = payload.message;
+        const address: unknown = payload.address;
+        if (typeof message === 'string' && message && typeof address === 'string') {
+            text = message;
+            dedupeKey = `${address}:${message}`;
+        }
+    }
+
+    if (!text || !dedupeKey) return;
     const now = Date.now();
-    if (key === lastTransferToastKey && now - lastTransferToastAt < TRANSFER_TOAST_DEDUPE_MS) {
+    if (dedupeKey === lastTransferToastKey && now - lastTransferToastAt < TRANSFER_TOAST_DEDUPE_MS) {
         return;
     }
-    lastTransferToastKey = key;
+    lastTransferToastKey = dedupeKey;
     lastTransferToastAt = now;
-    SimpleToast.show(message, SimpleToast.LONG);
+    SimpleToast.show(text, SimpleToast.LONG);
 }
 
 /**
