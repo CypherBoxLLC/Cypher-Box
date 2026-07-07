@@ -270,6 +270,14 @@ export type AuthStateType = {
     arkPendingTapRefresh: boolean;
 
     /**
+     * One-shot flag: set when the homepage "stuck on-chain funds" banner is
+     * tapped, consumed by ArkOnchainRecoverSection on the Capsules screen to
+     * auto-open its recover modal. Same short-lived pattern as
+     * arkPendingTapRefresh.
+     */
+    arkPendingOnchainRecoverOpen: boolean;
+
+    /**
      * Per-VTXO state for the "Arkoor receive" prompt feature.
      *
      * Map of vtxoId → { status, observedAt, dismissedAt? }. Tracks which
@@ -346,6 +354,7 @@ export type AuthStateType = {
     setArkBgRefreshLastStuckWarnAt: (state: number | null) => void;
     setArkBgRefreshMaxFeeSats: (state: number) => void;
     setArkPendingTapRefresh: (state: boolean) => void;
+    setArkPendingOnchainRecoverOpen: (state: boolean) => void;
     setArkIosBackupReminderActive: (state: boolean) => void;
     setArkArkoorPromptState: (
         state: Record<string, {
@@ -424,6 +433,7 @@ const createAuthStore = (
     arkBgRefreshLastStuckWarnAt: null,
     arkBgRefreshMaxFeeSats: 5000,
     arkPendingTapRefresh: false,
+    arkPendingOnchainRecoverOpen: false,
     arkIosBackupReminderActive: false,
     arkArkoorPromptState: {},
     arkArkoorPromptEnabled: true,
@@ -485,6 +495,7 @@ const createAuthStore = (
     setArkBgRefreshLastStuckWarnAt: (state: number | null) => set({ arkBgRefreshLastStuckWarnAt: state }),
     setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
     setArkPendingTapRefresh: (state: boolean) => set({ arkPendingTapRefresh: state }),
+    setArkPendingOnchainRecoverOpen: (state: boolean) => set({ arkPendingOnchainRecoverOpen: state }),
     setArkIosBackupReminderActive: (state: boolean) => set({ arkIosBackupReminderActive: state }),
     setArkArkoorPromptState: (state) => set({ arkArkoorPromptState: state }),
     setArkArkoorPromptEnabled: (state: boolean) => set({ arkArkoorPromptEnabled: state }),
@@ -523,6 +534,7 @@ const createAuthStore = (
             arkBgRefreshLastWarn2hAt: null,
             arkBgRefreshLastStuckWarnAt: null,
             arkPendingTapRefresh: false,
+            arkPendingOnchainRecoverOpen: false,
             arkIosBackupReminderActive: false,
             // Per-VTXO Arkoor-prompt state is wallet-scoped — clear on
             // disconnect so the next wallet doesn't inherit prior prompts.

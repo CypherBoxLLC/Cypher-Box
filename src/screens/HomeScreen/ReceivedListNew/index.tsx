@@ -858,8 +858,8 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
               // transform (not marginTop) so the layout flow
               // beneath isn't shifted with it.
               <View style={[styles.bitcoinTabContent, { transform: [{ translateY: -10 }] }]}>
-                <Text h2 bold>
-                  Bitcoin Network Address
+                <Text h4 bold style={{ color: '#FFD54F', textAlign: 'center', paddingHorizontal: 16 }}>
+                  ⚠️ Only receive 50,000 sats or more. Smaller amounts can't board your Bark vault and will need on-chain recovery.
                 </Text>
                 {!arkOnchainAddress ? (
                   <ActivityIndicator size="large" color="#ffffff" />

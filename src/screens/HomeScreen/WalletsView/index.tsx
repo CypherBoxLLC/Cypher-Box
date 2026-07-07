@@ -32,6 +32,11 @@ interface Props {
     onPageChange?: (index: number, total: number, kinds: Array<'fiat' | 'lightning' | 'ark'>) => void;
 }
 
+// ark.second.tech server board minimum. Confirmed on-chain deposits below
+// this can never board into a VTXO (see ArkOnchainRecoverSection). Mirrors
+// MIN_BOARD_SATS there; kept as a local const to avoid a store read here.
+const STUCK_BOARD_MIN_SATS = 50000;
+
 // Imperative handle exposed to HomeScreen so the page-indicator dots in
 // BalanceView can drive the carousel (tap dot 0 → fiat, dot 1 → lightning,
 // etc.) without us hoisting the entire snap-carousel ref tree upward.
@@ -71,6 +76,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
         arkIosBackupReminderActive,
+        arkBalanceDetail,
+        setArkPendingOnchainRecoverOpen,
     } = useAuthStore();
 
     // Per-card vertical nudge for the Ark slide.
@@ -222,6 +229,25 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // for the rationale. FGS_DATA_SYNC dropped, no auto-refresh
         // subsystem to fail.
 
+        // Stuck on-chain boarding funds: a confirmed deposit below the
+        // server's 50k board minimum can never become a VTXO and sits
+        // trapped in bark's on-chain wallet. Surface it as a tappable
+        // banner that deep-links to the Capsules tab and auto-opens the
+        // recover popup (address/vault picker). Highest priority after an
+        // in-flight refresh because it's trapped money.
+        {
+            const stuckSats = Number(arkBalanceDetail?.onchainBoardingSats ?? 0);
+            if (stuckSats > 0 && stuckSats < STUCK_BOARD_MIN_SATS) {
+                return {
+                    text: `You have ${stuckSats.toLocaleString()} sats failing to board your Bark vault. Recover here.`,
+                    linkText: 'here',
+                    tapTab: 0, // Capsules tab
+                    openOnchainRecover: true,
+                    error: true,
+                };
+            }
+        }
+
         if (dustCapsuleCount > 0) {
             return {
                 text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
@@ -260,6 +286,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         notificationsEnabled,
         arkIosBackupReminderActive,
         pendingRound,
+        arkBalanceDetail,
     ]);
 
     const [indexStrike, setIndexStrike] = useState(0);
@@ -876,7 +903,15 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         }}
                     >
                         <TouchableOpacity
-                            onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tapTab ?? 0 })}
+                            onPress={() => {
+                                // Stuck-boarding banner: arm the one-shot flag so
+                                // the Capsules recover section auto-opens its
+                                // address/vault picker on arrival.
+                                if ((bgRefreshStatus as any).openOnchainRecover) {
+                                    setArkPendingOnchainRecoverOpen(true);
+                                }
+                                dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tapTab ?? 0 });
+                            }}
                             activeOpacity={0.7}
                         >
                             <Text
