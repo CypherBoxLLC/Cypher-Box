@@ -21,6 +21,7 @@ import {
     estimateArkSendFee,
     executeArkSend,
     fetchArkBalance,
+    fetchArkPendingLightningReceives,
     fetchArkVtxos,
     fetchChainTipHeight,
 } from '@Cypher/services/ark';
@@ -49,6 +50,23 @@ function decodeBolt11Sats(invoice: string): number | null {
         return null;
     } catch (err) {
         if (__DEV__) console.log('[lightningSwap/ark] bolt11 decode failed:', err);
+        return null;
+    }
+}
+
+/**
+ * Extract the lower-cased hex payment hash from a BOLT11, or null. Used by
+ * confirmReceived to match a paid invoice against bark's pending Lightning
+ * receives (which key on the same hash).
+ */
+function decodeBolt11PaymentHash(invoice: string): string | null {
+    try {
+        const decoded = bolt11.decode(invoice);
+        const tag = decoded?.tags?.find((t: any) => t.tagName === 'payment_hash');
+        const hash = tag?.data;
+        return typeof hash === 'string' && hash.length > 0 ? hash.toLowerCase() : null;
+    } catch (err) {
+        if (__DEV__) console.log('[lightningSwap/ark] payment_hash decode failed:', err);
         return null;
     }
 }
@@ -186,6 +204,32 @@ const arkProvider: LightningSwapProvider = {
         } catch (err) {
             if (__DEV__) console.warn('[lightningSwap/ark] estimateFee failed:', err);
             return null;
+        }
+    },
+
+    async confirmReceived(invoice) {
+        // Pure read: has the payment for this invoice arrived at our ASP?
+        // `hasHtlcVtxos` flips true the moment the HTLC lands (the money is
+        // here), before it's even claimed into a VTXO — that's the earliest
+        // reliable "received" signal. `preimageRevealed` (or the entry being
+        // gone because it already claimed into a VTXO) also means received,
+        // but hasHtlcVtxos covers the confirmation window right after a send.
+        const hash = decodeBolt11PaymentHash(invoice);
+        if (!hash) return false;
+        try {
+            const pending = await fetchArkPendingLightningReceives();
+            const match = pending.find((r) => r.paymentHash?.toLowerCase() === hash);
+            if (__DEV__) {
+                console.log(
+                    '[lightningSwap/ark] confirmReceived hash=', hash.slice(0, 12),
+                    'match=', match
+                        ? `hasHtlc=${match.hasHtlcVtxos} preimage=${match.preimageRevealed} sats=${match.amountSats}`
+                        : `none (of ${pending.length} pending)`,
+                );
+            }
+            return Boolean(match && (match.hasHtlcVtxos || match.preimageRevealed));
+        } catch {
+            return false;
         }
     },
 

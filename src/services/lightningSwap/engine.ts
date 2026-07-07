@@ -75,6 +75,35 @@ export async function swap(
         // PaymentFailedError here is what previously made the swap screen
         // invite a retry that re-reserved the source balance.
         if (err instanceof PaymentPendingError) {
+            // The SOURCE couldn't self-confirm (e.g. Strike's mobile token
+            // 403s on the payment-status endpoint). Before surfacing the
+            // scary "submitted, do not retry" modal, ask the DESTINATION
+            // whether the money actually arrived — a pure, side-effect-free
+            // check. If it confirms, this was a SUCCESS, not a pending
+            // limbo. Poll a short window because the HTLC takes a few
+            // seconds to land after the source reports PENDING.
+            if (to.confirmReceived) {
+                const CONFIRM_WINDOW_MS = 45_000;
+                const CONFIRM_INTERVAL_MS = 3_000;
+                const deadline = Date.now() + CONFIRM_WINDOW_MS;
+                while (Date.now() < deadline) {
+                    let arrived = false;
+                    try {
+                        arrived = await to.confirmReceived(bolt11);
+                    } catch {
+                        arrived = false;
+                    }
+                    if (arrived) {
+                        if (__DEV__) console.log('[lightningSwap] source PENDING but destination', toId, 'confirmed receipt — success');
+                        // Surface the source's payment id when it carried one
+                        // (Strike attaches it to the PaymentPendingError).
+                        const pendingId = (err as any)?.paymentId;
+                        return { id: typeof pendingId === 'string' && pendingId ? pendingId : '(swap confirmed at destination)' };
+                    }
+                    await new Promise((r) => setTimeout(r, CONFIRM_INTERVAL_MS));
+                }
+                if (__DEV__) console.log('[lightningSwap] destination', toId, 'did not confirm within window — surfacing PENDING');
+            }
             if (__DEV__) console.log('[lightningSwap] payInvoice PENDING on', fromId, '— propagating, not a failure');
             throw err;
         }
