@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 
 import useAuthStore from '@Cypher/stores/authStore';
@@ -45,6 +45,23 @@ function ensureInit(): void {
  */
 export async function ensureBgNotificationPermission(): Promise<boolean> {
     ensureInit();
+    if (Platform.OS === 'android') {
+        // Android 13+ (API 33) gates notification display behind the
+        // POST_NOTIFICATIONS runtime permission. react-native-push-notification
+        // 8.1.1 predates that model, so its requestPermissions() never asks
+        // and every notification (including the five scheduled expiry
+        // warnings) is silently dropped by the OS. Found live 2026-07-07:
+        // granted=false on a stock Android 14 device that had toggled
+        // reminders on. Request through RN core's PermissionsAndroid
+        // instead. Below API 33 the manifest declaration alone grants it.
+        if (Number(Platform.Version) >= 33) {
+            const res = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+            );
+            return res === PermissionsAndroid.RESULTS.GRANTED;
+        }
+        return true;
+    }
     const result = await PushNotification.requestPermissions(['alert', 'sound', 'badge']);
     return Boolean(result?.alert);
 }
