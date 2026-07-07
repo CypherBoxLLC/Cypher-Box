@@ -171,10 +171,19 @@ export async function createArkWallet(
     return handle;
 }
 
-export async function openArkWallet(mnemonic: string): Promise<WalletInterface> {
+export async function openArkWallet(
+    mnemonic: string,
+    opts?: { esploraUrl?: string },
+): Promise<WalletInterface> {
     await ensureUniffi();
     const datadir = await ensureArkDatadir();
-    const config = createArkConfig();
+    // Optional esplora override: the boot retry loop rotates providers
+    // when the primary serves a bot-block page instead of chain data
+    // (see restore.ts). The chosen endpoint sticks for this session's
+    // syncs — that's fine, both providers serve the same chain.
+    const config = createArkConfig(
+        opts?.esploraUrl ? { esploraAddress: opts.esploraUrl } : undefined,
+    );
     handle = await Wallet.open(mnemonic, config, datadir);
     cachedMnemonic = mnemonic;
     startWatcher();

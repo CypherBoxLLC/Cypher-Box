@@ -94,6 +94,22 @@ export const ARK_SERVER_URL = 'https://ark.second.tech';
 // authenticated esplora endpoint.
 export const ESPLORA_URL = 'https://blockstream.info/api';
 
+/**
+ * Esplora rotation order for the wallet-open retry loop (restore.ts).
+ * Both public esploras intermittently refuse bark's mobile client —
+ * blockstream's Cloudflare serves a bot-block page instead of chain data
+ * (observed on BOTH platforms 2026-07-07 as "not a blockhash ... invalid
+ * hex string length 338"), and mempool.space has hung outright before
+ * (2026-06-03 note above). Rotating across attempts means one provider's
+ * throttle no longer bricks wallet startup. Primary stays blockstream.
+ *
+ * Deliberately no per-attempt watchdog for the mempool hang mode: a hung
+ * `Wallet.open` cannot be cancelled, and racing a second open against it
+ * targets the same datadir (BarkError.Database or worse). A hang behaves
+ * exactly as it did before this list existed.
+ */
+export const ESPLORA_URLS = [ESPLORA_URL, 'https://mempool.space/api'];
+
 export function createArkConfig(overrides?: Partial<Parameters<typeof Config.create>[0]>) {
     return Config.create({
         serverAddress: ARK_SERVER_URL,

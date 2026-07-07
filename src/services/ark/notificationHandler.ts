@@ -1,4 +1,6 @@
+import { AppState } from 'react-native';
 import PushNotification from 'react-native-push-notification';
+import SimpleToast from 'react-native-simple-toast';
 
 import useAuthStore from '@Cypher/stores/authStore';
 
@@ -71,6 +73,70 @@ async function dispatchArkCapsuleTap(autoRefresh: boolean): Promise<void> {
 }
 
 /**
+ * Shared tap routing, callable from ANY PushNotification.configure
+ * onNotification. react-native-push-notification only honors the LAST
+ * configure() call, and blue_modules/notifications.js re-configures when
+ * the user enables GroundControl notifications — which used to silently
+ * replace this handler and break expiry-warning taps. Both configure
+ * sites now delegate here, so last-caller-wins is harmless.
+ *
+ * Returns true when the notification was a capsule tap and was routed.
+ */
+export function handleArkNotificationTap(notification: any): boolean {
+    const data = (notification && (notification.data || notification.userInfo)) || {};
+    if (
+        notification &&
+        notification.userInteraction === true &&
+        isArkCapsuleTapSource(data.source)
+    ) {
+        // User tapped a capsule-related notification: an expiry warning,
+        // a payment-received alert, or a refresh-complete notice. All
+        // deep-link to the Capsules tab; only expiry warnings arm the
+        // one-shot auto-refresh flag, which ArkCapsules consumes on mount
+        // (hydrates the wallet, re-prompts Keychain biometric if needed,
+        // and fires `refreshIds` against every imminent VTXO with the
+        // "Refreshing…" indicator visible from first render). Works on
+        // cold/background/foreground because configure() auto-pops the
+        // initial notification on cold launches.
+        void dispatchArkCapsuleTap(isArkExpiryWarningSource(data.source));
+        return true;
+    }
+    return false;
+}
+
+// Foreground-transfer toast dedupe. GroundControl delivers the same
+// transfer push more than once (observed live: identical payload twice
+// within a second), and Android hands foreground pushes to JS silently —
+// without dedupe the toast would stack.
+let lastTransferToastKey = '';
+let lastTransferToastAt = 0;
+const TRANSFER_TOAST_DEDUPE_MS = 15_000;
+
+/**
+ * Visible in-app signal for a GroundControl transfer push that arrives
+ * while the app is foregrounded. The OS shows nothing in that state by
+ * design (the payload is handed to JS instead), and until now the app
+ * discarded it — the user only found out about an incoming transfer by
+ * pulling balances manually. Expects the flattened GroundControl payload
+ * (fields at the root, e.g. `message` + `address`).
+ */
+export function maybeShowForegroundTransferBanner(payload: any): void {
+    if (AppState.currentState !== 'active') return;
+    if (!payload || payload.userInteraction === true) return;
+    const message: unknown = payload.message;
+    const address: unknown = payload.address;
+    if (typeof message !== 'string' || !message || typeof address !== 'string') return;
+    const key = `${address}:${message}`;
+    const now = Date.now();
+    if (key === lastTransferToastKey && now - lastTransferToastAt < TRANSFER_TOAST_DEDUPE_MS) {
+        return;
+    }
+    lastTransferToastKey = key;
+    lastTransferToastAt = now;
+    SimpleToast.show(message, SimpleToast.LONG);
+}
+
+/**
  * One-time registration of the notification tap handler. Must run from
  * index.js so the handler is attached before the OS delivers a cold-start
  * tap into the process.
@@ -78,30 +144,22 @@ async function dispatchArkCapsuleTap(autoRefresh: boolean): Promise<void> {
  * requestPermissions: false — the reminders opt-in flow requests
  * permission via ensureBgNotificationPermission() when the user enables
  * the toggle.
+ *
+ * NOTE: blue_modules/notifications.js calls PushNotification.configure
+ * AGAIN when GroundControl notifications are enabled, replacing these
+ * callbacks. Both onNotification implementations route through the same
+ * shared handlers above, so behavior is identical whichever configure
+ * ran last.
  */
 export function registerArkNotificationTapHandler(): void {
-    // Single PushNotification.configure call for the whole app.
     PushNotification.configure({
         requestPermissions: false,
         onNotification: (notification: any) => {
-            const data = (notification && (notification.data || notification.userInfo)) || {};
-            if (
-                notification &&
-                notification.userInteraction === true &&
-                isArkCapsuleTapSource(data.source)
-            ) {
-                // User tapped a capsule-related notification: an expiry
-                // warning, a payment-received alert, or a refresh-complete
-                // notice. All deep-link to the Capsules tab; only expiry
-                // warnings arm the one-shot auto-refresh flag, which
-                // ArkCapsules consumes on mount (hydrates the wallet,
-                // re-prompts Keychain biometric if needed, and fires
-                // `refreshIds` against every imminent VTXO with the
-                // "Refreshing…" indicator visible from first render).
-                // Works on cold/background/foreground because configure()
-                // auto-pops the initial notification on cold launches.
-                void dispatchArkCapsuleTap(isArkExpiryWarningSource(data.source));
-            }
+            if (handleArkNotificationTap(notification)) return;
+            // Mirror blue_modules' payload flattening: GroundControl data
+            // sometimes sits under `data`, sometimes at the root.
+            const payload = Object.assign({}, notification, notification?.data);
+            maybeShowForegroundTransferBanner(payload);
         },
     });
 

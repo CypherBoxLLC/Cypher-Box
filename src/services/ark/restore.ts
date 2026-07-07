@@ -1,6 +1,7 @@
 import RNFS from 'react-native-fs';
 import * as Keychain from 'react-native-keychain';
 
+import { ESPLORA_URLS } from './config';
 import { ARK_DATADIR } from './datadir';
 import { getArkWalletHandle, openArkWallet } from './walletHandle';
 
@@ -75,14 +76,20 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
     }
 
     // Retry the open (seed already read above, so no repeat FaceID) to ride out
-    // the intermittent ASP ServerConnection failures.
+    // the intermittent ASP ServerConnection failures. Each attempt rotates to
+    // the next esplora provider: the dominant failure mode is one provider's
+    // CDN refusing bark's client (bot-block page instead of chain data), and
+    // retrying the same blocked endpoint five times just burns the window.
     const seed = creds.password;
     let lastErr: Error | undefined;
     for (let attempt = 1; attempt <= OPEN_ATTEMPTS; attempt++) {
+        const esploraUrl = ESPLORA_URLS[(attempt - 1) % ESPLORA_URLS.length];
         try {
-            await openArkWallet(seed);
-            if (__DEV__ && attempt > 1) {
-                console.log(`[Ark restore] open succeeded on attempt ${attempt}/${OPEN_ATTEMPTS}`);
+            await openArkWallet(seed, { esploraUrl });
+            if (__DEV__ && (attempt > 1 || esploraUrl !== ESPLORA_URLS[0])) {
+                console.log(
+                    `[Ark restore] open succeeded on attempt ${attempt}/${OPEN_ATTEMPTS} via ${esploraUrl}`,
+                );
             }
             return { restored: true };
         } catch (err) {
@@ -97,7 +104,7 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
                 // DNS, TCP, TLS, or a gRPC status from the ASP, and object
                 // args don't survive log forwarding as text.
                 console.log(
-                    `[Ark restore] open attempt ${attempt}/${OPEN_ATTEMPTS} failed (${detail.trim()}); ` +
+                    `[Ark restore] open attempt ${attempt}/${OPEN_ATTEMPTS} via ${esploraUrl} failed (${detail.trim()}); ` +
                     `inner=${e?.inner?.errorMessage ?? e?.inner?.message ?? 'n/a'} ` +
                     `raw=${JSON.stringify(e, Object.getOwnPropertyNames(e ?? {}))}; ` +
                     `retrying in ${OPEN_RETRY_DELAY_MS}ms`,
