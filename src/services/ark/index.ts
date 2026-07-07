@@ -125,6 +125,7 @@ export {
 export type { ChannelLookupResult } from './findBackup';
 
 export {
+    ArkRefreshInFlightError,
     cancelArkPendingRound,
     estimateArkRefreshFee,
     fetchArkPendingRoundStates,

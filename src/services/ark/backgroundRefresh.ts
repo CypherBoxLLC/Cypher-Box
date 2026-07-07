@@ -6,7 +6,12 @@ import { recordEvent } from '@Cypher/stores/eventLogStore';
 import { writeArkAutoBackup } from './backup';
 import { fetchChainTipHeight, blocksToDays } from './chainTip';
 import { ARK_REFRESH_MIN_SATS, ARK_VTXO_DUST_SATS } from './config';
-import { estimateArkRefreshFee, fetchArkPendingRoundStates, refreshArkVtxosAndSync } from './refresh';
+import {
+    ArkRefreshInFlightError,
+    estimateArkRefreshFee,
+    fetchArkPendingRoundStates,
+    refreshArkVtxosAndSync,
+} from './refresh';
 import { fetchArkVtxos } from './vtxos';
 import { getArkWalletHandle, getCachedArkMnemonic } from './walletHandle';
 import {
@@ -780,6 +785,15 @@ export async function runBackgroundRefresh(
         try {
             await refreshArkVtxosAndSync(batchIds, batchTotalSats);
         } catch (err: any) {
+            // Round-in-flight rejection is the serialization gate doing its
+            // job (a manual/prompt-initiated round won the race), not a
+            // failure — reuse the same outcome as the pre-check above so it
+            // doesn't tick the consecutive-failure counter.
+            if (err instanceof ArkRefreshInFlightError) {
+                return finalize('pending_round_conflict', {
+                    vtxoCount: batchIds.length,
+                });
+            }
             return finalize('error', {
                 vtxoCount: batchIds.length,
                 feeSats,

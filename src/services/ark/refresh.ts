@@ -23,6 +23,31 @@ function requireHandle() {
 }
 
 /**
+ * Thrown when a refresh submission is rejected because another round is
+ * already in flight. One wallet participating in multiple concurrent
+ * rounds reliably wedges them in `ongoing` state (observed live
+ * 2026-07-07: three parallel single-capsule rounds from back-to-back
+ * arkoor prompts sat ongoing for 8.6 hours until manually cancelled).
+ * Callers catch this to show a "refresh already running" message instead
+ * of a generic failure.
+ */
+export class ArkRefreshInFlightError extends Error {
+    constructor(pendingCount: number) {
+        super('A refresh is already in progress. Wait for it to finish before starting another.');
+        this.name = 'ArkRefreshInFlightError';
+        this.pendingCount = pendingCount;
+    }
+    readonly pendingCount: number;
+}
+
+// In-process gate. `refreshVtxos()` blocks for the round's full duration
+// (up to ~1h on mainnet), so this flag alone serializes submissions within
+// one JS process; the pendingRoundStates pre-check below extends the same
+// guarantee across app restarts (a round submitted by a previous process
+// still blocks new submissions until it completes or is cancelled).
+let refreshSubmissionInFlight = false;
+
+/**
  * Fee preview for refreshing the given VTXOs. Surfaces `feeSats` as a plain
  * number so call sites don't have to deal with bigint. `vtxosSpent` is
  * returned verbatim from the SDK — informational, usually equals the input.
@@ -56,6 +81,26 @@ export async function refreshArkVtxos(
     totalSats?: number,
 ): Promise<ArkRefreshResult> {
     const handle = requireHandle();
+
+    // Serialize rounds: one refresh at a time, per wallet. The in-process
+    // flag catches same-process races; the pendingRoundStates probe catches
+    // rounds left in flight by a previous process. Only `ongoing` rounds
+    // block — `ongoing=false` (finalising) rounds have terminated
+    // server-side, their inputs are already spent, and the next sync
+    // ingests them regardless.
+    if (refreshSubmissionInFlight) {
+        throw new ArkRefreshInFlightError(1);
+    }
+    const pending = await fetchArkPendingRoundStates();
+    const ongoingCount = pending.filter((r) => r.ongoing).length;
+    if (ongoingCount > 0) {
+        console.log(
+            '[Ark refresh] submission blocked:', ongoingCount,
+            'round(s) already ongoing',
+        );
+        throw new ArkRefreshInFlightError(ongoingCount);
+    }
+
     console.log('[Ark refresh] refreshVtxos() calling for', vtxoIds.length, 'vtxo(s):', vtxoIds.map((id) => id.slice(0, 12) + '…'));
     const t0 = Date.now();
     // Activity log: correlationId links the started/finished pair so the
@@ -70,6 +115,7 @@ export async function refreshArkVtxos(
         totalSats: totalSats ?? 0,
         correlationId,
     });
+    refreshSubmissionInFlight = true;
     try {
         const roundId = await handle.refreshVtxos(vtxoIds);
         console.log(
@@ -100,6 +146,8 @@ export async function refreshArkVtxos(
             durationMs: Date.now() - t0,
         });
         throw err;
+    } finally {
+        refreshSubmissionInFlight = false;
     }
 }
 

@@ -23,6 +23,7 @@ import {
     fetchArkVtxos,
     getArkCancelling,
     getArkWalletHandle,
+    ArkRefreshInFlightError,
     refreshArkVtxosAndSync,
     restoreArkWalletFromDisk,
     setArkCancelling,
@@ -1236,6 +1237,15 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 );
             }
         } catch (err: any) {
+            // Round already in flight: nothing was submitted, this isn't a
+            // failure. Tell the user to let the running round finish.
+            if (err instanceof ArkRefreshInFlightError) {
+                SimpleToast.show(
+                    'A refresh is already running. Wait for it to finish, then try again.',
+                    SimpleToast.LONG,
+                );
+                return;
+            }
             // BarkError.Internal is the SDK's opaque catch-all when the ASP
             // rejects the round submission. The most common cause we've
             // observed is a VTXO below the ASP's (undocumented, server-side)
