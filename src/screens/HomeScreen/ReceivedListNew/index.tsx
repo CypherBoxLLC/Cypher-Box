@@ -858,15 +858,15 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
               // transform (not marginTop) so the layout flow
               // beneath isn't shifted with it.
               <View style={[styles.bitcoinTabContent, { transform: [{ translateY: -10 }] }]}>
-                <Text h4 bold style={{ color: '#FFD54F', textAlign: 'center', paddingHorizontal: 16 }}>
-                  ⚠️ Only receive 50,000 sats or more. Smaller amounts can't board your Bark vault and will need on-chain recovery.
+                <Text semibold style={{ color: '#FFD54F', textAlign: 'center', fontSize: 13, paddingHorizontal: 16 }}>
+                  ⚠️ Do not receive less than {minBoardSats.toLocaleString('en-US')} sats to this on-chain address
                 </Text>
                 {!arkOnchainAddress ? (
                   <ActivityIndicator size="large" color="#ffffff" />
                 ) : (
                   <>
-                    <View style={styles.addressRow}>
-                      <Text semibold style={styles.bitcoinAddressText}>
+                    <View style={[styles.addressRow, { marginTop: 12 }]}>
+                      <Text semibold style={[styles.bitcoinAddressText, { fontSize: 13 }]}>
                         {arkOnchainAddress}
                       </Text>
                       <TouchableOpacity onPress={() => {
@@ -876,20 +876,14 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                         <Image source={Copy} style={styles.copyIconImage} />
                       </TouchableOpacity>
                     </View>
-                    <View style={{ marginTop: 10, padding: 2, backgroundColor: 'white', borderRadius: 2 }}>
+                    <View style={{ marginTop: 10, padding: 6, backgroundColor: 'white', borderRadius: 4 }}>
                       <QRCode
                         value={arkOnchainAddress}
-                        size={50}
+                        size={100}
                         color="black"
                         backgroundColor="white"
                       />
                     </View>
-                    <Text semibold style={styles.bitcoinAddressText}>
-                      Deposit Bitcoin here to board funds into Bark on the next round
-                    </Text>
-                    <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 8, textAlign: 'center', fontWeight: '600' }}>
-                      Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Bark and would have to be recovered on-chain.
-                    </Text>
                   </>
                 )}
               </View>

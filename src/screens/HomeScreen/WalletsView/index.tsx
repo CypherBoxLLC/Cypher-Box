@@ -341,22 +341,16 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             isArkAuth;
 
         const tabs: any = [];
-        // The carousel's `firstItem` prop is only respected on the Carousel
-        // component's *initial mount*. Because we render the Carousel before
-        // wTabs is populated (it starts as []), the Carousel mounts with
-        // firstItem=0 and ignores any later bump — so even if we set
-        // defaultIndex=1 here, the visible slide stays at index 0 on first
-        // login, while our state + the page indicator claimed index 1. That
-        // mismatch is the bug Bam saw: indicator on the middle line, but the
-        // fiat card actually showing.
-        //
-        // Easiest fix that keeps the existing render order: align the state
-        // with what the carousel actually shows — start on index 0 (fiat
-        // when Strike is connected, CircularView's left neighbour when both
-        // custodial providers are connected). Swiping left advances to the
-        // BTC card, exactly the same gesture as before; only the *initial*
-        // landing slide changes. The indicator now correctly points at the
-        // left line on first login and tracks swipes from there.
+        // Default-landing slide. When Strike is connected its fiat balance
+        // card sits at index 0, but the carousel should open on the actual
+        // BTC/Lightning slide — the Strike BTC card, or the Strike↔Coinos
+        // CircularView when both custodial providers are connected — not the
+        // fiat balance. Computed AFTER the tabs are assembled (below) as the
+        // first lightning-kind slide; falls back to 0 for Coinos-only /
+        // Ark-only configs that have no fiat slide. The Animated.FlatList
+        // honours this via `initialScrollIndex={indexStrike}` + getItemLayout
+        // (the old snap-carousel couldn't, hence the previous land-on-fiat
+        // workaround — no longer needed post-FlatList-migration).
         let defaultIndex = 0;
 
         const strikeDollarTab = {
@@ -406,6 +400,12 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         if (hasArk) {
             tabs.push(walletTabsMap.ARK);
         }
+
+        // Land on the first BTC/Lightning slide (Strike BTC card or the
+        // Strike↔Coinos CircularView), skipping the Strike fiat card when it
+        // exists. Falls back to 0 when there's no lightning slide.
+        const firstLightningIdx = tabs.findIndex((t: any) => kindFromTab(t) === 'lightning');
+        if (firstLightningIdx >= 0) defaultIndex = firstLightningIdx;
 
         // Always rebuild wTabs so the card closures capture fresh balances.
         // But only reset the page index (+ notify the indicator) when the
