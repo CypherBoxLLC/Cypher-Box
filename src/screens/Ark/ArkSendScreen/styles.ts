@@ -44,7 +44,10 @@ export default StyleSheet.create<Style>({
         borderWidth: 1,
         borderColor: '#333',
         paddingHorizontal: 12,
-        minHeight: 50,
+        // Fixed height so a long pasted invoice/address scrolls INSIDE the
+        // field instead of growing the box to a dozen lines (Bam: the field
+        // must stay the same size regardless of content length).
+        height: 64,
         marginBottom: 8,
     },
     destInput: {
@@ -52,6 +55,10 @@ export default StyleSheet.create<Style>({
         color: colors.white,
         fontSize: 14,
         paddingVertical: 10,
+        // Bound the multiline text region and pin it to the top so long
+        // content scrolls within the fixed-height wrapper above.
+        maxHeight: 44,
+        textAlignVertical: 'top',
     },
     pasteBtn: {
         paddingHorizontal: 10,

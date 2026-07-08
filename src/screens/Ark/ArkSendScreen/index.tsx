@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import bolt11 from 'bolt11';
 import {
     ActivityIndicator,
     Alert,
@@ -28,6 +29,25 @@ import {
 } from '@Cypher/services/ark';
 import { colors } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
+
+/**
+ * Decode the sat amount encoded in an amount-bearing BOLT11, or null if the
+ * invoice is amount-less / unparseable. Used to auto-fill the send amount so
+ * the user doesn't retype what the invoice already specifies.
+ */
+function decodeInvoiceSats(invoice: string): number | null {
+    try {
+        const decoded = bolt11.decode(invoice);
+        if (decoded?.satoshis && decoded.satoshis > 0) return decoded.satoshis;
+        if (decoded?.millisatoshis) {
+            const msat = Number(decoded.millisatoshis);
+            if (Number.isFinite(msat) && msat > 0) return Math.floor(msat / 1000);
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
 // Repo-level helper (not under src/) — owns the iOS camera permission
 // dance + the navigate-to-ScanQRCode callback contract used by every
 // scan flow in the app (HotVault, ConnectColdStorage, …).
@@ -103,6 +123,24 @@ export default function ArkSendScreen({ route }: Props) {
         () => classifyArkDestination(destinationRaw),
         [destinationRaw],
     );
+
+    // Auto-fill the amount for an amount-encoded Lightning invoice. The sats
+    // are baked into the BOLT11, so the user shouldn't have to type them, and
+    // filling them surfaces the inline fee preview (which needs an amount to
+    // estimate) without a manual step. Amount-less invoices/offers leave the
+    // field to the user. Only overwrite when the decoded value differs so we
+    // don't clobber the field on unrelated re-renders.
+    useEffect(() => {
+        if (destination.kind !== 'ln-invoice') return;
+        const decoded = decodeInvoiceSats(destination.value);
+        if (decoded && decoded > 0) {
+            const s = String(decoded);
+            setSats((prev) => (prev === s ? prev : s));
+            setIsSats(true);
+        }
+        // destination.value is stable per destinationRaw (memoized above).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [destination]);
 
     // Any edit to destination or amount invalidates a prior fee estimate.
     // Clearing the fee here means the user can't submit a stale number after
