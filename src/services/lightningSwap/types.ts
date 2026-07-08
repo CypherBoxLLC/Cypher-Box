@@ -153,9 +153,12 @@ export interface LightningSwapProvider {
      * success instead of scaring the user with a do-not-retry modal.
      *
      * Must be a PURE READ — the engine may poll it several times. Return
-     * false (never throw) when unknown/not-yet-arrived.
+     * false (never throw) when unknown/not-yet-arrived. `sinceMs` scopes the
+     * check to receipts observed at or after the swap started, so a stale
+     * same-amount receive from before this swap can't produce a false
+     * positive.
      */
-    confirmReceived?(bolt11: string): Promise<boolean>;
+    confirmReceived?(bolt11: string, sinceMs?: number): Promise<boolean>;
 }
 
 /**

@@ -63,7 +63,10 @@ export async function swap(
         throw new InvoiceCreationFailedError(toId, new Error('empty invoice returned'));
     }
 
-    // Step 2: source pays.
+    // Step 2: source pays. Stamp the start so destination-confirmation only
+    // counts receipts that arrive after this point (not a stale same-amount
+    // receive from before the swap).
+    const paidAt = Date.now();
     try {
         const result = await from.payInvoice(bolt11, amountSats, opts?.memo);
         if (__DEV__) console.log('[lightningSwap] swap done', fromId, '→', toId, 'id=', result.id);
@@ -83,13 +86,19 @@ export async function swap(
             // limbo. Poll a short window because the HTLC takes a few
             // seconds to land after the source reports PENDING.
             if (to.confirmReceived) {
-                const CONFIRM_WINDOW_MS = 45_000;
+                // LN routes through a slow rail (Strike) can take well over a
+                // minute to land at the destination (observed ~50s live), so
+                // the window is generous. `paidAt - 5000` gives a small grace
+                // window before the pay call in case a receive registered a
+                // beat early.
+                const CONFIRM_WINDOW_MS = 120_000;
                 const CONFIRM_INTERVAL_MS = 3_000;
+                const since = paidAt - 5_000;
                 const deadline = Date.now() + CONFIRM_WINDOW_MS;
                 while (Date.now() < deadline) {
                     let arrived = false;
                     try {
-                        arrived = await to.confirmReceived(bolt11);
+                        arrived = await to.confirmReceived(bolt11, since);
                     } catch {
                         arrived = false;
                     }

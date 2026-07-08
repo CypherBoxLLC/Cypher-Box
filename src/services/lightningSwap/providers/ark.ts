@@ -25,6 +25,9 @@ import {
     fetchArkVtxos,
     fetchChainTipHeight,
 } from '@Cypher/services/ark';
+// Direct module import (not via the ark barrel): movementWatcher is kept out
+// of the barrel to avoid the walletHandle <-> movementWatcher import cycle.
+import { hadSuccessfulReceiveSince } from '@Cypher/services/ark/movementWatcher';
 import useAuthStore from '@Cypher/stores/authStore';
 
 import type {
@@ -207,13 +210,26 @@ const arkProvider: LightningSwapProvider = {
         }
     },
 
-    async confirmReceived(invoice) {
-        // Pure read: has the payment for this invoice arrived at our ASP?
-        // `hasHtlcVtxos` flips true the moment the HTLC lands (the money is
-        // here), before it's even claimed into a VTXO — that's the earliest
-        // reliable "received" signal. `preimageRevealed` (or the entry being
-        // gone because it already claimed into a VTXO) also means received,
-        // but hasHtlcVtxos covers the confirmation window right after a send.
+    async confirmReceived(invoice, sinceMs) {
+        // Has the payment for this invoice actually arrived?
+        //
+        // PRIMARY signal: a successful receive MOVEMENT (subsystem=receive
+        // status=successful) for this exact sat amount, observed at/after the
+        // swap started. The movement watcher records these. This is the
+        // reliable signal — verified live 2026-07-08 that the
+        // pendingLightningReceives hasHtlcVtxos/preimageRevealed flags do NOT
+        // flip in time (they stayed false through a receive that succeeded 8s
+        // after the window closed).
+        //
+        // SECONDARY (belt-and-suspenders): the pending-receive flags, in case
+        // the movement was missed (e.g. watcher restart mid-swap). Cheap and
+        // can only make us MORE likely to confirm a real arrival.
+        const sats = decodeBolt11Sats(invoice);
+        const since = typeof sinceMs === 'number' ? sinceMs : 0;
+        if (sats && hadSuccessfulReceiveSince(sats, since)) {
+            if (__DEV__) console.log('[lightningSwap/ark] confirmReceived: movement matched', sats, 'sats');
+            return true;
+        }
         const hash = decodeBolt11PaymentHash(invoice);
         if (!hash) return false;
         try {
@@ -222,9 +238,8 @@ const arkProvider: LightningSwapProvider = {
             if (__DEV__) {
                 console.log(
                     '[lightningSwap/ark] confirmReceived hash=', hash.slice(0, 12),
-                    'match=', match
-                        ? `hasHtlc=${match.hasHtlcVtxos} preimage=${match.preimageRevealed} sats=${match.amountSats}`
-                        : `none (of ${pending.length} pending)`,
+                    'sats=', sats,
+                    'flagMatch=', match ? `hasHtlc=${match.hasHtlcVtxos} preimage=${match.preimageRevealed}` : 'none',
                 );
             }
             return Boolean(match && (match.hasHtlcVtxos || match.preimageRevealed));

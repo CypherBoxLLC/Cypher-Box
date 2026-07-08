@@ -39,6 +39,39 @@ let cancelled = false;
 // movements happens with the app foregrounded, where the AppState gate
 // suppresses the notification anyway.
 const notifiedRefreshMovementIds = new Set<number>();
+// Recent successful Lightning/arkoor RECEIVE movements, for swap
+// destination-confirmation. The movement event (subsystem=receive
+// status=successful) is the reliable "money arrived" signal — the
+// pendingLightningReceives hasHtlcVtxos/preimageRevealed flags do NOT flip
+// in time (observed live 2026-07-08: they stayed false through a receive
+// that succeeded). Keyed by effectiveSats; the swap layer matches by exact
+// amount within a time window (see hadSuccessfulReceiveSince). Trimmed to
+// the last few minutes so it can't grow unbounded.
+type ReceiveMark = { sats: number; at: number };
+const recentReceives: ReceiveMark[] = [];
+const RECEIVE_MARK_TTL_MS = 5 * 60 * 1000;
+
+function recordSuccessfulReceive(sats: number, at: number): void {
+    recentReceives.push({ sats, at });
+    // Drop anything older than the TTL to bound the array.
+    const cutoff = at - RECEIVE_MARK_TTL_MS;
+    while (recentReceives.length && recentReceives[0].at < cutoff) {
+        recentReceives.shift();
+    }
+}
+
+/**
+ * True if a successful Lightning/arkoor receive of exactly `sats` was
+ * observed at or after `sinceMs`. Used by the swap engine to confirm a
+ * destination received the payment when the source can't self-confirm.
+ * Matching on exact amount + recency is safe for swaps: a same-amount
+ * collision would itself be a real receive, so "success" stays correct.
+ * Note: getTime()-free — the caller passes timestamps (Date.now is fine
+ * in app code; the constraint only applies to workflow scripts).
+ */
+export function hadSuccessfulReceiveSince(sats: number, sinceMs: number): boolean {
+    return recentReceives.some((m) => m.sats === sats && m.at >= sinceMs);
+}
 // Promise that resolves when the runLoop has fully torn down — used by
 // `stopArkMovementWatcher` to give callers an awaitable signal that the
 // holder's `uniffiDestroy()` has run and bark's SQLite file descriptors
@@ -217,6 +250,9 @@ function handleNotification(notif: { tag: string; inner?: any }): void {
     const store = useAuthStore.getState();
     const cur = store.arkArkoorPromptState ?? {};
     const now = Date.now();
+    // Mark this successful receive for swap destination-confirmation. This is
+    // the reliable arrival signal (see recentReceives above).
+    if (sats > 0) recordSuccessfulReceive(sats, now);
     let mutated = false;
     const next = { ...cur };
     for (const id of ids) {
