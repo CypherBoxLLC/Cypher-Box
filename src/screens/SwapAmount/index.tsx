@@ -67,6 +67,20 @@ export default function SwapAmount() {
     const [usd, setUsd] = useState('');
     const [isSats, setIsSats] = useState(true);
     const [loading, setLoading] = useState(false);
+    // "Taking longer than expected" hint. The swap can sit in the processing
+    // spinner for the full confirmation window (up to ~120s) — most often
+    // when Strike's Lightning payment is slow to route to the destination
+    // (Strike→Bark especially). Surface a reassurance after 10s so the user
+    // isn't staring at a bare spinner wondering if it hung.
+    const [slowHint, setSlowHint] = useState(false);
+    useEffect(() => {
+        if (!loading) {
+            setSlowHint(false);
+            return;
+        }
+        const t = setTimeout(() => setSlowHint(true), 10000);
+        return () => clearTimeout(t);
+    }, [loading]);
     const [success, setSuccess] = useState(false);
     const [swappedSats, setSwappedSats] = useState('');
     const [swappedFiat, setSwappedFiat] = useState('');
@@ -424,6 +438,11 @@ export default function SwapAmount() {
                 <View style={styles.loadingView}>
                     <ActivityIndicator size="large" color={colors.pink.default} />
                     <Text style={styles.loadingText}>Processing swap...</Text>
+                    {slowHint && (
+                        <Text style={{ color: colors.gray.light, fontSize: 13, marginTop: 10, textAlign: 'center', marginHorizontal: 20 }}>
+                            It's taking longer than expected...
+                        </Text>
+                    )}
                 </View>
             ) : (
                 <CustomKeyboard

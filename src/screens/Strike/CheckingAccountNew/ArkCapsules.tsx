@@ -818,6 +818,29 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // having to find a button.
     const arkPendingTapRefresh = useAuthStore((s) => s.arkPendingTapRefresh);
     const setArkPendingTapRefresh = useAuthStore((s) => s.setArkPendingTapRefresh);
+    const arkRefreshStuck = useAuthStore((s) => s.arkRefreshStuck);
+    const setArkRefreshStuck = useAuthStore((s) => s.setArkRefreshStuck);
+
+    // Recover a stuck refresh from the Capsules tab. Mirrors the home-card
+    // handler in ArkWallet — but that banner is invisible to a user sitting
+    // on THIS tab watching a capsule pulse "Refreshing…", which is exactly
+    // when they need it. Cancels each wedged round to unlock its input VTXOs,
+    // then clears the banner; the next sync re-detects if any round is still
+    // stuck. Per-round failures are swallowed (cancelArkPendingRound already
+    // logs the inner BarkError) so one bad round can't block the rest.
+    const handleStuckRecovery = useCallback(async () => {
+        const stuck = useAuthStore.getState().arkRefreshStuck;
+        if (!stuck) return;
+        for (const roundId of stuck.stuckRoundIds) {
+            try {
+                await cancelArkPendingRound(roundId);
+            } catch {
+                // logged inside cancelArkPendingRound
+            }
+        }
+        setArkRefreshStuck(null);
+        SimpleToast.show('Recovering stuck refresh…', SimpleToast.SHORT);
+    }, [setArkRefreshStuck]);
 
     // Block-height the wallet's policy says we need to refresh by, or null
     // when nothing's in scope (no spendable VTXOs / all already refreshed
@@ -1815,6 +1838,42 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     </TouchableOpacity>
                 </View>
             </View>
+
+            {/* Stuck-refresh recovery banner. The equivalent home-card banner
+                (ArkWallet) is invisible to a user sitting on this tab watching
+                a capsule pulse "Refreshing…" — which is exactly when they need
+                it. Driven by the time-based stuck detection in useArkSync
+                (flags rounds pending past 2× the round interval, ongoing or
+                finalising). Tap cancels the wedged round(s) to unlock the
+                VTXOs. */}
+            {arkRefreshStuck && (
+                <TouchableOpacity
+                    onPress={handleStuckRecovery}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Recover stuck refresh"
+                    style={{
+                        marginHorizontal: 20,
+                        marginBottom: 10,
+                        paddingVertical: 10,
+                        paddingHorizontal: 14,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: colors.redLight,
+                        backgroundColor: 'rgba(253,122,104,0.10)',
+                    }}
+                >
+                    <Text bold style={{ color: colors.redLight, fontSize: 13, lineHeight: 18 }}>
+                        Refresh stuck for {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
+                        <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
+                            Tap to recover.
+                        </Text>
+                    </Text>
+                    <Text style={{ color: '#B0B0B0', fontSize: 11, marginTop: 3, lineHeight: 15 }}>
+                        This round is taking longer than expected. Recovering unlocks your capsules so you can try again. Your funds are safe.
+                    </Text>
+                </TouchableOpacity>
+            )}
 
             {/* Dust-consolidate banner. Surfaces only when there's at
                 least one dust capsule on the wallet. Two states:

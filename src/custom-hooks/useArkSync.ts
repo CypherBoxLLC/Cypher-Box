@@ -19,6 +19,7 @@ import {
     isICloudBackupAvailable,
     progressArkExits,
     progressArkPendingRounds,
+    reopenArkWalletFromCache,
     resetArkWalletState,
     runBackgroundRefresh,
     scheduleVtxoExpiryWarnings,
@@ -96,6 +97,42 @@ const URGENCY_THRESHOLD_BLOCKS = Math.round(
 const FOREGROUND_SWEEP_MIN_GAP_MS = 5 * 60 * 1000;
 let lastForegroundSweepAt = 0;
 
+// --- Self-heal for a failed boot open -------------------------------------
+//
+// useArkRestoreOnBoot runs exactly once per mount and, on a failed open,
+// leaves the handle null forever — the sync loop then just logs
+// "handle not ready" every tick and NOTHING re-opens until a full app
+// relaunch. That starves everything Ark (balance, VTXOs, round progression,
+// stuck-refresh detection). When the handle is missing we kick off a
+// cache-based re-open on a backoff. It reuses the seed cached at boot, so no
+// Keychain read and no repeat FaceID; if the seed was never cached (boot
+// hook hasn't run its first read yet) it no-ops and the boot hook handles it.
+let arkReopenInFlight = false;
+let lastArkReopenAt = 0;
+const ARK_REOPEN_MIN_GAP_MS = 20_000;
+
+async function maybeSelfHealArkHandle(): Promise<void> {
+    if (arkReopenInFlight) return;
+    if (Date.now() - lastArkReopenAt < ARK_REOPEN_MIN_GAP_MS) return;
+    arkReopenInFlight = true;
+    lastArkReopenAt = Date.now();
+    try {
+        const result = await reopenArkWalletFromCache();
+        if (__DEV__) {
+            console.log(
+                '[ArkSync] self-heal reopen:',
+                result.restored
+                    ? 'success'
+                    : `no-op/failed (${'reason' in result ? result.reason : 'unknown'})`,
+            );
+        }
+    } catch (err) {
+        if (__DEV__) console.warn('[ArkSync] self-heal reopen threw:', err);
+    } finally {
+        arkReopenInFlight = false;
+    }
+}
+
 /**
  * Schedule version of the OS-level expiry-warning queue. Bumped when the
  * warning schedule changes (e.g. moving from 24h+6h to 4d/2d/24h/12h/6h).
@@ -161,7 +198,12 @@ export default function useArkSync(): UseArkSync {
         // the AppState 'active' listener and the next interval tick will
         // pick up where we left off.
         if (!getArkWalletHandle()) {
-            if (__DEV__) console.log('[ArkSync] skipped — wallet handle not ready yet');
+            // Don't just skip forever — the boot open may have failed and
+            // nothing else re-opens. Kick off a guarded, backed-off re-open
+            // from the cached seed (no Keychain / FaceID). This tick still
+            // bails; the next tick after a successful re-open syncs normally.
+            if (__DEV__) console.log('[ArkSync] handle not ready — attempting self-heal reopen');
+            void maybeSelfHealArkHandle();
             return;
         }
 
@@ -523,7 +565,8 @@ export default function useArkSync(): UseArkSync {
 
             // Stuck-refresh detection — TIME-based.
             //
-            // Reliable signal: a round that's been `ongoing=true` for more
+            // Reliable signal: a round that's stayed pending (whether the SDK
+            // reports it `ongoing` or `finalising`) for more
             // than `2 × roundIntervalSecs` (interval from
             // `fetchArkRoundIntervalSecs` — mainnet=3600s, signet=300s) is
             // past the natural ASP completion window. 2× allows for normal
@@ -550,22 +593,32 @@ export default function useArkSync(): UseArkSync {
             // threshold instead of restarting the clock. The map is
             // pruned each sync to drop roundIds no longer in
             // `pendingRoundStates()`.
-            const ongoingRounds = rounds.filter((r) => r.ongoing);
+            // Track EVERY pending round, not just `ongoing` ones. A round
+            // wedged in `finalising` (ongoing=false — terminated server-side
+            // but never ingested into the local DB) is just as stuck as one
+            // wedged `ongoing`, and the old `filter(r => r.ongoing)` let it
+            // slip through, so it pulsed "Refreshing…" forever with no banner.
+            // A healthy finalising round clears within a sync tick or two and
+            // never reaches the 2×interval threshold; only wedged ones do.
             const now = Date.now();
             const prevFirstSeen = useAuthStore.getState().arkPendingRoundFirstSeen;
-            const intervalSecs = useAuthStore.getState().arkRoundIntervalSecs;
-            const ongoingIdSet = new Set(ongoingRounds.map((r) => String(r.id)));
+            // Ark is mainnet-only (1h round cadence), so fall back
+            // to 3600s when arkInfo hasn't resolved yet. Without this the whole
+            // detection silently no-op'd until the interval fetch landed, which
+            // on a flaky ASP can be never — a wedged round then had no path to
+            // a banner at all.
+            const intervalSecs = useAuthStore.getState().arkRoundIntervalSecs ?? 3600;
+            const pendingIdSet = new Set(rounds.map((r) => String(r.id)));
 
-            // Build the next firstSeen map: keep existing entries for
-            // rounds still pending; add a fresh `now` stamp for newly-
-            // observed rounds; drop entries for rounds that have left
-            // the pending list. Skip the setter call when the map is
-            // unchanged to avoid re-rendering subscribers for nothing.
+            // Build the next firstSeen map: keep existing entries for rounds
+            // still pending; stamp `now` for newly-observed rounds; drop
+            // entries for rounds no longer pending. Skip the setter when the
+            // map is unchanged to avoid re-rendering subscribers for nothing.
             const nextFirstSeen: Record<string, number> = {};
             for (const [id, ts] of Object.entries(prevFirstSeen)) {
-                if (ongoingIdSet.has(id)) nextFirstSeen[id] = ts;
+                if (pendingIdSet.has(id)) nextFirstSeen[id] = ts;
             }
-            for (const r of ongoingRounds) {
+            for (const r of rounds) {
                 const key = String(r.id);
                 if (nextFirstSeen[key] == null) nextFirstSeen[key] = now;
             }
@@ -576,22 +629,25 @@ export default function useArkSync(): UseArkSync {
                 nextKeys.some((k) => prevFirstSeen[k] !== nextFirstSeen[k]);
             if (mapChanged) setArkPendingRoundFirstSeen(nextFirstSeen);
 
-            if (intervalSecs != null && ongoingRounds.length > 0) {
+            if (rounds.length > 0) {
                 const stuckThresholdMs = 2 * intervalSecs * 1000;
-                const stuck = ongoingRounds.filter((r) => {
+                const stuck = rounds.filter((r) => {
                     const seen = nextFirstSeen[String(r.id)];
                     return seen != null && now - seen > stuckThresholdMs;
                 });
-                if (stuck.length > 0) {
-                    // "stuckSats" = sum of Locked VTXO amounts. Note: the
-                    // SDK doesn't expose a vtxo→round link, so this is the
-                    // total locked across all rounds, not strictly the
-                    // stuck-round subset. Acceptable for a banner headline
-                    // ("Refresh stuck · ~N sats") since the user is going
-                    // to cancel all stuck rounds anyway.
-                    const lockedSats = (vtxos?.all ?? [])
-                        .filter((v) => v.state.toLowerCase() === 'locked')
-                        .reduce((sum, v) => sum + v.sats, 0);
+                // "stuckSats" = sum of Locked VTXO amounts. The SDK doesn't
+                // expose a vtxo→round link, so this is the total locked across
+                // all rounds, not strictly the stuck-round subset. Fine for a
+                // banner headline since the user cancels all stuck rounds anyway.
+                const lockedSats = (vtxos?.all ?? [])
+                    .filter((v) => v.state.toLowerCase() === 'locked')
+                    .reduce((sum, v) => sum + v.sats, 0);
+                // Only surface the banner when funds are ACTUALLY locked. Orphan
+                // `finalising` round-state rows linger for days with no locked
+                // inputs (observed live: rounds 8 & 12 flagged with lockedSats=0),
+                // which the old `stuck.length > 0` alone would render as a bogus
+                // "Refresh stuck · 0 sats". No locked sats → nothing at stake.
+                if (stuck.length > 0 && lockedSats > 0) {
                     setArkRefreshStuck({
                         stuckRoundIds: stuck.map((r) => r.id),
                         stuckSats: lockedSats,
@@ -601,6 +657,7 @@ export default function useArkSync(): UseArkSync {
                         console.warn(
                             '[Ark sync] STUCK refresh (time-based):',
                             'roundIds=', stuck.map((r) => r.id),
+                            'ongoing=', stuck.map((r) => r.ongoing),
                             'ages(s)=', stuck.map((r) =>
                                 Math.round((now - nextFirstSeen[String(r.id)]) / 1000),
                             ),
@@ -612,9 +669,7 @@ export default function useArkSync(): UseArkSync {
                     setArkRefreshStuck(null);
                 }
             } else {
-                // No interval cached yet (first sync after sign-in before
-                // the interval fetcher resolves), OR no ongoing rounds at
-                // all. Either way: no stuck signal.
+                // No pending rounds at all → nothing stuck.
                 setArkRefreshStuck(null);
             }
 

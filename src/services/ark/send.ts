@@ -4,7 +4,7 @@ import {
     validateArkAddress,
 } from '@secondts/bark-react-native';
 
-import { getArkWalletHandle } from './walletHandle';
+import { ensureArkWalletHandleReady } from './restore';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
@@ -52,10 +52,14 @@ export type ArkSendResult = {
     feeSats: number;
 };
 
-function requireHandle() {
-    const handle = getArkWalletHandle();
-    if (!handle) throw new Error('Ark wallet not open — cannot send');
-    return handle;
+// Wait for the wallet handle instead of throwing "not open" the instant it's
+// null. At boot the open lags a user pasting an invoice / tapping send, and
+// the old hard throw failed the estimate/send until the user retried (the
+// recurring "ark wallet not open" the receive path already fixed).
+// ensureArkWalletHandleReady awaits the in-flight open — reusing the cached
+// seed, so no FaceID — and only throws a friendly message on timeout.
+async function requireHandle() {
+    return ensureArkWalletHandleReady();
 }
 
 // --- Classification ---------------------------------------------------------
@@ -115,7 +119,7 @@ export async function estimateArkSendFee(
     dest: ArkDestination,
     amountSats: number,
 ): Promise<ArkSendFeeView> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
     const amount = BigInt(amountSats);
 
     switch (dest.kind) {
@@ -176,7 +180,7 @@ function lightningSendId(send: LightningSend): string {
  * in the local DB while we await between polls.
  */
 async function waitForArkLightningSettlement(
-    handle: ReturnType<typeof requireHandle>,
+    handle: Awaited<ReturnType<typeof requireHandle>>,
     invoice: string,
     opts: { timeoutMs?: number; pollMs?: number } = {},
 ): Promise<'settled' | 'failed' | 'pending'> {
@@ -217,7 +221,7 @@ async function waitForArkLightningSettlement(
  * so the dispatch + settlement-wait can run inside a retry loop.
  */
 async function dispatchLnSend(
-    handle: ReturnType<typeof requireHandle>,
+    handle: Awaited<ReturnType<typeof requireHandle>>,
     dest: ArkDestination,
     amount: bigint,
     comment?: string,
@@ -246,7 +250,7 @@ export async function executeArkSend(
     amountSats: number,
     comment?: string,
 ): Promise<ArkSendResult> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
     const amount = BigInt(amountSats);
 
     // Reconcile VTXO state with the ASP before sending. bark's coin-selection

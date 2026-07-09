@@ -19,10 +19,25 @@ import { ESPLORA_URLS } from './config';
  *
  * Returns null only when EVERY provider fails (caller hides the ring).
  */
+// Per-provider request timeout. Without this a bot-blocking provider
+// (blockstream holds the connection open serving its Cloudflare page) makes
+// `fetch` hang indefinitely, and because this runs inside the sync loop's
+// Promise.all it froze the whole JS thread for ~90s (observed 2026-07-09,
+// which starved a user's fee estimate on the same thread). 8s is generous for
+// a single-integer GET; a slow provider is dropped and the next one tried.
+const TIP_FETCH_TIMEOUT_MS = 8000;
+
 export async function fetchChainTipHeight(): Promise<number | null> {
     for (const base of ESPLORA_URLS) {
         try {
-            const res = await fetch(`${base}/blocks/tip/height`, { method: 'GET' });
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), TIP_FETCH_TIMEOUT_MS);
+            let res: Response;
+            try {
+                res = await fetch(`${base}/blocks/tip/height`, { method: 'GET', signal: controller.signal });
+            } finally {
+                clearTimeout(timer);
+            }
             if (!res.ok) continue;
             const text = (await res.text()).trim();
             // A real tip height is a bare integer in the ~800k–10M range. The

@@ -96,6 +96,22 @@ export function getCachedArkMnemonic(): string | null {
     return cachedMnemonic;
 }
 
+/**
+ * Cache the mnemonic for a self-heal re-open WITHOUT a Keychain read.
+ *
+ * The Ark seed Keychain entry is stored with BIOMETRY_ANY_OR_DEVICE_PASSCODE,
+ * so every Keychain read prompts FaceID/passcode. `restoreArkWalletFromDisk`
+ * reads it once at boot; we cache it here immediately so that if the open
+ * fails, the sync-loop self-heal (`reopenArkWalletFromCache`) can retry the
+ * open reusing this value with no repeat biometric prompt. Deliberately
+ * cached even when the subsequent open fails and the handle stays null —
+ * `clearArkWalletHandle` flushes it on teardown, and every consumer of
+ * `getCachedArkMnemonic` already gates on an open handle first.
+ */
+export function cacheArkMnemonicForReopen(mnemonic: string): void {
+    cachedMnemonic = mnemonic;
+}
+
 function ensureUniffi(): Promise<void> {
     if (!uniffiReady) uniffiReady = uniffiInitAsync();
     return uniffiReady;
@@ -271,9 +287,15 @@ export function getArkOnchainHandle(): OnchainWalletInterface | null {
  * SQLite FDs before nulling the ref.
  */
 export function rotateArkOnchainEsplora(): void {
-    const idx = ESPLORA_URLS.indexOf(sessionEsploraUrl);
-    const next = ESPLORA_URLS[(idx + 1) % ESPLORA_URLS.length];
-    if (next === sessionEsploraUrl) return; // single provider — nothing to rotate to
+    // The onchain sync failed on the current provider. We used to cycle to the
+    // NEXT provider in ESPLORA_URLS — but the only fallback is blockstream,
+    // which chronically bot-blocks bark's client and (with no SDK-side esplora
+    // timeout) hangs the onchain sync ~90s. Observed 2026-07-09: that hang
+    // froze the JS thread and starved a stuck fee estimate. So reset to the
+    // reliable primary (mempool) instead of rotating onto the bad endpoint. If
+    // we're already on the primary, a transient failure just retries it next
+    // tick rather than pinning us to a dead provider.
+    if (sessionEsploraUrl === ESPLORA_URL) return; // already on primary
     if (onchainHandle && typeof (onchainHandle as any).uniffiDestroy === 'function') {
         try {
             (onchainHandle as any).uniffiDestroy();
@@ -282,8 +304,8 @@ export function rotateArkOnchainEsplora(): void {
         }
     }
     onchainHandle = null;
-    sessionEsploraUrl = next;
-    if (__DEV__) console.log('[Ark] rotated onchain esplora ->', next);
+    sessionEsploraUrl = ESPLORA_URL;
+    if (__DEV__) console.log('[Ark] onchain esplora reset to primary ->', ESPLORA_URL);
 }
 
 /**

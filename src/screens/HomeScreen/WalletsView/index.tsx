@@ -1,7 +1,7 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
-import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
@@ -77,6 +77,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         arkBgRefreshLastAttempt,
         arkIosBackupReminderActive,
         arkBalanceDetail,
+        arkRefreshStuck,
         setArkPendingOnchainRecoverOpen,
     } = useAuthStore();
 
@@ -825,6 +826,59 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     />
                 </Animated.View>
             )}
+            {/* Stuck-refresh recovery banner — shared-row mode. The in-card
+                ArkWallet banner is suppressed when the shared Send/Receive row
+                is active, so surface it here in the same absolute slot below
+                the row. Top precedence over the iOS-backup and bg-refresh
+                nudges below (a wedged round is the higher-stakes signal — both
+                gate on !arkRefreshStuck). Tap cancels the wedged round(s) to
+                unlock the VTXOs; the next sync re-detects if still stuck. */}
+            {useSharedButtons && arkRefreshStuck && (
+                <Animated.View
+                    pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
+                    style={{
+                        position: 'absolute',
+                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
+                        left: 0,
+                        right: 40,
+                        alignItems: 'center',
+                        opacity: arkReminderOpacity,
+                    }}
+                >
+                    <TouchableOpacity
+                        onPress={() => {
+                            const stuck = useAuthStore.getState().arkRefreshStuck;
+                            if (!stuck) return;
+                            (async () => {
+                                for (const roundId of stuck.stuckRoundIds) {
+                                    try {
+                                        await cancelArkPendingRound(roundId);
+                                    } catch {
+                                        // cancelArkPendingRound logs the inner BarkError
+                                    }
+                                }
+                                useAuthStore.getState().setArkRefreshStuck(null);
+                            })();
+                        }}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel="Recover stuck refresh"
+                    >
+                        <Text
+                            h4
+                            style={{
+                                color: colors.redLight,
+                                textAlign: 'center',
+                                paddingHorizontal: 12,
+                                textDecorationLine: 'underline',
+                            }}
+                        >
+                            Refresh stuck · {arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover
+                        </Text>
+                    </TouchableOpacity>
+                </Animated.View>
+            )}
+
             {/* iOS backup-snapshot reminder — funds-safety nudge for users
                 who satisfied the create-flow gate via manual share+confirm
                 without iCloud Drive verified. Takes the same absolute slot
@@ -832,7 +886,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 user can lose funds if they uninstall before re-exporting,
                 whereas the bg-refresh status is informational. Tap → Ark
                 settings tab, where the dismiss + re-export actions live. */}
-            {useSharedButtons && iosBackupReminderVisible && (
+            {useSharedButtons && !arkRefreshStuck && iosBackupReminderVisible && (
                 <Animated.View
                     pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
                     style={{
@@ -877,7 +931,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     slot (priority: funds-safety nudge over info text)
                 Tap → opens the Ark Capsules screen so the user can drill
                 into the bg-refresh settings or manually retry. */}
-            {useSharedButtons && !iosBackupReminderVisible && bgRefreshStatus && (() => {
+            {useSharedButtons && !arkRefreshStuck && !iosBackupReminderVisible && bgRefreshStatus && (() => {
                 const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
                 const linkText = (bgRefreshStatus as any).linkText as string | undefined;
                 const tapTab = (bgRefreshStatus as any).tapTab as number | undefined;

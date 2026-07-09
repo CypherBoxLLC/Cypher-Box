@@ -20,7 +20,7 @@ export {
 } from './recover';
 export type { ArkRecoveryResult, ArkSeedKeychainConflict } from './recover';
 
-export { restoreArkWalletFromDisk, hasArkDatadir } from './restore';
+export { restoreArkWalletFromDisk, reopenArkWalletFromCache, ensureArkWalletHandleReady, hasArkDatadir } from './restore';
 export type { ArkRestoreResult } from './restore';
 
 export { createArkLightningInvoice, getArkAddress, getArkOnchainAddress } from './receive';
