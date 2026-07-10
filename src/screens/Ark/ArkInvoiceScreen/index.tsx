@@ -81,6 +81,7 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
                 converted: formattedFiat,
                 hash: invoice,
                 receiveType: false,
+                theme: 'ark',
             });
         } catch (err) {
             console.error("Ark invoice creation failed:", err);
