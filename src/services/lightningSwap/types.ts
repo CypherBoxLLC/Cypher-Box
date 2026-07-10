@@ -137,6 +137,28 @@ export interface LightningSwapProvider {
      * the reserve when this method is absent.
      */
     maxFeeReserve?(amountSats: number): Promise<number>;
+
+    /**
+     * Optional DESTINATION-side confirmation: given a BOLT11 this provider
+     * generated (via createInvoice), report whether the payment for it has
+     * actually arrived on this rail.
+     *
+     * The engine uses this to rescue swaps whose SOURCE can't self-confirm.
+     * Strike's mobile token gets `403 Insufficient permissions` on the
+     * payment-status endpoint, so a successful Strike send surfaces as
+     * PaymentPendingError ("submitted, can't confirm") even though the money
+     * lands. When the destination can independently confirm receipt (Ark
+     * reads its own pending Lightning receives by payment hash — a pure,
+     * side-effect-free check), the engine turns that PENDING into a real
+     * success instead of scaring the user with a do-not-retry modal.
+     *
+     * Must be a PURE READ — the engine may poll it several times. Return
+     * false (never throw) when unknown/not-yet-arrived. `sinceMs` scopes the
+     * check to receipts observed at or after the swap started, so a stale
+     * same-amount receive from before this swap can't produce a false
+     * positive.
+     */
+    confirmReceived?(bolt11: string, sinceMs?: number): Promise<boolean>;
 }
 
 /**

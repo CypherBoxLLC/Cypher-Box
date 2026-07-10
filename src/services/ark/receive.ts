@@ -1,4 +1,5 @@
-import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
+import { ensureArkOnchainHandle } from './walletHandle';
+import { ensureArkWalletHandleReady } from './restore';
 
 /**
  * Create a BOLT11 invoice against the user's Ark wallet.
@@ -12,11 +13,15 @@ import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
  * reject zero / overflow.
  */
 export async function createArkLightningInvoice(amountSats: number): Promise<string> {
-    const handle = getArkWalletHandle();
-    if (!handle) throw new Error('Ark wallet not initialized');
     if (!Number.isFinite(amountSats) || amountSats <= 0) {
         throw new Error('Invalid invoice amount');
     }
+    // Wait for the wallet handle instead of throwing the instant it's not
+    // open yet. At boot the open can lag a user tapping "swap to Bark", and a
+    // hard "not initialized" throw forced the retry-until-it-works loop Bam
+    // hit. ensureArkWalletHandleReady awaits the in-flight open (reusing the
+    // cached seed — no FaceID) and only throws a friendly message on timeout.
+    const handle = await ensureArkWalletHandleReady();
     // bark 0.2.x: bolt11Invoice gained a second `description` arg (optional).
     // Pass undefined to preserve the prior no-description behavior.
     const { invoice } = await handle.bolt11Invoice(BigInt(Math.floor(amountSats)), undefined);
@@ -27,8 +32,7 @@ export async function createArkLightningInvoice(amountSats: number): Promise<str
  * Return a fresh Ark-side address for receiving VTXOs from another Ark user.
  */
 export async function getArkAddress(): Promise<string> {
-    const handle = getArkWalletHandle();
-    if (!handle) throw new Error('Ark wallet not initialized');
+    const handle = await ensureArkWalletHandleReady();
     return await handle.newAddress();
 }
 

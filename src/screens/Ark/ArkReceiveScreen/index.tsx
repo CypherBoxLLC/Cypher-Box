@@ -72,6 +72,7 @@ export default function ArkReceiveScreen() {
                 converted: "",
                 hash: address,
                 receiveType: false,
+                theme: 'ark',
             });
         } catch (err) {
             setError((err as Error)?.message ?? "Failed to get Bark address");
@@ -90,6 +91,7 @@ export default function ArkReceiveScreen() {
                 converted: "Board funds into Bark",
                 hash: address,
                 receiveType: false,
+                theme: 'ark',
             });
         } catch (err) {
             setError((err as Error)?.message ?? "Failed to get on-chain address");

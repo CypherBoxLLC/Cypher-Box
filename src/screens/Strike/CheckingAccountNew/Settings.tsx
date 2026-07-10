@@ -47,7 +47,6 @@ import {
   resetArkWalletState,
   setArkBackgroundRefreshEnabled,
   startArkEmergencyExit,
-  vendorGuidance,
   writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
@@ -404,20 +403,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     setTogglingBgRefresh(true);
     try {
       if (next) {
-        const creds = await Keychain.getGenericPassword({ service: "ark-seed-phrase" });
-        if (!creds || !creds.password) {
-          SimpleToast.show(
-            "Can't enable. Seed is not in Keychain. Use Recover to type it in first.",
-            SimpleToast.LONG,
-          );
-          return;
-        }
-        await setArkBackgroundRefreshEnabled(true, creds.password);
+        // No seed needed anymore: enabling only flips the flag and asks
+        // for notification permission. The old path mirrored the seed
+        // into a background-readable Keychain entry for headless wakes;
+        // that machinery is gone.
+        await setArkBackgroundRefreshEnabled(true);
         SimpleToast.show("Reminders enabled", SimpleToast.SHORT);
-        // Battery-Unrestricted onboarding nudge removed in v0.1.1: it was
-        // specifically about preventing AlarmManager wakes from being
-        // deferred under Doze. The 5 PushNotification.localNotificationSchedule
-        // warnings use allowWhileIdle and fire regardless of battery state.
       } else {
         await setArkBackgroundRefreshEnabled(false);
         SimpleToast.show("Reminders disabled", SimpleToast.SHORT);

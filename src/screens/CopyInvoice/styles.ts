@@ -8,6 +8,7 @@ interface Style {
     maintitle: TextStyle;
     imageView: ImageStyle;
     usd: TextStyle;
+    homeButton: ViewStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -46,5 +47,9 @@ export default StyleSheet.create<Style>({
         fontSize: 25,
         lineHeight: 34,
         marginTop: 20,
+    },
+    homeButton: {
+        width: '90%',
+        marginTop: 24,
     },
 })

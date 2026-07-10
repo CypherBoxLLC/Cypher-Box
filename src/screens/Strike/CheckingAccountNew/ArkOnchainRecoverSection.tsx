@@ -125,6 +125,22 @@ export default function ArkOnchainRecoverSection() {
         }
     }, [busy, confirmedSats, resolveHotVaultAddress]);
 
+    // Auto-open when the user arrived via the homepage "stuck funds" banner.
+    // One-shot: consume the flag immediately so a later manual visit to this
+    // screen doesn't re-pop the modal.
+    const pendingOpen = useAuthStore((s) => s.arkPendingOnchainRecoverOpen);
+    const setPendingOpen = useAuthStore((s) => s.setArkPendingOnchainRecoverOpen);
+    useEffect(() => {
+        if (pendingOpen && confirmedSats > 0 && !visible && !busy) {
+            setPendingOpen(false);
+            void openRecover();
+        } else if (pendingOpen && confirmedSats <= 0) {
+            // Nothing to recover (already cleared / not yet synced) — drop the
+            // flag so it doesn't fire spuriously later.
+            setPendingOpen(false);
+        }
+    }, [pendingOpen, confirmedSats, visible, busy, openRecover, setPendingOpen]);
+
     const onPaste = useCallback(async () => {
         try {
             const s = (await Clipboard.getString())?.trim();

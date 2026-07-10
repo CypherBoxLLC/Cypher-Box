@@ -21,6 +21,13 @@ interface Props {
     matchedRate?: number;
     currency?: string;
     colors_?: string[];
+    /**
+     * Text colour for the primary action button's title. The button defaults
+     * to white text, which is invisible on a light `colors_` gradient (the
+     * Ark surfaces use a white palette). Callers on those surfaces pass an
+     * explicit contrasting colour (e.g. black). Omitted → unchanged default.
+     */
+    titleColor?: string;
     isGradient?: boolean;
     maxBalance?: number;
     /**
@@ -32,7 +39,7 @@ interface Props {
     hideMax?: boolean;
 }
 
-export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], isGradient = true, maxBalance, hideMax = false }: Props) {
+export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], titleColor, isGradient = true, maxBalance, hideMax = false }: Props) {
     const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'MAX', '0'];
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState(prevSats || '');
@@ -143,7 +150,7 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
                 </TouchableOpacity>
             </View>
             {isGradient ?
-                <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
+                <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', ...(titleColor ? { color: titleColor } : null) }}
                     title={title}
                     disabled={disabled}
                     isError={isError}

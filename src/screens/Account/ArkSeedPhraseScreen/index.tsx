@@ -768,21 +768,14 @@ export default function ArkSeedPhraseScreen() {
 
         // Arm background-refresh for the new wallet. The zustand default
         // is `arkBgRefreshEnabled: true` so the toggle in ArkCapsules
-        // shows ON immediately; this call does the actual work — writing
-        // the bg-keychain seed copy, scheduling the AlarmManager fire,
-        // subscribing to the relay's silent-push channel. Wrapped in
-        // try/catch so a scheduling failure (rare — usually just means
-        // the OS denied a low-priority resource) doesn't block the
-        // create flow. The bg-refresh banner in WalletsView surfaces
-        // any subsequent failures, and the user can flip the toggle off
-        // any time from Capsules. Battery-optimisation onboarding lives
-        // in the toggle's own handler — for first-time enable here we
-        // skip it so the create flow finishes cleanly; users will see
-        // it when they next interact with the toggle.
+        // shows ON immediately; this call flips the flag and requests
+        // notification permission for the expiry warnings. Wrapped in
+        // try/catch so a permission failure doesn't block the create
+        // flow. The user can flip the toggle off any time from Settings.
         try {
-            await setArkBackgroundRefreshEnabled(true, mnemonic);
+            await setArkBackgroundRefreshEnabled(true);
         } catch (err) {
-            console.warn("[Ark create] failed to arm bg refresh:", err);
+            console.warn("[Ark create] failed to arm reminders:", err);
         }
 
         setSubmitting(false);
