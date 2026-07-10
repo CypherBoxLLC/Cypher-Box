@@ -9,7 +9,7 @@
 
 Cypher Box walks you up the self-custody ladder: start with an easy custodial Lightning account, graduate to a non-custodial Lightning vault on the Ark protocol, and land in full on-chain cold storage.
 
-Forked from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built with React Native + Electrum, powered by **Strike**, **Coinos**, and **Second's Bark SDK**.
+Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built with React Native + Electrum, powered by **Strike**, **Coinos**, and **Second's Bark SDK**.
 
 ---
 
