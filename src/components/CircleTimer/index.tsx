@@ -1,11 +1,18 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Image, ImageSourcePropType, View, StyleSheet } from 'react-native';
 import Svg, { Circle, ClipPath, Defs, G, LinearGradient, Rect, Stop } from 'react-native-svg';
+import Reanimated, { useAnimatedProps } from 'react-native-reanimated';
+import { useIsFocused } from '@react-navigation/native';
 import { Text } from '@Cypher/component-library';
 import styles from './styles';
 import { colors } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
 import { calculateBalancePercentage, calculatePercentage } from '@Cypher/helpers';
+import { CarouselPageVisibilityContext, useEasedProgress } from '@Cypher/custom-hooks';
+
+// SVG props aren't animatable on plain components; wrap once at module
+// level so the gauge arc can take an animated strokeDashoffset.
+const AnimatedCircle = Reanimated.createAnimatedComponent(Circle);
 
 type CircleTimerProps = {
   backgroundColor?: string;
@@ -87,7 +94,19 @@ const CircleTimer = ({
 
 
   const clampedBalanceProgress = Math.min(balancePercentage, 100) / 100;
-  const strokeBalanceDashoffset = circumference * (1 - clampedBalanceProgress);
+
+  // Eased gauge fill: balance changes sweep the arc instead of snapping.
+  // Plays only while the gauge is actually on screen (screen focused AND
+  // the carousel page visible); while unseen it holds, so the sweep
+  // replays when the user swipes back to this page. UI-thread via
+  // Reanimated — the JS-driver first cut stuttered on low-end Android.
+  const pageVisible = useContext(CarouselPageVisibilityContext);
+  const focused = useIsFocused();
+  const balanceAnim = useEasedProgress(clampedBalanceProgress, pageVisible && focused);
+  const animatedArcProps = useAnimatedProps(() => {
+    const p = Math.min(Math.max(balanceAnim.value, 0), 1);
+    return { strokeDashoffset: 0.75 * circumference * (1 - p) };
+  });
 
   const thresholdMet = balancePercentage >= 100;
 
@@ -123,7 +142,7 @@ const CircleTimer = ({
           />
 
           {/* Progress Arc with Gradient - clamped to 270° gauge */}
-          <Circle
+          <AnimatedCircle
             cx={size / 2}
             cy={size / 2}
             r={radius}
@@ -131,7 +150,7 @@ const CircleTimer = ({
             stroke="url(#progressGradient)"
             strokeWidth={strokeWidth}
             strokeDasharray={`${0.75 * circumference} ${circumference}`}
-            strokeDashoffset={0.75 * circumference * (1 - clampedBalanceProgress)}
+            animatedProps={animatedArcProps}
             strokeLinecap="round"
           />
 

@@ -9,7 +9,9 @@ import Share from 'react-native-share';
 import styles from "./styles";
 import { Copy, QrCode, Share2 } from "@Cypher/assets/images";
 import { ScreenLayout, Text } from "@Cypher/component-library";
-import { ImageTextVertical } from "@Cypher/components";
+import { GradientButton, ImageTextVertical } from "@Cypher/components";
+import { dispatchReset } from "@Cypher/helpers/navigation";
+import { colors } from "@Cypher/style-guide";
 
 interface Props {
     route: any;
@@ -17,6 +19,10 @@ interface Props {
 
 export default function CopyInvoice({ route }: Props) {
     const { value, converted, hash } = route?.params
+    // Callers pass theme: 'ark' for Bark surfaces (white gradient, black
+    // text); everything else (Strike, CoinOS) keeps GradientButton's
+    // default pink. Same split ArkSendSuccessScreen uses for its Home.
+    const isArk = route?.params?.theme === 'ark';
     const qrCode = useRef();
     const base64QrCodeRef = useRef('');
 
@@ -76,6 +82,17 @@ export default function CopyInvoice({ route }: Props) {
                         <ImageTextVertical text="Share" source={Share2} onPress={shareQRCode} />
                     </View>
                     <Text bold h3 style={styles.maintitle}>Copy this invoice code or share the QR with the sender to receive bitcoin</Text>
+                    <GradientButton
+                        style={styles.homeButton}
+                        title="Home"
+                        onPress={() => dispatchReset('HomeScreen')}
+                        {...(isArk
+                            ? {
+                                colors_: [colors.ark.gradient1, colors.ark.gradient2],
+                                textStyle: { fontFamily: 'Lato-Medium', color: colors.black.default },
+                            }
+                            : {})}
+                    />
                 </View>
             </View>
         </ScreenLayout>

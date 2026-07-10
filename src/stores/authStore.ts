@@ -233,10 +233,9 @@ export type AuthStateType = {
     setWithdrawArkThreshold: (state: any) => void;
     setReserveArkAmount: (state: number) => void;
 
-    // Background VTXO refresh (opt-in). Default off — see
-    // src/services/ark/backgroundRefresh.ts for the policy and
-    // src/services/ark/backgroundKeychain.ts for the keychain trade-off
-    // the toggle gates.
+    // Reminders + foreground auto-refresh (opt-in). Gates the five
+    // scheduled expiry warnings and the sync-tick urgency sweep — see
+    // src/services/ark/backgroundRefresh.ts for the policy.
     arkBgRefreshEnabled: boolean;
     /** Timestamp (ms) of the last successful background round. Drives 12h rate limit + UI status copy. */
     arkBgRefreshLastSuccessAt: number | null;
@@ -269,6 +268,14 @@ export type AuthStateType = {
      * next mount, which is the safer failure mode.
      */
     arkPendingTapRefresh: boolean;
+
+    /**
+     * One-shot flag: set when the homepage "stuck on-chain funds" banner is
+     * tapped, consumed by ArkOnchainRecoverSection on the Capsules screen to
+     * auto-open its recover modal. Same short-lived pattern as
+     * arkPendingTapRefresh.
+     */
+    arkPendingOnchainRecoverOpen: boolean;
 
     /**
      * Per-VTXO state for the "Arkoor receive" prompt feature.
@@ -347,6 +354,7 @@ export type AuthStateType = {
     setArkBgRefreshLastStuckWarnAt: (state: number | null) => void;
     setArkBgRefreshMaxFeeSats: (state: number) => void;
     setArkPendingTapRefresh: (state: boolean) => void;
+    setArkPendingOnchainRecoverOpen: (state: boolean) => void;
     setArkIosBackupReminderActive: (state: boolean) => void;
     setArkArkoorPromptState: (
         state: Record<string, {
@@ -425,6 +433,7 @@ const createAuthStore = (
     arkBgRefreshLastStuckWarnAt: null,
     arkBgRefreshMaxFeeSats: 5000,
     arkPendingTapRefresh: false,
+    arkPendingOnchainRecoverOpen: false,
     arkIosBackupReminderActive: false,
     arkArkoorPromptState: {},
     arkArkoorPromptEnabled: true,
@@ -486,6 +495,7 @@ const createAuthStore = (
     setArkBgRefreshLastStuckWarnAt: (state: number | null) => set({ arkBgRefreshLastStuckWarnAt: state }),
     setArkBgRefreshMaxFeeSats: (state: number) => set({ arkBgRefreshMaxFeeSats: state }),
     setArkPendingTapRefresh: (state: boolean) => set({ arkPendingTapRefresh: state }),
+    setArkPendingOnchainRecoverOpen: (state: boolean) => set({ arkPendingOnchainRecoverOpen: state }),
     setArkIosBackupReminderActive: (state: boolean) => set({ arkIosBackupReminderActive: state }),
     setArkArkoorPromptState: (state) => set({ arkArkoorPromptState: state }),
     setArkArkoorPromptEnabled: (state: boolean) => set({ arkArkoorPromptEnabled: state }),
@@ -512,12 +522,9 @@ const createAuthStore = (
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout
 
-            // Background-refresh state is wallet-scoped: clear on
-            // disconnect so the next wallet doesn't inherit a previous
-            // wallet's success timestamp / failure count. The keychain
-            // entry itself is cleared by setArkBackgroundRefreshEnabled
-            // (off path) which we call separately from the disconnect
-            // flow.
+            // Refresh state is wallet-scoped: clear on disconnect so
+            // the next wallet doesn't inherit a previous wallet's
+            // success timestamp / failure count.
             arkBgRefreshEnabled: false,
             arkBgRefreshLastSuccessAt: null,
             arkBgRefreshLastAttempt: null,
@@ -527,6 +534,7 @@ const createAuthStore = (
             arkBgRefreshLastWarn2hAt: null,
             arkBgRefreshLastStuckWarnAt: null,
             arkPendingTapRefresh: false,
+            arkPendingOnchainRecoverOpen: false,
             arkIosBackupReminderActive: false,
             // Per-VTXO Arkoor-prompt state is wallet-scoped — clear on
             // disconnect so the next wallet doesn't inherit prior prompts.

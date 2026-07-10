@@ -52,6 +52,23 @@ function Notifications(props) {
 
             // (required) Called when a remote is received or opened, or local notification is opened
             onNotification: async function (notification) {
+              // This configure() REPLACES the boot-time one registered by
+              // src/services/ark/notificationHandler.ts (the library only
+              // honors the last caller). Route Ark capsule taps through the
+              // same shared handler so expiry-warning / payment-received
+              // taps keep deep-linking after GroundControl notifications
+              // are enabled. Lazy require avoids a module cycle at boot.
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const arkHandler = require('../src/services/ark/notificationHandler');
+                if (arkHandler.handleArkNotificationTap(notification)) {
+                  notification.finish(PushNotificationIOS.FetchResult.NoData);
+                  return;
+                }
+              } catch (arkErr) {
+                console.warn('ark tap handler failed, continuing:', arkErr);
+              }
+
               // since we do not know whether we:
               // 1) received notification while app is in background (and storage is not decrypted so wallets are not loaded)
               // 2) opening this notification right now but storage is still unencrypted
@@ -69,6 +86,16 @@ function Notifications(props) {
 
               // (required) Called when a remote is received or opened, or local notification is opened
               notification.finish(PushNotificationIOS.FetchResult.NoData);
+
+              // Foreground transfers are otherwise invisible (the OS shows
+              // no banner while the app is active) — surface them in-app.
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const arkHandler = require('../src/services/ark/notificationHandler');
+                arkHandler.maybeShowForegroundTransferBanner(payload);
+              } catch (bannerErr) {
+                console.warn('foreground transfer banner failed:', bannerErr);
+              }
 
               // if user is staring at the app when he receives the notification we process it instantly
               // so app refetches related wallet

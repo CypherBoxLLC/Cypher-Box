@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
+
+import SimpleToast from 'react-native-simple-toast';
 
 import {
     ARK_ARKOOR_ASSUMED_DAYS,
+    ArkRefreshInFlightError,
     cancelVtxoExpiryWarnings,
     refreshArkVtxosAndSync,
     scheduleVtxoExpiryWarnings,
@@ -72,11 +75,22 @@ export default function useArkoorReceivePrompt(): void {
     // Tracks the current foreground state. Alert.alert is foreground-only;
     // attempting to fire while backgrounded creates a phantom modal that
     // surfaces on next foreground without the user's context. Gate on this.
-    const appActive = useRef(AppState.currentState === 'active');
+    //
+    // STATE, not a ref, deliberately: the documented contract is "popup
+    // fires on next foreground", and that requires the foreground
+    // transition itself to re-run the prompt effect. With a ref, the
+    // effect only re-evaluated when something else changed — usually the
+    // 30s sync tick's arkVtxos write, which pauses while HomeScreen is
+    // unfocused. Net effect observed live 2026-07-07: tap the
+    // payment-received notification (deep-links to Capsules), and the
+    // pending prompt never fires until the user wanders back to Home.
+    const [appIsActive, setAppIsActive] = useState(
+        AppState.currentState === 'active',
+    );
 
     useEffect(() => {
         const sub = AppState.addEventListener('change', (status: AppStateStatus) => {
-            appActive.current = status === 'active';
+            setAppIsActive(status === 'active');
         });
         return () => sub.remove();
     }, []);
@@ -215,7 +229,7 @@ export default function useArkoorReceivePrompt(): void {
                 sats: sats ?? undefined,
             });
         };
-        if (!appActive.current) {
+        if (!appIsActive) {
             logSkip('skipped-background');
             return;
         }
@@ -347,6 +361,42 @@ export default function useArkoorReceivePrompt(): void {
                                 // re-prompt the user on the next render, which is
                                 // worse than silent failure. The existing per-row
                                 // refresh affordance lets them retry manually.
+                                //
+                                // EXCEPT for the round-in-flight rejection: nothing
+                                // was submitted, and we already cancelled this
+                                // capsule's expiry warnings above in anticipation of
+                                // the refresh. Restore the warnings and mark the
+                                // entry dismissed (spendable, protected, no
+                                // re-prompt) so the capsule isn't left with no
+                                // safety net.
+                                if (err instanceof ArkRefreshInFlightError) {
+                                    const cur = useAuthStore.getState().arkArkoorPromptState;
+                                    const existing2 = cur[firstId];
+                                    if (existing2) {
+                                        setArkArkoorPromptState({
+                                            ...cur,
+                                            [firstId]: {
+                                                ...existing2,
+                                                status: 'dismissed',
+                                                dismissedAt: Date.now(),
+                                            },
+                                        });
+                                    }
+                                    const exp2 = (existing2?.observedAt ?? Date.now()) +
+                                        ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
+                                    try {
+                                        scheduleVtxoExpiryWarnings(firstId, exp2, sats ?? undefined);
+                                    } catch (schedErr) {
+                                        console.warn(
+                                            '[useArkoorReceivePrompt] re-schedule after in-flight reject threw:',
+                                            schedErr,
+                                        );
+                                    }
+                                    SimpleToast.show(
+                                        'A refresh is already running. These sats stay spendable, refresh them from Capsules once it finishes.',
+                                        SimpleToast.LONG,
+                                    );
+                                }
                             });
                         } finally {
                             promptInFlight.current = false;
@@ -362,5 +412,6 @@ export default function useArkoorReceivePrompt(): void {
         arkVtxos,
         bgRefreshEnabled,
         setArkArkoorPromptState,
+        appIsActive,
     ]);
 }

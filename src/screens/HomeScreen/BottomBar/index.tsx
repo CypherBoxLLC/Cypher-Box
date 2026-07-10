@@ -60,7 +60,24 @@ export default function BottomBar({
     matchedRateStrike
 }: Props) {
     if (__DEV__) console.log("🚀 ~ hasSavingVault:", hasSavingVault)
-    const { isAuth, isStrikeAuth, isArkAuth, strikeUser, withdrawStrikeThreshold, withdrawThreshold, reserveAmount, reserveStrikeAmount, vaultTab, setVaultTab } = useAuthStore();
+    // Per-field selectors, NOT a whole-store destructure. This component
+    // renders the vault cards + the withdraw/top-up gradient buttons; the bare
+    // `useAuthStore()` re-rendered the whole section on EVERY store write
+    // (including the Ark sync's balance/vtxo/tip churn every ~30s, which none
+    // of these fields depend on), and each parent re-render repaints the
+    // LinearGradient children under RN 0.77 Fabric interop — the flicker/twitch
+    // on "Hot Vault" / "Bitcoin Network" and the button arrows. Selecting only
+    // the fields we use confines re-renders to real changes to them.
+    const isAuth = useAuthStore(s => s.isAuth);
+    const isStrikeAuth = useAuthStore(s => s.isStrikeAuth);
+    const isArkAuth = useAuthStore(s => s.isArkAuth);
+    const strikeUser = useAuthStore(s => s.strikeUser);
+    const withdrawStrikeThreshold = useAuthStore(s => s.withdrawStrikeThreshold);
+    const withdrawThreshold = useAuthStore(s => s.withdrawThreshold);
+    const reserveAmount = useAuthStore(s => s.reserveAmount);
+    const reserveStrikeAmount = useAuthStore(s => s.reserveStrikeAmount);
+    const vaultTab = useAuthStore(s => s.vaultTab);
+    const setVaultTab = useAuthStore(s => s.setVaultTab);
     const bothVaultsExist = !!(wallet && coldStorageWallet);
 
     const flatListRef = useRef<FlatList<any>>(null);

@@ -95,7 +95,15 @@ if (__DEV__) console.log('Response status:', response.status);
     if (response.status === 429) {
       throw new Error('Too many login attempts. Please wait and try again later.');
     }
-    
+
+    // 502/503/504 are transient gateway errors from CoinOS's own
+    // infrastructure (Cloudflare briefly can't reach their origin), not a
+    // credential problem. Give the user a retry hint instead of a raw
+    // "status 502". Observed intermittently 2026-07-08.
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      throw new Error('Coinos is temporarily unavailable. Please try again in a moment.');
+    }
+
     if (!response.ok) {
       throw new Error(`Login failed with status ${response.status}`);
     }

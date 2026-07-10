@@ -21,17 +21,14 @@ import DeeplinkSchemaMatch from './class/deeplink-schema-match';
 import loc from './loc';
 import { BlueDefaultTheme, BlueDarkTheme } from './components/themes';
 import InitRoot from './Navigation';
-import BlueClipboard from './blue_modules/clipboard';
 import { BlueStorageContext } from './blue_modules/storage-context';
 import WatchConnectivity from './WatchConnectivity';
 import DeviceQuickActions from './class/quick-actions';
 import Notifications from './blue_modules/notifications';
 import Biometric from './class/biometrics';
 import WidgetCommunication from './blue_modules/WidgetCommunication';
-import ActionSheet from './screen/ActionSheet';
 import HandoffComponent from './components/handoff';
 import Privacy from './blue_modules/Privacy';
-import triggerHapticFeedback, { HapticFeedbackTypes } from './blue_modules/hapticFeedback';
 import MenuElements from './components/MenuElements';
 import PaymentNotification from './src/components/PaymentNotification';
 import { updateExchangeRate } from './blue_modules/currency';
@@ -48,11 +45,6 @@ const eventEmitter = Platform.OS === 'ios' ? new NativeEventEmitter(NativeModule
 const { EventEmitter, SplashScreen } = NativeModules;
 
 LogBox.ignoreLogs(['Require cycle:', 'Battery state `unknown` and monitoring disabled, this is normal for simulators and tvOS.']);
-
-const ClipboardContentType = Object.freeze({
-  BITCOIN: 'BITCOIN',
-  LIGHTNING: 'LIGHTNING',
-});
 
 if (Platform.OS === 'android') {
   if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -71,7 +63,6 @@ const App = () => {
     setSharedCosigner,
   } = useContext(BlueStorageContext);
   const appState = useRef(AppState.currentState);
-  const clipboardContent = useRef();
   // const colorScheme = useColorScheme();
   const colorScheme = 'dark';
 
@@ -235,42 +226,15 @@ const App = () => {
     if ((appState.current.match(/background/) && nextAppState === 'active') || nextAppState === undefined) {
       setTimeout(() => A(A.ENUM.APP_UNSUSPENDED), 2000);
       updateExchangeRate();
-      const processed = await processPushNotifications();
-      if (processed) return;
-      const clipboard = await BlueClipboard().getClipboardContent();
-      const isAddressFromStoredWallet = wallets.some(wallet => {
-        if (wallet.chain === Chain.ONCHAIN) {
-          // checking address validity is faster than unwrapping hierarchy only to compare it to garbage
-          return wallet.isAddressValid && wallet.isAddressValid(clipboard) && wallet.weOwnAddress(clipboard);
-        } else {
-          return wallet.isInvoiceGeneratedByWallet(clipboard) || wallet.weOwnAddress(clipboard);
-        }
-      });
-      const isBitcoinAddress = DeeplinkSchemaMatch.isBitcoinAddress(clipboard);
-      const isLightningInvoice = DeeplinkSchemaMatch.isLightningInvoice(clipboard);
-      const isLNURL = DeeplinkSchemaMatch.isLnUrl(clipboard);
-      const isBothBitcoinAndLightning = DeeplinkSchemaMatch.isBothBitcoinAndLightning(clipboard);
-      // Cypher Box: BlueWallet's "You have a Lightning invoice on your
-      // clipboard" prompt is suppressed — the Send screen now decodes
-      // pasted BOLT11 invoices locally (see src/screens/Send), so the
-      // OS-level prompt is redundant and was firing even when the user
-      // had no actionable Lightning rail. Bitcoin / both-rail prompts
-      // still surface (Bam hasn't asked to remove those).
-      if (
-        !isAddressFromStoredWallet &&
-        clipboardContent.current !== clipboard &&
-        (isBitcoinAddress || isBothBitcoinAndLightning) &&
-        !(isLightningInvoice || isLNURL)
-      ) {
-        let contentType;
-        if (isBitcoinAddress) {
-          contentType = ClipboardContentType.BITCOIN;
-        } else if (isBothBitcoinAndLightning) {
-          contentType = ClipboardContentType.BITCOIN;
-        }
-        showClipboardAlert({ contentType });
-      }
-      clipboardContent.current = clipboard;
+      await processPushNotifications();
+      // Cypher Box: BlueWallet's on-foreground clipboard detection (the
+      // "You have a Bitcoin address / Lightning invoice on your clipboard,
+      // continue?" prompt that jumps straight into a BlueWallet Send flow)
+      // is removed entirely. Cypher Box has its own send/receive surfaces;
+      // the OS-level prompt spawned foreign BlueWallet screens and read the
+      // clipboard on every foreground, which we don't want. Legitimate
+      // deep links (cypherbox:// etc.) still route via the Linking 'url'
+      // listener + handleOpenURL below — that path is untouched.
     }
     if (nextAppState) {
       appState.current = nextAppState;
@@ -284,44 +248,6 @@ const App = () => {
       saveToDisk,
       setSharedCosigner,
     });
-  };
-
-  const showClipboardAlert = ({ contentType }) => {
-    triggerHapticFeedback(HapticFeedbackTypes.ImpactLight);
-    BlueClipboard()
-      .getClipboardContent()
-      .then(clipboard => {
-        if (Platform.OS === 'ios' || Platform.OS === 'macos') {
-          ActionSheet.showActionSheetWithOptions(
-            {
-              options: [loc._.cancel, loc._.continue],
-              title: loc._.clipboard,
-              message: contentType === ClipboardContentType.BITCOIN ? loc.wallets.clipboard_bitcoin : loc.wallets.clipboard_lightning,
-              cancelButtonIndex: 0,
-            },
-            buttonIndex => {
-              if (buttonIndex === 1) {
-                handleOpenURL({ url: clipboard });
-              }
-            },
-          );
-        } else {
-          ActionSheet.showActionSheetWithOptions({
-            buttons: [
-              { text: loc._.cancel, style: 'cancel', onPress: () => {} },
-              {
-                text: loc._.continue,
-                style: 'default',
-                onPress: () => {
-                  handleOpenURL({ url: clipboard });
-                },
-              },
-            ],
-            title: loc._.clipboard,
-            message: contentType === ClipboardContentType.BITCOIN ? loc.wallets.clipboard_bitcoin : loc.wallets.clipboard_lightning,
-          });
-        }
-      });
   };
 
   useEffect(() => {
