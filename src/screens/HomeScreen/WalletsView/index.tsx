@@ -421,6 +421,14 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             prevCompositionRef.current = compositionKey;
             setIndexStrike(defaultIndex);
             onPageChange?.(defaultIndex, tabs.length, tabs.map(kindFromTab));
+            // Snap the FlatList itself to the new default page. Setting
+            // No imperative snap here: the composition change also changes
+            // the FlatList's `key` (see the render below), so the list
+            // REMOUNTS with the new data and honours initialScrollIndex.
+            // An rAF'd scrollToIndex against the remounting list raced its
+            // data commit and crashed with "scrollToIndex out of range:
+            // item length 0" (observed on the A14 right after this effect
+            // ran). The remount is the whole fix; nothing to scroll.
         }
     }, [allBTCWallets, isLoading, matchedRateStrike, strikeBalance, convertedRate]);
 
@@ -702,6 +710,20 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         }}>
             <Animated.FlatList
                 ref={flatListRef}
+                // Remount the list whenever the page COMPOSITION changes
+                // (login/logout adds or removes pages). A mounted FlatList
+                // whose data grows while initialScrollIndex points past page
+                // 0 hits the classic virtualizer bug: the render window
+                // anchors against the old content and the list draws ZERO
+                // cells (verified via uiautomator on the A14 after a Strike
+                // login grew the carousel 2 -> 3 pages: the scroller kept
+                // its full size but had no children, so swiping was a no-op
+                // on 0-wide content). The key string only changes when the
+                // tab keys change (wTabs is rebuilt every balance tick with
+                // identical keys), so routine ticks never remount; a fresh
+                // mount sees the final data + getItemLayout and honours
+                // initialScrollIndex correctly.
+                key={`wallet-carousel-${wTabs.map((t: any) => t.key).join('|')}`}
                 data={wTabs}
                 keyExtractor={(_: any, i: number) => `wallet-tab-${i}`}
                 renderItem={renderWalletItem}
@@ -723,6 +745,15 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     offset: screenWidth * i,
                     index: i,
                 })}
+                // Safety net for initialScrollIndex / snapTo racing layout:
+                // fall back to a raw offset scroll (always valid with fixed
+                // page widths) instead of silently leaving the list blank.
+                onScrollToIndexFailed={(info: { index: number }) => {
+                    flatListRef.current?.scrollToOffset?.({
+                        offset: screenWidth * info.index,
+                        animated: false,
+                    });
+                }}
                 // Drive scrollX from the native-driven Animated.event so
                 // the shared button row's translateX/opacity track the
                 // cards frame-for-frame during the drag — the same

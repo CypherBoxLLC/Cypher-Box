@@ -248,35 +248,49 @@ const arkProvider: LightningSwapProvider = {
         }
     },
 
-    async maxFeeReserve(amountSats) {
+    async maxFeeReserve(balanceSats) {
         // Headroom reserved off the Max button. Ark charges the LN routing fee
         // ON TOP of the sent amount (it is not deducted from it), so Max must
-        // leave room or the SDK rejects the send for `amount + fee > spendable`
-        // — which is what made Max-swaps fail.
+        // leave room or the SDK rejects the send for `amount + fee > spendable`.
         //
-        // Two failure modes this guards against:
-        //   1. A zero/failed estimate letting the reserve fall to 0, so Max
-        //      consumes the whole balance and the send can't cover its fee.
-        //      FLOOR_SATS ensures we always hold back at least a typical fee.
-        //   2. The estimate landing a hair under the real fee (observed: a
-        //      Max swap cleared by a single sat). PAD adds margin for route
-        //      variance and for the fee being quoted at the full balance while
-        //      the actual send is balance-minus-reserve.
+        // The reserve is computed from the SAME math as the send preflight:
+        // expired-filtered spendable, measured fresh, minus a padded fee.
+        // The UI's sourceBalance can be stale or unfiltered relative to what
+        // coin-selection actually has — on an active wallet, receives claiming
+        // into rounds move sats between spendable and pending constantly.
+        // Observed live: Max quoted 917 off a stale balance, the preflight
+        // then found fewer spendable sats and refused the swap. A blind flat
+        // floor can't absorb an arbitrary stale-balance gap; measuring
+        // spendable directly can.
         //
-        // The routing fee is roughly fixed (route base cost), not proportional
-        // to the amount, so a flat floor/pad is the right shape here (unlike
-        // Coinos's percentage buffer).
+        // The old floor/pad insights survive on the FEE side:
+        //   - FLOOR_SATS guards a zero/failed estimate (else Max consumes the
+        //     whole balance and the send can't cover its fee).
+        //   - PAD adds margin for route variance and for the fee being quoted
+        //     at full spendable while the actual send is slightly smaller.
         const FLOOR_SATS = 350; // comfortably above the observed ~265 fee
         const PAD = 1.25;
         try {
-            const fee = await estimateArkSendFee(
+            const [balance, vtxosResult, tip] = await Promise.all([
+                fetchArkBalance(),
+                fetchArkVtxos(),
+                fetchChainTipHeight(),
+            ]);
+            const filtered = balance
+                ? applyExpiredVtxoFilter(balance, vtxosResult?.all, tip)
+                : null;
+            const spendable = filtered?.spendableSats ?? 0;
+            if (spendable <= 0) return balanceSats; // nothing sendable: Max = 0
+            const est = await estimateArkSendFee(
                 { kind: 'ln-invoice', value: '' },
-                amountSats,
-            );
-            const est = Number(fee.feeSats || 0);
-            return Math.max(FLOOR_SATS, Math.ceil(est * PAD));
+                spendable,
+            ).catch(() => null);
+            const padded = Math.ceil(Number(est?.feeSats || 0) * PAD);
+            const fee = padded > 0 ? padded : FLOOR_SATS; // zero/failed estimate: hold back the floor
+            const maxSend = Math.max(0, spendable - fee);
+            return Math.max(0, balanceSats - maxSend);
         } catch (err) {
-            if (__DEV__) console.warn('[lightningSwap/ark] maxFeeReserve estimate failed, using floor:', err);
+            if (__DEV__) console.warn('[lightningSwap/ark] maxFeeReserve spendable lookup failed, using floor:', err);
             return FLOOR_SATS;
         }
     },

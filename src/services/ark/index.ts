@@ -44,7 +44,7 @@ export type { ArkOnchainRecoverEstimate, ArkOnchainRecoverResult } from './recov
 export { fetchArkVtxos } from './vtxos';
 export type { ArkVtxoView, ArkVtxoList } from './vtxos';
 
-export { tryClaimArkLightningReceives, fetchArkPendingLightningReceives } from './lightning';
+export { tryClaimArkLightningReceives, fetchArkPendingLightningReceives, driveArkPendingLightningSends } from './lightning';
 export type { ArkLightningReceiveView } from './lightning';
 
 export { fetchArkHistory } from './history';

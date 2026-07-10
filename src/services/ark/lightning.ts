@@ -1,3 +1,5 @@
+import bolt11 from 'bolt11';
+
 import { getArkWalletHandle } from './walletHandle';
 
 /**
@@ -88,6 +90,53 @@ export async function tryClaimArkLightningReceives(): Promise<ArkLightningReceiv
             '| inner=', e?.inner?.errorMessage ?? e?.inner?.message ?? 'n/a',
         );
         return [];
+    }
+}
+
+/**
+ * Drive any pending OUTGOING Lightning sends to a terminal state.
+ *
+ * bark 0.11.3's crash-safe send model expects the client to keep polling
+ * `checkLightningPayment` after dispatching with wait=false; our send flow
+ * only polls while its screen is up (~2 min). Any send abandoned past that
+ * window (slow route, user went Home, app killed) sits in `pendingLnSend`
+ * and locks its sats until the HTLC's block-height expiry, HOURS later.
+ * Observed live: 1240 sats locked across an evening of slow-swap attempts,
+ * spendable down to 27. Polling from the sync cycle drives each stuck send
+ * to settle or revoke (refund) as soon as the server allows, instead of
+ * waiting out the clock.
+ *
+ * wait=false: enumerate-and-poke, never block the sync cycle on a route.
+ */
+export async function driveArkPendingLightningSends(): Promise<void> {
+    const handle = getArkWalletHandle();
+    if (!handle) return;
+    let pending;
+    try {
+        pending = await handle.pendingLightningSends();
+    } catch (err) {
+        console.warn('[Ark sends] pendingLightningSends failed:', (err as Error)?.message ?? err);
+        return;
+    }
+    if (!pending?.length) return;
+    console.log('[Ark sends]', pending.length, 'pending lightning send(s); driving via checkLightningPayment');
+    for (const p of pending) {
+        try {
+            const hashTag = bolt11.decode(p.invoice).tags.find((t) => t.tagName === 'payment_hash');
+            const paymentHash = typeof hashTag?.data === 'string' ? hashTag.data : null;
+            if (!paymentHash) {
+                console.warn('[Ark sends] no payment_hash decodable for a pending send, skipping');
+                continue;
+            }
+            const status = await handle.checkLightningPayment(paymentHash, false);
+            console.log(
+                '[Ark sends]', Number(p.amountSats), 'sats hash=', paymentHash.slice(0, 12),
+                'status=', (status as { tag?: string })?.tag ?? 'unknown',
+                'failedRevocation=', p.hasFailedRevocation,
+            );
+        } catch (err) {
+            console.warn('[Ark sends] checkLightningPayment failed (continuing):', (err as Error)?.message ?? err);
+        }
     }
 }
 

@@ -26,6 +26,7 @@ import {
     syncArkExits,
     syncArkWallet,
     tryClaimArkLightningReceives,
+    driveArkPendingLightningSends,
     writeArkAutoBackup,
 } from '@Cypher/services/ark';
 import { processArkMovementsForActivity } from '@Cypher/services/ark/movementsActivity';
@@ -303,6 +304,14 @@ export default function useArkSync(): UseArkSync {
             // VTXOs. (See original comment.)
             await tryClaimArkLightningReceives();
             _stamp('tryClaimArkLightningReceives done');
+
+            // Drive forward any pending OUTGOING Lightning sends too. The
+            // 0.11.3 crash-safe send model needs someone polling
+            // checkLightningPayment or an abandoned send locks its sats in
+            // pendingLnSend until HTLC block expiry (hours). No-op when
+            // nothing is pending.
+            await driveArkPendingLightningSends();
+            _stamp('driveArkPendingLightningSends done');
 
             // Drive forward any pending refresh / send rounds. This is the
             // recovery path for VTXOs left Locked after an interrupted
