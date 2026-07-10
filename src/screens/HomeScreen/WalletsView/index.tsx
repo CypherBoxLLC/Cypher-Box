@@ -1,11 +1,12 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
-import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { CarouselPageVisibilityContext } from "@Cypher/custom-hooks";
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Animated, AppState, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -30,6 +31,11 @@ interface Props {
     /** Fires when the active carousel page changes. Used by BalanceView to render the page indicator (dots colored per wallet kind). */
     onPageChange?: (index: number, total: number, kinds: Array<'fiat' | 'lightning' | 'ark'>) => void;
 }
+
+// ark.second.tech server board minimum. Confirmed on-chain deposits below
+// this can never board into a VTXO (see ArkOnchainRecoverSection). Mirrors
+// MIN_BOARD_SATS there; kept as a local const to avoid a store read here.
+const STUCK_BOARD_MIN_SATS = 50000;
 
 // Imperative handle exposed to HomeScreen so the page-indicator dots in
 // BalanceView can drive the carousel (tap dot 0 → fiat, dot 1 → lightning,
@@ -70,6 +76,9 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
         arkIosBackupReminderActive,
+        arkBalanceDetail,
+        arkRefreshStuck,
+        setArkPendingOnchainRecoverOpen,
     } = useAuthStore();
 
     // Per-card vertical nudge for the Ark slide.
@@ -221,6 +230,25 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // for the rationale. FGS_DATA_SYNC dropped, no auto-refresh
         // subsystem to fail.
 
+        // Stuck on-chain boarding funds: a confirmed deposit below the
+        // server's 50k board minimum can never become a VTXO and sits
+        // trapped in bark's on-chain wallet. Surface it as a tappable
+        // banner that deep-links to the Capsules tab and auto-opens the
+        // recover popup (address/vault picker). Highest priority after an
+        // in-flight refresh because it's trapped money.
+        {
+            const stuckSats = Number(arkBalanceDetail?.onchainBoardingSats ?? 0);
+            if (stuckSats > 0 && stuckSats < STUCK_BOARD_MIN_SATS) {
+                return {
+                    text: `You have ${stuckSats.toLocaleString()} sats failing to board your Bark vault. Recover here.`,
+                    linkText: 'here',
+                    tapTab: 0, // Capsules tab
+                    openOnchainRecover: true,
+                    error: true,
+                };
+            }
+        }
+
         if (dustCapsuleCount > 0) {
             return {
                 text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
@@ -259,6 +287,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         notificationsEnabled,
         arkIosBackupReminderActive,
         pendingRound,
+        arkBalanceDetail,
     ]);
 
     const [indexStrike, setIndexStrike] = useState(0);
@@ -275,6 +304,11 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // wrong offsets, leaking the next slide past the right edge.
         snapTo: (i: number) => flatListRef.current?.scrollToIndex?.({ index: i, animated: true }),
     }), []);
+
+    // Signature of the last carousel COMPOSITION (which wallets/kinds exist),
+    // so the effect below can rebuild wTabs on every balance tick (to keep the
+    // card closures' balances fresh) WITHOUT resetting the user's current page.
+    const prevCompositionRef = useRef<string>('');
 
     useEffect(() => {
         if (!allBTCWallets || isLoading) return;
@@ -308,22 +342,16 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             isArkAuth;
 
         const tabs: any = [];
-        // The carousel's `firstItem` prop is only respected on the Carousel
-        // component's *initial mount*. Because we render the Carousel before
-        // wTabs is populated (it starts as []), the Carousel mounts with
-        // firstItem=0 and ignores any later bump — so even if we set
-        // defaultIndex=1 here, the visible slide stays at index 0 on first
-        // login, while our state + the page indicator claimed index 1. That
-        // mismatch is the bug Bam saw: indicator on the middle line, but the
-        // fiat card actually showing.
-        //
-        // Easiest fix that keeps the existing render order: align the state
-        // with what the carousel actually shows — start on index 0 (fiat
-        // when Strike is connected, CircularView's left neighbour when both
-        // custodial providers are connected). Swiping left advances to the
-        // BTC card, exactly the same gesture as before; only the *initial*
-        // landing slide changes. The indicator now correctly points at the
-        // left line on first login and tracks swipes from there.
+        // Default-landing slide. When Strike is connected its fiat balance
+        // card sits at index 0, but the carousel should open on the actual
+        // BTC/Lightning slide — the Strike BTC card, or the Strike↔Coinos
+        // CircularView when both custodial providers are connected — not the
+        // fiat balance. Computed AFTER the tabs are assembled (below) as the
+        // first lightning-kind slide; falls back to 0 for Coinos-only /
+        // Ark-only configs that have no fiat slide. The Animated.FlatList
+        // honours this via `initialScrollIndex={indexStrike}` + getItemLayout
+        // (the old snap-carousel couldn't, hence the previous land-on-fiat
+        // workaround — no longer needed post-FlatList-migration).
         let defaultIndex = 0;
 
         const strikeDollarTab = {
@@ -374,9 +402,34 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             tabs.push(walletTabsMap.ARK);
         }
 
-        setIndexStrike(defaultIndex);
+        // Land on the first BTC/Lightning slide (Strike BTC card or the
+        // Strike↔Coinos CircularView), skipping the Strike fiat card when it
+        // exists. Falls back to 0 when there's no lightning slide.
+        const firstLightningIdx = tabs.findIndex((t: any) => kindFromTab(t) === 'lightning');
+        if (firstLightningIdx >= 0) defaultIndex = firstLightningIdx;
+
+        // Always rebuild wTabs so the card closures capture fresh balances.
+        // But only reset the page index (+ notify the indicator) when the
+        // COMPOSITION actually changed — otherwise a routine balance update
+        // yanked the carousel back to page 0, which desynced indexStrike from
+        // the visible slide and blanked the scroll-opacity-driven shared
+        // Send/Receive row until the user manually swiped. (The row reappearing
+        // after a swipe was the tell: a real onScroll rewrote scrollX.)
+        const compositionKey = `${custodialLightning.join(',')}|ark:${hasArk}`;
         setWTabs(tabs);
-        onPageChange?.(defaultIndex, tabs.length, tabs.map(kindFromTab));
+        if (compositionKey !== prevCompositionRef.current) {
+            prevCompositionRef.current = compositionKey;
+            setIndexStrike(defaultIndex);
+            onPageChange?.(defaultIndex, tabs.length, tabs.map(kindFromTab));
+            // Snap the FlatList itself to the new default page. Setting
+            // No imperative snap here: the composition change also changes
+            // the FlatList's `key` (see the render below), so the list
+            // REMOUNTS with the new data and honours initialScrollIndex.
+            // An rAF'd scrollToIndex against the remounting list raced its
+            // data commit and crashed with "scrollToIndex out of range:
+            // item length 0" (observed on the A14 right after this effect
+            // ran). The remount is the whole fix; nothing to scroll.
+        }
     }, [allBTCWallets, isLoading, matchedRateStrike, strikeBalance, convertedRate]);
 
     // Maps a tab's `key` to the wallet "kind" used to color the page-indicator
@@ -483,10 +536,16 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // inactiveSlideScale=0.94 used to produce. Mirrors BottomBar's
     // FlatList renderItem after the same migration.
     const SHARED_SLIDE_HEIGHT = 133;
-    const renderWalletItem = ({ item }: any) => (
+    // Per-page visibility for the balance-fill animations: FlatList keeps
+    // neighbor pages mounted, so without this the eased threshold fills
+    // (Card / StrikeWallet / CircleTimer via useEasedProgress) animate
+    // while their page is off screen and the user never sees the sweep.
+    const renderWalletItem = ({ item, index }: any) => (
         <View style={{ width: screenWidth }}>
             <View style={{ width: screenWidth * 0.905 }}>
-                {item.component()}
+                <CarouselPageVisibilityContext.Provider value={index === indexStrike}>
+                    {item.component()}
+                </CarouselPageVisibilityContext.Provider>
             </View>
         </View>
     );
@@ -651,6 +710,20 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         }}>
             <Animated.FlatList
                 ref={flatListRef}
+                // Remount the list whenever the page COMPOSITION changes
+                // (login/logout adds or removes pages). A mounted FlatList
+                // whose data grows while initialScrollIndex points past page
+                // 0 hits the classic virtualizer bug: the render window
+                // anchors against the old content and the list draws ZERO
+                // cells (verified via uiautomator on the A14 after a Strike
+                // login grew the carousel 2 -> 3 pages: the scroller kept
+                // its full size but had no children, so swiping was a no-op
+                // on 0-wide content). The key string only changes when the
+                // tab keys change (wTabs is rebuilt every balance tick with
+                // identical keys), so routine ticks never remount; a fresh
+                // mount sees the final data + getItemLayout and honours
+                // initialScrollIndex correctly.
+                key={`wallet-carousel-${wTabs.map((t: any) => t.key).join('|')}`}
                 data={wTabs}
                 keyExtractor={(_: any, i: number) => `wallet-tab-${i}`}
                 renderItem={renderWalletItem}
@@ -672,6 +745,15 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     offset: screenWidth * i,
                     index: i,
                 })}
+                // Safety net for initialScrollIndex / snapTo racing layout:
+                // fall back to a raw offset scroll (always valid with fixed
+                // page widths) instead of silently leaving the list blank.
+                onScrollToIndexFailed={(info: { index: number }) => {
+                    flatListRef.current?.scrollToOffset?.({
+                        offset: screenWidth * info.index,
+                        animated: false,
+                    });
+                }}
                 // Drive scrollX from the native-driven Animated.event so
                 // the shared button row's translateX/opacity track the
                 // cards frame-for-frame during the drag — the same
@@ -775,6 +857,59 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     />
                 </Animated.View>
             )}
+            {/* Stuck-refresh recovery banner — shared-row mode. The in-card
+                ArkWallet banner is suppressed when the shared Send/Receive row
+                is active, so surface it here in the same absolute slot below
+                the row. Top precedence over the iOS-backup and bg-refresh
+                nudges below (a wedged round is the higher-stakes signal — both
+                gate on !arkRefreshStuck). Tap cancels the wedged round(s) to
+                unlock the VTXOs; the next sync re-detects if still stuck. */}
+            {useSharedButtons && arkRefreshStuck && (
+                <Animated.View
+                    pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
+                    style={{
+                        position: 'absolute',
+                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
+                        left: 0,
+                        right: 40,
+                        alignItems: 'center',
+                        opacity: arkReminderOpacity,
+                    }}
+                >
+                    <TouchableOpacity
+                        onPress={() => {
+                            const stuck = useAuthStore.getState().arkRefreshStuck;
+                            if (!stuck) return;
+                            (async () => {
+                                for (const roundId of stuck.stuckRoundIds) {
+                                    try {
+                                        await cancelArkPendingRound(roundId);
+                                    } catch {
+                                        // cancelArkPendingRound logs the inner BarkError
+                                    }
+                                }
+                                useAuthStore.getState().setArkRefreshStuck(null);
+                            })();
+                        }}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel="Recover stuck refresh"
+                    >
+                        <Text
+                            h4
+                            style={{
+                                color: colors.redLight,
+                                textAlign: 'center',
+                                paddingHorizontal: 12,
+                                textDecorationLine: 'underline',
+                            }}
+                        >
+                            Refresh stuck · {arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover
+                        </Text>
+                    </TouchableOpacity>
+                </Animated.View>
+            )}
+
             {/* iOS backup-snapshot reminder — funds-safety nudge for users
                 who satisfied the create-flow gate via manual share+confirm
                 without iCloud Drive verified. Takes the same absolute slot
@@ -782,7 +917,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 user can lose funds if they uninstall before re-exporting,
                 whereas the bg-refresh status is informational. Tap → Ark
                 settings tab, where the dismiss + re-export actions live. */}
-            {useSharedButtons && iosBackupReminderVisible && (
+            {useSharedButtons && !arkRefreshStuck && iosBackupReminderVisible && (
                 <Animated.View
                     pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
                     style={{
@@ -827,7 +962,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     slot (priority: funds-safety nudge over info text)
                 Tap → opens the Ark Capsules screen so the user can drill
                 into the bg-refresh settings or manually retry. */}
-            {useSharedButtons && !iosBackupReminderVisible && bgRefreshStatus && (() => {
+            {useSharedButtons && !arkRefreshStuck && !iosBackupReminderVisible && bgRefreshStatus && (() => {
                 const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
                 const linkText = (bgRefreshStatus as any).linkText as string | undefined;
                 const tapTab = (bgRefreshStatus as any).tapTab as number | undefined;
@@ -869,7 +1004,15 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         }}
                     >
                         <TouchableOpacity
-                            onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tapTab ?? 0 })}
+                            onPress={() => {
+                                // Stuck-boarding banner: arm the one-shot flag so
+                                // the Capsules recover section auto-opens its
+                                // address/vault picker on arrival.
+                                if ((bgRefreshStatus as any).openOnchainRecover) {
+                                    setArkPendingOnchainRecoverOpen(true);
+                                }
+                                dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tapTab ?? 0 });
+                            }}
                             activeOpacity={0.7}
                         >
                             <Text

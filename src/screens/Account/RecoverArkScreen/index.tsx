@@ -285,17 +285,17 @@ export default function RecoverArkScreen() {
         if (!allBTCWallets.includes("ARK")) {
             setAllBTCWallets([...allBTCWallets, "ARK"]);
         }
-        // Arm background-refresh the same way the create flow does
-        // (ArkSeedPhraseScreen). clearArkAuth resets arkBgRefreshEnabled
-        // to false on disconnect, so a fresh recovery would otherwise
-        // come back with auto-refresh OFF — which silently leaves the
-        // user's restored arkoor VTXOs under server-trust until they
-        // notice the toggle. Mirroring create here keeps the post-
+        // Arm reminders + foreground auto-refresh the same way the create
+        // flow does (ArkSeedPhraseScreen). clearArkAuth resets
+        // arkBgRefreshEnabled to false on disconnect, so a fresh recovery
+        // would otherwise come back with auto-refresh OFF — which silently
+        // leaves the user's restored arkoor VTXOs under server-trust until
+        // they notice the toggle. Mirroring create here keeps the post-
         // recovery experience identical to a fresh wallet.
         try {
-            await setArkBackgroundRefreshEnabled(true, mnemonic);
+            await setArkBackgroundRefreshEnabled(true);
         } catch (err) {
-            console.warn("[Ark recover] failed to arm bg refresh:", err);
+            console.warn("[Ark recover] failed to arm reminders:", err);
         }
         dispatchReset("HomeScreen", { isComplete: true });
     };

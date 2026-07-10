@@ -109,6 +109,8 @@ import ArkReceiveScreen from '@Cypher/screens/Ark/ArkReceiveScreen';
 import ArkInvoiceScreen from '@Cypher/screens/Ark/ArkInvoiceScreen';
 import ArkTransactionDetailsScreen from '@Cypher/screens/Ark/ArkTransactionDetailsScreen';
 import ArkSendScreen from '@Cypher/screens/Ark/ArkSendScreen';
+import ArkSendReviewScreen from '@Cypher/screens/Ark/ArkSendReviewScreen';
+import ArkSendSuccessScreen from '@Cypher/screens/Ark/ArkSendSuccessScreen';
 import ArkWithdrawReviewScreen from '@Cypher/screens/Ark/ArkWithdrawReviewScreen';
 import ArkCapsulesInfoScreen from '@Cypher/screens/Ark/ArkCapsulesInfoScreen';
 
@@ -212,6 +214,8 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="ArkCapsulesInfoScreen" component={ArkCapsulesInfoScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkTransactionDetailsScreen" component={ArkTransactionDetailsScreen} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ArkSendScreen" component={ArkSendScreen} options={{ headerShown: false, gestureEnabled: true }} />
+      <WalletsStack.Screen name="ArkSendReviewScreen" component={ArkSendReviewScreen} options={{ headerShown: false, gestureEnabled: true }} />
+      <WalletsStack.Screen name="ArkSendSuccessScreen" component={ArkSendSuccessScreen} options={{ headerShown: false, gestureEnabled: false }} />
       <WalletsStack.Screen name="ArkWithdrawReviewScreen" component={ArkWithdrawReviewScreen} options={{ headerShown: false, gestureEnabled: true }} />
       <WalletsStack.Screen name="ForgotCoinOSScreen" component={ForgetPassword} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ChangeUsername" component={ChangeUsername} options={{ headerShown: false }} />

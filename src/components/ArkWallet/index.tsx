@@ -637,7 +637,7 @@ export default function ArkWallet({
                                             { color: colors.redLight, textDecorationLine: 'underline' },
                                         ]}
                                     >
-                                        Refresh stuck · {arkRefreshStuck.stuckSats} sats — tap to recover
+                                        Refresh stuck · {arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover
                                     </Text>
                                 </TouchableOpacity>
                             )}

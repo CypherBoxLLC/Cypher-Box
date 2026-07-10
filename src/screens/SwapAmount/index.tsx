@@ -67,6 +67,20 @@ export default function SwapAmount() {
     const [usd, setUsd] = useState('');
     const [isSats, setIsSats] = useState(true);
     const [loading, setLoading] = useState(false);
+    // "Taking longer than expected" hint. The swap can sit in the processing
+    // spinner for the full confirmation window (up to ~120s) — most often
+    // when Strike's Lightning payment is slow to route to the destination
+    // (Strike→Bark especially). Surface a reassurance after 10s so the user
+    // isn't staring at a bare spinner wondering if it hung.
+    const [slowHint, setSlowHint] = useState(false);
+    useEffect(() => {
+        if (!loading) {
+            setSlowHint(false);
+            return;
+        }
+        const t = setTimeout(() => setSlowHint(true), 10000);
+        return () => clearTimeout(t);
+    }, [loading]);
     const [success, setSuccess] = useState(false);
     const [swappedSats, setSwappedSats] = useState('');
     const [swappedFiat, setSwappedFiat] = useState('');
@@ -231,6 +245,20 @@ export default function SwapAmount() {
                     Alert.alert(
                         'A capsule is stuck',
                         "One of your lightning capsules is in a state the Bark server won't spend, so payments from Bark keep failing. Try sending from a different wallet for now.",
+                        [{ text: 'OK', style: 'default' }],
+                        { cancelable: true },
+                    );
+                    setLoading(false);
+                    return;
+                }
+                // The Ark preflight's insufficient-balance message carries the
+                // exact actionable numbers ("need X, only Y spendable, try
+                // swapping Z"). A 2-second toast flashes it away before anyone
+                // can read it; show it as a blocking alert instead.
+                if (typeof cause?.message === 'string' && cause.message.startsWith('Not enough Ark balance')) {
+                    Alert.alert(
+                        'Not enough balance',
+                        cause.message,
                         [{ text: 'OK', style: 'default' }],
                         { cancelable: true },
                     );
@@ -424,6 +452,32 @@ export default function SwapAmount() {
                 <View style={styles.loadingView}>
                     <ActivityIndicator size="large" color={colors.pink.default} />
                     <Text style={styles.loadingText}>Processing swap...</Text>
+                    {slowHint && (
+                        <>
+                            <Text style={{ color: colors.gray.light, fontSize: 13, marginTop: 10, textAlign: 'center', marginHorizontal: 20 }}>
+                                It's taking longer than expected...
+                            </Text>
+                            {/* Slow swaps almost always LAND, minutes late (the
+                                LN path to the Ark server settles slowly; verified
+                                repeatedly on device). Don't trap the user staring
+                                at a spinner: say the swap keeps going and offer
+                                Home. The claim/movement watchers pick the result
+                                up in the background and the balance updates. */}
+                            <Text style={{ color: colors.gray.light, fontSize: 13, marginTop: 6, textAlign: 'center', marginHorizontal: 20 }}>
+                                The swap will keep confirming in the background. It's safe to go Home, your balance will update when it lands.
+                            </Text>
+                            <TouchableOpacity onPress={() => dispatchReset('HomeScreen')} style={styles.homeButton}>
+                                <LinearGradient
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    colors={[colors.pink.extralight, colors.pink.default]}
+                                    style={styles.homeButtonGradient}
+                                >
+                                    <Text bold style={styles.homeText}>Home</Text>
+                                </LinearGradient>
+                            </TouchableOpacity>
+                        </>
+                    )}
                 </View>
             ) : (
                 <CustomKeyboard
@@ -497,6 +551,9 @@ const styles = StyleSheet.create({
         paddingVertical: 40,
         alignItems: 'center',
         justifyContent: 'center',
+        // Lift the processing block so the slow-case message + Home button
+        // below it stay clear of the keyboard area / fold.
+        marginTop: -50,
     },
     loadingText: {
         marginTop: 16,

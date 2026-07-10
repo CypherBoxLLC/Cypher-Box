@@ -70,16 +70,24 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
     // VTXOs are actually landing in. Cheap log, keep on until the capsule
     // flow is solid.
     //
-    // Emit one log line per VTXO — packing the array into a single
-    // console.log makes oslog truncate after the first element, which
-    // hides most of the state we care about.
-    console.log('[Ark vtxos] allVtxos() returned', all.length, 'total');
-    all.forEach((v, i) => {
-        console.log(`[Ark vtxos] #${i} kind=${v.kind} state=${v.state} sats=${v.sats} exp=${v.expiryHeight} id=${v.id}`);
-    });
-
     const spendable = all.filter((v) => !HIDDEN_STATES.has(v.state.toLowerCase()));
-    console.log('[Ark vtxos] visible (non-spent/locked):', spendable.length);
+    if (__DEV__) {
+        // Dev-only, and only for ACTIVE (non-spent) VTXOs. Dumping every VTXO
+        // (178+ on a busy wallet, almost all spent history) on every fetch
+        // floods the JS/debugger bridge (2500+ messages discarded) and, with
+        // the inspector attached, adds enough latency to starve user-initiated
+        // SDK calls on the same JS thread — that's what left "Estimating fee…"
+        // hung for ~2 minutes. This block ran in production too (it was
+        // ungated), so gating it also trims real prod overhead.
+        console.log(
+            '[Ark vtxos] allVtxos() returned', all.length, 'total;',
+            spendable.length, 'visible (non-spent/locked)',
+        );
+        for (const v of all) {
+            if (v.state.toLowerCase() === 'spent') continue;
+            console.log(`[Ark vtxos] active kind=${v.kind} state=${v.state} sats=${v.sats} exp=${v.expiryHeight} id=${v.id}`);
+        }
+    }
 
     return {
         all,

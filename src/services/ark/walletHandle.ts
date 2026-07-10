@@ -6,17 +6,28 @@ import {
     OnchainWalletInterface,
     Wallet,
     WalletInterface,
+    WalletOpenArgs,
     uniffiInitAsync,
 } from '@secondts/bark-react-native';
 
-import { createArkConfig } from './config';
-import { ensureArkDatadir } from './datadir';
+import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
+import { deleteArkDatadir, ensureArkDatadir } from './datadir';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
 let handle: WalletInterface | null = null;
 let onchainHandle: OnchainWalletInterface | null = null;
 let uniffiReady: Promise<void> | null = null;
+
+// The esplora endpoint the main wallet successfully opened against this
+// session. The boot retry loop (restore.ts) rotates providers on bot-block,
+// so this is NOT necessarily the default — and the on-chain (BDK) handle
+// must use the SAME one, or it gets pinned to a provider that's currently
+// blocking us and every board-detection sync fails with BarkError.Network
+// while the main wallet is perfectly healthy on the other provider.
+// (Observed live 2026-07-07: wallet opened via mempool.space after
+// blockstream blocked it, but the onchain handle still hit blockstream.)
+let sessionEsploraUrl: string = ESPLORA_URL;
 
 // In-memory mnemonic cache. Populated whenever the wallet is opened/created
 // so other modules (e.g. the auto-backup routine) can read the seed without
@@ -86,6 +97,22 @@ export function getCachedArkMnemonic(): string | null {
     return cachedMnemonic;
 }
 
+/**
+ * Cache the mnemonic for a self-heal re-open WITHOUT a Keychain read.
+ *
+ * The Ark seed Keychain entry is stored with BIOMETRY_ANY_OR_DEVICE_PASSCODE,
+ * so every Keychain read prompts FaceID/passcode. `restoreArkWalletFromDisk`
+ * reads it once at boot; we cache it here immediately so that if the open
+ * fails, the sync-loop self-heal (`reopenArkWalletFromCache`) can retry the
+ * open reusing this value with no repeat biometric prompt. Deliberately
+ * cached even when the subsequent open fails and the handle stays null —
+ * `clearArkWalletHandle` flushes it on teardown, and every consumer of
+ * `getCachedArkMnemonic` already gates on an open handle first.
+ */
+export function cacheArkMnemonicForReopen(mnemonic: string): void {
+    cachedMnemonic = mnemonic;
+}
+
 function ensureUniffi(): Promise<void> {
     if (!uniffiReady) uniffiReady = uniffiInitAsync();
     return uniffiReady;
@@ -131,84 +158,122 @@ export async function createArkWallet(
     const datadir = await ensureArkDatadir();
     const config = createArkConfig();
 
-    try {
-        handle = await Wallet.open(mnemonic, config, datadir);
-        cachedMnemonic = mnemonic;
-        if (__DEV__) console.log('[Ark] Opened existing wallet from datadir');
-        startWatcher();
-        await tryEagerSpawnOnchainHandle('createArkWallet open');
-        return handle;
-    } catch (openErr) {
-        if (__DEV__) {
-            console.log('[Ark] Wallet.open failed, falling back to create (forceRescan=' + forceRescan + '):', openErr);
-        }
-        // Bark schema-init bug: `Wallet.open` against a fresh datadir
-        // creates an empty `bark.sqlite` as a side-effect of just
-        // opening the path, then errors with `no such table:
-        // bark_properties` because the migration hasn't run. That
-        // 0-byte file then blocks the `Wallet.create` fallback (bark
-        // sees an existing file and tries to migrate instead of create
-        // fresh). A zero-byte file can't contain real wallet state, so
-        // nuke it before retrying create. See the gitlab draft for the
-        // upstream report.
-        try {
-            const sqlitePath = `${datadir}/bark.sqlite`;
-            const stat = await RNFS.stat(sqlitePath).catch(() => null);
-            if (stat && Number((stat as any).size) === 0) {
-                await RNFS.unlink(sqlitePath);
-                if (__DEV__) console.log('[Ark] cleared 0-byte bark.sqlite trap before create fallback');
-            }
-        } catch (cleanupErr) {
-            console.warn('[Ark] 0-byte sqlite cleanup failed:', cleanupErr);
-        }
+    // bark 0.11.3 consolidated open-or-create into a single `Wallet.open` with
+    // `createIfNotExists`, so the old open-then-catch-then-`Wallet.create`
+    // fallback (and the 0-byte `bark.sqlite` trap that sat between them)
+    // collapse to one call. If the 0-byte-sqlite schema-init bug still occurs
+    // with the consolidated open, re-add a guarded cleanup here — verify during
+    // device testing.
+    //
+    // ⚠ UNRESOLVED — blocks recovery-from-seed. bark 0.11.3 removed the
+    // `forceRescan` argument the old `Wallet.create` took and exposes no rescan
+    // entry point in its type surface. Our recover flow relies on it to
+    // reconstruct VTXOs from the ASP for a restored seed. Until Second.tech
+    // confirms the 0.11.3 rescan path, fail LOUD rather than silently open
+    // without a rescan (which would hide funds).
+    if (forceRescan) {
+        throw new Error(
+            'Ark rescan (forceRescan) is not yet wired for bark 0.11.3 — the SDK ' +
+            'removed the rescan argument. Recovery-from-seed is blocked pending ' +
+            'the Second.tech rescan API. Do not ship this path.',
+        );
     }
 
-    handle = await Wallet.create(mnemonic, config, datadir, forceRescan);
+    try {
+        handle = await Wallet.open(
+            ARK_NETWORK,
+            mnemonic,
+            config,
+            WalletOpenArgs.create({ datadir, createIfNotExists: true }),
+        );
+    } catch (err) {
+        // Guarded cleanup for the poisoned-datadir trap (the cleanup the
+        // pre-0.11.3 open-catch-create fallback used to provide). A create
+        // that dies mid-flight (esplora unreachable, app killed) leaves a
+        // partial datadir bound to a mnemonic that no longer exists; every
+        // later create then fails on the mismatch and the user is stuck.
+        //
+        // Wipe-and-retry ONLY when both hold:
+        //   1. The failure is NOT network-shaped. Esplora/ASP outages throw
+        //      here too and the datadir is not the problem; wiping on those
+        //      would nuke state for nothing.
+        //   2. NO ark seed exists in the Keychain. bark cannot open a datadir
+        //      without its mnemonic, and the device's only copy lives at
+        //      KEYCHAIN_SERVICE; no seed = nothing can ever open this datadir
+        //      = failed-create residue. If a seed IS present the datadir may
+        //      be a live funded wallet, so never touch it.
+        //      getAllGenericPasswordServices is metadata-only (no FaceID);
+        //      if the query itself fails, fail SAFE and assume a seed exists.
+        const detail = `${(err as { tag?: string })?.tag ?? ''} ${(err as Error)?.message ?? String(err)}`;
+        const networkShaped =
+            /ServerConnection|Connection|connect|timeout|timed out|network|bad response from server/i.test(detail);
+        if (networkShaped) throw err;
+
+        const services = await Keychain.getAllGenericPasswordServices().catch(() => null);
+        const seedMayExist = services === null || services.includes(KEYCHAIN_SERVICE);
+        if (seedMayExist) {
+            console.warn('[Ark] Wallet.create failed with a keychain seed present; NOT wiping datadir:', detail);
+            throw err;
+        }
+
+        console.warn('[Ark] Wallet.create failed on an orphaned datadir (no keychain seed); wiping residue and retrying once:', detail);
+        await clearArkWalletHandle();
+        await deleteArkDatadir();
+        const freshDatadir = await ensureArkDatadir();
+        handle = await Wallet.open(
+            ARK_NETWORK,
+            mnemonic,
+            config,
+            WalletOpenArgs.create({ datadir: freshDatadir, createIfNotExists: true }),
+        );
+        console.log('[Ark] Wallet.create retry after residue wipe succeeded');
+    }
     cachedMnemonic = mnemonic;
-    if (__DEV__) console.log('[Ark] Created new wallet in datadir (forceRescan=' + forceRescan + ')');
+    if (__DEV__) console.log('[Ark] Opened-or-created wallet in datadir');
     startWatcher();
-    await tryEagerSpawnOnchainHandle('createArkWallet create');
+    await tryEagerSpawnOnchainHandle('createArkWallet open');
     return handle;
 }
 
-export async function openArkWallet(mnemonic: string): Promise<WalletInterface> {
+export async function openArkWallet(
+    mnemonic: string,
+    opts?: { esploraUrl?: string },
+): Promise<WalletInterface> {
     await ensureUniffi();
     const datadir = await ensureArkDatadir();
-    const config = createArkConfig();
-    handle = await Wallet.open(mnemonic, config, datadir);
+    // Optional esplora override: the boot retry loop rotates providers
+    // when the primary serves a bot-block page instead of chain data
+    // (see restore.ts). The chosen endpoint sticks for this session's
+    // syncs — that's fine, both providers serve the same chain.
+    const chosenEsplora = opts?.esploraUrl || ESPLORA_URL;
+    const config = createArkConfig({ esploraAddress: chosenEsplora });
+    // Open-only (createIfNotExists: false) — this path must not fabricate a
+    // wallet if the datadir is empty; that's createArkWallet's job. bark 0.11.3
+    // Wallet.open signature: (network, mnemonic, config, WalletOpenArgs).
+    //
+    // runDaemon: false (2026-07-09, device-verified). With the daemon on
+    // (0.11.3 default), a failing dependency inside Wallet.open blocks with NO
+    // timeout (observed 8.75min on a TCP-dead esplora; minutes on a held
+    // datadir lock) and the handle stays null behind an opaque hang. With the
+    // daemon off, the same failures THROW fast with a readable error, which
+    // the boot retry loop (restore.ts) can classify and rotate on. The daemon
+    // is redundant here anyway: the app drives its own sync (useArkSync +
+    // explicit handle.sync()), and the movement-notification stream was
+    // confirmed on device to keep firing without it (1266 notifications over
+    // a full send/receive QA session).
+    handle = await Wallet.open(
+        ARK_NETWORK,
+        mnemonic,
+        config,
+        WalletOpenArgs.create({ datadir, createIfNotExists: false, runDaemon: false }),
+    );
+    // Pin the on-chain (BDK) handle to the SAME provider that just worked, so
+    // board detection doesn't fail against a provider that's blocking us.
+    sessionEsploraUrl = chosenEsplora;
     cachedMnemonic = mnemonic;
     startWatcher();
     await tryEagerSpawnOnchainHandle('openArkWallet');
     return handle;
-}
-
-/**
- * Hydrate the wallet handle from a seed obtained outside any foreground
- * UI flow — e.g. a background-refresh wake on a force-quit app where the
- * JS module was just freshly imported and `cachedMnemonic` is null.
- *
- * No-op if a handle is already open. Otherwise delegates to
- * `createArkWallet(mnemonic, false)` which is open-or-create + populates
- * the in-memory mnemonic cache, so subsequent reads of
- * `getCachedArkMnemonic()` work normally for the rest of this process.
- *
- * Pulled out as a separate symbol so the import surface for background
- * callers is narrow and easy to audit.
- */
-export async function hydrateArkWalletFromBackgroundSeed(
-    mnemonic: string,
-): Promise<WalletInterface> {
-    if (handle) {
-        // Handle survived from a previous foreground session but the onchain
-        // handle may not have been spawned yet. Make sure it is, so the
-        // next syncArkWallet tick covers the boarding-deposit path. We
-        // already have a fresh mnemonic from the caller — bias the cache
-        // to it just in case the previous cache was cleared.
-        if (!cachedMnemonic) cachedMnemonic = mnemonic;
-        await tryEagerSpawnOnchainHandle('hydrateArkWalletFromBackgroundSeed reuse');
-        return handle;
-    }
-    return createArkWallet(mnemonic, false);
 }
 
 /**
@@ -271,13 +336,43 @@ export function getArkOnchainHandle(): OnchainWalletInterface | null {
 }
 
 /**
+ * Drop the on-chain handle and rotate to the next esplora provider, so the
+ * next `ensureArkOnchainHandle` re-spawns against a different endpoint.
+ * Called by the sync loop when the on-chain sync fails with a network error
+ * (the pinned provider started bot-blocking mid-session). No-op if there's
+ * only one provider configured. Destroys the old handle to release its
+ * SQLite FDs before nulling the ref.
+ */
+export function rotateArkOnchainEsplora(): void {
+    // The onchain sync failed on the current provider. We used to cycle to the
+    // NEXT provider in ESPLORA_URLS — but the only fallback is blockstream,
+    // which chronically bot-blocks bark's client and (with no SDK-side esplora
+    // timeout) hangs the onchain sync ~90s. Observed 2026-07-09: that hang
+    // froze the JS thread and starved a stuck fee estimate. So reset to the
+    // reliable primary (mempool) instead of rotating onto the bad endpoint. If
+    // we're already on the primary, a transient failure just retries it next
+    // tick rather than pinning us to a dead provider.
+    if (sessionEsploraUrl === ESPLORA_URL) return; // already on primary
+    if (onchainHandle && typeof (onchainHandle as any).uniffiDestroy === 'function') {
+        try {
+            (onchainHandle as any).uniffiDestroy();
+        } catch (err) {
+            if (__DEV__) console.log('[Ark] onchain rotate destroy threw:', err);
+        }
+    }
+    onchainHandle = null;
+    sessionEsploraUrl = ESPLORA_URL;
+    if (__DEV__) console.log('[Ark] onchain esplora reset to primary ->', ESPLORA_URL);
+}
+
+/**
  * Lazily spawn the BDK-backed on-chain wallet that sits alongside the Ark
  * wallet (shared seed + datadir). Used for boarding funds into Ark and for
  * the "receive on-chain" address in the Ark receive flow.
  *
  * Mnemonic source preference:
  *   1. The in-process `cachedMnemonic` populated by `createArkWallet` /
- *      `openArkWallet` / `hydrateArkWalletFromBackgroundSeed`. This is the
+ *      `openArkWallet`. This is the
  *      common path: anything happening *during* an open session reuses the
  *      same seed, no Keychain hit, no biometric prompt, works in background.
  *   2. Keychain fallback for the rare case where this is the very first call
@@ -304,11 +399,27 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
 
     await ensureUniffi();
     const datadir = await ensureArkDatadir();
-    const config = createArkConfig();
 
-    onchainHandle = await OnchainWallet.default_(mnemonic, config, datadir);
-    if (__DEV__) console.log('[Ark] Spawned onchain wallet');
-    return onchainHandle;
+    // Spawn against the session esplora first (the provider that opened the
+    // main wallet), then any others in the rotation. A provider that's
+    // bot-blocking us surfaces at spawn or first sync as a network error;
+    // trying the alternate keeps board detection alive instead of pinning
+    // to a dead endpoint for the whole session.
+    const ordered = [sessionEsploraUrl, ...ESPLORA_URLS.filter((u) => u !== sessionEsploraUrl)];
+    let lastErr: unknown;
+    for (const esploraUrl of ordered) {
+        try {
+            const config = createArkConfig({ esploraAddress: esploraUrl });
+            // bark 0.11.3 OnchainWallet.default_ signature adds a leading network arg.
+            onchainHandle = await OnchainWallet.default_(ARK_NETWORK, mnemonic, config, datadir);
+            if (__DEV__) console.log('[Ark] Spawned onchain wallet via', esploraUrl);
+            return onchainHandle;
+        } catch (err) {
+            lastErr = err;
+            if (__DEV__) console.log('[Ark] onchain spawn failed via', esploraUrl, '-', (err as any)?.message ?? err);
+        }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('Failed to spawn onchain wallet');
 }
 
 /**

@@ -37,7 +37,16 @@ interface Props extends TouchableOpacityProps {
 
 export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = 'Savings Vault', titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
     const { wallets } = useContext(BlueStorageContext);
-    const { walletID, coldStorageWalletID, vaultTab } = useAuthStore();
+    // Per-field selectors, NOT a whole-store destructure. The bare
+    // `useAuthStore()` re-rendered this card on EVERY store change (the Ark
+    // sync writes balance/vtxo/tip fields every ~30s and more), and each
+    // re-render repaints the LinearGradient + icons under RN 0.77's Fabric
+    // interop, which flickers the "Hot Vault" / "Bitcoin Network" text and
+    // icons. Selecting only the three fields we use means the card re-renders
+    // only when they actually change.
+    const walletID = useAuthStore(s => s.walletID);
+    const coldStorageWalletID = useAuthStore(s => s.coldStorageWalletID);
+    const vaultTab = useAuthStore(s => s.vaultTab);
     const vaultTabCheck = isVault === false || isVault === true ? isVault : vaultTab;
     const wallet = vaultTabCheck ? wallets.find(w => w.getID() === coldStorageWalletID) : wallets.find(w => w.getID() === walletID);
     const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];

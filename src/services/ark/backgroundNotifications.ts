@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 
 import useAuthStore from '@Cypher/stores/authStore';
@@ -45,6 +45,23 @@ function ensureInit(): void {
  */
 export async function ensureBgNotificationPermission(): Promise<boolean> {
     ensureInit();
+    if (Platform.OS === 'android') {
+        // Android 13+ (API 33) gates notification display behind the
+        // POST_NOTIFICATIONS runtime permission. react-native-push-notification
+        // 8.1.1 predates that model, so its requestPermissions() never asks
+        // and every notification (including the five scheduled expiry
+        // warnings) is silently dropped by the OS. Found live 2026-07-07:
+        // granted=false on a stock Android 14 device that had toggled
+        // reminders on. Request through RN core's PermissionsAndroid
+        // instead. Below API 33 the manifest declaration alone grants it.
+        if (Number(Platform.Version) >= 33) {
+            const res = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+            );
+            return res === PermissionsAndroid.RESULTS.GRANTED;
+        }
+        return true;
+    }
     const result = await PushNotification.requestPermissions(['alert', 'sound', 'badge']);
     return Boolean(result?.alert);
 }
@@ -195,6 +212,21 @@ export type ArkExpiryWarningSource = (typeof ARK_EXPIRY_WARNING_SOURCES)[number]
 export function isArkExpiryWarningSource(s: unknown): s is ArkExpiryWarningSource {
     return typeof s === 'string'
         && (ARK_EXPIRY_WARNING_SOURCES as readonly string[]).includes(s);
+}
+
+/**
+ * Every notification source whose tap should deep-link into the Capsules
+ * tab: the expiry warnings (refresh is the action), payment-received
+ * (see what landed), and refresh-complete (see the fresh capsules; the
+ * visit also reconciles any stale locked/pulsing UI state). The tap
+ * handler in notificationHandler.ts matches against this.
+ */
+export function isArkCapsuleTapSource(s: unknown): boolean {
+    return (
+        isArkExpiryWarningSource(s) ||
+        s === 'ark-received' ||
+        s === 'ark-refresh-complete'
+    );
 }
 
 /**
@@ -416,7 +448,31 @@ export function notifyArkReceived(sats?: number): void {
         typeof sats === 'number' && sats > 0
             ? `You received ${sats.toLocaleString()} sats in your Bark Vault.`
             : 'You received a payment in your Bark Vault.';
-    fire('Payment received', body, 'high', { sats });
+    // Dedicated source so the tap deep-links to the Capsules tab (see
+    // isArkCapsuleTapSource); the default 'ark-bg-refresh' source is
+    // ignored by the tap handler.
+    fire('Payment received', body, 'high', { source: 'ark-received', sats });
+}
+
+/**
+ * "Refresh done" — fired when a refresh round finalizes while the app is
+ * backgrounded. Complements the in-app refreshing indicator: users who
+ * kicked off a batch refresh (rounds can take up to an hour) and switched
+ * away get a definitive completion signal instead of re-opening the app
+ * to check. Foreground is deliberately not notified; the Capsules UI is
+ * the signal there. Caller dedupes per movement id.
+ */
+export function notifyArkRefreshComplete(capsuleCount?: number): void {
+    const subject =
+        typeof capsuleCount === 'number' && capsuleCount > 0
+            ? `${capsuleCount} capsule${capsuleCount === 1 ? '' : 's'}`
+            : 'Your capsules';
+    fire(
+        'Refresh complete',
+        `${subject} refreshed successfully. Fresh expiry is locked in.`,
+        'low',
+        { source: 'ark-refresh-complete', capsuleCount },
+    );
 }
 
 /**

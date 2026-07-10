@@ -4,13 +4,16 @@ import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } fro
 import { formatNumber, formatSats, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 import MaskedView from "@react-native-masked-view/masked-view";
-import React, { useEffect, useRef } from "react";
+import React, { useContext, useEffect, useRef } from "react";
 import { Animated, Easing, Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
 import GradientButtonWithShadow from "../GradientButtonWithShadow";
 import styles from "./styles";
 import useAuthStore from "@Cypher/stores/authStore";
+import { CarouselPageVisibilityContext, useEasedProgress } from "@Cypher/custom-hooks";
+import { useIsFocused } from "@react-navigation/native";
+import Reanimated, { useAnimatedStyle } from "react-native-reanimated";
 
 interface Props {
     onPress?: (value: boolean) => void;
@@ -140,9 +143,19 @@ export default function Card({ onPress,
         return `${calculatePercentage(Number(withdrawThreshold), (Number(reserveAmount)))}%`
     }
 
-    const getWidth = () => {
-        return `${calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount))}%`
-    }
+    // Eased fill for the threshold bar: balance changes glide the pink
+    // fill instead of snapping it. Gated on actual visibility (screen
+    // focused AND this carousel page on screen) so the sweep replays when
+    // the user arrives instead of playing unseen — a balance change while
+    // they're on the Bark page or another screen holds the old fill until
+    // they swipe back.
+    const cardPageVisible = useContext(CarouselPageVisibilityContext);
+    const cardFocused = useIsFocused();
+    const fillPct = calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount));
+    const fillAnim = useEasedProgress(fillPct, cardPageVisible && cardFocused);
+    const fillStyle = useAnimatedStyle(() => ({
+        width: `${Math.min(Math.max(fillAnim.value, 0), 100)}%`,
+    }));
     // Single-wallet shortcuts. When the user has exactly one BTC wallet
     // and no vaults, skip the wallet-picker sheet (it would show a single
     // tile anyway) and dispatch straight to the wallet-specific entry
@@ -417,7 +430,7 @@ export default function Card({ onPress,
                         wrapper doesn't render under Fabric interop, so we
                         use a solid color and let the wrapper's percent
                         width control the fill. */}
-                    <View style={[styles.linearGradient2, { width: getWidth(), backgroundColor: colors.pink.dark, minWidth: 6 } as any]} />
+                    <Reanimated.View style={[styles.linearGradient2, { backgroundColor: colors.pink.dark, minWidth: 6 } as any, fillStyle]} />
                 </View>
             )}
         </>

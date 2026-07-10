@@ -1,4 +1,4 @@
-import { getArkOnchainHandle, getArkWalletHandle, setLastOnchainBalanceSats } from './walletHandle';
+import { getArkOnchainHandle, getArkWalletHandle, rotateArkOnchainEsplora, setLastOnchainBalanceSats } from './walletHandle';
 
 /**
  * Pull round finalizations, incoming payments, and blockchain state from
@@ -93,6 +93,14 @@ export async function syncArkWallet(): Promise<boolean> {
             await handle.syncPendingBoards();
         } catch (oncErr) {
             console.warn('[Ark sync] onchain sync / board pipeline failed:', oncErr);
+            // If the pinned esplora is bot-blocking us (BarkError.Network /
+            // ServerConnection / the "not a blockhash" 338-byte block page),
+            // drop the handle and rotate providers so the next tick re-spawns
+            // against the alternate endpoint instead of failing forever.
+            const detail = `${(oncErr as any)?.tag ?? ''} ${(oncErr as any)?.message ?? ''} ${(oncErr as any)?.inner?.errorMessage ?? ''}`;
+            if (/Network|ServerConnection|blockhash|hex string|timeout|timed out/i.test(detail)) {
+                rotateArkOnchainEsplora();
+            }
         }
     }
 

@@ -20,7 +20,7 @@ export {
 } from './recover';
 export type { ArkRecoveryResult, ArkSeedKeychainConflict } from './recover';
 
-export { restoreArkWalletFromDisk, hasArkDatadir } from './restore';
+export { restoreArkWalletFromDisk, reopenArkWalletFromCache, ensureArkWalletHandleReady, hasArkDatadir } from './restore';
 export type { ArkRestoreResult } from './restore';
 
 export { createArkLightningInvoice, getArkAddress, getArkOnchainAddress } from './receive';
@@ -44,7 +44,7 @@ export type { ArkOnchainRecoverEstimate, ArkOnchainRecoverResult } from './recov
 export { fetchArkVtxos } from './vtxos';
 export type { ArkVtxoView, ArkVtxoList } from './vtxos';
 
-export { tryClaimArkLightningReceives, fetchArkPendingLightningReceives } from './lightning';
+export { tryClaimArkLightningReceives, fetchArkPendingLightningReceives, driveArkPendingLightningSends } from './lightning';
 export type { ArkLightningReceiveView } from './lightning';
 
 export { fetchArkHistory } from './history';
@@ -125,6 +125,7 @@ export {
 export type { ChannelLookupResult } from './findBackup';
 
 export {
+    ArkRefreshInFlightError,
     cancelArkPendingRound,
     estimateArkRefreshFee,
     fetchArkPendingRoundStates,
@@ -171,30 +172,13 @@ export type {
 } from './backgroundTelemetry';
 
 export {
-    hasBackgroundArkSeed,
-} from './backgroundKeychain';
-
-export {
     ensureBgNotificationPermission,
     areBgNotificationsEnabled,
     scheduleVtxoExpiryWarnings,
     cancelVtxoExpiryWarnings,
 } from './backgroundNotifications';
 
-export {
-    registerArkBackgroundRefreshHandlers,
-    scheduleArkBackgroundRefresh,
-    cancelArkBackgroundRefresh,
-    isIgnoringBatteryOptimizations,
-    openBatteryOptimizationSettings,
-    getDeviceManufacturer,
-    debugFireRefresh,
-} from './scheduler';
-
-export { vendorGuidance } from './batteryGuidance';
-export type { VendorGuidance } from './batteryGuidance';
-
-export { hydrateArkWalletFromBackgroundSeed } from './walletHandle';
+export { registerArkNotificationTapHandler } from './notificationHandler';
 
 export {
     classifyArkDestination,
