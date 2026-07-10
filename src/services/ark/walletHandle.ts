@@ -11,7 +11,7 @@ import {
 } from '@secondts/bark-react-native';
 
 import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
-import { ensureArkDatadir } from './datadir';
+import { deleteArkDatadir, ensureArkDatadir } from './datadir';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
@@ -179,12 +179,55 @@ export async function createArkWallet(
         );
     }
 
-    handle = await Wallet.open(
-        ARK_NETWORK,
-        mnemonic,
-        config,
-        WalletOpenArgs.create({ datadir, createIfNotExists: true }),
-    );
+    try {
+        handle = await Wallet.open(
+            ARK_NETWORK,
+            mnemonic,
+            config,
+            WalletOpenArgs.create({ datadir, createIfNotExists: true }),
+        );
+    } catch (err) {
+        // Guarded cleanup for the poisoned-datadir trap (the cleanup the
+        // pre-0.11.3 open-catch-create fallback used to provide). A create
+        // that dies mid-flight (esplora unreachable, app killed) leaves a
+        // partial datadir bound to a mnemonic that no longer exists; every
+        // later create then fails on the mismatch and the user is stuck.
+        //
+        // Wipe-and-retry ONLY when both hold:
+        //   1. The failure is NOT network-shaped. Esplora/ASP outages throw
+        //      here too and the datadir is not the problem; wiping on those
+        //      would nuke state for nothing.
+        //   2. NO ark seed exists in the Keychain. bark cannot open a datadir
+        //      without its mnemonic, and the device's only copy lives at
+        //      KEYCHAIN_SERVICE; no seed = nothing can ever open this datadir
+        //      = failed-create residue. If a seed IS present the datadir may
+        //      be a live funded wallet, so never touch it.
+        //      getAllGenericPasswordServices is metadata-only (no FaceID);
+        //      if the query itself fails, fail SAFE and assume a seed exists.
+        const detail = `${(err as { tag?: string })?.tag ?? ''} ${(err as Error)?.message ?? String(err)}`;
+        const networkShaped =
+            /ServerConnection|Connection|connect|timeout|timed out|network|bad response from server/i.test(detail);
+        if (networkShaped) throw err;
+
+        const services = await Keychain.getAllGenericPasswordServices().catch(() => null);
+        const seedMayExist = services === null || services.includes(KEYCHAIN_SERVICE);
+        if (seedMayExist) {
+            console.warn('[Ark] Wallet.create failed with a keychain seed present; NOT wiping datadir:', detail);
+            throw err;
+        }
+
+        console.warn('[Ark] Wallet.create failed on an orphaned datadir (no keychain seed); wiping residue and retrying once:', detail);
+        await clearArkWalletHandle();
+        await deleteArkDatadir();
+        const freshDatadir = await ensureArkDatadir();
+        handle = await Wallet.open(
+            ARK_NETWORK,
+            mnemonic,
+            config,
+            WalletOpenArgs.create({ datadir: freshDatadir, createIfNotExists: true }),
+        );
+        console.log('[Ark] Wallet.create retry after residue wipe succeeded');
+    }
     cachedMnemonic = mnemonic;
     if (__DEV__) console.log('[Ark] Opened-or-created wallet in datadir');
     startWatcher();
@@ -207,11 +250,22 @@ export async function openArkWallet(
     // Open-only (createIfNotExists: false) — this path must not fabricate a
     // wallet if the datadir is empty; that's createArkWallet's job. bark 0.11.3
     // Wallet.open signature: (network, mnemonic, config, WalletOpenArgs).
+    //
+    // runDaemon: false (2026-07-09, device-verified). With the daemon on
+    // (0.11.3 default), a failing dependency inside Wallet.open blocks with NO
+    // timeout (observed 8.75min on a TCP-dead esplora; minutes on a held
+    // datadir lock) and the handle stays null behind an opaque hang. With the
+    // daemon off, the same failures THROW fast with a readable error, which
+    // the boot retry loop (restore.ts) can classify and rotate on. The daemon
+    // is redundant here anyway: the app drives its own sync (useArkSync +
+    // explicit handle.sync()), and the movement-notification stream was
+    // confirmed on device to keep firing without it (1266 notifications over
+    // a full send/receive QA session).
     handle = await Wallet.open(
         ARK_NETWORK,
         mnemonic,
         config,
-        WalletOpenArgs.create({ datadir, createIfNotExists: false }),
+        WalletOpenArgs.create({ datadir, createIfNotExists: false, runDaemon: false }),
     );
     // Pin the on-chain (BDK) handle to the SAME provider that just worked, so
     // board detection doesn't fail against a provider that's blocking us.

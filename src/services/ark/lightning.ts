@@ -15,6 +15,7 @@ export type ArkLightningReceiveView = {
     preimageRevealed: boolean;
 };
 
+
 /**
  * Drive forward any pending Lightning receives and materialize them into
  * HTLC-recv VTXOs in the local SQLite datadir.
@@ -79,7 +80,13 @@ export async function tryClaimArkLightningReceives(): Promise<ArkLightningReceiv
         // surfacing to the user. The 30s sync will retry. Logged in detail
         // for now because diagnosing the missing-capsule bug needs to know
         // whether failures here are cause or symptom.
-        console.warn('[Ark claim] tryClaimAllLightningReceives failed:', err);
+        const e = err as { tag?: string; message?: string; inner?: { errorMessage?: string; message?: string } };
+        console.warn(
+            '[Ark claim] tryClaimAllLightningReceives failed:',
+            'tag=', e?.tag ?? 'n/a',
+            '| message=', e?.message ?? String(err),
+            '| inner=', e?.inner?.errorMessage ?? e?.inner?.message ?? 'n/a',
+        );
         return [];
     }
 }

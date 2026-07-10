@@ -1,6 +1,7 @@
 import {
     FeeEstimate,
-    LightningSend,
+    LightningSendStatus,
+    LightningSendStatus_Tags,
     validateArkAddress,
 } from '@secondts/bark-react-native';
 
@@ -142,34 +143,21 @@ export async function estimateArkSendFee(
 // --- Execution --------------------------------------------------------------
 //
 // Each branch returns an opaque string id:
-//   - Arkoor / onchain: SDK's direct return (txid or vtxo id).
-//   - Lightning: the LightningSend struct's `paymentHash` (or equivalent
-//     identifier) so callers have *something* to show in a receipt.
+//   - onchain: SDK's direct return (txid). Arkoor returns void in 0.11.3, so
+//     its id is left empty (no caller reads it).
+//   - Lightning: the `paymentHash` from a Paid LightningSendStatus, else the
+//     resolved bolt11, so callers have *something* to show in a receipt.
 //
 // After the send resolves we refresh balance + vtxos so the home card and
 // capsules tab update without needing to wait for the 30s tick.
 
-function lightningSendId(send: LightningSend): string {
-    // The LightningSend struct from Bark has a payment hash among its
-    // fields; we pick whichever string identifier is present so callers
-    // have a receipt handle. Keep this resilient to SDK field additions
-    // — just return the most identifying string we can find.
-    const anyShape = send as unknown as Record<string, unknown>;
-    const candidates = ['paymentHash', 'id', 'hash', 'preimage'];
-    for (const key of candidates) {
-        const v = anyShape[key];
-        if (typeof v === 'string' && v.length > 0) return v;
-    }
-    return '(lightning send — no id returned)';
-}
-
 /**
  * Wait for an Ark Lightning send to reach a terminal state.
  *
- * `payLightning*` returns once the HTLC is DISPATCHED, not once it settles, so
- * a returned LightningSend WITHOUT a `preimage` is not proof of payment. We
- * poll the local movement history for the `send` movement matching this invoice
- * and report its outcome so callers never declare a false success:
+ * `payLightning*` (called with wait=false) returns once the HTLC is DISPATCHED,
+ * not once it settles, so a non-`Paid` LightningSendStatus is not proof of
+ * payment. We poll the local movement history for the `send` movement matching
+ * this invoice and report its outcome so callers never declare a false success:
  *   - 'settled' — movement status `successful`
  *   - 'failed'  — movement status `failed` / `canceled` (the HTLC was refunded)
  *   - 'pending' — still pending when the timeout elapsed (do NOT claim success)
@@ -225,14 +213,19 @@ async function dispatchLnSend(
     dest: ArkDestination,
     amount: bigint,
     comment?: string,
-): Promise<LightningSend> {
+): Promise<LightningSendStatus> {
+    // 0.11.3 crash-safe send model: pay_lightning_* now take a `wait` flag and
+    // return a LightningSendStatus (Unknown | InProgress{send} | Paid{...}).
+    // We initiate with wait=false (dispatch-and-return, matching the old
+    // return-at-dispatch contract the retry/settlement loop below was built
+    // around) and confirm settlement ourselves via the movement-history poll.
     switch (dest.kind) {
         case 'ln-invoice':
-            return handle.payLightningInvoice(dest.value, amount);
+            return handle.payLightningInvoice(dest.value, amount, false);
         case 'ln-offer':
-            return handle.payLightningOffer(dest.value, amount);
+            return handle.payLightningOffer(dest.value, amount, false);
         case 'ln-address':
-            return handle.payLightningAddress(dest.value, amount, comment);
+            return handle.payLightningAddress(dest.value, amount, comment, false);
         default:
             throw new Error('dispatchLnSend called with a non-Lightning destination');
     }
@@ -253,19 +246,16 @@ export async function executeArkSend(
     const handle = await requireHandle();
     const amount = BigInt(amountSats);
 
-    // Reconcile VTXO state with the ASP before sending. bark's coin-selection
-    // can otherwise pick a locally-"spendable" but ASP-"unregistered" VTXO
-    // (e.g. orphaned arkoor change), making the send fail with BarkError.Internal:
-    // "vtxo <id> is not spendable (state: unregistered)". maintenance() reconciles
-    // such VTXOs; the app otherwise only runs the lightweight sync(), which does
-    // not clear this. Non-fatal: if maintenance throws we still attempt the send.
-    if (__DEV__) console.log('[Ark send] pre-send maintenance: reconciling VTXO state…');
-    try {
-        await handle.maintenance();
-        if (__DEV__) console.log('[Ark send] pre-send maintenance done');
-    } catch (e) {
-        if (__DEV__) console.warn('[Ark send] pre-send maintenance failed (continuing):', e);
-    }
+    // NOTE: a pre-send `handle.maintenance()` used to run here to reconcile
+    // ASP-"unregistered" VTXOs before coin-selection. Removed 2026-07-09: on a
+    // wallet wedged on stuck rounds, maintenance() takes the wallet lock and
+    // blocks for minutes (it froze a live Bark->CoinOS swap mid-send, and no
+    // payment could proceed behind it), and it did not reliably clear the
+    // unregistered-change it was meant to fix. We accept the small risk that
+    // coin-selection picks an unregistered VTXO (the send then fails fast and
+    // safe) rather than let a blocking reconcile stall every send. If
+    // unregistered-VTXO send failures resurface, fix them without a blocking
+    // pre-send call.
 
     // Pre-compute fee view so the result can carry it — useful for the
     // success screen so users see what they paid without re-estimating
@@ -274,9 +264,6 @@ export async function executeArkSend(
 
     let kind: ArkDestinationKind = dest.kind;
     let id!: string;
-    // Holds the most recent LightningSend (the last attempt) for LN kinds so the
-    // result can carry its id. Non-LN kinds leave this undefined.
-    let lnSend: LightningSend | undefined;
 
     console.log('[Ark send] executing', dest.kind, 'amount=', amountSats, 'sats');
 
@@ -289,11 +276,11 @@ export async function executeArkSend(
         // --- LN send with settlement-confirmed retry ------------------------
         //
         // Two facts drive this loop:
-        //  1. payLightning* returns at DISPATCH, not settlement. The returned
-        //     LightningSend only carries a `preimage` once settled; without one
-        //     the payment may still fail and refund, so the return is NOT proof
-        //     of payment. We always wait for the movement to reach a terminal
-        //     state rather than trusting the call returning.
+        //  1. payLightning*(wait=false) returns at DISPATCH, not settlement. It
+        //     yields a `Paid` LightningSendStatus (with preimage) only once
+        //     settled; a non-Paid status is NOT proof of payment (it may still
+        //     fail and refund). We always wait for the movement to reach a
+        //     terminal state rather than trusting the call returning.
         //  2. The ASP's route to the destination settles INTERMITTENTLY
         //     (confirmed: two identical 500-sat sends 12s apart, one settled and
         //     one failed; a 7,890-sat send succeeded while a 53k one failed). A
@@ -305,19 +292,38 @@ export async function executeArkSend(
         // throws so the user checks Activity instead of being silently re-sent.
         let settled = false;
         for (let attempt = 1; attempt <= MAX_LN_SEND_ATTEMPTS; attempt++) {
-            lnSend = await dispatchLnSend(handle, dest, amount, comment);
-            id = lightningSendId(lnSend);
+            const status = await dispatchLnSend(handle, dest, amount, comment);
+
+            // Fast path: bark settled at dispatch and handed us the preimage.
+            if (status.tag === LightningSendStatus_Tags.Paid) {
+                id = status.inner.paymentHash;
+                if (__DEV__) console.log('[Ark send] LN attempt', attempt, 'Paid at dispatch (preimage in hand)');
+                settled = true;
+                break;
+            }
+
+            // InProgress carries the resolved bolt11 (for offer/address kinds
+            // this is the only place we learn it); Unknown carries nothing, so
+            // fall back to the raw destination for the settlement match. (Offer/
+            // address + Unknown will not match the movement poll and so fail
+            // safe to 'pending' rather than a false success.)
+            const resolvedInvoice =
+                status.tag === LightningSendStatus_Tags.InProgress
+                    ? status.inner.send.invoice
+                    : dest.value;
+            // Receipt handle until we have a preimage: the invoice we paid.
+            id = resolvedInvoice;
             if (__DEV__) {
                 console.log(
                     '[Ark send] LN attempt', attempt, 'of', MAX_LN_SEND_ATTEMPTS,
-                    'htlcVtxoCount=', (lnSend as { htlcVtxoCount?: number }).htlcVtxoCount,
-                    'preimage=', lnSend.preimage ? 'present (settled at dispatch)' : 'absent',
+                    'status=', status.tag,
+                    status.tag === LightningSendStatus_Tags.InProgress
+                        ? `htlcVtxoCount=${status.inner.send.htlcVtxoCount}`
+                        : '',
                 );
             }
-            // Fast path: bark already holds the preimage -> settled.
-            if (lnSend.preimage) { settled = true; break; }
 
-            const outcome = await waitForArkLightningSettlement(handle, lnSend.invoice ?? dest.value);
+            const outcome = await waitForArkLightningSettlement(handle, resolvedInvoice);
             if (outcome === 'settled') { settled = true; break; }
             if (outcome === 'pending') {
                 throw new Error(
@@ -338,7 +344,11 @@ export async function executeArkSend(
     } else {
         switch (dest.kind) {
             case 'ark':
-                id = await handle.sendArkoorPayment(dest.value, amount);
+                // 0.11.3 sendArkoorPayment returns void (no vtxo/tx id
+                // surfaced). No caller reads the id for ark-to-ark sends, so
+                // leave it empty.
+                await handle.sendArkoorPayment(dest.value, amount);
+                id = '';
                 break;
             case 'onchain':
                 id = await handle.sendOnchain(dest.value, amount);

@@ -1,6 +1,7 @@
 export * from './utils';
 export { default as isIOS } from './isIOS';
 export { default as dispatchNavigate } from './navigation';
+export { dispatchReset, resetAndNavigate } from './navigation';
 export { default as openUrl } from './openUrl';
 export { default as openInAppBrowser } from './openInAppBrowser';
 export { default as calculatePercentage } from './calculatePercentage';

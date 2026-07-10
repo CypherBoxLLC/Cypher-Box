@@ -101,7 +101,16 @@ export const ARK_SERVER_URL = 'https://ark.second.tech';
 // bad day, every path falls back to blockstream. The durable fix remains a
 // dedicated / authenticated esplora endpoint. Flip this pair back if
 // mempool's open-endpoint hang (see 2026-06-03) recurs.
-export const ESPLORA_URL = 'https://mempool.space/api';
+//
+// 2026-07-09: FLIPPED BACK to blockstream primary — mempool's open-endpoint
+// hang recurred on device. On-device probe: mempool.space TCP-connect times out
+// (os error 60) so `Wallet.open` attempt 1 ate the full ~8.75min OS timeout on
+// every boot before rotating; blockstream served bark's Rust client in 534ms
+// (open succeeded on attempt 2 repeatedly). Blockstream 429s the JS `fetch`
+// path (chain-tip / fee), but bark's own client is NOT throttled, so the wallet
+// open + sync path is healthy on blockstream. mempool stays as fallback for
+// when it recovers.
+export const ESPLORA_URL = 'https://blockstream.info/api';
 
 /**
  * Esplora rotation order for the wallet-open retry loop (restore.ts), the
@@ -110,15 +119,16 @@ export const ESPLORA_URL = 'https://mempool.space/api';
  * client — blockstream's Cloudflare serves a bot-block page instead of chain
  * data (the recurring 2026-07-07 failure), and mempool.space has hung outright
  * before (2026-06-03 note above). Rotating across attempts means one provider's
- * throttle no longer bricks startup. Primary is now mempool (blockstream is the
- * daily offender); the fallback covers mempool's rarer hang.
+ * throttle no longer bricks startup. Primary is now blockstream (mempool went
+ * TCP-unreachable on device 2026-07-09); the fallback covers blockstream
+ * throttling for when the pair flaps back.
  *
  * Deliberately no per-attempt watchdog for the mempool hang mode: a hung
  * `Wallet.open` cannot be cancelled, and racing a second open against it
  * targets the same datadir (BarkError.Database or worse). A hang behaves
  * exactly as it did before this list existed.
  */
-export const ESPLORA_URLS = [ESPLORA_URL, 'https://blockstream.info/api'];
+export const ESPLORA_URLS = [ESPLORA_URL, 'https://mempool.space/api'];
 
 export function createArkConfig(overrides?: Partial<Parameters<typeof Config.create>[0]>) {
     return Config.create({
