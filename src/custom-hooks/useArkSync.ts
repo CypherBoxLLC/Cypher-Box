@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, AppStateStatus, InteractionManager, Platform } from 'react-native';
+import { Alert, AppState, AppStateStatus, InteractionManager, Platform } from 'react-native';
 
 import {
     applyExpiredVtxoFilter,
@@ -30,6 +30,9 @@ import {
     writeArkAutoBackup,
 } from '@Cypher/services/ark';
 import { processArkMovementsForActivity } from '@Cypher/services/ark/movementsActivity';
+// Imported from the file path directly (not the @Cypher/services/ark
+// barrel) — the barrel doesn't re-export the expiry module.
+import { formatBlocksUntil } from '@Cypher/services/ark/expiry';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import {
@@ -97,6 +100,24 @@ const URGENCY_THRESHOLD_BLOCKS = Math.round(
 // telemetry buffer would fill with no-ops.
 const FOREGROUND_SWEEP_MIN_GAP_MS = 5 * 60 * 1000;
 let lastForegroundSweepAt = 0;
+
+// --- Refresh-failure escalation near expiry --------------------------------
+//
+// The expiry-warning notifications cover "time is running out" and the
+// stuck-refresh banner covers "a round is wedged". Neither covers the
+// failure mode that actually lost user funds (support case 2026-07-11):
+// every refresh SUBMISSION fails outright (infra outage, IP-blocked
+// esplora, captive portal) while the expiry clock runs down — 12+ failed
+// rounds over 3 days with under 2 days left, and the app never raised
+// its voice. Once this many consecutive submissions have failed
+// (arkRefreshFailStreak, maintained in services/ark/refresh.ts across
+// every refresh path) AND a spendable VTXO is inside the urgency window,
+// a blocking Alert surfaces the rescue playbook in the order that works
+// in practice: switch networks and retry, then Emergency Exit while
+// there is still time. Re-shown at most once per gap window so the sync
+// tick doesn't nag while the user is following the steps.
+const REFRESH_FAIL_ESCALATE_STREAK = 3;
+const REFRESH_FAIL_ALERT_GAP_MS = 6 * 60 * 60 * 1000;
 
 // --- Self-heal for a failed boot open -------------------------------------
 //
@@ -424,34 +445,37 @@ export default function useArkSync(): UseArkSync {
                 setArkBalanceDetail(filteredBalance);
             }
             if (vtxos) {
-                // Filter past-expiry VTXOs out of the live capsule list.
-                // The SDK reports them as Spendable until the ASP actually
-                // sweeps them, but they cannot participate in a refresh
-                // round (the ASP rejects expired inputs) and surfacing
-                // them as actionable capsules misleads users: the funds
-                // are already lost. Arkoor (expiryHeight === 0) stay,
-                // they inherit expiry from their parent and the SDK
-                // hasn't resolved it yet. The History tab still shows
-                // their lifecycle as a record, so the loss is visible
-                // there instead of cluttering the active capsule list.
-                const visibleSpendable =
+                // Past-expiry VTXOs stay IN the list. The SDK reports them
+                // as Spendable until the ASP actually sweeps them; they
+                // can't join a refresh round (the ASP rejects expired
+                // inputs) and the funds are effectively lost. An earlier
+                // iteration filtered them out here, which made a wallet
+                // whose only capsule expired read as an unexplained zero
+                // balance with an empty Capsules tab (real support case,
+                // 2026-07-11: a 1000-sat VTXO expired during an infra
+                // outage and the app showed nothing at all). The Capsules
+                // tab now renders them as a greyed non-actionable
+                // "Expired" row with an explainer; the headline balance
+                // still excludes their sats via applyExpiredVtxoFilter
+                // above. Consumers that ACT on VTXOs (refresh batches,
+                // urgency sweep, dust consolidation, expiry warnings)
+                // each skip expiryHeight <= tip themselves.
+                const expiredCount =
                     typeof tip === 'number'
                         ? vtxos.spendable.filter(
-                              (v) => v.expiryHeight === 0 || v.expiryHeight > tip,
-                          )
-                        : vtxos.spendable;
+                              (v) => v.expiryHeight !== 0 && v.expiryHeight <= tip,
+                          ).length
+                        : 0;
                 console.log(
                     '[Ark sync] writing',
-                    visibleSpendable.length,
-                    'vtxos to store (of',
                     vtxos.spendable.length,
-                    'spendable,',
+                    'vtxos to store (of',
                     vtxos.all.length,
                     'total;',
-                    vtxos.spendable.length - visibleSpendable.length,
-                    'past-expiry hidden)',
+                    expiredCount,
+                    'past expiry)',
                 );
-                setArkVtxos(visibleSpendable);
+                setArkVtxos(vtxos.spendable);
             } else {
                 console.log('[Ark sync] fetchArkVtxos returned null (no handle)');
             }
@@ -760,13 +784,16 @@ export default function useArkSync(): UseArkSync {
                 }
             }
             let minBlocks = Infinity;
+            // Same minimum but INCLUDING user-deferred VTXOs — the
+            // failure-streak escalation below uses this one. Deferring
+            // auto-refresh ("Use immediately") doesn't make the funds
+            // immune to expiry, so a deferred VTXO still counts when
+            // deciding whether to raise the alarm.
+            let minBlocksAnySpendable = Infinity;
             if (tip !== null && vtxos) {
                 for (const v of vtxos.spendable) {
                     if (v.expiryHeight === 0) continue;
                     if (v.state.toLowerCase() === 'locked') continue;
-                    // User-deferred — skip so the urgency sweep doesn't
-                    // try to refresh a VTXO the user said to leave alone.
-                    if (deferredIds.has(v.id)) continue;
                     const blocks = v.expiryHeight - tip;
                     // Skip already-expired VTXOs. Including them would make
                     // the lazy-refresh sweep fire on dead funds (refresh
@@ -776,6 +803,10 @@ export default function useArkSync(): UseArkSync {
                     // next-most-urgent SPENDABLE-IN-PRACTICE VTXO, not to
                     // already-lost ones.
                     if (blocks <= 0) continue;
+                    if (blocks < minBlocksAnySpendable) minBlocksAnySpendable = blocks;
+                    // User-deferred — skip so the urgency sweep doesn't
+                    // try to refresh a VTXO the user said to leave alone.
+                    if (deferredIds.has(v.id)) continue;
                     if (blocks < minBlocks) minBlocks = blocks;
                 }
             }
@@ -809,6 +840,37 @@ export default function useArkSync(): UseArkSync {
                 void runBackgroundRefresh('foreground').catch((err) => {
                     console.warn('[Ark sync] foreground sweep threw:', err?.message ?? err);
                 });
+            }
+
+            // --- Refresh-failure escalation near expiry ---
+            //
+            // See REFRESH_FAIL_ESCALATE_STREAK above for the rationale.
+            // Blocking Alert, not a toast or banner: this is the last
+            // software intervention between the user and unrecoverable
+            // fund loss, and the two prior warning layers (expiry
+            // notifications, stuck banner) demonstrably weren't loud
+            // enough when refreshes were failing outright.
+            const failStreak = state.arkRefreshFailStreak ?? 0;
+            if (
+                failStreak >= REFRESH_FAIL_ESCALATE_STREAK &&
+                isFinite(minBlocksAnySpendable) &&
+                minBlocksAnySpendable < URGENCY_THRESHOLD_BLOCKS &&
+                Date.now() - (state.arkRefreshFailAlertAt ?? 0) > REFRESH_FAIL_ALERT_GAP_MS
+            ) {
+                useAuthStore.getState().setArkRefreshFailAlertAt(Date.now());
+                console.warn(
+                    '[Ark sync] refresh-failure escalation — failStreak=', failStreak,
+                    'minBlocks=', minBlocksAnySpendable,
+                );
+                Alert.alert(
+                    'Refresh keeps failing',
+                    `Your capsules expire ${formatBlocksUntil(minBlocksAnySpendable)} and your last ` +
+                    `${failStreak} refresh attempts failed. Switch networks (Wi-Fi to cellular, or ` +
+                    'cellular to Wi-Fi) and refresh again. If refresh still fails, use ' +
+                    'Settings → Emergency Exit to move your funds on-chain before they expire. ' +
+                    'Expired capsules are lost forever.',
+                    [{ text: 'OK' }],
+                );
             }
 
             // --- Auto-backup (fire-and-forget, off the critical path) ---

@@ -2,6 +2,7 @@ import { getArkWalletHandle } from './walletHandle';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
+import useAuthStore from '@Cypher/stores/authStore';
 import type { FeeEstimate, RoundState } from '@secondts/bark-react-native';
 
 export type ArkRefreshFeeView = {
@@ -128,6 +129,9 @@ export async function refreshArkVtxos(
             result: 'success',
             durationMs: Date.now() - t0,
         });
+        // Any successful round breaks the failure streak that drives the
+        // refresh-failing-near-expiry escalation in useArkSync.
+        useAuthStore.getState().setArkRefreshFailStreak(0);
         return { roundId: roundId ?? null };
     } catch (err: any) {
         // BarkError variants carry detail in `err.inner.errorMessage` rather than
@@ -145,6 +149,14 @@ export async function refreshArkVtxos(
             result: 'failure',
             durationMs: Date.now() - t0,
         });
+        // Count consecutive failed submissions across every refresh path
+        // (Capsules tab, notification tap, background sweep all land
+        // here). The pre-submission ArkRefreshInFlightError guard above
+        // doesn't reach this catch, so "already running" rejections
+        // don't inflate the streak. useArkSync escalates once the streak
+        // crosses its threshold while a VTXO is near expiry.
+        const store = useAuthStore.getState();
+        store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
         throw err;
     } finally {
         refreshSubmissionInFlight = false;

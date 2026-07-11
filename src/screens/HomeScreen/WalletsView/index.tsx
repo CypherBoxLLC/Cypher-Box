@@ -138,6 +138,10 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             if (v.expiryHeight === 0) continue;
             if (v.state.toLowerCase() === 'locked') continue;
             const blocks = v.expiryHeight - arkChainTipHeight;
+            // Skip already-expired VTXOs (they stay in the store so the
+            // Capsules tab can render them) — "refresh soon" is wrong
+            // advice for funds that are already unrecoverable.
+            if (blocks <= 0) continue;
             if (blocks < minBlocks) minBlocks = blocks;
         }
         if (!isFinite(minBlocks)) return null;
