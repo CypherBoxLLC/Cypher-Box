@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Platform, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Platform, TouchableOpacity, View } from "react-native";
 import DocumentPicker, { types as DocTypes } from "react-native-document-picker";
 import RNFS from "react-native-fs";
 import * as Keychain from "react-native-keychain";
@@ -25,6 +25,7 @@ import {
 import type { ChannelLookupResult } from "@Cypher/services/ark";
 import { validateMnemonic } from "@secondts/bark-react-native";
 import useAuthStore from "@Cypher/stores/authStore";
+import { useKeyboardLift } from "@Cypher/custom-hooks";
 import { colors } from "@Cypher/style-guide";
 
 import styles from "./styles";
@@ -960,8 +961,11 @@ function TypeSeedView({
     onRestoreCloud,
     onBack,
 }: TypeSeedViewProps) {
+    // Lift the view when the keyboard shows so words 11/12 stay visible
+    // while typing (slides up under the header, same as RecoverSavingVault).
+    const keyboardLift = useKeyboardLift(40);
     return (
-        <>
+        <Animated.View style={{ transform: [{ translateY: keyboardLift }] }}>
             <Text bold style={styles.introTitle}>
                 Type your 12-word Ark seed phrase
             </Text>
@@ -1065,6 +1069,6 @@ function TypeSeedView({
                     <Text style={{ color: colors.gray.light, fontSize: 12 }}>{`← Back to ${BIOMETRIC_LABEL} unlock`}</Text>
                 </TouchableOpacity>
             )}
-        </>
+        </Animated.View>
     );
 }

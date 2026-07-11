@@ -248,6 +248,25 @@ export type AuthStateType = {
     } | null;
     /** Counts only `error` outcomes. Resets to 0 on success. Drives the "couldn't auto-refresh" notification at 2. */
     arkBgRefreshConsecutiveFailures: number;
+    /**
+     * Consecutive FAILED refresh-round submissions across EVERY path
+     * (Capsules tab, notification tap, background sweep) — maintained by
+     * refreshArkVtxos() in services/ark/refresh.ts: a submission that
+     * reaches the SDK and throws increments it, a success resets it to 0.
+     * Distinct from arkBgRefreshConsecutiveFailures, which counts only
+     * background-orchestrator outcomes. Persisted because the failure
+     * streaks that lose funds span days and app restarts (support case
+     * 2026-07-11: 12+ failed refreshes over 3 days against a <2-day
+     * expiry clock, no escalation). Drives the refresh-failing-near-
+     * expiry Alert in useArkSync.
+     */
+    arkRefreshFailStreak: number;
+    /**
+     * Epoch ms when the refresh-failing-near-expiry Alert was last shown.
+     * Gates re-showing so the escalation fires once per re-show window
+     * instead of on every sync tick while the streak persists.
+     */
+    arkRefreshFailAlertAt: number | null;
     /** Set when a post-refresh cloud-backup upload deferred (Phase 4). Surfaces a banner on next foreground. */
     arkBgRefreshDeferredBackup: boolean;
     /** Last fire time of the <24h-to-expiry notification. Used to suppress repeat fires within a 12h window. */
@@ -348,6 +367,8 @@ export type AuthStateType = {
         } | null,
     ) => void;
     setArkBgRefreshConsecutiveFailures: (state: number) => void;
+    setArkRefreshFailStreak: (state: number) => void;
+    setArkRefreshFailAlertAt: (state: number | null) => void;
     setArkBgRefreshDeferredBackup: (state: boolean) => void;
     setArkBgRefreshLastWarn24hAt: (state: number | null) => void;
     setArkBgRefreshLastWarn2hAt: (state: number | null) => void;
@@ -427,6 +448,8 @@ const createAuthStore = (
     arkBgRefreshLastSuccessAt: null,
     arkBgRefreshLastAttempt: null,
     arkBgRefreshConsecutiveFailures: 0,
+    arkRefreshFailStreak: 0,
+    arkRefreshFailAlertAt: null,
     arkBgRefreshDeferredBackup: false,
     arkBgRefreshLastWarn24hAt: null,
     arkBgRefreshLastWarn2hAt: null,
@@ -489,6 +512,8 @@ const createAuthStore = (
     setArkBgRefreshLastSuccessAt: (state: number | null) => set({ arkBgRefreshLastSuccessAt: state }),
     setArkBgRefreshLastAttempt: (state) => set({ arkBgRefreshLastAttempt: state }),
     setArkBgRefreshConsecutiveFailures: (state: number) => set({ arkBgRefreshConsecutiveFailures: state }),
+    setArkRefreshFailStreak: (state: number) => set({ arkRefreshFailStreak: state }),
+    setArkRefreshFailAlertAt: (state: number | null) => set({ arkRefreshFailAlertAt: state }),
     setArkBgRefreshDeferredBackup: (state: boolean) => set({ arkBgRefreshDeferredBackup: state }),
     setArkBgRefreshLastWarn24hAt: (state: number | null) => set({ arkBgRefreshLastWarn24hAt: state }),
     setArkBgRefreshLastWarn2hAt: (state: number | null) => set({ arkBgRefreshLastWarn2hAt: state }),
@@ -529,6 +554,8 @@ const createAuthStore = (
             arkBgRefreshLastSuccessAt: null,
             arkBgRefreshLastAttempt: null,
             arkBgRefreshConsecutiveFailures: 0,
+            arkRefreshFailStreak: 0,
+            arkRefreshFailAlertAt: null,
             arkBgRefreshDeferredBackup: false,
             arkBgRefreshLastWarn24hAt: null,
             arkBgRefreshLastWarn2hAt: null,

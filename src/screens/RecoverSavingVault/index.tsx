@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { Alert, ActivityIndicator, TouchableOpacity, View } from 'react-native';
+import { Alert, ActivityIndicator, Animated, TouchableOpacity, View } from 'react-native';
 import styles from './styles';
 import { ScreenLayout, Text, Input, Button } from '@Cypher/component-library';
 import { colors } from '@Cypher/style-guide';
@@ -7,6 +7,7 @@ import { HDSegwitBech32Wallet } from '../../../class';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
 import useAuthStore from "@Cypher/stores/authStore";
+import { useKeyboardLift } from '@Cypher/custom-hooks';
 import { dispatchReset } from '@Cypher/helpers/navigation';
 import {
     getHotVaultSeedFromKeychain,
@@ -40,6 +41,9 @@ export default function RecoverSavingVault({ route }: Props) {
     const autoAttempted = useRef(false);
     const importing = useRef(false);
     const inputRefs = useRef<Array<any>>(new Array(inputs.length));
+    // Lift the whole content block when the keyboard shows so words 11/12
+    // stay visible while typing (the grid slides up under the header).
+    const keyboardLift = useKeyboardLift(40);
 
     // Auto-recover from Keychain on mount — mimics password-autofill UX.
     //
@@ -462,7 +466,7 @@ export default function RecoverSavingVault({ route }: Props) {
 
     return (
         <ScreenLayout title="Enter Your Seed phrase" showToolbar isBackButton disableScroll>
-            <View style={styles.container}>
+            <Animated.View style={[styles.container, { transform: [{ translateY: keyboardLift }] }]}>
                 {loading ?
                     <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />
                     :
@@ -525,7 +529,7 @@ export default function RecoverSavingVault({ route }: Props) {
                         />
                     </>
                 }
-            </View>
+            </Animated.View>
         </ScreenLayout>
     );
 }

@@ -604,6 +604,17 @@ async function deriveAesKey(mnemonic: string): Promise<string> {
  *
  * Throws if the datadir is empty.
  */
+/**
+ * Lock artifacts are per-process runtime state, never wallet data. `LOCK`
+ * is the datadir lock file (bark 0.3.0's lock manager stores the holder
+ * PID in it; earlier cores used it as an sled/BDK lock). Backing one up or
+ * restoring one plants a foreign process's lock into the datadir.
+ */
+function isLockArtifact(relPath: string): boolean {
+    const base = relPath.split('/').pop() ?? relPath;
+    return base === 'LOCK' || base === '.lock' || base.endsWith('.lock');
+}
+
 async function _packDatadirIntoBlob(
     mnemonic: string,
 ): Promise<{ blob: string; createdAt: number; fileCount: number; fingerprint: string }> {
@@ -616,6 +627,13 @@ async function _packDatadirIntoBlob(
 
     const files: BackupFileEntry[] = [];
     for (const rel of relPaths) {
+        // Never capture lock artifacts. They're transient process state:
+        // bark 0.3.0's datadir lock manager records the holder PID and
+        // refuses to open a datadir another process "holds", so restoring
+        // a LOCK from some other device/process into a fresh datadir can
+        // brick the first open after restore. (Old backups in the wild
+        // already contain LOCK; the restore side skips them too.)
+        if (isLockArtifact(rel)) continue;
         const full = `${datadir}/${rel}`;
         // RNFS reads as base64 directly when format='base64' — avoids the
         // round-trip through utf-8 strings that would corrupt SQLite blobs.
@@ -1002,6 +1020,11 @@ export async function restoreArkBackupBlob(
     // Step 5: write files. mkdirp parents per entry — manifest doesn't
     // explicitly list directories.
     for (const f of manifest.files) {
+        // Existing backups in the wild captured the datadir LOCK file.
+        // Restoring it plants another process's lock into the fresh
+        // datadir, which bark 0.3.0's lock manager can refuse to open.
+        // Locks are runtime state; the wallet recreates what it needs.
+        if (isLockArtifact(f.path)) continue;
         const full = `${datadir}/${f.path}`;
         const lastSlash = full.lastIndexOf('/');
         if (lastSlash > 0) {

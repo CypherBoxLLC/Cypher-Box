@@ -71,6 +71,23 @@ import ArkOnchainRecoverSection from "./ArkOnchainRecoverSection";
 const VTXO_MAX_DAYS = 28;
 const VTXO_MAX_BLOCKS = Math.round((VTXO_MAX_DAYS * 24 * 60) / AVG_BLOCK_MINUTES);
 
+/**
+ * Expired = past its expiry height and not mid-round. The funds can no
+ * longer be refreshed, sent, or swept (the ASP can claim them at any
+ * time), so expired rows render greyed and non-actionable. Locked rows
+ * are excluded even when their daysLeft reads 0: a Locked VTXO's
+ * expiryHeight is the PRE-refresh leaf's expiry, which legitimately lags
+ * the chain tip while a recovery round is in flight — those keep the
+ * transient "Refreshing" treatment instead.
+ */
+function isExpiredCapsule(r: {
+    daysLeft: number;
+    pendingRound: boolean;
+    recoverability: 'backed-up' | 'needs-backup' | 'in-flight';
+}): boolean {
+    return r.daysLeft <= 0 && !r.pendingRound && r.recoverability !== 'in-flight';
+}
+
 type ExpiryStatus = "green" | "yellow" | "orange" | "red";
 
 interface ExpiryView {
@@ -324,15 +341,39 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
     // same two-line label since the user-visible behaviour is identical
     // (capsule is locked, unspendable until the operation commits).
     const isTransientForLabel = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
-    const labelColor = isTransientForLabel ? colors.ark.light : view.color;
+    // Expired rows render greyed and non-actionable: grey "Expired"
+    // label, grey amount, no recoverability suffix (a backup can't
+    // resurrect an expired VTXO), badge instead of refresh/select, and
+    // tap opens an explainer instead of toggling selection.
+    const isExpired = isExpiredCapsule(vtxo);
+    const labelColor = isTransientForLabel
+        ? colors.ark.light
+        : isExpired
+            ? '#888'
+            : view.color;
     const labelText = isTransientForLabel
         ? (isCancelling
             ? 'Cancelling\n(takes less than an hour)'
             : 'Refreshing or In-flight\n(takes less than an hour)')
-        : vtxo.unknownExpiry
-            ? vtxo.kind
-            : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
+        : isExpired
+            ? 'Expired'
+            : vtxo.unknownExpiry
+                ? vtxo.kind
+                : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
     const ringDaysLeft = isTransientForLabel ? VTXO_MAX_DAYS : vtxo.daysLeft;
+
+    // Explainer for expired capsules — the only "action" the row keeps.
+    // Copy matches the header tagline's "lost forever" framing so the
+    // user gets the same story everywhere.
+    const showExpiredExplainer = () => {
+        Alert.alert(
+            'Capsule expired',
+            `This ${vtxo.sats.toLocaleString()}-sat capsule reached its expiry without a successful refresh. ` +
+            'After expiry the Ark server can sweep the funds, and they can no longer be refreshed, sent, or recovered. ' +
+            'Refresh your remaining capsules before they expire, or they are lost forever.',
+            [{ text: 'OK' }],
+        );
+    };
 
     // Recoverability suffix — appended to the existing expiry/state line as
     // a second colored span separated by " - ". Three states drive both
@@ -419,13 +460,12 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
             )}
             {/* Outer row tap toggles selection. For ANY expired capsule
                 (dust or not) the action area renders EXPIRED instead of
-                a refresh icon / checkbox, so the tap has nothing useful
-                to toggle — disable it to avoid an invisible "selected"
-                state that the user can't see or act on. */}
+                a refresh icon / checkbox, so there's nothing useful to
+                toggle — the tap opens the expiry explainer instead. */}
             <TouchableOpacity
-                activeOpacity={vtxo.daysLeft <= 0 ? 1 : 0.7}
+                activeOpacity={0.7}
                 style={rowStyles.container}
-                onPress={vtxo.daysLeft <= 0 ? undefined : onPress}
+                onPress={isExpired ? showExpiredExplainer : onPress}
             >
                 {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
                     bump the size column from 1.8 → 2.8 so the time-left +
@@ -437,7 +477,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                 </View>
                 <View style={[rowStyles.size, { flex: 2.8 }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
-                        <Text bold style={rowStyles.value}>{BTCAmount}</Text>
+                        <Text bold style={isExpired ? [rowStyles.value, { color: '#888' }] : rowStyles.value}>{BTCAmount}</Text>
                         {/* Dust badge: capsules at or below the on-chain
                             dust limit can't be refreshed (ASP rejects)
                             and create stranded change if used in a send
@@ -454,7 +494,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                             anymore). Keeps the row's right edge
                             telling the user "this is dead" instead of
                             duplicating the badge in two places. */}
-                        {vtxo.sats <= ARK_VTXO_DUST_SATS && vtxo.daysLeft > 0 && (
+                        {vtxo.sats <= ARK_VTXO_DUST_SATS && !isExpired && (
                             <View
                                 style={{
                                     marginLeft: 6,
@@ -483,12 +523,14 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                         message is too important to compete with the days-
                         left text on the same line. Other recoverability
                         states keep the inline " - <text>" layout. */}
-                    {vtxo.recoverability === 'in-flight' ? (
+                    {vtxo.recoverability === 'in-flight' || isExpired ? (
                         // The two-line italic label above already says
                         // "Refreshing or In-flight\n(takes less than an hour)"
                         // so we drop the separate recoverabilityText
                         // suffix on this branch — it'd just say
-                        // "In-flight" again.
+                        // "In-flight" again. Expired rows drop the suffix
+                        // too: "Backed up" next to a dead capsule reads
+                        // as "recoverable", which it is not.
                         <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
                             {labelText}
                         </Text>
@@ -506,7 +548,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                         </View>
                     )}
                 </View>
-                {vtxo.daysLeft <= 0 ? (
+                {isExpired ? (
                     // Expired action area: no refresh icon, no checkbox —
                     // neither operation is reachable on a VTXO that's past
                     // its expiry height (ASP can sweep it at any time, and
@@ -514,7 +556,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                     // The badge expands to the combined width of the icon
                     // + select columns (flex 2). Dust-vs-non-dust changes
                     // only the label text — visual treatment is identical.
-                    // Outer row tap is also disabled below for both.
+                    // Outer row tap opens the expiry explainer for both.
                     <View
                         style={{
                             flex: 2,
@@ -961,15 +1003,15 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 recoverability,
             };
         });
-        // Sort: expired-dust capsules to the bottom of the list. They're
-        // functionally logs — past expiry, below the dust limit, no
-        // refresh path, no economic exit path. Above-the-fold prominence
-        // is wasted on them; users should see live capsules first and
-        // scroll past the carcasses. Everything else preserves the
-        // SDK's natural order.
+        // Sort: expired capsules (dust or not) to the bottom of the list.
+        // They're functionally logs — past expiry, no refresh path, no
+        // send path, no exit path. Above-the-fold prominence is wasted
+        // on them; users should see live capsules first and scroll past
+        // the carcasses. Everything else preserves the SDK's natural
+        // order.
         return mapped.sort((a, b) => {
-            const aDead = a.sats <= ARK_VTXO_DUST_SATS && a.daysLeft <= 0;
-            const bDead = b.sats <= ARK_VTXO_DUST_SATS && b.daysLeft <= 0;
+            const aDead = isExpiredCapsule(a);
+            const bDead = isExpiredCapsule(b);
             if (aDead !== bDead) return aDead ? 1 : -1;
             return 0;
         });
@@ -1141,6 +1183,21 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 SimpleToast.show(detail, SimpleToast.LONG);
                 return;
             }
+        }
+
+        // Expired capsules can't ride in a round (the ASP rejects expired
+        // inputs and the attempt would wedge). The row UI blocks selecting
+        // them, but a capsule can flip to expired between selection and
+        // tap, so gate here too.
+        const expiredSelected = rows.filter(
+            (r) => ids.includes(r.id) && isExpiredCapsule(r),
+        );
+        if (expiredSelected.length > 0) {
+            SimpleToast.show(
+                `${expiredSelected.length} capsule(s) already expired and can no longer be refreshed`,
+                SimpleToast.LONG,
+            );
+            return;
         }
 
         // Refusing to refresh a VTXO that's already Locked in a pending
@@ -1729,8 +1786,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 shortfall: 0,
             };
         }
+        // Fillers must be LIVE too — an expired non-dust capsule in the
+        // input set would poison the whole consolidation round the same
+        // way expired dust would.
         const nonDust = rows
-            .filter((r) => r.sats > ARK_VTXO_DUST_SATS && !r.pendingRound)
+            .filter((r) => r.sats > ARK_VTXO_DUST_SATS && !r.pendingRound && r.daysLeft > 0)
             .sort((a, b) => a.sats - b.sats);
         const fillers: typeof rows = [];
         let total = dustTotal;
