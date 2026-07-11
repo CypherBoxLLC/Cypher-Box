@@ -126,7 +126,7 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
         ],
       },
       {
-        argument: { url: `bluewallet:BITCOIN:${suffix}BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo` },
+        argument: { url: `cypherbox:BITCOIN:${suffix}BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo` },
         expected: [
           'SendDetailsRoot',
           { screen: 'SendDetails', params: { uri: 'BITCOIN:BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo' } },
@@ -148,7 +148,7 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
       },
       {
         argument: {
-          url: `bluewallet:lightning:${suffix}lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde`,
+          url: `cypherbox:lightning:${suffix}lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde`,
         },
         expected: [
           'ScanLndInvoiceRoot',
@@ -198,7 +198,7 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
       },
       {
         argument: {
-          url: 'bluewallet:setelectrumserver?server=electrum1.bluewallet.io%3A443%3As',
+          url: 'cypherbox:setelectrumserver?server=electrum1.bluewallet.io%3A443%3As',
         },
         expected: [
           'ElectrumSettings',
@@ -209,7 +209,7 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
       },
       {
         argument: {
-          url: 'bluewallet:setlndhuburl?url=https%3A%2F%2Flndhub.herokuapp.com',
+          url: 'cypherbox:setlndhuburl?url=https%3A%2F%2Flndhub.herokuapp.com',
         },
         expected: [
           'LightningSettings',
@@ -443,7 +443,7 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
   it('can work with some deeplink actions', () => {
     assert.strictEqual(DeeplinkSchemaMatch.getServerFromSetElectrumServerAction('sgasdgasdgasd'), false);
     assert.strictEqual(
-      DeeplinkSchemaMatch.getServerFromSetElectrumServerAction('bluewallet:setelectrumserver?server=electrum1.bluewallet.io%3A443%3As'),
+      DeeplinkSchemaMatch.getServerFromSetElectrumServerAction('cypherbox:setelectrumserver?server=electrum1.bluewallet.io%3A443%3As'),
       'electrum1.bluewallet.io:443:s',
     );
     assert.strictEqual(
@@ -460,11 +460,11 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
     );
 
     assert.strictEqual(
-      DeeplinkSchemaMatch.getUrlFromSetLndhubUrlAction('bluewallet:setlndhuburl?url=https%3A%2F%2Flndhub.herokuapp.com'),
+      DeeplinkSchemaMatch.getUrlFromSetLndhubUrlAction('cypherbox:setlndhuburl?url=https%3A%2F%2Flndhub.herokuapp.com'),
       'https://lndhub.herokuapp.com',
     );
     assert.strictEqual(
-      DeeplinkSchemaMatch.getUrlFromSetLndhubUrlAction('bluewallet:setlndhuburl?url=https%3A%2F%2Flndhub.herokuapp.com%3A443'),
+      DeeplinkSchemaMatch.getUrlFromSetLndhubUrlAction('cypherbox:setlndhuburl?url=https%3A%2F%2Flndhub.herokuapp.com%3A443'),
       'https://lndhub.herokuapp.com:443',
     );
     assert.strictEqual(
