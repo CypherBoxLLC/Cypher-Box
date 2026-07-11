@@ -87,7 +87,11 @@
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native(-.*)?|@react-native(-community)?)/)"
     ],
+    "moduleNameMapper": {
+      "\\.(bmp|gif|jpg|jpeg|mp4|png|psd|svg|webp)$": "<rootDir>/tests/__mocks__/imageMock.js"
+    },
     "setupFiles": [
+      "./node_modules/react-native-gesture-handler/jestSetup.js",
       "./tests/setup.js"
     ],
     "watchPathIgnorePatterns": [

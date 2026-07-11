@@ -1,151 +1,37 @@
 name: Tests
 
-# https://dev.to/edvinasbartkus/running-react-native-detox-tests-for-ios-and-android-on-github-actions-2ekn
-# https://medium.com/@reime005/the-best-ci-cd-for-react-native-with-e2e-support-4860b4aaab29
-
-env:
-  TRAVIS: 1
-  HD_MNEMONIC: ${{ secrets.HD_MNEMONIC }}
-  HD_MNEMONIC_BIP84: ${{ secrets.HD_MNEMONIC_BIP84 }}
+# Runs the unit suite (tests/unit) on every PR. The BlueWallet-inherited
+# Detox/emulator e2e job that used to live here had been red on every run
+# (deprecated upload-artifact@v2 failed the job at startup, and the specs
+# target BlueWallet flows this app no longer has), so it was removed in
+# favour of a check that can actually fail for a real reason. Integration
+# tests (tests/integration) hit live Electrum servers and stay local-only.
 
 on: [pull_request]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    runs-on: macos-latest
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - name: Checkout project
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Specify node version
-        uses: actions/setup-node@v2-beta
+      - name: Set up node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: 18
+          node-version: 22
+          cache: npm
 
-      - name: Use npm caches
-        uses: actions/cache@v3
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Use node_modules caches
-        id: cache-nm
-        uses: actions/cache@v3
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-nm-${{ hashFiles('package-lock.json') }}
-
-      - name: Install node_modules
-        if: steps.cache-nm.outputs.cache-hit != 'true'
-        run: npm install
-
-    # - name: Run tests
-    #  run: npm test || npm test || npm test
-    # env:
-    #  BIP47_HD_MNEMONIC: ${{ secrets.BIP47_HD_MNEMONIC}}
-    # HD_MNEMONIC: ${{ secrets.HD_MNEMONIC }}
-    #HD_MNEMONIC_BIP49: ${{ secrets.HD_MNEMONIC_BIP49 }}
-    #HD_MNEMONIC_BIP49_MANY_TX: ${{ secrets.HD_MNEMONIC_BIP49_MANY_TX }}
-    #HD_MNEMONIC_BIP84: ${{ secrets.HD_MNEMONIC_BIP84 }}
-    #HD_MNEMONIC_BREAD: ${{ secrets.HD_MNEMONIC_BREAD }}
-    #FAULTY_ZPUB: ${{ secrets.FAULTY_ZPUB }}
-    #MNEMONICS_COBO: ${{ secrets.MNEMONICS_COBO }}
-    #MNEMONICS_COLDCARD: ${{ secrets.MNEMONICS_COLDCARD }}
-
-  e2e:
-    runs-on: macos-latest
-    steps:
-      - name: checkout
-        uses: actions/checkout@v3
-
-      - name: Specify node version
-        uses: actions/setup-node@v2-beta
-        with:
-          node-version: 18
-
-      - name: Use gradle caches
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Use npm caches
-        uses: actions/cache@v3
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
-
-      - name: Install node_modules
-        run: npm install
-
-      - name: Use specific Java version for sdkmanager to work
-        uses: actions/setup-java@v2
-        with:
-          distribution: "temurin"
-          java-version: "11"
-
-      - name: Build
-        run: npm run e2e:release-build
-
-      - name: Test attempt 1
-        uses: reactivecircus/android-emulator-runner@v2
-        continue-on-error: true
-        id: test1
-        with:
-          api-level: 31
-          avd-name: Pixel_API_29_AOSP
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -partition-size 2047
-          arch: x86_64
-          script: npm run e2e:release-test
-
-      - name: Test attempt 2
-        uses: reactivecircus/android-emulator-runner@v2
-        continue-on-error: true
-        id: test2
-        if: steps.test1.outcome != 'success'
-        with:
-          api-level: 31
-          avd-name: Pixel_API_29_AOSP
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -partition-size 2047
-          arch: x86_64
-          script: npm run e2e:release-test
-
-      - name: Test attempt 3
-        uses: reactivecircus/android-emulator-runner@v2
-        continue-on-error: true
-        id: test3
-        if: steps.test1.outcome != 'success' && steps.test2.outcome != 'success'
-        with:
-          api-level: 31
-          avd-name: Pixel_API_29_AOSP
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -partition-size 2047
-          arch: x86_64
-          script: npm run e2e:release-test
-
-      - name: Test attempt 4
-        uses: reactivecircus/android-emulator-runner@v2
-        if: steps.test1.outcome != 'success' && steps.test2.outcome != 'success' && steps.test3.outcome != 'success'
-        with:
-          api-level: 31
-          avd-name: Pixel_API_29_AOSP
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none -partition-size 2047
-          arch: x86_64
-          script: npm run e2e:release-test
-
-      - uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: e2e-test-videos
-          path: ./artifacts/
+      - name: Unit tests
+        run: npm run unit
