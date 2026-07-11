@@ -6,4 +6,5 @@ export type {ArkRestoreBootStatus} from './useArkRestoreOnBoot';
 export {default as useArkExitDestinationBackfill} from './useArkExitDestinationBackfill';
 export {default as useArkoorReceivePrompt} from './useArkoorReceivePrompt';
 export {default as useEasedProgress} from './useEasedProgress';
+export {default as useKeyboardLift} from './useKeyboardLift';
 export {CarouselPageVisibilityContext} from './carouselPageVisibility';
