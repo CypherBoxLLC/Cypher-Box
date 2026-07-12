@@ -64,7 +64,7 @@ export default function CopyInvoice({ route }: Props) {
         <ScreenLayout showToolbar title='Copy Invoice'>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text bold h1>{route?.params?.value}</Text>
+                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1}>{route?.params?.value}</Text>
                     <Text bold style={styles.usd}>{route?.params?.converted}</Text>
                     {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
                     <View style={{ margin: 20, padding: 30, backgroundColor: 'white', borderRadius: 30 }}>
