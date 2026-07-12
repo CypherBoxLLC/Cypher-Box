@@ -41,16 +41,18 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
             SimpleToast.show("Please enter an amount", SimpleToast.SHORT);
             return;
         }
-        // Resolve the sat amount from whichever mode the keyboard last wrote
-        // to. Both `sats` and `usd` are kept in sync by CustomKeyboard's
-        // onchange, but we defend against a torn state by recomputing from
-        // `usd` when the user submitted in USD mode. Integer-rounded so the
-        // SDK doesn't reject a fractional sat.
+        // Resolve the sat amount. CustomKeyboard writes the raw typed value to
+        // `sats` and the converted counterpart to `usd`, so in fiat mode `usd`
+        // ALREADY holds the sat amount (and `sats` holds the dollars) — the same
+        // contract the CoinOS CreateInvoice sibling reads as
+        // `isSats ? Number(sats) : Number(usd)`. The old code re-divided that
+        // already-in-sats `usd` value by the rate and multiplied by 1e8 again,
+        // double-converting: a $100 fiat entry asked the ASP for ~1.1 BTC
+        // (~1000x too much), which it can't invoice — the "Failed to create Ark
+        // invoice" the user hit. Round because the fiat-mode value carries 2
+        // decimals from the keyboard's toFixed.
         const rate = Number(matchedRate) || 0;
-        let satsAmount = Number(sats);
-        if (!isSats && rate > 0 && usd) {
-            satsAmount = Math.round((Number(usd) / rate) * 100000000);
-        }
+        const satsAmount = Math.round(isSats ? Number(sats) : Number(usd));
         if (!Number.isFinite(satsAmount) || satsAmount <= 0) {
             SimpleToast.show("Please enter a valid amount", SimpleToast.SHORT);
             return;
