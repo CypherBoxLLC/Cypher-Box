@@ -4,6 +4,7 @@ import {
     LightningSendStatus_Tags,
     validateArkAddress,
 } from '@secondts/bark-react-native';
+import bolt11 from 'bolt11';
 
 import { ensureArkWalletHandleReady } from './restore';
 import { fetchArkBalance } from './balance';
@@ -173,10 +174,48 @@ async function waitForArkLightningSettlement(
     opts: { timeoutMs?: number; pollMs?: number } = {},
 ): Promise<'settled' | 'failed' | 'pending'> {
     const timeoutMs = opts.timeoutMs ?? 75_000;
-    const pollMs = opts.pollMs ?? 3_000;
+    // Poll fast: a Lightning payment settles in seconds, and the authoritative
+    // check below reports Paid the moment it does, so keep the send screen
+    // snappy instead of waiting whole seconds between checks.
+    const pollMs = opts.pollMs ?? 1_000;
     const deadline = Date.now() + timeoutMs;
 
+    // Decode the payment hash so we can poll `checkLightningPayment` — the SAME
+    // authoritative settlement signal the background pending-send driver uses
+    // (see driveArkPendingLightningSends). The movement-history string match
+    // below only matches when the invoice string appears in `sentToAddresses`,
+    // which is true for ln-invoice but NOT for ln-address / ln-offer (their
+    // movement records the address/offer, not the resolved bolt11). That made
+    // the wait time out to 'pending' for ln-address sends that had actually
+    // settled — the user saw a "still confirming" failure for a Paid payment.
+    let paymentHash: string | null = null;
+    try {
+        const tag = bolt11.decode(invoice).tags.find((t) => t.tagName === 'payment_hash');
+        paymentHash = typeof tag?.data === 'string' ? tag.data : null;
+    } catch {
+        // `invoice` isn't a decodable bolt11 (e.g. an Unknown-status raw
+        // address/offer) — fall back to the history match below.
+    }
+
     while (Date.now() < deadline) {
+        // 1) Authoritative success: checkLightningPayment reports Paid as soon as
+        //    the ASP confirms settlement, for every destination kind. This is
+        //    what makes ln-address sends resolve correctly and fast. It only
+        //    reports Unknown/InProgress/Paid — never failure — so terminal
+        //    failure is still detected via the movement history below.
+        if (paymentHash) {
+            try {
+                const st = await handle.checkLightningPayment(paymentHash, false);
+                if (st.tag === LightningSendStatus_Tags.Paid) {
+                    if (__DEV__) console.log('[Ark send] settlement confirmed via checkLightningPayment');
+                    return 'settled';
+                }
+            } catch (err) {
+                if (__DEV__) console.warn('[Ark send] checkLightningPayment poll error (continuing):', err);
+            }
+        }
+        // 2) Fallback match + terminal failure: the movement history carries the
+        //    'failed'/'canceled' state that checkLightningPayment cannot report.
         try {
             const movements = await handle.history();
             const m = movements
