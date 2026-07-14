@@ -1,0 +1,131 @@
+name: Android release build (real-config, unsigned)
+
+# Builds the SHIPPABLE Android AAB entirely in CI, replacing the throwaway
+# self-hosted amd64 box. It is UNSIGNED on purpose: the upload key never touches
+# CI. Download the artifact and sign locally with the YubiKey (BUILD.md section
+# 6) before uploading to Google Play.
+#
+# What it does, in order:
+#   1. Build the placeholder-config AAB with NO secrets present — byte-identical
+#      to build-verify.yml, i.e. the public reproducibility reference.
+#   2. Inject the two real build-config values from repo secrets and build again
+#      -> the real-config, shippable AAB.
+#   3. Shred the injected files from the workspace.
+#   4. Assert the two AABs differ ONLY in the four config-injection entries
+#      (index.android.bundle, classes2.dex, resources.pb, baseline.prof), so the
+#      reproducibility guarantee is proven automatically on every release build.
+#
+# Only two values are injected, both already extractable from the shipped app,
+# so the marginal exposure of holding them as Actions secrets is minimal:
+#   - GOOGLE_WEB_CLIENT_ID : a Google OAuth 2.0 client id of type Web. Public by
+#                            design (baked into every build, sent in every OAuth
+#                            request). Consumed via react-native-config.
+#   - RELAY_API_KEY        : the push-relay X-API-Key, already inlined in every
+#                            shipped APK's JS bundle.
+# No signing key, no keystore, no wallet material is ever present.
+
+on:
+  workflow_dispatch: {} # release action — dispatch on the release commit/tag
+
+# Least privilege: read the repo. No write, no deploy scope.
+permissions:
+  contents: read
+
+jobs:
+  android-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Free runner disk
+        run: |
+          set -eux
+          df -h /
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/local/share/boost \
+            "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}" || true
+          sudo apt-get clean || true
+          df -h /
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Build placeholder AAB (public reproducibility reference)
+        # No secrets present, so the build falls back to the .example config and
+        # matches build-verify.yml byte-for-byte.
+        run: |
+          set -eux
+          make repro-build
+          cp out/app-release.aab /tmp/ci-reference.aab
+          shasum -a 256 /tmp/ci-reference.aab
+
+      - name: Inject real build config from secrets
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          RELAY_API_KEY: ${{ secrets.RELAY_API_KEY }}
+        run: |
+          # No `-x`: never echo the values. GitHub also masks them in logs.
+          set -eu
+          if [ -z "${GOOGLE_WEB_CLIENT_ID}" ] || [ -z "${RELAY_API_KEY}" ]; then
+            echo "Missing repo secret GOOGLE_WEB_CLIENT_ID and/or RELAY_API_KEY" >&2
+            exit 1
+          fi
+          printf 'GOOGLE_WEB_CLIENT_ID=%s\n' "$GOOGLE_WEB_CLIENT_ID" > .env
+          printf 'export const RELAY_API_KEY = "%s";\n' "$RELAY_API_KEY" > blue_modules/secrets.ts
+          echo "injected .env + blue_modules/secrets.ts"
+
+      - name: Build real-config AAB (shippable, unsigned)
+        run: |
+          set -eux
+          make repro-build
+          cp out/app-release.aab /tmp/real.aab
+          shasum -a 256 /tmp/real.aab
+
+      - name: Shred injected secrets from the workspace
+        if: always()
+        run: rm -f .env blue_modules/secrets.ts
+
+      - name: Attributable diff — only the 4 config entries may differ
+        run: |
+          set -eu
+          rm -rf /tmp/ref /tmp/realx && mkdir -p /tmp/ref /tmp/realx
+          (cd /tmp/ref && unzip -q /tmp/ci-reference.aab)
+          (cd /tmp/realx && unzip -q /tmp/real.aab)
+          echo "diff -rq (reference vs real-config):"
+          diff -rq /tmp/ref /tmp/realx || true
+          UNEXPECTED="$(diff -rq /tmp/ref /tmp/realx | grep -vE 'index\.android\.bundle|classes2\.dex|resources\.pb|baseline\.prof' || true)"
+          if [ -n "$UNEXPECTED" ]; then
+            echo "REJECT: differences beyond the 4 config-injection entries:" >&2
+            echo "$UNEXPECTED" >&2
+            exit 1
+          fi
+          echo "OK: only index.android.bundle, classes2.dex, resources.pb, baseline.prof differ."
+
+      - name: Assemble artifacts + checksums
+        run: |
+          set -eux
+          rm -rf out-release && mkdir -p out-release
+          cp /tmp/real.aab       out-release/cypherbox-real-config-unsigned.aab
+          cp /tmp/ci-reference.aab out-release/cypherbox-ci-reference.aab
+          (cd out-release && shasum -a 256 *.aab | tee SHA256SUMS.txt)
+          {
+            echo '### Android release build'
+            echo
+            echo 'Sign `cypherbox-real-config-unsigned.aab` locally, then upload to Play.'
+            echo '```'
+            cat out-release/SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: cypherbox-android-release-${{ github.sha }}
+          path: out-release/
+          if-no-files-found: error
+          retention-days: 90
