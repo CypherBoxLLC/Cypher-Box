@@ -71,6 +71,15 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
   const [bankMethods, setBankMethods] = useState<any[]>([]);
 
   useEffect(() => {
+    // The Bark vault reuses this Settings screen but renders none of the Strike
+    // data (no profile, fiat limits, or bank methods — see the `isArk` branch
+    // below), so skip the Strike fetches entirely. Otherwise the vault fires
+    // getStrikeProfile / getStrikeLimits / getBankPaymentMethods on mount, which
+    // error in the background whenever Strike isn't logged in.
+    if (isArk) {
+      setIsLoading(false);
+      return;
+    }
     if (!receiveType) {
       loadStrikeData();
     } else {

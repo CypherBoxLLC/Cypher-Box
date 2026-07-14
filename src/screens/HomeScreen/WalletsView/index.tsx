@@ -477,7 +477,10 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         hasArkWallet;
 
     const walletTabsMap = {
-        COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency={currency} isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
+        // CoinOS is USD-denominated (convertedRate is the USD figure), so its
+        // symbol is always "$", not the Strike account currency — same fix as
+        // the Bark card below.
+        COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency="USD" isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
         STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currencyStrike} isLoading={isLoading} matchedRateStrike={matchedRateStrike} strikeConvertedBalance={strikeConvertedBalance} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
         // Ark-only users (no Lightning) keep the in-card Receive/Send pair
         // because `useSharedButtons` is false in that case. When Lightning
@@ -494,7 +497,12 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 <View style={{ marginTop: arkCardExtraOffsetPt }}>
                     <ArkWallet
                         convertedRate={convertedRate}
-                        currency={currency}
+                        // Bark is USD-denominated (arkConvertedRate uses the USD
+                        // oracle), so its symbol is always "$", never the Strike
+                        // account currency — passing `currency` here showed a EUR
+                        // symbol on a USD number for European Strike accounts, and
+                        // kept it after Strike logout until relaunch.
+                        currency="USD"
                         isLoading={isLoading}
                         matchedRate={matchedRate}
                         refRBSheet={refRBSheet}
