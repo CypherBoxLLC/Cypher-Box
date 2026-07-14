@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import bolt11 from 'bolt11';
 import {
     Clipboard,
+    Keyboard,
     ScrollView,
     TextInput,
     TouchableOpacity,
@@ -274,6 +275,13 @@ export default function ArkSendScreen({ route }: Props) {
                         autoCorrect={false}
                         spellCheck={false}
                         multiline
+                        // A destination is a single line, so the return key
+                        // should dismiss the keyboard rather than insert a
+                        // newline. `blurOnSubmit` overrides the multiline default
+                        // (which keeps the keyboard up until you tap outside).
+                        returnKeyType="done"
+                        blurOnSubmit={true}
+                        onSubmitEditing={() => Keyboard.dismiss()}
                     />
                     <TouchableOpacity style={styles.pasteBtn} onPress={handlePaste}>
                         <Text style={styles.pasteBtnText}>PASTE</Text>

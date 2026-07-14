@@ -13,7 +13,7 @@ import {
   LogBox,
 } from 'react-native';
 import { NavigationContainer, CommonActions } from '@react-navigation/native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { navigationRef } from './NavigationService';
 import * as NavigationService from './NavigationService';
 import { Chain } from './models/bitcoinUnits';
@@ -257,8 +257,12 @@ const App = () => {
     }
   }, []);
 
+  // initialMetrics gives the provider synchronous safe-area insets on the very
+  // first frame. Without it, insets resolve a frame or two late, so screens
+  // render flush to the top and then visibly drop down once the top inset
+  // applies (the "lifted then settles" jump on navigation).
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <View style={styles.root}>
         <NavigationContainer ref={navigationRef} theme={colorScheme === 'dark' ? BlueDarkTheme : BlueDefaultTheme}>
           <InitRoot />
