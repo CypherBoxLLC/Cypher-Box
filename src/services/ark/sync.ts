@@ -1,4 +1,14 @@
+import useAuthStore from '@Cypher/stores/authStore';
+
 import { getArkOnchainHandle, getArkWalletHandle, rotateArkOnchainEsplora, setLastOnchainBalanceSats } from './walletHandle';
+
+// Flat board-fee headroom (sats) subtracted from the boardable surplus when an
+// exit-fee reserve is armed, so boardAmount's own fee can't erode the reserve
+// regardless of whether it deducts fee from the boarded amount or the leftover.
+const BOARD_FEE_HEADROOM_SATS = 1500;
+// Server board minimum (ark.second.tech). A surplus below this can never board,
+// so we hold it on-chain rather than retry-storming boardAmount against it.
+const MIN_BOARD_SATS = 50_000;
 
 /**
  * Pull round finalizations, incoming payments, and blockchain state from
@@ -74,7 +84,52 @@ export async function syncArkWallet(): Promise<boolean> {
             // second clause prevents double-firing while a previous board
             // is mid-round and bark has not yet observed the input
             // consumption back from BDK's scanner.
-            if (onchainBal.confirmedSats > 0n && arkBal.pendingBoardSats === 0n) {
+            //
+            // Reserve/exit awareness (fund-safety): the unilateral-exit CPFP
+            // fees are paid from THIS on-chain wallet. Two rules keep that fee
+            // money from being auto-boarded away:
+            //   1. While an exit is in progress, board NOTHING, since every VTXO is
+            //      already in exit state and the on-chain balance is fee money.
+            //      The guard lives HERE (not only in useArkSync's exit branch)
+            //      because ArkCapsules calls syncArkWallet() directly on a
+            //      stuck-round cancel, unguarded by the exit-in-progress flag.
+            //   2. When the user has armed an exit-fee reserve, keep that many
+            //      sats on-chain: board only the EXCESS above it (boardAmount),
+            //      never boardAll. reserveSats === 0 (every user who hasn't
+            //      touched the exit-funding flow) keeps the exact old boardAll
+            //      behavior.
+            const authState = useAuthStore.getState();
+            const reserveSats = authState.arkExitFeeReserveSats ?? 0;
+            const canBoard =
+                !authState.arkExitInProgress &&
+                onchainBal.confirmedSats > 0n &&
+                arkBal.pendingBoardSats === 0n;
+            if (canBoard && reserveSats > 0) {
+                // Board only the surplus above the reserve. Subtract a flat
+                // board-fee headroom so boardAmount's own fee can't dip the
+                // leftover below the reserve. Only board when the surplus
+                // clears the server board minimum (a smaller surplus can never
+                // board and would retry-storm), otherwise hold it on-chain.
+                const confirmed = Number(onchainBal.confirmedSats);
+                const excess = confirmed - reserveSats - BOARD_FEE_HEADROOM_SATS;
+                if (excess >= MIN_BOARD_SATS) {
+                    console.log(
+                        '[Ark sync] auto-board (reserve armed): boarding surplus',
+                        excess, 'sats; keeping', reserveSats, 'on-chain for exit fees',
+                    );
+                    try {
+                        await handle.boardAmount(onchain, BigInt(excess));
+                        console.log('[Ark sync] auto-board: boardAmount initiated');
+                    } catch (boardErr) {
+                        console.warn('[Ark sync] auto-board: boardAmount failed:', boardErr);
+                    }
+                } else if (__DEV__) {
+                    console.log(
+                        '[Ark sync] auto-board held: surplus', excess,
+                        'below board minimum; keeping funds on-chain for exit fees',
+                    );
+                }
+            } else if (canBoard) {
                 console.log(
                     '[Ark sync] auto-board: detected',
                     String(onchainBal.confirmedSats),
@@ -86,6 +141,8 @@ export async function syncArkWallet(): Promise<boolean> {
                 } catch (boardErr) {
                     console.warn('[Ark sync] auto-board: boardAll failed:', boardErr);
                 }
+            } else if (authState.arkExitInProgress && onchainBal.confirmedSats > 0n && __DEV__) {
+                console.log('[Ark sync] auto-board skipped: exit in progress, holding on-chain funds for exit fees');
             }
 
             // Progress any pending boards through their phases. No-op when

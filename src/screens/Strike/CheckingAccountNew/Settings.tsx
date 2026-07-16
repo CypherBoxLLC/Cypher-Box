@@ -31,10 +31,14 @@ import styles from "./styles";
 import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods } from "@Cypher/api/strikeAPIs";
 import {
   AUTO_BACKUP_PATH,
+  computeExitFeeReserveSats,
   connectGoogleDrive,
+  convertToExitFees,
   disconnectGoogleDrive,
+  estimateExitFeeConvert,
   fetchPendingExitsTotalSats,
   findAutoBackupForRecovery,
+  getArkOnchainAddress,
   getAutoBackupPath,
   getCachedArkBackupFingerprint,
   getDriveBackupInfo,
@@ -43,12 +47,14 @@ import {
   getLastLocalBackupNote,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
+  probeAspReachable,
   readArkSeedPhrase,
   resetArkWalletState,
   setArkBackgroundRefreshEnabled,
   startArkEmergencyExit,
   writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
+import type { ExitFeeConvertEstimate } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -313,12 +319,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     clearArkAuth,
     walletID,
     coldStorageWalletID,
+    arkBalanceDetail,
     arkExitInProgress,
     arkExitDestinationAddress,
     arkExitStartedAt,
+    arkExitFeeReserveSats,
     setArkExitInProgress,
     setArkExitDestinationAddress,
     setArkExitStartedAt,
+    setArkExitFeeReserveSats,
   } = useAuthStore() as any;
   const arkIosBackupReminderActive = useAuthStore((s) => s.arkIosBackupReminderActive);
   const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
@@ -857,6 +866,45 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const [exitStarting, setExitStarting] = useState(false);
   const [pendingExitSats, setPendingExitSats] = useState<number | null>(null);
 
+  // --- Exit-fee funding gate ---
+  //
+  // The unilateral exit pays its on-chain CPFP fees from a SEPARATE bark
+  // on-chain (BDK) wallet that a Lightning-only user never funds (holds 0
+  // sats), so an unfunded exit silently stalls. We recommend an on-chain
+  // reserve sized from the VTXOs' own exit weights (computeExitFeeReserveSats)
+  // and gate Emergency Exit until the on-chain balance
+  // (arkBalanceDetail.onchainBoardingSats, refreshed each sync tick) meets it.
+  // `null` while the first computation is in flight.
+  const [recommendedReserveSats, setRecommendedReserveSats] = useState<number | null>(null);
+  const [exitFundingOpen, setExitFundingOpen] = useState(false);
+  const [fundingTab, setFundingTab] = useState<'receive' | 'convert'>('receive');
+  const [onchainFundAddr, setOnchainFundAddr] = useState<string | null>(null);
+  // ASP reachability for the CONVERT (cooperative-offboard) tab. null = probing.
+  const [aspReachable, setAspReachable] = useState<boolean | null>(null);
+  const [convertAmount, setConvertAmount] = useState('');
+  const [convertEst, setConvertEst] = useState<ExitFeeConvertEstimate | null>(null);
+  const [fundingBusy, setFundingBusy] = useState(false);
+  // Editable reserve-target field (sats) in the funding modal. Lets the user
+  // hold more than the recommendation (bigger fee-spike buffer) or less.
+  const [reserveTargetInput, setReserveTargetInput] = useState('');
+
+  const onchainReserveSats: number = arkBalanceDetail?.onchainBoardingSats ?? 0;
+  // Reserve target: the user's chosen hold amount if they've set/armed one
+  // (persisted), otherwise the computed recommendation. Drives the gate, the
+  // funded state, and (via arkExitFeeReserveSats) how much auto-board keeps
+  // on-chain. While recommended is still null (first compute) and nothing is
+  // armed, the target is 0 so we don't gate; the button shows "checking".
+  const reserveTargetSats: number =
+    (arkExitFeeReserveSats ?? 0) > 0 ? arkExitFeeReserveSats : (recommendedReserveSats ?? 0);
+  const exitFeeGated = reserveTargetSats > 0 && onchainReserveSats < reserveTargetSats;
+  const exitFeeShortfallSats = Math.max(0, reserveTargetSats - onchainReserveSats);
+  const exitFeeFunded = reserveTargetSats > 0 && onchainReserveSats >= reserveTargetSats;
+  // The user armed a target below the recommended safe amount (warn them).
+  const reserveBelowRecommended =
+    (arkExitFeeReserveSats ?? 0) > 0 &&
+    (recommendedReserveSats ?? 0) > 0 &&
+    arkExitFeeReserveSats < (recommendedReserveSats ?? 0);
+
   // Reset transient picker state whenever the modal closes so the next open
   // starts from category step with no stale selection / checkbox carry-over.
   useEffect(() => {
@@ -894,6 +942,166 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       clearInterval(id);
     };
   }, [arkExitInProgress]);
+
+  // Compute the recommended exit-fee reserve when the actions tab is showing
+  // and no exit is in flight. computeExitFeeReserveSats runs the JS-thread-
+  // blocking allVtxos() call, so it lives in an effect (off the render path),
+  // keyed on the spendable balance so it re-sizes when the VTXO set changes.
+  useEffect(() => {
+    if (view !== 'actions' || arkExitInProgress) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await computeExitFeeReserveSats();
+        if (!cancelled) setRecommendedReserveSats(r.recommendedSats);
+      } catch (err) {
+        // Leave any prior recommendation in place; a transient failure
+        // shouldn't flip a gated wallet to ungated.
+        if (__DEV__) console.warn('[Ark exit-funding] reserve compute failed:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, arkExitInProgress, arkBalanceDetail?.spendableSats]);
+
+  // When the funding modal opens: fetch a fresh on-chain address (RECEIVE tab)
+  // and probe ASP reachability (gates the CONVERT tab).
+  useEffect(() => {
+    if (!exitFundingOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const addr = await getArkOnchainAddress();
+        if (!cancelled) setOnchainFundAddr(addr);
+      } catch (err) {
+        if (__DEV__) console.warn('[Ark exit-funding] onchain address fetch failed:', err);
+      }
+      try {
+        const ok = await probeAspReachable();
+        if (!cancelled) setAspReachable(ok);
+      } catch {
+        if (!cancelled) setAspReachable(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [exitFundingOpen]);
+
+  // Debounced fee estimate for the CONVERT tab. Skipped when the ASP is known
+  // unreachable (the offboard would fail) or the amount is empty/invalid.
+  useEffect(() => {
+    if (!exitFundingOpen || fundingTab !== 'convert') return;
+    const amt = parseInt(convertAmount, 10);
+    if (!Number.isFinite(amt) || amt <= 0 || aspReachable === false) {
+      setConvertEst(null);
+      return;
+    }
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      try {
+        const est = await estimateExitFeeConvert(amt);
+        if (!cancelled) setConvertEst(est);
+      } catch (err) {
+        if (!cancelled) setConvertEst(null);
+        if (__DEV__) console.warn('[Ark exit-funding] convert estimate failed:', err);
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [exitFundingOpen, fundingTab, convertAmount, aspReachable]);
+
+  // Open the funding flow. ARM the reserve synchronously FIRST (before any
+  // address is shown or deposit can confirm), so an incoming deposit isn't
+  // auto-boarded back into a VTXO before the reserve is set (sync.ts reads
+  // arkExitFeeReserveSats to decide how much to keep on-chain).
+  const openExitFunding = () => {
+    // Seed the target from the user's current armed reserve if any, else the
+    // recommendation. Arm it so incoming deposits up to the target aren't
+    // auto-boarded away (sync.ts reads arkExitFeeReserveSats).
+    const current = (arkExitFeeReserveSats ?? 0) > 0 ? arkExitFeeReserveSats : (recommendedReserveSats ?? 0);
+    if (current > 0) setArkExitFeeReserveSats(current);
+    setReserveTargetInput(current > 0 ? String(current) : '');
+    setFundingTab('receive');
+    setConvertAmount(String(Math.max(0, current - onchainReserveSats)));
+    setConvertEst(null);
+    setAspReachable(null);
+    setOnchainFundAddr(null);
+    setExitFundingOpen(true);
+  };
+
+  // Apply an edited reserve target: this is how the user holds MORE than the
+  // recommendation (bigger buffer) or less. Arms arkExitFeeReserveSats so
+  // auto-board keeps exactly this much on-chain and boards any surplus.
+  const applyReserveTarget = () => {
+    const t = parseInt(reserveTargetInput, 10);
+    if (!Number.isFinite(t) || t < 0) {
+      setReserveTargetInput(String(reserveTargetSats));
+      return;
+    }
+    setArkExitFeeReserveSats(t);
+    setConvertAmount(String(Math.max(0, t - onchainReserveSats)));
+  };
+
+  // Release the reserve: stop holding on-chain funds for exit fees. If the
+  // balance clears the 50k board minimum it boards back into Ark on the next
+  // round; below that it stays on-chain and the user recovers it to a Bitcoin
+  // address from the Capsules tab (the ASP won't board sub-50k deposits).
+  const doReleaseReserve = () => {
+    Alert.alert(
+      'Release exit fees',
+      `Stop reserving ${onchainReserveSats.toLocaleString()} sats for Emergency Exit fees?\n\n` +
+        (onchainReserveSats >= 50000
+          ? 'They will board back into your Ark balance on the next round.'
+          : 'They are below the 50,000-sat board minimum, so they cannot go back into a capsule. They stay on-chain, where you can recover them to a Bitcoin address from the Capsules tab.'),
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Release',
+          style: 'destructive',
+          onPress: () => {
+            setArkExitFeeReserveSats(0);
+            setExitFundingOpen(false);
+            SimpleToast.show('Exit fee reserve released.', SimpleToast.LONG);
+          },
+        },
+      ],
+    );
+  };
+
+  const doConvertToExitFees = async () => {
+    const amt = parseInt(convertAmount, 10);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      SimpleToast.show('Enter an amount to convert.', SimpleToast.SHORT);
+      return;
+    }
+    if (aspReachable === false) {
+      SimpleToast.show('Ark server unreachable. Use Receive Bitcoin instead.', SimpleToast.LONG);
+      return;
+    }
+    setFundingBusy(true);
+    try {
+      // Re-arm defensively in case the reserve was cleared between open and now.
+      const rec = recommendedReserveSats ?? 0;
+      if (rec > 0) setArkExitFeeReserveSats(rec);
+      await convertToExitFees(amt);
+      setExitFundingOpen(false);
+      SimpleToast.show(
+        'Converting to on-chain fee funds. Emergency Exit unlocks once it confirms.',
+        SimpleToast.LONG,
+      );
+    } catch (e: any) {
+      Alert.alert(
+        'Could not convert',
+        String(e?.message || '') || 'The offboard failed. Your Ark funds are unchanged.',
+      );
+    } finally {
+      setFundingBusy(false);
+    }
+  };
 
   /**
    * Build a list of usable receive addresses for a BlueWallet HD wallet by
@@ -951,10 +1159,31 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const startExitWithAddress = async (destLabel: string, address: string) => {
     setExitPickerOpen(false);
     setExitStarting(true);
+    // Re-estimate the exit-fee cost NOW: fee rates move between screen mount and
+    // this tap, so the warning must reflect the current shortfall rather than a
+    // stale mount-time number. If the on-chain fee wallet is short, advise the
+    // user to top up. It's a stall warning, not a hard block (progressExits
+    // resumes the moment fees are added).
+    let freshRecommended = recommendedReserveSats ?? 0;
+    try {
+      const fresh = await computeExitFeeReserveSats();
+      freshRecommended = fresh.recommendedSats;
+      setRecommendedReserveSats(fresh.recommendedSats);
+    } catch {
+      // Keep the last computed recommendation on a transient failure.
+    }
+    const shortfall = Math.max(0, freshRecommended - onchainReserveSats);
+    const underfunded = freshRecommended > 0 && shortfall > 0;
+    const underfundedPrefix = underfunded
+      ? `Your on-chain fee wallet holds ${onchainReserveSats.toLocaleString()} sats of about ${freshRecommended.toLocaleString()} needed for miner fees. Add about ${shortfall.toLocaleString()} sats more, or the exit may stall until you top up during the wait.\n\n`
+      : '';
     try {
       Alert.alert(
         'Emergency Exit',
-        `Forces your VTXO capsules onto the Bitcoin chain. Funds arrive at your ${destLabel} after a ~24-hour wait set by Bitcoin. Once you start, this can't be cancelled.\n\n${address}\n\n` +
+        underfundedPrefix +
+          `Forces your VTXO capsules onto the Bitcoin chain. Funds arrive at your ${destLabel} after a ~24-hour wait set by Bitcoin. Once you start, this can't be cancelled.\n\n` +
+          'Only start this if your soonest capsule is at least 1 day from expiry. The exit txs must confirm on-chain before then, so it is not a last-minute rescue.\n\n' +
+          `${address}\n\n` +
           'Cypher Box keeps the exit running in the background and removes this Ark wallet when the funds arrive.',
         [
           {
@@ -1493,9 +1722,6 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             sit next to the balance card. The Settings tab now only holds
             Seed Phrase + Ark backup file — true one-time setup. */}
         <View style={{ marginTop: 24 }}>
-          <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Capsule expiry reminders
-          </Text>
           <View
             style={{
               paddingVertical: 10,
@@ -1539,7 +1765,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               {arkBgRefreshEnabled
-                ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, expired capsules cannot be recovered.'
+                ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, expired capsules cannot be recovered.'
                 : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Expired capsules cannot be recovered.'}
             </Text>
 
@@ -1576,19 +1802,100 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             {/* Emergency Exit — sits ABOVE Delete Ark vault. Yellow text
                 rather than red so users don't conflate it with the
                 irreversible "Delete vault" path; the Alert in
-                startExitWithAddress carries the full warning. */}
+                startExitWithAddress carries the full warning.
+
+                Disabled while the on-chain fee reserve is still being sized
+                (recommendedReserveSats === null) or below the recommendation
+                (exitFeeGated). When gated, the amber block below explains why
+                and offers "Fund exit fees" + a "Start exit anyway" break-glass. */}
             <GradientView
-              style={{ marginTop: 30, alignSelf: 'center', height: 38, width: widths * 0.5, shadowColor: '#040404', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.8, shadowRadius: 16, elevation: 8 }}
+              style={{ marginTop: 30, alignSelf: 'center', height: 38, width: widths * 0.5, shadowColor: '#040404', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.8, shadowRadius: 16, elevation: 8, opacity: (exitStarting || recommendedReserveSats === null || exitFeeGated) ? 0.45 : 1 }}
               linearGradientStyle={{ shadowColor: '#27272C', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
               topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowColor: colors.ark?.shadowTopNew ?? '#E85C5A', borderRadius: 24, height: 38, width: widths * 0.5, justifyContent: 'center', alignItems: 'center' }}
               bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 1, shadowColor: '#030303', borderRadius: 24, height: 38, width: widths * 0.5, justifyContent: 'center', position: 'absolute' }}
               linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.5, justifyContent: 'center', alignItems: 'center' }}
-              onPress={exitStarting ? undefined : () => setExitPickerOpen(true)}
+              onPress={(exitStarting || recommendedReserveSats === null || exitFeeGated) ? undefined : () => setExitPickerOpen(true)}
             >
               <Text h3 bold center style={{ color: colors.ark?.light ?? colors.pink.default }}>
-                {exitStarting ? 'Starting exit…' : 'Emergency Exit'}
+                {exitStarting
+                  ? 'Starting exit…'
+                  : recommendedReserveSats === null
+                    ? 'Checking exit fees…'
+                    : 'Emergency Exit'}
               </Text>
             </GradientView>
+
+            {/* Fee-funding gate: on-chain fee wallet is short. Explain, offer
+                "Fund exit fees", and a low-emphasis break-glass to start anyway
+                (progressExits resumes once fees are added). */}
+            {exitFeeGated && (
+              <View style={{ marginTop: 12, marginHorizontal: 24, padding: 12, borderRadius: 10, backgroundColor: 'rgba(255, 200, 80, 0.06)', borderWidth: 1, borderColor: 'rgba(255, 200, 80, 0.30)' }}>
+                <Text bold style={{ fontSize: 13, color: '#FFD54F', marginBottom: 6 }}>
+                  Fund exit fees first
+                </Text>
+                <Text style={{ fontSize: 12, color: '#CCC', lineHeight: 17 }}>
+                  Emergency Exit pays Bitcoin miner fees from a separate on-chain wallet that holds {onchainReserveSats.toLocaleString()} sats. Add about {exitFeeShortfallSats.toLocaleString()} sats more so the exit can broadcast and confirm. Without it the exit will stall.
+                </Text>
+                <TouchableOpacity
+                  onPress={openExitFunding}
+                  style={{ marginTop: 10, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: '#FFD54F' }}
+                >
+                  <Text bold style={{ fontSize: 13, color: '#1C1C1C' }}>
+                    Fund exit fees
+                  </Text>
+                </TouchableOpacity>
+                {/* Break-glass only when they actually have SOME on-chain fee
+                    money. With 0 sats the exit can't broadcast anything, so
+                    starting it is pointless: hide the escape hatch entirely. */}
+                {onchainReserveSats > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setExitPickerOpen(true)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ marginTop: 10, alignItems: 'center' }}
+                  >
+                    <Text style={{ fontSize: 12, color: '#888', textDecorationLine: 'underline' }}>
+                      Start exit anyway
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Funded confirmation: the on-chain fee wallet now covers the
+                reserve, so the button is unlocked. Confirm the sats are set
+                aside and, critically, that the exit is an EARLY tool: it must
+                be started at least a day before a capsule expires, never as a
+                last-minute rescue (the exit txs must confirm on-chain before
+                the expiry, which takes time). */}
+            {exitFeeFunded && (
+              <View style={{ marginTop: 12, marginHorizontal: 24, padding: 12, borderRadius: 10, backgroundColor: 'rgba(35, 196, 127, 0.07)', borderWidth: 1, borderColor: 'rgba(35, 196, 127, 0.35)' }}>
+                <Text bold style={{ fontSize: 13, color: colors.green, marginBottom: 6 }}>
+                  Exit fees ready
+                </Text>
+                <Text style={{ fontSize: 12, color: '#CCC', lineHeight: 17 }}>
+                  {onchainReserveSats.toLocaleString()} sats are reserved on-chain to pay Emergency Exit fees. Start the exit at least 1 day before your soonest capsule expires. It unrolls on-chain and needs time to confirm, so it is not a last-minute rescue.
+                </Text>
+                {reserveBelowRecommended && (
+                  <Text style={{ fontSize: 11, color: '#FFD54F', marginTop: 8, lineHeight: 15 }}>
+                    You reserved less than the recommended {(recommendedReserveSats ?? 0).toLocaleString()} sats. A fee spike could stall the exit.
+                  </Text>
+                )}
+                <View style={{ flexDirection: 'row', marginTop: 12 }}>
+                  <TouchableOpacity
+                    onPress={openExitFunding}
+                    style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: colors.green, marginRight: 8 }}
+                  >
+                    <Text bold style={{ fontSize: 12, color: colors.green }}>Add more</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={doReleaseReserve}
+                    style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#888' }}
+                  >
+                    <Text bold style={{ fontSize: 12, color: '#AAA' }}>Release</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
 
             {/* Caption row: short summary + circular "?" toggle that
                 expands an inline note explaining all the cases where
@@ -1964,6 +2271,151 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 style={{ marginTop: 14, paddingVertical: 10, alignItems: 'center' }}
               >
                 <Text bold style={{ fontSize: 14, color: '#AAA' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Fund-exit-fees modal. Tops up the on-chain (BDK) wallet that pays
+            the unilateral-exit CPFP fees. Two paths:
+              Receive Bitcoin (primary, ASP-independent): deposit external BTC
+                to the on-chain address; the armed reserve keeps it on-chain
+                (sync.ts won't board it away) and the gate unlocks on confirm.
+              Convert from balance (secondary, precautionary): cooperative
+                offboard from Ark. Needs the ASP, so disabled when unreachable;
+                do it ahead of time, not as an at-outage rescue. */}
+        <Modal
+          visible={exitFundingOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => !fundingBusy && setExitFundingOpen(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
+            <View style={{ backgroundColor: '#1a1a1a', borderRadius: 14, padding: 18, borderWidth: 1, borderColor: colors.ark?.light ?? colors.pink.default }}>
+              <Text bold style={{ fontSize: 17, color: '#FFF', marginBottom: 4 }}>
+                Fund exit fees
+              </Text>
+              <Text style={{ fontSize: 12, color: '#AAA', marginBottom: 12, lineHeight: 17 }}>
+                Emergency Exit needs on-chain sats to pay Bitcoin miner fees. On-chain now: {onchainReserveSats.toLocaleString()} of {reserveTargetSats.toLocaleString()} sats reserved.
+              </Text>
+
+              {/* Editable reserve target: hold more (bigger fee-spike buffer) or
+                  less. Applied on blur; auto-board keeps exactly this much
+                  on-chain and boards any surplus into the Ark balance. */}
+              <Text style={{ fontSize: 12, color: '#FFF', marginBottom: 6 }}>Reserve for fees (sats)</Text>
+              <TextInput
+                value={reserveTargetInput}
+                onChangeText={(t) => setReserveTargetInput(t.replace(/[^0-9]/g, ''))}
+                onEndEditing={applyReserveTarget}
+                keyboardType="number-pad"
+                placeholder={String(recommendedReserveSats ?? 0)}
+                placeholderTextColor="#666"
+                editable={!fundingBusy}
+                style={{ color: '#FFF', borderWidth: 1, borderColor: '#444', borderRadius: 8, padding: 10, fontSize: 14, marginBottom: 4 }}
+              />
+              <Text style={{ fontSize: 11, color: '#777', marginBottom: 14, lineHeight: 15 }}>
+                Recommended {(recommendedReserveSats ?? 0).toLocaleString()} sats. We keep this much on-chain; anything above it boards into your Ark balance.
+              </Text>
+
+              {/* Tab switch */}
+              <View style={{ flexDirection: 'row', marginBottom: 14, borderRadius: 10, backgroundColor: '#222', padding: 3 }}>
+                {(['receive', 'convert'] as const).map((tab) => {
+                  const active = fundingTab === tab;
+                  return (
+                    <TouchableOpacity
+                      key={tab}
+                      onPress={() => setFundingTab(tab)}
+                      style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: active ? (colors.ark?.light ?? colors.pink.default) : 'transparent' }}
+                    >
+                      <Text bold style={{ fontSize: 12, color: active ? '#1C1C1C' : '#AAA' }}>
+                        {tab === 'receive' ? 'Receive Bitcoin' : 'Convert from balance'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {fundingTab === 'receive' && (
+                <>
+                  <Text style={{ fontSize: 12, color: '#CCC', marginBottom: 12, lineHeight: 17 }}>
+                    Send at least {exitFeeShortfallSats.toLocaleString()} sats to this address. It stays on-chain to pay exit fees (it will not be moved into Ark).
+                  </Text>
+                  {onchainFundAddr ? (
+                    <>
+                      <View style={{ alignSelf: 'center', backgroundColor: 'white', padding: 10, borderRadius: 10, marginBottom: 12 }}>
+                        <QRCode value={onchainFundAddr} size={150} color="black" backgroundColor="white" />
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (onchainFundAddr) {
+                            Clipboard.setString(onchainFundAddr);
+                            SimpleToast.show('Address copied', SimpleToast.SHORT);
+                          }
+                        }}
+                        activeOpacity={0.7}
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, marginBottom: 8 }}
+                      >
+                        <Text style={{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }} numberOfLines={1}>
+                          {onchainFundAddr}
+                        </Text>
+                        <Image source={Copy} style={{ width: 20, height: 16, marginLeft: 8, tintColor: '#aaa' }} resizeMode="contain" />
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 11, color: '#777', lineHeight: 15 }}>
+                        Emergency Exit unlocks automatically once the deposit confirms on-chain.
+                      </Text>
+                    </>
+                  ) : (
+                    <ActivityIndicator color={colors.ark?.light ?? colors.pink.default} style={{ marginVertical: 24 }} />
+                  )}
+                </>
+              )}
+
+              {fundingTab === 'convert' && (
+                <>
+                  <Text style={{ fontSize: 12, color: '#CCC', marginBottom: 10, lineHeight: 17 }}>
+                    Move sats from your Ark balance to the on-chain fee wallet. This uses the Ark server, so do it ahead of time. It will not work if the server is down.
+                  </Text>
+                  {aspReachable === false && (
+                    <View style={{ padding: 10, borderRadius: 8, backgroundColor: 'rgba(232, 92, 90, 0.08)', borderWidth: 1, borderColor: colors.redLight, marginBottom: 10 }}>
+                      <Text style={{ fontSize: 12, color: '#FFF' }}>
+                        Ark server unreachable. Use Receive Bitcoin instead.
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={{ fontSize: 12, color: '#FFF', marginBottom: 6 }}>Amount (sats)</Text>
+                  <TextInput
+                    value={convertAmount}
+                    onChangeText={(t) => setConvertAmount(t.replace(/[^0-9]/g, ''))}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor="#666"
+                    editable={aspReachable !== false && !fundingBusy}
+                    style={{ color: '#FFF', borderWidth: 1, borderColor: '#444', borderRadius: 8, padding: 10, fontSize: 14 }}
+                  />
+                  {convertEst && (
+                    <Text style={{ fontSize: 12, color: '#AAA', marginTop: 8, lineHeight: 17 }}>
+                      About {convertEst.netLandingSats.toLocaleString()} sats will land on-chain after a {convertEst.feeSats.toLocaleString()} sat fee.
+                    </Text>
+                  )}
+                  <TouchableOpacity
+                    onPress={doConvertToExitFees}
+                    disabled={fundingBusy || aspReachable === false || !convertEst}
+                    style={{ marginTop: 14, paddingVertical: 12, borderRadius: 10, alignItems: 'center', backgroundColor: (fundingBusy || aspReachable === false || !convertEst) ? '#222' : (colors.ark?.light ?? colors.pink.default) }}
+                  >
+                    <Text bold style={{ fontSize: 13, color: (fundingBusy || aspReachable === false || !convertEst) ? '#666' : '#000' }}>
+                      {fundingBusy ? 'Converting…' : 'Convert to exit fees'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              <TouchableOpacity
+                onPress={() => !fundingBusy && setExitFundingOpen(false)}
+                style={{ marginTop: 14, paddingVertical: 10, alignItems: 'center' }}
+              >
+                <Text bold style={{ fontSize: 13, color: '#AAA' }}>
+                  Close
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

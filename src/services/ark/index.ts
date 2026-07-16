@@ -154,6 +154,14 @@ export {
 } from './exit';
 export { estimateArkOffboardFee, offboardArkVtxos } from './offboard';
 export type { ArkOffboardFeeView } from './offboard';
+export {
+    computeExitFeeReserveSats,
+    convertToExitFees,
+    estimateExitFeeConvert,
+    fetchFastFeeRateSatPerVb,
+    probeAspReachable,
+} from './exitFunding';
+export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
 export type { ArkRefreshFeeView, ArkRefreshResult } from './refresh';
 
 export {
@@ -178,9 +186,6 @@ export {
     areBgNotificationsEnabled,
     scheduleVtxoExpiryWarnings,
     cancelVtxoExpiryWarnings,
-    scheduleVtxoStuckSwapWarnings,
-    cancelVtxoStuckSwapWarnings,
-    notifyStuckSwapNow,
 } from './backgroundNotifications';
 
 export { registerArkNotificationTapHandler } from './notificationHandler';
