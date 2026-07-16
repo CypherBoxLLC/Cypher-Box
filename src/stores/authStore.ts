@@ -209,6 +209,17 @@ export type AuthStateType = {
      * (don't auto-claim on a stale exit-in-progress flag from a crash).
      */
     arkExitStartedAt: number | null;
+    /**
+     * Armed on-chain fee reserve, in sats. The bark on-chain (BDK) wallet pays
+     * the unilateral-exit CPFP fees; this is the amount the user has committed
+     * to keep on-chain for that purpose. While > 0 the auto-board pipeline
+     * (`sync.ts`) leaves this many sats on-chain instead of boarding every
+     * confirmed deposit straight back into a VTXO, otherwise funds sent to
+     * cover exit fees would be boarded away the moment they land. 0 = no
+     * reserve armed (default; auto-board behaves exactly as before). Set when
+     * the user opens the "Fund exit fees" flow; reset on wallet teardown.
+     */
+    arkExitFeeReserveSats: number;
     arkUseHotVaultSeed: boolean;
     withdrawArkThreshold: any | null;
     reserveArkAmount: number;
@@ -229,6 +240,7 @@ export type AuthStateType = {
     setArkExitInProgress: (state: boolean) => void;
     setArkExitDestinationAddress: (state: string | null) => void;
     setArkExitStartedAt: (state: number | null) => void;
+    setArkExitFeeReserveSats: (state: number) => void;
     setArkUseHotVaultSeed: (state: boolean) => void;
     setWithdrawArkThreshold: (state: any) => void;
     setReserveArkAmount: (state: number) => void;
@@ -434,6 +446,7 @@ const createAuthStore = (
     arkExitInProgress: false,
     arkExitDestinationAddress: null,
     arkExitStartedAt: null,
+    arkExitFeeReserveSats: 0,
     arkUseHotVaultSeed: false,
     withdrawArkThreshold: 500000,
     reserveArkAmount: 100000,
@@ -505,6 +518,7 @@ const createAuthStore = (
     setArkExitInProgress: (state: boolean) => set({ arkExitInProgress: state }),
     setArkExitDestinationAddress: (state: string | null) => set({ arkExitDestinationAddress: state }),
     setArkExitStartedAt: (state: number | null) => set({ arkExitStartedAt: state }),
+    setArkExitFeeReserveSats: (state: number) => set({ arkExitFeeReserveSats: state }),
     setArkUseHotVaultSeed: (state: boolean) => set({ arkUseHotVaultSeed: state }),
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
     setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),
@@ -543,6 +557,7 @@ const createAuthStore = (
             arkExitInProgress: false,
             arkExitDestinationAddress: null,
             arkExitStartedAt: null,
+            arkExitFeeReserveSats: 0,
             arkUseHotVaultSeed: false,
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout
