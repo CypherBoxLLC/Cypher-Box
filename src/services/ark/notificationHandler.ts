@@ -5,7 +5,11 @@ import SimpleToast from 'react-native-simple-toast';
 import useAuthStore from '@Cypher/stores/authStore';
 
 import { navigationRef } from '../../../NavigationService';
-import { isArkCapsuleTapSource, isArkExpiryWarningSource } from './backgroundNotifications';
+import {
+    isArkCapsuleTapSource,
+    isArkExpiryWarningSource,
+    isArkStuckSwapSource,
+} from './backgroundNotifications';
 
 /**
  * Notification-tap routing for the Ark capsule notifications: the five
@@ -73,6 +77,29 @@ async function dispatchArkCapsuleTap(autoRefresh: boolean): Promise<void> {
 }
 
 /**
+ * Deep-link a stuck-refresh "move your funds out" notification tap to
+ * ArkStuckCapsuleScreen. Unlike the expiry-warning taps, this does NOT arm
+ * auto-refresh, since refreshing is exactly what's stuck. The screen reads the
+ * live `arkRefreshStuck` state from the store (cancel + swap-out actions),
+ * so we pass only the vtxoId for context. Same cold-start nav-ready poll as
+ * dispatchArkCapsuleTap.
+ */
+async function dispatchArkStuckSwapTap(vtxoId: unknown): Promise<void> {
+    const wallet = useAuthStore.getState().arkWallet;
+    if (!wallet) return;
+
+    const start = Date.now();
+    while (!navigationRef.isReady() && Date.now() - start < NAV_WAIT_MS) {
+        await new Promise<void>(resolve => setTimeout(resolve, 100));
+    }
+    if (!navigationRef.isReady()) return;
+
+    navigationRef.current?.navigate('ArkStuckCapsuleScreen', {
+        vtxoId: typeof vtxoId === 'string' ? vtxoId : undefined,
+    });
+}
+
+/**
  * Shared tap routing, callable from ANY PushNotification.configure
  * onNotification. react-native-push-notification only honors the LAST
  * configure() call, and blue_modules/notifications.js re-configures when
@@ -84,6 +111,17 @@ async function dispatchArkCapsuleTap(autoRefresh: boolean): Promise<void> {
  */
 export function handleArkNotificationTap(notification: any): boolean {
     const data = (notification && (notification.data || notification.userInfo)) || {};
+    // Stuck-refresh swap-out taps route to ArkStuckCapsuleScreen instead of
+    // the Capsules tab + auto-refresh. Checked first because these sources
+    // are deliberately NOT in isArkCapsuleTapSource (refreshing is stuck).
+    if (
+        notification &&
+        notification.userInteraction === true &&
+        isArkStuckSwapSource(data.source)
+    ) {
+        void dispatchArkStuckSwapTap(data.vtxoId);
+        return true;
+    }
     if (
         notification &&
         notification.userInteraction === true &&

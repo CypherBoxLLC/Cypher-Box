@@ -299,6 +299,68 @@ const WARN_SCHEDULE: ReadonlyArray<{
     },
 ];
 
+// --- Stuck-refresh SWAP-OUT notifications -----------------------------------
+//
+// A separate notification category from the five refresh warnings above.
+// These fire ONLY when a refresh round is wedged (stuck past 2× the round
+// interval, per useArkSync) AND the Locked funds are near their pre-refresh
+// expiry. At that point telling the user to "tap to refresh" is wrong (the
+// refresh is what's stuck). Instead these say "move your funds out" and their
+// tap deep-links to ArkStuckCapsuleScreen (cancel the wedged round + swap to
+// another wallet), not the auto-refresh path.
+//
+// Product decision (2026-07-15): the 24h refresh warning stays as-is (a
+// freshly received arkoor VTXO legitimately has a 24-48h TTL, so refresh is
+// still the right first action there); only from 12h down does a stuck round
+// escalate to "swap out". So the schedule is 12h / 6h / 3h. The refresh 12h/6h
+// warnings are already cancelled the moment a VTXO goes Locked (it drops out
+// of the spendable set the scheduler reconciles against), so there is no
+// double-notification: these replace them for the stuck-and-locked window.
+type StuckSwapKind = 'swap12h' | 'swap6h' | 'swap3h';
+
+export const ARK_STUCK_SWAP_SOURCES = [
+    'ark-vtxo-stuck-swap12h',
+    'ark-vtxo-stuck-swap6h',
+    'ark-vtxo-stuck-swap3h',
+] as const;
+
+export type ArkStuckSwapSource = (typeof ARK_STUCK_SWAP_SOURCES)[number];
+
+export function isArkStuckSwapSource(s: unknown): s is ArkStuckSwapSource {
+    return typeof s === 'string'
+        && (ARK_STUCK_SWAP_SOURCES as readonly string[]).includes(s);
+}
+
+const STUCK_SWAP_SCHEDULE: ReadonlyArray<{
+    kind: StuckSwapKind;
+    source: ArkStuckSwapSource;
+    offsetMs: number;
+    label: string;
+    suffix: string;
+}> = [
+    {
+        kind: 'swap12h',
+        source: 'ark-vtxo-stuck-swap12h',
+        offsetMs: 12 * 60 * 60 * 1000,
+        label: '12 hours',
+        suffix: ' ⚠️',
+    },
+    {
+        kind: 'swap6h',
+        source: 'ark-vtxo-stuck-swap6h',
+        offsetMs: 6 * 60 * 60 * 1000,
+        label: '6 hours',
+        suffix: ' 🚨',
+    },
+    {
+        kind: 'swap3h',
+        source: 'ark-vtxo-stuck-swap3h',
+        offsetMs: 3 * 60 * 60 * 1000,
+        label: '3 hours',
+        suffix: ' 🚨',
+    },
+];
+
 /**
  * Hash a VTXO id + kind to a stable 31-bit signed integer.
  *
@@ -323,7 +385,7 @@ const WARN_SCHEDULE: ReadonlyArray<{
  * {@link cancelVtxoExpiryWarnings} so users don't get phantom alerts about
  * funds that already moved.
  */
-function notificationIdFor(vtxoId: string, kind: WarnKind): string {
+function notificationIdFor(vtxoId: string, kind: WarnKind | StuckSwapKind): string {
     let h = 2166136261;
     const tagged = `${kind}:${vtxoId}`;
     for (let i = 0; i < tagged.length; i++) {
@@ -411,6 +473,52 @@ export function cancelVtxoExpiryWarnings(vtxoId: string): void {
     }
 }
 
+/**
+ * Schedule the 12h/6h/3h "move your funds out" alarms for a Locked VTXO whose
+ * refresh round is stuck. `expiryAtMs` is the VTXO's pre-refresh expiry (the
+ * deadline the stuck round failed to extend). Mirrors
+ * {@link scheduleVtxoExpiryWarnings}: gated on the reminders toggle, idempotent
+ * by id, skips levels already past. Cancellation on state change is the
+ * caller's job via {@link cancelVtxoStuckSwapWarnings}.
+ */
+export function scheduleVtxoStuckSwapWarnings(
+    vtxoId: string,
+    expiryAtMs: number,
+    satsAmount?: number,
+): void {
+    if (!useAuthStore.getState().arkBgRefreshEnabled) return;
+    ensureInit();
+    const now = Date.now();
+    const subject = fmtSatsSubject(satsAmount);
+    for (const w of STUCK_SWAP_SCHEDULE) {
+        const at = expiryAtMs - w.offsetMs;
+        if (at <= now) continue;
+        PushNotification.localNotificationSchedule({
+            id: notificationIdFor(vtxoId, w.kind),
+            channelId: CHANNEL_ID,
+            title: `Refresh stuck: move ${subject} out${w.suffix}`,
+            message: `${w.label} left before expiry. Tap to move your funds to another wallet.`,
+            date: new Date(at),
+            priority: 'high',
+            importance: 'high',
+            playSound: true,
+            soundName: 'default',
+            userInfo: { source: w.source, vtxoId },
+            allowWhileIdle: true,
+        });
+    }
+}
+
+export function cancelVtxoStuckSwapWarnings(vtxoId: string): void {
+    try {
+        for (const w of STUCK_SWAP_SCHEDULE) {
+            PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, w.kind));
+        }
+    } catch (err) {
+        console.warn('[Ark notifications] cancelVtxoStuckSwapWarnings:', err);
+    }
+}
+
 export function notifyDustUneconomic(
     feeSats: number,
     totalSats: number,
@@ -488,5 +596,21 @@ export function notifyStuckRefresh(sats?: number): void {
         'Refresh stuck',
         `A capsule refresh got stuck${amount}. Open Cypher Box to recover it.`,
         'high',
+    );
+}
+
+/**
+ * Fire the stuck-refresh SWAP-OUT notification immediately, with the same
+ * content + source as the scheduled 12h warning so the tap deep-links to
+ * ArkStuckCapsuleScreen. Used by the in-app dev test trigger to exercise the
+ * notification path without waiting for a real stuck round near expiry.
+ */
+export function notifyStuckSwapNow(satsAmount?: number): void {
+    const subject = fmtSatsSubject(satsAmount);
+    fire(
+        `Refresh stuck: move ${subject} out ⚠️`,
+        '12 hours left before expiry. Tap to move your funds to another wallet.',
+        'high',
+        { source: 'ark-vtxo-stuck-swap12h' },
     );
 }

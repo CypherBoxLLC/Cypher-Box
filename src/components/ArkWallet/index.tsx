@@ -629,10 +629,19 @@ export default function ArkWallet({
                                 still-stuck condition pops the banner back. */}
                             {!isLoading && arkRefreshStuck && (
                                 <TouchableOpacity
-                                    onPress={handleStuckRecovery}
+                                    // Near expiry: refreshing is stuck AND the
+                                    // funds are running out, so route to the
+                                    // "move your funds out" screen instead of
+                                    // the in-place cancel-and-retry (which only
+                                    // helps when there's still time to retry).
+                                    onPress={arkRefreshStuck.nearExpiry
+                                        ? () => dispatchNavigate('ArkStuckCapsuleScreen', {})
+                                        : handleStuckRecovery}
                                     activeOpacity={0.7}
                                     accessibilityRole="button"
-                                    accessibilityLabel="Recover stuck refresh"
+                                    accessibilityLabel={arkRefreshStuck.nearExpiry
+                                        ? 'Move your stuck funds out'
+                                        : 'Recover stuck refresh'}
                                 >
                                     <Text
                                         h4
@@ -641,7 +650,9 @@ export default function ArkWallet({
                                             { color: colors.redLight, textDecorationLine: 'underline' },
                                         ]}
                                     >
-                                        Refresh stuck · {arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover
+                                        {arkRefreshStuck.nearExpiry
+                                            ? `Warning: Refresh stuck near expiry · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to move funds out`
+                                            : `Refresh stuck · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover`}
                                     </Text>
                                 </TouchableOpacity>
                             )}

@@ -26,6 +26,17 @@ export type ArkRefreshStuckInfo = {
     stuckSats: number;
     /** Chain tip at detection time — for "X blocks past expiry" messaging. */
     detectedAtTip: number;
+    /**
+     * True when the stuck round's Locked VTXOs are inside the swap-out
+     * window (12h of their pre-refresh expiry). Set by useArkSync alongside
+     * the stuck detection. Flips the recovery UX from "cancel & retry" to
+     * "move your funds out": the home-card banner, the Capsules banner, and
+     * the swap-out expiry notifications all route to ArkStuckCapsuleScreen
+     * instead of the in-place cancel-and-retry when this is true. Optional
+     * so state persisted before this field migrates cleanly (treated as
+     * false / not-near-expiry).
+     */
+    nearExpiry?: boolean;
 };
 
 export type AuthStateType = {
@@ -139,6 +150,18 @@ export type AuthStateType = {
      */
     arkScheduledExpiryNotifs: Record<string, number>;
     /**
+     * Map of `vtxoId → scheduled-for expiry epoch ms` for Locked VTXOs that
+     * have the stuck-refresh SWAP-OUT notifications (12h/6h/3h) queued via
+     * `scheduleVtxoStuckSwapWarnings`. Separate from
+     * `arkScheduledExpiryNotifs` (the refresh-flavoured warnings) because
+     * these fire only while a round is stuck AND the funds are near expiry,
+     * and their tap routes to ArkStuckCapsuleScreen ("move your funds out")
+     * rather than arming an auto-refresh. Persisted so the sync sweep doesn't
+     * re-schedule every tick; reconciled the same way (add when stuck+near,
+     * cancel when the VTXO unlocks / stops being stuck / stops being near).
+     */
+    arkScheduledStuckSwapNotifs: Record<string, number>;
+    /**
      * Version of the expiry-warning schedule reflected in the OS notification
      * queue. Bumped when the schedule changes (e.g. moving from 24h+6h to
      * 4d/2d/24h/12h/6h). On the first sync after upgrade, useArkSync compares
@@ -220,6 +243,7 @@ export type AuthStateType = {
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => void;
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => void;
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => void;
+    setArkScheduledStuckSwapNotifs: (state: Record<string, number>) => void;
     setArkExpiryNotifsScheduleVersion: (state: number) => void;
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setArkChainTipHeight: (state: number | null) => void;
@@ -425,6 +449,7 @@ const createAuthStore = (
     arkRefreshStuck: null,
     arkPendingRoundFirstSeen: {},
     arkScheduledExpiryNotifs: {},
+    arkScheduledStuckSwapNotifs: {},
     arkExpiryNotifsScheduleVersion: 0,
     arkPendingLnReceives: [],
     arkChainTipHeight: null,
@@ -496,6 +521,7 @@ const createAuthStore = (
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => set({ arkRefreshStuck: state }),
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => set({ arkPendingRoundFirstSeen: state }),
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => set({ arkScheduledExpiryNotifs: state }),
+    setArkScheduledStuckSwapNotifs: (state: Record<string, number>) => set({ arkScheduledStuckSwapNotifs: state }),
     setArkExpiryNotifsScheduleVersion: (state: number) => set({ arkExpiryNotifsScheduleVersion: state }),
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => set({ arkPendingLnReceives: state }),
     setArkChainTipHeight: (state: number | null) => set({ arkChainTipHeight: state }),
@@ -533,7 +559,8 @@ const createAuthStore = (
             arkVtxos: [],
             arkRefreshStuck: null,
             arkPendingRoundFirstSeen: {},
-    arkScheduledExpiryNotifs: {},
+            arkScheduledExpiryNotifs: {},
+            arkScheduledStuckSwapNotifs: {},
             arkExpiryNotifsScheduleVersion: 0,
             arkPendingLnReceives: [],
             arkChainTipHeight: null,
