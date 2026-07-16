@@ -825,6 +825,146 @@ interface ArkCapsulesProps {
  */
 const TAP_REFRESH_IMMINENT_DAYS = 14;
 
+// Countdown window for the refresh-wait reminder. Each in-flight round gets a
+// 3h timer counting down from when it started (its first-seen timestamp).
+const REFRESH_WAIT_WINDOW_MS = 3 * 60 * 60 * 1000;
+// Cap the stacked per-round countdown lines so spam-tapping (which queues
+// duplicate rounds) can't grow the banner unbounded; the rest collapse to
+// a "+N more" line.
+const MAX_EXTRA_REFRESH_LINES = 3;
+
+// Format a remaining-ms value as H:MM:SS (e.g. 2:59:59). Clamped at 0.
+function formatCountdown(ms: number): string {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+/**
+ * Green pulsing reminder shown while a refresh round is in flight. A round can
+ * take up to a few hours to finalise (or time out) server-side, and the user
+ * must be back in the app for the completion sync to land, so we nudge them to
+ * return, with a live countdown per in-flight round.
+ *
+ * `roundStarts` is the set of round first-seen timestamps (ms) from
+ * `arkPendingRoundFirstSeen`, one per in-flight round. Each gets a 3h
+ * countdown; the soonest-to-elapse (oldest round) is shown inline in the
+ * headline and the rest stack below as "Refresh 2 / 3 / ...". A line drops
+ * when its round completes (pruned from the map upstream). If a round is still
+ * present after its 3h window is up it hasn't completed, so the banner switches
+ * to a "stuck" state with a Cancel action; cancelling clears the round, which
+ * unmounts the banner via the caller's in-flight gate. Self-contained pulse +
+ * 1s tick so only this component re-renders each second, not the capsule list.
+ */
+function RefreshWaitBanner({
+    roundStarts,
+    cancelling,
+    onCancel,
+}: {
+    roundStarts: number[];
+    cancelling: boolean;
+    onCancel: () => void;
+}) {
+    const pulse = useRef(new Animated.Value(0.6)).current;
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+        const loop = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulse, {
+                    toValue: 1,
+                    duration: 900,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pulse, {
+                    toValue: 0.6,
+                    duration: 900,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+            ]),
+        );
+        loop.start();
+        const tick = setInterval(() => setNow(Date.now()), 1000);
+        return () => {
+            loop.stop();
+            clearInterval(tick);
+        };
+    }, [pulse]);
+
+    // A round still tracked after its 3h window has elapsed hasn't completed:
+    // treat it as stuck. Otherwise render the per-round countdowns, soonest-to-
+    // elapse first (the oldest round is the headline timer; the rest stack).
+    const isStuck = roundStarts.some((start) => now - start >= REFRESH_WAIT_WINDOW_MS);
+    const counting = roundStarts
+        .map((start) => ({ start, remaining: start + REFRESH_WAIT_WINDOW_MS - now }))
+        .filter((x) => x.remaining > 0)
+        .sort((a, b) => a.remaining - b.remaining);
+    const primary = counting[0];
+    const extras = counting.slice(1);
+
+    // Always amber: this is a "come back and check" warning whether the round
+    // is still counting down or already stuck.
+    const accent = '#FFD54F';
+    const tint = 'rgba(255, 213, 79, 0.10)';
+
+    return (
+        <Animated.View
+            style={{
+                // Steady (no pulse) once stuck so the amber warning reads as a
+                // fixed alert and the Cancel button stays easy to tap.
+                opacity: isStuck ? 1 : pulse,
+                marginHorizontal: 24,
+                marginBottom: 12,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+                borderRadius: 10,
+                backgroundColor: tint,
+                borderWidth: 1,
+                borderColor: accent,
+            }}
+        >
+            {isStuck ? (
+                <>
+                    <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
+                        This refresh is stuck. You can cancel the refresh and try again later.
+                    </Text>
+                    <TouchableOpacity
+                        onPress={cancelling ? undefined : onCancel}
+                        style={{ marginTop: 10, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: accent }}
+                    >
+                        <Text bold style={{ fontSize: 12, color: accent }}>
+                            {cancelling ? 'Cancelling…' : 'Cancel refresh'}
+                        </Text>
+                    </TouchableOpacity>
+                </>
+            ) : (
+                <>
+                    <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
+                        {`PLEASE COME BACK IN 3 HOURS TO MAKE SURE THE REFRESH HAS COMPLETED${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
+                    </Text>
+                    {extras.slice(0, MAX_EXTRA_REFRESH_LINES).map((x, i) => (
+                        <Text
+                            key={x.start}
+                            center
+                            style={{ fontSize: 11, color: accent, marginTop: 4 }}
+                        >
+                            {`- Refresh ${i + 2}: ${formatCountdown(x.remaining)}`}
+                        </Text>
+                    ))}
+                    {extras.length > MAX_EXTRA_REFRESH_LINES && (
+                        <Text center style={{ fontSize: 11, color: accent, marginTop: 4 }}>
+                            {`+${extras.length - MAX_EXTRA_REFRESH_LINES} more`}
+                        </Text>
+                    )}
+                </>
+            )}
+        </Animated.View>
+    );
+}
+
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
@@ -862,6 +1002,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const setArkPendingTapRefresh = useAuthStore((s) => s.setArkPendingTapRefresh);
     const arkRefreshStuck = useAuthStore((s) => s.arkRefreshStuck);
     const setArkRefreshStuck = useAuthStore((s) => s.setArkRefreshStuck);
+    // Per-round first-seen timestamps (round id -> ms), maintained by
+    // useArkSync's stuck detection. Drives the per-round 3h countdowns in the
+    // refresh-wait banner. Auto-prunes when a round completes.
+    const arkPendingRoundFirstSeen = useAuthStore((s) => s.arkPendingRoundFirstSeen);
 
     // Recover a stuck refresh from the Capsules tab. Mirrors the home-card
     // handler in ArkWallet — but that banner is invisible to a user sitting
@@ -1831,6 +1975,18 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         </GradientView>
     );
 
+    // Refresh-in-flight signals for the action button + wait banner.
+    // `roundInFlight` (any Locked VTXO) is the same signal that flips the
+    // per-row refresh icon to a cancel-X, and it persists for the whole round
+    // (up to a few hours), so it drives the "Cancel" label and the banner.
+    // `refreshing` is the brief local submit phase before the round is Locked.
+    const roundInFlight = pendingRoundSats > 0;
+    const refreshInFlight = refreshing || roundInFlight;
+    // Round start timestamps for the wait-banner countdowns. Values are the
+    // first-seen ms per in-flight round; the banner turns each into a 3h
+    // countdown and drops it when it elapses or its round completes.
+    const roundStarts = Object.values(arkPendingRoundFirstSeen ?? {});
+
     return (
         <View style={vaultStyles.flex}>
             {/* Header block: prominent Auto-refresh on/off status on the
@@ -1848,25 +2004,6 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         {arkBgRefreshEnabled ? 'on' : 'off'}
                     </Text>
                 </Text>
-                {/* Wallet-policy refresh deadline. Always shown when the SDK
-                    has a value, regardless of whether auto-refresh is on —
-                    a user with auto-refresh off still needs to know when
-                    to manually act. Hidden when nextRefreshBlocks is null
-                    (no spendable VTXOs / all already refreshed within
-                    policy margin) so the line doesn't render as broken
-                    state on a fresh / empty wallet. */}
-                {nextRefreshBlocks !== null && (
-                    <Text
-                        style={{
-                            fontSize: 12,
-                            color: '#888',
-                            marginTop: -2,
-                            marginBottom: 6,
-                        }}
-                    >
-                        {`Next refresh ${formatBlocksUntil(nextRefreshBlocks)}`}
-                    </Text>
-                )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
                         Your lightning capsules (VTXOs) must be refreshed before they expire, or they are lost forever.{' '}
@@ -1899,6 +2036,45 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 </View>
             </View>
 
+            {/* DEV-ONLY stuck-refresh test harness. Never renders in a release
+                build (__DEV__ is false). Lets us exercise the swap-out UX
+                without a real ASP-side wedge: "Simulate stuck" injects a
+                near-expiry stuck state (empty roundIds so nothing real is
+                cancelled) which lights up the home-card + Capsules banners and
+                makes ArkStuckCapsuleScreen reachable; "Fire notification"
+                fires the 12h swap-out push immediately to test its content +
+                tap routing; "Clear" removes the simulated state. */}
+            {/* Commented out for release. To re-enable on-device testing,
+                uncomment this block AND re-add `notifyStuckSwapNow` to the
+                @Cypher/services/ark import above. It is __DEV__-gated so it
+                never renders in production either way.
+            {__DEV__ && (
+                <View style={{ marginHorizontal: 20, marginBottom: 10, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#555', borderStyle: 'dashed' }}>
+                    <Text bold style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>DEV: stuck-refresh test</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        <TouchableOpacity
+                            onPress={() => setArkRefreshStuck({ stuckRoundIds: [], stuckSats: 12500, detectedAtTip: chainTipHeight ?? 0, nearExpiry: true })}
+                            style={{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#333', marginRight: 8, marginBottom: 6 }}
+                        >
+                            <Text style={{ fontSize: 12, color: '#EEE' }}>Simulate stuck</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => notifyStuckSwapNow(12500)}
+                            style={{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#333', marginRight: 8, marginBottom: 6 }}
+                        >
+                            <Text style={{ fontSize: 12, color: '#EEE' }}>Fire notification</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => setArkRefreshStuck(null)}
+                            style={{ paddingVertical: 7, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#333', marginBottom: 6 }}
+                        >
+                            <Text style={{ fontSize: 12, color: '#EEE' }}>Clear</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
+            */}
+
             {/* Stuck-refresh recovery banner. The equivalent home-card banner
                 (ArkWallet) is invisible to a user sitting on this tab watching
                 a capsule pulse "Refreshing…" — which is exactly when they need
@@ -1908,10 +2084,18 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 VTXOs. */}
             {arkRefreshStuck && (
                 <TouchableOpacity
-                    onPress={handleStuckRecovery}
+                    // Near expiry: refreshing is stuck AND the funds are running
+                    // out, so this becomes the Capsules-tab entry point into the
+                    // "move your funds out" screen. Otherwise keep the in-place
+                    // cancel-and-retry recovery.
+                    onPress={arkRefreshStuck.nearExpiry
+                        ? () => dispatchNavigate('ArkStuckCapsuleScreen', {})
+                        : handleStuckRecovery}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel="Recover stuck refresh"
+                    accessibilityLabel={arkRefreshStuck.nearExpiry
+                        ? 'Move your stuck funds out'
+                        : 'Recover stuck refresh'}
                     style={{
                         marginHorizontal: 20,
                         marginBottom: 10,
@@ -1924,13 +2108,26 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     }}
                 >
                     <Text bold style={{ color: colors.redLight, fontSize: 13, lineHeight: 18 }}>
-                        Refresh stuck for {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
-                        <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
-                            Tap to recover.
-                        </Text>
+                        {arkRefreshStuck.nearExpiry ? (
+                            <>
+                                Warning: Refresh stuck near expiry · {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
+                                <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
+                                    Tap to move funds out
+                                </Text>
+                            </>
+                        ) : (
+                            <>
+                                Refresh stuck for {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
+                                <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
+                                    Tap to recover.
+                                </Text>
+                            </>
+                        )}
                     </Text>
                     <Text style={{ color: '#B0B0B0', fontSize: 11, marginTop: 3, lineHeight: 15 }}>
-                        This round is taking longer than expected. Recovering unlocks your capsules so you can try again. Your funds are safe.
+                        {arkRefreshStuck.nearExpiry
+                            ? 'Refresh process is stuck and some capsules are about to expire. Tap to move funds to another wallet before they expire.'
+                            : 'This round is taking longer than expected. Recovering unlocks your capsules so you can try again. Your funds are safe.'}
                     </Text>
                 </TouchableOpacity>
             )}
@@ -1997,12 +2194,15 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             <View style={vaultStyles.titleStyle}>
                 <Text bold style={vaultStyles.coin}>Capsules</Text>
                 <Text bold style={vaultStyles.size}>Size</Text>
+                {/* Column header for the per-row refresh/cancel icons. Flips to
+                    "Cancel" while a round is in flight, matching the per-row
+                    icons that switch from the refresh arrows to a cancel-X. */}
                 <Text
                     bold
                     numberOfLines={1}
                     style={[vaultStyles.label, { fontSize: 18, textAlign: 'left', marginLeft: -8, flex: 1.35 }]}
                 >
-                    Refresh
+                    {roundInFlight ? 'Cancel' : 'Refresh'}
                 </Text>
                 <Text bold style={vaultStyles.select}>Select</Text>
             </View>
@@ -2079,6 +2279,17 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 de-clutters the screen. No Emergency Exit here — that's
                 the global Withdraw button's job, see the file docblock. */}
             <View style={vaultStyles.bottomViewNew}>
+                {/* Green pulsing "come back in 3 hours" reminder while a
+                    refresh round is in flight (or being submitted), with a
+                    live 3h countdown per in-flight round. Flips to a stuck
+                    state with a Cancel action once a round's 3h elapses. */}
+                {refreshInFlight && (
+                    <RefreshWaitBanner
+                        roundStarts={roundStarts}
+                        cancelling={cancelling}
+                        onCancel={handleRowCancel}
+                    />
+                )}
                 <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 12 }}>
                     {renderActionButton("Send", handleSend)}
                     {renderActionButton(

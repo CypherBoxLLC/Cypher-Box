@@ -892,6 +892,13 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         onPress={() => {
                             const stuck = useAuthStore.getState().arkRefreshStuck;
                             if (!stuck) return;
+                            // Near expiry: refreshing is stuck AND the funds are
+                            // running out, so route to the "move your funds out"
+                            // screen rather than the in-place cancel-and-retry.
+                            if (stuck.nearExpiry) {
+                                dispatchNavigate('ArkStuckCapsuleScreen', {});
+                                return;
+                            }
                             (async () => {
                                 for (const roundId of stuck.stuckRoundIds) {
                                     try {
@@ -905,7 +912,9 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         }}
                         activeOpacity={0.7}
                         accessibilityRole="button"
-                        accessibilityLabel="Recover stuck refresh"
+                        accessibilityLabel={arkRefreshStuck.nearExpiry
+                            ? 'Move your stuck funds out'
+                            : 'Recover stuck refresh'}
                     >
                         <Text
                             h4
@@ -916,7 +925,9 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                                 textDecorationLine: 'underline',
                             }}
                         >
-                            Refresh stuck · {arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover
+                            {arkRefreshStuck.nearExpiry
+                                ? `Warning: Refresh stuck near expiry · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to move funds out`
+                                : `Refresh stuck · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover`}
                         </Text>
                     </TouchableOpacity>
                 </Animated.View>

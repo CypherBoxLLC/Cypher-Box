@@ -4,8 +4,12 @@ import { Alert, AppState, AppStateStatus, InteractionManager, Platform } from 'r
 import {
     applyExpiredVtxoFilter,
     AVG_BLOCK_MINUTES,
+    cancelArkPendingRound,
     cancelVtxoExpiryWarnings,
+    cancelVtxoStuckSwapWarnings,
     claimArkExitsToAddress,
+    getArkCancelling,
+    setArkCancelling,
     fetchArkBalance,
     fetchArkPendingLightningReceives,
     fetchArkPendingRoundStates,
@@ -23,6 +27,7 @@ import {
     resetArkWalletState,
     runBackgroundRefresh,
     scheduleVtxoExpiryWarnings,
+    scheduleVtxoStuckSwapWarnings,
     syncArkExits,
     syncArkWallet,
     tryClaimArkLightningReceives,
@@ -119,6 +124,73 @@ let lastForegroundSweepAt = 0;
 const REFRESH_FAIL_ESCALATE_STREAK = 3;
 const REFRESH_FAIL_ALERT_GAP_MS = 6 * 60 * 60 * 1000;
 
+// --- Stuck-refresh swap-out window + auto-cancel safety net ----------------
+//
+// When a round is detected stuck (useArkSync flags it past 2× the round
+// interval) AND its Locked VTXOs are inside this window of their pre-refresh
+// expiry, the UX escalates from "cancel & retry the refresh" to "move your
+// funds out": swap-out notifications (12h/6h/3h) are scheduled and the
+// in-app banners route to ArkStuckCapsuleScreen. 12h matches the product
+// decision to keep the 24h warning as a normal refresh prompt (a fresh
+// arkoor receive legitimately sits near 24h) and only escalate from 12h.
+const STUCK_SWAP_WINDOW_MS = 12 * 60 * 60 * 1000;
+// Auto-cancel safety net: once a stuck round's Locked funds are inside this
+// window of expiry, cancel the wedged round automatically so the VTXOs unlock
+// with enough runway for the user to still swap / exit before the deadline.
+// Cancelling only unlocks the inputs (per Erik / Bark), it never spends, so
+// this is safe to do without user confirmation. Bam approved this net.
+const STUCK_AUTO_CANCEL_MS = 3 * 60 * 60 * 1000;
+
+// Module-level throttle for the auto-cancel net so a 30s sync tick doesn't
+// hammer cancelPendingRound while a round settles server-side. Mirrors the
+// lastForegroundSweepAt guard above.
+let arkAutoCancelInFlight = false;
+let lastArkAutoCancelAt = 0;
+const ARK_AUTO_CANCEL_MIN_GAP_MS = 5 * 60 * 1000;
+// After an auto-cancel unlocks a stuck round's funds near expiry, keep the
+// urgency sweep off for this long so the funds STAY spendable for the user to
+// swap / exit. Without it, the sweep (which fires within 2 days of expiry)
+// would immediately re-refresh the just-unlocked VTXO and risk re-wedging it
+// against the same misbehaving ASP, the exact loop we're rescuing them from.
+const ARK_POST_AUTOCANCEL_SWEEP_COOLDOWN_MS = 30 * 60 * 1000;
+
+/**
+ * Cancel the given stuck round(s) automatically, then sync so the just-
+ * unlocked VTXOs re-read as Spendable. Guarded + throttled + respects the
+ * shared `cancelling` flag so it never races a user-initiated cancel or the
+ * banner's cancel-and-retry. Per-round failures are swallowed (the round may
+ * already be finalising server-side, in which case the next sync ingests it).
+ */
+async function maybeAutoCancelStuckRounds(roundIds: number[]): Promise<void> {
+    if (!roundIds || roundIds.length === 0) return;
+    if (arkAutoCancelInFlight) return;
+    if (Date.now() - lastArkAutoCancelAt < ARK_AUTO_CANCEL_MIN_GAP_MS) return;
+    // Don't fight a user-initiated cancel (banner cancel-and-retry sets this).
+    if (getArkCancelling()) return;
+    arkAutoCancelInFlight = true;
+    lastArkAutoCancelAt = Date.now();
+    setArkCancelling(true);
+    try {
+        for (const id of roundIds) {
+            try {
+                await cancelArkPendingRound(id);
+            } catch {
+                // cancelArkPendingRound already logs the inner BarkError.
+                // Swallow so one refused round doesn't block the others.
+            }
+        }
+        try {
+            await syncArkWallet();
+        } catch (syncErr: any) {
+            if (__DEV__) console.warn('[Ark auto-cancel] post-cancel sync failed:', syncErr?.message ?? syncErr);
+        }
+        if (__DEV__) console.warn('[Ark auto-cancel] cancelled stuck rounds near expiry:', roundIds);
+    } finally {
+        setArkCancelling(false);
+        arkAutoCancelInFlight = false;
+    }
+}
+
 // --- Self-heal for a failed boot open -------------------------------------
 //
 // useArkRestoreOnBoot runs exactly once per mount and, on a failed open,
@@ -181,6 +253,7 @@ export default function useArkSync(): UseArkSync {
     const setArkRefreshStuck = useAuthStore((s) => s.setArkRefreshStuck);
     const setArkPendingRoundFirstSeen = useAuthStore((s) => s.setArkPendingRoundFirstSeen);
     const setArkScheduledExpiryNotifs = useAuthStore((s) => s.setArkScheduledExpiryNotifs);
+    const setArkScheduledStuckSwapNotifs = useAuthStore((s) => s.setArkScheduledStuckSwapNotifs);
     const setArkPendingLnReceives = useAuthStore((s) => s.setArkPendingLnReceives);
     const setArkChainTipHeight = useAuthStore((s) => s.setArkChainTipHeight);
     const setArkLastSyncedAt = useAuthStore((s) => s.setArkLastSyncedAt);
@@ -672,9 +745,29 @@ export default function useArkSync(): UseArkSync {
                 // expose a vtxo→round link, so this is the total locked across
                 // all rounds, not strictly the stuck-round subset. Fine for a
                 // banner headline since the user cancels all stuck rounds anyway.
-                const lockedSats = (vtxos?.all ?? [])
-                    .filter((v) => v.state.toLowerCase() === 'locked')
-                    .reduce((sum, v) => sum + v.sats, 0);
+                const lockedVtxos = (vtxos?.all ?? []).filter(
+                    (v) => v.state.toLowerCase() === 'locked',
+                );
+                const lockedSats = lockedVtxos.reduce((sum, v) => sum + v.sats, 0);
+                // nearExpiry: is any Locked VTXO inside the swap-out window of
+                // its PRE-refresh expiry? A Locked VTXO's expiryHeight is the
+                // pre-refresh leaf's expiry (the deadline the stuck round
+                // failed to extend), so it IS the real "time left before these
+                // funds are lost" clock (unlike a healthy round, where the
+                // countdown is meaningless; the 2× stuck gate rules that out).
+                // Drives the escalation from "cancel & retry" to "move funds
+                // out" across the notifications + banners.
+                const blockMsStuck = AVG_BLOCK_MINUTES * 60 * 1000;
+                let soonestLockedMsLeft = Infinity;
+                if (typeof tip === 'number') {
+                    for (const v of lockedVtxos) {
+                        if (v.expiryHeight <= 0) continue;
+                        const msLeft = Math.max(0, v.expiryHeight - tip) * blockMsStuck;
+                        if (msLeft < soonestLockedMsLeft) soonestLockedMsLeft = msLeft;
+                    }
+                }
+                const stuckNearExpiry =
+                    isFinite(soonestLockedMsLeft) && soonestLockedMsLeft <= STUCK_SWAP_WINDOW_MS;
                 // Only surface the banner when funds are ACTUALLY locked. Orphan
                 // `finalising` round-state rows linger for days with no locked
                 // inputs (observed live: rounds 8 & 12 flagged with lockedSats=0),
@@ -685,6 +778,7 @@ export default function useArkSync(): UseArkSync {
                         stuckRoundIds: stuck.map((r) => r.id),
                         stuckSats: lockedSats,
                         detectedAtTip: typeof tip === 'number' ? tip : 0,
+                        nearExpiry: stuckNearExpiry,
                     });
                     if (__DEV__) {
                         console.warn(
@@ -696,6 +790,7 @@ export default function useArkSync(): UseArkSync {
                             ),
                             'thresholdSecs=', intervalSecs * 2,
                             'lockedSats=', lockedSats,
+                            'nearExpiry=', stuckNearExpiry,
                         );
                     }
                 } else {
@@ -704,6 +799,73 @@ export default function useArkSync(): UseArkSync {
             } else {
                 // No pending rounds at all → nothing stuck.
                 setArkRefreshStuck(null);
+            }
+
+            // --- Stuck-capsule swap-out notifications + auto-cancel net ---
+            //
+            // When a round is stuck AND its Locked funds are near expiry,
+            // schedule the 12h/6h/3h "move your funds out" alarms (whose tap
+            // routes to ArkStuckCapsuleScreen) and, once inside the 3h
+            // auto-cancel window, cancel the wedged round so the funds unlock
+            // with runway to still swap/exit. Reconciled like the expiry queue:
+            // entries added while stuck+near, cancelled the moment a VTXO stops
+            // qualifying (unlocked / round cleared / no longer near expiry).
+            // Reads arkRefreshStuck fresh (just set above).
+            if (vtxos && typeof tip === 'number') {
+                const stuckNow = useAuthStore.getState().arkRefreshStuck;
+                const prevSwap = useAuthStore.getState().arkScheduledStuckSwapNotifs;
+                const nextSwap: Record<string, number> = {};
+                if (stuckNow && useAuthStore.getState().arkBgRefreshEnabled) {
+                    const blockMs2 = AVG_BLOCK_MINUTES * 60 * 1000;
+                    const nowMs2 = Date.now();
+                    let anyWithinAutoCancel = false;
+                    for (const v of vtxos.all) {
+                        if (v.state.toLowerCase() !== 'locked') continue;
+                        if (v.expiryHeight <= 0) continue;
+                        const expiryAtMs = nowMs2 + Math.max(0, v.expiryHeight - tip) * blockMs2;
+                        const msLeft = expiryAtMs - nowMs2;
+                        if (msLeft <= STUCK_SWAP_WINDOW_MS) {
+                            nextSwap[v.id] = expiryAtMs;
+                            if (prevSwap[v.id] == null) {
+                                try {
+                                    scheduleVtxoStuckSwapWarnings(v.id, expiryAtMs, v.sats);
+                                    if (__DEV__) {
+                                        console.log(
+                                            '[Ark sync] scheduled swap-out warnings for',
+                                            v.id.slice(0, 12),
+                                            'expiry', new Date(expiryAtMs).toISOString(),
+                                        );
+                                    }
+                                } catch (notifErr) {
+                                    console.warn('[Ark sync] scheduleVtxoStuckSwapWarnings threw:', notifErr);
+                                }
+                            }
+                        }
+                        if (msLeft <= STUCK_AUTO_CANCEL_MS) anyWithinAutoCancel = true;
+                    }
+                    // Auto-cancel-at-3h safety net (Bam-approved): unlock the
+                    // wedged round's inputs while there's still time to move out.
+                    if (anyWithinAutoCancel && stuckNow.stuckRoundIds.length > 0) {
+                        void maybeAutoCancelStuckRounds(stuckNow.stuckRoundIds);
+                    }
+                }
+                // Cancel swap-out alarms for VTXOs that no longer qualify
+                // (unlocked, round cleared, or no longer near expiry).
+                for (const id of Object.keys(prevSwap)) {
+                    if (nextSwap[id] == null) {
+                        try {
+                            cancelVtxoStuckSwapWarnings(id);
+                        } catch (notifErr) {
+                            console.warn('[Ark sync] cancelVtxoStuckSwapWarnings threw:', notifErr);
+                        }
+                    }
+                }
+                const prevSwapKeys = Object.keys(prevSwap);
+                const nextSwapKeys = Object.keys(nextSwap);
+                const swapChanged =
+                    prevSwapKeys.length !== nextSwapKeys.length ||
+                    nextSwapKeys.some((k) => prevSwap[k] !== nextSwap[k]);
+                if (swapChanged) setArkScheduledStuckSwapNotifs(nextSwap);
             }
 
             // In-flight LN receives: pay-only entries (hasHtlcVtxos === true)
@@ -828,6 +990,15 @@ export default function useArkSync(): UseArkSync {
             // success rate-limit still applies.
             if (
                 state.arkBgRefreshEnabled &&
+                // Stop feeding the loop: when a round is already wedged, don't
+                // start new rounds on other near-expiry VTXOs. The stuck-swap
+                // flow (banner + notifications + auto-cancel) owns recovery
+                // until the wedge clears, at which point the sweep resumes.
+                !state.arkRefreshStuck &&
+                // And after an auto-cancel unlocks funds near expiry, stay off
+                // for a cooldown so they remain spendable for the user to move
+                // out instead of being immediately re-refreshed into the wedge.
+                Date.now() - lastArkAutoCancelAt > ARK_POST_AUTOCANCEL_SWEEP_COOLDOWN_MS &&
                 isFinite(minBlocks) &&
                 minBlocks < URGENCY_THRESHOLD_BLOCKS &&
                 Date.now() - lastForegroundSweepAt > FOREGROUND_SWEEP_MIN_GAP_MS
