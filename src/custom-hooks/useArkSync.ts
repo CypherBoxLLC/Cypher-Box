@@ -38,6 +38,7 @@ import { processArkMovementsForActivity } from '@Cypher/services/ark/movementsAc
 // Imported from the file path directly (not the @Cypher/services/ark
 // barrel) — the barrel doesn't re-export the expiry module.
 import { formatBlocksUntil } from '@Cypher/services/ark/expiry';
+import { buildDeferredVtxoIds } from '@Cypher/services/ark/refreshDeferral';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import {
@@ -126,14 +127,14 @@ const REFRESH_FAIL_ALERT_GAP_MS = 6 * 60 * 60 * 1000;
 
 // --- Stuck-refresh swap-out window + auto-cancel safety net ----------------
 //
-// When a round is detected stuck (useArkSync flags it past 2× the round
+// When a round is detected stuck (useArkSync flags it past 2x the round
 // interval) AND its Locked VTXOs are inside this window of their pre-refresh
 // expiry, the UX escalates from "cancel & retry the refresh" to "move your
-// funds out": swap-out notifications (12h/6h/3h) are scheduled and the
-// in-app banners route to ArkStuckCapsuleScreen. 12h matches the product
-// decision to keep the 24h warning as a normal refresh prompt (a fresh
-// arkoor receive legitimately sits near 24h) and only escalate from 12h.
-const STUCK_SWAP_WINDOW_MS = 12 * 60 * 60 * 1000;
+// funds out": swap-out notifications are scheduled and the in-app banners
+// route to ArkStuckCapsuleScreen. 24h gives a full day of runway for the
+// cooperative swap-out or exit before the funds expire, so a stuck round this
+// close to expiry surfaces the escape hatch rather than just a cancel prompt.
+const STUCK_SWAP_WINDOW_MS = 24 * 60 * 60 * 1000;
 // Auto-cancel safety net: once a stuck round's Locked funds are inside this
 // window of expiry, cancel the wedged round automatically so the VTXOs unlock
 // with enough runway for the user to still swap / exit before the deadline.
@@ -939,12 +940,7 @@ export default function useArkSync(): UseArkSync {
             // movementWatcher pushing the entry and the user tapping a
             // button, so the race-winner is the user, not the scheduler.
             const promptState = state.arkArkoorPromptState ?? {};
-            const deferredIds = new Set<string>();
-            for (const [id, entry] of Object.entries(promptState)) {
-                if (entry.status === 'pending' || entry.status === 'dismissed') {
-                    deferredIds.add(id);
-                }
-            }
+            const deferredIds = buildDeferredVtxoIds(promptState);
             let minBlocks = Infinity;
             // Same minimum but INCLUDING user-deferred VTXOs — the
             // failure-streak escalation below uses this one. Deferring

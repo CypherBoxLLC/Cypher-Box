@@ -159,7 +159,8 @@ import {
     writeArkBackupToSaf,
 } from './safFolderBackup';
 import type { SafBackupOutcome } from './safFolderBackup';
-import { clearArkWalletHandle, openArkWallet } from './walletHandle';
+import { clearArkWalletHandle } from './walletHandle';
+import { openArkWalletWithRotation } from './restore';
 
 /**
  * Ark datadir backup / restore — Phase 2A: manual encrypted file export.
@@ -960,6 +961,30 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
 }
 
 /**
+ * Thrown by `restoreArkBackupBlob` when decrypt + manifest validation SUCCEEDED
+ * but applying the backup failed — the datadir write (e.g. ENOSPC) or the final
+ * `Wallet.open` (esplora/ASP unreachable). At this point the backup FILE is
+ * provably intact, so the recovery UI must NOT show "Backup file is corrupt";
+ * it should reassure the user their funds are safe and prompt a retry. See the
+ * esplora note in config.ts for the original mislabel this prevents.
+ *
+ * `backupIntact` is duck-typed so callers can detect it even if `instanceof`
+ * is defeated by class-transpilation of the Error subclass.
+ */
+export class ArkRestoreApplyError extends Error {
+    readonly backupIntact = true as const;
+    readonly innerError?: unknown;
+    constructor(innerError: unknown) {
+        const inner = (innerError as Error)?.message;
+        super(inner ? `Backup restore could not complete: ${inner}` : 'Backup restore could not complete');
+        this.name = 'ArkRestoreApplyError';
+        this.innerError = innerError;
+        // Guard instanceof against Babel's Error-subclass transpile gotcha.
+        Object.setPrototypeOf(this, ArkRestoreApplyError.prototype);
+    }
+}
+
+/**
  * Restore a backup blob into a fresh datadir and open the wallet.
  *
  * Steps, in order:
@@ -1000,48 +1025,63 @@ export async function restoreArkBackupBlob(
         }
     }
 
-    // Step 2: close the wallet so SQLite handles release file descriptors.
-    // Awaiting is required — the movement watcher's holder destroy
-    // happens asynchronously and pins SQLite FDs until it runs.
-    // Without the await, the subsequent unlink races the watcher's
-    // teardown and the restore fails with BarkError.Database (we hit
-    // this exact mode during the seed-only recovery testing — see
-    // walletHandle.clearArkWalletHandle).
-    await clearArkWalletHandle();
+    // Everything past decrypt + manifest validation is "the backup was good,
+    // now apply it." If teardown, the datadir write (e.g. ENOSPC), or the
+    // wallet open (esplora/ASP unreachable) throws, the FILE is provably intact
+    // — decrypt already succeeded above — so surface it as a typed
+    // ArkRestoreApplyError. The recovery UI keys off that to reassure the user
+    // and prompt a retry instead of the false "Backup file is corrupt" scare
+    // (see config.ts esplora note for the 45-minute misdiagnosis this caused).
+    try {
+        // Step 2: close the wallet so SQLite handles release file descriptors.
+        // Awaiting is required — the movement watcher's holder destroy
+        // happens asynchronously and pins SQLite FDs until it runs.
+        // Without the await, the subsequent unlink races the watcher's
+        // teardown and the restore fails with BarkError.Database (we hit
+        // this exact mode during the seed-only recovery testing — see
+        // walletHandle.clearArkWalletHandle).
+        await clearArkWalletHandle();
 
-    // Step 3+4: nuke and recreate datadir. Don't use deleteArkDatadir() since
-    // it flips the `ensured` latch in datadir.ts and we want to resume using
-    // the same path; a follow-up ensureArkDatadir handles re-creation.
-    if (await RNFS.exists(ARK_DATADIR)) {
-        await RNFS.unlink(ARK_DATADIR);
-    }
-    const datadir = await ensureArkDatadir();
-
-    // Step 5: write files. mkdirp parents per entry — manifest doesn't
-    // explicitly list directories.
-    for (const f of manifest.files) {
-        // Existing backups in the wild captured the datadir LOCK file.
-        // Restoring it plants another process's lock into the fresh
-        // datadir, which bark 0.3.0's lock manager can refuse to open.
-        // Locks are runtime state; the wallet recreates what it needs.
-        if (isLockArtifact(f.path)) continue;
-        const full = `${datadir}/${f.path}`;
-        const lastSlash = full.lastIndexOf('/');
-        if (lastSlash > 0) {
-            const parent = full.slice(0, lastSlash);
-            if (!(await RNFS.exists(parent))) {
-                await RNFS.mkdir(parent, {
-                    NSURLIsExcludedFromBackupKey: true,
-                    NSFileProtectionKey:
-                        'NSFileProtectionCompleteUntilFirstUserAuthentication',
-                });
-            }
+        // Step 3+4: nuke and recreate datadir. Don't use deleteArkDatadir()
+        // since it flips the `ensured` latch in datadir.ts and we want to
+        // resume using the same path; a follow-up ensureArkDatadir re-creates.
+        if (await RNFS.exists(ARK_DATADIR)) {
+            await RNFS.unlink(ARK_DATADIR);
         }
-        await RNFS.writeFile(full, f.b64, 'base64');
-    }
+        const datadir = await ensureArkDatadir();
 
-    // Step 6: open the wallet — should succeed now that datadir + seed agree.
-    await openArkWallet(mnemonic);
+        // Step 5: write files. mkdirp parents per entry — manifest doesn't
+        // explicitly list directories.
+        for (const f of manifest.files) {
+            // Existing backups in the wild captured the datadir LOCK file.
+            // Restoring it plants another process's lock into the fresh
+            // datadir, which bark 0.3.0's lock manager can refuse to open.
+            // Locks are runtime state; the wallet recreates what it needs.
+            if (isLockArtifact(f.path)) continue;
+            const full = `${datadir}/${f.path}`;
+            const lastSlash = full.lastIndexOf('/');
+            if (lastSlash > 0) {
+                const parent = full.slice(0, lastSlash);
+                if (!(await RNFS.exists(parent))) {
+                    await RNFS.mkdir(parent, {
+                        NSURLIsExcludedFromBackupKey: true,
+                        NSFileProtectionKey:
+                            'NSFileProtectionCompleteUntilFirstUserAuthentication',
+                    });
+                }
+            }
+            await RNFS.writeFile(full, f.b64, 'base64');
+        }
+
+        // Step 6: open the wallet — rotate esplora providers (matching the boot
+        // path) so a single provider bot-blocking bark's client doesn't fail
+        // the whole recovery. A single non-rotating open here was the recovery
+        // failure surfaced on device (2026-07-17): esplora threw at open and
+        // the screen mislabeled the intact backup "corrupt."
+        await openArkWalletWithRotation(mnemonic);
+    } catch (err) {
+        throw new ArkRestoreApplyError(err);
+    }
 }
 
 /**

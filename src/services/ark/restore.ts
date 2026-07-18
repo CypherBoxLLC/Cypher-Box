@@ -147,6 +147,29 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
 }
 
 /**
+ * Open the Ark wallet with the SAME esplora provider rotation the boot path
+ * uses, but THROW the last error on final failure instead of returning a
+ * result code. The `.cbark` restore flow (`restoreArkBackupBlob` in backup.ts)
+ * needs the failure to propagate so the recovery screen can tell a "decrypted
+ * fine, server unreachable" open failure apart from a genuinely corrupt backup.
+ *
+ * Reuses `openWithRetry` (transient-only retry + provider rotation) and the
+ * shared `openInFlight` guard so it can't race a boot/self-heal open against
+ * the same datadir.
+ */
+export async function openArkWalletWithRotation(seed: string): Promise<void> {
+    openInFlight = true;
+    try {
+        const result = await openWithRetry(seed);
+        if (!result.restored) {
+            throw result.error ?? new Error('Ark wallet open failed after trying all esplora providers');
+        }
+    } finally {
+        openInFlight = false;
+    }
+}
+
+/**
  * Self-heal re-open for the sync loop.
  *
  * `useArkRestoreOnBoot` runs exactly once per mount; if its open fails the

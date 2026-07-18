@@ -19,6 +19,7 @@ import {
     lookupArkBackupInLocalDocuments,
     lookupArkBackupInSafFolder,
     lookupArkBackupOnDrive,
+    ArkRestoreApplyError,
     restoreArkBackupBlob,
     setArkBackgroundRefreshEnabled,
 } from "@Cypher/services/ark";
@@ -340,6 +341,22 @@ export default function RecoverArkScreen() {
             // file path. See .claude/OPEN_BUGS.md for the original
             // diagnosis trail.
             if (result.kind === 'matched') {
+                // restoreArkBackupBlob decrypts + validates the manifest BEFORE
+                // it touches disk or the network. An ArkRestoreApplyError means
+                // those passed and only the apply/open step failed (server
+                // unreachable, or storage) — the file is provably intact, so it
+                // is NEVER corrupt. Reuse the same "backup is safe, retry"
+                // reassurance the network branch shows.
+                if (err instanceof ArkRestoreApplyError || err?.backupIntact === true) {
+                    console.warn('[Ark restore] apply/open failed after decrypt (file intact):', err);
+                    setRestoring(false);
+                    setErrorMsg(
+                        "Your backup file is intact, but the wallet couldn't reach the Ark server right now. " +
+                        "This is usually temporary. Check your internet connection and try again in a moment. " +
+                        "Your funds and seed are safe; no need to pick a different backup file.",
+                    );
+                    return true;
+                }
                 const msg = String(err?.message ?? '');
                 const isNetworkError =
                     msg.includes('BarkError.ServerConnection') ||

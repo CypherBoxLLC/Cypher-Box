@@ -112,7 +112,17 @@ export default function SendScreen({ navigation, route }: any) {
     const [isScannerActive, setIsScannerActive] = useState(false);
     const [addressFocused, setAddressFocused] = useState(false);
     const [maxUSD, setMaxUSD] = useState(0);
-    const [isPaste, setIsPaste] = useState(info?.destination && info?.destination?.startsWith('ln') ? true : false)
+    // Treat a Lightning invoice that arrives pre-filled via EITHER `to`
+    // (scanner / deep-link) or `destination` (paste flow) as a paste, so the
+    // amount-decode effect below runs and fills in the invoice amount.
+    // Previously this only checked `destination`, so a scanned invoice that
+    // landed in `to` left isPaste false and the amount stuck at 0. Lowercased
+    // because QR-encoded BOLT11 is often uppercase. Withdrawals set their own
+    // amount, so they opt out.
+    const [isPaste, setIsPaste] = useState(
+        !info?.isWithdrawal &&
+        (info?.to || info?.destination || '').trim().toLowerCase().startsWith('ln'),
+    )
     const [maxBalance, setMaxBalance] = useState<number>(0);
 
     useEffect(() => {
@@ -145,14 +155,15 @@ export default function SendScreen({ navigation, route }: any) {
     }, [info])
 
     useEffect(() => {
-        if (!sender.startsWith('ln') && !sender.includes('@') && !recommendedFee) {
+        const lnSender = sender.trim().toLowerCase();
+        if (!lnSender.startsWith('ln') && !sender.includes('@') && !recommendedFee) {
             const init = async () => {
                 const res = await bitcoinRecommendedFee();
                 setRecommendedFee(res);
                 console.log('recommendedFee: ', res)
             }
             init();
-        } else if (sender.startsWith('ln') && isPaste){
+        } else if (lnSender.startsWith('ln') && isPaste){
             // Two paths for a pasted Lightning invoice:
             //   1. Screen was opened with a pre-filled `info.destination`
             //      (e.g. deep-link / share-extension flow): the existing
@@ -166,7 +177,7 @@ export default function SendScreen({ navigation, route }: any) {
             if (info?.destination) {
                 setTimeout(() => handleLighteningInvoice(), 500);
             } else {
-                const trimmed = sender.trim();
+                const trimmed = sender.trim().toLowerCase();
                 const decodedSats = decodeBolt11Sats(trimmed);
                 if (decodedSats !== null && decodedSats > 0) {
                     // Compute fiat now so we can both populate the field
@@ -570,6 +581,12 @@ export default function SendScreen({ navigation, route }: any) {
                                                 onChange={newValue => {
                                                     console.log('newValue: ', newValue)
                                                     setSender(newValue);
+                                                    // A scanned/pasted Lightning invoice can land in the
+                                                    // field directly (e.g. the keyboard's Scan Text)
+                                                    // without going through the paste/scan buttons, which
+                                                    // were the only places isPaste got set. Flag it so the
+                                                    // amount-decode effect below runs and fills the amount.
+                                                    if (newValue.trim().toLowerCase().startsWith('ln')) setIsPaste(true);
                                                 }}
                                                 value={!sender.includes('@') && sender.length > 20 ? shortenAddress(sender) : sender}
                                                 textInputStyle={styles.senderText}

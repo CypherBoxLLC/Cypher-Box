@@ -74,6 +74,7 @@ export {
     isICloudBackupAvailable,
     migrateLegacyBackupFile,
     peekBackupHeader,
+    ArkRestoreApplyError,
     restoreArkBackupBlob,
     writeArkAutoBackup,
     writeAndVerifyArkBackup,

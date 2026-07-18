@@ -2,7 +2,7 @@ import { ScreenLayout } from "@Cypher/component-library";
 import { Tabs } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { useRoute } from "@react-navigation/native";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 import { default as Account, default as Vault } from "./Account";
 import ArkCapsules from "./ArkCapsules";
@@ -31,6 +31,13 @@ export default function CheckingAccountNew({ navigation, route }: any) {
         initialTab?: number,
     };
     const [selectedTab, setSelectedTab] = useState(initialTab ?? 0);
+    // Re-sync the active tab when navigated here with an explicit initialTab
+    // while this screen is already mounted (e.g. the send flow's locked-funds
+    // "Go to Capsules" notice → initialTab 0). useState above only captures the
+    // first value, so a back-navigation wouldn't otherwise switch tabs.
+    useEffect(() => {
+        if (typeof initialTab === 'number') setSelectedTab(initialTab);
+    }, [initialTab]);
     const { vaultTab, matchedRateStrike, strikeUser } = useAuthStore();
     const isArk = accountType === 'ark';
     // Strike branch (not Ark, not CoinOS-receive): rate + currency must

@@ -434,7 +434,17 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // item length 0" (observed on the A14 right after this effect
             // ran). The remount is the whole fix; nothing to scroll.
         }
-    }, [allBTCWallets, isLoading, matchedRateStrike, strikeBalance, convertedRate]);
+    }, [
+        allBTCWallets, isLoading, matchedRateStrike, strikeBalance, convertedRate,
+        // isArkAuth gates the Ark card (see `hasArk` above). Recovery writes
+        // isArkAuth and allBTCWallets in SEPARATE store updates, and the
+        // HomeScreen remount reconciles isArkAuth against disk, so this effect
+        // can run with 'ARK' already in the list while isArkAuth is still
+        // false, build wTabs WITHOUT the Ark card, then never rebuild when
+        // isArkAuth flips true. Without it here the recovered card only appears
+        // after a manual swipe / navigate-away-and-back forces a fresh build.
+        isArkAuth,
+    ]);
 
     // Maps a tab's `key` to the wallet "kind" used to color the page-indicator
     // line in BalanceView. Centralized here so the carousel and the indicator
