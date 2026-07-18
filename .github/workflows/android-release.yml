@@ -12,7 +12,7 @@ name: Android release build (real-config, unsigned)
 #      -> the real-config, shippable AAB.
 #   3. Shred the injected files from the workspace.
 #   4. Assert the two AABs differ ONLY in the four config-injection entries
-#      (index.android.bundle, classes2.dex, resources.pb, baseline.prof), so the
+#      (index.android.bundle, classesN.dex, resources.pb, baseline.prof), so the
 #      reproducibility guarantee is proven automatically on every release build.
 #
 # Only two values are injected, both already extractable from the shipped app,
@@ -98,13 +98,16 @@ jobs:
           (cd /tmp/realx && unzip -q /tmp/real.aab)
           echo "diff -rq (reference vs real-config):"
           diff -rq /tmp/ref /tmp/realx || true
-          UNEXPECTED="$(diff -rq /tmp/ref /tmp/realx | grep -vE 'index\.android\.bundle|classes2\.dex|resources\.pb|baseline\.prof' || true)"
+          # The BuildConfig-bearing dex is not always classes2: dex numbering
+          # shifts as the app grows, so config injection can land in classesN.
+          # Match any classesN.dex rather than pinning a number.
+          UNEXPECTED="$(diff -rq /tmp/ref /tmp/realx | grep -vE 'index\.android\.bundle|classes[0-9]+\.dex|resources\.pb|baseline\.prof' || true)"
           if [ -n "$UNEXPECTED" ]; then
             echo "REJECT: differences beyond the 4 config-injection entries:" >&2
             echo "$UNEXPECTED" >&2
             exit 1
           fi
-          echo "OK: only index.android.bundle, classes2.dex, resources.pb, baseline.prof differ."
+          echo "OK: only index.android.bundle, classesN.dex, resources.pb, baseline.prof differ."
 
       - name: Assemble artifacts + checksums
         run: |
