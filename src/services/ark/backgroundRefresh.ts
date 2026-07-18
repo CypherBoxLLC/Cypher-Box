@@ -12,6 +12,7 @@ import {
     fetchArkPendingRoundStates,
     refreshArkVtxosAndSync,
 } from './refresh';
+import { buildDeferredVtxoIds } from './refreshDeferral';
 import { fetchArkVtxos } from './vtxos';
 import { getArkWalletHandle, getCachedArkMnemonic } from './walletHandle';
 import {
@@ -495,22 +496,12 @@ export async function runBackgroundRefresh(
         //        new vtxo gets pulled into the round as a filler.
         // Adding the time-window check picks up arkoors that arrived
         // mid-orchestrator and prevents them from being swept.
-        const RECENT_WINDOW_MS = 90_000; // 90s — covers a slow ASP round + sync lag
         const promptState = useAuthStore.getState().arkArkoorPromptState ?? {};
-        const nowForGate = Date.now();
-        const deferredIds = new Set<string>();
-        for (const [id, entry] of Object.entries(promptState)) {
-            if (entry.status === 'pending' || entry.status === 'dismissed') {
-                deferredIds.add(id);
-                continue;
-            }
-            // Recently observed but somehow not pending (e.g. user already
-            // resolved it via popup but the entry hasn't been pruned yet).
-            // Don't double-refresh.
-            if (entry.observedAt && nowForGate - entry.observedAt < RECENT_WINDOW_MS) {
-                deferredIds.add(id);
-            }
-        }
+        // Skip vtxos inside the "Use immediately" 3h grace, unanswered arkoor
+        // popups, and 90s-fresh arrivals (mid-orchestrator race). Shared with
+        // every other automatic refresh path via buildDeferredVtxoIds. A
+        // 'dismissed' vtxo whose grace has lapsed is intentionally NOT skipped.
+        const deferredIds = buildDeferredVtxoIds(promptState);
         console.log(
             '[Ark bg refresh] deferral set:',
             deferredIds.size,
@@ -678,17 +669,10 @@ export async function runBackgroundRefresh(
         {
             const latestPromptState =
                 useAuthStore.getState().arkArkoorPromptState ?? {};
+            const latestDeferred = buildDeferredVtxoIds(latestPromptState);
             const lateAddedDeferred = new Set<string>();
-            const lateNow = Date.now();
-            for (const [id, entry] of Object.entries(latestPromptState)) {
-                if (deferredIds.has(id)) continue; // already accounted for at categorization
-                if (
-                    entry.status === 'pending' ||
-                    entry.status === 'dismissed' ||
-                    (entry.observedAt && lateNow - entry.observedAt < RECENT_WINDOW_MS)
-                ) {
-                    lateAddedDeferred.add(id);
-                }
+            for (const id of latestDeferred) {
+                if (!deferredIds.has(id)) lateAddedDeferred.add(id); // newly deferred since categorization
             }
             if (lateAddedDeferred.size > 0) {
                 const droppedFromBatch = batchIds.filter((id) =>

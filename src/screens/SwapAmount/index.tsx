@@ -8,6 +8,7 @@ import { GradientShock, Electricity } from "@Cypher/assets/images";
 import { dispatchNavigate, dispatchReset } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
+import LockedInRefreshNotice from "@Cypher/components/LockedInRefreshNotice";
 import SimpleToast from "react-native-simple-toast";
 import { StyleSheet } from "react-native";
 import {
@@ -34,6 +35,12 @@ export default function SwapAmount() {
         sourceBalance?: number;
     };
     const { matchedRateStrike, strikeUser } = useAuthStore();
+    // Ark sats locked in an in-flight refresh. When the source is Ark and the
+    // user can't cover the swap because funds are locked, point them to
+    // Capsules to cancel the refresh (see LockedInRefreshNotice) rather than
+    // letting the swap fail with an opaque insufficient-balance error.
+    const arkBalanceDetail = useAuthStore((s) => s.arkBalanceDetail);
+    const pendingInRoundSats = Number(arkBalanceDetail?.pendingInRoundSats ?? 0);
     // Currency and rate are rail-specific. Strike carries the user's
     // configured fiat currency (e.g. EUR) and a Strike-side rate in that
     // currency. Every other rail uses USD and BlueWallet's USD/BTC rate
@@ -94,7 +101,15 @@ export default function SwapAmount() {
      * — providers that don't quote ahead of time return null and we
      * default to 0 (no reserve, same as before for Coinos/Strike).
      */
-    const [maxFeeReserve, setMaxFeeReserve] = useState<number>(0);
+    // Conservative headroom held back on the Max button UNTIL the provider's
+    // precise reserve finishes seeding (in the effect below). That seed is
+    // async: it hits the ASP, and on Ark a chain-tip fetch that can stall for
+    // seconds while esplora is rate-limited (429). Seeding this at 0 let Max
+    // momentarily equal the full spendable balance, which then fails the send
+    // preflight ("amount + routing fee > spendable"). Seeding it at a safe
+    // holdback that only ever DECREASES to the real reserve closes that race.
+    const MAX_RESERVE_SEEDING_HOLDBACK = 500;
+    const [maxFeeReserve, setMaxFeeReserve] = useState<number>(MAX_RESERVE_SEEDING_HOLDBACK);
 
     // One-shot Max-button reserve at mount. Two-stage lookup:
     //   1. Provider's `maxFeeReserve` — explicit headroom buffer (Coinos
@@ -120,8 +135,10 @@ export default function SwapAmount() {
                 }
                 if (!cancelled) setMaxFeeReserve(Math.max(0, reserve));
             } catch {
-                // Reserve is best-effort — fall back to 0 (full balance).
-                if (!cancelled) setMaxFeeReserve(0);
+                // Reserve is best-effort. Fall back to the safe holdback (NOT
+                // 0/full balance) so a failed seed can't let Max overshoot the
+                // "amount + fee ≤ spendable" preflight either.
+                if (!cancelled) setMaxFeeReserve(MAX_RESERVE_SEEDING_HOLDBACK);
             }
         })();
         return () => { cancelled = true; };
@@ -419,6 +436,9 @@ export default function SwapAmount() {
         <ScreenLayout disableScroll showToolbar isBackButton title="Lightning Swap">
             <View style={styles.main}>
                 <GradientInput isSats={isSats} walletInfo={{ matchedRate, currency }} sats={sats} setSats={setSats} usd={usd} />
+                {swapFrom === 'ark' && pendingInRoundSats > 0 && (sourceBalance === 0 || (Number(sats) || 0) > sourceBalance) && (
+                    <LockedInRefreshNotice lockedSats={pendingInRoundSats} />
+                )}
                 <View style={styles.directionRow}>
                     {renderProviderBadge(fromProvider, swapFrom, 'inline')}
                     <Text style={styles.arrow}>→</Text>

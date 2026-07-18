@@ -231,7 +231,15 @@ export default function ArkSeedPhraseScreen() {
         } catch (err) {
             console.warn("[Ark] Wallet.create failed during backup setup:", err);
             const msg = (err as Error)?.message ?? "unknown error";
-            const looksLikeStaleDatadir = /Internal|InvalidMnemonic|Database/i.test(msg);
+            // bark's error strings for "a datadir already exists on disk but
+            // this seed can't open it": Internal / Database (0-byte or schema
+            // residue) and "incorrect mnemonic" (the datadir was created with a
+            // DIFFERENT seed, i.e. the poisoned-datadir trap left by a create that
+            // died mid-flight, e.g. the esplora bot-block). All three route to
+            // the user-confirmed Reset & retry below; without "incorrect
+            // mnemonic" here that case dead-ended on a bare toast and the only
+            // way out was reinstalling the app.
+            const looksLikeStaleDatadir = /Internal|InvalidMnemonic|Database|incorrect mnemonic/i.test(msg);
 
             // Non-stale-datadir errors: just toast and bail. Caller retries on next tap.
             if (!looksLikeStaleDatadir) {

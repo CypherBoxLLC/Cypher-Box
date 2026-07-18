@@ -22,6 +22,7 @@ import {
 } from '@Cypher/services/ark';
 import { colors } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
+import LockedInRefreshNotice from '@Cypher/components/LockedInRefreshNotice';
 
 /**
  * Decode the sat amount encoded in an amount-bearing BOLT11, or null if the
@@ -100,6 +101,10 @@ export default function ArkSendScreen({ route }: Props) {
     // useless in the UI. The store is kept fresh by the 30 s useArkSync tick.
     const arkBalance = useAuthStore((s) => s.arkBalance);
     const spendableSats = Number(arkBalance ?? 0);
+    // Sats locked in an in-flight refresh round. Spendable again once the
+    // round finalises or the user cancels it from the Capsules tab.
+    const arkBalanceDetail = useAuthStore((s) => s.arkBalanceDetail);
+    const pendingInRoundSats = Number(arkBalanceDetail?.pendingInRoundSats ?? 0);
 
     const [destinationRaw, setDestinationRaw] = useState<string>(
         route?.params?.initialDestination ?? '',
@@ -311,12 +316,15 @@ export default function ArkSendScreen({ route }: Props) {
                     Locked (mid-round) and needs a recovery / wait, not that
                     the amount is wrong. */}
                 {amountValid && !amountWithinBalance && (
-                    <Text style={styles.error}>
-                        Insufficient spendable balance: {spendableSats.toLocaleString()} sats available.
-                        {spendableSats === 0
-                            ? ' Your VTXO capsules may be locked in a pending round — try again once the round finalises, or recover from the Capsules tab.'
-                            : ''}
-                    </Text>
+                    pendingInRoundSats > 0 ? (
+                        // Funds aren't missing, they're locked in a refresh.
+                        // Point the user to Capsules to cancel it (see notice).
+                        <LockedInRefreshNotice lockedSats={pendingInRoundSats} />
+                    ) : (
+                        <Text style={styles.error}>
+                            Insufficient spendable balance: {spendableSats.toLocaleString()} sats available.
+                        </Text>
+                    )
                 )}
             </ScrollView>
 

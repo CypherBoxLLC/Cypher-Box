@@ -39,6 +39,7 @@ import {
     formatBlocksUntil,
 } from "@Cypher/services/ark/expiry";
 import { buildRefreshBatch } from "@Cypher/services/ark/refreshBatch";
+import { buildDeferredVtxoIds } from "@Cypher/services/ark/refreshDeferral";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
@@ -110,6 +111,18 @@ function getExpiryView(daysLeft: number): ExpiryView {
     if (daysLeft >= 14) return { status: "yellow", color: colors.ark.light, fractionLeft };
     if (daysLeft >= 7)  return { status: "orange", color: "#FB923C",        fractionLeft };
     return                      { status: "red",   color: colors.redLight,  fractionLeft };
+}
+
+/**
+ * Day + hour precision for the per-row "time left" label, e.g. "1d 16h left"
+ * or "16h left". A flat "1d" is misleading near expiry (1d and 1d-23h read the
+ * same); showing the hours makes the countdown honest.
+ */
+function formatExpiryLeft(daysLeft: number): string {
+    const totalHours = Math.max(0, Math.round(daysLeft * 24));
+    const d = Math.floor(totalHours / 24);
+    const h = totalHours % 24;
+    return d > 0 ? `${d}d ${h}h left` : `${h}h left`;
 }
 
 // --- Ring constants ---
@@ -246,6 +259,12 @@ interface VtxoRowProps {
     isCancelling: boolean;
     /** Round cadence in seconds (from wallet.arkInfo()), null until fetched. */
     roundIntervalSecs: number | null;
+    /**
+     * Consecutive refresh failures (arkRefreshFailStreak). When > 0 and the
+     * capsule is mid-refresh, the row shows "⚠️ N refresh attempt(s) failed"
+     * instead of the "takes less than 3 hours" reassurance.
+     */
+    failedAttempts?: number;
 }
 
 /**
@@ -266,7 +285,7 @@ function formatRoundUpperBound(secs: number): string {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCancelling, roundIntervalSecs }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCancelling, roundIntervalSecs, failedAttempts }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = formatCapsuleAmount(vtxo.sats);
 
@@ -353,13 +372,15 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
             : view.color;
     const labelText = isTransientForLabel
         ? (isCancelling
-            ? 'Cancelling\n(takes less than an hour)'
-            : 'Refreshing or In-flight\n(takes less than an hour)')
+            ? 'Cancelling\n(takes less than 3 hours)'
+            : (failedAttempts && failedAttempts > 0
+                ? `Refreshing or In-flight\n⚠️ ${failedAttempts} refresh attempt${failedAttempts === 1 ? '' : 's'} failed`
+                : 'Refreshing or In-flight\n(takes less than 3 hours)'))
         : isExpired
             ? 'Expired'
             : vtxo.unknownExpiry
                 ? vtxo.kind
-                : `${Math.max(0, Math.round(vtxo.daysLeft))}d left`;
+                : formatExpiryLeft(vtxo.daysLeft);
     const ringDaysLeft = isTransientForLabel ? VTXO_MAX_DAYS : vtxo.daysLeft;
 
     // Explainer for expired capsules — the only "action" the row keeps.
@@ -1006,6 +1027,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // useArkSync's stuck detection. Drives the per-round 3h countdowns in the
     // refresh-wait banner. Auto-prunes when a round completes.
     const arkPendingRoundFirstSeen = useAuthStore((s) => s.arkPendingRoundFirstSeen);
+    // Subscribed (not getState) so the dust-consolidate banner re-derives when
+    // a "Use immediately" grace is set/lapses and stops auto-sweeping that vtxo.
+    const arkArkoorPromptState = useAuthStore((s) => s.arkArkoorPromptState);
+    // Consecutive refresh failures, drives the per-row "N refresh attempts
+    // failed" copy while a capsule is stuck mid-refresh.
+    const arkRefreshFailStreak = useAuthStore((s) => s.arkRefreshFailStreak);
 
     // Recover a stuck refresh from the Capsules tab. Mirrors the home-card
     // handler in ArkWallet — but that banner is invisible to a user sitting
@@ -1191,17 +1218,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         setArkPendingTapRefresh(false);
 
         // Honour user-deferred VTXOs ("Use immediately" from the arkoor
-        // receive popup). Mirrors the deferred-set logic in
-        // src/services/ark/backgroundRefresh.ts so the tap and bg paths
-        // agree on what's off-limits.
+        // receive popup), via the shared gate so the tap and bg paths agree
+        // on what's off-limits (3h grace, unanswered popups, 90s race window).
         const promptState =
             useAuthStore.getState().arkArkoorPromptState ?? {};
-        const deferredIds = new Set<string>();
-        for (const [id, entry] of Object.entries(promptState)) {
-            if (entry.status === 'pending' || entry.status === 'dismissed') {
-                deferredIds.add(id);
-            }
-        }
+        const deferredIds = buildDeferredVtxoIds(promptState);
 
         const batch = buildRefreshBatch({
             vtxos: rows.map((r) => ({
@@ -1661,12 +1682,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         const freshTip = useAuthStore.getState().arkChainTipHeight;
         const freshPromptState =
             useAuthStore.getState().arkArkoorPromptState ?? {};
-        const freshDeferredIds = new Set<string>();
-        for (const [id, entry] of Object.entries(freshPromptState)) {
-            if (entry.status === 'pending' || entry.status === 'dismissed') {
-                freshDeferredIds.add(id);
-            }
-        }
+        const freshDeferredIds = buildDeferredVtxoIds(freshPromptState);
         const projected = freshVtxos.map((v) => {
             const pending = v.state.toLowerCase() === 'locked';
             if (v.expiryHeight === 0 || freshTip === null) {
@@ -1913,9 +1929,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         // ASP rejects it for being past its lifetime — so trying to
         // include it would just nuke the whole consolidation attempt.
         // Also exclude pendingRound capsules (already in flight, double-
-        // submission would confuse the SDK).
+        // submission would confuse the SDK). And exclude vtxos inside their
+        // "Use immediately" grace; this button auto-selects the set, so it
+        // must honour the same consent every other automatic path does.
+        const deferredIds = buildDeferredVtxoIds(arkArkoorPromptState);
         const dust = rows.filter(
-            (r) => r.sats <= ARK_VTXO_DUST_SATS && !r.pendingRound && r.daysLeft > 0,
+            (r) => r.sats <= ARK_VTXO_DUST_SATS && !r.pendingRound && r.daysLeft > 0 && !deferredIds.has(r.id),
         );
         if (dust.length === 0) {
             return { dust, ids: [] as string[], total: 0, viable: false, shortfall: 0 };
@@ -1934,7 +1953,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         // input set would poison the whole consolidation round the same
         // way expired dust would.
         const nonDust = rows
-            .filter((r) => r.sats > ARK_VTXO_DUST_SATS && !r.pendingRound && r.daysLeft > 0)
+            .filter((r) => r.sats > ARK_VTXO_DUST_SATS && !r.pendingRound && r.daysLeft > 0 && !deferredIds.has(r.id))
             .sort((a, b) => a.sats - b.sats);
         const fillers: typeof rows = [];
         let total = dustTotal;
@@ -1951,7 +1970,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             viable,
             shortfall: viable ? 0 : ARK_REFRESH_MIN_SATS - total,
         };
-    }, [rows]);
+    }, [rows, arkArkoorPromptState]);
 
     const handleConsolidateDust = () => {
         if (!dustConsolidate.viable || dustConsolidate.ids.length < 2) return;
@@ -2221,6 +2240,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         onCancelIcon={handleRowCancel}
                         isCancelling={cancelling}
                         roundIntervalSecs={arkRoundIntervalSecs}
+                        failedAttempts={arkRefreshFailStreak}
                     />
                 )}
                 // Pending LN receives render ABOVE the VTXO list. They're

@@ -382,13 +382,13 @@ export default function ArkStuckCapsuleScreen() {
                             disabled={!canExit}
                             activeOpacity={0.7}
                             accessibilityRole="button"
-                            accessibilityLabel="Exit"
+                            accessibilityLabel="Rescue near-expired funds"
                             style={{ marginTop: 16, paddingVertical: 14, borderRadius: 12, alignItems: "center", backgroundColor: canExit ? accent : "#444" }}
                         >
                             {exiting ? (
                                 <ActivityIndicator color="#0B0B0B" />
                             ) : (
-                                <Text bold style={{ fontSize: 15, color: "#0B0B0B" }}>Exit</Text>
+                                <Text bold style={{ fontSize: 15, color: "#0B0B0B" }}>Rescue near-expired funds</Text>
                             )}
                         </TouchableOpacity>
                     </>

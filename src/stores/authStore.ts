@@ -361,6 +361,15 @@ export type AuthStateType = {
         observedAt: number;
         dismissedAt?: number;
         /**
+         * "Spend immediately" grace: epoch-ms until which auto-refresh must
+         * leave this vtxo alone. Set to now + SPEND_GRACE_MS when the user taps
+         * "Use immediately" so the choice actually holds, then lapses so the
+         * vtxo can auto-refresh again well before expiry. Absent on entries
+         * from before this field / on non-"use-immediately" dismissals; those
+         * are NOT grace-deferred. Manual (user-tapped) refresh ignores this.
+         */
+        deferUntil?: number;
+        /**
          * Sats from the Bark movement event's `effectiveBalanceSats`.
          * Stored at push time so the popup can render the amount even
          * when the vtxo has already been Locked into a refresh round
@@ -418,6 +427,8 @@ export type AuthStateType = {
             status: 'pending' | 'dismissed' | 'refreshed';
             observedAt: number;
             dismissedAt?: number;
+            deferUntil?: number;
+            sats?: number;
         }>,
     ) => void;
     setArkArkoorPromptEnabled: (state: boolean) => void;

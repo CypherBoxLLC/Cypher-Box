@@ -156,7 +156,6 @@ export async function createArkWallet(
 ): Promise<WalletInterface> {
     await ensureUniffi();
     const datadir = await ensureArkDatadir();
-    const config = createArkConfig();
 
     // bark 0.11.3 consolidated open-or-create into a single `Wallet.open` with
     // `createIfNotExists`, so the old open-then-catch-then-`Wallet.create`
@@ -179,54 +178,79 @@ export async function createArkWallet(
         );
     }
 
-    try {
-        handle = await Wallet.open(
-            ARK_NETWORK,
-            mnemonic,
-            config,
-            WalletOpenArgs.create({ datadir, createIfNotExists: true }),
-        );
-    } catch (err) {
-        // Guarded cleanup for the poisoned-datadir trap (the cleanup the
-        // pre-0.11.3 open-catch-create fallback used to provide). A create
-        // that dies mid-flight (esplora unreachable, app killed) leaves a
-        // partial datadir bound to a mnemonic that no longer exists; every
-        // later create then fails on the mismatch and the user is stuck.
-        //
-        // Wipe-and-retry ONLY when both hold:
-        //   1. The failure is NOT network-shaped. Esplora/ASP outages throw
-        //      here too and the datadir is not the problem; wiping on those
-        //      would nuke state for nothing.
-        //   2. NO ark seed exists in the Keychain. bark cannot open a datadir
-        //      without its mnemonic, and the device's only copy lives at
-        //      KEYCHAIN_SERVICE; no seed = nothing can ever open this datadir
-        //      = failed-create residue. If a seed IS present the datadir may
-        //      be a live funded wallet, so never touch it.
-        //      getAllGenericPasswordServices is metadata-only (no FaceID);
-        //      if the query itself fails, fail SAFE and assume a seed exists.
-        const detail = `${(err as { tag?: string })?.tag ?? ''} ${(err as Error)?.message ?? String(err)}`;
-        const networkShaped =
-            /ServerConnection|Connection|connect|timeout|timed out|network|bad response from server/i.test(detail);
-        if (networkShaped) throw err;
+    // runDaemon: false on the create/recover path too (matches openArkWallet).
+    // The 0.11.3 SDK daemon defaults ON and runs its own maintenance-refresh
+    // below JS, which bypasses the "Use immediately" deferral and locks vtxos
+    // the user chose to keep spendable. Keep JS the sole refresh driver.
+    // Esplora rotation on create (mirrors the restore.ts open loop and
+    // ensureArkOnchainHandle below). A public esplora that bot-blocks bark's
+    // client, blockstream serves a ~338-byte Cloudflare page in place of chain
+    // data, surfacing as "bad response from server (not a blockhash)", would
+    // otherwise kill wallet creation outright, since the single-endpoint create
+    // had no fallback, unlike recovery which already rotates. attempt 0 is the
+    // same primary the old single-endpoint create used, so the happy path is
+    // unchanged; only a network-shaped failure rotates to the next provider.
+    for (let attempt = 0; attempt < ESPLORA_URLS.length; attempt++) {
+        const config = createArkConfig({ esploraAddress: ESPLORA_URLS[attempt] });
+        try {
+            handle = await Wallet.open(
+                ARK_NETWORK,
+                mnemonic,
+                config,
+                WalletOpenArgs.create({ datadir, createIfNotExists: true, runDaemon: false }),
+            );
+            break;
+        } catch (err) {
+            // Guarded cleanup for the poisoned-datadir trap (the cleanup the
+            // pre-0.11.3 open-catch-create fallback used to provide). A create
+            // that dies mid-flight (esplora unreachable, app killed) leaves a
+            // partial datadir bound to a mnemonic that no longer exists; every
+            // later create then fails on the mismatch and the user is stuck.
+            //
+            // Wipe-and-retry ONLY when both hold:
+            //   1. The failure is NOT network-shaped. Esplora/ASP outages throw
+            //      here too and the datadir is not the problem; wiping on those
+            //      would nuke state for nothing.
+            //   2. NO ark seed exists in the Keychain. bark cannot open a datadir
+            //      without its mnemonic, and the device's only copy lives at
+            //      KEYCHAIN_SERVICE; no seed = nothing can ever open this datadir
+            //      = failed-create residue. If a seed IS present the datadir may
+            //      be a live funded wallet, so never touch it.
+            //      getAllGenericPasswordServices is metadata-only (no FaceID);
+            //      if the query itself fails, fail SAFE and assume a seed exists.
+            const detail = `${(err as { tag?: string })?.tag ?? ''} ${(err as Error)?.message ?? String(err)}`;
+            const networkShaped =
+                /ServerConnection|Connection|connect|timeout|timed out|network|bad response from server/i.test(detail);
+            if (networkShaped) {
+                // The datadir is not the problem, so rotate to the next esplora
+                // and retry. Throw only after every provider has been tried.
+                if (attempt < ESPLORA_URLS.length - 1) {
+                    if (__DEV__) console.warn(`[Ark] create via ${ESPLORA_URLS[attempt]} failed (network-shaped: ${detail.trim()}); rotating esplora`);
+                    continue;
+                }
+                throw err;
+            }
 
-        const services = await Keychain.getAllGenericPasswordServices().catch(() => null);
-        const seedMayExist = services === null || services.includes(KEYCHAIN_SERVICE);
-        if (seedMayExist) {
-            console.warn('[Ark] Wallet.create failed with a keychain seed present; NOT wiping datadir:', detail);
-            throw err;
+            const services = await Keychain.getAllGenericPasswordServices().catch(() => null);
+            const seedMayExist = services === null || services.includes(KEYCHAIN_SERVICE);
+            if (seedMayExist) {
+                console.warn('[Ark] Wallet.create failed with a keychain seed present; NOT wiping datadir:', detail);
+                throw err;
+            }
+
+            console.warn('[Ark] Wallet.create failed on an orphaned datadir (no keychain seed); wiping residue and retrying once:', detail);
+            await clearArkWalletHandle();
+            await deleteArkDatadir();
+            const freshDatadir = await ensureArkDatadir();
+            handle = await Wallet.open(
+                ARK_NETWORK,
+                mnemonic,
+                config,
+                WalletOpenArgs.create({ datadir: freshDatadir, createIfNotExists: true, runDaemon: false }),
+            );
+            console.log('[Ark] Wallet.create retry after residue wipe succeeded');
+            break;
         }
-
-        console.warn('[Ark] Wallet.create failed on an orphaned datadir (no keychain seed); wiping residue and retrying once:', detail);
-        await clearArkWalletHandle();
-        await deleteArkDatadir();
-        const freshDatadir = await ensureArkDatadir();
-        handle = await Wallet.open(
-            ARK_NETWORK,
-            mnemonic,
-            config,
-            WalletOpenArgs.create({ datadir: freshDatadir, createIfNotExists: true }),
-        );
-        console.log('[Ark] Wallet.create retry after residue wipe succeeded');
     }
     cachedMnemonic = mnemonic;
     if (__DEV__) console.log('[Ark] Opened-or-created wallet in datadir');

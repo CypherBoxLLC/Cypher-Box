@@ -10,6 +10,7 @@ import {
     refreshArkVtxosAndSync,
     scheduleVtxoExpiryWarnings,
 } from '@Cypher/services/ark';
+import { SPEND_GRACE_MS } from '@Cypher/services/ark/refreshDeferral';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 
@@ -283,16 +284,26 @@ export default function useArkoorReceivePrompt(): void {
                             });
                             const cur = useAuthStore.getState().arkArkoorPromptState;
                             const existing = cur[firstId];
-                            if (existing) {
-                                setArkArkoorPromptState({
-                                    ...cur,
-                                    [firstId]: {
-                                        ...existing,
-                                        status: 'dismissed',
-                                        dismissedAt: Date.now(),
-                                    },
-                                });
-                            }
+                            const nowTs = Date.now();
+                            // Create-or-update so the "spend immediately" grace always
+                            // holds, even if the pending entry is somehow missing.
+                            // deferUntil holds auto-refresh off this vtxo for
+                            // SPEND_GRACE_MS, then it refreshes normally.
+                            setArkArkoorPromptState({
+                                ...cur,
+                                [firstId]: {
+                                    ...(existing ?? { observedAt: nowTs, sats: sats ?? undefined }),
+                                    status: 'dismissed',
+                                    dismissedAt: nowTs,
+                                    deferUntil: nowTs + SPEND_GRACE_MS,
+                                },
+                            });
+                            console.log(
+                                '[useArkoorReceivePrompt] use-immediately grace stamped',
+                                firstId.slice(0, 12),
+                                'deferUntil=now+', Math.round(SPEND_GRACE_MS / 3600000), 'h',
+                                'existingFound=', !!existing,
+                            );
                             // Re-arm OS push warnings — idempotent per id, so this
                             // is a no-op if they were already scheduled at
                             // observation time. Belt + suspenders in case the
