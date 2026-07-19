@@ -12,6 +12,9 @@ on:
   push:
     branches:
       - main # verify reproducibility on each release-integration push to main
+    paths-ignore: # doc-only edits do not change the build, so skip the run
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch: {} # manual run for ad-hoc determinism checks
 
 # Least privilege: read the repo and nothing else. No write, no id-token, no
