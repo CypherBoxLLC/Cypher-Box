@@ -42,7 +42,7 @@ Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark
 * Send & receive over Lightning, receive on Ark addresses, board from on-chain
 * **Capsule dashboard** with color-coded expiry at a glance:
 
-  | | Capsule age | Meaning |
+  | | Lightning Capsule age | Meaning |
   |---|---|---|
   | 🟢 | 21+ days left | Fresh, nothing to do |
   | 🟡 | 14–20 days | Past the midpoint |
