@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackActions, useNavigation, useRoute } from '@react-navigation/native';
 import { BlueStorageContext } from './blue_modules/storage-context';
 import { isHandset } from './blue_modules/environment';
+import { resolveUnlockAction } from './blue_modules/unlockDecision';
 import triggerHapticFeedback, { HapticFeedbackTypes } from './blue_modules/hapticFeedback';
 
 const styles = StyleSheet.create({
@@ -121,9 +122,17 @@ const UnlockWith = () => {
       }
 
       setBiometricType(bt);
-      if (!biometricType || storageIsEncrypted) {
+      // Decide from the freshly fetched `bt`, never from the `biometricType`
+      // state variable: state updates do not apply inside this closure, so
+      // reading state here always saw the initial `false` and silently took
+      // the no-auth key path on cold start (biometrics enabled, storage
+      // unencrypted). See tests/unit/unlockDecision.test.ts.
+      const action = resolveUnlockAction(bt, storageIsEncrypted);
+      if (action === 'key') {
         unlockWithKey();
-      } else if (typeof biometricType === 'string') unlockWithBiometrics();
+      } else {
+        unlockWithBiometrics();
+      }
     }
   };
 
