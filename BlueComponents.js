@@ -21,6 +21,7 @@ import {
   ImageBackground,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import { copySensitiveToClipboard } from './helpers/clipboardSensitive';
 import NetworkTransactionFees, { NetworkTransactionFee, NetworkTransactionFeeType } from './models/networkTransactionFees';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlueCurrentTheme, useTheme } from './components/themes';
@@ -265,11 +266,13 @@ export class BlueCopyTextToClipboard extends Component {
   static propTypes = {
     text: PropTypes.string,
     truncated: PropTypes.bool,
+    sensitive: PropTypes.bool,
   };
 
   static defaultProps = {
     text: '',
     truncated: false,
+    sensitive: false,
   };
 
   constructor(props) {
@@ -287,7 +290,11 @@ export class BlueCopyTextToClipboard extends Component {
 
   copyToClipboard = () => {
     this.setState({ hasTappedText: true }, () => {
-      Clipboard.setString(this.props.text);
+      if (this.props.sensitive) {
+        copySensitiveToClipboard(this.props.text);
+      } else {
+        Clipboard.setString(this.props.text);
+      }
       this.setState({ address: loc.wallets.xpub_copiedToClipboard }, () => {
         setTimeout(() => {
           this.setState({ hasTappedText: false, address: this.props.text });

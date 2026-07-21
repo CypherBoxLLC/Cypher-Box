@@ -115,7 +115,7 @@ const WalletExport = () => {
             )}
             <BlueSpacing20 />
             {wallet.type === LightningCustodianWallet.type || wallet.type === WatchOnlyWallet.type ? (
-              <BlueCopyTextToClipboard text={wallet.getSecret()} />
+              <BlueCopyTextToClipboard text={wallet.getSecret()} sensitive />
             ) : (
               <BlueText style={[styles.secret, styles.secretWritingDirection, stylesHook.secret]} testID="Secret">
                 {wallet.getSecret()}
