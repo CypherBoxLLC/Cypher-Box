@@ -412,6 +412,27 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
     );
   });
 
+  it('decodeBitcoinUri drops non-https payjoin endpoints (BIP78)', () => {
+    // cleartext http pj= must be dropped: the endpoint receives the PSBT
+    const decoded = DeeplinkSchemaMatch.decodeBitcoinUri(
+      `bitcoin:${suffix}bc1qnapskphjnwzw2w3dk4anpxntunc77v6qrua0f7?amount=0.0001&pj=http://btc.donate.kukks.org/BTC/pj`,
+    );
+    assert.strictEqual(decoded.payjoinUrl, '');
+    assert.strictEqual(decoded.address, 'bc1qnapskphjnwzw2w3dk4anpxntunc77v6qrua0f7');
+
+    // non-URL pj= must be dropped as well
+    const decoded2 = DeeplinkSchemaMatch.decodeBitcoinUri(
+      `bitcoin:${suffix}bc1qnapskphjnwzw2w3dk4anpxntunc77v6qrua0f7?amount=0.0001&pj=notaurl`,
+    );
+    assert.strictEqual(decoded2.payjoinUrl, '');
+
+    // https is preserved
+    const decoded3 = DeeplinkSchemaMatch.decodeBitcoinUri(
+      `bitcoin:${suffix}bc1qnapskphjnwzw2w3dk4anpxntunc77v6qrua0f7?amount=0.0001&pj=https://btc.donate.kukks.org/BTC/pj`,
+    );
+    assert.strictEqual(decoded3.payjoinUrl, 'https://btc.donate.kukks.org/BTC/pj');
+  });
+
   it('recognizes files', () => {
     // txn files:
     assert.ok(DeeplinkSchemaMatch.isTXNFile('file://com.android.externalstorage.documents/document/081D-1403%3Atxhex.txn'));

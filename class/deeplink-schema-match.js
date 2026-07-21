@@ -491,7 +491,14 @@ class DeeplinkSchemaMatch {
           memo = parsedBitcoinUri.options.label || memo;
         }
         if ('pj' in parsedBitcoinUri.options) {
-          payjoinUrl = parsedBitcoinUri.options.pj;
+          const pjCandidate = parsedBitcoinUri.options.pj;
+          // BIP78: the payjoin endpoint must be HTTPS (HTTP only for .onion,
+          // which this build does not support). A cleartext or non-HTTP pj=
+          // endpoint would receive the PSBT in the clear, so drop it here and
+          // fall back to a normal (non-payjoin) send.
+          if (typeof pjCandidate === 'string' && /^https:\/\/.+/.test(pjCandidate)) {
+            payjoinUrl = pjCandidate;
+          }
         }
       }
     } catch (_) { }
