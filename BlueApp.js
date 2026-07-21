@@ -990,6 +990,14 @@ const startAndDecrypt = async retry => {
     // we had password and yet could not load/decrypt
     unlockAttempt++;
     if (unlockAttempt < 10 || Platform.OS !== 'ios') {
+      // Online brute-force throttle on ALL platforms: exponential backoff
+      // from the 5th failed attempt, capped at 30s. Android previously
+      // recursed immediately forever; iOS additionally offers the keychain
+      // wipe at 10 attempts (else branch below).
+      if (unlockAttempt >= 5) {
+        const backoffMs = Math.min(30000, 2 ** (unlockAttempt - 5) * 1000);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
       return startAndDecrypt(true);
     } else {
       unlockAttempt = 0;
