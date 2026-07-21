@@ -1207,7 +1207,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // cycles + app restarts so the auto-claim path in
                 // useArkSync can match the started/finished pair.
                 const correlationId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-                setArkExitCorrelationId(correlationId);
+                await setArkExitCorrelationId(correlationId);
                 let exitSats = 0;
                 try {
                   exitSats = await fetchPendingExitsTotalSats();

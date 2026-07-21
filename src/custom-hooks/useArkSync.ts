@@ -368,14 +368,14 @@ export default function useArkSync(): UseArkSync {
                         // that the exit succeeded. correlationId pairs
                         // this with the ark-exit-started event captured
                         // at the start of the exit.
-                        const correlationId = getArkExitCorrelationId();
+                        const correlationId = await getArkExitCorrelationId();
                         if (correlationId) {
                             recordEvent({
                                 kind: 'ark-exit-finished',
                                 correlationId,
                                 result: 'success',
                             });
-                            setArkExitCorrelationId(null);
+                            await setArkExitCorrelationId(null);
                         }
                         await resetArkWalletState();
                         clearArkAuth();

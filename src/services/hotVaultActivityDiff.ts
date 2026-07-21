@@ -31,7 +31,7 @@ type HotVaultLikeWallet = {
 
 const MIN_CONFIRMATIONS_TO_EMIT = 1;
 
-export function processHotVaultTxsForActivity(wallet: HotVaultLikeWallet | null | undefined): void {
+export async function processHotVaultTxsForActivity(wallet: HotVaultLikeWallet | null | undefined): Promise<void> {
     if (!wallet || typeof wallet.getTransactions !== "function") return;
 
     let txs: ReturnType<typeof wallet.getTransactions>;
@@ -43,11 +43,11 @@ export function processHotVaultTxsForActivity(wallet: HotVaultLikeWallet | null 
     if (!Array.isArray(txs) || txs.length === 0) return;
 
     const allTxids = txs.map((t) => t.txid).filter((id): id is string => typeof id === "string" && id.length > 0);
-    const cursor = getHotVaultSeenTxids();
+    const cursor = await getHotVaultSeenTxids();
 
     // First-sync: snapshot the world without emitting.
     if (cursor === null) {
-        setHotVaultSeenTxids(allTxids);
+        await setHotVaultSeenTxids(allTxids);
         return;
     }
 
@@ -77,5 +77,5 @@ export function processHotVaultTxsForActivity(wallet: HotVaultLikeWallet | null 
     // Persist the union of (cursor + everything currently visible). Pending
     // unconfirmed txs go into the cursor too — once they confirm on a
     // future tick they're already "seen" and won't re-emit.
-    setHotVaultSeenTxids([...new Set([...cursor, ...allTxids])]);
+    await setHotVaultSeenTxids([...new Set([...cursor, ...allTxids])]);
 }
