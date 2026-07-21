@@ -65,6 +65,20 @@ let disableBatching = false;
 let connectionAttempt = 0;
 let currentPeerIndex = Math.floor(Math.random() * hardcodedPeers.length);
 
+/**
+ * TLS certificate validation policy. The bundled first-party default peers
+ * all present valid public certificates, so strict validation is enforced
+ * for them (the library historically passed rejectUnauthorized:false for
+ * EVERY server — any certificate was accepted on the balance/history/fee/
+ * broadcast path). User-configured servers remain permissive for now, since
+ * self-hosted Electrum servers commonly use self-signed certs; a
+ * trust-on-first-use pinning UI is the documented follow-up for those.
+ */
+function getElectrumConnectionOptions(peer) {
+  const isFirstPartyPeer = [defaultPeer, ...hardcodedPeers].some(p => p.host === peer.host);
+  return { rejectUnauthorized: isFirstPartyPeer };
+}
+
 let latestBlockheight = false;
 let latestBlockheightTimestamp = false;
 
@@ -121,7 +135,14 @@ async function connectMain() {
 
   try {
     console.log('begin connection:', JSON.stringify(usingPeer));
-    mainClient = new ElectrumClient(global.net, global.tls, usingPeer.ssl || usingPeer.tcp, usingPeer.host, usingPeer.ssl ? 'tls' : 'tcp');
+    mainClient = new ElectrumClient(
+      global.net,
+      global.tls,
+      usingPeer.ssl || usingPeer.tcp,
+      usingPeer.host,
+      usingPeer.ssl ? 'tls' : 'tcp',
+      getElectrumConnectionOptions(usingPeer),
+    );
 
     mainClient.onError = function (e) {
       console.log('electrum mainClient.onError():', e.message);

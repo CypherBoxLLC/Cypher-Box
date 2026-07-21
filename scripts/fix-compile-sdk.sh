@@ -183,3 +183,33 @@ if [ -f "$RNREG" ] && [ -f "$RNREG_PATCH" ] && ! grep -q "CypherBox.FabricViewLe
 fi
 
 echo "=== Done ==="
+
+# electrum-client: thread an options object into TlsSocketWrapper so callers can
+# opt into TLS certificate validation per-server. The library historically
+# hardcoded rejectUnauthorized:false, so EVERY Electrum TLS connection accepted
+# ANY certificate on the balance/history/fee/broadcast path (CWE-295). The app
+# (blue_modules/BlueElectrum.js) now opts into strict validation for the
+# bundled first-party peers while leaving user-configured (often self-signed)
+# servers permissive. Anchors are SHA-pinned by the lockfile, so FAIL LOUD if
+# they disappear: a drifted anchor means the security patch silently skipped.
+TLS_WRAP="node_modules/electrum-client/lib/TlsSocketWrapper.js"
+EC_CLIENT="node_modules/electrum-client/lib/client.js"
+if [ -f "$TLS_WRAP" ]; then
+  if grep -q "rejectUnauthorized: false" "$TLS_WRAP"; then
+    sedi "s/constructor(tls) {/constructor(tls, options) {/" "$TLS_WRAP"
+    sedi "s|this._tls = tls; // dependency injection lol|this._tls = tls; this._options = options \|\| {}; // dependency injection lol|" "$TLS_WRAP"
+    sedi "s/rejectUnauthorized: false/rejectUnauthorized: !!this._options.rejectUnauthorized/" "$TLS_WRAP"
+    echo "  Patched electrum-client: per-server TLS certificate validation opt-in"
+  fi
+  if ! grep -q "this._options.rejectUnauthorized" "$TLS_WRAP"; then
+    echo "ERROR: electrum-client TLS patch did not apply (anchor drifted; library changed?)" >&2
+    exit 1
+  fi
+fi
+if [ -f "$EC_CLIENT" ]; then
+  sedi "s/new TlsSocketWrapper(this.tls)/new TlsSocketWrapper(this.tls, options)/" "$EC_CLIENT"
+  if ! grep -q "new TlsSocketWrapper(this.tls, options)" "$EC_CLIENT"; then
+    echo "ERROR: electrum-client client.js patch did not apply" >&2
+    exit 1
+  fi
+fi
