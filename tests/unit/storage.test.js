@@ -4,6 +4,8 @@ const BlueApp = require('../../BlueApp');
 const AppStorage = BlueApp.AppStorage;
 const assert = require('assert');
 
+jest.setTimeout(120000); // PBKDF2-SHA256 600k via node mock makes KDF-heavy tests slow
+
 jest.mock('../../blue_modules/BlueElectrum', () => {
   return {
     connectMain: jest.fn(),

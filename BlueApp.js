@@ -136,7 +136,7 @@ class AppStorage {
   isPasswordInUse = async password => {
     try {
       let data = await this.getItem('data');
-      data = this.decryptData(data, password);
+      data = await this.decryptData(data, password);
       return !!data;
     } catch (_e) {
       return false;
@@ -151,22 +151,27 @@ class AppStorage {
    * @param password
    * @returns {boolean|string} Either STRING of storage data (which is stringified JSON) or FALSE, which means failure
    */
-  decryptData(data, password) {
+  decryptData = async (data, password) => {
     data = JSON.parse(data);
     let decrypted;
     let num = 0;
     for (const value of data) {
-      decrypted = encryption.decrypt(value, password);
+      decrypted = await encryption.decrypt(value, password);
 
       if (decrypted) {
         usedBucketNum = num;
+        if (encryption.isLegacyEncryptedData(value)) {
+          // the winning bucket still uses the legacy KDF; loadFromDisk will
+          // re-save to upgrade it to v2 with the now-cached password
+          this.storageNeedsEncryptionUpgrade = true;
+        }
         return decrypted;
       }
       num++;
     }
 
     return false;
-  }
+  };
 
   decryptStorage = async password => {
     if (password === this.cachedPassword) {
@@ -186,7 +191,7 @@ class AppStorage {
     let data = await this.getItem('data');
     // TODO: refactor ^^^ (should not save & load to fetch data)
 
-    const encrypted = encryption.encrypt(data, password);
+    const encrypted = await encryption.encrypt(data, password);
     data = [];
     data.push(encrypted); // putting in array as we might have many buckets with storages
     data = JSON.stringify(data);
@@ -213,7 +218,7 @@ class AppStorage {
 
     let buckets = await this.getItem('data');
     buckets = JSON.parse(buckets);
-    buckets.push(encryption.encrypt(JSON.stringify(data), fakePassword));
+    buckets.push(await encryption.encrypt(JSON.stringify(data), fakePassword));
     this.cachedPassword = fakePassword;
     const bucketsString = JSON.stringify(buckets);
     await this.setItem('data', bucketsString);
@@ -225,13 +230,35 @@ class AppStorage {
   };
 
   /**
+   * Returns the device-unique fallback password for the tx-history Realm,
+   * generated once and held in the platform Keychain/Keystore. Replaces the
+   * previous hardcoded default ('fyegjitkyf[eqjnc.lf'), which was public and
+   * identical for every install. NOTE: the Realm path is derived from this
+   * key, so existing no-password installs get a fresh empty tx-cache realm
+   * on first launch after upgrade (the cache re-syncs; no wallet data lost).
+   *
+   * @returns {Promise<string>}
+   */
+  async getRealmDeviceFallbackPassword() {
+    const service = 'realm_txcache_encryption_key';
+    const credentials = await Keychain.getGenericPassword({ service });
+    if (credentials) {
+      return credentials.password;
+    }
+    const buf = await randomBytes(64);
+    const password = buf.toString('hex');
+    await Keychain.setGenericPassword(service, password, { service });
+    return password;
+  }
+
+  /**
    * Returns instace of the Realm database, which is encrypted either by cached user's password OR default password.
    * Database file is deterministically derived from encryption key.
    *
    * @returns {Promise<Realm>}
    */
   async getRealm() {
-    const password = this.hashIt(this.cachedPassword || 'fyegjitkyf[eqjnc.lf');
+    const password = this.hashIt(this.cachedPassword || (await this.getRealmDeviceFallbackPassword()));
     const buf = Buffer.from(this.hashIt(password) + this.hashIt(password), 'hex');
     const encryptionKey = Int8Array.from(buf);
     const path = this.hashIt(this.hashIt(password)) + '-wallettransactions.realm';
@@ -330,10 +357,16 @@ class AppStorage {
     }
 
     if (password) {
-      data = this.decryptData(data, password);
+      data = await this.decryptData(data, password);
       if (data) {
         // password is good, cache it
         this.cachedPassword = password;
+        if (this.storageNeedsEncryptionUpgrade) {
+          // passive migration: re-encrypt legacy-format buckets to v2 now
+          // that the password is cached (saveToDisk re-encrypts everything)
+          this.storageNeedsEncryptionUpgrade = false;
+          await this.saveToDisk();
+        }
       }
     }
     if (data !== null) {
@@ -706,7 +739,7 @@ class AppStorage {
           } else {
             // we dont have `usedBucketNum` for whatever reason, so lets try to decrypt each bucket after bucket
             // till we find the right one
-            decrypted = encryption.decrypt(bucket, this.cachedPassword);
+            decrypted = await encryption.decrypt(bucket, this.cachedPassword);
           }
 
           if (!decrypted) {
@@ -715,7 +748,7 @@ class AppStorage {
           } else {
             // decrypted ok, this is our bucket
             // we serialize our object's data, encrypt it, and add it to buckets
-            newData.push(encryption.encrypt(JSON.stringify(data), this.cachedPassword));
+            newData.push(await encryption.encrypt(JSON.stringify(data), this.cachedPassword));
           }
         }
         data = newData;
