@@ -320,11 +320,13 @@ export default function CreateArkScreen() {
                     <Text style={styles.warnTitle}>⚠ Experimental</Text>
                     <Text style={styles.warnBody}>
                         Ark is a new Bitcoin Layer 2 protocol (by Second.tech). It enables
-                        cheap non-custodial Lightning-style payments — but the SDK is pre-1.0
-                        and wallet recovery from seed is <Text bold>not yet supported</Text>.
+                        cheap non-custodial Lightning-style payments. The SDK is still
+                        pre-1.0, so treat it as experimental.
                     </Text>
                     <Text style={styles.warnBody}>
-                        Use for small amounts only until recovery ships.
+                        Recovery needs <Text bold>both</Text> your seed phrase and your
+                        backup file (.cbark). Your seed alone is not enough, so always
+                        keep a current backup.
                     </Text>
 
                     <View style={styles.divider} />

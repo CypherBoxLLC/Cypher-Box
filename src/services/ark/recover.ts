@@ -218,12 +218,13 @@ export async function recoverArkWalletFromKeychain(): Promise<ArkRecoveryResult>
     }
 
     try {
-        // forceRescan=true → SDK queries the ASP for VTXOs owned by this
-        // seed's pubkey and rehydrates the empty datadir with them.
-        // This is what makes seed-only recovery actually return funds
-        // instead of an empty wallet.
+        // forceRescan=true rescans the on-chain BDK side for this seed, but
+        // it does NOT restore Ark VTXOs: the ASP has no lookup-by-pubkey
+        // endpoint, so VTXO state can only come from the .cbark backup.
+        // Seed-only recovery therefore lands a wallet with no VTXO balance;
+        // this path is a last resort for users who have no backup file.
         await createArkWallet(mnemonic, true);
-        console.log('[Ark recover] wallet recreated successfully (with ASP rescan)');
+        console.log('[Ark recover] wallet recreated (on-chain rescan only, no VTXO restore)');
     } catch (err: any) {
         console.log('[Ark recover] createArkWallet failed:', err?.message ?? err, err);
         return { ok: false, reason: 'wallet-create-failed', cause: err };

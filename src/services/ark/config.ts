@@ -10,11 +10,11 @@ import { Config, Network } from '@secondts/bark-react-native';
  * visible in archive/TestFlight builds for ongoing testing and for
  * eventual production rollout.
  *
- * Note: the original comment flagged that seed-alone recovery cannot
- * restore Ark balance per Bark's docs (encrypted backup/restore is the
- * Phase 2 work). That's still a real footgun for end users — make sure
- * the in-app UX surfaces the "back up your seed AND your VTXO state"
- * warning before going live to non-tester users.
+ * Note: seed-alone recovery cannot restore Ark VTXO balance (the ASP has
+ * no lookup-by-pubkey endpoint, so VTXO state can only come from the
+ * encrypted .cbark backup). That backup/restore has shipped: recovery is
+ * seed + .cbark. Keep the in-app UX surfacing the "back up your seed AND
+ * your VTXO state" warning, since seed-only still lands an empty balance.
  */
 export const FEATURE_ARK_ENABLED = true;
 
