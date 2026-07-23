@@ -71,7 +71,7 @@ const PleaseBackupLdk = () => {
             ecl="H"
           />
         </View>
-        <BlueCopyTextToClipboard text={wallet.getSecret()} />
+        <BlueCopyTextToClipboard text={wallet.getSecret()} sensitive />
         <BlueSpacing20 />
         <Button onPress={pop} title={loc.pleasebackup.ok_lnd} />
       </ScrollView>

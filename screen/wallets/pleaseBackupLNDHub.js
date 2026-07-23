@@ -61,7 +61,7 @@ const PleaseBackupLNDHub = () => {
         </View>
         <BlueSpacing20 />
         <QRCodeComponent value={wallet.getSecret()} size={qrCodeSize} />
-        <BlueCopyTextToClipboard text={wallet.getSecret()} />
+        <BlueCopyTextToClipboard text={wallet.getSecret()} sensitive />
         <BlueSpacing20 />
         <Button onPress={pop} title={loc.pleasebackup.ok_lnd} />
       </ScrollView>
