@@ -40,9 +40,11 @@ import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 
 type Dest = "strike" | "coinos" | "hot" | "cold" | "external";
 
-// "About to expire" window. The feature is reached at 12h; 24h captures the
-// at-risk set with margin. Tunable.
-const ABOUT_TO_EXPIRE_BLOCKS = Math.round((24 * 60) / AVG_BLOCK_MINUTES);
+// "About to expire" window. Reached from the 12h swap-out notifications AND
+// from the Capsules stuck banner, which offers the swap-out path up to 3 days
+// out (STUCK_SWAP_BANNER_DAYS) so a stuck multi-day capsule can still be moved
+// here. 72h captures that whole at-risk set. Tunable.
+const ABOUT_TO_EXPIRE_BLOCKS = Math.round((72 * 60) / AVG_BLOCK_MINUTES);
 
 function looksLikeBitcoinAddress(s: string): boolean {
     const t = s.trim();

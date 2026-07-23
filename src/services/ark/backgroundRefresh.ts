@@ -5,7 +5,7 @@ import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 import { writeArkAutoBackup } from './backup';
 import { fetchChainTipHeight, blocksToDays } from './chainTip';
-import { ARK_REFRESH_MIN_SATS, ARK_VTXO_DUST_SATS } from './config';
+import { ARK_REFRESH_MIN_SATS } from './config';
 import {
     ArkRefreshInFlightError,
     estimateArkRefreshFee,
@@ -509,15 +509,18 @@ export async function runBackgroundRefresh(
             Object.keys(promptState).length,
         );
 
-        // Categorise spendable VTXOs by expiry window and dust status.
-        // The round-input constraint is on the AGGREGATE input total
-        // (≥ ARK_REFRESH_MIN_SATS, currently 500 sats), not per-input —
-        // so dust capsules CAN be refreshed if we top up the batch with
-        // non-dust fillers. Mirrors the manual `dustConsolidate` logic
-        // in `src/screens/Strike/CheckingAccountNew/ArkCapsules.tsx`.
+        // Categorise spendable VTXOs by expiry window + per-input floor.
+        // The round-input constraint is PER-INPUT: the ASP rejects the
+        // whole round with BarkError.Internal if any single input is below
+        // ARK_REFRESH_MIN_SATS (currently 500 sats), the same way an
+        // expired input poisons a round. So dust below the floor can NOT
+        // ride along; it's diverted to strandedDust and the user is nudged
+        // to spend it before expiry. Mirrors the pure `buildRefreshBatch`
+        // helper in `src/services/ark/refreshBatch.ts`.
         type Candidate = { id: string; sats: number; daysLeft: number };
-        const shortExpiry: Candidate[] = []; // < batchDays, will be batched
-        const longExpiryNonDust: Candidate[] = []; // ≥ batchDays AND > dust — usable as filler
+        const shortExpiry: Candidate[] = []; // < batchDays AND ≥ floor, batched
+        let strandedDustCount = 0; // < batchDays but < floor, can't be batched
+        let strandedDustSats = 0;
         let triggerCount = 0;
         let imminent24h = false;
         let imminent6h = false;
@@ -569,11 +572,20 @@ export async function runBackgroundRefresh(
             }
             const cand: Candidate = { id: v.id, sats: v.sats, daysLeft };
             if (daysLeft < BG_REFRESH_TUNABLES.batchDays) {
-                shortExpiry.push(cand);
-                if (daysLeft < BG_REFRESH_TUNABLES.triggerDays) triggerCount++;
-            } else if (v.sats > ARK_VTXO_DUST_SATS) {
-                longExpiryNonDust.push(cand);
+                if (v.sats < ARK_REFRESH_MIN_SATS) {
+                    // Sub-floor dust: can't join a round without poisoning
+                    // it, so strand it (the user must spend it) rather than
+                    // batch it. It still counts toward the imminent-expiry
+                    // warnings fired above.
+                    strandedDustCount++;
+                    strandedDustSats += v.sats;
+                } else {
+                    shortExpiry.push(cand);
+                    if (daysLeft < BG_REFRESH_TUNABLES.triggerDays) triggerCount++;
+                }
             }
+            // Far-from-expiry capsules are left alone, with dust no longer
+            // riding along, there is no filler role for them.
         }
         if (deferredSkipped > 0) {
             console.log(
@@ -593,45 +605,18 @@ export async function runBackgroundRefresh(
             });
         }
 
-        // Build the round batch. Start with everything short-expiry; if
-        // the aggregate is below the round minimum, top up with the
-        // smallest non-dust long-expiry fillers (refreshing them too is
-        // a small cost — they get a fresh ~30d lifetime — and unlocks
-        // the dust). If even with all available fillers we can't reach
-        // the minimum, the dust is protocol-stranded for this cycle and
-        // we surface that to the user instead of submitting a round
-        // that bark will reject with BarkError.Internal.
+        // The round batch is exactly the near-expiry capsules that clear
+        // the per-input floor (categorised above). Sub-floor dust was
+        // diverted to strandedDust, it can't join a round without
+        // poisoning it, so we never batch it.
         const batchCandidates: Candidate[] = [...shortExpiry];
         let batchTotalSats = batchCandidates.reduce((a, c) => a + c.sats, 0);
-        let fillerCount = 0;
-        if (batchTotalSats > 0 && batchTotalSats < ARK_REFRESH_MIN_SATS) {
-            // Filler selection priority:
-            //   1. soonest-to-expire first (within the long-expiry set) —
-            //      a filler at 16d gains ~14 days from this refresh,
-            //      a filler at 30d gains only ~0 days, so we get more
-            //      "expiry value" per fee sat spent;
-            //   2. smallest sats within the same expiry tier — minimises
-            //      the amount of healthy capsule value we drag into a
-            //      dust-driven round;
-            // Skipping fresh long-life big capsules unless nothing else
-            // is available — matches Bam's intent for auto-consolidation.
-            const fillers = [...longExpiryNonDust].sort((a, b) => {
-                if (a.daysLeft !== b.daysLeft) return a.daysLeft - b.daysLeft;
-                return a.sats - b.sats;
-            });
-            for (const f of fillers) {
-                batchCandidates.push(f);
-                batchTotalSats += f.sats;
-                fillerCount++;
-                if (batchTotalSats >= ARK_REFRESH_MIN_SATS) break;
-            }
-        }
         const batchIds: string[] = batchCandidates.map((c) => c.id);
-        if (fillerCount > 0) {
+        if (strandedDustCount > 0) {
             console.log(
-                '[Ark bg refresh] topped up batch with', fillerCount,
-                'long-expiry non-dust filler(s) to clear', ARK_REFRESH_MIN_SATS,
-                'sat round minimum (final total=', batchTotalSats, 'sats)',
+                '[Ark bg refresh] stranded', strandedDustCount,
+                'sub-floor dust capsule(s) totalling', strandedDustSats,
+                'sats (below', ARK_REFRESH_MIN_SATS, 'sat per-input min; user must spend)',
             );
         }
 
@@ -704,23 +689,20 @@ export async function runBackgroundRefresh(
             }
         }
 
+        // Nothing refreshable is imminent. If the only imminent capsules
+        // were sub-floor dust (each below ARK_REFRESH_MIN_SATS, which bark
+        // rejects per-input with `BarkError.Internal: "vtxo amount must be
+        // at least 0.00000330 BTC to participate in a round"`), surface
+        // dust_stranded so the user knows to spend them before expiry,
+        // they can't auto-refresh. Otherwise this is a normal idle cycle.
         if (triggerCount === 0 || batchIds.length === 0) {
+            if (strandedDustCount > 0) {
+                return finalize('dust_stranded', {
+                    vtxoCount: strandedDustCount,
+                    totalSats: strandedDustSats,
+                });
+            }
             return finalize('no_eligible_vtxos', { vtxoCount: batchIds.length });
-        }
-
-        // Round-input minimum: bark/ASP rejects rounds whose total input
-        // value is below ARK_REFRESH_MIN_SATS with `BarkError.Internal:
-        // "vtxo amount must be at least 0.00000330 BTC to participate in
-        // a round"`. We already topped up with fillers above; if we
-        // still can't reach the minimum, the user genuinely doesn't
-        // have enough non-dust value in their wallet to consolidate
-        // the dust. Surface it instead of submitting a round that
-        // bark will reject.
-        if (batchTotalSats < ARK_REFRESH_MIN_SATS) {
-            return finalize('dust_stranded', {
-                vtxoCount: batchIds.length,
-                totalSats: batchTotalSats,
-            });
         }
 
         // Fee preview before committing to the round. If the ASP returns an
