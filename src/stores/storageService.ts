@@ -26,10 +26,28 @@ const LEGACY_V1_ID = "mmkv.default";
 let storagePromise: Promise<MMKV> | null = null;
 
 async function getOrCreateEncryptionKey(): Promise<string> {
-    const credentials = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+    let credentials: Awaited<ReturnType<typeof Keychain.getGenericPassword>>;
+    try {
+        credentials = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+    } catch (e) {
+        // A Keychain READ error (locked keystore, transient failure, biometric
+        // interaction) is NOT proof the key is absent. Minting a replacement
+        // here would open the existing v3 store with the wrong key and, once
+        // migrateInto() clears the legacy stores, permanently orphan the
+        // encrypted tokens. Abort so the caller retries on a later access
+        // rather than destroying data. Only a clean "no entry" result (below)
+        // provisions a new key.
+        throw new Error(
+            `[storageService] keychain read failed; refusing to mint a replacement key: ${
+                (e as Error)?.message ?? String(e)
+            }`,
+        );
+    }
     if (credentials && typeof credentials !== "boolean" && credentials.password) {
         return credentials.password;
     }
+    // Genuinely absent: getGenericPassword resolves to `false` only when no
+    // entry exists, so this is a first run on this device. Provision a key.
     const key = (await randomBytes(32)).toString("hex");
     await Keychain.setGenericPassword(KEYCHAIN_SERVICE, key, {
         service: KEYCHAIN_SERVICE,
@@ -70,7 +88,13 @@ async function createStorage(): Promise<MMKV> {
 
 function getStorage(): Promise<MMKV> {
     if (!storagePromise) {
-        storagePromise = createStorage();
+        storagePromise = createStorage().catch((e) => {
+            // Never cache a rejected promise: a single transient keychain
+            // failure would otherwise wedge ALL storage access for the rest of
+            // the app's lifetime. Reset so the next call retries cleanly.
+            storagePromise = null;
+            throw e;
+        });
     }
     return storagePromise;
 }
