@@ -65,8 +65,7 @@ describe('verifyLnurlPayInvoice', () => {
     assert.throws(() => verifyLnurlPayInvoice(VALID_PR, 10, '[["text/plain","different"]]'), /description_hash/);
   });
 
-  it('still enforces amount when metadata is absent', () => {
-    verifyLnurlPayInvoice(VALID_PR, 10);
-    assert.throws(() => verifyLnurlPayInvoice(VALID_PR, 9), /doesn't match specified amount/);
+  it('rejects a missing metadata (the description_hash binding is mandatory)', () => {
+    assert.throws(() => verifyLnurlPayInvoice(VALID_PR, 10), /no metadata/);
   });
 });

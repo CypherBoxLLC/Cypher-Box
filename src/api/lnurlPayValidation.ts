@@ -41,9 +41,13 @@ export function assertAmountWithinSendable(amountMsat: number, minSendable?: num
 }
 
 /**
- * Verify the returned bolt11 invoice actually matches what the user asked
- * to pay: same amount, and (when the service supplied metadata) the
- * invoice's description_hash commits to that exact metadata.
+ * Verify the returned bolt11 invoice actually matches what the user asked to
+ * pay: the same amount, and a mandatory description_hash committing to the
+ * service metadata. Per LUD-06 the LNURL-pay response always carries metadata
+ * and the invoice must commit to it, so a missing metadata or description_hash
+ * is a hard failure. Skipping the check when metadata is absent would let a
+ * malicious service omit it to bypass the recipient/description binding: the
+ * amount alone does not bind the payee.
  */
 export function verifyLnurlPayInvoice(pr: string, expectedAmountSats: number, metadata?: string): void {
   const decoded = bolt11.decode(pr);
@@ -56,12 +60,19 @@ export function verifyLnurlPayInvoice(pr: string, expectedAmountSats: number, me
   if (invoiceSats !== Math.round(expectedAmountSats)) {
     throw new Error(`Invoice doesn't match specified amount, got ${invoiceSats}, expected ${Math.round(expectedAmountSats)}`);
   }
-  if (metadata) {
-    const metadataHash = createHash('sha256').update(metadata).digest('hex');
-    const invoiceHash = decoded.tagsObject.purpose_commit_hash;
-    if (invoiceHash !== metadataHash) {
-      throw new Error("Invoice description_hash doesn't match metadata.");
-    }
+  // Mandatory: the amount alone does not bind the payee, so the invoice must
+  // commit to the service metadata via a description_hash. A missing metadata
+  // or description_hash is a hard failure, not a silent skip.
+  if (!metadata) {
+    throw new Error('LNURL-pay response has no metadata; refusing to pay an unverifiable invoice.');
+  }
+  const metadataHash = createHash('sha256').update(metadata).digest('hex');
+  const invoiceHash = decoded.tagsObject.purpose_commit_hash;
+  if (!invoiceHash) {
+    throw new Error('Invoice has no description_hash to verify against the LNURL metadata.');
+  }
+  if (invoiceHash !== metadataHash) {
+    throw new Error("Invoice description_hash doesn't match metadata.");
   }
 }
 
