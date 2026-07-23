@@ -56,11 +56,10 @@ export function getLastOnchainBalanceSats(): { confirmedSats: number; pendingSat
 }
 
 // Lazy-require avoids the import cycle with `./movementWatcher`, which itself
-// imports `getArkWalletHandle` from this file (and transitively
-// `runBackgroundRefresh` whose dependency tree also walks back through here).
-// Static ES imports across that cycle work in Hermes but become brittle as
-// the orchestrator graph grows; established codebase pattern is to use
-// `require()` at the call site for these intra-package back-references.
+// imports `getArkWalletHandle` from this file. Static ES imports across that
+// cycle work in Hermes but become brittle as the module graph grows;
+// established codebase pattern is to use `require()` at the call site for
+// these intra-package back-references.
 function startWatcher(): void {
     console.log('[Ark] startWatcher() invoked from walletHandle');
     try {

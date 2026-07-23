@@ -165,12 +165,7 @@ export {
 export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
 export type { ArkRefreshFeeView, ArkRefreshResult } from './refresh';
 
-export {
-    runBackgroundRefresh,
-    setArkBackgroundRefreshEnabled,
-    BG_REFRESH_TUNABLES,
-} from './backgroundRefresh';
-export type { ArkBgRefreshResult } from './backgroundRefresh';
+export { setArkBackgroundRefreshEnabled } from './backgroundRefresh';
 
 export {
     readTelemetry as readArkBgRefreshTelemetry,
