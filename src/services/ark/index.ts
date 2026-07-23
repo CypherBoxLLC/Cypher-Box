@@ -187,6 +187,8 @@ export {
     areBgNotificationsEnabled,
     scheduleVtxoExpiryWarnings,
     cancelVtxoExpiryWarnings,
+    scheduleVtxoStuckSwapWarnings,
+    cancelVtxoStuckSwapWarnings,
 } from './backgroundNotifications';
 
 export { registerArkNotificationTapHandler } from './notificationHandler';
