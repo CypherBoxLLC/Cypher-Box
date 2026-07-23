@@ -160,7 +160,7 @@ function fmtSatsSubject(satsAmount: number | undefined): string {
  */
 function fmtBody(urgent: boolean, satsKnown: boolean): string {
     if (urgent) {
-        return 'Tap to refresh. Refresh takes up to an hour.';
+        return 'Tap to refresh. Refresh takes up to 3 hours.';
     }
     return satsKnown
         ? 'Tap to refresh, or these sats may be lost.'
@@ -538,8 +538,8 @@ export function notifyDustStranded(
     vtxoCount: number,
 ): void {
     fire(
-        'Tiny capsules need topping up',
-        `${vtxoCount} capsule${vtxoCount === 1 ? '' : 's'} totalling ${totalSats} sats can't auto-refresh — round minimum is ${minRequired} sats. Send funds to yourself to combine them before expiry.`,
+        'Spend your tiny capsules',
+        `${vtxoCount} capsule${vtxoCount === 1 ? '' : 's'} totalling ${totalSats} sats ${vtxoCount === 1 ? 'is' : 'are'} below the ${minRequired}-sat refresh minimum, so ${vtxoCount === 1 ? "it can't" : "they can't"} auto-refresh. Spend ${vtxoCount === 1 ? 'it' : 'them'} in a payment before ${vtxoCount === 1 ? 'it expires' : 'they expire'}.`,
         'high',
         { totalSats, minRequired, vtxoCount },
     );
