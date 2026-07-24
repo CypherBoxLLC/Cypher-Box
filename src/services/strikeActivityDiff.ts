@@ -58,10 +58,10 @@ export async function processStrikeInvoicesForActivity(): Promise<void> {
     const newestId = items[0]?.invoiceId;
     if (!newestId) return;
 
-    const cursor = getStrikeLastSeenInvoiceId();
+    const cursor = await getStrikeLastSeenInvoiceId();
 
     if (cursor === null) {
-        setStrikeLastSeenInvoiceId(newestId);
+        await setStrikeLastSeenInvoiceId(newestId);
         return;
     }
 
@@ -83,6 +83,6 @@ export async function processStrikeInvoicesForActivity(): Promise<void> {
     }
 
     if (newestId !== cursor) {
-        setStrikeLastSeenInvoiceId(newestId);
+        await setStrikeLastSeenInvoiceId(newestId);
     }
 }

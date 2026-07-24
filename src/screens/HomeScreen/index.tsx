@@ -389,11 +389,9 @@ export default function HomeScreen({ route }: Props) {
       // Activity log: diff the wallet's tx list for new on-chain receives.
       // Failure is non-fatal — the rest of the home screen renders fine
       // and the next refresh tick will retry.
-      try {
-        processHotVaultTxsForActivity(walletTemp as any);
-      } catch (diffErr) {
+      processHotVaultTxsForActivity(walletTemp as any).catch(diffErr => {
         if (__DEV__) console.warn('[Activity] hot-vault tx diff failed:', diffErr);
-      }
+      });
       if (wallets && walletID) {
         setIsAllDone(!!walletTemp);
       } else {

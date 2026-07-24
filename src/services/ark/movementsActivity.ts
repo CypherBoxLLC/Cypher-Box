@@ -36,11 +36,11 @@ export async function processArkMovementsForActivity(): Promise<void> {
     }
     if (!movements || movements.length === 0) return;
 
-    const cursor = getArkLastSeenMovementId();
+    const cursor = await getArkLastSeenMovementId();
     const maxId = movements.reduce((m, mv) => (mv.id > m ? mv.id : m), 0);
 
     if (cursor === null) {
-        setArkLastSeenMovementId(maxId);
+        await setArkLastSeenMovementId(maxId);
         return;
     }
 
@@ -56,6 +56,6 @@ export async function processArkMovementsForActivity(): Promise<void> {
     }
 
     if (maxId > cursor) {
-        setArkLastSeenMovementId(maxId);
+        await setArkLastSeenMovementId(maxId);
     }
 }

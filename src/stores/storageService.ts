@@ -1,33 +1,107 @@
 import { MMKV } from "react-native-mmkv";
+import * as Keychain from "react-native-keychain";
+import { randomBytes } from "../../class/rng";
 
-// Encrypted MMKV store for sensitive data (auth tokens, user state)
-// The encryption key is derived from a fixed app secret + stored in the MMKV instance itself.
-// This protects against trivial file-level extraction on rooted/jailbroken devices.
-const ENCRYPTION_KEY = "cypherbox-mmkv-v1"; // rotated by changing this value + clearing app data
-const storage = new MMKV({ id: "cypherbox-secure", encryptionKey: ENCRYPTION_KEY });
+// Encrypted MMKV store for sensitive data (auth tokens, user state).
+//
+// The AES key is a device-generated random value held in the platform
+// Keychain/Keystore (hardware-backed where available), NOT a compile-time
+// constant. The previous implementation used the hardcoded public string
+// "cypherbox-mmkv-v1", which shipped inside the binary and therefore
+// offered only obfuscation: anyone with the public APK and a copy of the
+// MMKV file could decrypt the custodial (CoinOS/Strike) bearer tokens
+// persisted here. With a keychain-held key, offline decryption requires
+// both the file AND the device's keystore.
+//
+// Store generations:
+//   v1 'mmkv.default'        — unencrypted (legacy)
+//   v2 'cypherbox-secure'    — encrypted with the hardcoded public key (legacy)
+//   v3 'cypherbox-secure-v3' — encrypted with a keychain-held device key (current)
+const STORE_ID_V3 = "cypherbox-secure-v3";
+const KEYCHAIN_SERVICE = "cypherbox.mmkv.v3.key";
+const LEGACY_V2_ID = "cypherbox-secure";
+const LEGACY_V2_PUBLIC_KEY = "cypherbox-mmkv-v1";
+const LEGACY_V1_ID = "mmkv.default";
 
-// Migration: read from old unencrypted store, copy to encrypted, then delete old.
-// Explicit id matches v2's implicit default ('mmkv.default') so the legacy
-// instance points at the same on-disk file v2 wrote to. Required as of
-// react-native-mmkv v3 where Configuration.id is no longer optional.
-const legacyStorage = new MMKV({ id: 'mmkv.default' });
-try {
-    const legacyKeys = legacyStorage.getAllKeys();
-    if (legacyKeys.length > 0) {
-        for (const key of legacyKeys) {
-            const value = legacyStorage.getString(key);
-            if (value && !storage.contains(key)) {
-                storage.set(key, value);
-            }
-        }
-        legacyStorage.clearAll();
+let storagePromise: Promise<MMKV> | null = null;
+
+async function getOrCreateEncryptionKey(): Promise<string> {
+    let credentials: Awaited<ReturnType<typeof Keychain.getGenericPassword>>;
+    try {
+        credentials = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+    } catch (e) {
+        // A Keychain READ error (locked keystore, transient failure, biometric
+        // interaction) is NOT proof the key is absent. Minting a replacement
+        // here would open the existing v3 store with the wrong key and, once
+        // migrateInto() clears the legacy stores, permanently orphan the
+        // encrypted tokens. Abort so the caller retries on a later access
+        // rather than destroying data. Only a clean "no entry" result (below)
+        // provisions a new key.
+        throw new Error(
+            `[storageService] keychain read failed; refusing to mint a replacement key: ${
+                (e as Error)?.message ?? String(e)
+            }`,
+        );
     }
-} catch (_e) {
-    // Migration failed silently — legacy store may already be empty
+    if (credentials && typeof credentials !== "boolean" && credentials.password) {
+        return credentials.password;
+    }
+    // Genuinely absent: getGenericPassword resolves to `false` only when no
+    // entry exists, so this is a first run on this device. Provision a key.
+    const key = (await randomBytes(32)).toString("hex");
+    await Keychain.setGenericPassword(KEYCHAIN_SERVICE, key, {
+        service: KEYCHAIN_SERVICE,
+        accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+    return key;
 }
 
-export const getItem = (key: string) => {
+function migrateInto(store: MMKV, legacy: MMKV): void {
     try {
+        const legacyKeys = legacy.getAllKeys();
+        if (legacyKeys.length > 0) {
+            for (const key of legacyKeys) {
+                const value = legacy.getString(key);
+                if (value && !store.contains(key)) {
+                    store.set(key, value);
+                }
+            }
+            legacy.clearAll();
+        }
+    } catch (_e) {
+        // Migration is best-effort: a corrupted legacy store must not break
+        // startup. Worst case the user re-authenticates.
+    }
+}
+
+async function createStorage(): Promise<MMKV> {
+    const key = await getOrCreateEncryptionKey();
+    const store = new MMKV({ id: STORE_ID_V3, encryptionKey: key });
+
+    // v2 -> v3: read with the (public) v2 key, re-encrypt under the device key.
+    migrateInto(store, new MMKV({ id: LEGACY_V2_ID, encryptionKey: LEGACY_V2_PUBLIC_KEY }));
+    // v1 -> v3: belt-and-braces for installs that skipped the v2 migration.
+    migrateInto(store, new MMKV({ id: LEGACY_V1_ID }));
+
+    return store;
+}
+
+function getStorage(): Promise<MMKV> {
+    if (!storagePromise) {
+        storagePromise = createStorage().catch((e) => {
+            // Never cache a rejected promise: a single transient keychain
+            // failure would otherwise wedge ALL storage access for the rest of
+            // the app's lifetime. Reset so the next call retries cleanly.
+            storagePromise = null;
+            throw e;
+        });
+    }
+    return storagePromise;
+}
+
+export const getItem = async (key: string) => {
+    try {
+        const storage = await getStorage();
         const value = storage.getString(key);
         if (value) {
             return JSON.parse(value);
@@ -38,11 +112,18 @@ export const getItem = (key: string) => {
     }
 };
 
-export const setItem = (key: string, value: string | number | boolean | object) => {
+export const setItem = async (key: string, value: string | number | boolean | object) => {
+    const storage = await getStorage();
     const storeValue = JSON.stringify(value);
     return storage.set(key, storeValue);
 };
 
-export const removeItem = (key: string) => storage.delete(key);
+export const removeItem = async (key: string) => {
+    const storage = await getStorage();
+    return storage.delete(key);
+};
 
-export const clearAllData = () => storage.clearAll();
+export const clearAllData = async () => {
+    const storage = await getStorage();
+    return storage.clearAll();
+};
