@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { updateExchangeRate, EXCHANGE_RATES_STORAGE_KEY } from "../../blue_modules/currency";
 import { getFiatRate } from "../../models/fiatUnit";
+import { assertLnurlPayCallbackUrl, assertAmountWithinSendable, buildCallbackUrl, verifyLnurlPayInvoice } from "./lnurlPayValidation";
 
 const BASE_URL = 'https://coinos.io/api';
 
@@ -310,14 +311,21 @@ export const sendCoinsViaUsername = async (address: string, amount: number, memo
     }
 
     let url = `https://${domain}/.well-known/lnurlp/${name}`;
-    
+
     const response = await fetch(url);
 if (__DEV__) console.log('sendCoinsViaLNURL response: ', response)
     const lnurlPayData = await response.json();
 if (__DEV__) console.log('sendCoinsViaLNURL lnurlPayData: ', lnurlPayData)
 
     if (lnurlPayData.tag === "payRequest") {
-      const paymentResponse = await fetch(lnurlPayData.callback+'?amount='+(amount * 1000), {
+      // Verify the service before trusting anything it returns: https-only
+      // callback, declared min/max bounds, then verify the returned invoice
+      // matches the amount the user confirmed and commits to the service
+      // metadata (same checks as the hardened class/lnurl.js path).
+      assertLnurlPayCallbackUrl(lnurlPayData.callback);
+      const amountMsat = Math.floor(amount * 1000);
+      assertAmountWithinSendable(amountMsat, lnurlPayData.minSendable, lnurlPayData.maxSendable);
+      const paymentResponse = await fetch(buildCallbackUrl(lnurlPayData.callback, amountMsat), {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -328,6 +336,7 @@ if (__DEV__) console.log('sendCoinsViaLNURL paymentResponse: ', paymentResponse)
       const paymentResult = await paymentResponse.json();
 if (__DEV__) console.log('sendCoinsViaLNURL paymentResult: ', paymentResult)
       if(paymentResult.pr){
+        verifyLnurlPayInvoice(paymentResult.pr, amount, lnurlPayData.metadata);
 if (__DEV__) console.log('domain: ', domain)
         if(domain == 'coinos.io'){
           const response = await fetch(`${BASE_URL}/payments`, await withAuthToken({
