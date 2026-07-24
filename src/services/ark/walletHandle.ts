@@ -34,19 +34,8 @@ let sessionEsploraUrl: string = ESPLORA_URL;
 // hitting Keychain — which on some iOS configurations triggers a biometric
 // prompt. Only ever holds one value (there is exactly one Ark wallet per
 // session). Cleared when the handle is torn down so a dangling mnemonic
-// string can't outlive its wallet, and purged when the app goes to
-// background so a seed never sits in JS memory while suspended.
+// string can't outlive its wallet.
 let cachedMnemonic: string | null = null;
-
-/**
- * Drop the in-memory mnemonic cache WITHOUT tearing down the wallet handle.
- * Called when the app backgrounds: the seed is re-read from Keychain on next
- * use (at most one biometric prompt), instead of living in JS memory for the
- * whole suspended lifetime of the process.
- */
-export function purgeCachedArkMnemonic(): void {
-    cachedMnemonic = null;
-}
 
 // Last on-chain (BDK) balance observed by syncArkWallet, in sats. fetchArkBalance
 // reads THIS instead of making its own onchain.balance() call: that call races

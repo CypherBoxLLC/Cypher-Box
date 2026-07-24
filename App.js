@@ -32,7 +32,6 @@ import Privacy from './blue_modules/Privacy';
 import MenuElements from './components/MenuElements';
 import PaymentNotification from './src/components/PaymentNotification';
 import { updateExchangeRate } from './blue_modules/currency';
-import { purgeCachedArkMnemonic } from './src/services/ark/walletHandle';
 // Side-effect import: configures the Google Drive OAuth client at app
 // startup using the GOOGLE_WEB_CLIENT_ID from .env (via react-native-
 // config). No-op on iOS and on Android if the env var is unset; we
@@ -224,11 +223,6 @@ const App = () => {
 
   const handleAppStateChange = async nextAppState => {
     if (wallets.length === 0) return;
-    if (nextAppState === 'background' || nextAppState === 'inactive') {
-      // Never leave the Ark seed sitting in JS memory while the app is
-      // suspended; it is re-read from Keychain on next use.
-      purgeCachedArkMnemonic();
-    }
     if ((appState.current.match(/background/) && nextAppState === 'active') || nextAppState === undefined) {
       setTimeout(() => A(A.ENUM.APP_UNSUSPENDED), 2000);
       updateExchangeRate();
