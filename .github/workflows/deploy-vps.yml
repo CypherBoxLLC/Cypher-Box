@@ -1,34 +1,48 @@
 name: Deploy GroundControl to VPS
 
+# Trigger model (corrected 2026-07): the previous push trigger listed paths
+# ('app-fixed/**', 'docker-compose.yml') that do not exist in this repository,
+# so the workflow could never fire on push anyway. Manual dispatch with an
+# explicit ref is now the only entry point, and the deploy checks out an
+# immutable commit instead of pulling whatever a moving branch points to.
+
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'app-fixed/**'
-      - 'docker-compose.yml'
-      - '.github/workflows/deploy-vps.yml'
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Immutable commit SHA on the relay repo to deploy'
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
+      - name: Validate ref is a full commit SHA
+        run: |
+          set -euxo pipefail
+          echo "${{ inputs.ref }}" | grep -qE '^[0-9a-f]{40}$'
+
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.0
+        uses: appleboy/ssh-action@55dabf81b49d4120609345970c91507e2d734799 # v1.0.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script: |
+            set -euo pipefail
             cd /opt/groundcontrol
-            git pull origin development
+            git fetch origin
+            git checkout --detach ${{ inputs.ref }}
             docker compose down
             docker compose build --no-cache groundcontrol-api
             docker compose up -d groundcontrol-api

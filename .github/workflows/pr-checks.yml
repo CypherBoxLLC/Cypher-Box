@@ -60,6 +60,15 @@ jobs:
           tar -xzf gitleaks.tar.gz gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
           gitleaks version
+      - name: Pin scan config to the base commit
+        # The scan must not read its rules from the PR's own merge checkout:
+        # a PR could otherwise weaken .gitleaks.toml and scan itself with the
+        # weakened rules. Always take the config from the base commit.
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euxo pipefail
+          git show "${BASE}:.gitleaks.toml" > /tmp/gitleaks-base.toml
       - name: Scan PR commits for secrets
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -67,4 +76,4 @@ jobs:
         run: |
           set -euxo pipefail
           gitleaks detect --source . --log-opts="${BASE}..${HEAD}" \
-            --redact --exit-code 1 --config .gitleaks.toml
+            --redact --exit-code 1 --config /tmp/gitleaks-base.toml
