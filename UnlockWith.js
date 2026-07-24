@@ -87,7 +87,11 @@ const UnlockWith = () => {
       return <ActivityIndicator />;
     } else {
       const color = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
-      if ((biometricType === Biometric.TouchID || biometricType === Biometric.Biometrics) && !isStorageEncryptedEnabled) {
+      // 'Fingerprint' covers legacy Android devices, where
+      // react-native-fingerprint-scanner reports that raw string rather than
+      // 'Biometrics'. Without it the retry button never renders on those
+      // devices after a failed or cancelled prompt (relaunch-to-recover).
+      if ((biometricType === Biometric.TouchID || biometricType === Biometric.Biometrics || biometricType === 'Fingerprint') && !isStorageEncryptedEnabled) {
         return (
           <TouchableOpacity accessibilityRole="button" disabled={isAuthenticating} onPress={unlockWithBiometrics}>
             <Icon name="fingerprint" size={64} type="font-awesome5" color={color} />
