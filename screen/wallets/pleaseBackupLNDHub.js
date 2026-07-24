@@ -38,10 +38,10 @@ const PleaseBackupLNDHub = () => {
   });
 
   useEffect(() => {
-    Privacy.enableBlur();
+    Privacy.enableBlurAllowingScreenshots();
     const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackButton);
     return () => {
-      Privacy.disableBlur();
+      Privacy.disableBlurAllowingScreenshots();
       subscription.remove();
     };
   }, [handleBackButton]);

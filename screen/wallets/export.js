@@ -52,7 +52,7 @@ const WalletExport = () => {
 
   useFocusEffect(
     useCallback(() => {
-      Privacy.enableBlur();
+      Privacy.enableBlurAllowingScreenshots();
       const task = InteractionManager.runAfterInteractions(async () => {
         if (wallet) {
           const isBiometricsEnabled = await Biometric.isBiometricUseCapableAndEnabled();
@@ -71,7 +71,7 @@ const WalletExport = () => {
       });
       return () => {
         task.cancel();
-        Privacy.disableBlur();
+        Privacy.disableBlurAllowingScreenshots();
       };
     }, [goBack, saveToDisk, wallet]),
   );

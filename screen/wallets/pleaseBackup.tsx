@@ -41,11 +41,11 @@ const PleaseBackup: React.FC = () => {
   }, [navigation]);
 
   useEffect(() => {
-    Privacy.enableBlur();
+    Privacy.enableBlurAllowingScreenshots();
     setIsLoading(false);
     const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackButton);
     return () => {
-      Privacy.disableBlur();
+      Privacy.disableBlurAllowingScreenshots();
       subscription.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
