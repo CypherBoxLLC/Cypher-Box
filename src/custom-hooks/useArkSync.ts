@@ -25,7 +25,6 @@ import {
     progressArkPendingRounds,
     reopenArkWalletFromCache,
     resetArkWalletState,
-    runBackgroundRefresh,
     scheduleVtxoExpiryWarnings,
     scheduleVtxoStuckSwapWarnings,
     syncArkExits,
@@ -38,7 +37,6 @@ import { processArkMovementsForActivity } from '@Cypher/services/ark/movementsAc
 // Imported from the file path directly (not the @Cypher/services/ark
 // barrel) — the barrel doesn't re-export the expiry module.
 import { formatBlocksUntil } from '@Cypher/services/ark/expiry';
-import { buildDeferredVtxoIds } from '@Cypher/services/ark/refreshDeferral';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import {
@@ -89,23 +87,14 @@ const INTERVAL_MS = Platform.OS === 'android' ? INTERVAL_MS_ANDROID : INTERVAL_M
 // and just refresh balance/vtxos/tip — saving ~2s per cycle.
 const IDLE_SKIP_AFTER_EMPTY_TICKS = 3;
 
-// Lazy refresh threshold. The sweep below fires runBackgroundRefresh
-// ('foreground') only when a spendable, non-arkoor VTXO is within this
-// many days of expiry. Anything farther out is left alone — the arkoor
-// server-trust window is acceptable (and bark's refresh fee is 0 below
-// 2 days per their published schedule). Replaces the old arrival-trigger
-// strategy that fired on every LN receive.
+// Urgency threshold for the refresh-failure escalation: a spendable VTXO
+// this close to expiry, together with a run of failed manual refreshes,
+// triggers the blocking rescue Alert below. This used to also gate the
+// automatic foreground refresh sweep, which has been removed.
 const URGENCY_THRESHOLD_DAYS = 2;
 const URGENCY_THRESHOLD_BLOCKS = Math.round(
     (URGENCY_THRESHOLD_DAYS * 24 * 60) / AVG_BLOCK_MINUTES,
 );
-// JS-side gate so a 30s sync tick doesn't spam runBackgroundRefresh()
-// while the wallet sits in the urgent zone. The orchestrator has its
-// own success-rate-limit, but it also writes a telemetry entry on
-// every call (including rate_limited ones) — without this guard the
-// telemetry buffer would fill with no-ops.
-const FOREGROUND_SWEEP_MIN_GAP_MS = 5 * 60 * 1000;
-let lastForegroundSweepAt = 0;
 
 // --- Refresh-failure escalation near expiry --------------------------------
 //
@@ -143,17 +132,10 @@ const STUCK_SWAP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STUCK_AUTO_CANCEL_MS = 3 * 60 * 60 * 1000;
 
 // Module-level throttle for the auto-cancel net so a 30s sync tick doesn't
-// hammer cancelPendingRound while a round settles server-side. Mirrors the
-// lastForegroundSweepAt guard above.
+// hammer cancelPendingRound while a round settles server-side.
 let arkAutoCancelInFlight = false;
 let lastArkAutoCancelAt = 0;
 const ARK_AUTO_CANCEL_MIN_GAP_MS = 5 * 60 * 1000;
-// After an auto-cancel unlocks a stuck round's funds near expiry, keep the
-// urgency sweep off for this long so the funds STAY spendable for the user to
-// swap / exit. Without it, the sweep (which fires within 2 days of expiry)
-// would immediately re-refresh the just-unlocked VTXO and risk re-wedging it
-// against the same misbehaving ASP, the exact loop we're rescuing them from.
-const ARK_POST_AUTOCANCEL_SWEEP_COOLDOWN_MS = 30 * 60 * 1000;
 
 /**
  * Cancel the given stuck round(s) automatically, then sync so the just-
@@ -918,96 +900,37 @@ export default function useArkSync(): UseArkSync {
             setArkLastSyncedAt(Date.now());
             setLastError(null);
 
-            // --- Push soonest-expiry to the relay (fire-and-forget) ---
+            // --- Soonest spendable expiry (feeds the failure escalation) ---
             //
-            // The relay's silent-push scanner uses this to decide when
-            // to fire ark.refresh.due wakes. We POST only when the user
-            // has opted into background refresh — non-opted-in users
-            // shouldn't generate relay traffic from this code path.
-            //
-            // Compute the soonest expiry locally rather than asking the
-            // SDK because the same math (skip arkoor, skip Locked) is
-            // already used in ArkWallet/index.tsx for the in-app banner;
-            // duplicating it inline is cheaper than introducing a
-            // dependency cycle.
+            // Soonest on-chain expiry among spendable, non-Locked VTXOs.
+            // Automatic refresh has been removed, so this now feeds only the
+            // refresh-failure escalation below; the user acts on approaching
+            // expiry via the pre-scheduled OS warnings and manual refresh.
             const state = useAuthStore.getState();
-            // VTXOs the user has explicitly told us NOT to auto-refresh —
-            // via the Arkoor-receive popup's "Use immediately" path. Without
-            // this gate, picking "Use immediately" is a lie: auto-refresh
-            // hits the urgency threshold a few seconds later and grabs the
-            // VTXO anyway, locking the funds into a round. Status
-            // 'pending' is included for the brief window between
-            // movementWatcher pushing the entry and the user tapping a
-            // button, so the race-winner is the user, not the scheduler.
-            const promptState = state.arkArkoorPromptState ?? {};
-            const deferredIds = buildDeferredVtxoIds(promptState);
-            let minBlocks = Infinity;
-            // Same minimum but INCLUDING user-deferred VTXOs — the
-            // failure-streak escalation below uses this one. Deferring
-            // auto-refresh ("Use immediately") doesn't make the funds
-            // immune to expiry, so a deferred VTXO still counts when
-            // deciding whether to raise the alarm.
             let minBlocksAnySpendable = Infinity;
             if (tip !== null && vtxos) {
                 for (const v of vtxos.spendable) {
                     if (v.expiryHeight === 0) continue;
                     if (v.state.toLowerCase() === 'locked') continue;
                     const blocks = v.expiryHeight - tip;
-                    // Skip already-expired VTXOs. Including them would make
-                    // the lazy-refresh sweep fire on dead funds (refresh
-                    // hangs because the ASP can sweep at any time past
-                    // expiry — observed 2026-05-16 on a sim that was offline
-                    // for 3+ days). The sweep should react to the
-                    // next-most-urgent SPENDABLE-IN-PRACTICE VTXO, not to
-                    // already-lost ones.
+                    // Skip already-expired VTXOs: they can't be refreshed (the
+                    // ASP can sweep them at any time past expiry), so they must
+                    // not drive the escalation toward already-lost funds.
                     if (blocks <= 0) continue;
                     if (blocks < minBlocksAnySpendable) minBlocksAnySpendable = blocks;
-                    // User-deferred — skip so the urgency sweep doesn't
-                    // try to refresh a VTXO the user said to leave alone.
-                    if (deferredIds.has(v.id)) continue;
-                    if (blocks < minBlocks) minBlocks = blocks;
                 }
             }
 
-            // --- Lazy-refresh sweep ---
+            // --- Automatic refresh: removed (2026-07-23) ---
             //
-            // Fires runBackgroundRefresh('foreground') only when a
-            // spendable, non-arkoor VTXO is within URGENCY_THRESHOLD_DAYS
-            // of expiry. Replaces the old movement-watcher arrival path
-            // that triggered on every LN receive — that strategy locked
-            // funds for ~1h within minutes of arrival and hammered the
-            // ASP during flake periods. Lazy refresh lets fresh receives
-            // stay spendable for days (Lightning-like UX) and only spends
-            // refresh fees / takes round-locking risk near expiry.
-            //
-            // The JS-side FOREGROUND_SWEEP_MIN_GAP_MS guard prevents
-            // every 30s tick from invoking the orchestrator and writing
-            // a rate_limited telemetry entry. The orchestrator's own
-            // success rate-limit still applies.
-            if (
-                state.arkBgRefreshEnabled &&
-                // Stop feeding the loop: when a round is already wedged, don't
-                // start new rounds on other near-expiry VTXOs. The stuck-swap
-                // flow (banner + notifications + auto-cancel) owns recovery
-                // until the wedge clears, at which point the sweep resumes.
-                !state.arkRefreshStuck &&
-                // And after an auto-cancel unlocks funds near expiry, stay off
-                // for a cooldown so they remain spendable for the user to move
-                // out instead of being immediately re-refreshed into the wedge.
-                Date.now() - lastArkAutoCancelAt > ARK_POST_AUTOCANCEL_SWEEP_COOLDOWN_MS &&
-                isFinite(minBlocks) &&
-                minBlocks < URGENCY_THRESHOLD_BLOCKS &&
-                Date.now() - lastForegroundSweepAt > FOREGROUND_SWEEP_MIN_GAP_MS
-            ) {
-                lastForegroundSweepAt = Date.now();
-                console.log(
-                    '[Ark sync] urgency sweep firing — minBlocks=', minBlocks,
-                    'threshold=', URGENCY_THRESHOLD_BLOCKS,
-                );
-                void runBackgroundRefresh('foreground').catch((err) => {
-                    console.warn('[Ark sync] foreground sweep threw:', err?.message ?? err);
-                });
-            }
+            // A foreground sweep used to fire a refresh round on any spendable
+            // VTXO within URGENCY_THRESHOLD_DAYS of expiry, retrying every few
+            // minutes. After a user cancelled a wedged round it re-locked the
+            // just-unlocked VTXO before the already-completed round could
+            // reconcile, deadlocking near-expiry funds (incident 2026-07-23).
+            // Refresh is manual now: the pre-scheduled expiry warnings say when
+            // to act, the failure escalation below covers repeated manual
+            // failures, and the stuck-swap flow covers a genuinely wedged round.
 
             // --- Refresh-failure escalation near expiry ---
             //

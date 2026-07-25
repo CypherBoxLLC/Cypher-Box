@@ -1,24 +1,28 @@
 /**
  * Pure helper that builds the VTXO set to submit to an Ark refresh round.
  *
- * The ASP's "round minimum" gate operates on the AGGREGATE input value,
- * not per-input, so dust capsules CAN ride along in a round as long as
- * the batch as a whole clears the threshold. This helper encodes the
- * filler logic: gather everything imminent (including dust), and if the
- * total is below the round minimum, top up with the smallest non-dust
- * longer-expiry fillers until we clear it. If even all available fillers
- * leave us short, the batch is "stranded" — the caller surfaces that to
- * the user instead of submitting a round bark will reject.
+ * A VTXO can only join a round if its OWN value is at least the per-input
+ * refresh minimum (`minRefreshSats`, currently ARK_REFRESH_MIN_SATS). The
+ * ASP rejects the ENTIRE round with `BarkError.Internal` if any single
+ * input is below it ("vtxo amount must be at least ... to participate in a
+ * round"), the same way an expired input poisons a round. So a dust
+ * capsule can NOT ride along on a batch of larger ones: including it makes
+ * the whole round fail, healthy inputs and all. Sub-minimum capsules are
+ * therefore excluded and reported as `strandedDust`; the caller nudges the
+ * user to spend them (a normal payment folds them in via coin-selection)
+ * before they expire.
+ *
+ * Only near-expiry (within `batchDays`) VTXOs are batched, a refresh costs
+ * a fee and locks the input for the round, so healthy far-from-expiry
+ * capsules are left alone.
  *
  * Used by the notification-tap auto-refresh path in
  * src/screens/Strike/CheckingAccountNew/ArkCapsules.tsx. The
- * background-refresh orchestrator at
- * src/services/ark/backgroundRefresh.ts has its own version of this
- * logic (it also has to consult cached chain tip, mid-round arkoor
- * deferrals, and a final-mile deferral re-check on top of categorisation
- * — too much extra to fold into a pure helper). Keep both call sites in
- * sync conceptually: same priority order, same dust handling, same
- * stranded-detection semantics.
+ * background-refresh orchestrator at src/services/ark/backgroundRefresh.ts
+ * has its own copy of this categorisation (it also consults cached chain
+ * tip, mid-round arkoor deferrals, and a final-mile deferral re-check).
+ * Keep both call sites in sync: same per-input floor, same stranded-dust
+ * semantics.
  */
 
 export interface BatchVtxoInput {
@@ -43,28 +47,31 @@ export interface BuildRefreshBatchInputs {
     deferredIds?: ReadonlySet<string>;
     /** Inclusive upper bound on daysLeft for the short-expiry trigger set. */
     batchDays: number;
-    /** Round minimum the ASP rejects below (per the active config). */
-    minBatchSats: number;
     /**
-     * Dust threshold (per-VTXO). Below this a capsule can't sit alone in
-     * a round but can ride along when the aggregate clears `minBatchSats`.
+     * Per-input floor. A VTXO whose OWN value is below this can't join a
+     * round (the ASP rejects the whole round), so it is excluded and
+     * reported as stranded dust rather than batched.
      */
-    dustThresholdSats: number;
+    minRefreshSats: number;
 }
 
 export interface BuildRefreshBatchResult {
-    /** Ordered VTXO ids to submit. Empty when nothing imminent. */
+    /** Ordered VTXO ids to submit. Empty when nothing refreshable is imminent. */
     ids: string[];
     /** Aggregate input sats of the batch. */
     totalSats: number;
-    /** How many non-dust longer-expiry VTXOs were added as fillers. */
-    fillerCount: number;
-    /** True when the imminent set is non-empty but aggregate < minBatchSats even with all fillers. */
-    stranded: boolean;
-    /** Number of imminent (within `batchDays`) VTXOs included in the batch. */
+    /** Number of imminent (within `batchDays`) refreshable VTXOs in the batch. */
     triggerCount: number;
-    /** Aggregate sats of just the imminent (non-filler) VTXOs in the batch. */
+    /** Aggregate sats of the batched VTXOs (== totalSats; kept for symmetry). */
     triggerSats: number;
+    /**
+     * Imminent VTXOs excluded because their own value is below
+     * `minRefreshSats` and they can't join a round. The caller surfaces
+     * these so the user spends them before they expire.
+     */
+    strandedDustCount: number;
+    /** Aggregate sats of the stranded (sub-minimum) imminent VTXOs. */
+    strandedDustSats: number;
     /** How many candidates were skipped because they were Locked. */
     skippedPendingCount: number;
     /** How many candidates were skipped because the user deferred them. */
@@ -78,10 +85,11 @@ type Candidate = { id: string; sats: number; daysLeft: number };
  * store reads. Caller threads through deferred state + config constants.
  */
 export function buildRefreshBatch(input: BuildRefreshBatchInputs): BuildRefreshBatchResult {
-    const { vtxos, deferredIds, batchDays, minBatchSats, dustThresholdSats } = input;
+    const { vtxos, deferredIds, batchDays, minRefreshSats } = input;
 
-    const shortExpiry: Candidate[] = [];
-    const longExpiryNonDust: Candidate[] = [];
+    const batch: Candidate[] = [];
+    let strandedDustCount = 0;
+    let strandedDustSats = 0;
     let skippedPendingCount = 0;
     let skippedDeferredCount = 0;
 
@@ -96,47 +104,28 @@ export function buildRefreshBatch(input: BuildRefreshBatchInputs): BuildRefreshB
             skippedDeferredCount++;
             continue;
         }
-        const cand: Candidate = { id: v.id, sats: v.sats, daysLeft: v.daysLeft };
-        if (v.daysLeft < batchDays) {
-            shortExpiry.push(cand);
-        } else if (v.sats > dustThresholdSats) {
-            longExpiryNonDust.push(cand);
+        // Only near-expiry VTXOs are worth the refresh fee + round lock.
+        if (v.daysLeft >= batchDays) continue;
+        // Per-input floor: a sub-minimum capsule can't join a round without
+        // poisoning it (bark rejects the whole round), so strand it instead
+        // of batching it. The user is nudged to spend it before expiry.
+        if (v.sats < minRefreshSats) {
+            strandedDustCount++;
+            strandedDustSats += v.sats;
+            continue;
         }
+        batch.push({ id: v.id, sats: v.sats, daysLeft: v.daysLeft });
     }
 
-    const batch: Candidate[] = [...shortExpiry];
-    const triggerCount = shortExpiry.length;
-    const triggerSats = shortExpiry.reduce((a, c) => a + c.sats, 0);
-    let totalSats = triggerSats;
-    let fillerCount = 0;
-
-    if (totalSats > 0 && totalSats < minBatchSats) {
-        // Filler priority: soonest-to-expire first (more "expiry value"
-        // per fee sat spent — a filler at 16d gains ~14 days from a
-        // refresh, a filler at 30d gains ~0), then smallest sats within
-        // the same tier (minimises the healthy capsule value dragged
-        // into a dust-driven round).
-        const fillers = [...longExpiryNonDust].sort((a, b) => {
-            if (a.daysLeft !== b.daysLeft) return a.daysLeft - b.daysLeft;
-            return a.sats - b.sats;
-        });
-        for (const f of fillers) {
-            batch.push(f);
-            totalSats += f.sats;
-            fillerCount++;
-            if (totalSats >= minBatchSats) break;
-        }
-    }
-
-    const stranded = triggerCount > 0 && totalSats > 0 && totalSats < minBatchSats;
+    const totalSats = batch.reduce((a, c) => a + c.sats, 0);
 
     return {
         ids: batch.map((c) => c.id),
         totalSats,
-        fillerCount,
-        stranded,
-        triggerCount,
-        triggerSats,
+        triggerCount: batch.length,
+        triggerSats: totalSats,
+        strandedDustCount,
+        strandedDustSats,
         skippedPendingCount,
         skippedDeferredCount,
     };

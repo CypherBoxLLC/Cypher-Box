@@ -280,6 +280,26 @@ function formatRoundUpperBound(secs: number): string {
 }
 
 /**
+ * Detailed remaining-time label for the refresh / in-flight state. While a
+ * round runs the user is racing the capsule's (pre-refresh) expiry, so hours
+ * matter, not just whole days. Examples: "2d 2h left", "5h left", "45m left",
+ * "expiring" (≈0 or past). Returns null for arkoor / unknown expiry.
+ */
+function formatTimeLeftDetailed(daysLeft: number): string {
+    if (!Number.isFinite(daysLeft) || daysLeft <= 0) return 'expiring';
+    const totalHours = daysLeft * 24;
+    if (totalHours >= 24) {
+        const days = Math.floor(daysLeft);
+        const hours = Math.round((daysLeft - days) * 24);
+        // Carry: "1d 24h" reads wrong, roll it into the next day.
+        if (hours >= 24) return `${days + 1}d left`;
+        return hours > 0 ? `${days}d ${hours}h left` : `${days}d left`;
+    }
+    if (totalHours >= 1) return `${Math.round(totalHours)}h left`;
+    return `${Math.max(1, Math.round(totalHours * 60))}m left`;
+}
+
+/**
  * VtxoRow — one VTXO. Same Transaction background + 4-column layout as the
  * Hot Vault ListView. The only swap from Hot Vault is the visual in the
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
@@ -354,11 +374,12 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
     // breathing rather than zooming.
     const iconScale = pulseAnim.interpolate({ inputRange: [0.2, 1], outputRange: [0.92, 1.08] });
 
-    // Pending-round / in-flight VTXOs: flat yellow label, full ring (so
-    // the row doesn't read as "almost expired" while it's actually
-    // sitting in a round / mid-send / mid-board). Both states share the
-    // same two-line label since the user-visible behaviour is identical
-    // (capsule is locked, unspendable until the operation commits).
+    // Pending-round / in-flight VTXOs: flat yellow label. The ring keeps
+    // showing the capsule's REAL expiry (see ringDaysLeft below) so the
+    // user can see the deadline they're racing while the round runs. Both
+    // states share the same two-line label since the user-visible
+    // behaviour is identical (capsule is locked, unspendable until the
+    // operation commits).
     const isTransientForLabel = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
     // Expired rows render greyed and non-actionable: grey "Expired"
     // label, grey amount, no recoverability suffix (a backup can't
@@ -381,7 +402,9 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
             : vtxo.unknownExpiry
                 ? vtxo.kind
                 : formatExpiryLeft(vtxo.daysLeft);
-    const ringDaysLeft = isTransientForLabel ? VTXO_MAX_DAYS : vtxo.daysLeft;
+    // Reflect real expiry even mid-round (arkoor daysLeft=Infinity still
+    // reads full/green, no deadline). Matches the red countdown text.
+    const ringDaysLeft = vtxo.daysLeft;
 
     // Explainer for expired capsules — the only "action" the row keeps.
     // Copy matches the header tagline's "lost forever" framing so the
@@ -552,9 +575,22 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                         // "In-flight" again. Expired rows drop the suffix
                         // too: "Backed up" next to a dead capsule reads
                         // as "recoverable", which it is not.
-                        <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
-                            {labelText}
-                        </Text>
+                        //
+                        // While a refresh round is in flight the capsule is
+                        // still racing its (pre-refresh) expiry, so keep the
+                        // countdown visible in the expiry-band colour (red
+                        // when <7d) under the "Refreshing…" label. Hidden for
+                        // arkoor / unknown-expiry rows (no meaningful deadline).
+                        <View>
+                            <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
+                                {labelText}
+                            </Text>
+                            {isTransientForLabel && !isExpired && !vtxo.unknownExpiry && Number.isFinite(vtxo.daysLeft) && (
+                                <Text bold numberOfLines={1} style={{ color: view.color, fontSize: 12 }}>
+                                    {formatTimeLeftDetailed(vtxo.daysLeft)}
+                                </Text>
+                            )}
+                        </View>
                     ) : (
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
                             <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
@@ -849,6 +885,12 @@ const TAP_REFRESH_IMMINENT_DAYS = 14;
 // Countdown window for the refresh-wait reminder. Each in-flight round gets a
 // 3h timer counting down from when it started (its first-seen timestamp).
 const REFRESH_WAIT_WINDOW_MS = 3 * 60 * 60 * 1000;
+// A stuck refresh becomes worth bailing on (swap the capsule to another
+// wallet, retry later) well before the 12h `nearExpiry` gate, a failing
+// round shouldn't be allowed to burn down a multi-day runway. The Capsules
+// banner offers the swap-out path once a stuck capsule is within this many
+// days of expiry.
+const STUCK_SWAP_BANNER_DAYS = 3;
 // Cap the stacked per-round countdown lines so spam-tapping (which queues
 // duplicate rounds) can't grow the banner unbounded; the rest collapse to
 // a "+N more" line.
@@ -1234,8 +1276,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             })),
             deferredIds,
             batchDays: TAP_REFRESH_IMMINENT_DAYS,
-            minBatchSats: ARK_REFRESH_MIN_SATS,
-            dustThresholdSats: ARK_VTXO_DUST_SATS,
+            minRefreshSats: ARK_REFRESH_MIN_SATS,
         });
 
         // Imminent (≤14d) VTXOs that are currently Locked. They're the
@@ -1257,11 +1298,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             return;
         }
 
-        if (batch.stranded) {
+        if (batch.ids.length === 0 && batch.strandedDustCount > 0) {
             SimpleToast.show(
-                `Your imminent capsules total ${batch.totalSats.toLocaleString()} sats, ` +
-                `below the ${ARK_REFRESH_MIN_SATS}-sat round minimum. Receive more sats ` +
-                `into your Bark Vault to combine them before they expire.`,
+                `Your imminent capsule${batch.strandedDustCount === 1 ? '' : 's'} ` +
+                `(${batch.strandedDustSats.toLocaleString()} sats) ` +
+                `${batch.strandedDustCount === 1 ? 'is' : 'are'} below the ` +
+                `${ARK_REFRESH_MIN_SATS}-sat refresh minimum. Spend ` +
+                `${batch.strandedDustCount === 1 ? 'it' : 'them'} in a payment before ` +
+                `${batch.strandedDustCount === 1 ? 'it expires' : 'they expire'}.`,
                 SimpleToast.LONG,
             );
             return;
@@ -1278,7 +1322,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 'ids=', batch.ids.length,
                 'totalSats=', batch.totalSats,
                 'triggerCount=', batch.triggerCount,
-                'fillerCount=', batch.fillerCount,
+                'strandedDust=', batch.strandedDustCount,
                 'skippedPending=', batch.skippedPendingCount,
                 'skippedDeferred=', batch.skippedDeferredCount,
             );
@@ -1380,25 +1424,46 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             return;
         }
 
-        // Pre-flight dust check: the ASP rejects refresh rounds for
-        // inputs below `ARK_REFRESH_MIN_SATS` (empirically ~500). Catch
-        // this client-side instead of letting the user wait through a
-        // round attempt that's predestined to fail with an opaque
-        // BarkError.Internal. The reactive error path below still
-        // exists as a safety net for above-threshold rounds that fail
-        // for other reasons.
+        // Pre-flight PER-INPUT dust check. The ASP rejects the WHOLE round
+        // with an opaque BarkError.Internal if ANY single input is below
+        // `ARK_REFRESH_MIN_SATS` (empirically ~500), it's a per-input
+        // floor, not an aggregate one, so a dust capsule can't ride along
+        // on larger ones. Drop sub-floor capsules from the round (the user
+        // spends them separately; coin-selection folds them into a normal
+        // payment) rather than letting one dust input sink the refresh of
+        // the healthy ones. The reactive error path below stays as a
+        // safety net for above-floor rounds that fail for other reasons.
+        const dustRows = rows.filter(
+            (r) => ids.includes(r.id) && r.sats < ARK_REFRESH_MIN_SATS,
+        );
+        if (dustRows.length > 0) {
+            const dustSats = dustRows.reduce((acc, r) => acc + r.sats, 0);
+            const refreshable = ids.filter(
+                (id) => !dustRows.some((d) => d.id === id),
+            );
+            if (refreshable.length === 0) {
+                SimpleToast.show(
+                    `${dustSats}-sat capsule${dustRows.length === 1 ? ' is' : 's are'} too small ` +
+                    `to refresh (server minimum ~${ARK_REFRESH_MIN_SATS}). ` +
+                    `Spend ${dustRows.length === 1 ? 'it' : 'them'} in a payment ` +
+                    `before ${dustRows.length === 1 ? 'it expires' : 'they expire'}.`,
+                    SimpleToast.LONG,
+                );
+                return;
+            }
+            SimpleToast.show(
+                `Skipping ${dustRows.length} tiny capsule${dustRows.length === 1 ? '' : 's'} ` +
+                `(${dustSats} sats, below the ~${ARK_REFRESH_MIN_SATS}-sat minimum). ` +
+                `Spend ${dustRows.length === 1 ? 'it' : 'them'} in a payment. Refreshing the rest.`,
+                SimpleToast.LONG,
+            );
+            ids = refreshable;
+        }
+        // Post-filter input total (drives the refreshArkVtxosAndSync amount
+        // arg + telemetry below).
         const totalIn = rows
             .filter((r) => ids.includes(r.id))
             .reduce((acc, r) => acc + r.sats, 0);
-        if (totalIn > 0 && totalIn < ARK_REFRESH_MIN_SATS) {
-            SimpleToast.show(
-                `${totalIn}-sat capsule${ids.length === 1 ? '' : 's'} too small to refresh ` +
-                `(server minimum ~${ARK_REFRESH_MIN_SATS}). ` +
-                `Combine into a larger capsule first via a self-send.`,
-                SimpleToast.LONG,
-            );
-            return;
-        }
 
         setRefreshing(true);
         try {
@@ -1591,7 +1656,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             SimpleToast.show(
                 `${lockedImminentCount} capsule${lockedImminentCount === 1 ? '' : 's'} ` +
                 `(${lockedImminentSats.toLocaleString()} sats) ${lockedImminentCount === 1 ? 'is' : 'are'} ` +
-                `already in an active refresh round. It should finalise within an hour.`,
+                `already in an active refresh round. It should finalise within 3 hours.`,
                 SimpleToast.LONG,
             );
             if (batch.ids.length > 0) {
@@ -1707,8 +1772,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             vtxos: projected,
             deferredIds: freshDeferredIds,
             batchDays: TAP_REFRESH_IMMINENT_DAYS,
-            minBatchSats: ARK_REFRESH_MIN_SATS,
-            dustThresholdSats: ARK_VTXO_DUST_SATS,
+            minRefreshSats: ARK_REFRESH_MIN_SATS,
         });
 
         if (freshBatch.ids.length === 0) {
@@ -1923,63 +1987,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
      * `pendingRound` capsules are excluded from both sets — refreshing
      * a Locked VTXO is a no-op at best, double-submission at worst.
      */
-    const dustConsolidate = React.useMemo(() => {
-        // Only LIVE dust counts toward consolidation. Expired dust
-        // (daysLeft ≤ 0) can't participate in a refresh round — the
-        // ASP rejects it for being past its lifetime — so trying to
-        // include it would just nuke the whole consolidation attempt.
-        // Also exclude pendingRound capsules (already in flight, double-
-        // submission would confuse the SDK). And exclude vtxos inside their
-        // "Use immediately" grace; this button auto-selects the set, so it
-        // must honour the same consent every other automatic path does.
-        const deferredIds = buildDeferredVtxoIds(arkArkoorPromptState);
+    const strandedDust = React.useMemo(() => {
+        // Live capsules below the per-input refresh floor. They can't join a
+        // round (bark rejects the whole round on a sub-floor input) and can't
+        // be economically exited, so they are a one-way trap unless spent.
+        // Surface them so the user spends them (a normal payment folds them in
+        // via coin-selection) before they expire. Excludes pendingRound
+        // (mid-round) and already-expired rows.
+        //
+        // Round-based "consolidation" was removed: it batched sub-floor dust
+        // with fillers on the false premise that the round minimum is an
+        // aggregate, when it is per-input, so the round always failed.
         const dust = rows.filter(
-            (r) => r.sats <= ARK_VTXO_DUST_SATS && !r.pendingRound && r.daysLeft > 0 && !deferredIds.has(r.id),
+            (r) => r.sats < ARK_REFRESH_MIN_SATS && !r.pendingRound && r.daysLeft > 0,
         );
-        if (dust.length === 0) {
-            return { dust, ids: [] as string[], total: 0, viable: false, shortfall: 0 };
-        }
-        const dustTotal = dust.reduce((a, r) => a + r.sats, 0);
-        if (dustTotal >= ARK_REFRESH_MIN_SATS) {
-            return {
-                dust,
-                ids: dust.map((r) => r.id),
-                total: dustTotal,
-                viable: true,
-                shortfall: 0,
-            };
-        }
-        // Fillers must be LIVE too — an expired non-dust capsule in the
-        // input set would poison the whole consolidation round the same
-        // way expired dust would.
-        const nonDust = rows
-            .filter((r) => r.sats > ARK_VTXO_DUST_SATS && !r.pendingRound && r.daysLeft > 0 && !deferredIds.has(r.id))
-            .sort((a, b) => a.sats - b.sats);
-        const fillers: typeof rows = [];
-        let total = dustTotal;
-        for (const v of nonDust) {
-            fillers.push(v);
-            total += v.sats;
-            if (total >= ARK_REFRESH_MIN_SATS) break;
-        }
-        const viable = total >= ARK_REFRESH_MIN_SATS;
-        return {
-            dust,
-            ids: viable ? [...dust.map((r) => r.id), ...fillers.map((r) => r.id)] : [],
-            total,
-            viable,
-            shortfall: viable ? 0 : ARK_REFRESH_MIN_SATS - total,
-        };
-    }, [rows, arkArkoorPromptState]);
-
-    const handleConsolidateDust = () => {
-        if (!dustConsolidate.viable || dustConsolidate.ids.length < 2) return;
-        // Surface the selection so the user sees which capsules will
-        // get rolled in (the row halos will light up). The refreshIds
-        // call clears `selectedIds` on completion regardless.
-        setSelectedIds(dustConsolidate.ids);
-        void refreshIds(dustConsolidate.ids);
-    };
+        const total = dust.reduce((a, r) => a + r.sats, 0);
+        return { dust, total };
+    }, [rows]);
 
     const renderActionButton = (label: string, onPress: () => void) => (
         <GradientView
@@ -2005,6 +2029,25 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // first-seen ms per in-flight round; the banner turns each into a 3h
     // countdown and drops it when it elapses or its round completes.
     const roundStarts = Object.values(arkPendingRoundFirstSeen ?? {});
+
+    // Soonest (pre-refresh) expiry among Locked capsules, the deadline a
+    // stuck round is failing to extend. Drives the stuck banner's escalation
+    // from "cancel & retry" to "swap it out and retry later" once inside
+    // STUCK_SWAP_BANNER_DAYS. Only meaningful while a stuck round holds funds.
+    const soonestStuckDaysLeft = arkRefreshStuck
+        ? rows.reduce(
+            (min, r) =>
+                r.pendingRound && !r.unknownExpiry && Number.isFinite(r.daysLeft) && r.daysLeft < min
+                    ? r.daysLeft
+                    : min,
+            Infinity,
+        )
+        : Infinity;
+    // Offer the swap-out path when a stuck round's funds are near expiry: the
+    // existing 12h `nearExpiry` gate OR our wider multi-day banner window.
+    const stuckExpirySoon =
+        !!arkRefreshStuck &&
+        (arkRefreshStuck.nearExpiry || soonestStuckDaysLeft <= STUCK_SWAP_BANNER_DAYS);
 
     return (
         <View style={vaultStyles.flex}>
@@ -2103,16 +2146,16 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 VTXOs. */}
             {arkRefreshStuck && (
                 <TouchableOpacity
-                    // Near expiry: refreshing is stuck AND the funds are running
-                    // out, so this becomes the Capsules-tab entry point into the
-                    // "move your funds out" screen. Otherwise keep the in-place
-                    // cancel-and-retry recovery.
-                    onPress={arkRefreshStuck.nearExpiry
+                    // Near expiry (12h gate) OR stuck within STUCK_SWAP_BANNER_DAYS:
+                    // a failing round is eating the runway, so this becomes the
+                    // Capsules-tab entry into the "move your funds out" screen.
+                    // Otherwise keep the in-place cancel-and-retry recovery.
+                    onPress={stuckExpirySoon
                         ? () => dispatchNavigate('ArkStuckCapsuleScreen', {})
                         : handleStuckRecovery}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel={arkRefreshStuck.nearExpiry
+                    accessibilityLabel={stuckExpirySoon
                         ? 'Move your stuck funds out'
                         : 'Recover stuck refresh'}
                     style={{
@@ -2134,6 +2177,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                                     Tap to move funds out
                                 </Text>
                             </>
+                        ) : stuckExpirySoon ? (
+                            <>
+                                Refresh looks stuck and this capsule expires soon.{' '}
+                                <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
+                                    Tap to swap it to another wallet
+                                </Text>
+                            </>
                         ) : (
                             <>
                                 Refresh stuck for {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
@@ -2146,22 +2196,21 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     <Text style={{ color: '#B0B0B0', fontSize: 11, marginTop: 3, lineHeight: 15 }}>
                         {arkRefreshStuck.nearExpiry
                             ? 'Refresh process is stuck and some capsules are about to expire. Tap to move funds to another wallet before they expire.'
-                            : 'This round is taking longer than expected. Recovering unlocks your capsules so you can try again. Your funds are safe.'}
+                            : stuckExpirySoon
+                                ? `This refresh keeps failing and the capsule has ${formatTimeLeftDetailed(soonestStuckDaysLeft)}. Move it to another wallet and try the refresh again later.`
+                                : 'This round is taking longer than expected. Recovering unlocks your capsules so you can try again. Your funds are safe.'}
                     </Text>
                 </TouchableOpacity>
             )}
 
-            {/* Dust-consolidate banner. Surfaces only when there's at
-                least one dust capsule on the wallet. Two states:
-                  - viable (we can build a refresh set above the
-                    threshold): tappable button merges them in one
-                    refresh round
-                  - non-viable (not enough non-dust capsules to top up):
-                    informational, explains how much more they need
-                    to receive before consolidation works. The banner
-                    is the only place users learn that dust is a
-                    one-way trap unless they top up. */}
-            {dustConsolidate.dust.length > 0 && (
+            {/* Stranded-dust notice. Surfaces when the wallet holds capsules
+                below the per-input refresh floor: they can't be refreshed
+                (bark rejects a round with any sub-floor input) and can't be
+                economically exited, so the only way to keep their value is to
+                spend them before they expire. This banner is the one place a
+                user learns that. Round-based "consolidation" was removed: the
+                round minimum is per-input, not aggregate, so it always failed. */}
+            {strandedDust.dust.length > 0 && (
                 <View
                     style={{
                         marginHorizontal: 20,
@@ -2176,36 +2225,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     }}
                 >
                     <RNText style={{ fontSize: 13, color: '#FF7A68', fontWeight: '700', marginBottom: 4 }}>
-                        {dustConsolidate.dust.length} dust capsule{dustConsolidate.dust.length === 1 ? '' : 's'} stranded
+                        {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} cannot be refreshed
                     </RNText>
-                    {dustConsolidate.viable ? (
-                        <>
-                            <RNText style={{ fontSize: 12, color: '#ddd', marginBottom: 8 }}>
-                                Combine {dustConsolidate.ids.length} capsule{dustConsolidate.ids.length === 1 ? '' : 's'}
-                                {' '}({dustConsolidate.total.toLocaleString()} sats) into one refresh round to absorb the dust.
-                            </RNText>
-                            <TouchableOpacity
-                                onPress={handleConsolidateDust}
-                                disabled={refreshing}
-                                activeOpacity={0.7}
-                                style={{
-                                    paddingVertical: 8,
-                                    paddingHorizontal: 12,
-                                    borderRadius: 6,
-                                    backgroundColor: refreshing ? '#444' : '#FF7A68',
-                                    alignItems: 'center',
-                                }}
-                            >
-                                <RNText style={{ fontSize: 12, color: '#1a0f0d', fontWeight: '700' }}>
-                                    {refreshing ? 'Refreshing…' : 'Combine dust into one capsule'}
-                                </RNText>
-                            </TouchableOpacity>
-                        </>
-                    ) : (
-                        <RNText style={{ fontSize: 12, color: '#ddd' }}>
-                            Total available is {dustConsolidate.total.toLocaleString()} sats — {dustConsolidate.shortfall.toLocaleString()} sats short of the {ARK_REFRESH_MIN_SATS}-sat refresh minimum. Receive at least that much more before the dust expires, or it will be lost to the ASP.
-                        </RNText>
-                    )}
+                    <RNText style={{ fontSize: 12, color: '#ddd' }}>
+                        Below the {ARK_REFRESH_MIN_SATS}-sat round minimum ({strandedDust.total.toLocaleString()} sats total). Spend {strandedDust.dust.length === 1 ? 'it' : 'them'} in a payment before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}. A normal send folds {strandedDust.dust.length === 1 ? 'it' : 'them'} in.
+                    </RNText>
                 </View>
             )}
 

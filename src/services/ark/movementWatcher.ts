@@ -12,17 +12,15 @@ import { getArkWalletHandle } from './walletHandle';
 /**
  * Long-lived consumer of the bark wallet's notification stream.
  *
- * Originally fired `runBackgroundRefresh('arrival')` on every LN receive
- * to close the arkoor server-trust window within minutes. That strategy
- * was replaced by lazy refresh: the 30s sweep in useArkSync fires
- * `runBackgroundRefresh('foreground')` only when a spendable VTXO has
- * `daysLeft < URGENCY_THRESHOLD_DAYS` (2 days). Trust window grows from
- * "minutes" to "up to several days" for fresh receives, matching bark's
- * fee schedule (0-fee refresh below 2 days) and avoiding hammering the
- * ASP during flaky periods.
+ * Originally fired a refresh on every LN receive to close the arkoor
+ * server-trust window within minutes. That was later replaced by a lazy
+ * foreground sweep, and automatic refresh has since been removed entirely
+ * (the sweep re-locked cancelled rounds near expiry, deadlocking the
+ * funds). Refresh is manual now: fresh receives stay spendable until the
+ * user refreshes, and the pre-scheduled expiry warnings prompt them in time.
  *
  * The watcher is kept for diagnostic logging of MovementCreated /
- * MovementUpdated events — useful when investigating stuck rounds or
+ * MovementUpdated events, useful when investigating stuck rounds or
  * receive-pipeline issues. It no longer dispatches any refresh.
  *
  * Lifecycle: started when a wallet handle opens, stopped when it
