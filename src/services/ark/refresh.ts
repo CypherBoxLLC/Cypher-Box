@@ -190,6 +190,165 @@ export async function refreshArkVtxosAndSync(
     return result;
 }
 
+export type ArkDelegatedRefreshResult = {
+    /**
+     * RoundState the ASP returned when it ACCEPTED the delegation, or null if
+     * the SDK scheduled nothing. Note this is "accepted", not "completed": the
+     * server finishes the round later and the refreshed VTXO only appears after
+     * a subsequent `sync()`.
+     */
+    roundState: RoundState | null;
+};
+
+/**
+ * Delegated refresh — the mobile-appropriate path. Hands the given VTXOs to
+ * the ASP to re-board on our behalf in the next round.
+ *
+ * Unlike self-signed `refreshArkVtxos` (which blocks for the whole round, up
+ * to ~1h, and needs the app foregrounded the entire time), this returns as
+ * soon as the ASP ACCEPTS the delegation (seconds). The server then carries
+ * the round to completion with no client presence, so the app can background
+ * immediately. Confirmed reliable by Second.tech.
+ *
+ * IMPORTANT: resolving here means "delegation accepted", NOT "VTXO refreshed".
+ * The refreshed VTXO materialises only after the round finalises server-side
+ * and a later `sync()` ingests it. That later sync is also where the client
+ * VALIDATES the new VTXO (the liveness/verification step the trust model
+ * requires).
+ *
+ * Serialization: we reuse the same ongoing-round pre-check as the self-signed
+ * path (one wallet cannot be in two rounds at once). We do NOT hold the
+ * `refreshSubmissionInFlight` flag for the round's duration the way the
+ * blocking path does, because this call returns long before the round ends;
+ * the `pendingRoundStates` ongoing-check is what prevents overlap across the
+ * server-side round.
+ */
+export async function refreshArkVtxosDelegated(
+    vtxoIds: string[],
+    totalSats?: number,
+): Promise<ArkDelegatedRefreshResult> {
+    const handle = requireHandle();
+
+    // Block only when a round is genuinely still ongoing server-side. A
+    // finalising (`ongoing=false`) round has terminated and the next sync
+    // ingests it, so it must not block a fresh delegation.
+    const pending = await fetchArkPendingRoundStates();
+    const ongoingCount = pending.filter((r) => r.ongoing).length;
+    if (ongoingCount > 0) {
+        console.log(
+            '[Ark refresh] delegated submission blocked:', ongoingCount,
+            'round(s) already ongoing',
+        );
+        throw new ArkRefreshInFlightError(ongoingCount);
+    }
+
+    console.log(
+        '[Ark refresh] refreshVtxosDelegated() calling for', vtxoIds.length,
+        'vtxo(s):', vtxoIds.map((id) => id.slice(0, 12) + '…'),
+    );
+    const t0 = Date.now();
+    const correlationId = `${t0.toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    recordEvent({
+        kind: 'ark-refresh-started',
+        vtxoCount: vtxoIds.length,
+        totalSats: totalSats ?? 0,
+        correlationId,
+    });
+    try {
+        const roundState = await handle.refreshVtxosDelegated(vtxoIds);
+        console.log(
+            '[Ark refresh] refreshVtxosDelegated() accepted in',
+            Math.round((Date.now() - t0) / 1000), 's',
+        );
+        // "finished" here = the ASP accepted the delegation, NOT that the VTXO
+        // is refreshed. Actual completion is observed on the next sync.
+        recordEvent({
+            kind: 'ark-refresh-finished',
+            correlationId,
+            result: 'success',
+            durationMs: Date.now() - t0,
+        });
+        // Acceptance breaks the failure streak that drives the
+        // refresh-failing-near-expiry escalation in useArkSync.
+        useAuthStore.getState().setArkRefreshFailStreak(0);
+        return { roundState: roundState ?? null };
+    } catch (err: any) {
+        // BarkError carries detail in `err.inner.errorMessage`, not `err.message`.
+        const inner = err?.inner?.errorMessage ?? err?.inner?.message ?? null;
+        const tag = err?.tag ?? null;
+        console.warn(
+            '[Ark refresh] refreshVtxosDelegated() threw after',
+            Math.round((Date.now() - t0) / 1000),
+            's: tag=', tag, 'inner=', inner, 'message=', err?.message ?? String(err),
+        );
+        recordEvent({
+            kind: 'ark-refresh-finished',
+            correlationId,
+            result: 'failure',
+            durationMs: Date.now() - t0,
+        });
+        const store = useAuthStore.getState();
+        store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        throw err;
+    }
+}
+
+/**
+ * Convenience: delegated refresh + sync + refetch balance/vtxos, mirroring
+ * `refreshArkVtxosAndSync` for the self-signed path. The sync pulls the new
+ * in-round state into the local datadir so the capsule row flips to its
+ * "Refreshing" treatment without waiting for the 30s useArkSync tick. The
+ * round still completes server-side later; the refreshed VTXO appears on a
+ * subsequent sync (which is also where the client validates it).
+ */
+export async function refreshArkVtxosDelegatedAndSync(
+    vtxoIds: string[],
+    totalSats?: number,
+): Promise<ArkDelegatedRefreshResult> {
+    const handle = requireHandle();
+    const result = await refreshArkVtxosDelegated(vtxoIds, totalSats);
+    await handle.sync();
+    await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+    return result;
+}
+
+/**
+ * Background maintenance via delegation — asks the SDK to refresh whatever
+ * VTXOs are due (its own `getVtxosToRefresh` policy) and hand them to the ASP
+ * on our behalf. This is the unattended background engine: the app wakes on a
+ * silent push, calls this, then backgrounds again while the server runs the
+ * round(s).
+ *
+ * The SDK selects and submits internally (no vtxoIds arg). Like the delegated
+ * refresh above, resolving means the delegation was accepted, not that any
+ * VTXO is refreshed yet; the next `sync()` reconciles + validates.
+ *
+ * Errors are surfaced to the caller (the background trigger records telemetry
+ * and decides whether to notify), unlike `progressArkPendingRounds` which
+ * swallows.
+ */
+export async function maintenanceArkDelegated(): Promise<void> {
+    const handle = requireHandle();
+    const t0 = Date.now();
+    console.log('[Ark refresh] maintenanceDelegated() calling');
+    try {
+        await handle.maintenanceDelegated();
+        console.log(
+            '[Ark refresh] maintenanceDelegated() accepted in',
+            Math.round((Date.now() - t0) / 1000), 's',
+        );
+    } catch (err: any) {
+        const inner = err?.inner?.errorMessage ?? err?.inner?.message ?? null;
+        const tag = err?.tag ?? null;
+        console.warn(
+            '[Ark refresh] maintenanceDelegated() threw after',
+            Math.round((Date.now() - t0) / 1000),
+            's: tag=', tag, 'inner=', inner, 'message=', err?.message ?? String(err),
+        );
+        throw err;
+    }
+}
+
 /**
  * Drive any pending rounds forward.
  *

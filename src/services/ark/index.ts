@@ -132,9 +132,12 @@ export {
     fetchArkPendingRoundStates,
     fetchArkRoundIntervalSecs,
     fetchArkMinBoardSats,
+    maintenanceArkDelegated,
     progressArkPendingRounds,
     refreshArkVtxos,
     refreshArkVtxosAndSync,
+    refreshArkVtxosDelegated,
+    refreshArkVtxosDelegatedAndSync,
 } from './refresh';
 
 export {
@@ -163,7 +166,7 @@ export {
     probeAspReachable,
 } from './exitFunding';
 export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
-export type { ArkRefreshFeeView, ArkRefreshResult } from './refresh';
+export type { ArkRefreshFeeView, ArkRefreshResult, ArkDelegatedRefreshResult } from './refresh';
 
 export { setArkBackgroundRefreshEnabled } from './backgroundRefresh';
 

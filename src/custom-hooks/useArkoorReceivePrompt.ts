@@ -7,7 +7,7 @@ import {
     ARK_ARKOOR_ASSUMED_DAYS,
     ArkRefreshInFlightError,
     cancelVtxoExpiryWarnings,
-    refreshArkVtxosAndSync,
+    refreshArkVtxosDelegatedAndSync,
     scheduleVtxoExpiryWarnings,
 } from '@Cypher/services/ark';
 import { SPEND_GRACE_MS } from '@Cypher/services/ark/refreshDeferral';
@@ -53,10 +53,11 @@ import { recordEvent } from '@Cypher/stores/eventLogStore';
  *   the popup fires on next foreground because the state is persisted.
  *   The 24h push (scheduled at first observation, not at dismissal) is the
  *   safety net for users who never return.
- * - "Refresh now" calls refreshArkVtxosAndSync which is long-running
- *   (round cadence is ~1h on mainnet). We DO NOT block the UI on it — fire
- *   and forget. The existing per-row spinning refresh icon on the Capsules
- *   tab surfaces in-flight state if the user navigates there.
+ * - "Refresh now" calls refreshArkVtxosDelegatedAndSync, which returns as
+ *   soon as the ASP accepts the delegation (seconds); the round then
+ *   completes in the background. We fire and forget either way. The existing
+ *   per-row spinning refresh icon on the Capsules tab surfaces in-flight
+ *   state if the user navigates there.
  */
 export default function useArkoorReceivePrompt(): void {
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
@@ -260,7 +261,7 @@ export default function useArkoorReceivePrompt(): void {
         const body =
             `You just received ${amountPhrase} to your Bark Vault.\n\n` +
             `These sats expire in about ${ARK_ARKOOR_ASSUMED_DAYS} days unless they're refreshed into a long-life capsule. ` +
-            `Refreshing takes up to an hour, during which the sats can't be spent.` +
+            `Refreshing locks these sats for up to an hour while it finishes in the background, and you don't need to keep the app open.` +
             autoRefreshNote;
         const dontRefreshLabel =
             sats != null
@@ -325,7 +326,7 @@ export default function useArkoorReceivePrompt(): void {
                     },
                 },
                 {
-                    text: 'Refresh now (~1 hour, recommended)',
+                    text: 'Refresh now (recommended)',
                     onPress: () => {
                         try {
                             recordEvent({
@@ -358,14 +359,16 @@ export default function useArkoorReceivePrompt(): void {
                                     err,
                                 );
                             }
-                            // Fire-and-forget. refreshArkVtxosAndSync resolves
-                            // when the round completes (~1h on mainnet). The
-                            // per-row spinning icon on the Capsules tab is the
-                            // user-visible in-flight signal — we don't block
-                            // here so the popup dismissal feels immediate.
-                            refreshArkVtxosAndSync([firstId], sats ?? undefined).catch((err) => {
+                            // Fire-and-forget. refreshArkVtxosDelegatedAndSync
+                            // resolves as soon as the ASP accepts the delegation
+                            // (seconds); the round then completes in the
+                            // background. The per-row spinning icon on the
+                            // Capsules tab is the user-visible in-flight signal,
+                            // and we don't block here so the dismissal feels
+                            // immediate.
+                            refreshArkVtxosDelegatedAndSync([firstId], sats ?? undefined).catch((err) => {
                                 console.warn(
-                                    '[useArkoorReceivePrompt] refreshArkVtxosAndSync threw:',
+                                    '[useArkoorReceivePrompt] refreshArkVtxosDelegatedAndSync threw:',
                                     err?.message ?? err,
                                 );
                                 // Don't roll status back to 'pending' — that would
