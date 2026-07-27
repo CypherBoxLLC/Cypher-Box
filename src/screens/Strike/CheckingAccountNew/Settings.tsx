@@ -52,6 +52,7 @@ import {
   resetArkWalletState,
   setArkBackgroundRefreshEnabled,
   startArkEmergencyExit,
+  writeAndVerifyArkBackup,
   writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
 import type { ExitFeeConvertEstimate } from "@Cypher/services/ark";
@@ -1328,14 +1329,53 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     setDeleteModalVisible(false);
     setDeleting(true);
     try {
+      // Fund-safety gate: Ark VTXO state is NOT seed-derivable, so wiping the
+      // datadir without a current, verified backup is silent, permanent fund
+      // loss. Force a fresh verified backup BEFORE the wipe and refuse to
+      // delete if we can't produce one. reset() does not pass
+      // deleteBackupFilesForFingerprint, so this .cbark survives the wipe and
+      // stays a valid restore source afterward. Mirrors the wallet-create
+      // policy that a user can't proceed without a verified backup.
+      const mnemonic = await readArkSeedPhrase();
+      if (!mnemonic) {
+        SimpleToast.show(
+          "Couldn't read your seed to back up first, so delete was cancelled. Your funds are untouched.",
+          SimpleToast.LONG,
+        );
+        setDeleting(false);
+        return;
+      }
+      try {
+        const verified = await writeAndVerifyArkBackup(mnemonic);
+        if (!verified.local.ok) {
+          SimpleToast.show(
+            `Couldn't write a verified backup (${verified.local.error}), so delete was cancelled. Your funds are untouched.`,
+            SimpleToast.LONG,
+          );
+          setDeleting(false);
+          return;
+        }
+      } catch (backupErr: any) {
+        // writeAndVerifyArkBackup throws only on a fundamental pack failure
+        // (e.g. empty or locked datadir). Treat as "cannot guarantee a
+        // backup" and abort the delete rather than risk silent loss.
+        console.warn('[Ark] pre-delete backup failed:', backupErr);
+        SimpleToast.show(
+          `Couldn't create a backup to protect your funds, so delete was cancelled: ${backupErr?.message ?? "unknown error"}`,
+          SimpleToast.LONG,
+        );
+        setDeleting(false);
+        return;
+      }
+
       await resetArkWalletState({ keepSeedInKeychain: keepSeedOnDevice });
       if (typeof clearArkAuth === 'function') {
         clearArkAuth();
       }
       SimpleToast.show(
         keepSeedOnDevice
-          ? "Ark vault deleted. Seed kept on device for biometric recovery."
-          : "Ark vault deleted from this device.",
+          ? "Backup verified. Ark vault deleted. Seed kept on device for biometric recovery."
+          : "Backup verified. Ark vault deleted from this device.",
         SimpleToast.LONG,
       );
       setTimeout(() => navigation.goBack(), 300);

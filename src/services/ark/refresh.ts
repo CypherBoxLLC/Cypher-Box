@@ -1,6 +1,7 @@
-import { getArkWalletHandle } from './walletHandle';
+import { getArkWalletHandle, getCachedArkMnemonic } from './walletHandle';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
+import { writeArkAutoBackup } from './backup';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import useAuthStore from '@Cypher/stores/authStore';
 import type { FeeEstimate, RoundState } from '@secondts/bark-react-native';
@@ -187,6 +188,16 @@ export async function refreshArkVtxosAndSync(
     // Pull the round outcome into the local datadir before we re-read.
     await handle.sync();
     await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+    // G2: eager backup so the just-refreshed state is captured now, not on
+    // the up-to-60s auto-backup tick. A reinstall in that gap would otherwise
+    // lose the new (non-seed-derivable) VTXO. Cached mnemonic (no biometric
+    // prompt), fire-and-forget with a swallowed error, mirroring the tick.
+    const eagerMnemonic = getCachedArkMnemonic();
+    if (eagerMnemonic) {
+        writeArkAutoBackup(eagerMnemonic).catch((e: any) =>
+            console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
+        );
+    }
     return result;
 }
 
@@ -309,6 +320,16 @@ export async function refreshArkVtxosDelegatedAndSync(
     const result = await refreshArkVtxosDelegated(vtxoIds, totalSats);
     await handle.sync();
     await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+    // G2: eager backup so the just-refreshed state is captured now, not on
+    // the up-to-60s auto-backup tick. A reinstall in that gap would otherwise
+    // lose the new (non-seed-derivable) VTXO. Cached mnemonic (no biometric
+    // prompt), fire-and-forget with a swallowed error, mirroring the tick.
+    const eagerMnemonic = getCachedArkMnemonic();
+    if (eagerMnemonic) {
+        writeArkAutoBackup(eagerMnemonic).catch((e: any) =>
+            console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
+        );
+    }
     return result;
 }
 

@@ -1467,6 +1467,44 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
         setRefreshing(true);
         try {
+            // G5: the store's vtxo list lags the ASP right after an arkoor
+            // send, so `ids` (built from the last poll) can still include a
+            // VTXO already spent server-side. Submitting a spent input makes
+            // the ASP reject the whole round (and inflates the fail streak).
+            // Resync and drop any id that is no longer a live, non-locked
+            // capsule before we estimate/submit. Same resync the stuck-round
+            // retry uses; a spent VTXO falls out of the store's spendable list,
+            // so "still present and not locked" is the liveness test.
+            try {
+                await syncArkWallet();
+                await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+            } catch (syncErr: any) {
+                console.warn(
+                    '[Ark refresh] pre-submit resync failed, proceeding with last-known set:',
+                    syncErr?.message ?? syncErr,
+                );
+            }
+            const liveIds = new Set(
+                (useAuthStore.getState().arkVtxos ?? [])
+                    .filter((v) => v.state.toLowerCase() !== 'locked')
+                    .map((v) => v.id),
+            );
+            const droppedStale = ids.filter((id) => !liveIds.has(id));
+            if (droppedStale.length > 0) {
+                ids = ids.filter((id) => liveIds.has(id));
+                console.log(
+                    '[Ark refresh] dropped', droppedStale.length,
+                    'stale/spent vtxo(s) after resync; refreshing', ids.length,
+                );
+            }
+            if (ids.length === 0) {
+                SimpleToast.show(
+                    'Those capsules just changed state (spent or now in a round), so there is nothing left to refresh.',
+                    SimpleToast.LONG,
+                );
+                setRefreshing(false);
+                return;
+            }
             const fee = await estimateArkRefreshFee(ids);
             // Present fee preview + confirmation before committing. The
             // delegation costs a round fee, so the user should opt in

@@ -371,46 +371,45 @@ export default function useArkoorReceivePrompt(): void {
                                     '[useArkoorReceivePrompt] refreshArkVtxosDelegatedAndSync threw:',
                                     err?.message ?? err,
                                 );
-                                // Don't roll status back to 'pending' — that would
-                                // re-prompt the user on the next render, which is
-                                // worse than silent failure. The existing per-row
-                                // refresh affordance lets them retry manually.
-                                //
-                                // EXCEPT for the round-in-flight rejection: nothing
-                                // was submitted, and we already cancelled this
-                                // capsule's expiry warnings above in anticipation of
-                                // the refresh. Restore the warnings and mark the
-                                // entry dismissed (spendable, protected, no
-                                // re-prompt) so the capsule isn't left with no
-                                // safety net.
-                                if (err instanceof ArkRefreshInFlightError) {
-                                    const cur = useAuthStore.getState().arkArkoorPromptState;
-                                    const existing2 = cur[firstId];
-                                    if (existing2) {
-                                        setArkArkoorPromptState({
-                                            ...cur,
-                                            [firstId]: {
-                                                ...existing2,
-                                                status: 'dismissed',
-                                                dismissedAt: Date.now(),
-                                            },
-                                        });
-                                    }
-                                    const exp2 = (existing2?.observedAt ?? Date.now()) +
-                                        ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
-                                    try {
-                                        scheduleVtxoExpiryWarnings(firstId, exp2, sats ?? undefined);
-                                    } catch (schedErr) {
-                                        console.warn(
-                                            '[useArkoorReceivePrompt] re-schedule after in-flight reject threw:',
-                                            schedErr,
-                                        );
-                                    }
-                                    SimpleToast.show(
-                                        'A refresh is already running. These sats stay spendable, refresh them from Capsules once it finishes.',
-                                        SimpleToast.LONG,
+                                // The optimistic 'refreshed' status + expiry-warning
+                                // cancel above ran BEFORE this submit (so the prompt
+                                // would not re-fire mid-flight). On ANY failure that
+                                // optimism is wrong: nothing is refreshing, and leaving
+                                // the warnings cancelled lets the arkoor's expiry fuse
+                                // run down with zero signal. So for every failure,
+                                // restore the safety net: mark the entry 'dismissed'
+                                // (spendable, protected, no re-prompt spam) and re-arm
+                                // the expiry warnings. Only the toast copy differs by
+                                // cause; the per-row Capsules refresh stays as the
+                                // manual retry.
+                                const cur = useAuthStore.getState().arkArkoorPromptState;
+                                const existing2 = cur[firstId];
+                                if (existing2) {
+                                    setArkArkoorPromptState({
+                                        ...cur,
+                                        [firstId]: {
+                                            ...existing2,
+                                            status: 'dismissed',
+                                            dismissedAt: Date.now(),
+                                        },
+                                    });
+                                }
+                                const exp2 = (existing2?.observedAt ?? Date.now()) +
+                                    ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
+                                try {
+                                    scheduleVtxoExpiryWarnings(firstId, exp2, sats ?? undefined);
+                                } catch (schedErr) {
+                                    console.warn(
+                                        '[useArkoorReceivePrompt] re-schedule after refresh failure threw:',
+                                        schedErr,
                                     );
                                 }
+                                SimpleToast.show(
+                                    err instanceof ArkRefreshInFlightError
+                                        ? 'A refresh is already running. These sats stay spendable, refresh them from Capsules once it finishes.'
+                                        : 'Refresh did not go through. Your sats are still spendable and protected. Try again from Capsules.',
+                                    SimpleToast.LONG,
+                                );
                             });
                         } finally {
                             promptInFlight.current = false;
