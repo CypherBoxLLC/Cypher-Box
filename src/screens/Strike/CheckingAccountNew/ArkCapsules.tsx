@@ -24,7 +24,7 @@ import {
     getArkCancelling,
     getArkWalletHandle,
     ArkRefreshInFlightError,
-    refreshArkVtxosAndSync,
+    refreshArkVtxosDelegatedAndSync,
     restoreArkWalletFromDisk,
     setArkCancelling,
     syncArkWallet,
@@ -1459,18 +1459,56 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             );
             ids = refreshable;
         }
-        // Post-filter input total (drives the refreshArkVtxosAndSync amount
-        // arg + telemetry below).
+        // Post-filter input total (drives the refreshArkVtxosDelegatedAndSync
+        // amount arg + telemetry below).
         const totalIn = rows
             .filter((r) => ids.includes(r.id))
             .reduce((acc, r) => acc + r.sats, 0);
 
         setRefreshing(true);
         try {
+            // G5: the store's vtxo list lags the ASP right after an arkoor
+            // send, so `ids` (built from the last poll) can still include a
+            // VTXO already spent server-side. Submitting a spent input makes
+            // the ASP reject the whole round (and inflates the fail streak).
+            // Resync and drop any id that is no longer a live, non-locked
+            // capsule before we estimate/submit. Same resync the stuck-round
+            // retry uses; a spent VTXO falls out of the store's spendable list,
+            // so "still present and not locked" is the liveness test.
+            try {
+                await syncArkWallet();
+                await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+            } catch (syncErr: any) {
+                console.warn(
+                    '[Ark refresh] pre-submit resync failed, proceeding with last-known set:',
+                    syncErr?.message ?? syncErr,
+                );
+            }
+            const liveIds = new Set(
+                (useAuthStore.getState().arkVtxos ?? [])
+                    .filter((v) => v.state.toLowerCase() !== 'locked')
+                    .map((v) => v.id),
+            );
+            const droppedStale = ids.filter((id) => !liveIds.has(id));
+            if (droppedStale.length > 0) {
+                ids = ids.filter((id) => liveIds.has(id));
+                console.log(
+                    '[Ark refresh] dropped', droppedStale.length,
+                    'stale/spent vtxo(s) after resync; refreshing', ids.length,
+                );
+            }
+            if (ids.length === 0) {
+                SimpleToast.show(
+                    'Those capsules just changed state (spent or now in a round), so there is nothing left to refresh.',
+                    SimpleToast.LONG,
+                );
+                setRefreshing(false);
+                return;
+            }
             const fee = await estimateArkRefreshFee(ids);
-            // Present fee preview + confirmation before committing. Round is
-            // blocking and can take seconds-to-minutes, so the user should
-            // opt in explicitly rather than have it happen silently. The
+            // Present fee preview + confirmation before committing. The
+            // delegation costs a round fee, so the user should opt in
+            // explicitly rather than have it happen silently. The
             // notification-tap path skips this dialog: the user already
             // signalled intent by tapping the warning and the deep-link
             // would be pointless if we then asked them to tap Refresh
@@ -1481,7 +1519,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     Alert.alert(
                         "Refresh capsules?",
                         `Re-board ${ids.length} capsule(s) into a new Ark round for ~${fee.feeSats} sats. ` +
-                        `This extends their expiry by another full lifetime and may take up to a minute.`,
+                        `This extends their expiry by another full lifetime. It finishes in the background ` +
+                        `within the hour, so you can close the app once it's submitted.`,
                         [
                             { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
                             { text: "Refresh", onPress: () => resolve(true) },
@@ -1494,58 +1533,25 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 return;
             }
 
-            // Watchdog: we don't want the spinner to be held hostage if the
-            // ASP round drags on or the SDK never surfaces completion (we've
-            // observed rounds sitting in the Locked state for many minutes
-            // while the server thinks about it). The underlying SDK call
-            // can't be cancelled — Bark doesn't expose an AbortSignal —
-            // but we DO want the UI to release. After the timeout we stop
-            // waiting on the refresh promise and trust the 30s `useArkSync`
-            // loop to catch completion: when `pendingInRoundSats` drops to
-            // 0 and the Locked VTXO turns Spendable, the capsules view
-            // rerenders on its own. We attach a passive `.catch` so an
-            // eventual rejection from the detached promise doesn't become
-            // an unhandled rejection.
-            // Bump the queued-rounds counter as we hand off to the SDK.
-            // The counter resets to 0 in the pendingRoundSats === 0 effect
-            // above when the round either commits or times out server-side.
+            // Delegated refresh: hand the capsules to the ASP to re-board in
+            // the next round. Returns as soon as the server ACCEPTS them
+            // (seconds), not when the round finishes. The round then completes
+            // server-side with no app presence needed, so the user can close
+            // the app. The capsules carry the "Refreshing" row treatment
+            // (Locked in round) until a later sync ingests the refreshed VTXO.
+            // Bump the queued-rounds counter so the in-flight UI reflects the
+            // pending round; it resets in the pendingRoundSats === 0 effect
+            // above when the round commits server-side.
             queuedRoundsCountRef.current += 1;
             setQueuedRoundsCount(queuedRoundsCountRef.current);
 
-            const WATCHDOG_MS = 90_000;
-            type RefreshResult = Awaited<ReturnType<typeof refreshArkVtxosAndSync>>;
-            const refreshPromise: Promise<RefreshResult> = refreshArkVtxosAndSync(ids, totalIn);
-            // Detach the rejection handler so the promise won't complain
-            // if it settles after the watchdog fires.
-            refreshPromise.catch((detachedErr) => {
-                console.warn('[Ark refresh] detached promise eventually rejected:', detachedErr);
-            });
-            const timeoutSentinel = Symbol('refresh-watchdog');
-            const raced = await Promise.race<RefreshResult | typeof timeoutSentinel>([
-                refreshPromise,
-                new Promise((resolve) =>
-                    setTimeout(() => resolve(timeoutSentinel), WATCHDOG_MS),
-                ),
-            ]);
-            if (raced === timeoutSentinel) {
-                // Fall back to "it's in flight" UX. Clear the selection so
-                // the user can't accidentally re-trigger the same IDs —
-                // they're now marked pendingRound in the row data anyway.
-                setSelectedIds([]);
-                SimpleToast.show(
-                    `Refresh still in progress — this can take a minute on busy rounds. ` +
-                    `Your capsule will appear here when it finalises.`,
-                    SimpleToast.LONG,
-                );
-            } else {
-                setSelectedIds([]);
-                SimpleToast.show(
-                    raced.roundId
-                        ? `Refreshed ${ids.length} capsule(s) in round ${raced.roundId.slice(0, 8)}…`
-                        : `Refresh completed for ${ids.length} capsule(s)`,
-                    SimpleToast.LONG,
-                );
-            }
+            await refreshArkVtxosDelegatedAndSync(ids, totalIn);
+            setSelectedIds([]);
+            SimpleToast.show(
+                `Refresh submitted for ${ids.length} capsule${ids.length === 1 ? '' : 's'}. ` +
+                `They finish in the background within the hour, so you can close the app.`,
+                SimpleToast.LONG,
+            );
         } catch (err: any) {
             // Round already in flight: nothing was submitted, this isn't a
             // failure. Tell the user to let the running round finish.
