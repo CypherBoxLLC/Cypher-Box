@@ -79,6 +79,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         arkBalanceDetail,
         arkRefreshStuck,
         setArkPendingOnchainRecoverOpen,
+        arkExitFeeReserveSats,
     } = useAuthStore();
 
     // Per-card vertical nudge for the Ark slide.
@@ -242,7 +243,10 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // in-flight refresh because it's trapped money.
         {
             const stuckSats = Number(arkBalanceDetail?.onchainBoardingSats ?? 0);
-            if (stuckSats > 0 && stuckSats < STUCK_BOARD_MIN_SATS) {
+            // Suppress when the user has armed an on-chain exit-fee reserve —
+            // those funds are their intentional CPFP reserve, not stuck money,
+            // and the recover section this deep-links to is hidden anyway.
+            if (stuckSats > 0 && stuckSats < STUCK_BOARD_MIN_SATS && (arkExitFeeReserveSats ?? 0) <= 0) {
                 return {
                     text: `You have ${stuckSats.toLocaleString()} sats failing to board your Bark vault. Recover here.`,
                     linkText: 'here',

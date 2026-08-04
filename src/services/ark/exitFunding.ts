@@ -18,6 +18,7 @@
  * of this reserve.
  */
 
+import { assertNoActiveArkExit } from './exit';
 import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
@@ -45,14 +46,28 @@ const SPIKE_MULT = 2.0;
 /** Lower bound whenever there is anything to exit, so a low fee rate (or a
  *  runtime `exitTxWeightWu` of 0) still reserves enough for at least one CPFP
  *  child at a moderate rate. Kept below the 50k board minimum so it doesn't
- *  over-hoard on-chain. */
-const RESERVE_FLOOR_SATS = 10_000;
+ *  over-hoard on-chain.
+ *
+ *  Sized to the stated rationale (one CPFP child ~150 vB at a moderate rate
+ *  with the spike buffer), not a flat 10k. The old 10k floor over-reserved
+ *  small exits by 2-4x their real cost and, combined with the (soft) fee gate,
+ *  made a well-funded small vault look unfundable for exit. This is guidance
+ *  only now: the exit stays startable via "Start exit anyway" whenever there
+ *  is any on-chain balance, so the floor no longer blocks — it just sets the
+ *  auto-board hold target. */
+const RESERVE_FLOOR_SATS = 5_000;
 /** Fallback per-VTXO vsize used only if the SDK returns `exitTxWeightWu === 0`
  *  at runtime (the type says it's populated; guard anyway). */
 const FALLBACK_VB_PER_VTXO = 200;
 /** Fee-rate fallback (sat/vB) when the mempool fetch fails. Deliberately not
- *  tiny, since an emergency exit may run during congestion. */
-const RESERVE_FEE_FALLBACK_RATE = 20;
+ *  tiny, since an emergency exit may run during congestion, but not the old
+ *  20 either: on a flaky network the fee fetch fails often, and 20 sat/vB
+ *  ballooned the recommendation (e.g. ~108k sats for a 3-VTXO exit) far past
+ *  any real cost. 10 keeps a congestion hedge without the runaway over-
+ *  reservation. Trade-off: if fees genuinely exceed 10 sat/vB *while* the fee
+ *  API is unreachable and the user arms to this recommendation, they may
+ *  under-hold; the soft gate + spike buffer absorb that. */
+const RESERVE_FEE_FALLBACK_RATE = 10;
 
 export type ExitFeeReserve = {
     /** Recommended sats to hold on-chain to fund the exit. 0 when nothing is
@@ -195,6 +210,7 @@ export async function probeAspReachable(): Promise<boolean> {
 export async function estimateExitFeeConvert(
     amountSats: number,
 ): Promise<ExitFeeConvertEstimate> {
+    assertNoActiveArkExit();
     if (!Number.isFinite(amountSats) || amountSats <= 0) {
         throw new Error('Invalid amount');
     }
@@ -220,6 +236,7 @@ export async function estimateExitFeeConvert(
 export async function convertToExitFees(
     amountSats: number,
 ): Promise<{ txid: string; grossSats: number }> {
+    assertNoActiveArkExit();
     if (!Number.isFinite(amountSats) || amountSats <= 0) {
         throw new Error('Invalid amount');
     }

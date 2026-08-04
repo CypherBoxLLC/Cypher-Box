@@ -347,6 +347,49 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const [bamskiiFee, setBamskiiFee] = useState<number>(0);
     const [feeLoading, setFeeLoading] = useState<boolean>(false);
     const [isSendLoading, setIsSendLoading] = useState<boolean>(false);
+
+    // --- BUY progress steps -------------------------------------------------
+    // The slide-to-purchase flow runs two (or three) sequential operations
+    // behind one spinner: Strike fiat→BTC execute, a settle wait, then the
+    // swap / on-chain withdrawal to the picked destination. That's easily
+    // 15–30s of anonymous loading. These steps narrate each stage under the
+    // slider ("X sats purchased from Strike", "Swapping to Bark Vault…",
+    // "taking longer than usual", failure lines) so the wait reads as
+    // progress instead of a hang. Cleared at the start of each new slide.
+    type BuyStepState = 'active' | 'slow' | 'done' | 'failed';
+    type BuyStep = { text: string; state: BuyStepState };
+    const [buyProgress, setBuyProgress] = useState<BuyStep[]>([]);
+    const swapSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** Mark the current active step done and append a new active one. */
+    const buyStepStart = (text: string) =>
+        setBuyProgress(prev => [
+            ...prev.map(s =>
+                s.state === 'active' || s.state === 'slow'
+                    ? { ...s, state: 'done' as const }
+                    : s),
+            { text, state: 'active' },
+        ]);
+    /** Resolve the current active step (done/failed), optionally re-texting it. */
+    const buyStepFinish = (state: BuyStepState, text?: string) =>
+        setBuyProgress(prev => {
+            const next = [...prev];
+            const i = next.findIndex(s => s.state === 'active' || s.state === 'slow');
+            if (i >= 0) next[i] = { text: text ?? next[i].text, state };
+            else if (text) next.push({ text, state });
+            return next;
+        });
+    /** Downgrade the active step to the amber "taking longer" treatment. */
+    const buyStepSlow = (text: string) =>
+        setBuyProgress(prev => prev.map(s =>
+            s.state === 'active' ? { text, state: 'slow' as const } : s));
+    const clearBuyProgress = () => {
+        if (swapSlowTimerRef.current) clearTimeout(swapSlowTimerRef.current);
+        swapSlowTimerRef.current = null;
+        setBuyProgress([]);
+    };
+    useEffect(() => () => {
+        if (swapSlowTimerRef.current) clearTimeout(swapSlowTimerRef.current);
+    }, []);
     const [isModalVisible, setModalVisible] = useState(false);
     const [isEditAmount, setIsEditAmount] = useState(false);
     const [isCheck, setIsCheck] = useState(false);
@@ -816,12 +859,24 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 // ought to poll the quote-status endpoint instead;
                 // doing that as follow-on work.
                 if (__DEV__) console.log(`[BUY → ${dest}] waiting 6s for Strike trade to settle`);
+                buyStepStart('Waiting for Strike to settle the trade…');
                 await new Promise(resolve => setTimeout(resolve, 6000));
 
                 if (__DEV__) console.log(`[BUY → ${dest}] starting swap`);
+                const destLabel = dest === 'coinos' ? 'CoinOS' : 'Bark Vault';
+                buyStepStart(`Swapping ${purchasedSats.toLocaleString()} sats to ${destLabel}…`);
+                // Amber "taking longer" treatment if the swap hasn't
+                // resolved after 15s (invoice creation + LN routing can
+                // stall without failing outright).
+                swapSlowTimerRef.current = setTimeout(() => {
+                    buyStepSlow(`Swapping to ${destLabel} is taking longer than usual…`);
+                }, 15_000);
                 const result = await runLightningSwap('strike', dest, purchasedSats, {
                     memo: `Buy → ${dest}`,
                 });
+                if (swapSlowTimerRef.current) clearTimeout(swapSlowTimerRef.current);
+                swapSlowTimerRef.current = null;
+                buyStepFinish('done', `${purchasedSats.toLocaleString()} sats swapped to ${destLabel}`);
                 const fiatPerBtc = Number(matchedRate) || 0;
                 const convertedFiat = (purchasedSats * fiatPerBtc * btc(1)).toFixed(2);
                 // type: 'BUY' keeps the success screen reading
@@ -841,6 +896,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     swappedTo: dest === 'coinos' ? 'CoinOS' : 'Bark Vault',
                 });
             } catch (error) {
+                if (swapSlowTimerRef.current) clearTimeout(swapSlowTimerRef.current);
+                swapSlowTimerRef.current = null;
+                buyStepFinish('failed',
+                    `Failed to swap to ${dest === 'coinos' ? 'CoinOS' : 'Bark Vault'}. Your sats are safe in Strike.`);
                 console.error(`[BUY → ${dest}] swap failed:`, error);
                 let message = 'Swap failed. Your purchase succeeded — try again from Home → Swap.';
                 if (error instanceof InvoiceCreationFailedError) {
@@ -934,7 +993,9 @@ export default function ReviewPayment({ navigation, route }: Props) {
             if (__DEV__) console.log(`[BUY → ${dest}] inline withdrawal: address=${address} tier=${tier?.id} sats=${purchasedSats}`);
             // Mirror the swap path: 6s settle window so Strike's BUY
             // lands in the BTC sub-balance before we reference it.
+            buyStepStart('Waiting for Strike to settle the trade…');
             await new Promise(resolve => setTimeout(resolve, 6000));
+            buyStepStart(`Sending ${purchasedSats.toLocaleString()} sats on-chain to ${dest === 'cold' ? 'Cold Vault' : 'Hot Vault'}…`);
 
             // Fresh on-chain quote for the just-purchased sats. INCLUSIVE
             // fee policy means Strike subtracts the tier fee from the
@@ -960,6 +1021,8 @@ export default function ReviewPayment({ navigation, route }: Props) {
             if (result?.data?.message && !result?.id) {
                 throw new Error(result?.data?.message);
             }
+            buyStepFinish('done',
+                `${purchasedSats.toLocaleString()} sats sent to ${dest === 'cold' ? 'Cold Vault' : 'Hot Vault'}`);
             // Match the coinos/ark swap success UX: Transaction screen
             // with type='BUY' renders "Purchase Complete", and the
             // swappedTo subtitle adds the "→ Swapped to <vault>" note
@@ -977,6 +1040,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 swappedTo: dest === 'cold' ? 'Cold Vault' : 'Hot Vault',
             });
         } catch (e) {
+            buyStepFinish('failed', 'Purchase succeeded but the withdrawal failed. Your sats are safe in Strike.');
             if (__DEV__) console.error(`[BUY → ${dest}] inline withdrawal failed:`, e);
             const message = e instanceof Error ? e.message : 'Withdrawal failed';
             SimpleToast.show(`Purchase succeeded but withdrawal failed (${message}). Find the BTC in Strike → use Home → Send to retry.`, SimpleToast.LONG);
@@ -998,12 +1062,26 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 setIsSendLoading(false);
                 return;
             }
+            // Narrate the purchase leg. Intended sats from the keyboard;
+            // the settled figure (Strike's quote target) replaces it in
+            // the done-line once the 202 lands.
+            const intendedSats = Math.round(isSats ? Number(value) || 0 : Number(converted) || 0);
+            clearBuyProgress();
+            if (type === 'BUY') {
+                buyStepStart(`Purchasing ${intendedSats.toLocaleString()} sats from Strike…`);
+            }
             try {
                 console.log('paymentQuoteData: ', paymentQuoteData)
                 const response = await executeFiatExchangeQuote(paymentQuoteData?.id);
                 console.log('response executeFiatExchangeQuote: ', response)
                 if(response?.status === 202){
                     if (__DEV__) console.log(`[BUY] 202 OK, type=${type}, purchaseDest=${purchaseDest}`);
+                    if (type === 'BUY') {
+                        const boughtBtc = Number(paymentQuoteData?.target?.amount) || 0;
+                        const boughtSats = Math.floor(boughtBtc * SATS);
+                        buyStepFinish('done',
+                            `${(boughtSats > 0 ? boughtSats : intendedSats).toLocaleString()} sats purchased from Strike`);
+                    }
                     // BUY routes by destination. SELL keeps the legacy
                     // single-screen flow (sale completes → Transaction
                     // success animation). The picker UI is BUY-only.
@@ -1013,10 +1091,12 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: paymentQuoteData });
                     }
                 } else {
+                    if (type === 'BUY') buyStepFinish('failed', 'Purchase failed. Please try again.');
                     SimpleToast.show(response?.data?.message ? response?.data?.message + " Please Try again" : 'Failed to execute payment. Please try again.', SimpleToast.SHORT)
                     handleFiatPayment()
                 }
             } catch (error) {
+                if (type === 'BUY') buyStepFinish('failed', 'Purchase failed. Check your connection and try again.');
                 console.error('Error execute payment Strike:', error);
             } finally {
                 setIsSendLoading(false);
@@ -1920,6 +2000,28 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 }
             </View>
             {(type === 'bitcoin' || type === 'liquid') && <Text style={{ color: '#FFFFFF', fontSize: 15, textAlign: 'center', marginBottom: 10 }}><Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 'bold' }}>Caution:</Text> Bitcoin transactions are irreversible</Text>}
+            {/* BUY progress narration — fills the multi-step loading window
+                (purchase → settle → swap/withdraw) with live status lines.
+                Persists after a failure (cleared on the next slide) so the
+                user can read what happened. */}
+            {buyProgress.length > 0 && (
+                <View style={{ marginHorizontal: 24, marginBottom: 12, padding: 12, borderRadius: 10, backgroundColor: '#1a1a1a' }}>
+                    {buyProgress.map((s, i) => (
+                        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 3 }}>
+                            {(s.state === 'active' || s.state === 'slow') ? (
+                                <ActivityIndicator size="small" color={s.state === 'slow' ? '#FFD54F' : colors.green} />
+                            ) : (
+                                <Text bold style={{ color: s.state === 'done' ? colors.green : colors.redLight, fontSize: 14, width: 20, textAlign: 'center' }}>
+                                    {s.state === 'done' ? '✓' : '✗'}
+                                </Text>
+                            )}
+                            <Text style={{ marginLeft: 8, flexShrink: 1, fontSize: 13, lineHeight: 18, color: s.state === 'failed' ? colors.redLight : s.state === 'slow' ? '#FFD54F' : s.state === 'done' ? '#CCC' : '#FFF' }}>
+                                {s.text}
+                            </Text>
+                        </View>
+                    ))}
+                </View>
+            )}
             <View style={styles.container}>
                 {type === 'bitcoin' || type == "SELL" || type == "BUY" ?
                     <SwipeButton title={isWithdrawal ? 'Slide to Withdraw' : type === 'BUY' ? 'Slide to Purchase' : type === 'SELL' ? 'Slide to Sell' : 'Slide to Send'} ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />

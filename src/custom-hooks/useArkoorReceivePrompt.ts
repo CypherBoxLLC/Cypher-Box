@@ -63,7 +63,6 @@ export default function useArkoorReceivePrompt(): void {
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const arkArkoorPromptState = useAuthStore((s) => s.arkArkoorPromptState);
     const setArkArkoorPromptState = useAuthStore((s) => s.setArkArkoorPromptState);
-    const bgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
     const isArkAuth = useAuthStore((s) => s.isArkAuth);
     // NB: `arkArkoorPromptEnabled` exists in the store for back-compat but
     // is no longer read. The popup is always on — see the field's
@@ -254,15 +253,11 @@ export default function useArkoorReceivePrompt(): void {
             vtxoIdPrefix,
             sats: sats ?? undefined,
         });
-        const autoRefreshNote = bgRefreshEnabled
-            ? '\n\nAuto-refresh is on, so this will refresh on its own before expiry. You can still lock it in now if you want certainty.'
-            : '';
         const amountPhrase = sats != null ? `${sats.toLocaleString()} sats` : `sats`;
         const body =
             `You just received ${amountPhrase} to your Bark Vault.\n\n` +
             `These sats expire in about ${ARK_ARKOOR_ASSUMED_DAYS} days unless they're refreshed into a long-life capsule. ` +
-            `Refreshing locks these sats for up to an hour while it finishes in the background, and you don't need to keep the app open.` +
-            autoRefreshNote;
+            `Refreshing locks these sats for up to an hour while it finishes in the background, and you don't need to keep the app open.`;
         const dontRefreshLabel =
             sats != null
                 ? `Don't refresh the ${sats.toLocaleString()} sats — I'll spend them now`
@@ -423,7 +418,6 @@ export default function useArkoorReceivePrompt(): void {
         arkArkoorPromptState,
         isArkAuth,
         arkVtxos,
-        bgRefreshEnabled,
         setArkArkoorPromptState,
         appIsActive,
     ]);

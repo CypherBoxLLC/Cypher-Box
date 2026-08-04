@@ -44,7 +44,6 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
 import rowStyles from "../../HotStorageVault/ListView/styles";
-import ArkOnchainRecoverSection from "./ArkOnchainRecoverSection";
 
 /**
  * ArkCapsules — VTXO management surface for the Ark wallet menu.
@@ -201,6 +200,14 @@ interface VtxoRowData {
      * don't render expiry for it.
      */
     pendingRound: boolean;
+    /**
+     * True when this VTXO is actively being unilaterally exited (bark exit
+     * record in Processing/claimable state — see ArkVtxoView.exiting). bark
+     * still reports it Spendable until the exit leaf confirms, but spending
+     * or refreshing it would race the user's own exit, so the row renders
+     * locked: no selection, no refresh, "Exiting on-chain" label.
+     */
+    exiting: boolean;
     /**
      * Recoverability classification for the per-row badge.
      *
@@ -386,22 +393,34 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
     // resurrect an expired VTXO), badge instead of refresh/select, and
     // tap opens an explainer instead of toggling selection.
     const isExpired = isExpiredCapsule(vtxo);
-    const labelColor = isTransientForLabel
+    // Actively-exiting row: locked treatment (no select / no refresh) with
+    // its own label. Takes precedence over the expiry countdown; transient
+    // (mid-round) can't co-occur with it (an exiting VTXO reads Spendable).
+    const isExiting = vtxo.exiting;
+    // isExiting OUTRANKS the transient (locked/in-flight) treatment: after
+    // the exit's leaf tx confirms, bark reports the VTXO in a locked-ish
+    // state, and the generic "Refreshing or In-flight" label would shadow
+    // the exit story (observed live during the AwaitingDelta phase).
+    const labelColor = isExiting
         ? colors.ark.light
-        : isExpired
-            ? '#888'
-            : view.color;
-    const labelText = isTransientForLabel
-        ? (isCancelling
-            ? 'Cancelling\n(takes less than 3 hours)'
-            : (failedAttempts && failedAttempts > 0
-                ? `Refreshing or In-flight\n⚠️ ${failedAttempts} refresh attempt${failedAttempts === 1 ? '' : 's'} failed`
-                : 'Refreshing or In-flight\n(takes less than 3 hours)'))
-        : isExpired
-            ? 'Expired'
-            : vtxo.unknownExpiry
-                ? vtxo.kind
-                : formatExpiryLeft(vtxo.daysLeft);
+        : isTransientForLabel
+            ? colors.ark.light
+            : isExpired
+                ? '#888'
+                : view.color;
+    const labelText = isExiting
+        ? 'Exiting on-chain\n(sweeps after the ~24h timelock)'
+        : isTransientForLabel
+            ? (isCancelling
+                ? 'Cancelling\n(takes less than 3 hours)'
+                : (failedAttempts && failedAttempts > 0
+                    ? `Refreshing or In-flight\n⚠️ ${failedAttempts} refresh attempt${failedAttempts === 1 ? '' : 's'} failed`
+                    : 'Refreshing or In-flight\n(takes less than 3 hours)'))
+            : isExpired
+                ? 'Expired'
+                : vtxo.unknownExpiry
+                    ? vtxo.kind
+                    : formatExpiryLeft(vtxo.daysLeft);
     // Reflect real expiry even mid-round (arkoor daysLeft=Infinity still
     // reads full/green, no deadline). Matches the red countdown text.
     const ringDaysLeft = vtxo.daysLeft;
@@ -643,15 +662,16 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                             pixel-perfect aim. */}
                         <TouchableOpacity
                             style={[rowStyles.label, { alignItems: 'flex-start' }]}
-                            onPress={isTransient ? onCancelIcon : onRefreshIcon}
+                            onPress={isExiting ? undefined : isTransient ? onCancelIcon : onRefreshIcon}
                             delayPressIn={0}
                             hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
                             activeOpacity={0.6}
                             // Disable the touchable while a cancel is in
                             // flight — both to prevent double-firing the
                             // cancel handler and to give the "Cancelling"
-                            // text a visually-locked feel.
-                            disabled={isTransient && isCancelling}
+                            // text a visually-locked feel. Exiting rows have
+                            // no action at all (the exit can't be cancelled).
+                            disabled={(isTransient && isCancelling) || isExiting}
                         >
                             {/* Three visual states for the row's action slot:
                                   - idle (not transient): spinning refresh-cw,
@@ -663,7 +683,14 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                                     standing in for the X, non-tappable, so
                                     the user can't spam-tap the cancel button
                                     while waiting for bark to settle. */}
-                            {isTransient ? (
+                            {isExiting ? (
+                                // No action while exiting — empty slot keeps
+                                // the column widths stable. Checked BEFORE
+                                // isTransient so an exiting VTXO in bark's
+                                // locked-ish post-confirm state never shows
+                                // the cancel X (exits can't be cancelled).
+                                null
+                            ) : isTransient ? (
                                 isCancelling ? (
                                     <Text bold style={{ color: colors.redLight, fontSize: 12 }}>
                                         Cancelling
@@ -683,7 +710,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                                 queueing new refresh actions over a cancel
                                 they're still waiting on. The outer slot
                                 stays so row column widths don't shift. */}
-                            {!isCancelling && (
+                            {!isCancelling && !isExiting && (
                                 <View style={rowStyles.checkbox}>
                                     {selected && <Image source={Yes} />}
                                 </View>
@@ -1202,6 +1229,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     unknownExpiry: true,
                     kind: v.kind,
                     pendingRound,
+                    exiting: v.exiting ?? false,
                     recoverability,
                 };
             }
@@ -1213,6 +1241,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 unknownExpiry: false,
                 kind: v.kind,
                 pendingRound,
+                exiting: v.exiting ?? false,
                 recoverability,
             };
         });
@@ -1267,7 +1296,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         const deferredIds = buildDeferredVtxoIds(promptState);
 
         const batch = buildRefreshBatch({
-            vtxos: rows.map((r) => ({
+            // Exiting capsules are out of scope for refresh batches — the
+            // exit owns them (and one riding along would trip refreshIds'
+            // exiting gate and block the whole batch).
+            vtxos: rows.filter((r) => !r.exiting).map((r) => ({
                 id: r.id,
                 sats: r.sats,
                 daysLeft: r.daysLeft,
@@ -1337,6 +1369,16 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     }, [arkPendingTapRefresh, rows, setArkPendingTapRefresh]);
 
     const toggle = (id: string) => {
+        // Exiting capsules can't be selected for send/refresh — the exit
+        // owns them until it completes (see VtxoRowData.exiting).
+        const row = rows.find((r) => r.id === id);
+        if (row?.exiting) {
+            SimpleToast.show(
+                'This capsule is exiting on-chain and can no longer be spent or refreshed.',
+                SimpleToast.SHORT,
+            );
+            return;
+        }
         setSelectedIds((prev) =>
             prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
         );
@@ -1404,6 +1446,19 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         if (expiredSelected.length > 0) {
             SimpleToast.show(
                 `${expiredSelected.length} capsule(s) already expired and can no longer be refreshed`,
+                SimpleToast.LONG,
+            );
+            return;
+        }
+
+        // Actively-exiting capsules can't ride a round either — the exit
+        // owns them now (see VtxoRowData.exiting).
+        const exitingSelected = rows.filter(
+            (r) => ids.includes(r.id) && r.exiting,
+        );
+        if (exitingSelected.length > 0) {
+            SimpleToast.show(
+                `${exitingSelected.length} capsule(s) are exiting on-chain and can no longer be refreshed`,
                 SimpleToast.LONG,
             );
             return;
@@ -1754,7 +1809,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         const freshPromptState =
             useAuthStore.getState().arkArkoorPromptState ?? {};
         const freshDeferredIds = buildDeferredVtxoIds(freshPromptState);
-        const projected = freshVtxos.map((v) => {
+        // Exiting VTXOs excluded for the same reason as the tap-refresh
+        // batch above: the exit owns them.
+        const projected = freshVtxos.filter((v) => !v.exiting).map((v) => {
             const pending = v.state.toLowerCase() === 'locked';
             if (v.expiryHeight === 0 || freshTip === null) {
                 return {
@@ -2315,8 +2372,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 }
                 // Stuck on-chain (boarding) funds capsule + recover action,
                 // rendered under the last VTXO so it scrolls with the list.
-                ListFooterComponent={<ArkOnchainRecoverSection />}
-                style={{ marginTop: 10 }}
+                style={{ marginTop: 10, flex: 1 }}
             />
 
             {/* Action row — Send (consume selected capsules as a payment)

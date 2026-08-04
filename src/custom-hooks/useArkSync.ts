@@ -16,6 +16,7 @@ import {
     fetchArkRoundIntervalSecs,
     fetchArkVtxos,
     fetchChainTipHeight,
+    fetchArkExitVtxos,
     fetchClaimableExitVtxos,
     fetchPendingExitsTotalSats,
     getArkWalletHandle,
@@ -24,7 +25,6 @@ import {
     progressArkExits,
     progressArkPendingRounds,
     reopenArkWalletFromCache,
-    resetArkWalletState,
     scheduleVtxoExpiryWarnings,
     scheduleVtxoStuckSwapWarnings,
     syncArkExits,
@@ -245,10 +245,13 @@ export default function useArkSync(): UseArkSync {
     const setArkRoundIntervalSecs = useAuthStore((s) => s.setArkRoundIntervalSecs);
     const arkExitInProgress = useAuthStore((s) => s.arkExitInProgress);
     const arkExitDestinationAddress = useAuthStore((s) => s.arkExitDestinationAddress);
-    const clearArkAuth = useAuthStore((s) => s.clearArkAuth);
     const setArkExitInProgress = useAuthStore((s) => s.setArkExitInProgress);
     const setArkExitDestinationAddress = useAuthStore((s) => s.setArkExitDestinationAddress);
     const setArkExitStartedAt = useAuthStore((s) => s.setArkExitStartedAt);
+    const arkExitDrained = useAuthStore((s) => s.arkExitDrained);
+    const setArkExitDrained = useAuthStore((s) => s.setArkExitDrained);
+    const arkExitStartedAt = useAuthStore((s) => s.arkExitStartedAt);
+    const setArkExitStartedSats = useAuthStore((s) => s.setArkExitStartedSats);
 
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastError, setLastError] = useState<Error | null>(null);
@@ -257,6 +260,9 @@ export default function useArkSync(): UseArkSync {
     // in-flight when the interval fires, skip the new one. This also means
     // a slow esplora round-trip doesn't stack up calls behind it.
     const inFlight = useRef(false);
+    // Last wall-clock ms the exit machinery (progressExits/syncExits) ran.
+    // Drives the ~2 min exit-drive throttle — see the exit block below.
+    const exitDriveLastRunMsRef = useRef(0);
     // Counter used by the idle-skip heuristic. Increments every cycle that
     // returns balance=0 and vtxos.all.length=0; resets the moment either
     // turns non-zero. We use this to avoid the 2s Bark `syncArkWallet`
@@ -315,41 +321,218 @@ export default function useArkSync(): UseArkSync {
             // chain state. Once listClaimableExits() returns non-empty, we
             // sweep to the saved destination address with drainExits().
             //
-            // When pendingExitsTotalSats hits 0 AND there are no claimable
-            // exits left, the exit is complete. We auto-delete the vault
-            // (resetArkWalletState + clearArkAuth) so the user doesn't have
-            // to come back later — Bam's call: "yes auto delete ark vault".
-            if (arkExitInProgress) {
+            // Exit self-heal: bark's own DB is the source of truth for an
+            // in-flight exit, not our zustand flag. The flag can be lost
+            // while the exit txs live on-chain (observed: a stale bundle's
+            // older guard cleared it mid-broadcast; also possible via
+            // backup-restore onto a device that never had the flag). If the
+            // flag is off but bark holds active exit records, re-arm so the
+            // drive block below resumes progressing + claiming. Destination
+            // backfill (ArkExitBackfill) re-derives the payout address when
+            // it's missing, so claim still lands in the user's Hot Vault.
+            if (!arkExitInProgress) {
                 try {
-                    await progressArkExits();
+                    const orphanExits = await fetchArkExitVtxos();
+                    const activeOrphans = orphanExits.filter((v) =>
+                        /^(Processing|Awaiting)/.test(String(v.state)) || v.isClaimable);
+                    if (activeOrphans.length > 0) {
+                        console.warn(
+                            '[Ark exit] found', activeOrphans.length,
+                            'in-flight exit vtxo(s) in bark DB with no in-progress flag — re-arming exit drive',
+                        );
+                        setArkExitInProgress(true);
+                        // Let the next tick run the full drive block with the
+                        // re-armed flag (this tick's closure still sees the
+                        // stale false).
+                        return;
+                    }
+                } catch {
+                    // Handle closed or read failed — nothing to heal this tick.
+                }
+            }
+
+            // Exit lifecycle. HARD-WON (2026-07-31, wallet deleted mid-exit,
+            // twice): the SDK's `pendingExitsTotalSats()` returns 0 even
+            // while exit txs are actively broadcasting (per-VTXO state
+            // `Processing(…)`), so "0 pending && 0 claimable" is NOT a
+            // completion signal — it's also the mid-broadcast state AND the
+            // never-materialised state. Liveness must come from the per-VTXO
+            // exit records (`getExitVtxos`): Processing/claimable = ACTIVE.
+            // Completion (funds drained, nothing active) just retires the
+            // exit flags — the vault is NEVER auto-deleted (see the
+            // completion branch below).
+            if (arkExitInProgress) {
+                // Throttle: every progressExits/syncExits pass hits esplora
+                // (tip retrieval + tx status). At the 30s sync cadence that
+                // burned Blockstream's unauthenticated 700 req/h/IP cap
+                // mid-exit (429s, observed live). Block time is ~10 min, so
+                // driving the exit machinery every ~2 min loses nothing and
+                // cuts the esplora load 4x. Skipped ticks do nothing at all
+                // (normal sync stays skipped while an exit is running).
+                const nowMs = Date.now();
+                if (nowMs - exitDriveLastRunMsRef.current < 120_000) {
+                    _stamp('exit drive skipped (throttle)');
+                    return;
+                }
+                exitDriveLastRunMsRef.current = nowMs;
+                try {
+                    // Sync the wallet FIRST. The normal sync path below is
+                    // skipped during an exit, so without this bark's on-chain
+                    // (BDK) wallet and chain tip go stale across app
+                    // restarts — and progressExits then tries to fund the
+                    // next CPFP child from already-spent coins, silently
+                    // failing to broadcast forever (observed live: leaf stuck
+                    // in AwaitingCpfpBroadcast with tip frozen 129 blocks
+                    // behind). The board pipeline inside syncArkWallet is
+                    // exit-aware (holds funds while arkExitInProgress), so
+                    // this is safe to run mid-exit.
+                    try {
+                        await syncArkWallet();
+                        _stamp('exit: syncArkWallet done');
+                    } catch (syncErr: any) {
+                        console.warn('[Ark exit] pre-drive wallet sync failed (continuing):', syncErr?.message ?? syncErr);
+                    }
+                    const progressResult = await progressArkExits();
                     _stamp('progressArkExits done');
+                    // Diagnostic: the per-VTXO progress payload is the only
+                    // signal of WHERE the state machine is (build?
+                    // broadcast? awaiting confs?). Serialize defensively;
+                    // UniFFI objects can carry bigints.
+                    try {
+                        console.log(
+                            '[Ark exit] progressExits result:',
+                            JSON.stringify(progressResult, (_, v) =>
+                                typeof v === 'bigint' ? Number(v) : v),
+                        );
+                    } catch { /* diagnostic only */ }
                     await syncArkExits();
                     _stamp('syncArkExits done');
 
                     const claimable = await fetchClaimableExitVtxos();
                     _stamp(`fetchClaimableExitVtxos: ${claimable.length} ready`);
                     if (claimable.length > 0 && arkExitDestinationAddress) {
-                        const claim = await claimArkExitsToAddress(
-                            arkExitDestinationAddress,
-                        );
-                        _stamp(
-                            `drainExits done — fee=${Number(claim.feeSats)} sats`,
-                        );
+                        // claimArkExitsToAddress now finalizes AND broadcasts the
+                        // claim (drainExits alone only builds a PSBT). Gate
+                        // arkExitDrained on a real broadcast txid: a non-throwing
+                        // return is NOT proof the funds left, and treating it as
+                        // such pinned the exit "active" forever (the claim VTXO
+                        // stayed claimable because nothing was ever relayed).
+                        try {
+                            const claim = await claimArkExitsToAddress(
+                                arkExitDestinationAddress,
+                            );
+                            if (claim.txid) {
+                                _stamp(
+                                    `exit claim broadcast txid=${claim.txid} fee=${claim.feeSats} sats`,
+                                );
+                                setArkExitDrained(true);
+                            } else {
+                                _stamp('exit claim returned no txid, NOT marking drained');
+                            }
+                        } catch (claimErr: any) {
+                            // Sign/extract/broadcast failed. Leave arkExitDrained
+                            // as-is so the next cycle retries; the claim VTXO
+                            // stays listClaimableExits()-visible until the tx
+                            // actually lands, which is the correct retry gate.
+                            console.warn(
+                                '[Ark exit] claim sweep failed (will retry next cycle):',
+                                claimErr?.message ?? claimErr,
+                            );
+                        }
                     }
 
-                    // Did we finish? "Finished" = nothing pending AND nothing
-                    // claimable left. Use this conservative AND so we don't
-                    // delete the wallet while a second batch is mid-broadcast.
+                    // Per-VTXO liveness (the authoritative signal — see the
+                    // block comment above). `pendingTotal` is kept only as a
+                    // belt-and-suspenders OR-term in case a future SDK
+                    // version starts counting something we don't model.
+                    const exitVtxos = await fetchArkExitVtxos();
+                    const processingCount = exitVtxos.filter((v) =>
+                        /^(Processing|Awaiting)/.test(String(v.state))).length;
+                    console.log(
+                        '[Ark exit] exit vtxos:',
+                        exitVtxos.length,
+                        exitVtxos.map((v) =>
+                            `${String(v.vtxoId).slice(0, 8)}… state=${String(v.state).slice(0, 40)} claimable=${v.isClaimable} sats=${Number(v.amountSats)}`,
+                        ).join(' | '),
+                    );
                     const pendingTotal = await fetchPendingExitsTotalSats();
                     const stillClaimable = await fetchClaimableExitVtxos();
-                    if (pendingTotal === 0 && stillClaimable.length === 0) {
-                        if (__DEV__) console.log('[Ark exit] complete — auto-deleting vault');
-                        // Activity log: emit BEFORE resetArkWalletState
-                        // wipes the Ark identity from this device, so the
-                        // event-log entry is the user's lasting record
-                        // that the exit succeeded. correlationId pairs
-                        // this with the ark-exit-started event captured
-                        // at the start of the exit.
+                    const exitActive =
+                        processingCount > 0 ||
+                        stillClaimable.length > 0 ||
+                        exitVtxos.some((v) => v.isClaimable) ||
+                        pendingTotal > 0;
+
+                    // Keep the UI truthful during the exit. The normal sync
+                    // path below is SKIPPED while an exit is in progress
+                    // (early return), which used to freeze the store on the
+                    // pre-exit snapshot: capsule rendered green/spendable and
+                    // the balance card kept its old total for the entire
+                    // ~24h+ exit. Refresh vtxos + balance here with the same
+                    // filter pipeline as the normal path, so the `exiting`
+                    // row flags and the zeroed spendable actually reach the
+                    // UI (and the send gate's store checks stay current).
+                    try {
+                        const uiVtxos = await fetchArkVtxos();
+                        if (uiVtxos) setArkVtxos(uiVtxos.spendable);
+                        const uiBalance = await fetchArkBalance();
+                        const uiTip = useAuthStore.getState().arkChainTipHeight;
+                        const uiFiltered = uiBalance
+                            ? applyExpiredVtxoFilter(uiBalance, uiVtxos?.all, uiTip)
+                            : null;
+                        if (uiFiltered) {
+                            setArkBalance(uiFiltered.totalSats);
+                            setArkBalanceDetail(uiFiltered);
+                        }
+                    } catch (uiErr: any) {
+                        console.warn('[Ark exit] mid-exit store refresh failed:', uiErr?.message ?? uiErr);
+                    }
+
+                    if (exitActive) {
+                        // Exit txs are live (broadcasting / awaiting confs /
+                        // awaiting CSV). Keep the flag set and keep driving —
+                        // NO timeout applies to a live exit (it legitimately
+                        // spans ~24h of confirmations + timelock).
+                        console.log(
+                            '[Ark exit] active —',
+                            processingCount, 'processing,',
+                            stillClaimable.length, 'claimable,',
+                            pendingTotal, 'sats pending',
+                        );
+                    } else if (!arkExitDrained) {
+                        // Nothing active and nothing was ever drained: either
+                        // the start produced no exit txs at all, or every
+                        // record is in a state we don't recognise (log above
+                        // shows which). Grace window: give bark a few cycles
+                        // to materialise the txs (esplora flakiness, fee
+                        // estimation) before declaring the exit dead. Then
+                        // clear the flag — NEVER delete on this path.
+                        const elapsedMs = Date.now() - (arkExitStartedAt ?? 0);
+                        const EXIT_MATERIALISE_GRACE_MS = 10 * 60 * 1000;
+                        if (arkExitStartedAt && elapsedMs < EXIT_MATERIALISE_GRACE_MS) {
+                            console.log(
+                                '[Ark exit] nothing active yet — still trying,',
+                                Math.round(elapsedMs / 1000) + 's elapsed of',
+                                Math.round(EXIT_MATERIALISE_GRACE_MS / 1000) + 's grace',
+                            );
+                        } else {
+                            console.warn('[Ark exit] no exit ever materialised (nothing active, never drained, grace expired) — clearing exit-in-progress WITHOUT deleting the vault');
+                            setArkExitInProgress(false);
+                            setArkExitDestinationAddress(null);
+                            setArkExitStartedAt(null);
+                            setArkExitStartedSats(null);
+                        }
+                    } else {
+                        // Exit complete: funds drained to the destination and
+                        // nothing is active any more. The vault is KEPT — an
+                        // exit empties a wallet, it doesn't end it (identity,
+                        // history, and receive ability all stay valid, and
+                        // funds can even arrive mid-exit). Deleting here
+                        // turned every completion-detection bug into fund
+                        // loss, so auto-delete is gone entirely; the manual
+                        // "Delete Ark vault" flow exists for when the user
+                        // actually wants the vault removed.
+                        console.log('[Ark exit] complete — funds swept; vault kept');
                         const correlationId = await getArkExitCorrelationId();
                         if (correlationId) {
                             recordEvent({
@@ -359,11 +542,11 @@ export default function useArkSync(): UseArkSync {
                             });
                             await setArkExitCorrelationId(null);
                         }
-                        await resetArkWalletState();
-                        clearArkAuth();
                         setArkExitInProgress(false);
                         setArkExitDestinationAddress(null);
                         setArkExitStartedAt(null);
+                        setArkExitStartedSats(null);
+                        setArkExitDrained(false);
                     }
                 } catch (exitErr: any) {
                     console.warn('[Ark exit] cycle failed:', exitErr?.message ?? exitErr);
@@ -1040,10 +1223,13 @@ export default function useArkSync(): UseArkSync {
         setArkLastBackupAt,
         arkExitInProgress,
         arkExitDestinationAddress,
-        clearArkAuth,
         setArkExitInProgress,
         setArkExitDestinationAddress,
         setArkExitStartedAt,
+        arkExitDrained,
+        setArkExitDrained,
+        arkExitStartedAt,
+        setArkExitStartedSats,
     ]);
 
     // Primary driver: mount + interval. Restarts whenever auth flips on,

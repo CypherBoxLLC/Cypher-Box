@@ -15,6 +15,7 @@ import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import SimpleToast from "react-native-simple-toast";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Image, Platform, TouchableOpacity, View } from "react-native";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -70,6 +71,8 @@ export default function ArkWallet({
         arkRefreshStuck,
         setArkRefreshStuck,
         arkBalanceDetail,
+        arkExitFeeReserveSats,
+        setArkExitFeeReserveSats,
         walletID,
     } = useAuthStore();
 
@@ -160,6 +163,12 @@ export default function ArkWallet({
         // Optimistically suppressed right after a successful recover, until the
         // next sync writes the real (cleared) balance.
         if (boardingHiddenAfterRecover) return null;
+        // When the user has armed an on-chain exit-fee reserve, these boarding
+        // funds are their intentional CPFP reserve for a future unilateral exit
+        // (sync.ts keeps them on-chain instead of auto-boarding), not a stuck
+        // deposit — so don't nag. The reserve is managed/released from the
+        // Settings exit-fee screen.
+        if ((arkExitFeeReserveSats ?? 0) > 0) return null;
         const confirmed = arkBalanceDetail?.onchainBoardingSats ?? 0;
         const confirming = arkBalanceDetail?.onchainConfirmingSats ?? 0;
         if (confirmed <= 0 && confirming <= 0) return null;
@@ -179,7 +188,7 @@ export default function ArkWallet({
             sats: confirming, color: colors.green, stuck: false,
             label: `Boarding (on-chain): ${confirming} sats. Confirming.`,
         };
-    }, [arkBalanceDetail, minBoardSats, boardingHiddenAfterRecover]);
+    }, [arkBalanceDetail, minBoardSats, boardingHiddenAfterRecover, arkExitFeeReserveSats]);
 
     /**
      * F3 — drain a stuck on-chain boarding deposit back to the Hot Vault.
@@ -658,6 +667,7 @@ export default function ArkWallet({
                             )}
                             {!isLoading && boardingView && (
                                 boardingView.stuck ? (
+                                    <>
                                     <TouchableOpacity
                                         onPress={handleRecoverBoard}
                                         disabled={recovering}
@@ -675,6 +685,26 @@ export default function ArkWallet({
                                             </Text>
                                         </Text>
                                     </TouchableOpacity>
+                                    {/* Opt-in alternative to recovering: mark these
+                                        funds as the exit-fee reserve. Arms
+                                        arkExitFeeReserveSats, which suppresses this
+                                        banner (here + the capsules card) and tells
+                                        sync.ts to hold them on-chain for a future
+                                        unilateral exit. */}
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setArkExitFeeReserveSats(boardingView.sats);
+                                            SimpleToast.show('Kept on-chain for exit fees.', SimpleToast.SHORT);
+                                        }}
+                                        activeOpacity={0.7}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Leave on-chain funds as exit fees"
+                                    >
+                                        <Text h4 style={[styles.alert, { color: colors.gray.light, textDecorationLine: 'underline' }]}>
+                                            Leave on-chain funds as exit fees
+                                        </Text>
+                                    </TouchableOpacity>
+                                    </>
                                 ) : (
                                     <Text h4 style={[styles.alert, { color: boardingView.color }]}>
                                         {boardingView.label}

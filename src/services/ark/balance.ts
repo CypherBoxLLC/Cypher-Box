@@ -139,33 +139,47 @@ export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
  * Pass the `all` list from `fetchArkVtxos()` and the height from
  * `fetchChainTipHeight()`. When either is missing this function returns
  * the input summary unchanged (with `expiredUnrecoverableSats: 0`).
+ *
+ * ALSO subtracts actively-EXITING VTXOs (see `ArkVtxoView.exiting`): bark
+ * reports a VTXO as Spendable all the way until its unilateral-exit leaf tx
+ * confirms on-chain, so without this the balance (and swap "Max") offers
+ * coins that are mid-exit — spending them cooperatively would race the
+ * user's own exit inside the fraud window. Exiting sats move from
+ * `spendableSats` into `pendingExitSats` (the SDK's own pendingExitSats
+ * reads 0 during broadcast — same quirk as pendingExitsTotalSats()). The
+ * exiting subtraction only needs the vtxo list, not the chain tip.
  */
 export function applyExpiredVtxoFilter(
     summary: ArkBalanceSummary,
     vtxos: ArkVtxoView[] | null | undefined,
     chainTipHeight: number | null | undefined,
 ): ArkBalanceSummary {
-    if (!vtxos || typeof chainTipHeight !== 'number' || chainTipHeight <= 0) {
+    if (!vtxos) {
         return { ...summary, expiredUnrecoverableSats: 0 };
     }
+    const tipKnown = typeof chainTipHeight === 'number' && chainTipHeight > 0;
     let expired = 0;
+    let exiting = 0;
     for (const v of vtxos) {
+        if (v.state.toLowerCase() !== 'spendable') continue;
         if (
+            tipKnown &&
             v.expiryHeight > 0 &&
-            v.expiryHeight <= chainTipHeight &&
-            v.state.toLowerCase() === 'spendable'
+            v.expiryHeight <= (chainTipHeight as number)
         ) {
             expired += v.sats;
+        } else if (v.exiting) {
+            // Not double-counted: expired-and-exiting counts as expired.
+            exiting += v.sats;
         }
     }
-    if (expired === 0) {
+    if (expired === 0 && exiting === 0) {
         return { ...summary, expiredUnrecoverableSats: 0 };
     }
-    const adjustedSpendable = Math.max(0, summary.spendableSats - expired);
+    const adjustedSpendable = Math.max(0, summary.spendableSats - expired - exiting);
     console.log(
-        '[Ark balance] expired-VTXO filter subtracted',
-        expired,
-        'sats; spendable',
+        '[Ark balance] filter subtracted', expired, 'expired +',
+        exiting, 'exiting sats; spendable',
         summary.spendableSats,
         '→',
         adjustedSpendable,
@@ -175,5 +189,6 @@ export function applyExpiredVtxoFilter(
         totalSats: adjustedSpendable,
         spendableSats: adjustedSpendable,
         expiredUnrecoverableSats: expired,
+        pendingExitSats: summary.pendingExitSats + exiting,
     };
 }

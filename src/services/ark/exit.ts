@@ -33,9 +33,39 @@
  * sync loop drive them.
  */
 
+import { extractTxFromPsbt } from '@secondts/bark-react-native';
 import type { ExitClaimTransaction, ExitVtxo } from '@secondts/bark-react-native';
 
+import useAuthStore from '@Cypher/stores/authStore';
+
 import { ensureArkOnchainHandle, getArkOnchainHandle, getArkWalletHandle } from './walletHandle';
+
+/**
+ * Hard gate for every OUTGOING spend path (send, offboard, convert, swap
+ * source): while a unilateral exit is active, the wallet must refuse to
+ * spend. bark keeps reporting exiting VTXOs as Spendable until the exit's
+ * leaf tx confirms, so without this the user could double-commit the same
+ * coin: a cooperative spend racing their own in-flight exit inside the
+ * fraud window (one of the two loses, and it can be the user).
+ *
+ * Two sync signals, no SDK call (safe to run at estimate frequency):
+ *   - `arkExitInProgress` — authoritative flag; kept honest by useArkSync's
+ *     bark-DB self-heal (re-arms it whenever active exit records exist).
+ *   - any store VTXO marked `exiting` — belt-and-suspenders for the window
+ *     before the self-heal tick lands.
+ *
+ * Throws with user-facing copy: callers surface `err.message` in the
+ * estimate/send error toast, so the block explains itself.
+ */
+export function assertNoActiveArkExit(): void {
+    const s = useAuthStore.getState();
+    const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
+    if (s.arkExitInProgress || exitingVtxo) {
+        throw new Error(
+            'Emergency Exit is in progress. Sending from the Bark vault is disabled until the exit completes on-chain.',
+        );
+    }
+}
 
 function requireWallet() {
     const handle = getArkWalletHandle();
@@ -144,21 +174,83 @@ export async function fetchClaimableExitVtxos(): Promise<ExitVtxo[]> {
 }
 
 /**
- * Sweep any currently-claimable exits to the user's chosen Bitcoin address.
- * Pass an empty `vtxoIds` array to drain ALL claimable exits in one shot
- * (the Bark default). The returned PSBT is signed and broadcast by the SDK
- * itself — caller doesn't need to relay it manually.
+ * Extract a broadcastable tx hex from a claim PSBT produced by drainExits.
  *
- * Returned `feeSats` reflects the fee paid. Surface that in the UI so the
- * user knows what came off the top.
+ * Exit-claim inputs are taproot script-path (CSV) spends; WalletLike exposes a
+ * dedicated signer, signExitClaimInputs(). If drainExits already returned a
+ * finalized PSBT, that call may reject, so we fall back to extracting the PSBT
+ * as-is. Which path is canonical is being confirmed with Second.tech; each path
+ * logs so a device run locks it in and we can drop the fallback.
+ */
+async function finalizeExitClaimPsbtToHex(psbtBase64: string): Promise<string> {
+    const handle = requireWallet();
+    try {
+        const signed = await handle.signExitClaimInputs(psbtBase64);
+        const hex = extractTxFromPsbt(signed);
+        console.log('[Ark exit] finalize path=signExitClaimInputs');
+        return hex;
+    } catch (e: any) {
+        console.log(
+            '[Ark exit] signExitClaimInputs failed, trying raw extract:',
+            e?.message ?? e,
+        );
+    }
+    const hex = extractTxFromPsbt(psbtBase64);
+    console.log('[Ark exit] finalize path=raw-extract');
+    return hex;
+}
+
+/**
+ * Result of a claim sweep. A non-empty `txid` is the ONLY proof the funds
+ * actually left the exit output; callers must gate exit-completion on it.
+ */
+export interface ArkExitClaimResult {
+    txid: string;
+    feeSats: number;
+    psbtBase64: string;
+}
+
+/**
+ * Sweep all currently-claimable exits to the user's chosen Bitcoin address.
+ *
+ * CORRECTED 2026-08-02: `handle.drainExits()` does NOT broadcast. It only
+ * builds and signs a claim PSBT ({ psbtBase64, feeSats }); the caller must
+ * finalize and relay it. The old code (and its "broadcast by the SDK itself"
+ * comment) stopped after drainExits, so every unilateral exit stalled at the
+ * final sweep: the claim VTXO stayed listClaimableExits()-visible forever, the
+ * vault stayed send-locked, and nothing hit the chain (observed live: a matured
+ * leaf output sat unspent 2+ days past its 144-block CSV while drainExits
+ * "succeeded" every 2 min). Pipeline is now:
+ *   drainExits -> finalize (sign) -> extractTxFromPsbt -> broadcastTx
+ *
+ * Returns the broadcast txid plus the fee paid. Surface `feeSats` in the UI so
+ * the user knows what came off the top.
  */
 export async function claimArkExitsToAddress(
     address: string,
     feeRateSatPerVb?: bigint,
-): Promise<ExitClaimTransaction> {
+): Promise<ArkExitClaimResult> {
     const handle = requireWallet();
-    if (!address || !address.trim()) {
+    const dest = address?.trim();
+    if (!dest) {
         throw new Error('Destination address is required');
     }
-    return await handle.drainExits([], address.trim(), feeRateSatPerVb);
+
+    // 1. Build + sign the claim PSBT. Does NOT broadcast.
+    const claim: ExitClaimTransaction = await handle.drainExits(
+        [],
+        dest,
+        feeRateSatPerVb,
+    );
+    const feeSats = Number(claim.feeSats);
+    console.log(`[Ark exit] drainExits built claim PSBT, fee=${feeSats} sats`);
+
+    // 2 + 3. Finalize to a broadcastable tx hex.
+    const txHex = await finalizeExitClaimPsbtToHex(claim.psbtBase64);
+
+    // 4. Broadcast. This is the step that was missing entirely.
+    const txid = await handle.broadcastTx(txHex);
+    console.log(`[Ark exit] claim broadcast txid=${txid}`);
+
+    return { txid, feeSats, psbtBase64: claim.psbtBase64 };
 }

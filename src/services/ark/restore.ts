@@ -126,7 +126,16 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
             lastErr = err as Error;
             const e = err as { tag?: string; message?: string; inner?: { errorMessage?: string; message?: string } };
             const detail = `${e?.tag ?? ''} ${e?.message ?? ''}`;
-            const transient = /ServerConnection|Connection|timeout|timed out|network/i.test(detail);
+            // Esplora provider returned junk instead of chain data — a CDN
+            // bot-block / error page that bark parses as "bad response from
+            // server (not a blockhash)" / "failed to parse hex". This is
+            // provider-specific (blockstream refusing bark's client on some
+            // networks), so rotating to the next ESPLORA_URLS entry
+            // (mempool.space) is the correct recovery. Treat it as retryable
+            // alongside the raw connection errors — otherwise the loop breaks
+            // on attempt 1 and never tries the working fallback, and the wallet
+            // never opens (handle-not-ready spam, empty balance, exit gated).
+            const transient = /ServerConnection|Connection|timeout|timed out|network|bad response from server|not a blockhash|failed to parse hex|Esplora client/i.test(detail);
             if (!transient || attempt === OPEN_ATTEMPTS) break;
             if (__DEV__) {
                 // Stringify the inner UniFFI payload inline: the tag alone
