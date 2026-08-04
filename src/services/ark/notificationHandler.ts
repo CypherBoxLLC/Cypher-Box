@@ -226,18 +226,18 @@ export function registerArkNotificationTapHandler(): void {
         },
     });
 
-    // One-time hygiene for installs that had the old background-refresh
-    // feature enabled: the toggle used to mirror the seed into a
-    // background-readable (non-biometric) Keychain entry so headless wakes
-    // could open the wallet. Those wakes no longer exist, so no copy of
-    // the seed should either. Lazy require keeps the boot path light;
-    // fire-and-forget because failure just means the entry outlives this
-    // launch and gets retried on the next one.
+    // Keep the background-readable seed copy in sync with the opt-in state: it
+    // must exist ONLY while background refresh is enabled. When it's off, delete
+    // any lingering copy so no seed lives outside the biometry-locked primary.
+    // (Opt-out and reset delete it explicitly; this is the boot-time safety
+    // net.) Lazy require keeps the boot path light; fire-and-forget.
     setTimeout(() => {
         try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const { deleteBackgroundArkSeed } = require('./backgroundKeychain');
-            void deleteBackgroundArkSeed().catch(() => {});
+            if (!useAuthStore.getState().arkBgRefreshEnabled) {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { deleteBackgroundArkSeed } = require('./backgroundKeychain');
+                void deleteBackgroundArkSeed().catch(() => {});
+            }
         } catch {}
     }, 0);
 }

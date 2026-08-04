@@ -52,6 +52,33 @@ function Notifications(props) {
 
             // (required) Called when a remote is received or opened, or local notification is opened
             onNotification: async function (notification) {
+              // SILENT MAINTENANCE PUSH (content-available, no alert):
+              // GroundControl wakes the app a few hours before the earliest
+              // capsule expiry so the wallet can hand due VTXOs to the ASP
+              // for a delegated refresh, unattended. Detected by the
+              // `arkMaintenance` marker in the payload. Must run BEFORE the
+              // tap handler (this is not a tap) and must call finish() only
+              // AFTER the maintenance completes — that's iOS's background
+              // execution window contract (~30s budget; the delegated
+              // submit returns in seconds once the ASP accepts).
+              try {
+                const maintData = Object.assign({}, notification.data, notification.data && notification.data.data);
+                if (notification.arkMaintenance || (maintData && maintData.arkMaintenance)) {
+                  // eslint-disable-next-line @typescript-eslint/no-var-requires
+                  const bg = require('../src/services/ark/backgroundRefresh');
+                  try {
+                    await bg.runArkBackgroundMaintenance('push');
+                    notification.finish(PushNotificationIOS.FetchResult.NewData);
+                  } catch (maintErr) {
+                    console.warn('ark background maintenance failed:', maintErr);
+                    notification.finish(PushNotificationIOS.FetchResult.ResultFailed);
+                  }
+                  return;
+                }
+              } catch (detectErr) {
+                console.warn('ark maintenance-push detection failed, continuing:', detectErr);
+              }
+
               // This configure() REPLACES the boot-time one registered by
               // src/services/ark/notificationHandler.ts (the library only
               // honors the last caller). Route Ark capsule taps through the
@@ -243,6 +270,45 @@ function Notifications(props) {
         },
       }),
     );
+  };
+
+  /**
+   * Registers (or re-registers) this device's earliest Ark capsule expiry
+   * with GroundControl, so the server's scheduler can send a silent
+   * content-available maintenance push (payload: { arkMaintenance: 1 })
+   * a few hours before the deadline. Idempotent upsert keyed by token:
+   * the server keeps ONE expiry per device; every call replaces it.
+   *
+   * Server contract (endpoint to be added on the GroundControl VPS):
+   *   POST /arkExpiry  { token, os, expiryAtMs }
+   *   expiryAtMs === 0 clears the subscription (no live capsules left).
+   *
+   * Fire-and-forget: the endpoint doesn't exist server-side yet, so all
+   * failures are swallowed — the local reminder schedule is the fallback.
+   *
+   * @param expiryAtMs {number} epoch ms of the EARLIEST live capsule expiry
+   * @returns {Promise<object|undefined>}
+   */
+  Notifications.arkExpiryToGroundControl = async function (expiryAtMs) {
+    if (!Number.isFinite(expiryAtMs) || expiryAtMs < 0) return;
+    const pushToken = await Notifications.getPushToken();
+    if (!pushToken || !pushToken.token || !pushToken.os) return;
+
+    const api = new Frisbee({ baseURI });
+    try {
+      return await api.post(
+        '/arkExpiry',
+        Object.assign({}, _getHeaders(), {
+          body: {
+            token: pushToken.token,
+            os: pushToken.os,
+            expiryAtMs,
+          },
+        }),
+      );
+    } catch (_) {
+      // Server support lands separately; silent by design.
+    }
   };
 
   /**

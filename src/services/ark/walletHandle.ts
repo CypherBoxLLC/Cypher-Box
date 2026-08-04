@@ -12,6 +12,7 @@ import {
 
 import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
 import { deleteArkDatadir, ensureArkDatadir } from './datadir';
+import { ensureBackgroundArkSeed } from './backgroundKeychain';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
@@ -296,6 +297,10 @@ export async function openArkWallet(
     cachedMnemonic = mnemonic;
     startWatcher();
     await tryEagerSpawnOnchainHandle('openArkWallet');
+    // Background-refresh backstop: while the toggle is on (default), keep a
+    // background-readable copy of the seed so a background wake can open the
+    // wallet without a biometric prompt. Fire-and-forget; retried on next open.
+    void ensureBackgroundArkSeed(mnemonic);
     return handle;
 }
 

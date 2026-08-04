@@ -268,6 +268,11 @@ export default function useArkSync(): UseArkSync {
     // turns non-zero. We use this to avoid the 2s Bark `syncArkWallet`
     // call when the wallet has nothing to settle.
     const consecutiveEmptyTicks = useRef(0);
+    // Last earliest-expiry (epoch ms) POSTed to GroundControl's /arkExpiry.
+    // Memoizes the fire-and-forget registration so the 30s sync tick only
+    // re-POSTs when the earliest expiry actually moves (see below). 0 = a
+    // "no live capsules" clear was the last thing sent (or nothing yet).
+    const lastGcArkExpiryRef = useRef(0);
 
     const sync = useCallback(async () => {
         if (inFlight.current) return;
@@ -832,6 +837,43 @@ export default function useArkSync(): UseArkSync {
                         .setArkExpiryNotifsScheduleVersion(
                             CURRENT_EXPIRY_NOTIFS_SCHEDULE_VERSION,
                         );
+                }
+
+                // GroundControl silent-push registration: tell the server
+                // the EARLIEST live expiry so its scheduler can wake us
+                // with an { arkMaintenance: 1 } content-available push
+                // while there's still runway (server policy decides the
+                // offsets). Follows the reminders toggle: when it's off we
+                // send one clearing 0 (the push would no-op anyway — the
+                // bg seed is deleted on disable — but don't make the
+                // server wake us for nothing). Re-POSTs only when the
+                // earliest moves by >1h (refresh landed / capsule set
+                // changed), not every 30s tick.
+                const gcExpiries = Object.values(nextScheduled);
+                const gcEarliest = remindersOn && gcExpiries.length > 0
+                    ? Math.min(...gcExpiries)
+                    : 0;
+                const gcChanged =
+                    Math.abs(gcEarliest - lastGcArkExpiryRef.current) > 3_600_000 ||
+                    (gcEarliest === 0) !== (lastGcArkExpiryRef.current === 0);
+                if (gcChanged) {
+                    lastGcArkExpiryRef.current = gcEarliest;
+                    try {
+                        // Lazy require: notifications.js is a JS singleton
+                        // whose statics attach at App bootstrap; optional-
+                        // chain in case this tick wins that race.
+                        // eslint-disable-next-line @typescript-eslint/no-var-requires
+                        const Notifications = require('../../blue_modules/notifications');
+                        void Notifications.arkExpiryToGroundControl?.(gcEarliest);
+                        if (__DEV__) {
+                            console.log(
+                                '[Ark sync] GroundControl expiry registration:',
+                                gcEarliest === 0 ? 'cleared' : new Date(gcEarliest).toISOString(),
+                            );
+                        }
+                    } catch (gcErr) {
+                        if (__DEV__) console.warn('[Ark sync] GroundControl expiry registration failed:', gcErr);
+                    }
                 }
             }
 
