@@ -1,7 +1,9 @@
-import React, {useContext, useReducer, useState} from "react";
-import { View, Image, InteractionManager } from "react-native";
+import React, {useContext, useReducer, useState, useRef, useEffect} from "react";
+import { View, Image, InteractionManager, Switch, TouchableOpacity, Animated, Keyboard, KeyboardEvent, Platform } from "react-native";
+import * as bip39 from 'bip39';
+import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
-import { Button, ScreenLayout, Text } from "@Cypher/component-library";
+import { Button, Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
 import { HDSegwitBech32Wallet } from "../../../class";
@@ -16,6 +18,90 @@ import useAuthStore from "@Cypher/stores/authStore";
 
 export default function SavingVaultIntro() {
     const [isLoading, setIsLoading] = useState(false)
+    // BIP39 passphrase ("25th word"), strictly opt-in via the toggle so
+    // nothing is ever typed (or applied) without a deliberate choice. The
+    // passphrase is used exactly as typed (case-sensitive, spaces count),
+    // never trimmed, never stored anywhere — it only feeds setPassphrase()
+    // at generation time. Confirm-field guards the create-time typo that
+    // would otherwise strand funds on a wallet nobody can recover.
+    const [usePassphrase, setUsePassphrase] = useState(false);
+    const [passphrase, setPassphrase] = useState('');
+    const [passphraseConfirm, setPassphraseConfirm] = useState('');
+    // Dice entropy (BlueWallet's ProvideEntropy screen). When set, the seed
+    // is derived from EXACTLY the first 16 bytes (128 bits) of user rolls —
+    // no device-RNG padding, that's the point of the feature. The screen
+    // itself hard-blocks Save under 128 bits (minBits param), so a set
+    // buffer here is always >= 16 bytes; the length check in createWallet
+    // is defense-in-depth.
+    const [diceEntropy, setDiceEntropy] = useState<Buffer | null>(null);
+
+    // Keyboard-avoidance for the passphrase fields. They sit low on the
+    // screen, so on focus the keyboard covers them. A KeyboardAwareScrollView
+    // can't help: the content is flex:1 (exactly viewport height), so there's
+    // no scroll overflow to lift into. Instead we translate the whole content
+    // up by exactly the overlap between the focused field and the keyboard
+    // top, measured live so it's correct on any device and for BOTH fields
+    // (confirm sits lower than passphrase and needs a bigger lift).
+    const contentLift = useRef(new Animated.Value(0)).current;
+    // Last target we animated to. Native-driver animations don't fire JS
+    // value listeners, so we track the target ourselves to recover a field's
+    // resting position from its (already-lifted) measured position.
+    const currentLift = useRef(0);
+    const keyboardTop = useRef<number | null>(null);
+    const focusedField = useRef<View | null>(null);
+    const passWrapRef = useRef<View>(null);
+    const confirmWrapRef = useRef<View>(null);
+
+    const animateLift = (to: number, duration: number) => {
+        currentLift.current = to;
+        Animated.timing(contentLift, {
+            toValue: to,
+            duration: duration > 0 ? duration : 220,
+            useNativeDriver: true,
+        }).start();
+    };
+
+    // Solve for the ABSOLUTE translateY that puts the focused field ~16pt
+    // above the keyboard. measureInWindow returns the field's current
+    // (already-lifted) position, so add back the current lift to recover its
+    // resting position first, otherwise switching fields double-counts the
+    // shift already applied.
+    const recomputeLift = (kbTop: number, duration: number) => {
+        const target = focusedField.current;
+        if (!target) return;
+        target.measureInWindow((_x, y, _w, h) => {
+            const restingBottom = y + h - currentLift.current;
+            const desired = kbTop - 16 - restingBottom; // negative => lift up
+            animateLift(desired < 0 ? desired : 0, duration);
+        });
+    };
+
+    useEffect(() => {
+        const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+        const onShow = (e: KeyboardEvent) => {
+            keyboardTop.current = e.endCoordinates.screenY;
+            recomputeLift(keyboardTop.current, e.duration ?? 220);
+        };
+        const onHide = (e: KeyboardEvent) => {
+            keyboardTop.current = null;
+            animateLift(0, e?.duration ?? 220);
+        };
+        const s = Keyboard.addListener(showEvt, onShow);
+        const hd = Keyboard.addListener(hideEvt, onHide);
+        return () => { s.remove(); hd.remove(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // While the keyboard is already up, switching between the two fields must
+    // re-solve the lift (keyboardWillShow won't fire a second time).
+    const handleFieldFocus = (ref: React.RefObject<View>) => {
+        focusedField.current = ref.current;
+        if (keyboardTop.current != null) recomputeLift(keyboardTop.current, 180);
+    };
+    const handleFieldBlur = () => {
+        focusedField.current = null;
+    };
 
     const nextClickHandler = () => {
         console.log('next click');
@@ -74,6 +160,21 @@ export default function SavingVaultIntro() {
      */
     const createWallet = async () => {
       if (isLoading) return; // guard against double-tap racing the transition
+
+      // Passphrase gate BEFORE the spinner: a validation bounce should not
+      // flash the loading state. Empty toggle-on is treated as a mistake
+      // (turn it off to create without a passphrase), and both entries must
+      // match exactly — there is no recovery from a create-time typo.
+      if (usePassphrase) {
+        if (!passphrase) {
+          SimpleToast.show('Enter a passphrase, or turn the passphrase toggle off', SimpleToast.LONG);
+          return;
+        }
+        if (passphrase !== passphraseConfirm) {
+          SimpleToast.show('Passphrases do not match', SimpleToast.LONG);
+          return;
+        }
+      }
       setIsLoading(true);
 
       // Hand the UI one frame to actually paint the spinner. Without this,
@@ -84,7 +185,22 @@ export default function SavingVaultIntro() {
 
       const w = new HDSegwitBech32Wallet();
       w.setLabel(label || loc.wallets.details_title);
-      await w.generate();   // BIP39 mnemonic — ~5ms on device
+      if (diceEntropy && diceEntropy.length >= 16) {
+        // 12-word seed from the user's own dice rolls: first 16 bytes ->
+        // bip39.entropyToMnemonic — the same library call generate() uses,
+        // minus the device RNG. Deliberately NOT generateFromEntropy(): the
+        // fork's version pads/concats to 32 bytes and would emit a 24-word
+        // seed, breaking this app's fixed-12-word recovery flow.
+        w.setSecret(bip39.entropyToMnemonic(diceEntropy.slice(0, 16).toString('hex')));
+      } else {
+        await w.generate();   // BIP39 mnemonic — ~5ms on device
+      }
+      // MUST run before getID()/addWallet(): the wallet ID hash includes the
+      // passphrase, so setting it later would silently change the vault's
+      // identity out from under everything that captured the ID.
+      if (usePassphrase && passphrase) {
+        w.setPassphrase(passphrase);
+      }
       addWallet(w);          // in-memory push; next screen finds wallet by ID
       const id = w.getID();  // sha256 over type+secret+path — trivially fast
       setWalletID(id);
@@ -109,7 +225,7 @@ export default function SavingVaultIntro() {
   
     return (
         <ScreenLayout showToolbar progress={0} color={[colors.green, colors.green]}>
-            <View style={styles.container}>
+            <Animated.View style={[styles.container, { transform: [{ translateY: contentLift }] }]}>
                 <View style={styles.innerView}>
                     <Text style={styles.title}>Hot Savings Vault</Text>
                     <Text h4 style={styles.descption}>Hot Vault, commonly known as a ‘hot wallet’, allows you to become the sole owner of your bitcoin, as the saying goes: Not your keys, not your coins. Money stored in this vault will be secured by the main Bitcoin network, not by a third party custodian.
@@ -125,9 +241,97 @@ export default function SavingVaultIntro() {
                       style={{height: 80}}
                       resizeMode="contain"
                     />
+
+                    {/* Opt-in BIP39 passphrase. Toggle-gated so the fields
+                        (and the feature) only exist for users who ask for
+                        them; default flow is untouched. */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 18 }}>
+                        <Text bold style={{ color: '#FFF', fontSize: 15, flex: 1 }}>
+                            Optional Passphrase
+                        </Text>
+                        <Switch
+                            value={usePassphrase}
+                            onValueChange={setUsePassphrase}
+                            trackColor={{ false: '#3a3a3a', true: colors.green }}
+                            thumbColor={'#FFF'}
+                        />
+                    </View>
+                    {usePassphrase && (
+                        <View style={{ marginTop: 8 }}>
+                            <Text h4 style={{ color: '#CCC', fontSize: 12, lineHeight: 17 }}>
+                                Adds a secret "25th word" to your vault: anyone who finds your 12 words alone cannot spend your funds, and the seed copy stored on this phone stays useless without it.
+                            </Text>
+                            <Text h4 style={{ color: '#FFD54F', fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+                                ⚠ Losing the passphrase means irrecoverably losing your Hot Vault funds, even if you possess the 12-word seed phrase. It is case-sensitive and spaces count. You should be able to memorise it, and include it on your seed phrase paper.
+                            </Text>
+                            <View ref={passWrapRef} collapsable={false}>
+                                <Input
+                                    onChange={setPassphrase}
+                                    value={passphrase}
+                                    label="Passphrase"
+                                    autoCapitalize="none"
+                                    secureTextEntry
+                                    textInputStyle={{ color: '#FFF' }}
+                                    style={{ marginTop: 10 }}
+                                    onFocus={() => handleFieldFocus(passWrapRef)}
+                                    onBlur={handleFieldBlur}
+                                />
+                            </View>
+                            <View ref={confirmWrapRef} collapsable={false}>
+                                <Input
+                                    onChange={setPassphraseConfirm}
+                                    value={passphraseConfirm}
+                                    label="Confirm passphrase"
+                                    autoCapitalize="none"
+                                    secureTextEntry
+                                    textInputStyle={{ color: '#FFF' }}
+                                    style={{ marginTop: 8 }}
+                                    onFocus={() => handleFieldFocus(confirmWrapRef)}
+                                    onBlur={handleFieldBlur}
+                                />
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Opt-in dice entropy via BlueWallet's entropy screen.
+                        The 128-bit floor is enforced in the screen itself;
+                        the badge shows the armed state and ✗ discards back
+                        to the phone's RNG. */}
+                    {diceEntropy ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
+                            <Text bold style={{ color: colors.green, fontSize: 13, flex: 1 }}>
+                                ✓ 128 bits entropy generated via dice rolls
+                            </Text>
+                            <TouchableOpacity
+                                onPress={() => setDiceEntropy(null)}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                accessibilityLabel="Discard dice entropy"
+                            >
+                                <Text bold style={{ color: '#888', fontSize: 16 }}>✗</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <TouchableOpacity
+                            onPress={() =>
+                                dispatchNavigate('ProvideEntropy', {
+                                    minBits: 128,
+                                    limit: 128,
+                                    instruction: 'Roll the dice 100 times and select which face it lands to build more entropy for your seedphrase',
+                                    onGenerated: (buf: Buffer) => {
+                                        if (buf && buf.length >= 16) setDiceEntropy(buf);
+                                    },
+                                })
+                            }
+                            style={{ marginTop: 14 }}
+                        >
+                            <Text bold style={{ color: colors.green, fontSize: 14 }}>
+                                Optional: create your own entropy via your dice rolls 🎲
+                            </Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
                 <Button text="Generate Private Key" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
-            </View>
+            </Animated.View>
         </ScreenLayout>
     )
 }

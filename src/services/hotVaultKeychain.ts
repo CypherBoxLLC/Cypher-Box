@@ -72,6 +72,15 @@ export interface HotVaultMeta {
     version: 1;
     createdAt: number;
     label?: string | null;
+    /**
+     * True when the vault was created with a BIP39 passphrase. The keychain
+     * stores the WORDS ONLY (the passphrase is deliberately never persisted
+     * anywhere — it is the "something you know"); this flag tells the
+     * keychain-recovery flow to prompt for the passphrase after the
+     * biometric seed read. Reveals only that protection exists, never the
+     * protection itself. Absent on pre-feature backups (=> no prompt).
+     */
+    hasPassphrase?: boolean;
 }
 
 export type HotVaultKeychainSaveResult =
@@ -136,6 +145,7 @@ export async function backupHotVaultMeta(
             version: 1,
             createdAt: meta.createdAt,
             label: meta.label ?? null,
+            hasPassphrase: meta.hasPassphrase ?? false,
         };
         await Keychain.setGenericPassword(
             walletID,
@@ -174,6 +184,7 @@ export async function backupHotVaultSeedWithMeta(
     const metaResult = await backupHotVaultMeta(walletID, {
         createdAt: meta?.createdAt ?? Date.now(),
         label: meta?.label ?? null,
+        hasPassphrase: meta?.hasPassphrase ?? false,
     });
     // Deliberately don't bubble up meta failures — the seed is saved, and a
     // missing meta row just falls back to a walletID-only picker row. That's
@@ -259,6 +270,12 @@ export async function getHotVaultMeta(
             version: 1,
             createdAt: parsed.createdAt,
             label: typeof parsed.label === 'string' ? parsed.label : null,
+            // Preserve the passphrase flag across the read. Dropping it here
+            // (as an earlier version did) makes every recovered backup look
+            // passphrase-less, so the Recover flow skips the passphrase prompt
+            // and reconstructs the wrong wallet. Coerce to a strict boolean so
+            // legacy entries (field absent) read as false.
+            hasPassphrase: parsed.hasPassphrase === true,
         };
     } catch (err) {
         console.warn('[HotVault] Meta read failed for', walletID, err);

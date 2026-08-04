@@ -82,7 +82,13 @@ export default function SavingVault() {
                 const result = await backupHotVaultSeedWithMeta(
                     walletID,
                     mnemonic,
-                    { createdAt: Date.now() },
+                    {
+                        createdAt: Date.now(),
+                        // Keychain stores the words only; this flag makes the
+                        // recovery flow prompt for the (never-stored)
+                        // passphrase after the biometric read.
+                        hasPassphrase: !!wallet?.getPassphrase?.(),
+                    },
                 );
                 if (result.ok) {
                     setKeychainStatus("ok");
@@ -128,6 +134,16 @@ export default function SavingVault() {
                 <Text h4 style={styles.descption} center>
                     Write this backup copy on a piece of paper
                 </Text>
+                {/* Passphrase vaults: the words alone are NOT the full
+                    backup. Remind here, at the moment the paper backup is
+                    being written, per the creation-screen guidance
+                    (memorise it and include it on the paper). The
+                    passphrase itself is never displayed. */}
+                {!!(wallets.find((w: any) => w.getID() === walletID)?.getPassphrase?.()) && (
+                    <Text center style={{ color: '#FFD54F', fontSize: 12, lineHeight: 17, marginTop: 6, marginHorizontal: 16 }}>
+                        ⚠ This vault has a passphrase. Recovery needs these 12 words AND your passphrase. Write both on your paper backup.
+                    </Text>
+                )}
                 <PrivateKeyGenerater callNext={nextClickInitiate} />
                 <Tips />
 
