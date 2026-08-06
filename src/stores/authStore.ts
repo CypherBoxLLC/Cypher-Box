@@ -115,6 +115,15 @@ export type AuthStateType = {
     // view. Spendable-only subset drives the capsule UI.
     arkVtxos: ArkVtxoView[];
     /**
+     * VTXO ids the client submitted for a delegated refresh and is waiting to
+     * finalise. bark 0.6.0 no longer marks a mid-refresh VTXO `Locked` (it
+     * stays `Spendable` so the user can still spend it), so the client tracks
+     * these ids itself to drive the per-capsule "Refreshing" animation. Pruned
+     * each sync by useArkSync (id gone from the wallet, or pendingInRoundSats
+     * back to 0).
+     */
+    arkRefreshingVtxoIds: string[];
+    /**
      * Set when at least one ongoing round has been pending for longer than
      * `2 × roundIntervalSecs` (time-based detection). Drives the "Recover
      * stuck refresh" banner in ArkWallet. `null` means no stuck round
@@ -268,6 +277,7 @@ export type AuthStateType = {
     setArkBalance: (state: number) => void;
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => void;
     setArkVtxos: (state: ArkVtxoView[]) => void;
+    setArkRefreshingVtxoIds: (ids: string[]) => void;
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => void;
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => void;
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => void;
@@ -488,6 +498,7 @@ const createAuthStore = (
     arkBalance: 0,
     arkBalanceDetail: null,
     arkVtxos: [],
+    arkRefreshingVtxoIds: [],
     arkRefreshStuck: null,
     arkPendingRoundFirstSeen: {},
     arkScheduledExpiryNotifs: {},
@@ -563,6 +574,7 @@ const createAuthStore = (
     setArkBalance: (state: number) => set({ arkBalance: state }),
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
+    setArkRefreshingVtxoIds: (ids: string[]) => set({ arkRefreshingVtxoIds: ids }),
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => set({ arkRefreshStuck: state }),
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => set({ arkPendingRoundFirstSeen: state }),
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => set({ arkScheduledExpiryNotifs: state }),
@@ -605,6 +617,7 @@ const createAuthStore = (
             arkBalance: 0,
             arkBalanceDetail: null,
             arkVtxos: [],
+            arkRefreshingVtxoIds: [],
             arkRefreshStuck: null,
             arkPendingRoundFirstSeen: {},
             arkScheduledExpiryNotifs: {},

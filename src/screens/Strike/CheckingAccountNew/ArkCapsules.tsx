@@ -1068,6 +1068,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // X button reappears, inviting users to spam-tap it.
     const cancelling = useArkCancelling();
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
+    const arkRefreshingVtxoIds = useAuthStore((s) => s.arkRefreshingVtxoIds);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const setArkPendingLnReceives = useAuthStore((s) => s.setArkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
@@ -1160,21 +1161,20 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         };
     }, [arkLastSyncedAt, chainTipHeight]);
 
-    // Sum of sats currently locked in pending refresh rounds. Same derivation
-    // as ArkWallet/index.tsx (Locked-state VTXO sats), to avoid the SDK's
-    // `arkBalanceDetail.pendingInRoundSats` over-counting bug where each
-    // queued round contributes its expected output, so re-tapping refresh
-    // 5 times against the same VTXO inflates the figure 5×.
+    // Sum of sats currently in a pending refresh round we submitted. Driven by
+    // the client-tracked ids (authStore arkRefreshingVtxoIds) — same approach
+    // as ArkWallet/index.tsx. bark 0.6.0 no longer marks a mid-refresh VTXO
+    // `Locked` (it stays `Spendable`), so the old "sum Locked VTXOs" derivation
+    // silently returned 0; and its `arkBalanceDetail.pendingInRoundSats` lags
+    // the submission by seconds-to-minutes, so we don't use that either.
     //
-    // Used to disable the Refresh action button when a round is in flight,
-    // so users don't accidentally queue duplicate rounds at the ASP and
-    // think it speeds completion.
+    // Used to disable the Refresh action button while a round is in flight, so
+    // users don't queue duplicate rounds at the ASP thinking it speeds things.
     const pendingRoundSats = useMemo(() => {
-        return arkVtxos.reduce(
-            (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
-            0,
-        );
-    }, [arkVtxos]);
+        if (arkRefreshingVtxoIds.length === 0) return 0;
+        const set = new Set(arkRefreshingVtxoIds);
+        return arkVtxos.reduce((sum, v) => (set.has(v.id) ? sum + v.sats : sum), 0);
+    }, [arkVtxos, arkRefreshingVtxoIds]);
 
     // Track refresh attempts that have queued a round but haven't visibly
     // resolved yet. Each successful `refreshIds` call bumps this; it resets
@@ -1196,10 +1196,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // full green ring and hide the "Xd left" line — still visible, but with
     // no misleading time estimate.
     const rows: VtxoRowData[] = useMemo(() => {
+        const refreshingSet = new Set(arkRefreshingVtxoIds);
         const mapped = arkVtxos.map((v) => {
             const stateLower = v.state.toLowerCase();
             const kindLower = v.kind.toLowerCase();
-            const pendingRound = stateLower === "locked";
+            // bark 0.6.0: a mid-refresh VTXO stays `Spendable` (not `Locked`),
+            // so drive the "Refreshing…" row treatment off the client-tracked
+            // ids too (see authStore arkRefreshingVtxoIds).
+            const pendingRound = stateLower === "locked" || refreshingSet.has(v.id);
 
             // Tri-state recoverability — see VtxoRowData.recoverability
             // for the full reasoning. Quick summary: a Pubkey/Spendable
@@ -1257,7 +1261,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             if (aDead !== bDead) return aDead ? 1 : -1;
             return 0;
         });
-    }, [arkVtxos, chainTipHeight, arkLastBackupAt]);
+    }, [arkVtxos, chainTipHeight, arkLastBackupAt, arkRefreshingVtxoIds]);
 
     // Auto-refresh when the user landed here from a tapped expiry-warning
     // notification. The scheduler's tap handler set arkPendingTapRefresh

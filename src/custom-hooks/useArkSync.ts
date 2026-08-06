@@ -688,6 +688,30 @@ export default function useArkSync(): UseArkSync {
                 setArkBalance(filteredBalance.totalSats);
                 setArkBalanceDetail(filteredBalance);
             }
+
+            // bark 0.6.0: mid-refresh VTXOs stay `Spendable`, so the client
+            // tracks the submitted refresh ids itself (authStore
+            // arkRefreshingVtxoIds) to drive the per-capsule "Refreshing"
+            // animation. Prune them here: drop ids no longer in the wallet
+            // (refreshed away, or spent by the user before the round ran), and
+            // clear everything once nothing is left in a pending round.
+            {
+                const s = useAuthStore.getState();
+                const tracked = s.arkRefreshingVtxoIds;
+                if (tracked.length > 0) {
+                    // Prune ONLY when the VTXO leaves the wallet (refreshed away
+                    // or spent by the user). Do NOT prune on
+                    // pendingInRoundSats === 0: bark reflects the round in the
+                    // balance seconds-to-minutes AFTER the submission, and
+                    // clearing during that lag drops the id before the animation
+                    // ever shows.
+                    const present = new Set((vtxos?.spendable ?? []).map((v) => v.id));
+                    const next = tracked.filter((id) => present.has(id));
+                    if (next.length !== tracked.length) {
+                        s.setArkRefreshingVtxoIds(next);
+                    }
+                }
+            }
             if (vtxos) {
                 // Past-expiry VTXOs stay IN the list. The SDK reports them
                 // as Spendable until the ASP actually sweeps them; they

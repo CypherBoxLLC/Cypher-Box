@@ -64,6 +64,7 @@ export default function ArkWallet({
         reserveArkAmount,
         arkVtxos,
         arkChainTipHeight,
+        arkRefreshingVtxoIds,
         arkBgRefreshEnabled,
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
@@ -289,36 +290,35 @@ export default function ArkWallet({
     // StrikeWallet). Other combos are untouched.
     const allThreeLightning = isAuth && isStrikeAuth && isArkAuth;
 
-    // Non-zero means there's an in-flight round (refresh / send / board).
+    // The capsules mid-refresh: ids we submitted for refresh that are still in
+    // the wallet. Driven by our OWN tracking (set the instant the user taps),
+    // NOT bark's `pendingInRoundSats` — that field lags the submission by
+    // seconds-to-minutes on 0.6.0, so gating on it left the animation blank
+    // during the wait. useArkSync prunes an id only when its VTXO leaves the
+    // wallet (refreshed away or spent), so the capsule spins for the whole round.
     //
-    // We DERIVE this from the Locked VTXO amounts rather than using
-    // `arkBalanceDetail.pendingInRoundSats` directly, because the SDK's
-    // raw field sums both sides of the round (input + expected output ≈
-    // 2× the real amount). With the headline balance now including the
-    // Locked-VTXO amount, showing the raw 2× number in the subtitle
-    // confused users — they saw e.g. "9980 sats" on the card and
-    // "19911 sats pending" just below, and reasonably thought we were
-    // double-counting.
-    //
-    // Summing Locked VTXOs from `arkVtxos` gives the exact post-fee
-    // retained amount that's currently tied up in the round. When no
-    // round is pending, this is 0 and the subtitle is hidden.
-    const pendingRoundSats = useMemo(() => {
-        return arkVtxos.reduce(
-            (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
-            0,
-        );
-    }, [arkVtxos]);
+    // bark 0.6.0 background: a VTXO in a pending delegated round now stays
+    // `Spendable` (no longer `Locked`), which is why the pre-0.6 "sum Locked
+    // VTXOs" approach silently returned 0 and the "Refreshing" UI vanished.
+    const refreshingIds = useMemo(() => {
+        if (arkRefreshingVtxoIds.length === 0) return new Set<string>();
+        const present = new Set(arkVtxos.map((v) => v.id));
+        return new Set(arkRefreshingVtxoIds.filter((id) => present.has(id)));
+    }, [arkVtxos, arkRefreshingVtxoIds]);
 
-    // Count of locked VTXOs (mid-round). Paired with pendingRoundSats
-    // so the status banner can render "Refreshing N capsules · X sats"
-    // and tell the user why their headline balance dropped.
-    const pendingRoundCount = useMemo(() => {
-        return arkVtxos.reduce(
-            (n, v) => (v.state.toLowerCase() === 'locked' ? n + 1 : n),
-            0,
-        );
-    }, [arkVtxos]);
+    // Sats mid-refresh, for the "+ Refreshing X sats" line. Sum the tracked
+    // VTXOs directly (available the instant we submit); fall back to bark's
+    // `pendingInRoundSats` for a refresh we didn't originate (e.g. background
+    // maintenance).
+    const pendingRoundSats = refreshingIds.size > 0
+        ? arkVtxos.reduce((sum, v) => (refreshingIds.has(v.id) ? sum + v.sats : sum), 0)
+        : (arkBalanceDetail?.pendingInRoundSats ?? 0);
+
+    // Count of capsules mid-round, for "Refreshing N capsules · X sats". Falls
+    // back to 1 when sats are in a round but no tracked id matches.
+    const pendingRoundCount = refreshingIds.size > 0
+        ? refreshingIds.size
+        : (pendingRoundSats > 0 ? 1 : 0);
 
     // Surface a nudge when the soonest-expiring VTXO is under a week out, so
     // users don't need to dig into the capsules tab to notice. VTXOs with
@@ -368,13 +368,13 @@ export default function ArkWallet({
                     : 30;
                 return {
                     color: getCapsuleColorBand(daysLeft).color,
-                    refreshing: v.state.toLowerCase() === 'locked',
+                    refreshing: refreshingIds.has(v.id),
                     daysLeft,
                 };
             })
             .sort((a, b) => a.daysLeft - b.daysLeft)
             .map(({ color, refreshing }) => ({ color, refreshing }));
-    }, [arkVtxos, arkChainTipHeight]);
+    }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
     /**
      * Count of dust capsules that haven't expired yet. A "dust capsule" is

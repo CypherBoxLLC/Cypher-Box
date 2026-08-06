@@ -279,9 +279,17 @@ export async function refreshArkVtxosDelegated(
             result: 'success',
             durationMs: Date.now() - t0,
         });
+        // bark 0.6.0: the submitted VTXOs stay `Spendable` (no longer marked
+        // `Locked`), so track their ids here to drive the per-capsule
+        // "Refreshing" animation until the round finalises. useArkSync prunes
+        // them once they leave the wallet or nothing is left in a round.
+        const store = useAuthStore.getState();
+        store.setArkRefreshingVtxoIds(
+            Array.from(new Set([...store.arkRefreshingVtxoIds, ...vtxoIds])),
+        );
         // Acceptance breaks the failure streak that drives the
         // refresh-failing-near-expiry escalation in useArkSync.
-        useAuthStore.getState().setArkRefreshFailStreak(0);
+        store.setArkRefreshFailStreak(0);
         return { roundState: roundState ?? null };
     } catch (err: any) {
         // BarkError carries detail in `err.inner.errorMessage`, not `err.message`.
