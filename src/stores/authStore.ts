@@ -638,10 +638,20 @@ const createAuthStore = (
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout
 
-            // Refresh state is wallet-scoped: clear on disconnect so
-            // the next wallet doesn't inherit a previous wallet's
-            // success timestamp / failure count.
-            arkBgRefreshEnabled: false,
+            // Background-refresh bookkeeping is wallet-scoped: clear on
+            // disconnect so the next wallet doesn't inherit a previous
+            // wallet's success timestamp / failure count.
+            //
+            // arkBgRefreshEnabled is intentionally NOT reset here. It is a
+            // user preference (on by default), so it is kept across wallet
+            // changes, the same treatment as arkArkoorPromptEnabled below.
+            // Forcing it false on every disconnect silently disabled
+            // background refresh after any recover/reconnect: the wallet-open
+            // backfill (ensureBackgroundArkSeed) only mirrors the background-
+            // readable seed while the flag is true, so a persisted false
+            // starved the maintenance task of its seed. An explicit opt-out
+            // (the toggle) still sets the flag false and deletes the seed,
+            // and that choice is now preserved across a reconnect too.
             arkBgRefreshLastSuccessAt: null,
             arkBgRefreshLastAttempt: null,
             arkBgRefreshConsecutiveFailures: 0,
