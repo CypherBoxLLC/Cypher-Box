@@ -118,7 +118,7 @@ export async function syncArkWallet(): Promise<boolean> {
                         excess, 'sats; keeping', reserveSats, 'on-chain for exit fees',
                     );
                     try {
-                        await handle.boardAmount(onchain, BigInt(excess));
+                        await handle.boardAmount(BigInt(excess));
                         console.log('[Ark sync] auto-board: boardAmount initiated');
                     } catch (boardErr) {
                         console.warn('[Ark sync] auto-board: boardAmount failed:', boardErr);
@@ -136,7 +136,7 @@ export async function syncArkWallet(): Promise<boolean> {
                     'sats unboarded onchain, initiating boardAll',
                 );
                 try {
-                    await handle.boardAll(onchain);
+                    await handle.boardAll();
                     console.log('[Ark sync] auto-board: boardAll initiated');
                 } catch (boardErr) {
                     console.warn('[Ark sync] auto-board: boardAll failed:', boardErr);

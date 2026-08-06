@@ -38,7 +38,7 @@ import type { ExitClaimTransaction, ExitVtxo } from '@secondts/bark-react-native
 
 import useAuthStore from '@Cypher/stores/authStore';
 
-import { ensureArkOnchainHandle, getArkOnchainHandle, getArkWalletHandle } from './walletHandle';
+import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
 
 /**
  * Hard gate for every OUTGOING spend path (send, offboard, convert, swap
@@ -100,16 +100,11 @@ export async function progressArkExits(
     feeRateSatPerVb?: bigint,
 ): Promise<unknown[]> {
     const handle = requireWallet();
-    const onchain = getArkOnchainHandle();
-    if (!onchain) {
-        // Lazily spawn — first call after process restart hits this branch.
-        await ensureArkOnchainHandle();
-    }
-    const onchainReady = getArkOnchainHandle();
-    if (!onchainReady) {
-        throw new Error('Ark onchain wallet not available');
-    }
-    const result = await handle.progressExits(onchainReady, feeRateSatPerVb);
+    // bark 0.15.0: the onchain wallet is pinned at Wallet.open
+    // (WalletOpenArgs.onchain) rather than passed per-call, so progressExits no
+    // longer takes it. openArkWallet/createArkWallet always supply it and the
+    // boot-restore path re-opens, so a live Ark handle always has its onchain.
+    const result = await handle.progressExits(feeRateSatPerVb);
     return result;
 }
 
@@ -123,14 +118,8 @@ export async function progressArkExits(
  */
 export async function syncArkExits(): Promise<void> {
     const handle = requireWallet();
-    if (!getArkOnchainHandle()) {
-        await ensureArkOnchainHandle();
-    }
-    const onchain = getArkOnchainHandle();
-    if (!onchain) {
-        throw new Error('Ark onchain wallet not available');
-    }
-    await handle.syncExits(onchain);
+    // bark 0.15.0: onchain pinned at open; syncExits no longer takes it.
+    await handle.syncExits();
 }
 
 /**
