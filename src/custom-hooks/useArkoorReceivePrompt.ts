@@ -338,22 +338,23 @@ export default function useArkoorReceivePrompt(): void {
                                     [firstId]: { ...existing, status: 'refreshed' },
                                 });
                             }
-                            // We're committing to refresh — the OS-queued 24h/2h
-                            // pushes for this arkoor are now phantom warnings (the
-                            // funds will be safe once the round completes).
-                            // Cancel them. If refresh ends up failing, the user
-                            // can retry from the Capsules tab; we accept the
-                            // tradeoff of "no fallback push on a failed refresh"
-                            // for "no phantom warning on a successful refresh"
-                            // because failed refreshes are visible in-app.
-                            try {
-                                cancelVtxoExpiryWarnings(firstId);
-                            } catch (err) {
-                                console.warn(
-                                    '[useArkoorReceivePrompt] cancel on refresh threw:',
-                                    err,
-                                );
-                            }
+                            // The expiry warnings are deliberately NOT cancelled
+                            // here. The submit below resolves when the ASP ACCEPTS
+                            // the delegation, not when the round completes, so a
+                            // round that fails after acceptance never reaches the
+                            // .catch. Cancelling up-front meant that failure mode
+                            // silently disarmed every warning for this arkoor and
+                            // nothing re-armed them (movementWatcher observes only
+                            // successful refreshes), leaving its expiry fuse to run
+                            // down with no signal at all.
+                            //
+                            // Instead the warnings stay armed and the prune effect
+                            // (step 1b) cancels them once the refreshed replacement
+                            // lands and this vtxo leaves the wallet. That covers the
+                            // success case without a phantom-warning window: the
+                            // warnings fire 24h/12h/6h before a ~3-day deadline,
+                            // roughly two days out, while a round settles in seconds
+                            // to about an hour.
                             // Fire-and-forget. refreshArkVtxosDelegatedAndSync
                             // resolves as soon as the ASP accepts the delegation
                             // (seconds); the round then completes in the
@@ -366,17 +367,17 @@ export default function useArkoorReceivePrompt(): void {
                                     '[useArkoorReceivePrompt] refreshArkVtxosDelegatedAndSync threw:',
                                     err?.message ?? err,
                                 );
-                                // The optimistic 'refreshed' status + expiry-warning
-                                // cancel above ran BEFORE this submit (so the prompt
-                                // would not re-fire mid-flight). On ANY failure that
-                                // optimism is wrong: nothing is refreshing, and leaving
-                                // the warnings cancelled lets the arkoor's expiry fuse
-                                // run down with zero signal. So for every failure,
-                                // restore the safety net: mark the entry 'dismissed'
-                                // (spendable, protected, no re-prompt spam) and re-arm
-                                // the expiry warnings. Only the toast copy differs by
-                                // cause; the per-row Capsules refresh stays as the
-                                // manual retry.
+                                // The optimistic 'refreshed' status was set BEFORE this
+                                // submit (so the prompt would not re-fire mid-flight).
+                                // On a submit-time failure that optimism is wrong:
+                                // nothing is refreshing. Mark the entry 'dismissed'
+                                // (spendable, protected, no re-prompt spam). The
+                                // expiry warnings were never cancelled, so they are
+                                // already armed; the re-schedule below is a defensive
+                                // no-op (idempotent on the OS notification id) in case
+                                // anything else dropped them. Only the toast copy
+                                // differs by cause; the per-row Capsules refresh stays
+                                // as the manual retry.
                                 const cur = useAuthStore.getState().arkArkoorPromptState;
                                 const existing2 = cur[firstId];
                                 if (existing2) {

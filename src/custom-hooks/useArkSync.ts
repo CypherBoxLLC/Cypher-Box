@@ -3,6 +3,7 @@ import { Alert, AppState, AppStateStatus, InteractionManager, Platform } from 'r
 
 import {
     applyExpiredVtxoFilter,
+    ARK_ARKOOR_ASSUMED_DAYS,
     AVG_BLOCK_MINUTES,
     cancelArkPendingRound,
     cancelVtxoExpiryWarnings,
@@ -873,7 +874,32 @@ export default function useArkSync(): UseArkSync {
                 // server wake us for nothing). Re-POSTs only when the
                 // earliest moves by >1h (refresh landed / capsule set
                 // changed), not every 30s tick.
-                const gcExpiries = Object.values(nextScheduled);
+                // Arkoor VTXOs must be included here even though they are
+                // absent from `nextScheduled`. They report expiryHeight 0
+                // (the SDK does not surface the ASP's trust window), so the
+                // loop above skips them, which used to leave the shortest-
+                // lived funds in the wallet as the ONLY ones the server was
+                // never asked to wake us for. Their deadline is already known
+                // and persisted: useArkoorReceivePrompt schedules local
+                // warnings off `observedAt + ARK_ARKOOR_ASSUMED_DAYS` and
+                // stores it in arkArkoorPromptState. Reuse that same assumed
+                // deadline here so the background wake covers them too.
+                //
+                // Registration only. Local reminder scheduling stays entirely
+                // with useArkoorReceivePrompt (it already works, and driving
+                // it from two places would fight over cancellation).
+                const arkoorPromptState = useAuthStore.getState().arkArkoorPromptState ?? {};
+                const arkoorDeadlines: number[] = [];
+                for (const v of vtxos.spendable) {
+                    if (v.expiryHeight > 0) continue;
+                    const entry = arkoorPromptState[v.id];
+                    if (!entry?.observedAt) continue;
+                    arkoorDeadlines.push(
+                        entry.observedAt + ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000,
+                    );
+                }
+
+                const gcExpiries = [...Object.values(nextScheduled), ...arkoorDeadlines];
                 const gcEarliest = remindersOn && gcExpiries.length > 0
                     ? Math.min(...gcExpiries)
                     : 0;
