@@ -71,6 +71,18 @@ export async function setArkBackgroundRefreshEnabled(enabled: boolean): Promise<
             const Notifications = require('../../../blue_modules/notifications').default;
             const got = await Notifications.ensurePushTokenForArk?.();
             console.log('[Ark reminders] push token acquired:', !!got);
+            // DEV verdict line: proves the privacy guarantee on device without
+            // attaching a debugger. onchainSubs MUST stay false here, otherwise
+            // minting a token for Bark silently opted the user into uploading
+            // wallet addresses. Remove once this is covered by a test.
+            if (__DEV__) {
+                const tok = await Notifications.getPushToken?.();
+                const onchain = await Notifications.isOnchainSubscriptionEnabled?.();
+                console.log(
+                    '[Ark reminders] VERDICT hasToken=', !!(tok && tok.token),
+                    'onchainSubs=', onchain,
+                );
+            }
         } catch (tokenErr) {
             console.warn('[Ark reminders] push token acquisition threw:', tokenErr);
         }
@@ -95,6 +107,14 @@ export async function setArkBackgroundRefreshEnabled(enabled: boolean): Promise<
     // Remove the background-readable seed copy so no seed lives outside the
     // biometry-locked primary once the user opts out.
     await deleteBackgroundArkSeed();
+
+    // NOTE: an earlier DEV-only reset here cleared PUSH_TOKEN and the onchain
+    // consent so a from-zero mint could be observed. It was removed: clearing
+    // the consent key mid-session recreates a state a real device never has
+    // (unset flag while the app is live and the OS can re-deliver a token to
+    // the already-registered onRegister callback), which re-runs the
+    // token-presence migration and reports consent as enabled. That is a test
+    // artefact, not the user-facing behaviour.
 }
 
 /**
@@ -191,4 +211,10 @@ export async function runArkBackgroundMaintenance(
 if (__DEV__) {
     (globalThis as Record<string, unknown>).arkBgMaintenanceTest = () =>
         runArkBackgroundMaintenance('manual-test');
+    // TEMP diagnostic (DEV only): report why the bg seed may be missing.
+    (globalThis as Record<string, unknown>).arkBgSeedCheck = async () => JSON.stringify({
+        enabled: useAuthStore.getState().arkBgRefreshEnabled,
+        cachedMnemonic: !!getCachedArkMnemonic(),
+        bgSeedPresent: !!(await readBackgroundArkSeed()),
+    });
 }
