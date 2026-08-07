@@ -12,6 +12,7 @@ const PUSH_TOKEN = 'PUSH_TOKEN';
 const GROUNDCONTROL_BASE_URI = 'GROUNDCONTROL_BASE_URI';
 const NOTIFICATIONS_STORAGE = 'NOTIFICATIONS_STORAGE';
 const NOTIFICATIONS_NO_AND_DONT_ASK_FLAG = 'NOTIFICATIONS_NO_AND_DONT_ASK_FLAG';
+const ONCHAIN_SUBSCRIPTIONS_ENABLED = 'ONCHAIN_SUBSCRIPTIONS_ENABLED';
 let alreadyConfigured = false;
 let baseURI = constants.groundControlUri;
 
@@ -174,6 +175,46 @@ function Notifications(props) {
   };
 
   /**
+   * Whether this device may upload wallet data (onchain addresses, Lightning
+   * payment hashes, txids) to GroundControl so the server can push payment
+   * alerts. This is the onchain/Lightning notification consent.
+   *
+   * Deliberately separate from the Ark capsule-expiry registration
+   * (`arkExpiryToGroundControl`), which sends only a push token and a
+   * timestamp, carries no wallet-identifying data, and is governed by its own
+   * preference.
+   *
+   * Why this exists: nothing used to gate `majorTomToGroundControl`. It runs
+   * unconditionally from ~20 call sites (wallet load, home render, vault open,
+   * receive, send, broadcast) and was held back only by the absence of a push
+   * token. That made privacy an accident of the token being missing: minting a
+   * token for any unrelated feature would have silently started uploading
+   * every wallet address. This flag makes the upload an explicit choice.
+   *
+   * First read migrates so nobody's behaviour changes today: a device that
+   * already holds a push token was already subscribing and keeps doing so; a
+   * device without one resolves to off, which is the posture it already had.
+   */
+  async function _isOnchainSubscriptionEnabled() {
+    try {
+      const stored = await AsyncStorage.getItem(ONCHAIN_SUBSCRIPTIONS_ENABLED);
+      if (stored !== null) return stored === '1';
+      const hadToken = !!(await Notifications.getPushToken());
+      await AsyncStorage.setItem(ONCHAIN_SUBSCRIPTIONS_ENABLED, hadToken ? '1' : '0');
+      return hadToken;
+    } catch (_) {
+      // Fail closed: on a storage error never upload wallet data.
+      return false;
+    }
+  }
+
+  Notifications.isOnchainSubscriptionEnabled = _isOnchainSubscriptionEnabled;
+
+  Notifications.setOnchainSubscriptionEnabled = async function (enabled) {
+    return AsyncStorage.setItem(ONCHAIN_SUBSCRIPTIONS_ENABLED, enabled ? '1' : '0');
+  };
+
+  /**
    * Should be called when user is most interested in receiving push notifications.
    * If we dont have a token it will show alert asking whether
    * user wants to receive notifications, and if yes - will configure push notifications.
@@ -253,6 +294,9 @@ function Notifications(props) {
   Notifications.majorTomToGroundControl = async function (addresses, hashes, txids) {
     if (!Array.isArray(addresses) || !Array.isArray(hashes) || !Array.isArray(txids))
       throw new Error('no addresses or hashes or txids provided');
+    // Consent gate. Checked here rather than at the ~20 call sites so a new
+    // caller cannot upload wallet data by forgetting to ask.
+    if (!(await _isOnchainSubscriptionEnabled())) return;
     const pushToken = await Notifications.getPushToken();
     if (!pushToken || !pushToken.token || !pushToken.os) return;
 

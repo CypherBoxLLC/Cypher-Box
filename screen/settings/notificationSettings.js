@@ -23,6 +23,10 @@ const NotificationSettings = () => {
 
   const onNotificationsSwitch = async value => {
     setNotificationsEnabled(value); // so the slider is not 'jumpy'
+    // This switch is the consent for uploading wallet data (addresses, LN
+    // payment hashes, txids) to GroundControl. Record it before the calls
+    // below, since majorTomToGroundControl now refuses to upload without it.
+    await Notifications.setOnchainSubscriptionEnabled(value);
     if (value) {
       // user is ENABLING notifications
       await Notifications.cleanUserOptOutFlag();
