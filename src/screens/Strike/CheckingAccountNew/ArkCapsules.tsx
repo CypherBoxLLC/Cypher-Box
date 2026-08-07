@@ -425,15 +425,27 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
     // reads full/green, no deadline). Matches the red countdown text.
     const ringDaysLeft = vtxo.daysLeft;
 
-    // Explainer for expired capsules — the only "action" the row keeps.
-    // Copy matches the header tagline's "lost forever" framing so the
-    // user gets the same story everywhere.
+    // Explainer for expired capsules, the only "action" the row keeps.
+    //
+    // Deliberately does NOT claim the funds are unrecoverable. Second.tech
+    // allows refreshes after the expiry height, during a grace window before
+    // the ASP sweeps, so "lost forever" stated a certainty we cannot back and
+    // told users to give up at the point they might still have acted. What we
+    // can honestly say is that the server may sweep at any time and recovery
+    // is not guaranteed.
+    //
+    // NOTE: the same "lost forever" / "cannot be recovered" framing still
+    // appears in the header tagline below and in several other surfaces
+    // (useArkSync expiry alert, Settings and CheckingAccountCreated reminder
+    // copy, ArkCapsulesInfoScreen). Those are unchanged pending a copy pass,
+    // so this screen is intentionally out of step with them for now.
     const showExpiredExplainer = () => {
         Alert.alert(
             'Capsule expired',
-            `This ${vtxo.sats.toLocaleString()}-sat capsule reached its expiry without a successful refresh. ` +
-            'After expiry the Ark server can sweep the funds, and they can no longer be refreshed, sent, or recovered. ' +
-            'Refresh your remaining capsules before they expire, or they are lost forever.',
+            `This ${vtxo.sats.toLocaleString()}-sat capsule passed its expiry without a successful refresh.\n\n` +
+            'After expiry the Ark server can sweep these funds at any time, so they may already be gone. ' +
+            'Recovery is not guaranteed.\n\n' +
+            "Refresh your other capsules before they expire so this doesn't happen to them.",
             [{ text: 'OK' }],
         );
     };
