@@ -434,16 +434,16 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
     // can honestly say is that the server may sweep at any time and recovery
     // is not guaranteed.
     //
-    // NOTE: the same "lost forever" / "cannot be recovered" framing still
-    // appears in the header tagline below and in several other surfaces
-    // (useArkSync expiry alert, Settings and CheckingAccountCreated reminder
-    // copy, ArkCapsulesInfoScreen). Those are unchanged pending a copy pass,
-    // so this screen is intentionally out of step with them for now.
+    // The same correction was applied to every other surface that carried the
+    // "lost forever" / "cannot be recovered" framing: the header tagline
+    // below, the useArkSync expiry alert, the Settings and
+    // CheckingAccountCreated reminder copy, and ArkCapsulesInfoScreen. Keep
+    // them in step if this wording changes again.
     const showExpiredExplainer = () => {
         Alert.alert(
             'Capsule expired',
             `This ${vtxo.sats.toLocaleString()}-sat capsule passed its expiry without a successful refresh.\n\n` +
-            'After expiry the Ark server can sweep these funds at any time, so they may already be gone. ' +
+            'After expiry the Second.tech server can sweep these funds at any time, so they may already be gone. ' +
             'Recovery is not guaranteed.\n\n' +
             "Refresh your other capsules before they expire so this doesn't happen to them.",
             [{ text: 'OK' }],
@@ -2147,7 +2147,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                        Your lightning capsules (VTXOs) must be refreshed before they expire, or they are lost forever.{' '}
+                        Your lightning capsules (VTXOs) must be refreshed before they expire. Once expired, recovery is not guaranteed.{' '}
                         <Text
                             bold
                             style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}

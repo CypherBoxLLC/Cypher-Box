@@ -25,12 +25,13 @@ export default function ArkCapsulesInfoScreen() {
                         Your Bark balance is held as a collection of small lightning capsules
                         (VTXOs). Each capsule has an expiry date. To keep your funds fully
                         self-custodial, meaning you can always recover them yourself without
-                        needing the Bark server's permission, each capsule must be refreshed
+                        needing the Second.tech server's permission, each capsule must be refreshed
                         before it expires.
                     </Body>
                     <Body>
-                        If a capsule expires without being refreshed, the funds inside are lost
-                        forever. There is no recovery.
+                        If a capsule expires without being refreshed, the Second.tech server can
+                        sweep the funds at any time. Recovery after expiry is not guaranteed, so
+                        treat the expiry date as a hard deadline.
                     </Body>
                 </Section>
 

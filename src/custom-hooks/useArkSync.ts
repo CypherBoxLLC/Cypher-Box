@@ -1233,7 +1233,7 @@ export default function useArkSync(): UseArkSync {
                     `${failStreak} refresh attempts failed. Switch networks (Wi-Fi to cellular, or ` +
                     'cellular to Wi-Fi) and refresh again. If refresh still fails, use ' +
                     'Settings → Emergency Exit to move your funds on-chain before they expire. ' +
-                    'Expired capsules are lost forever.',
+                    'Once a capsule expires, recovery is not guaranteed.',
                     [{ text: 'OK' }],
                 );
             }
