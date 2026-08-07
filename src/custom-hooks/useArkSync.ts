@@ -913,7 +913,12 @@ export default function useArkSync(): UseArkSync {
                         // whose statics attach at App bootstrap; optional-
                         // chain in case this tick wins that race.
                         // eslint-disable-next-line @typescript-eslint/no-var-requires
-                        const Notifications = require('../../blue_modules/notifications');
+                        // .default is required: notifications.js is an ES
+                        // module, so require() returns the module namespace and
+                        // the statics hang off .default. Without it the
+                        // optional call below silently no-ops, which is why
+                        // the server was never told when a capsule expires.
+                        const Notifications = require('../../blue_modules/notifications').default;
                         void Notifications.arkExpiryToGroundControl?.(gcEarliest);
                         if (__DEV__) {
                             console.log(

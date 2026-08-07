@@ -56,6 +56,24 @@ export async function setArkBackgroundRefreshEnabled(enabled: boolean): Promise<
         } catch (notifErr) {
             console.warn('[Ark reminders] notification permission threw:', notifErr);
         }
+        // Acquire a push token so the server can wake this device before a
+        // capsule expires. ensureBgNotificationPermission only unlocks LOCAL
+        // notifications; it never registers the callback that captures a
+        // token, so without this the wake registration silently no-ops and
+        // the unattended refresh can never fire.
+        //
+        // This does NOT opt the user into onchain address uploads: that
+        // consent is a separate flag which ensurePushTokenForArk pins before
+        // minting. Lazy require because notifications.js is a JS singleton
+        // whose statics attach at App bootstrap.
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const Notifications = require('../../../blue_modules/notifications').default;
+            const got = await Notifications.ensurePushTokenForArk?.();
+            console.log('[Ark reminders] push token acquired:', !!got);
+        } catch (tokenErr) {
+            console.warn('[Ark reminders] push token acquisition threw:', tokenErr);
+        }
         return;
     }
 
@@ -142,7 +160,11 @@ export async function runArkBackgroundMaintenance(
                     if (earliest === 0 || expiryAtMs < earliest) earliest = expiryAtMs;
                 }
                 // eslint-disable-next-line @typescript-eslint/no-var-requires
-                const Notifications = require('../../../blue_modules/notifications');
+                // .default is required: notifications.js is an ES module, so
+                // require() returns the module namespace and the statics hang
+                // off .default. Without it the optional call below silently
+                // no-ops and the next wake is never registered.
+                const Notifications = require('../../../blue_modules/notifications').default;
                 void Notifications.arkExpiryToGroundControl?.(earliest);
                 console.log(
                     '[Ark bg-refresh] re-registered earliest expiry:',

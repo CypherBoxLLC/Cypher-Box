@@ -215,6 +215,50 @@ function Notifications(props) {
   };
 
   /**
+   * Acquire a push token for the Bark capsule-expiry wake WITHOUT opting the
+   * user into onchain address uploads.
+   *
+   * The wake needs a token: `arkExpiryToGroundControl` returns early without
+   * one, so the server is never told when a capsule expires and never wakes
+   * the device. Until now the only path that minted a token was
+   * `tryToObtainPermissions`, reached solely from legacy BlueWallet screens
+   * the Cypher Box flow never visits, which left Bark's safety net dependent
+   * on an unrelated privacy toggle.
+   *
+   * Ordering matters. `_isOnchainSubscriptionEnabled` migrates an unset flag
+   * by inferring consent from token presence. Resolving it FIRST pins it to
+   * the pre-token answer (no token, so off); minting first would make the next
+   * read conclude the user had already agreed to upload addresses.
+   *
+   * The caller's toggle is the consent, so this goes straight to the OS
+   * prompt rather than through the `tryToObtainPermissions` pre-prompt, and
+   * deliberately ignores the global "no and don't ask" flag: flipping the
+   * capsule-reminders switch is a fresh, explicit request.
+   *
+   * Never rejects, and never hangs: configureNotifications only resolves once
+   * onRegister fires, so a denied prompt would leave it pending forever. A
+   * timeout bounds that. Returning false on timeout is safe, since a late
+   * grant still stores the token via onRegister.
+   */
+  Notifications.ensurePushTokenForArk = async function () {
+    if (!Notifications.isNotificationsCapable) return false;
+    try {
+      await _isOnchainSubscriptionEnabled();
+      if (await Notifications.getPushToken()) {
+        if (!alreadyConfigured) configureNotifications();
+        return true;
+      }
+      return await Promise.race([
+        configureNotifications(),
+        new Promise(resolve => setTimeout(() => resolve(false), 60000)),
+      ]);
+    } catch (err) {
+      console.warn('[Ark] push token acquisition failed:', err);
+      return false;
+    }
+  };
+
+  /**
    * Should be called when user is most interested in receiving push notifications.
    * If we dont have a token it will show alert asking whether
    * user wants to receive notifications, and if yes - will configure push notifications.
