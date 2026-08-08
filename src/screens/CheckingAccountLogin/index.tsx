@@ -32,7 +32,11 @@ const config = {
     // clientSecret removed — do not hardcode secrets
     clientSecret: "",
     redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
-    scopes: ["offline_access", 'partner.currency-exchange-quote.create', 'partner.currency-exchange-quote.execute', 'partner.currency-exchange-quote.read', 'partner.receive-request.read', 'partner.deposit.manage', 'partner.payout-originator.read', 'partner.payment-quote.onchain.create', 'partner.payment-quote.lightning.create', 'partner.payment-quote.execute', 'partner.receive-request.create', "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
+    // No offline_access: it asks Strike to mint a refresh token, and nothing
+    // consumes one. The backend relay strips it from the exchange response,
+    // and there is no refreshToken reference anywhere in the app. Requesting
+    // it only creates a long-lived credential with no consumer.
+    scopes: ['partner.currency-exchange-quote.create', 'partner.currency-exchange-quote.execute', 'partner.currency-exchange-quote.read', 'partner.receive-request.read', 'partner.deposit.manage', 'partner.payout-originator.read', 'partner.payment-quote.onchain.create', 'partner.payment-quote.lightning.create', 'partner.payment-quote.execute', 'partner.receive-request.create', "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
     usePKCE: true,
     skipCodeExchange: true,
     idToken: false,
