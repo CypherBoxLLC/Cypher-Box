@@ -12,7 +12,7 @@ import { btc, getStrikeCurrency, SATS } from '@Cypher/helpers/coinosHelper'
 import useAuthStore from '@Cypher/stores/authStore'
 import SimpleToast from "react-native-simple-toast";
 import { useNavigation } from '@react-navigation/native'
-import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout } from '@Cypher/api/strikeAPIs'
+import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout, revokeStrikeToken } from '@Cypher/api/strikeAPIs'
 import { colors } from '@Cypher/style-guide'
 
 interface Props {
@@ -185,6 +185,12 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     }
 
     const handleStrikeLogout = async () => {
+        // Read the token BEFORE clearing, and do not await the revoke: local
+        // state must clear immediately so a slow or failed network call can
+        // never leave the user looking logged in with no way out.
+        // revokeStrikeToken never throws.
+        const tokenToRevoke = useAuthStore.getState().strikeToken;
+        void revokeStrikeToken(tokenToRevoke);
         clearStrikeAuth();
         setTimeout(() => {
             navigation.goBack();

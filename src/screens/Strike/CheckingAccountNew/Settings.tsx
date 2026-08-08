@@ -28,7 +28,7 @@ import * as Keychain from "react-native-keychain";
 import { useNavigation } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
-import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods } from "@Cypher/api/strikeAPIs";
+import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods, revokeStrikeToken } from "@Cypher/api/strikeAPIs";
 import {
   AUTO_BACKUP_PATH,
   computeExitFeeReserveSats,
@@ -116,6 +116,12 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
   };
 
   const handleLogout = () => {
+    // Read the token BEFORE clearing, since clearStrikeAuth nulls it, and fire
+    // the revoke without awaiting: local state must clear immediately so a slow
+    // or failed network call can never leave the user looking logged in with no
+    // way out. revokeStrikeToken never throws.
+    const tokenToRevoke = useAuthStore.getState().strikeToken;
+    void revokeStrikeToken(tokenToRevoke);
     clearStrikeAuth();
     setTimeout(() => {
       navigation.goBack();
