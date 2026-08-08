@@ -70,7 +70,7 @@ interface Props {
 }
 
 export default function Settings({ receiveType, currency, isArk }: Props) {
-  const { strikeMe, clearStrikeAuth } = useAuthStore();
+  const { strikeMe, clearStrikeAuth, clearAuth } = useAuthStore();
   const navigation = useNavigation();
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
@@ -115,14 +115,25 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
     }
   };
 
+  // Strike disconnect. Read the token BEFORE clearing, since clearStrikeAuth
+  // nulls it, and fire the revoke without awaiting: local state must clear
+  // immediately so a slow or failed network call can never leave the user
+  // looking logged in with no way out. revokeStrikeToken never throws.
   const handleLogout = () => {
-    // Read the token BEFORE clearing, since clearStrikeAuth nulls it, and fire
-    // the revoke without awaiting: local state must clear immediately so a slow
-    // or failed network call can never leave the user looking logged in with no
-    // way out. revokeStrikeToken never throws.
     const tokenToRevoke = useAuthStore.getState().strikeToken;
     void revokeStrikeToken(tokenToRevoke);
     clearStrikeAuth();
+    setTimeout(() => {
+      navigation.goBack();
+    }, 500);
+  };
+
+  // CoinOS disconnect. This screen renders for both wallets, and the CoinOS
+  // Logout used to call the Strike handler, so it disconnected Strike and left
+  // the CoinOS session intact: the opposite of what the user asked for, and it
+  // left a live custodial token behind.
+  const handleCoinosLogout = () => {
+    clearAuth();
     setTimeout(() => {
       navigation.goBack();
     }, 500);
@@ -166,7 +177,7 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
             topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowColor: '#E85C5A', borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', alignItems: 'center' }}
             bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 1, shadowColor: '#030303', borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', position: 'absolute' }}
             linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', alignItems: 'center' }}
-            onPress={handleLogout}
+            onPress={handleCoinosLogout}
           >
             <Text h3 bold center>Logout</Text>
           </GradientView>
