@@ -14,6 +14,7 @@ import { maintenanceArkDelegated } from './refresh';
 import { syncArkWallet } from './sync';
 import { AVG_BLOCK_MINUTES, fetchChainTipHeight } from './chainTip';
 import { fetchArkVtxos } from './vtxos';
+import { recordTelemetry } from './backgroundTelemetry';
 
 /**
  * Toggle the capsule-expiry reminders + opt-in background maintenance on/off.
@@ -137,8 +138,25 @@ export async function setArkBackgroundRefreshEnabled(enabled: boolean): Promise<
 export async function runArkBackgroundMaintenance(
     trigger: 'push' | 'scheduled' | 'foreground' | 'manual-test',
 ): Promise<void> {
+    // Telemetry is the ONLY evidence a wake left behind when the app was not
+    // attached to a debugger, which is every real background wake and the
+    // force-quit case in particular. It lands in AsyncStorage, so it survives
+    // process death and can be read off the device afterwards.
+    const startedAt = Date.now();
+
     const mnemonic = await readBackgroundArkSeed();
-    if (!mnemonic) return; // not opted in / no background seed → cannot open headlessly.
+    if (!mnemonic) {
+        // Not opted in / no background seed → cannot open headlessly. Record it:
+        // a wake that arrived and could do nothing looks identical to a wake
+        // that never arrived unless we write this down.
+        void recordTelemetry({
+            at: startedAt,
+            trigger,
+            outcome: 'no_seed',
+            elapsedMs: Date.now() - startedAt,
+        });
+        return;
+    }
 
     useAuthStore.getState().setArkBgRefreshLastAttempt(Date.now());
     console.log('[Ark bg-refresh] maintenance start, trigger=', trigger);
@@ -155,6 +173,12 @@ export async function runArkBackgroundMaintenance(
         s.setArkBgRefreshLastSuccessAt(Date.now());
         s.setArkBgRefreshConsecutiveFailures(0);
         console.log('[Ark bg-refresh] maintenance ok, trigger=', trigger);
+        void recordTelemetry({
+            at: startedAt,
+            trigger,
+            outcome: 'success',
+            elapsedMs: Date.now() - startedAt,
+        });
 
         // Re-register the NEW earliest expiry with GroundControl from within
         // the background wake itself. Without this, a device that is never
@@ -198,6 +222,13 @@ export async function runArkBackgroundMaintenance(
         const s = useAuthStore.getState();
         s.setArkBgRefreshConsecutiveFailures((s.arkBgRefreshConsecutiveFailures ?? 0) + 1);
         console.warn('[Ark bg-refresh] maintenance failed:', err?.message ?? err);
+        void recordTelemetry({
+            at: startedAt,
+            trigger,
+            outcome: 'error',
+            elapsedMs: Date.now() - startedAt,
+            errorMsg: String(err?.message ?? err).slice(0, 200),
+        });
     }
 }
 
