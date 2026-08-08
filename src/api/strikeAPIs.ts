@@ -1,9 +1,56 @@
 import useAuthStore from '@Cypher/stores/authStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SimpleToast from "react-native-simple-toast";
+import { revoke } from 'react-native-app-auth';
 import { v4 as uuidv4 } from 'uuid';
 
 const BASE_URL = 'https://api.strike.me/v1';
+
+/**
+ * Strike OAuth client + revocation endpoint, mirroring the serviceConfiguration
+ * in CheckingAccountLogin. Kept here so the disconnect paths can revoke without
+ * importing a screen. auth.strike.me is already a configured host for the login
+ * flow, so this adds no new host.
+ */
+const STRIKE_REVOKE_CONFIG = {
+    clientId: 'cypherbox',
+    serviceConfiguration: {
+        authorizationEndpoint: 'https://auth.strike.me/connect/authorize',
+        tokenEndpoint: 'https://auth.strike.me/connect/token',
+        revocationEndpoint: 'https://auth.strike.me/connect/revocation',
+    },
+};
+
+/**
+ * Tell Strike to invalidate an access token, so disconnecting actually ends the
+ * session instead of leaving a working bearer token alive until it expires on
+ * its own. The token is persisted (encrypted) on the device, so a stale valid
+ * one is a real credential sitting at rest for no reason.
+ *
+ * Best effort by design: NEVER throws. The caller must be able to clear local
+ * state unconditionally, so a network failure cannot strand someone in a
+ * logged-in-looking state they can't leave.
+ *
+ * sendClientId is required because Strike runs IdentityServer, which expects
+ * client_id in the revocation body. Basic auth is deliberately not used: the
+ * app has no client secret (the OAuth relay holds it), so an Authorization
+ * header here would just send an empty secret. If Strike rejects revocation
+ * from the app because the client is confidential, this returns false and the
+ * revoke has to move server-side into the relay.
+ */
+export const revokeStrikeToken = async (accessToken: string | null | undefined): Promise<boolean> => {
+    if (!accessToken) return false;
+    try {
+        await revoke(STRIKE_REVOKE_CONFIG, {
+            tokenToRevoke: accessToken,
+            sendClientId: true,
+        });
+        return true;
+    } catch (err) {
+        console.warn('[Strike] access-token revocation failed:', err);
+        return false;
+    }
+};
 
 const withAuthToken = async (requestConfig: any) => {
     const authToken = useAuthStore.getState().strikeToken;
