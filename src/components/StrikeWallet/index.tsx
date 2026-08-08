@@ -6,7 +6,6 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import React, { useContext, useRef } from "react";
 import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
-import { authorize } from "react-native-app-auth";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "./styles";
 import { CarouselPageVisibilityContext, useEasedProgress } from "@Cypher/custom-hooks";
@@ -29,31 +28,12 @@ interface Props {
     hideActionButtons?: boolean;
 }
 
-const config = {
-    id: 'strike',
-    name: 'Strike',
-    type: 'oauth',
-    issuer: "https://auth.strike.me", // Strike Identity Server URL
-    clientId: "cypherbox",
-    clientSecret: "", // DO NOT hardcode secrets in client-side code
-    redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
-    scopes: ["partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
-    //clientAuthMethod: "post",
-    //wellKnown: `https://auth.strike.me/.well-known/openid-configuration`,
-    // authorization: {
-    //     params: {
-    //         scope: 'partner.invoice.read offline_access',
-    //         response_type: 'code',
-    //     }
-    // },
-    idToken: false,
-    checks: ['pkce', 'state'],
-    // serviceConfiguration: {
-    //   authorizationEndpoint: "https://auth.strike.me/oauth/authorize",
-    //   tokenEndpoint: "https://auth.strike.me/oauth/token",
-    //   revocationEndpoint: "https://auth.strike.me/oauth/revoke",
-    // },
-};
+// The Strike OAuth config that used to live here has been removed along with
+// the in-app token exchange it fed. Strike's `cypherbox` client is
+// confidential: the OAuth relay authenticates with a real client_secret, so an
+// exchange performed in the app with an empty secret could never succeed. This
+// screen's login now routes to CheckingAccountLogin, which owns the single
+// working flow (skipCodeExchange, code exchanged by the relay).
 
 export default function StrikeWallet({
     isLoading,
@@ -69,7 +49,7 @@ export default function StrikeWallet({
     homeMessage,
     hideActionButtons = false,
 }: Props) {
-    const { isStrikeAuth, isArkAuth, isAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, setStrikeToken, setStrikeAuth, allBTCWallets } = useAuthStore();
+    const { isStrikeAuth, isArkAuth, isAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, allBTCWallets } = useAuthStore();
     const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
 
     // Strike + Ark (no CoinOS): the Strike Lightning card sits a bit
@@ -111,16 +91,12 @@ export default function StrikeWallet({
         dispatchNavigate('CheckingAccountNew', { wallet: wallet, matchedRate: matchedRateStrike, receiveType: false, balance: Math.round(Number(strikeUser?.[0]?.available || 0) * SATS), converted: (Number(strikeUser?.[0]?.available || 0) * (matchedRateStrike || 0)).toFixed(2), currency: safeCurrency, reserveAmount: Number(reserveStrikeAmount), withdrawThreshold: Number(withdrawStrikeThreshold) });
     }
 
-    const handleStrikeLogin = async () => {
-        try {
-            const result = await authorize(config);
-            setStrikeToken(result.accessToken);
-            setStrikeAuth(true);
-        } catch (error) {
-            console.error("OAuth error", error);
-        } finally {
-            //   setIsLoading(false)
-        }
+    // Send the user to the one working Strike login. This used to run its own
+    // authorize() and exchange the code in-app, which always failed against a
+    // confidential client and reported nothing to the user beyond a console
+    // line, so the button appeared to do nothing at all.
+    const handleStrikeLogin = () => {
+        dispatchNavigate('CheckingAccountLogin');
     };
 
     const createStrikeAccountClickHandler = () => {
