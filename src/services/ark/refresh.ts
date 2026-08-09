@@ -240,6 +240,17 @@ export async function refreshArkVtxosDelegated(
 ): Promise<ArkDelegatedRefreshResult> {
     const handle = requireHandle();
 
+    // Cross-caller submission guard. `refreshSubmissionInFlight` is shared
+    // with the self-signed path and now also with delegated maintenance, so
+    // an arkoor auto-refresh, a Capsules tap-refresh, and a background wake
+    // cannot all submit at once. It closes the window between the pending-
+    // round check below and the ASP marking the new round `ongoing`: without
+    // it, two callers both read 0 ongoing and start two single-wallet rounds,
+    // which wedge each other server-side for hours (the exact deadlock the
+    // old auto-refresh was removed to avoid).
+    if (refreshSubmissionInFlight) {
+        throw new ArkRefreshInFlightError(0);
+    }
     // Block only when a round is genuinely still ongoing server-side. A
     // finalising (`ongoing=false`) round has terminated and the next sync
     // ingests it, so it must not block a fresh delegation.
@@ -252,6 +263,7 @@ export async function refreshArkVtxosDelegated(
         );
         throw new ArkRefreshInFlightError(ongoingCount);
     }
+    refreshSubmissionInFlight = true;
 
     console.log(
         '[Ark refresh] refreshVtxosDelegated() calling for', vtxoIds.length,
@@ -309,6 +321,11 @@ export async function refreshArkVtxosDelegated(
         const store = useAuthStore.getState();
         store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
         throw err;
+    } finally {
+        // Held only across the submit (seconds, until accept). Once accepted
+        // the round is `ongoing`, so the pending-round check guards it from
+        // here; releasing lets the next legitimate submission proceed.
+        refreshSubmissionInFlight = false;
     }
 }
 
@@ -358,6 +375,19 @@ export async function refreshArkVtxosDelegatedAndSync(
  */
 export async function maintenanceArkDelegated(): Promise<void> {
     const handle = requireHandle();
+    // Same cross-caller guard as refreshArkVtxosDelegated: the background wake
+    // must not submit a maintenance round while another submission is mid-
+    // flight or a round is already ongoing (previously this path had no check
+    // at all).
+    if (refreshSubmissionInFlight) {
+        throw new ArkRefreshInFlightError(0);
+    }
+    const pending = await fetchArkPendingRoundStates();
+    const ongoingCount = pending.filter((r) => r.ongoing).length;
+    if (ongoingCount > 0) {
+        throw new ArkRefreshInFlightError(ongoingCount);
+    }
+    refreshSubmissionInFlight = true;
     const t0 = Date.now();
     console.log('[Ark refresh] maintenanceDelegated() calling');
     try {
@@ -375,6 +405,8 @@ export async function maintenanceArkDelegated(): Promise<void> {
             's: tag=', tag, 'inner=', inner, 'message=', err?.message ?? String(err),
         );
         throw err;
+    } finally {
+        refreshSubmissionInFlight = false;
     }
 }
 
