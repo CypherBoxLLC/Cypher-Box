@@ -121,3 +121,17 @@ blue_modules/secrets.ts
 # Reproducible-build outputs: `make repro-build` AAB + walletscrutiny verdict file
 /out/
 walletscrutiny/COMPARISON_RESULTS.yaml
+
+# Exported private keys / WIFs — NEVER commit. Created ad hoc during Ark exit
+# and wallet testing; a bare WIF IS the funds it controls. Broad pattern so a
+# future export can never be accidentally staged.
+*.wif
+
+# Local build artifacts / release bundles (Android App Bundles, checksum
+# manifests, extracted release trees). Produced by CI or local builds.
+*.aab
+SHA256SUMS.txt
+cypherbox-android-release-*/
+
+# Ad hoc SQLite schema dumps from bark debugging
+.schema bark_vtxo_state
