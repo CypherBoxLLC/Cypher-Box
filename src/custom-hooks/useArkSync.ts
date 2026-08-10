@@ -23,6 +23,7 @@ import {
     getArkWalletHandle,
     getCachedArkMnemonic,
     isICloudBackupAvailable,
+    maybeSweepDueArkVtxos,
     progressArkExits,
     progressArkPendingRounds,
     reopenArkWalletFromCache,
@@ -745,6 +746,15 @@ export default function useArkSync(): UseArkSync {
                     'past expiry)',
                 );
                 setArkVtxos(vtxos.spendable);
+
+                // Foreground maintenance sweep: refresh in-band (28h..1week to
+                // expiry, above-dust) VTXOs — regular and arkoor — so nothing
+                // refreshable is silently lost. Fire-and-forget: it manages its
+                // own pacing + in-flight guard, skips while a round is
+                // ongoing/stuck, and respects the exit-runway floor. Always-on
+                // in foreground; safe on the delegated (non-locking) path. See
+                // services/ark/foregroundSweep.ts.
+                void maybeSweepDueArkVtxos(vtxos.spendable, tip);
             } else {
                 console.log('[Ark sync] fetchArkVtxos returned null (no handle)');
             }

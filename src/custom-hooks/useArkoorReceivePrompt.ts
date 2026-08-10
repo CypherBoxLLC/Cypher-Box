@@ -5,6 +5,7 @@ import SimpleToast from 'react-native-simple-toast';
 
 import {
     ARK_ARKOOR_ASSUMED_DAYS,
+    ARK_EXIT_RUNWAY_HOURS,
     ARK_REFRESH_MIN_SATS,
     ArkRefreshInFlightError,
     AVG_BLOCK_MINUTES,
@@ -300,8 +301,28 @@ export default function useArkoorReceivePrompt(): void {
             try {
                 const entry = useAuthStore.getState().arkArkoorPromptState[firstId];
                 if (!entry || entry.status !== 'pending') { release(); return; }
-                const vtxo = arkVtxos.find((v) => v.id === firstId);
-                const sats = entry.sats ?? vtxo?.sats ?? null;
+                // Prefer the live store (fresher than this render's closure) so a
+                // sync that landed the vtxo between render and here is seen.
+                const vtxo =
+                    useAuthStore.getState().arkVtxos.find((v) => v.id === firstId) ??
+                    arkVtxos.find((v) => v.id === firstId);
+                // The exit-runway floor below needs the vtxo's REAL expiry. A
+                // received capsule's vtxo lags its MovementUpdated notification by
+                // ~2s; if it hasn't materialised yet, defer to the next tick (the
+                // prune grace window holds the entry) rather than decide blind and
+                // risk auto-refreshing a sub-28h capsule. If it never lands, the
+                // grace window drops the entry and the foreground sweep is the
+                // backstop once the vtxo settles.
+                if (!vtxo) { release(); return; }
+                // Use the ACTUAL vtxo amount, not the movement total in the
+                // entry. A receive can split into multiple outputs (e.g. a 700
+                // receive leaving a 673 capsule + a 27-sat dust piece); the
+                // movement records 700 but THIS capsule may be dust. Deciding on
+                // the movement total made the decision try to refresh a 27-sat
+                // dust vtxo, which the ASP rejects ("amount must be >= 330 sats")
+                // and which inflated the refresh-fail streak. entry.sats is only
+                // a fallback for the rare case the vtxo carries no amount.
+                const sats = vtxo.sats ?? entry.sats ?? null;
                 const vtxoIdPrefix = firstId.slice(0, 12);
                 const amountPhrase = sats != null ? `${sats.toLocaleString()} sats` : 'these sats';
 
@@ -325,14 +346,30 @@ export default function useArkoorReceivePrompt(): void {
 
                 const outputSats = sats != null && feeSats != null ? sats - feeSats : null;
                 const belowFloor = outputSats != null && outputSats < ARK_REFRESH_MIN_SATS;
+                // Exit-runway floor: never AUTO-refresh a capsule within 28h of
+                // expiry (24h unilateral-exit runway + 4h grace). A delegated
+                // round that hangs instead of finalizing would eat the exit
+                // window; below the floor the user should spend/exit, not
+                // refresh. Older arkoors report expiryHeight 0 (unknown, ~3-day
+                // assumed), which is safely above the floor.
+                const tip = useAuthStore.getState().arkChainTipHeight;
+                const runwayBlocks = Math.round((ARK_EXIT_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES);
+                const blocksLeft =
+                    vtxo.expiryHeight > 0 && typeof tip === 'number'
+                        ? vtxo.expiryHeight - tip
+                        : null;
+                const belowExitRunway = blocksLeft != null && blocksLeft < runwayBlocks;
                 const safeToAutoRefresh =
-                    spendsOnlySelf && outputSats != null && outputSats >= ARK_REFRESH_MIN_SATS;
+                    spendsOnlySelf &&
+                    outputSats != null &&
+                    outputSats >= ARK_REFRESH_MIN_SATS &&
+                    !belowExitRunway;
 
                 if (__DEV__) {
                     console.log('[arkoor decision]', JSON.stringify({
                         id: vtxoIdPrefix, sats, feeSats, outputSats,
                         spendsOnlySelf, safeToAutoRefresh, belowFloor,
-                        expiryHeight: vtxo?.expiryHeight,
+                        belowExitRunway, blocksLeft, expiryHeight: vtxo.expiryHeight,
                     }));
                 }
 
@@ -394,7 +431,11 @@ export default function useArkoorReceivePrompt(): void {
                 // foreground rather than queue a phantom modal.
                 if (AppState.currentState !== 'active') { release(); return; }
 
-                recordEvent({ kind: 'arkoor-prompt', outcome: 'too-small-notice', vtxoIdPrefix, sats: sats ?? undefined });
+                // Distinguish "too small to refresh" from "too close to expiry
+                // to refresh safely" (the exit-runway floor) so the activity log
+                // is not mislabelled for a large near-expiry capsule.
+                const noticeOutcome = belowExitRunway && !belowFloor ? 'too-soon-notice' : 'too-small-notice';
+                recordEvent({ kind: 'arkoor-prompt', outcome: noticeOutcome, vtxoIdPrefix, sats: sats ?? undefined });
                 const cur = useAuthStore.getState().arkArkoorPromptState;
                 const ex = cur[firstId] ?? { observedAt: Date.now(), sats: sats ?? undefined };
                 setArkArkoorPromptState({ ...cur, [firstId]: { ...ex, status: 'dismissed', dismissedAt: Date.now() } });
@@ -402,12 +443,16 @@ export default function useArkoorReceivePrompt(): void {
                 try { scheduleVtxoExpiryWarnings(firstId, exp, sats ?? undefined); } catch (schedErr) {
                     console.warn('[arkoor auto-refresh] notice re-schedule threw:', schedErr);
                 }
-                const tip = useAuthStore.getState().arkChainTipHeight;
-                const timeLeft = formatCapsuleTimeLeft(vtxo?.expiryHeight, tip, ex.observedAt);
-                // Only assert "too small" when the output is genuinely below the
-                // refresh floor; the filler / unknown-size fallback uses neutral
-                // wording so we never mislabel a large capsule.
-                const reasonLine = belowFloor ? 'They are too small to refresh on their own. ' : '';
+                const timeLeft = formatCapsuleTimeLeft(vtxo.expiryHeight, tip, ex.observedAt);
+                // Reason wording matches why we did NOT auto-refresh: too small
+                // (below the refresh floor), too soon (inside the exit-runway
+                // window), or neutral for the filler / unknown-size fallback so a
+                // large capsule is never mislabelled. COPY: Bam finalizes.
+                const reasonLine = belowFloor
+                    ? 'They are too small to refresh on their own. '
+                    : belowExitRunway
+                        ? 'They are close to expiring. '
+                        : '';
                 Alert.alert(
                     'New sats in your Bark Vault',
                     `You received ${amountPhrase}. ${reasonLine}` +

@@ -5,6 +5,8 @@ export {
     ARK_VTXO_DUST_SATS,
     ARK_REFRESH_MIN_SATS,
     ARK_ARKOOR_ASSUMED_DAYS,
+    ARK_EXIT_RUNWAY_HOURS,
+    ARK_SWEEP_MAX_RUNWAY_HOURS,
     ESPLORA_URL,
     createArkConfig,
 } from './config';
@@ -169,6 +171,8 @@ export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
 export type { ArkRefreshFeeView, ArkRefreshResult, ArkDelegatedRefreshResult } from './refresh';
 
 export { setArkBackgroundRefreshEnabled } from './backgroundRefresh';
+
+export { maybeSweepDueArkVtxos } from './foregroundSweep';
 
 export {
     readTelemetry as readArkBgRefreshTelemetry,
