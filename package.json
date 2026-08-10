@@ -127,7 +127,7 @@
     "@react-navigation/native": "6.1.9",
     "@react-navigation/native-stack": "6.9.17",
     "@react-navigation/stack": "^6.3.25",
-    "@secondts/bark-react-native": "0.15.0",
+    "@secondts/bark-react-native": "0.16.1",
     "@spsina/bip47": "github:BlueWallet/bip47#0a2f02c90350802f2ec93afa4e6c8843be2d687c",
     "aezeed": "0.0.5",
     "assert": "2.1.0",

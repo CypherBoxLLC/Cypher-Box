@@ -22,6 +22,8 @@ import {
     fetchPendingExitsTotalSats,
     getArkWalletHandle,
     getCachedArkMnemonic,
+    barkStateTag,
+    isActiveExit,
     isICloudBackupAvailable,
     maybeSweepDueArkVtxos,
     progressArkExits,
@@ -340,8 +342,10 @@ export default function useArkSync(): UseArkSync {
             if (!arkExitInProgress) {
                 try {
                     const orphanExits = await fetchArkExitVtxos();
-                    const activeOrphans = orphanExits.filter((v) =>
-                        /^(Processing|Awaiting)/.test(String(v.state)) || v.isClaimable);
+                    // bark 0.6.1: exit `state` is a tagged-enum object; the
+                    // not-terminal liveness check re-arms the drive for any
+                    // in-flight exit (incl. the new Start / ClaimInProgress).
+                    const activeOrphans = orphanExits.filter((v) => isActiveExit(v));
                     if (activeOrphans.length > 0) {
                         console.warn(
                             '[Ark exit] found', activeOrphans.length,
@@ -453,19 +457,21 @@ export default function useArkSync(): UseArkSync {
                     // belt-and-suspenders OR-term in case a future SDK
                     // version starts counting something we don't model.
                     const exitVtxos = await fetchArkExitVtxos();
-                    const processingCount = exitVtxos.filter((v) =>
-                        /^(Processing|Awaiting)/.test(String(v.state))).length;
+                    // bark 0.6.1: count in-flight exits by the not-terminal
+                    // check so we never under-count active exits, which would
+                    // retire an exit early (the mid-exit wallet-deletion bug).
+                    const activeExitCount = exitVtxos.filter((v) => isActiveExit(v)).length;
                     console.log(
                         '[Ark exit] exit vtxos:',
                         exitVtxos.length,
                         exitVtxos.map((v) =>
-                            `${String(v.vtxoId).slice(0, 8)}… state=${String(v.state).slice(0, 40)} claimable=${v.isClaimable} sats=${Number(v.amountSats)}`,
+                            `${String(v.vtxoId).slice(0, 8)}… state=${barkStateTag(v.state)} claimable=${v.isClaimable} sats=${Number(v.amountSats)}`,
                         ).join(' | '),
                     );
                     const pendingTotal = await fetchPendingExitsTotalSats();
                     const stillClaimable = await fetchClaimableExitVtxos();
                     const exitActive =
-                        processingCount > 0 ||
+                        activeExitCount > 0 ||
                         stillClaimable.length > 0 ||
                         exitVtxos.some((v) => v.isClaimable) ||
                         pendingTotal > 0;
@@ -502,7 +508,7 @@ export default function useArkSync(): UseArkSync {
                         // spans ~24h of confirmations + timelock).
                         console.log(
                             '[Ark exit] active —',
-                            processingCount, 'processing,',
+                            activeExitCount, 'active,',
                             stillClaimable.length, 'claimable,',
                             pendingTotal, 'sats pending',
                         );

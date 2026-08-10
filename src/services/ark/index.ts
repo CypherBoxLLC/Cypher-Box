@@ -174,6 +174,8 @@ export { setArkBackgroundRefreshEnabled } from './backgroundRefresh';
 
 export { maybeSweepDueArkVtxos } from './foregroundSweep';
 
+export { barkStateTag, isActiveExit } from './barkState';
+
 export {
     readTelemetry as readArkBgRefreshTelemetry,
     clearTelemetry as clearArkBgRefreshTelemetry,

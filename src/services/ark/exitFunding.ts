@@ -18,6 +18,7 @@
  * of this reserve.
  */
 
+import { barkStateTag } from './barkState';
 import { assertNoActiveArkExit } from './exit';
 import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
@@ -148,7 +149,10 @@ export async function computeExitFeeReserveSats(): Promise<ExitFeeReserve> {
     }
 
     const exitable = (vtxos ?? []).filter(
-        (v) => String(v.state).toLowerCase() !== 'spent',
+        // bark 0.6.1: `state` is a tagged-enum object; read its variant string.
+        // Same semantics as before: exclude already-spent vtxos from the
+        // exit-fee estimate.
+        (v) => barkStateTag(v.state).toLowerCase() !== 'spent',
     );
     if (exitable.length === 0) return empty;
 

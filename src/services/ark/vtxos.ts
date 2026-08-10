@@ -1,4 +1,5 @@
 import { getArkWalletHandle } from './walletHandle';
+import { barkStateTag, isActiveExit } from './barkState';
 
 /**
  * Plain-JS view of one VTXO, suitable for the UI.
@@ -82,8 +83,10 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         const exits = await handle.getExitVtxos();
         activeExitIds = new Set(
             (exits ?? [])
-                .filter((e: any) =>
-                    /^(Processing|Awaiting)/.test(String(e.state)) || e.isClaimable)
+                // bark 0.6.1: exit `state` is a tagged-enum object now; use the
+                // shared not-terminal liveness check (Start/Processing/
+                // AwaitingDelta/Claimable/ClaimInProgress = active).
+                .filter((e: any) => isActiveExit(e))
                 .map((e: any) => String(e.vtxoId)),
         );
     } catch { /* handle busy or exit subsystem unavailable — no lock */ }
@@ -93,7 +96,10 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         sats: Number(v.amountSats),
         expiryHeight: v.expiryHeight,
         kind: v.kind,
-        state: v.state,
+        // bark 0.6.1: `state` is a tagged-enum object; flatten to its variant
+        // string so ArkVtxoView.state stays a plain string and every
+        // downstream `.toLowerCase()` comparison keeps working.
+        state: barkStateTag(v.state),
         exiting: activeExitIds.has(v.id),
     }));
 
