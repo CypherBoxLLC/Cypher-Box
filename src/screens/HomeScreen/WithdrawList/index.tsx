@@ -647,8 +647,11 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
               ))}
             </View>
           </Animated.View>
-          <TouchableOpacity activeOpacity={0.7} onPress={onNext} disabled={selectedItem === null || selectedWallet === null} style={[styles.nextBtn, { marginTop: 20 }, (selectedItem == null || selectedWallet == null) && {backgroundColor: colors.gray.disable}]}>
-              <Text h3>Next</Text>
+          {/* Next button matches the chosen source: pink for Strike/CoinOS
+              (the nextBtn default), white for Bark (id 5, the Bark palette).
+              Disabled grey wins last. Dark text on the white Bark button. */}
+          <TouchableOpacity activeOpacity={0.7} onPress={onNext} disabled={selectedItem === null || selectedWallet === null} style={[styles.nextBtn, { marginTop: 20 }, selectedItem === 5 && { backgroundColor: colors.ark.light }, (selectedItem == null || selectedWallet == null) && {backgroundColor: colors.gray.disable}]}>
+              <Text h3 style={selectedItem === 5 && selectedWallet !== null ? { color: '#202832' } : undefined}>Next</Text>
           </TouchableOpacity>
         </LinearGradient>
       </LinearGradient>

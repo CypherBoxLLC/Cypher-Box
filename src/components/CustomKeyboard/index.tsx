@@ -22,6 +22,13 @@ interface Props {
     currency?: string;
     colors_?: string[];
     /**
+     * Gradient for the primary action button ONLY, overriding `colors_` for
+     * the CTA while leaving the tabs / MAX / keys on the base palette. Used to
+     * turn just the button a warning colour (e.g. yellow on a small-amount
+     * receive) without recolouring the whole keyboard. Omitted → uses colors_.
+     */
+    buttonColors_?: string[];
+    /**
      * Text colour for the primary action button's title. The button defaults
      * to white text, which is invisible on a light `colors_` gradient (the
      * Ark surfaces use a white palette). Callers on those surfaces pass an
@@ -39,7 +46,7 @@ interface Props {
     hideMax?: boolean;
 }
 
-export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], titleColor, isGradient = true, maxBalance, hideMax = false }: Props) {
+export default function CustomKeyBoard({ title, prevSats, disabled, onPress, setSATS, setUSD, setIsSATS, isError, matchedRate, currency = 'USD', colors_ = [colors.pink.extralight, colors.pink.default], buttonColors_, titleColor, isGradient = true, maxBalance, hideMax = false }: Props) {
     const KEYSARRAY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'MAX', '0'];
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState(prevSats || '');
@@ -154,7 +161,7 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
                     title={title}
                     disabled={disabled}
                     isError={isError}
-                    colors_={colors_}
+                    colors_={buttonColors_ ?? colors_}
                     onPress={onPress} />
                 :
                 <TouchableOpacity onPress={onPress} disabled={disabled} style={{ width: '90%', opacity: disabled ? 0.5 : 1 }}>

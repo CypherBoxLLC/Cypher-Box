@@ -393,6 +393,11 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
     // resurrect an expired VTXO), badge instead of refresh/select, and
     // tap opens an explainer instead of toggling selection.
     const isExpired = isExpiredCapsule(vtxo);
+    // Too small to refresh: below the round minimum and otherwise a normal
+    // spendable capsule. The server rejects sub-minimum inputs, so it can't
+    // join a refresh round — non-selectable for batch/refresh. Excludes
+    // expired + in-flight, which have their own states.
+    const isDust = !isExpired && !isTransient && vtxo.sats < ARK_REFRESH_MIN_SATS;
     // Actively-exiting row: locked treatment (no select / no refresh) with
     // its own label. Takes precedence over the expiry countdown; transient
     // (mid-round) can't co-occur with it (an exiting VTXO reads Spendable).
@@ -450,6 +455,18 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
         );
     };
 
+    // Same non-selectable pattern as expired, for a capsule below the refresh
+    // floor: tapping the greyed row explains why it can't be refreshed. COPY:
+    // Bam finalizes.
+    const showDustExplainer = () => {
+        Alert.alert(
+            'Too small to refresh',
+            `This ${vtxo.sats.toLocaleString()}-sat capsule is below the ~${ARK_REFRESH_MIN_SATS}-sat round minimum, so it can't be refreshed on its own.\n\n` +
+            'Spend it in a payment before it expires. A normal send folds it in.',
+            [{ text: 'OK' }],
+        );
+    };
+
     // Recoverability suffix — appended to the existing expiry/state line as
     // a second colored span separated by " - ". Three states drive both
     // the icon and the message; see VtxoRowData.recoverability for the
@@ -493,7 +510,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
         // changing.
         <Animated.View style={[
             rowStyles.main,
-            { height: 100, paddingTop: 0, justifyContent: 'center', opacity: pulseAnim },
+            { height: 100, paddingTop: 0, justifyContent: 'center', opacity: isDust ? 0.5 : pulseAnim },
         ]}>
             <LinearGradient
                 colors={['#3A3A3A', '#1C1C1C']}
@@ -540,7 +557,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
             <TouchableOpacity
                 activeOpacity={0.7}
                 style={rowStyles.container}
-                onPress={isExpired ? showExpiredExplainer : onPress}
+                onPress={isExpired ? showExpiredExplainer : isDust ? showDustExplainer : onPress}
             >
                 {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
                     bump the size column from 1.8 → 2.8 so the time-left +
@@ -636,8 +653,10 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                         </View>
                     )}
                 </View>
-                {isExpired ? (
-                    // Expired action area: no refresh icon, no checkbox —
+                {(isExpired || isDust) ? (
+                    // Expired / too-small action area: no refresh icon, no
+                    // checkbox — neither is reachable on an expired or
+                    // below-minimum VTXO. The badge label reflects which.
                     // neither operation is reachable on a VTXO that's past
                     // its expiry height (ASP can sweep it at any time, and
                     // bark's refresh on an expired input hangs the round).
@@ -660,7 +679,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                         }}
                     >
                         <RNText style={{ fontSize: 10, color: '#888', fontWeight: '700', textAlign: 'center' }}>
-                            {vtxo.sats <= ARK_VTXO_DUST_SATS ? 'EXPIRED DUST' : 'EXPIRED'}
+                            {isExpired ? (vtxo.sats <= ARK_VTXO_DUST_SATS ? 'EXPIRED DUST' : 'EXPIRED') : 'TOO SMALL TO REFRESH'}
                         </RNText>
                     </View>
                 ) : (
@@ -921,9 +940,11 @@ interface ArkCapsulesProps {
  */
 const TAP_REFRESH_IMMINENT_DAYS = 14;
 
-// Countdown window for the refresh-wait reminder. Each in-flight round gets a
-// 3h timer counting down from when it started (its first-seen timestamp).
-const REFRESH_WAIT_WINDOW_MS = 3 * 60 * 60 * 1000;
+// Countdown window for the refresh-wait reminder. A delegated round finishes
+// within the hour, so each in-flight round gets a 1h timer counting down from
+// when it started (its first-seen timestamp); past it the round is treated as
+// stuck and the banner offers Cancel.
+const REFRESH_WAIT_WINDOW_MS = 60 * 60 * 1000;
 // A stuck refresh becomes worth bailing on (swap the capsule to another
 // wallet, retry later) well before the 12h `nearExpiry` gate, a failing
 // round shouldn't be allowed to burn down a multi-day runway. The Capsules
@@ -1045,7 +1066,7 @@ function RefreshWaitBanner({
             ) : (
                 <>
                     <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
-                        {`PLEASE COME BACK IN 3 HOURS TO MAKE SURE THE REFRESH HAS COMPLETED${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
+                        {`PLEASE COME BACK IN 1 HOUR TO MAKE SURE THE REFRESH HAS COMPLETED${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
                     </Text>
                     {extras.slice(0, MAX_EXTRA_REFRESH_LINES).map((x, i) => (
                         <Text
