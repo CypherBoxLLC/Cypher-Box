@@ -10,7 +10,7 @@ import { Check, CoinOS, CoinOSSmall, Cold1, Edit, Electricity, Hot, StrikeFull }
 import { GradientButton, GradientCard, GradientCardWithShadow, GradientText, ImageText, SwipeButton } from "@Cypher/components";
 import CustomProgressBar from "@Cypher/components/CustomProgressBar";
 import { colors } from "@Cypher/style-guide";
-import { dispatchNavigate, isIOS } from "@Cypher/helpers";
+import { dispatchNavigate, dispatchReset, isIOS } from "@Cypher/helpers";
 import LinearGradient from "react-native-linear-gradient";
 import TextView from "./TextView";
 import TextViewV2 from "../Invoice/TextView"
@@ -360,6 +360,12 @@ export default function ReviewPayment({ navigation, route }: Props) {
     type BuyStep = { text: string; state: BuyStepState };
     const [buyProgress, setBuyProgress] = useState<BuyStep[]>([]);
     const swapSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Set when the user taps "Home" while a swap is still confirming. The swap
+    // keeps running (the LN payment is already dispatched and the Ark/CoinOS
+    // claim watchers pick it up in the background), so once it resolves we must
+    // NOT yank the user off Home to the Transaction success screen. Guards the
+    // post-swap navigations below.
+    const wentHomeRef = useRef(false);
     /** Mark the current active step done and append a new active one. */
     const buyStepStart = (text: string) =>
         setBuyProgress(prev => [
@@ -877,6 +883,11 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 if (swapSlowTimerRef.current) clearTimeout(swapSlowTimerRef.current);
                 swapSlowTimerRef.current = null;
                 buyStepFinish('done', `${purchasedSats.toLocaleString()} sats swapped to ${destLabel}`);
+                // User already tapped "Home" during the slow swap — the swap
+                // just landed in the background; leave them on Home (their
+                // balance updates from the claim watchers) instead of pushing
+                // the success screen over the top of it.
+                if (wentHomeRef.current) return;
                 const fiatPerBtc = Number(matchedRate) || 0;
                 const convertedFiat = (purchasedSats * fiatPerBtc * btc(1)).toFixed(2);
                 // type: 'BUY' keeps the success screen reading
@@ -922,7 +933,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 SimpleToast.show(message, SimpleToast.LONG);
                 // Fall back to the Transaction success screen so the
                 // user at least sees the BUY landed; the CoinOS/Ark
-                // balance will refresh on Home pull-to-refresh.
+                // balance will refresh on Home pull-to-refresh. Skip if the
+                // user already went Home during the slow swap — the toast
+                // above still tells them what happened.
+                if (wentHomeRef.current) return;
                 dispatchNavigate('Transaction', {
                     matchedRate, currency, type, value, converted, receiveType, isSats, to, item: paymentQuoteData,
                 });
@@ -1049,6 +1063,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     };
 
     const handleSendSats = async () => {
+        wentHomeRef.current = false;
         setIsSendLoading(true);
         console.log('value: ', value, converted)
         const amount =  receiveType ? isSats ? value : converted : isSats ? converted : value;
@@ -2020,6 +2035,37 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             </Text>
                         </View>
                     ))}
+                </View>
+            )}
+            {/* Escape hatch for a long-running custodial→vault swap. Once a
+                step goes "slow" the slider just keeps spinning with no way
+                out but the back arrow. Offer Home (above the slider) so the
+                user can leave and let the swap finish in the background — the
+                LN payment is already dispatched and the claim/movement
+                watchers land it, updating the balance when it arrives.
+                Mirrors the swap-screen Home button. COPY: Bam finalizes. */}
+            {isSendLoading && buyProgress.some(s => s.state === 'slow') && (
+                <View style={{ marginHorizontal: 24, marginBottom: 14, alignItems: 'center' }}>
+                    <Text style={{ color: '#AAAAAA', fontSize: 13, lineHeight: 18, textAlign: 'center', marginBottom: 12 }}>
+                        This is taking longer than usual. The swap keeps confirming in the background — it's safe to go Home, your balance updates when it lands.
+                    </Text>
+                    <TouchableOpacity
+                        onPress={() => {
+                            wentHomeRef.current = true;
+                            if (swapSlowTimerRef.current) { clearTimeout(swapSlowTimerRef.current); swapSlowTimerRef.current = null; }
+                            dispatchReset('HomeScreen');
+                        }}
+                        style={{ width: '80%' }}
+                    >
+                        <LinearGradient
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            colors={[colors.pink.extralight, colors.pink.default]}
+                            style={{ borderRadius: 25, height: 50, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            <Text bold style={{ fontSize: 18, color: '#FFFFFF' }}>Home</Text>
+                        </LinearGradient>
+                    </TouchableOpacity>
                 </View>
             )}
             <View style={styles.container}>
