@@ -19,8 +19,8 @@ find node_modules/*/android/build.gradle node_modules/@*/*/android/build.gradle 
     ver=$(grep -o "compileSdkVersion [0-9]*" "$f" | head -1 | awk '{print $2}')
     if [ -n "$ver" ] && [ "$ver" -lt 30 ]; then
       mod=$(echo "$f" | sed 's|node_modules/||' | sed 's|/android/build.gradle||')
-      sedi "s/compileSdkVersion $ver/compileSdkVersion 35/" "$f"
-      echo "  Fixed $mod: $ver -> 35"
+      sedi "s/compileSdkVersion $ver/compileSdkVersion 36/" "$f"
+      echo "  Fixed $mod: $ver -> 36"
     fi
   fi
 done
@@ -28,7 +28,7 @@ done
 # Fix Gradle 8 incompatibility: the `classifier` property was removed from the
 # Jar task in Gradle 8. react-native-widget-center's androidJavadocJar /
 # androidSourcesJar tasks still set `classifier = '...'`, which fails at
-# configuration time on this branch (Gradle 8.10.2 / RN 0.76). Rewrite to
+# configuration time on this branch (Gradle 8.11.1 / RN 0.77). Rewrite to
 # archiveClassifier.set('...'). Idempotent: the grep guard skips the file once
 # it has already been rewritten, so re-running postinstall is a no-op.
 # NOTE: patch-package is intentionally NOT used here. patches/ holds an inert

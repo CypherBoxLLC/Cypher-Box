@@ -1,6 +1,6 @@
 # Building Cypher Box
 
-Cypher Box is a React Native (RN 0.76, New Architecture) Bitcoin wallet. This
+Cypher Box is a React Native (RN 0.77.3, New Architecture) Bitcoin wallet. This
 document covers the Android and iOS builds, and the **reproducible** Android
 build path that lets anyone verify a Play Store release rebuilds from source
 (security-plan §11.1, walletscrutiny goal §13).
@@ -16,20 +16,21 @@ publish the source commit SHA only.
 | Component | Version | Source of truth |
 |---|---|---|
 | JDK | Temurin 17 (LTS) | `android/*` compiled with 17 |
-| Gradle | 8.10.2 | `android/gradle/wrapper/gradle-wrapper.properties` |
-| Android Gradle Plugin | 8.6.0 | resolved via the RN gradle plugin |
-| Kotlin | 1.9.25 | `android/build.gradle` (`ext.kotlinVersion`) |
-| compileSdk / targetSdk | 35 / 34 | `android/build.gradle` |
+| Gradle | 8.11.1 | `android/gradle/wrapper/gradle-wrapper.properties` |
+| Android Gradle Plugin | 8.10.1 | `android/build.gradle` (pinned; overrides RN plugin's 8.7.2) |
+| Kotlin | 2.0.21 | `android/build.gradle` (`ext.kotlinVersion`) |
+| compileSdk / targetSdk | 36 / 36 | `android/build.gradle` |
 | minSdk | 24 | `android/build.gradle` |
-| build-tools | 35.0.0 | `android/build.gradle` |
-| NDK | 26.1.10909125 | `android/build.gradle` (`ext.ndkVersion`) |
-| CMake | 3.22.1 | RN 0.76 default |
+| build-tools | 36.0.0 | `android/build.gradle` |
+| NDK | 27.1.12297006 | `android/build.gradle` (`ext.ndkVersion`) |
+| CMake | 3.22.1 | RN 0.77 default |
 | Node | 22.22.3 (LTS) | dev pin `node@22` (see `CLAUDE.md`) |
 
 > The security plan §11.1 names build-tools 34.0.0 and Node 18.x. Two
-> intentional deviations: the project compiles against **SDK 35**, and **Node
-> 18 is EOL (2025-04)** while RN 0.76's hermes post-build tooling is validated
-> on `node@22` in this repo. The pinned versions above are the real ones.
+> intentional deviations: the project compiles against **SDK 36** (Android 16,
+> the Google Play targetSdk requirement), and **Node 18 is EOL (2025-04)** while
+> RN 0.77's hermes post-build tooling is validated on `node@22` in this repo.
+> The pinned versions above are the real ones.
 
 ---
 
@@ -47,7 +48,7 @@ publish the source commit SHA only.
 
 ## 3. Android - standard build
 
-Always run codegen first (RN 0.76 has a cold-build `build.ninja` race):
+Always run codegen first (RN 0.77 has a cold-build `build.ninja` race):
 
 ```sh
 export ANDROID_HOME="$HOME/Library/Android/sdk"
@@ -103,11 +104,11 @@ make repro-verify    # build twice, assert the two SHA-256s match
 ## 5. node_modules source fixes (`scripts/fix-compile-sdk.sh`)
 
 This branch needs a handful of small source fixes in third-party packages to
-build on RN 0.76 / Gradle 8. They are applied deterministically at
+build on RN 0.77 / Gradle 8. They are applied deterministically at
 `postinstall` time by `scripts/fix-compile-sdk.sh` (idempotent seds), so they
 survive `npm ci` and run identically in the container:
 
-1. **compileSdkVersion** bumped to 35 in any lib still pinning < 30 (AGP 8).
+1. **compileSdkVersion** bumped to 36 in any lib still pinning < 30 (AGP 8).
 2. **react-native-widget-center** - `classifier = '...'` -> `archiveClassifier.set('...')` (the `classifier` Jar property was removed in Gradle 8).
 3. **rn-ldk** - `RnLdk_kotlinVersion` 1.3.50 -> 1.6.0, and `promise.reject(e.message)` -> `promise.reject(e)` (String? vs String on RN 0.76).
 4. **react-native-nitro-modules** - `ReactModuleInfo(...)` named args -> positional, so it binds to RN 0.76's constructor (the named form only exists on RN >= 0.77). This keeps the `react-native-mmkv` / `nitro-modules` pair on their locked versions.
@@ -229,10 +230,10 @@ these still need closing:
 
 ## 8. iOS (not reproducible)
 
-- Min deployment target iOS 15.1 (RN 0.76).
+- Min deployment target iOS 15.1 (RN 0.77).
 - Pin Xcode's Node to `node@22` in `ios/.xcode.env.local` (gitignored):
   `echo 'export NODE_BINARY=/opt/homebrew/opt/node@22/bin/node' > ios/.xcode.env.local`
-  (RN 0.76's hermes script crashes on Node 25/26).
+  (RN 0.77's hermes script crashes on Node 25/26).
 - `cd ios && pod install`, then archive in Xcode. Apple re-signs on upload, so
   we publish the source commit SHA only.
 
