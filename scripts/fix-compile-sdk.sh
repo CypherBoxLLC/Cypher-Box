@@ -19,8 +19,8 @@ find node_modules/*/android/build.gradle node_modules/@*/*/android/build.gradle 
     ver=$(grep -o "compileSdkVersion [0-9]*" "$f" | head -1 | awk '{print $2}')
     if [ -n "$ver" ] && [ "$ver" -lt 30 ]; then
       mod=$(echo "$f" | sed 's|node_modules/||' | sed 's|/android/build.gradle||')
-      sedi "s/compileSdkVersion $ver/compileSdkVersion 35/" "$f"
-      echo "  Fixed $mod: $ver -> 35"
+      sedi "s/compileSdkVersion $ver/compileSdkVersion 36/" "$f"
+      echo "  Fixed $mod: $ver -> 36"
     fi
   fi
 done

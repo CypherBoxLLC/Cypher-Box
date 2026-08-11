@@ -4,9 +4,9 @@ buildscript {
     ext {
         minSdkVersion = 24
         supportLibVersion = "28.0.0"
-        buildToolsVersion = "35.0.0"
-        compileSdkVersion = 35
-        targetSdkVersion = 35
+        buildToolsVersion = "36.0.0"
+        compileSdkVersion = 36
+        targetSdkVersion = 36
         googlePlayServicesVersion = "16.+"
         googlePlayServicesIidVersion = "16.0.1"
         firebaseVersion = "17.3.4"
@@ -22,7 +22,13 @@ buildscript {
         maven { url 'https://www.jitpack.io' }
     }
     dependencies {
-        classpath("com.android.tools.build:gradle")
+        // AGP pinned explicitly for compileSdk/targetSdk 36 (Android 16). React
+        // Native 0.77.3's gradle plugin only provides AGP 8.7.2, whose max tested
+        // API is 35; 8.10.x is the first AGP whose max tested API is 36, so no
+        // android.suppressUnsupportedCompileSdk flag is needed. 8.10.x requires
+        // Gradle 8.11.1 (see gradle/wrapper/gradle-wrapper.properties). The RN 0.77
+        // plugin lineage runs fine on this AGP (RN 0.81 ships AGP 8.11.0 on it).
+        classpath("com.android.tools.build:gradle:8.10.1")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("com.bugsnag:bugsnag-android-gradle-plugin:5.8.2")
         classpath 'com.google.gms:google-services:4.4.0'

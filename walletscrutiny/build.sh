@@ -133,7 +133,7 @@ echo "==> [3/4] deriving universal APK via bundletool ${BT_VER}"
   cd /out
   curl -fsSLo bundletool.jar https://github.com/google/bundletool/releases/download/${BT_VER}/bundletool-all-${BT_VER}.jar
   echo '${BT_SHA}  bundletool.jar' | sha256sum -c -
-  AAPT2=\$(ls \"\$ANDROID_HOME\"/build-tools/35.0.0/aapt2)
+  AAPT2=\$(ls \"\$ANDROID_HOME\"/build-tools/36.0.0/aapt2)
   java -jar bundletool.jar build-apks --bundle=app-release.aab --output=built.apks \
     --mode=universal --aapt2=\"\$AAPT2\"
   unzip -o -p built.apks universal.apk > built-universal.apk

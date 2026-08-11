@@ -8,17 +8,23 @@
 #
 # Pinned toolchain (must match android/build.gradle + gradle-wrapper.properties):
 #   JDK ........ Temurin 17 (LTS)         android/* is compiled with 17
-#   Gradle ..... 8.10.2 (via ./gradlew)   android/gradle/wrapper/*.properties
-#   SDK ........ platforms;android-35, build-tools;35.0.0   android/build.gradle
-#   NDK ........ 26.1.10909125            android/build.gradle ext.ndkVersion
-#   CMake ...... 3.22.1                   RN 0.76 default
+#   Gradle ..... 8.11.1 (via ./gradlew)   android/gradle/wrapper/*.properties
+#   SDK ........ platforms;android-36, build-tools;36.0.0   android/build.gradle
+#   NDK ........ 27.1.12297006            android/build.gradle ext.ndkVersion
+#   CMake ...... 3.22.1                   RN 0.77 default
 #   Node ....... 22.22.3 (LTS)            matches the dev pin (CLAUDE.md node@22)
-#   AGP ........ 8.6.0                    resolved via the RN gradle plugin
-#   Kotlin ..... 1.9.25                   android/build.gradle
+#   AGP ........ 8.10.1                   pinned in android/build.gradle (overrides RN plugin's 8.7.2)
+#   Kotlin ..... 2.0.21                   android/build.gradle
+#
+# AGP, Gradle and Kotlin are fetched by Gradle at build time from the pins above;
+# only the SDK platform, build-tools and NDK are baked into this image. A few
+# third-party RN libs pin their own older compileSdk (33/34/35); AGP auto-downloads
+# those platforms at build time (checksummed, so still deterministic).
 #
 # DEVIATIONS from the literal §11.1 prompt, intentional (see BUILD.md):
-#   * build-tools 35.0.0, not 34.0.0 - the project compiles against SDK 35.
-#   * Node 22.22.3, not 18.x - Node 18 reached EOL (2025-04); RN 0.76's hermes
+#   * build-tools 36.0.0, not 34.0.0 - the project compiles against SDK 36
+#     (Android 16, the Google Play targetSdk requirement).
+#   * Node 22.22.3, not 18.x - Node 18 reached EOL (2025-04); RN 0.77's hermes
 #     post-build tooling is validated on node@22 in this repo (CLAUDE.md).
 #
 # HARDENING STATUS:
@@ -85,9 +91,9 @@ ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tool
 RUN yes | sdkmanager --licenses >/dev/null \
     && sdkmanager --install \
        "platform-tools" \
-       "platforms;android-35" \
-       "build-tools;35.0.0" \
-       "ndk;26.1.10909125" \
+       "platforms;android-36" \
+       "build-tools;36.0.0" \
+       "ndk;27.1.12297006" \
        "cmake;3.22.1" >/dev/null \
     && echo "sdk.dir=${ANDROID_HOME}" # informational
 
