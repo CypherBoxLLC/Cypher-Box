@@ -254,6 +254,12 @@ interface VtxoRowProps {
      */
     onCancelIcon: () => void;
     /**
+     * Tap on the "Dust refresh" button shown on a below-floor (dust) capsule.
+     * Sweeps ALL dust capsules into one via a delegated round (a lone one
+     * can't refresh, but bark 0.6.1 takes a batch whose sum clears dust).
+     */
+    onDustRefresh: () => void;
+    /**
      * True while the user-initiated cancel is in flight (between tap and
      * post-cancel sync). Drives a "Cancelling" UI state — the per-row
      * label flips from "Refreshing…" to "Cancelling…" and the tappable
@@ -312,7 +318,7 @@ function formatTimeLeftDetailed(daysLeft: number): string {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCancelling, roundIntervalSecs, failedAttempts }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustRefresh, isCancelling, roundIntervalSecs, failedAttempts }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = formatCapsuleAmount(vtxo.sats);
 
@@ -417,10 +423,10 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
         ? 'Exiting on-chain\n(sweeps after the ~24h timelock)'
         : isTransientForLabel
             ? (isCancelling
-                ? 'Cancelling\n(takes less than 3 hours)'
+                ? 'Cancelling\n(takes less than an hour)'
                 : (failedAttempts && failedAttempts > 0
                     ? `Refreshing or In-flight\n⚠️ ${failedAttempts} refresh attempt${failedAttempts === 1 ? '' : 's'} failed`
-                    : 'Refreshing or In-flight\n(takes less than 3 hours)'))
+                    : 'Refreshing or In-flight\n(takes less than an hour)'))
             : isExpired
                 ? 'Expired'
                 : vtxo.unknownExpiry
@@ -644,26 +650,26 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                             <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
                                 {labelText}
                             </Text>
-                            <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
-                                {" - "}
-                            </Text>
-                            <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
-                                {recoverabilityText}
-                            </Text>
+                            {!isTransientForLabel && (
+                                <>
+                                    <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
+                                        {" - "}
+                                    </Text>
+                                    <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
+                                        {recoverabilityText}
+                                    </Text>
+                                </>
+                            )}
                         </View>
                     )}
                 </View>
-                {(isExpired || isDust) ? (
-                    // Expired / too-small action area: no refresh icon, no
-                    // checkbox — neither is reachable on an expired or
-                    // below-minimum VTXO. The badge label reflects which.
-                    // neither operation is reachable on a VTXO that's past
-                    // its expiry height (ASP can sweep it at any time, and
-                    // bark's refresh on an expired input hangs the round).
-                    // The badge expands to the combined width of the icon
-                    // + select columns (flex 2). Dust-vs-non-dust changes
-                    // only the label text — visual treatment is identical.
-                    // Outer row tap opens the expiry explainer for both.
+                {isExpired ? (
+                    // Expired action area: no refresh icon, no checkbox —
+                    // neither is reachable on a VTXO past its expiry height
+                    // (the ASP can sweep it at any time, and bark's refresh on
+                    // an expired input hangs the round). The badge expands to
+                    // the combined width of the icon + select columns (flex 2).
+                    // Outer row tap opens the expiry explainer.
                     <View
                         style={{
                             flex: 2,
@@ -679,9 +685,38 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                         }}
                     >
                         <RNText style={{ fontSize: 10, color: '#888', fontWeight: '700', textAlign: 'center' }}>
-                            {isExpired ? (vtxo.sats <= ARK_VTXO_DUST_SATS ? 'EXPIRED DUST' : 'EXPIRED') : 'TOO SMALL TO REFRESH'}
+                            {vtxo.sats <= ARK_VTXO_DUST_SATS ? 'EXPIRED DUST' : 'EXPIRED'}
                         </RNText>
                     </View>
+                ) : isDust ? (
+                    // Dust action area: a lone sub-floor capsule can't refresh
+                    // on its own (its round output would fall below the dust
+                    // limit), but bark 0.6.1 accepts a DELEGATED batch whose
+                    // SUM clears dust. This button sweeps ALL dust capsules
+                    // into one; it shows on every dust row so the action is
+                    // reachable from any of them. COPY: Bam finalizes.
+                    <TouchableOpacity
+                        style={{
+                            flex: 2,
+                            marginRight: 8,
+                            marginVertical: 6,
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: '#FFFFFF',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingVertical: 6,
+                            paddingHorizontal: 4,
+                        }}
+                        onPress={onDustRefresh}
+                        delayPressIn={0}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.6}
+                    >
+                        <RNText style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '700', textAlign: 'center' }}>
+                            DUST REFRESH
+                        </RNText>
+                    </TouchableOpacity>
                 ) : (
                     <>
                         {/* Refresh icon Touchable — independent of the row's
@@ -1903,6 +1938,96 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     };
 
     /**
+     * Sweep every below-floor (dust) capsule into a single fresh one.
+     *
+     * A lone sub-floor capsule can't join a round on its own — its round
+     * output would fall below the dust limit and the ASP rejects it. But
+     * bark 0.6.1 accepts a DELEGATED batch whose per-input values are each
+     * below the floor as long as the SUM clears the dust limit, folding them
+     * into one capsule for a negligible fee (measured at ~1 sat on device).
+     * Every dust row's "Dust refresh" button calls this, so the action is
+     * reachable from any of them; it always operates on the whole dust set.
+     *
+     * Resyncs first (a stale/spent id poisons the whole round), gates on the
+     * dust total clearing the dust limit, previews the fee, then submits via
+     * the same delegated path the manual refresh uses. COPY: Bam finalizes.
+     */
+    const handleDustRefresh = () => {
+        void (async () => {
+            try {
+                await syncArkWallet();
+                await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+            } catch (syncErr: any) {
+                console.warn(
+                    '[Ark dust-refresh] pre-submit resync failed, proceeding with last-known set:',
+                    syncErr?.message ?? syncErr,
+                );
+            }
+            const dust = (useAuthStore.getState().arkVtxos ?? []).filter(
+                (v) => v.sats < ARK_REFRESH_MIN_SATS && v.state.toLowerCase() === 'spendable',
+            );
+            const ids = dust.map((v) => v.id);
+            const total = dust.reduce((acc, v) => acc + v.sats, 0);
+            if (ids.length === 0) {
+                SimpleToast.show('No dust capsules to refresh.', SimpleToast.SHORT);
+                return;
+            }
+            if (total <= ARK_VTXO_DUST_SATS) {
+                SimpleToast.show(
+                    `Only ${total} sats of dust so far. It needs to total more than ${ARK_VTXO_DUST_SATS} sats before it can be swept into one capsule.`,
+                    SimpleToast.LONG,
+                );
+                return;
+            }
+            setRefreshing(true);
+            try {
+                const fee = await estimateArkRefreshFee(ids);
+                const confirmed = await new Promise<boolean>((resolve) => {
+                    Alert.alert(
+                        'Sweep dust?',
+                        `Combine ${ids.length} tiny capsule${ids.length === 1 ? '' : 's'} (${total} sats) into one for ~${fee.feeSats} sats. ` +
+                        `It finishes in the background within the hour, so you can close the app once it's submitted.`,
+                        [
+                            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                            { text: 'Sweep', onPress: () => resolve(true) },
+                        ],
+                        { cancelable: true, onDismiss: () => resolve(false) },
+                    );
+                });
+                if (!confirmed) {
+                    setRefreshing(false);
+                    return;
+                }
+                queuedRoundsCountRef.current += 1;
+                setQueuedRoundsCount(queuedRoundsCountRef.current);
+                await refreshArkVtxosDelegatedAndSync(ids, total);
+                SimpleToast.show(
+                    'Dust sweep submitted. It finishes in the background within the hour.',
+                    SimpleToast.LONG,
+                );
+            } catch (err: any) {
+                if (err instanceof ArkRefreshInFlightError) {
+                    SimpleToast.show(
+                        'A refresh is already running. Wait for it to finish, then try again.',
+                        SimpleToast.LONG,
+                    );
+                } else {
+                    console.warn(
+                        '[Ark dust-refresh] failed tag=', err?.tag,
+                        'inner=', err?.inner?.errorMessage ?? err?.message ?? String(err),
+                    );
+                    SimpleToast.show(
+                        'Dust sweep failed. Your funds are safe, nothing was spent.',
+                        SimpleToast.LONG,
+                    );
+                }
+            } finally {
+                setRefreshing(false);
+            }
+        })();
+    };
+
+    /**
      * Cancel a specific pending Lightning receive by payment hash.
      *
      * Two-stage UX:
@@ -2311,26 +2436,59 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 user learns that. Round-based "consolidation" was removed: the
                 round minimum is per-input, not aggregate, so it always failed. */}
             {strandedDust.dust.length > 0 && (
-                <View
-                    style={{
-                        marginHorizontal: 20,
-                        marginTop: 6,
-                        marginBottom: 6,
-                        paddingVertical: 10,
-                        paddingHorizontal: 14,
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: '#FF7A68',
-                        backgroundColor: '#1a0f0d',
-                    }}
-                >
-                    <RNText style={{ fontSize: 13, color: '#FF7A68', fontWeight: '700', marginBottom: 4 }}>
-                        {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} cannot be refreshed
-                    </RNText>
-                    <RNText style={{ fontSize: 12, color: '#ddd' }}>
-                        Below the {ARK_REFRESH_MIN_SATS}-sat round minimum ({strandedDust.total.toLocaleString()} sats total). Spend {strandedDust.dust.length === 1 ? 'it' : 'them'} in a payment before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}. A normal send folds {strandedDust.dust.length === 1 ? 'it' : 'them'} in.
-                    </RNText>
-                </View>
+                strandedDust.total > ARK_VTXO_DUST_SATS ? (
+                    // Sweepable: their combined value clears the dust limit, so
+                    // bark 0.6.1 folds them into one capsule in a single
+                    // delegated round. Tappable — same action as the per-capsule
+                    // "Dust refresh" button. COPY: Bam finalizes.
+                    <TouchableOpacity
+                        onPress={handleDustRefresh}
+                        activeOpacity={0.7}
+                        style={{
+                            marginHorizontal: 20,
+                            marginTop: 6,
+                            marginBottom: 6,
+                            paddingVertical: 10,
+                            paddingHorizontal: 14,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: '#FFFFFF',
+                            backgroundColor: '#15171c',
+                        }}
+                    >
+                        <RNText style={{ fontSize: 13, color: '#FFFFFF', fontWeight: '700', marginBottom: 4 }}>
+                            {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} ({strandedDust.total.toLocaleString()} sats) can be combined
+                        </RNText>
+                        <RNText style={{ fontSize: 12, color: '#ddd' }}>
+                            Tap here (or "Dust refresh" on a capsule) to combine {strandedDust.dust.length === 1 ? 'it' : 'them'} into one capsule before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}.
+                        </RNText>
+                    </TouchableOpacity>
+                ) : (
+                    // Truly stranded: combined value is still below the dust
+                    // limit, so a consolidating round would produce a sub-dust
+                    // output the ASP rejects. The only way out is to spend them
+                    // (a normal payment folds them in). COPY: Bam finalizes.
+                    <View
+                        style={{
+                            marginHorizontal: 20,
+                            marginTop: 6,
+                            marginBottom: 6,
+                            paddingVertical: 10,
+                            paddingHorizontal: 14,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: '#FF7A68',
+                            backgroundColor: '#1a0f0d',
+                        }}
+                    >
+                        <RNText style={{ fontSize: 13, color: '#FF7A68', fontWeight: '700', marginBottom: 4 }}>
+                            {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} cannot be refreshed yet
+                        </RNText>
+                        <RNText style={{ fontSize: 12, color: '#ddd' }}>
+                            Only {strandedDust.total.toLocaleString()} sats total, below the {ARK_VTXO_DUST_SATS}-sat dust limit. Spend {strandedDust.dust.length === 1 ? 'it' : 'them'} in a payment before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}. A normal send folds {strandedDust.dust.length === 1 ? 'it' : 'them'} in.
+                        </RNText>
+                    </View>
+                )
             )}
 
             {/* Column header row — matches Hot Vault's layout */}
@@ -2362,6 +2520,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         onPress={() => toggle(item.id)}
                         onRefreshIcon={() => handleRowRefresh(item.id)}
                         onCancelIcon={handleRowCancel}
+                        onDustRefresh={handleDustRefresh}
                         isCancelling={cancelling}
                         roundIntervalSecs={arkRoundIntervalSecs}
                         failedAttempts={arkRefreshFailStreak}
