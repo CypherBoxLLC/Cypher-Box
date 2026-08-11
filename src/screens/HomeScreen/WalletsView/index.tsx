@@ -71,6 +71,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         isArkAuth,
         arkWallet,
         arkVtxos,
+        arkRefreshingVtxoIds,
         arkChainTipHeight,
         arkBgRefreshEnabled,
         arkBgRefreshLastSuccessAt,
@@ -159,17 +160,23 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // the Capsules tab consolidates them into above-dust outputs.
     const dustCapsuleCount = useMemo(() => {
         if (!arkVtxos || arkChainTipHeight == null) return 0;
+        // bark 0.6.1 keeps a delegated-refreshing VTXO Spendable (not Locked),
+        // so a dust capsule mid-sweep still looks spendable here. Exclude the
+        // client-tracked refreshing set so the "needs action" dust warning
+        // doesn't fire on capsules that are already being consolidated.
+        const refreshing = new Set(arkRefreshingVtxoIds ?? []);
         let count = 0;
         for (const v of arkVtxos) {
             if (v.sats > ARK_VTXO_DUST_SATS) continue;
             if (v.state.toLowerCase() !== 'spendable') continue;
             if (v.expiryHeight === 0) continue;
+            if (refreshing.has(v.id)) continue;
             const blocks = v.expiryHeight - arkChainTipHeight;
             if (blocks <= 0) continue;
             count++;
         }
         return count;
-    }, [arkVtxos, arkChainTipHeight]);
+    }, [arkVtxos, arkChainTipHeight, arkRefreshingVtxoIds]);
 
     // VTXOs currently mid-round (state === 'locked' — refresh / send / board
     // in flight). The headline balance EXCLUDES these (only spendable
@@ -259,7 +266,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
 
         if (dustCapsuleCount > 0) {
             return {
-                text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
+                text: 'Attention: you have dust ark capsules that might expire. Batch refresh or spend them here.',
                 linkText: 'here',
                 tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
                 error: true,

@@ -395,12 +395,15 @@ export default function ArkWallet({
             if (v.sats > ARK_VTXO_DUST_SATS) continue;
             if (v.state.toLowerCase() !== 'spendable') continue;
             if (v.expiryHeight === 0) continue;
+            // bark 0.6.1 keeps a delegated-refreshing VTXO Spendable, so skip
+            // any dust capsule already mid-sweep — it isn't "needs action".
+            if (refreshingIds.has(v.id)) continue;
             const blocks = v.expiryHeight - arkChainTipHeight;
             if (blocks <= 0) continue; // already expired — different kind of problem
             count++;
         }
         return count;
-    }, [arkVtxos, arkChainTipHeight]);
+    }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
     /**
      * Single status line surfaced under the Ark balance.
@@ -462,7 +465,7 @@ export default function ArkWallet({
         //    tab. Render "here" as an underlined link to invite the tap.
         if (dustCapsuleCount > 0) {
             return {
-                text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
+                text: 'Attention: you have dust ark capsules that might expire. Batch refresh or spend them here.',
                 linkText: 'here',
                 tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
                 error: true,
