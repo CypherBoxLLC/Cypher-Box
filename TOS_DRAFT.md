@@ -1,5 +1,5 @@
 # TERMS OF SERVICE & PRIVACY POLICY — DRAFT
-# Last Updated: June 2026
+# Last Updated: August 2026
 
 ---
 
@@ -13,8 +13,8 @@ By checking the box, clicking on "Start," "I understand," "Next," or similar ter
 
 Cypher Box lets you connect through API(s) (create account and/or login) to one or more Bitcoin custodians that (if benevolent) allow you to request sending and receiving payments quickly and cheaply in Bitcoin (BTC) through their Lightning Network infrastructure. Currently integrated custodians include:
 
-- **CoinOS** — A Lightning Network service provider accessible via username and password authentication.
-- **Strike** — A regulated cryptocurrency exchange accessible via OAuth 2.0 authentication.
+- **CoinOS**: A Lightning Network service provider accessible via username and password authentication.
+- **Strike**: A regulated cryptocurrency exchange accessible via OAuth 2.0 authentication.
 
 A custodian is an entity that allows you to transact and accumulate bitcoin (up to a certain subjective threshold) quickly and cheaply depending on your jurisdiction. The funds stored on your custodian Lightning Account(s) are technically under the full control of the custodian, NOT OURS, NOT YOURS. The balance shown on your Lightning Account(s) may or may not be real Bitcoin.
 
@@ -36,7 +36,7 @@ Cypher Box LLC is not liable for any financial losses due to a failure or error 
 
 ### 3. Self-Custodial Vault(s)
 
-Cypher Box enables you to create single, hierarchical deterministic (HD), non-custodial wallet(s) (referred to as "Vault(s)") for Bitcoin. You can use these Vaults to withdraw from your Lightning Account(s), store, send, and receive the digital asset Bitcoin only (BTC). Section 5 below describes a separate non-custodial Lightning offering, the Ark Vault, which uses its own seedphrase and refresh mechanism.
+Cypher Box enables you to create single, hierarchical deterministic (HD), non-custodial wallet(s) (referred to as "Vault(s)") for Bitcoin. You can use these Vaults to withdraw from your Lightning Account(s), store, send, and receive the digital asset Bitcoin only (BTC). Section 5 below describes a separate non-custodial Lightning offering, the Bark Vault, which uses its own seedphrase and refresh mechanism.
 
 In order to use the hot or cold storage Vault(s) you are expected to be fully aware of the dangers associated with securing your 12-word backup seedphrase. You are expected to know that: you should never lose access to your seedphrase(s); you should write the words in their correct order on a physical medium such as paper or a metallic plate; you should make multiple physical copies and store them in secure locations; you should never share them with anyone including us; and you should never ask us to recover your Vault(s) funds because the only entity capable of doing so is the one that holds the private keys represented in the form of a 12-word seedphrase, which is YOU, NOT US.
 
@@ -52,25 +52,33 @@ You may configure automated withdrawal thresholds that trigger withdrawals from 
 
 Cypher Box LLC is not liable for any financial loss arising from incorrectly constructed transactions, incorrect Capsule selection, misconfigured thresholds, or network fee miscalculations associated with these functions.
 
-### 5. Non-Custodial Lightning Vault (Ark Vault)
+### 5. Non-Custodial Lightning Vault (Bark Vault)
 
-Cypher Box enables you to create a non-custodial Lightning wallet (the "Ark Vault") that participates in a shared-signing Bitcoin protocol coordinated by a third-party Ark Service Provider ("ASP"). Unlike the third-party custodian Lightning Accounts described in Section 1, funds held in your Ark Vault remain under your unilateral control: the ASP cannot move, freeze, or seize your funds without your cooperation.
+Cypher Box enables you to create a non-custodial Lightning wallet (the "Bark Vault") that participates in a shared-signing Bitcoin protocol coordinated by a third-party Ark Service Provider ("ASP"). The ASP currently used by the Bark Vault is TwoND, Inc., doing business as Second ("Second"), which operates the Ark server at ark.second.tech.
 
-The Ark Vault relies on the ASP's software development kit ("ASP's SDK") to construct co-signed virtual transaction outputs ("VTXOs") that represent your balance. The ASP serves as a coordinator and liquidity provider for these VTXOs but never holds custody of your private keys. Cypher Box LLC is not affiliated with the ASP and has no control over its operations, uptime, availability, fees, or decision to continue providing service.
+Unlike the third-party custodian Lightning Accounts described in Section 1, the ASP never takes custody of your Bark Vault funds and cannot unilaterally spend them. Every movement of your funds requires a signature that only you can produce. That guarantee is narrower than it may first appear, and you should read the rest of this section before funding a Bark Vault. In particular, the ASP can decline to co-sign your transactions, and it can sweep a VTXO that you allow to expire.
 
-**Seedphrase generation and backup.** When you create an Ark Vault, the application generates a 12-word backup seedphrase locally on your device. The seedphrase is stored in encrypted local storage. You may optionally enable an additional encrypted backup file to be stored in your device's cloud storage service (iCloud on iOS, Google Drive on Android), at your configuration. The backup file is encrypted on your device before upload. Cypher Box LLC does not have access to your seedphrase, your encrypted backup file, or the encryption key. The ASP does not have access either. If you lose access to your seedphrase and all backup copies, your Ark Vault funds will be irrecoverable.
+The Bark Vault relies on the ASP's software development kit ("ASP's SDK") to construct co-signed virtual transaction outputs ("VTXOs") that represent your balance. The ASP serves as a coordinator and liquidity provider for these VTXOs but never holds custody of your private keys. Cypher Box LLC is not affiliated with the ASP and has no control over its operations, uptime, availability, fees, or decision to continue providing service.
 
-**VTXO expiry and refresh.** Funds in an Ark Vault are organized as VTXOs, each with an expiry timestamp set by the ASP when the VTXO is created. Before a VTXO expires, you must either refresh it into a new VTXO (which extends its expiry) or perform an on-chain exit. To assist you, Cypher Box:
+**Seedphrase generation and backup.** When you create a Bark Vault, the application generates a 12-word backup seedphrase locally on your device. The seedphrase is stored in encrypted local storage. You may optionally enable an additional encrypted backup file to be stored in your device's cloud storage service (iCloud on iOS, Google Drive on Android), at your configuration. The backup file is encrypted on your device before upload. Cypher Box LLC does not have access to your seedphrase, your encrypted backup file, or the encryption key. The ASP does not have access either. If you lose access to your seedphrase and all backup copies, your Bark Vault funds will be irrecoverable.
+
+**VTXO expiry and refresh.** Funds in a Bark Vault are organized as VTXOs, each with an expiry timestamp set by the ASP when the VTXO is created. Before a VTXO expires, you must either refresh it into a new VTXO (which extends its expiry) or perform an on-chain exit. To assist you, Cypher Box:
 
 - Schedules local device notifications to alert you approximately twenty-four (24) hours and six (6) hours before any of your VTXOs are due to expire;
 - Offers an optional auto-refresh function that attempts to refresh VTXOs in the background, subject to your device's operating-system constraints including battery optimization, background-task scheduling, network availability, and similar limitations outside our control;
-- Provides a manual refresh action accessible from the Ark Vault interface.
+- Provides a manual refresh action accessible from the Bark Vault interface.
 
-You are responsible for periodically opening the application and acting on expiry notifications. If you do not refresh a VTXO before its expiry and do not perform an on-chain exit, the funds it represents may become inaccessible or subject to forfeiture under the ASP's protocol rules. Cypher Box LLC has no responsibility and will not be liable for any loss arising from a missed refresh, an unacknowledged notification, a disabled notification, or any other failure on your part to act on an expiry warning.
+You are responsible for periodically opening the application and acting on expiry notifications. If you do not refresh a VTXO before its expiry and do not perform an on-chain exit, the Ark protocol permits the ASP to sweep the bitcoin that VTXO represents. Under the ASP's own terms, the ASP has no obligation to return swept funds to you, although it may choose to do so at its sole discretion. Cypher Box LLC has no responsibility and will not be liable for any loss arising from a missed refresh, an unacknowledged notification, a disabled notification, or any other failure on your part to act on an expiry warning.
 
-**Trustless on-chain exit.** At any time, you may initiate an on-chain exit through the application. This process broadcasts the Bitcoin transactions necessary to move your Ark Vault funds to a regular on-chain Bitcoin address that you control, without requiring the cooperation of the ASP or Cypher Box LLC. The exit is subject to Bitcoin Network fees and confirmation times. The same option is available as an emergency recourse if the ASP becomes unavailable, refuses to cooperate, or discontinues its service.
+**What the ASP can do without your cooperation.** Although the ASP cannot take custody of or unilaterally spend your funds, under its own terms it reserves the right, at its sole discretion and without notice, to refuse to process any operation, to block access from any region or IP address, to decline to co-sign transactions to or from any bitcoin address, and to suspend its service in whole or in part. It may do so for sanctions compliance, for regulatory or licensing reasons, or for any other reason it considers necessary. The practical effect is that the ASP can prevent you from sending, receiving, or refreshing through the Bark Vault even though it cannot take your funds. Your recourse in that situation is the on-chain exit described below, and that recourse depends on your VTXOs not having expired. Cypher Box LLC does not control and cannot influence any such decision by the ASP, and will not be liable for any loss or inability to transact arising from it.
 
-**ASP dependency for day-to-day operations.** Although the ASP cannot take custody of your funds, the ASP's availability is necessary for ordinary Ark Vault operations including receives, sends, refreshes, and Lightning routing. If the ASP becomes unavailable, unreliable, or chooses to discontinue service, you may temporarily lose the ability to transact through the Ark Vault and may need to perform an on-chain exit to retain access to your funds. Cypher Box LLC is not liable for any loss, inability to transact, or any inconvenience arising from the ASP's operational decisions, downtime, fees, or discontinuation of service.
+**Trustless on-chain exit.** At any time, you may initiate an on-chain exit through the application. This process broadcasts the Bitcoin transactions necessary to move your Bark Vault funds to a regular on-chain Bitcoin address that you control, without requiring the cooperation of the ASP or Cypher Box LLC. The exit is subject to Bitcoin Network fees and confirmation times. The same option is available as an emergency recourse if the ASP becomes unavailable, refuses to cooperate, or discontinues its service.
+
+The exit relies on pre-signed Bitcoin transactions associated with your live VTXOs, and those transactions must confirm on the Bitcoin Network before the associated VTXOs expire. An exit is therefore something to start early, not at the last moment. Once a VTXO has expired, the exit path for that VTXO may no longer be available to you, and the bitcoin it represented may already have been swept by the ASP. Cypher Box LLC will not be liable for any loss arising from an exit begun too late to confirm, or from Bitcoin Network fee conditions or congestion that delay confirmation.
+
+**The ASP's own terms.** When you use the Bark Vault, your device connects directly to the ASP's Ark server, and the ASP treats you as a user of its own service under its own terms, currently published at https://second.tech/terms. Those terms are an agreement between you and the ASP. They are not part of this Agreement, and Cypher Box LLC is not a party to them. They contain the ASP's own provisions on VTXO expiry and sweeping, sanctions representations, disclaimers of warranty, limits on the ASP's liability, and a binding arbitration agreement with a class action waiver. You should read them before funding a Bark Vault. Cypher Box LLC did not negotiate those terms, cannot vary them on your behalf, and has no control over the ASP's decision to change them.
+
+**ASP dependency for day-to-day operations.** Although the ASP cannot take custody of your funds, the ASP's availability is necessary for ordinary Bark Vault operations including receives, sends, refreshes, and Lightning routing. If the ASP becomes unavailable, unreliable, or chooses to discontinue service, you may temporarily lose the ability to transact through the Bark Vault and may need to perform an on-chain exit to retain access to your funds. Cypher Box LLC is not liable for any loss, inability to transact, or any inconvenience arising from the ASP's operational decisions, downtime, fees, or discontinuation of service.
 
 ### 6. Supported Digital Assets
 
@@ -90,11 +98,11 @@ It is your responsibility to keep your seedphrase secure. You should not provide
 
 If you permanently forget or lose your backup seedphrase, you will NEVER be able to recover any cryptocurrency in your Vault, and you will suffer a complete, irrecoverable, and catastrophic loss of all Digital Assets in your Vault. It is your responsibility to safeguard and retain your backup seedphrase. Cypher Box has no responsibility and will not be liable for any loss or damage you suffer from the loss or misappropriation of your seedphrases.
 
-The same risks and responsibilities apply to the seedphrase of any Ark Vault you create under Section 5. The Ark Vault seedphrase is generated and stored separately from your other Vault seedphrases. The optional encrypted cloud backup described in Section 5 is provided for your convenience and does not change the foregoing: Cypher Box LLC does not have access to the backup file or the encryption key, and is not liable for any loss arising from the loss of access to your cloud storage account, the loss of the encryption material protecting the backup, or any failure of the cloud storage service.
+The same risks and responsibilities apply to the seedphrase of any Bark Vault you create under Section 5. The Bark Vault seedphrase is generated and stored separately from your other Vault seedphrases. The optional encrypted cloud backup described in Section 5 is provided for your convenience and does not change the foregoing: Cypher Box LLC does not have access to the backup file or the encryption key, and is not liable for any loss arising from the loss of access to your cloud storage account, the loss of the encryption material protecting the backup, or any failure of the cloud storage service.
 
 ### 9. Third-Party Integrations
 
-Our Services support or are integrated with third-party services, including but not limited to CoinOS, Strike, the Ark Service Provider used by the Ark Vault, the ASP's SDK that runs locally on your device, and Google reCAPTCHA (used during CoinOS authentication). We are not responsible for any third-party services and will not be liable for any loss or damage caused by third-party services. Your use of third-party services through our app is also subject to those services' own terms of service and privacy policies.
+Our Services support or are integrated with third-party services, including but not limited to CoinOS, Strike, the Ark Service Provider used by the Bark Vault (Second, at https://second.tech/terms), the ASP's SDK that runs locally on your device, and Google reCAPTCHA (used during CoinOS authentication). We are not responsible for any third-party services and will not be liable for any loss or damage caused by third-party services. Your use of third-party services through our app is also subject to those services' own terms of service and privacy policies, which are agreements between you and that third party rather than between you and Cypher Box LLC. You are responsible for reading them.
 
 ### 10. Exchange Rates and Price Display
 
@@ -131,10 +139,12 @@ Without limiting the generality of the foregoing, Cypher Box LLC and its third-p
 - Financial loss due to phishing or other websites masquerading as Cypher Box LLC.
 - Financial loss due to inaccurate exchange rate data from third-party sources.
 - Financial loss due to misconfigured automated withdrawal thresholds.
-- Financial loss due to a VTXO expiring before refresh or on-chain exit.
-- Financial loss due to a missed, dismissed, disabled, or otherwise unacknowledged Ark Vault expiry notification.
+- Financial loss due to a VTXO expiring before refresh or on-chain exit, including the Ark Service Provider sweeping the bitcoin that VTXO represented.
+- Financial loss due to a missed, dismissed, disabled, or otherwise unacknowledged Bark Vault expiry notification.
 - Financial loss due to the Ark Service Provider's unavailability, fee changes, protocol changes, or discontinuation of service.
-- Financial loss due to loss of access to your Ark Vault seedphrase, the encrypted local backup, or the encrypted cloud backup, or to your iCloud or Google Drive account.
+- Financial loss due to the Ark Service Provider declining to co-sign a transaction, refusing to process an operation, or blocking access by region or IP address.
+- Financial loss due to an on-chain exit begun too late to confirm before VTXO expiry, or delayed by Bitcoin Network fee conditions or congestion.
+- Financial loss due to loss of access to your Bark Vault seedphrase, the encrypted local backup, or the encrypted cloud backup, or to your iCloud or Google Drive account.
 
 ### 14. Indemnification
 
@@ -178,7 +188,7 @@ All provisions of this Agreement which by their nature extend beyond the expirat
 
 ## PRIVACY POLICY
 
-**Last Updated: June 2026**
+**Last Updated: August 2026**
 
 Cypher Box LLC ("Cypher Box," "we," "us") is committed to transparency about how data is handled when you use our app. This Privacy Policy describes what data is collected, by whom, and for what purpose.
 
@@ -194,14 +204,14 @@ Cypher Box does not collect, store, or have access to:
 
 The following data is stored locally on your device using encrypted storage and/or the operating system's secure keychain. This data does not leave your device and is not transmitted to Cypher Box servers:
 
-- **CoinOS credentials** (username and password) — stored in the iOS Keychain / Android Keystore
-- **Authentication tokens** for CoinOS and Strike — stored in encrypted local storage
-- **Vault private keys and seedphrases** — stored in encrypted local storage
-- **Ark Vault private keys and seedphrase** — stored in the iOS Keychain / Android Keystore
-- **Ark Vault wallet state** (signed VTXOs, refresh history, ASP coordination data needed by the ASP's SDK to operate) — stored in encrypted local storage
-- **App preferences and settings** — such as withdrawal thresholds, reserve amounts, and UI state
+- **CoinOS credentials** (username and password): stored in the iOS Keychain / Android Keystore
+- **Authentication tokens** for CoinOS and Strike: stored in encrypted local storage
+- **Vault private keys and seedphrases**: stored in encrypted local storage
+- **Bark Vault private keys and seedphrase**: stored in the iOS Keychain / Android Keystore
+- **Bark Vault wallet state** (signed VTXOs, refresh history, ASP coordination data needed by the ASP's SDK to operate): stored in encrypted local storage
+- **App preferences and settings**: such as withdrawal thresholds, reserve amounts, and UI state
 
-**Optional cloud backup of the Ark Vault.** If you opt in, an encrypted backup file containing your Ark Vault state is uploaded to your device's iCloud (iOS) or Google Drive (Android) account. The file is encrypted on your device before upload using a key derived from your Ark Vault seedphrase. Neither Cypher Box LLC nor the cloud storage provider can read the contents of this file without your seedphrase. You can disable cloud backup at any time from the Ark Vault settings. The local backup remains on your device regardless of whether cloud backup is enabled.
+**Optional cloud backup of the Bark Vault.** If you opt in, an encrypted backup file containing your Bark Vault state is uploaded to your device's iCloud (iOS) or Google Drive (Android) account. The file is encrypted on your device before upload using a key derived from your Bark Vault seedphrase. Neither Cypher Box LLC nor the cloud storage provider can read the contents of this file without your seedphrase. You can disable cloud backup at any time from the Bark Vault settings. The local backup remains on your device regardless of whether cloud backup is enabled.
 
 ### 3. Data Collected by Cypher Box Services (Optional)
 
@@ -231,8 +241,10 @@ Strike may collect personal and financial data in accordance with their regulato
 **Google reCAPTCHA (during CoinOS login):**
 CoinOS requires Google reCAPTCHA verification for authentication. When this occurs, Google may collect device identifiers, IP addresses, browser/device fingerprints, and interaction data. This data is collected and processed by Google according to Google's Privacy Policy. Cypher Box does not have access to the data Google collects through reCAPTCHA.
 
-**Ark Service Provider (when you use the Ark Vault):**
-The Ark Vault communicates with an ASP to coordinate VTXO creation, refresh rounds, Lightning routing, and on-chain exit. The ASP receives the cryptographic data necessary to construct and co-sign these transactions, including pubkeys, signatures, VTXO structures, and protocol-level coordination messages. The ASP does not require an account, username, email address, or other personal identifier from you, and Cypher Box does not transmit any personal information about you to the ASP. Network-level metadata such as your IP address may be visible to the ASP unless you route your connection through a privacy network. Please refer to the ASP's own terms and privacy policy for details.
+**Ark Service Provider (when you use the Bark Vault):**
+The Bark Vault communicates with an ASP to coordinate VTXO creation, refresh rounds, Lightning routing, and on-chain exit. The ASP receives the cryptographic data necessary to construct and co-sign these transactions, including pubkeys, signatures, VTXO structures, and protocol-level coordination messages. Because the ASP coordinates every ordinary Bark Vault operation, it is in a position to observe your payment activity over time. The ASP does not require an account, username, email address, or other personal identifier from you, and Cypher Box does not transmit any personal information about you to the ASP. Network-level metadata such as your IP address may be visible to the ASP unless you route your connection through a privacy network.
+
+The ASP publishes terms of service at https://second.tech/terms. As of the date of this Privacy Policy it does not publish a separate privacy policy, and its terms do not describe what it logs or how long it retains it. Cypher Box LLC has no visibility into and no control over the ASP's data practices.
 
 ### 5. Data Collected via the Bitcoin Network
 
@@ -240,7 +252,7 @@ Due to the transparent nature of the Bitcoin blockchain, when you use the "Withd
 
 ### 6. Data Sharing
 
-Cypher Box LLC does not sell, rent, or share your personal data with third parties for marketing or advertising purposes. Data is shared only as described in this policy — with custodians when you initiate transactions, and with service providers as necessary for the features you choose to use.
+Cypher Box LLC does not sell, rent, or share your personal data with third parties for marketing or advertising purposes. Data is shared only as described in this policy, with custodians when you initiate transactions, and with service providers as necessary for the features you choose to use.
 
 ### 7. Data Retention
 
@@ -260,4 +272,4 @@ If you have questions about this Privacy Policy, you may contact us at: info@cyp
 
 ---
 
-*This Agreement and Privacy Policy were last updated in June 2026.*
+*This Agreement and Privacy Policy were last updated in August 2026.*
