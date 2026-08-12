@@ -388,7 +388,26 @@ export const sendInternalPayment = async (amount: number, hash: string) => {
   }
 };
 
+// Static mainnet fee tiers (sat/vB), used only when BOTH live sources are
+// unreachable. Conservative-but-usable so an on-chain withdraw is never
+// hard-blocked by a fee-endpoint outage. Same keys mempool.space returns.
+const FALLBACK_FEE_TIERS = {
+  fastestFee: 20,
+  halfHourFee: 12,
+  hourFee: 8,
+  economyFee: 4,
+  minimumFee: 1,
+};
+
+// On-chain fee tiers for the withdraw/send fee selector. mempool.space is the
+// primary source, but it intermittently rate-limits / Cloudflare-bot-blocks the
+// mobile client (per-platform, so it can fail on Android while iOS is fine). The
+// old version threw on any failure, leaving `recommendedFee` undefined — which
+// UNMOUNTED the whole fee selector in ReviewPayment and dead-ended the withdraw.
+// Now fall back to the blockstream esplora we already use, then to static tiers,
+// so the selector always has usable values and the flow never gets stuck.
 export const bitcoinRecommendedFee = async () => {
+  // Primary: mempool.space (native shape).
   try {
     const response = await fetch(`https://mempool.space/api/v1/fees/recommended`, {
       method: 'GET',
@@ -396,11 +415,42 @@ export const bitcoinRecommendedFee = async () => {
         'Content-Type': 'application/json',
       },
     });
-    return await response.json();
+    if (response.ok) {
+      const data = await response.json();
+      if (data?.fastestFee != null) return data;
+    }
   } catch (error) {
-    console.error('Error getting Fee:', error);
-    throw error;
+    console.warn('bitcoinRecommendedFee: mempool.space failed, trying blockstream:', error);
   }
+
+  // Fallback 1: blockstream fee-estimates — a map of confirmation-target (in
+  // blocks) to sat/vB. Already a trusted endpoint (the Ark esplora). Map its
+  // targets onto mempool's tier shape so the UI is unchanged.
+  try {
+    const response = await fetch(`https://blockstream.info/api/fee-estimates`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    if (response.ok) {
+      const est = await response.json();
+      const pick = (target: string, fallback: number) =>
+        est?.[target] != null ? Math.max(1, Math.ceil(Number(est[target]))) : fallback;
+      return {
+        fastestFee: pick('1', FALLBACK_FEE_TIERS.fastestFee),
+        halfHourFee: pick('3', FALLBACK_FEE_TIERS.halfHourFee),
+        hourFee: pick('6', FALLBACK_FEE_TIERS.hourFee),
+        economyFee: pick('144', FALLBACK_FEE_TIERS.economyFee),
+        minimumFee: pick('1008', FALLBACK_FEE_TIERS.minimumFee),
+      };
+    }
+  } catch (error) {
+    console.warn('bitcoinRecommendedFee: blockstream fallback failed, using static tiers:', error);
+  }
+
+  // Fallback 2: static tiers so the selector never disappears.
+  return { ...FALLBACK_FEE_TIERS };
 };
 
 export const bitcoinSendFee = async (amount: number, address: string, feeRate: number) => {
