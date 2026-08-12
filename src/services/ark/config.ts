@@ -67,6 +67,26 @@ export const ARK_REFRESH_MIN_SATS = 500;
  */
 export const ARK_ARKOOR_ASSUMED_DAYS = 3;
 
+/**
+ * Exit-runway floor for AUTO refresh (24h unilateral-exit runway + 4h grace).
+ *
+ * A unilateral exit needs ~24h to confirm before a VTXO expires. We never
+ * AUTO-refresh a VTXO with less time-to-expiry than this, because a delegated
+ * round that hangs instead of finalizing would eat the user's exit window and
+ * trap the funds. Below this floor the correct action is spend (fast
+ * cooperative) or exit, which the expiry warnings + refresh-failure escalation
+ * own. Both the receive-time arkoor auto-refresh and the foreground maintenance
+ * sweep respect this floor. Hours; convert to blocks via AVG_BLOCK_MINUTES.
+ */
+export const ARK_EXIT_RUNWAY_HOURS = 28;
+
+/**
+ * Upper bound of the maintenance-sweep refresh band. No reason to spend the
+ * refresh fee earlier than ~a week before expiry; the sweep only acts on a VTXO
+ * whose time-to-expiry sits between ARK_EXIT_RUNWAY_HOURS and this. Hours.
+ */
+export const ARK_SWEEP_MAX_RUNWAY_HOURS = 7 * 24;
+
 export const ARK_NETWORK: Network = Network.Bitcoin;
 
 export const ARK_SERVER_URL = 'https://ark.second.tech';

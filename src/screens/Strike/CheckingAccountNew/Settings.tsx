@@ -28,7 +28,7 @@ import * as Keychain from "react-native-keychain";
 import { useNavigation } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
-import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods } from "@Cypher/api/strikeAPIs";
+import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods, revokeStrikeToken } from "@Cypher/api/strikeAPIs";
 import {
   AUTO_BACKUP_PATH,
   computeExitFeeReserveSats,
@@ -36,6 +36,9 @@ import {
   convertToExitFees,
   disconnectGoogleDrive,
   estimateExitFeeConvert,
+  estimateArkOnchainRecover,
+  recoverArkOnchainBoard,
+  fetchArkExitVtxos,
   fetchPendingExitsTotalSats,
   findAutoBackupForRecovery,
   getArkOnchainAddress,
@@ -70,7 +73,7 @@ interface Props {
 }
 
 export default function Settings({ receiveType, currency, isArk }: Props) {
-  const { strikeMe, clearStrikeAuth } = useAuthStore();
+  const { strikeMe, clearStrikeAuth, clearAuth } = useAuthStore();
   const navigation = useNavigation();
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
@@ -115,8 +118,25 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
     }
   };
 
+  // Strike disconnect. Read the token BEFORE clearing, since clearStrikeAuth
+  // nulls it, and fire the revoke without awaiting: local state must clear
+  // immediately so a slow or failed network call can never leave the user
+  // looking logged in with no way out. revokeStrikeToken never throws.
   const handleLogout = () => {
+    const tokenToRevoke = useAuthStore.getState().strikeToken;
+    void revokeStrikeToken(tokenToRevoke);
     clearStrikeAuth();
+    setTimeout(() => {
+      navigation.goBack();
+    }, 500);
+  };
+
+  // CoinOS disconnect. This screen renders for both wallets, and the CoinOS
+  // Logout used to call the Strike handler, so it disconnected Strike and left
+  // the CoinOS session intact: the opposite of what the user asked for, and it
+  // left a live custodial token behind.
+  const handleCoinosLogout = () => {
+    clearAuth();
     setTimeout(() => {
       navigation.goBack();
     }, 500);
@@ -160,7 +180,7 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
             topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowColor: '#E85C5A', borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', alignItems: 'center' }}
             bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 1, shadowColor: '#030303', borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', position: 'absolute' }}
             linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', alignItems: 'center' }}
-            onPress={handleLogout}
+            onPress={handleCoinosLogout}
           >
             <Text h3 bold center>Logout</Text>
           </GradientView>
@@ -328,6 +348,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     setArkExitInProgress,
     setArkExitDestinationAddress,
     setArkExitStartedAt,
+    setArkExitDrained,
+    arkExitStartedSats,
+    setArkExitStartedSats,
     setArkExitFeeReserveSats,
   } = useAuthStore() as any;
   const arkIosBackupReminderActive = useAuthStore((s) => s.arkIosBackupReminderActive);
@@ -847,9 +870,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
    *   3. Drain: sweep claimable outputs to user's chosen Bitcoin address
    *
    * Phases 2 + 3 run automatically in useArkSync; user only acts here for
-   * phase 1. After phase 3 completes, useArkSync auto-deletes the vault
-   * (resetArkWalletState + clearArkAuth) — Bam's call: don't make the user
-   * come back later to clean up.
+   * phase 1. After phase 3 completes, useArkSync retires the exit flags and
+   * KEEPS the vault (auto-delete was removed: an exit empties a wallet, it
+   * doesn't end it, and funds can arrive mid-exit).
    */
   type ExitPickerStep = 'category' | 'hot-addr' | 'cold-addr' | 'external';
   const [exitPickerOpen, setExitPickerOpen] = useState(false);
@@ -899,7 +922,6 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     (arkExitFeeReserveSats ?? 0) > 0 ? arkExitFeeReserveSats : (recommendedReserveSats ?? 0);
   const exitFeeGated = reserveTargetSats > 0 && onchainReserveSats < reserveTargetSats;
   const exitFeeShortfallSats = Math.max(0, reserveTargetSats - onchainReserveSats);
-  const exitFeeFunded = reserveTargetSats > 0 && onchainReserveSats >= reserveTargetSats;
   // The user armed a target below the recommended safe amount (warn them).
   const reserveBelowRecommended =
     (arkExitFeeReserveSats ?? 0) > 0 &&
@@ -930,8 +952,19 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     let cancelled = false;
     const tick = async () => {
       try {
-        const n = await fetchPendingExitsTotalSats();
-        if (!cancelled) setPendingExitSats(n);
+        // pendingExitsTotalSats() reads 0 while exit txs are still
+        // broadcasting/confirming (SDK quirk — it only counts later
+        // phases), which left this panel blank mid-exit. Derive the figure
+        // from the per-VTXO exit records and keep the SDK total as a
+        // lower bound for whatever later phase it does count.
+        const [vtxos, pendingTotal] = await Promise.all([
+          fetchArkExitVtxos(),
+          fetchPendingExitsTotalSats(),
+        ]);
+        const activeSats = vtxos
+          .filter((v) => /^(Processing|Awaiting)/.test(String(v.state)) || v.isClaimable)
+          .reduce((acc, v) => acc + Number(v.amountSats), 0);
+        if (!cancelled) setPendingExitSats(Math.max(activeSats, pendingTotal));
       } catch {
         // Best-effort; the status panel falls back to "—" sats.
       }
@@ -1047,26 +1080,63 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     setConvertAmount(String(Math.max(0, t - onchainReserveSats)));
   };
 
-  // Release the reserve: stop holding on-chain funds for exit fees. If the
-  // balance clears the 50k board minimum it boards back into Ark on the next
-  // round; below that it stays on-chain and the user recovers it to a Bitcoin
-  // address from the Capsules tab (the ASP won't board sub-50k deposits).
-  const doReleaseReserve = () => {
+  // Release (recover) the on-chain fee funds back to the user's Hot Vault.
+  // Replaces the old Capsules "recover" banner — same recoverArkOnchainBoard
+  // flow, surfaced here so the Vault tab is the single home for the on-chain
+  // wallet. Un-arms the reserve on success since the funds are leaving.
+  const doRecoverOnchain = async () => {
+    const hotVault: any = (wallets || []).find(
+      (w: any) => typeof w?.getID === 'function' && w.getID() === walletID,
+    );
+    if (!hotVault || typeof hotVault._getInternalAddressByIndex !== 'function') {
+      Alert.alert('No Hot Vault found', 'Open or create your Hot Vault first, then try again.');
+      return;
+    }
+    let est;
+    try {
+      est = await estimateArkOnchainRecover(onchainReserveSats);
+    } catch {
+      Alert.alert('Release unavailable', 'Could not read the on-chain balance right now. Check your connection and try again.');
+      return;
+    }
+    if (est.confirmedSats <= 0) {
+      SimpleToast.show('Nothing to release right now.', SimpleToast.SHORT);
+      return;
+    }
+    if (!est.economical) {
+      Alert.alert('Too small to release', 'The network fee would be larger than the amount, so recovering it on-chain would cost more than it returns.');
+      return;
+    }
+    let destAddress: string;
+    try {
+      destAddress = hotVault._getInternalAddressByIndex(hotVault.getNextFreeChangeAddressIndex());
+    } catch {
+      Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to release to.');
+      return;
+    }
+    if (!destAddress) {
+      Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to release to.');
+      return;
+    }
     Alert.alert(
-      'Release exit fees',
-      `Stop reserving ${onchainReserveSats.toLocaleString()} sats for Emergency Exit fees?\n\n` +
-        (onchainReserveSats >= 50000
-          ? 'They will board back into your Ark balance on the next round.'
-          : 'They are below the 50,000-sat board minimum, so they cannot go back into a capsule. They stay on-chain, where you can recover them to a Bitcoin address from the Capsules tab.'),
+      'Release on-chain funds',
+      `Send ${est.recoverableSats.toLocaleString()} sats back to your Hot Vault? This is an on-chain transaction; the network fee is about ${est.feeSats.toLocaleString()} sats.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Release',
-          style: 'destructive',
-          onPress: () => {
-            setArkExitFeeReserveSats(0);
-            setExitFundingOpen(false);
-            SimpleToast.show('Exit fee reserve released.', SimpleToast.LONG);
+          onPress: async () => {
+            try {
+              const res = await recoverArkOnchainBoard(destAddress, est.confirmedSats, est.feeRateSatPerVb);
+              setArkExitFeeReserveSats(0);
+              if (res.status === 'already-cleared') {
+                Alert.alert('Nothing to release', 'These funds already cleared.');
+              } else {
+                Alert.alert('Release sent', `${res.sentSats.toLocaleString()} sats are on the way to your Hot Vault. They will appear there as a pending transaction.`);
+              }
+            } catch (e: any) {
+              Alert.alert('Release failed', String(e?.message || '') || 'The transaction could not be sent. Your funds are unchanged.');
+            }
           },
         },
       ],
@@ -1185,7 +1255,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
           `Forces your VTXO capsules onto the Bitcoin chain. Funds arrive at your ${destLabel} after a ~24-hour wait set by Bitcoin. Once you start, this can't be cancelled.\n\n` +
           'Only start this if your soonest capsule is at least 1 day from expiry. The exit txs must confirm on-chain before then, so it is not a last-minute rescue.\n\n' +
           `${address}\n\n` +
-          'Cypher Box keeps the exit running in the background and removes this Ark wallet when the funds arrive.',
+          'Cypher Box keeps the exit running in the background and sweeps the funds to this address when the timelock expires. The vault stays afterwards.',
         [
           {
             text: 'Cancel',
@@ -1200,6 +1270,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 await startArkEmergencyExit();
                 setArkExitDestinationAddress(address);
                 setArkExitStartedAt(Date.now());
+                // Fresh exit: clear any stale "drained" flag from a prior exit
+                // so the completion gate (useArkSync) starts clean.
+                setArkExitDrained(false);
+                // Snapshot the amount being exited (pre-exit spendable
+                // balance). The SDK's pending counter reads 0 while the exit
+                // txs broadcast and any live read needs an open handle, so
+                // this persisted figure is what the status panel falls back
+                // to across reloads.
+                const startedSats = Number(arkBalanceDetail?.spendableSats ?? 0);
+                setArkExitStartedSats(startedSats > 0 ? startedSats : null);
                 setArkExitInProgress(true);
                 // Activity log: read pending sats fresh — the exit just
                 // moved every spendable VTXO into pending-exit state, so
@@ -1209,15 +1289,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // useArkSync can match the started/finished pair.
                 const correlationId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
                 await setArkExitCorrelationId(correlationId);
-                let exitSats = 0;
-                try {
-                  exitSats = await fetchPendingExitsTotalSats();
-                } catch {
-                  // non-fatal — emit the event with 0 if the read fails
-                }
+                // Use the pre-exit spendable snapshot: pendingExitsTotalSats
+                // reads 0 while the exit txs are still broadcasting (SDK
+                // quirk — see useArkSync exit block), which recorded every
+                // exit as "0 sats" in the activity log.
                 recordEvent({
                   kind: 'ark-exit-started',
-                  sats: exitSats,
+                  sats: startedSats,
                   correlationId,
                 });
                 SimpleToast.show(
@@ -1225,7 +1303,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   SimpleToast.LONG,
                 );
               } catch (err: any) {
-                console.warn('[Ark exit] start failed:', err);
+                console.warn('[Ark exit] start failed:', 'tag=', err?.tag, 'inner=', err?.inner?.errorMessage ?? err?.inner?.message, 'message=', err?.message ?? String(err));
                 SimpleToast.show(
                   `Couldn't start exit: ${err?.message ?? 'unknown error'}`,
                   SimpleToast.LONG,
@@ -1805,8 +1883,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               {arkBgRefreshEnabled
-                ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, expired capsules cannot be recovered.'
-                : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Expired capsules cannot be recovered.'}
+                ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
+                : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
             </Text>
 
           </View>
@@ -1814,17 +1892,26 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
         {/* Exit-in-progress status panel replaces both action buttons.
             Shows a single source of truth for what's happening + the
-            destination the user picked. Auto-claim + auto-delete run from
-            useArkSync, so there's nothing for the user to tap here. */}
+            destination the user picked. Auto-claim runs from useArkSync,
+            so there's nothing for the user to tap here. */}
         {arkExitInProgress ? (
           <View style={{ marginTop: 30, alignSelf: 'center', width: widths * 0.85, paddingVertical: 14, paddingHorizontal: 18, borderRadius: 12, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: colors.redLight }}>
             <Text bold style={{ fontSize: 15, color: colors.redLight, marginBottom: 8 }}>
               Emergency exit in progress
             </Text>
             <Text style={{ fontSize: 13, color: '#DDD', marginBottom: 6 }}>
-              {pendingExitSats == null
-                ? 'Broadcasting exit transactions…'
-                : `${pendingExitSats.toLocaleString()} sats pending exit. Funds sweep automatically once the ~24h CSV timelock expires.`}
+              {(() => {
+                // Live per-VTXO read when the handle is open; otherwise the
+                // persisted at-start snapshot, so the amount survives
+                // reloads and closed-handle windows.
+                const shownSats =
+                  pendingExitSats && pendingExitSats > 0
+                    ? pendingExitSats
+                    : (arkExitStartedSats ?? pendingExitSats);
+                return shownSats == null || shownSats <= 0
+                  ? 'Broadcasting exit transactions…'
+                  : `${shownSats.toLocaleString()} sats pending exit. Funds sweep automatically once the ~24h CSV timelock expires.`;
+              })()}
             </Text>
             {arkExitDestinationAddress && (
               <Text style={{ fontSize: 12, color: '#888' }} numberOfLines={1}>
@@ -1833,7 +1920,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             )}
             {arkExitStartedAt && (
               <Text style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                Started {new Date(arkExitStartedAt).toLocaleString()}. This vault auto-deletes when the sweep completes.
+                Started {new Date(arkExitStartedAt).toLocaleString()}. Funds sweep to the destination when the timelock expires; the vault stays afterwards.
               </Text>
             )}
           </View>
@@ -1868,7 +1955,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             {/* Fee-funding gate: on-chain fee wallet is short. Explain, offer
                 "Fund exit fees", and a low-emphasis break-glass to start anyway
                 (progressExits resumes once fees are added). */}
-            {exitFeeGated && (
+            {exitFeeGated && onchainReserveSats <= 0 && (
               <View style={{ marginTop: 12, marginHorizontal: 24, padding: 12, borderRadius: 10, backgroundColor: 'rgba(255, 200, 80, 0.06)', borderWidth: 1, borderColor: 'rgba(255, 200, 80, 0.30)' }}>
                 <Text bold style={{ fontSize: 13, color: '#FFD54F', marginBottom: 6 }}>
                   Fund exit fees first
@@ -1901,26 +1988,38 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               </View>
             )}
 
-            {/* Funded confirmation: the on-chain fee wallet now covers the
-                reserve, so the button is unlocked. Confirm the sats are set
-                aside and, critically, that the exit is an EARLY tool: it must
-                be started at least a day before a capsule expires, never as a
-                last-minute rescue (the exit txs must confirm on-chain before
-                the expiry, which takes time). */}
-            {exitFeeFunded && (
-              <View style={{ marginTop: 12, marginHorizontal: 24, padding: 12, borderRadius: 10, backgroundColor: 'rgba(35, 196, 127, 0.07)', borderWidth: 1, borderColor: 'rgba(35, 196, 127, 0.35)' }}>
-                <Text bold style={{ fontSize: 13, color: colors.green, marginBottom: 6 }}>
-                  Exit fees ready
+            {/* On-chain fee wallet card. Present whenever the on-chain wallet
+                holds funds: show the balance and the actions the user can take
+                on it — reserve as Emergency Exit fees, add more, or release
+                (recover) it back to the Hot Vault. Green once armed, amber
+                while unreserved. This is the single home for the on-chain
+                wallet; the old Capsules "stuck funds" banner was removed in
+                favour of it. Empty wallet falls through to the "Fund exit
+                fees first" prompt above. */}
+            {onchainReserveSats > 0 && (
+              <View style={{ marginTop: 12, marginHorizontal: 24, padding: 12, borderRadius: 10, backgroundColor: (arkExitFeeReserveSats ?? 0) > 0 ? 'rgba(35, 196, 127, 0.07)' : 'rgba(255, 200, 80, 0.06)', borderWidth: 1, borderColor: (arkExitFeeReserveSats ?? 0) > 0 ? 'rgba(35, 196, 127, 0.35)' : 'rgba(255, 200, 80, 0.30)' }}>
+                <Text bold style={{ fontSize: 13, color: (arkExitFeeReserveSats ?? 0) > 0 ? colors.green : '#FFD54F', marginBottom: 6 }}>
+                  {(arkExitFeeReserveSats ?? 0) > 0 ? 'Exit fees ready' : 'On-chain funds'}
                 </Text>
                 <Text style={{ fontSize: 12, color: '#CCC', lineHeight: 17 }}>
-                  {onchainReserveSats.toLocaleString()} sats are reserved on-chain to pay Emergency Exit fees. Start the exit at least 1 day before your soonest capsule expires. It unrolls on-chain and needs time to confirm, so it is not a last-minute rescue.
+                  {(arkExitFeeReserveSats ?? 0) > 0
+                    ? `${onchainReserveSats.toLocaleString()} sats are reserved on-chain to pay Emergency Exit fees. Start the exit at least 1 day before your soonest capsule expires. It unrolls on-chain and needs time to confirm, so it is not a last-minute rescue.`
+                    : `${onchainReserveSats.toLocaleString()} sats are sitting in your on-chain wallet. Reserve them to pay Emergency Exit fees, add more, or release them back to your Hot Vault.`}
                 </Text>
-                {reserveBelowRecommended && (
+                {(arkExitFeeReserveSats ?? 0) > 0 && reserveBelowRecommended && (
                   <Text style={{ fontSize: 11, color: '#FFD54F', marginTop: 8, lineHeight: 15 }}>
                     You reserved less than the recommended {(recommendedReserveSats ?? 0).toLocaleString()} sats. A fee spike could stall the exit.
                   </Text>
                 )}
                 <View style={{ flexDirection: 'row', marginTop: 12 }}>
+                  {(arkExitFeeReserveSats ?? 0) <= 0 && (
+                    <TouchableOpacity
+                      onPress={() => { setArkExitFeeReserveSats(onchainReserveSats); SimpleToast.show('Reserved for exit fees.', SimpleToast.SHORT); }}
+                      style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', backgroundColor: '#FFD54F', marginRight: 8 }}
+                    >
+                      <Text bold style={{ fontSize: 12, color: '#1C1C1C' }}>Reserve as exit fee</Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity
                     onPress={openExitFunding}
                     style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: colors.green, marginRight: 8 }}
@@ -1928,12 +2027,29 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     <Text bold style={{ fontSize: 12, color: colors.green }}>Add more</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={doReleaseReserve}
+                    onPress={doRecoverOnchain}
                     style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#888' }}
                   >
                     <Text bold style={{ fontSize: 12, color: '#AAA' }}>Release</Text>
                   </TouchableOpacity>
                 </View>
+                {/* Break-glass: armed target is above the on-chain balance
+                    (exitFeeGated) but funds ARE present on-chain. The main
+                    button stays gated, but let the user start the exit anyway
+                    rather than stranding them with no path but "Add more".
+                    They accept the fee-spike risk; the picker's own warning
+                    still applies. */}
+                {exitFeeGated && (
+                  <TouchableOpacity
+                    onPress={() => setExitPickerOpen(true)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ marginTop: 12, alignItems: 'center' }}
+                  >
+                    <Text style={{ fontSize: 12, color: '#888', textDecorationLine: 'underline' }}>
+                      Start exit anyway
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
 

@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // `acceptedTosVersion` doesn't match this string are routed to the
 // GetStartedScreen re-acceptance flow on next launch. Keep in sync with
 // the literal written in GetStartedScreen handleStartClick.
-const CURRENT_TOS_VERSION = '2026-06';
+const CURRENT_TOS_VERSION = '2026-08';
 
 // Minimum time the bootsplash stays up so the brand moment doesn't flicker
 // on fast boots. Boot work and tos check race against this.

@@ -115,6 +115,15 @@ export type AuthStateType = {
     // view. Spendable-only subset drives the capsule UI.
     arkVtxos: ArkVtxoView[];
     /**
+     * VTXO ids the client submitted for a delegated refresh and is waiting to
+     * finalise. bark 0.6.0 no longer marks a mid-refresh VTXO `Locked` (it
+     * stays `Spendable` so the user can still spend it), so the client tracks
+     * these ids itself to drive the per-capsule "Refreshing" animation. Pruned
+     * each sync by useArkSync (id gone from the wallet, or pendingInRoundSats
+     * back to 0).
+     */
+    arkRefreshingVtxoIds: string[];
+    /**
      * Set when at least one ongoing round has been pending for longer than
      * `2 × roundIntervalSecs` (time-based detection). Drives the "Recover
      * stuck refresh" banner in ArkWallet. `null` means no stuck round
@@ -233,6 +242,23 @@ export type AuthStateType = {
      */
     arkExitStartedAt: number | null;
     /**
+     * Spendable sats captured at the moment the exit was started. Display
+     * fallback for the "X sats pending exit" panel: the SDK's live counters
+     * read 0 mid-broadcast (see useArkSync exit block) and any live read
+     * needs an open wallet handle, so this persisted snapshot is what keeps
+     * the amount visible across reloads. Null when no exit is in flight.
+     */
+    arkExitStartedSats: number | null;
+    /**
+     * True once the in-flight exit has actually swept (drained) funds to the
+     * destination at least once. The vault auto-delete (useArkSync) gates on
+     * this: "0 pending / 0 claimable" means "exit complete" ONLY if we've
+     * drained — otherwise it's the empty/never-materialised state (e.g. start
+     * produced no pending exit txs) and deleting would wipe a wallet whose
+     * funds never left. Reset on exit start and on teardown.
+     */
+    arkExitDrained: boolean;
+    /**
      * Armed on-chain fee reserve, in sats. The bark on-chain (BDK) wallet pays
      * the unilateral-exit CPFP fees; this is the amount the user has committed
      * to keep on-chain for that purpose. While > 0 the auto-board pipeline
@@ -251,6 +277,7 @@ export type AuthStateType = {
     setArkBalance: (state: number) => void;
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => void;
     setArkVtxos: (state: ArkVtxoView[]) => void;
+    setArkRefreshingVtxoIds: (ids: string[]) => void;
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => void;
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => void;
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => void;
@@ -264,6 +291,8 @@ export type AuthStateType = {
     setArkExitInProgress: (state: boolean) => void;
     setArkExitDestinationAddress: (state: string | null) => void;
     setArkExitStartedAt: (state: number | null) => void;
+    setArkExitDrained: (state: boolean) => void;
+    setArkExitStartedSats: (state: number | null) => void;
     setArkExitFeeReserveSats: (state: number) => void;
     setArkUseHotVaultSeed: (state: boolean) => void;
     setWithdrawArkThreshold: (state: any) => void;
@@ -469,6 +498,7 @@ const createAuthStore = (
     arkBalance: 0,
     arkBalanceDetail: null,
     arkVtxos: [],
+    arkRefreshingVtxoIds: [],
     arkRefreshStuck: null,
     arkPendingRoundFirstSeen: {},
     arkScheduledExpiryNotifs: {},
@@ -482,6 +512,8 @@ const createAuthStore = (
     arkExitInProgress: false,
     arkExitDestinationAddress: null,
     arkExitStartedAt: null,
+    arkExitDrained: false,
+    arkExitStartedSats: null,
     arkExitFeeReserveSats: 0,
     arkUseHotVaultSeed: false,
     withdrawArkThreshold: 500000,
@@ -542,6 +574,7 @@ const createAuthStore = (
     setArkBalance: (state: number) => set({ arkBalance: state }),
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
+    setArkRefreshingVtxoIds: (ids: string[]) => set({ arkRefreshingVtxoIds: ids }),
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => set({ arkRefreshStuck: state }),
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => set({ arkPendingRoundFirstSeen: state }),
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => set({ arkScheduledExpiryNotifs: state }),
@@ -555,6 +588,8 @@ const createAuthStore = (
     setArkExitInProgress: (state: boolean) => set({ arkExitInProgress: state }),
     setArkExitDestinationAddress: (state: string | null) => set({ arkExitDestinationAddress: state }),
     setArkExitStartedAt: (state: number | null) => set({ arkExitStartedAt: state }),
+    setArkExitDrained: (state: boolean) => set({ arkExitDrained: state }),
+    setArkExitStartedSats: (state: number | null) => set({ arkExitStartedSats: state }),
     setArkExitFeeReserveSats: (state: number) => set({ arkExitFeeReserveSats: state }),
     setArkUseHotVaultSeed: (state: boolean) => set({ arkUseHotVaultSeed: state }),
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
@@ -582,6 +617,7 @@ const createAuthStore = (
             arkBalance: 0,
             arkBalanceDetail: null,
             arkVtxos: [],
+            arkRefreshingVtxoIds: [],
             arkRefreshStuck: null,
             arkPendingRoundFirstSeen: {},
             arkScheduledExpiryNotifs: {},
@@ -595,15 +631,27 @@ const createAuthStore = (
             arkExitInProgress: false,
             arkExitDestinationAddress: null,
             arkExitStartedAt: null,
+            arkExitDrained: false,
+            arkExitStartedSats: null,
             arkExitFeeReserveSats: 0,
             arkUseHotVaultSeed: false,
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout
 
-            // Refresh state is wallet-scoped: clear on disconnect so
-            // the next wallet doesn't inherit a previous wallet's
-            // success timestamp / failure count.
-            arkBgRefreshEnabled: false,
+            // Background-refresh bookkeeping is wallet-scoped: clear on
+            // disconnect so the next wallet doesn't inherit a previous
+            // wallet's success timestamp / failure count.
+            //
+            // arkBgRefreshEnabled is intentionally NOT reset here. It is a
+            // user preference (on by default), so it is kept across wallet
+            // changes, the same treatment as arkArkoorPromptEnabled below.
+            // Forcing it false on every disconnect silently disabled
+            // background refresh after any recover/reconnect: the wallet-open
+            // backfill (ensureBackgroundArkSeed) only mirrors the background-
+            // readable seed while the flag is true, so a persisted false
+            // starved the maintenance task of its seed. An explicit opt-out
+            // (the toggle) still sets the flag false and deletes the seed,
+            // and that choice is now preserved across a reconnect too.
             arkBgRefreshLastSuccessAt: null,
             arkBgRefreshLastAttempt: null,
             arkBgRefreshConsecutiveFailures: 0,

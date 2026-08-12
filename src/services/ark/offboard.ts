@@ -1,3 +1,4 @@
+import { assertNoActiveArkExit } from './exit';
 import { getArkWalletHandle } from './walletHandle';
 
 /**
@@ -34,6 +35,7 @@ export async function estimateArkOffboardFee(
     address: string,
     vtxoIds: string[],
 ): Promise<ArkOffboardFeeView> {
+    assertNoActiveArkExit();
     const handle = requireHandle();
     const est = await handle.estimateOffboardFee(address.trim(), vtxoIds);
     return {
@@ -51,6 +53,7 @@ export async function offboardArkVtxos(
     vtxoIds: string[],
     address: string,
 ): Promise<string> {
+    assertNoActiveArkExit();
     const handle = requireHandle();
     return await handle.offboardVtxos(vtxoIds, address.trim());
 }

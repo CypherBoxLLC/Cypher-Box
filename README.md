@@ -1,13 +1,13 @@
 # ⚡ Cypher Box — A Fun Way to Play Bitcoin
 
-[![Release](https://img.shields.io/badge/release-v0.1.4-f7931a)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
+[![Release](https://img.shields.io/badge/release-v0.1.6-f7931a)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
 [![Reproducible build](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml/badge.svg)](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-lightgrey)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
 
 **Website:** [cypherbox.io](https://cypherbox.io) · **Community:** [Telegram](https://t.me/BitcoinUserSupport) · **Email:** info@cypherbox.io
 
-Cypher Box walks you up the self-custody ladder: start with an easy custodial Lightning account, graduate to a non-custodial Lightning vault on the Ark protocol, and land in full on-chain cold storage.
+Cypher Box walks you up the self-custody ladder: start with an easy custodial Lightning account(s), graduate to a Hot/Ark vault, and land in full on-chain cold storage for long term secure storage. You can reverse the flow and top-up coins from cold storage back to your hot or lightning wallets for cheap fast payments.
 
 Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built with React Native + Electrum, powered by **Strike**, **Coinos**, and **Second's Bark SDK**.
 
@@ -18,7 +18,7 @@ Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built 
 | Rail | Custody | Network | Best for |
 |---|---|---|---|
 | ⚡ **Lightning Accounts** | Custodial (Strike / Coinos) | Lightning | First sats, everyday spending |
-| ⛵ **Bark Vault** | **Self-custodial** | Ark protocol (L2) | Lightning speed, your keys |
+| ⛵ **Bark Vault** | **Self-custodial** | Ark protocol (L2) | Lightning speed, your keys, experimental |
 | 🔥 **Hot Vault** | Self-custodial | Bitcoin on-chain | Savings on your device |
 | 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Hardware-signed savings |
 
@@ -28,7 +28,6 @@ Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, wit
 
 ## ⚡ Lightning Accounts
 
-* **Multi-currency** balances via Strike + Coinos (USD, EUR, GBP, AUD and more)
 * OAuth login (Strike) or credentials (Coinos); tokens live only in your device Keychain
 * Send/receive Lightning and on-chain BTC; Liquid receive via Coinos
 * Lightning addresses, payment history, withdrawal-threshold reminders
@@ -36,7 +35,7 @@ Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, wit
 * Swap between accounts, withdraw to vaults, top-up from vaults
 
 ## ⛵ Bark Vault — non-custodial Lightning (Ark protocol)
-
+  
 Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). Self-custodial: you can always exit to the chain without the server's permission.
 
 * Send & receive over Lightning, receive on Ark addresses, board from on-chain
@@ -61,6 +60,7 @@ Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark
 * **Coin control** with UTXO visualization: label, consolidate, pick coins
 * Cold Vault: watch-only + PSBT signing with **BBQr animated QR** for airgapped hardware
 * Custom Electrum server support, plausible deniability
+* **Privacy boundary:** the app is wired so your xPub is never exposed to the Lightning custodians or exchanges; they only ever see the single address you chose to withdraw to. Users are advised to practice good coin control and labelling.
 
 ---
 

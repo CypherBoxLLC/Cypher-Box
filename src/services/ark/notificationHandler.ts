@@ -209,15 +209,47 @@ export function maybeShowForegroundTransferBanner(payload: any): void {
  * the toggle.
  *
  * NOTE: blue_modules/notifications.js calls PushNotification.configure
- * AGAIN when GroundControl notifications are enabled, replacing these
- * callbacks. Both onNotification implementations route through the same
- * shared handlers above, so behavior is identical whichever configure
- * ran last.
+ * AGAIN when GroundControl notifications are enabled, and the library only
+ * honours the LAST caller. Whichever registration wins that race owns every
+ * incoming push, so both implementations have to handle every push type.
+ * They did not: only blue_modules recognised the silent { arkMaintenance: 1 }
+ * wake. If this registration ran last, a maintenance push was delivered,
+ * handed to a handler that ignored it, and did nothing at all, which is
+ * indistinguishable from the push never arriving and is exactly how it was
+ * misdiagnosed for a long evening.
  */
 export function registerArkNotificationTapHandler(): void {
     PushNotification.configure({
         requestPermissions: false,
         onNotification: (notification: any) => {
+            // SILENT MAINTENANCE PUSH. Checked FIRST because it is not a tap,
+            // and because iOS only keeps the process alive until finish() is
+            // called. Mirrors blue_modules/notifications.js so behaviour no
+            // longer depends on which configure() happened to win.
+            try {
+                const maintData = Object.assign(
+                    {},
+                    notification?.data,
+                    notification?.data && notification.data.data,
+                );
+                if (notification?.arkMaintenance || maintData?.arkMaintenance) {
+                    // eslint-disable-next-line @typescript-eslint/no-var-requires
+                    const bg = require('./backgroundRefresh');
+                    void Promise.resolve(bg.runArkBackgroundMaintenance('push'))
+                        .catch((err: any) =>
+                            console.warn('[Ark] background maintenance (tap-handler path) failed:', err),
+                        )
+                        .finally(() => {
+                            try {
+                                notification?.finish?.('UIBackgroundFetchResultNewData');
+                            } catch (_) {}
+                        });
+                    return;
+                }
+            } catch (detectErr) {
+                console.warn('[Ark] maintenance-push detection failed, continuing:', detectErr);
+            }
+
             if (handleArkNotificationTap(notification)) return;
             // Mirror blue_modules' payload flattening: GroundControl data
             // sometimes sits under `data`, sometimes at the root.
@@ -226,18 +258,18 @@ export function registerArkNotificationTapHandler(): void {
         },
     });
 
-    // One-time hygiene for installs that had the old background-refresh
-    // feature enabled: the toggle used to mirror the seed into a
-    // background-readable (non-biometric) Keychain entry so headless wakes
-    // could open the wallet. Those wakes no longer exist, so no copy of
-    // the seed should either. Lazy require keeps the boot path light;
-    // fire-and-forget because failure just means the entry outlives this
-    // launch and gets retried on the next one.
+    // Keep the background-readable seed copy in sync with the opt-in state: it
+    // must exist ONLY while background refresh is enabled. When it's off, delete
+    // any lingering copy so no seed lives outside the biometry-locked primary.
+    // (Opt-out and reset delete it explicitly; this is the boot-time safety
+    // net.) Lazy require keeps the boot path light; fire-and-forget.
     setTimeout(() => {
         try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const { deleteBackgroundArkSeed } = require('./backgroundKeychain');
-            void deleteBackgroundArkSeed().catch(() => {});
+            if (!useAuthStore.getState().arkBgRefreshEnabled) {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { deleteBackgroundArkSeed } = require('./backgroundKeychain');
+                void deleteBackgroundArkSeed().catch(() => {});
+            }
         } catch {}
     }, 0);
 }

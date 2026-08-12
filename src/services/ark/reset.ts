@@ -1,6 +1,7 @@
 import * as Keychain from 'react-native-keychain';
 
 import { clearArkKeyCache, deleteArkBackupForWallet } from './backup';
+import { deleteBackgroundArkSeed } from './backgroundKeychain';
 import { deleteArkDatadir } from './datadir';
 import { clearArkWalletHandle } from './walletHandle';
 
@@ -107,4 +108,12 @@ export async function resetArkWalletState(
             console.warn('[Ark] Keychain reset failed:', err);
         }
     }
+
+    // Always drop the background-readable seed copy (opt-in bg maintenance): it
+    // must never outlive the wallet it belongs to. Unconditional even when
+    // keepSeedInKeychain is true, so the copy never holds a retired wallet's
+    // seed; openArkWallet's backfill re-creates it on the next open if the user
+    // is still opted in, keeping it in step with the currently-open wallet.
+    // (deleteBackgroundArkSeed swallows its own errors — absent is the goal.)
+    await deleteBackgroundArkSeed();
 }

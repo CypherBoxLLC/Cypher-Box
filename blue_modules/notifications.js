@@ -12,6 +12,7 @@ const PUSH_TOKEN = 'PUSH_TOKEN';
 const GROUNDCONTROL_BASE_URI = 'GROUNDCONTROL_BASE_URI';
 const NOTIFICATIONS_STORAGE = 'NOTIFICATIONS_STORAGE';
 const NOTIFICATIONS_NO_AND_DONT_ASK_FLAG = 'NOTIFICATIONS_NO_AND_DONT_ASK_FLAG';
+const ONCHAIN_SUBSCRIPTIONS_ENABLED = 'ONCHAIN_SUBSCRIPTIONS_ENABLED';
 let alreadyConfigured = false;
 let baseURI = constants.groundControlUri;
 
@@ -52,6 +53,33 @@ function Notifications(props) {
 
             // (required) Called when a remote is received or opened, or local notification is opened
             onNotification: async function (notification) {
+              // SILENT MAINTENANCE PUSH (content-available, no alert):
+              // GroundControl wakes the app a few hours before the earliest
+              // capsule expiry so the wallet can hand due VTXOs to the ASP
+              // for a delegated refresh, unattended. Detected by the
+              // `arkMaintenance` marker in the payload. Must run BEFORE the
+              // tap handler (this is not a tap) and must call finish() only
+              // AFTER the maintenance completes — that's iOS's background
+              // execution window contract (~30s budget; the delegated
+              // submit returns in seconds once the ASP accepts).
+              try {
+                const maintData = Object.assign({}, notification.data, notification.data && notification.data.data);
+                if (notification.arkMaintenance || (maintData && maintData.arkMaintenance)) {
+                  // eslint-disable-next-line @typescript-eslint/no-var-requires
+                  const bg = require('../src/services/ark/backgroundRefresh');
+                  try {
+                    await bg.runArkBackgroundMaintenance('push');
+                    notification.finish(PushNotificationIOS.FetchResult.NewData);
+                  } catch (maintErr) {
+                    console.warn('ark background maintenance failed:', maintErr);
+                    notification.finish(PushNotificationIOS.FetchResult.ResultFailed);
+                  }
+                  return;
+                }
+              } catch (detectErr) {
+                console.warn('ark maintenance-push detection failed, continuing:', detectErr);
+              }
+
               // This configure() REPLACES the boot-time one registered by
               // src/services/ark/notificationHandler.ts (the library only
               // honors the last caller). Route Ark capsule taps through the
@@ -147,6 +175,90 @@ function Notifications(props) {
   };
 
   /**
+   * Whether this device may upload wallet data (onchain addresses, Lightning
+   * payment hashes, txids) to GroundControl so the server can push payment
+   * alerts. This is the onchain/Lightning notification consent.
+   *
+   * Deliberately separate from the Ark capsule-expiry registration
+   * (`arkExpiryToGroundControl`), which sends only a push token and a
+   * timestamp, carries no wallet-identifying data, and is governed by its own
+   * preference.
+   *
+   * Why this exists: nothing used to gate `majorTomToGroundControl`. It runs
+   * unconditionally from ~20 call sites (wallet load, home render, vault open,
+   * receive, send, broadcast) and was held back only by the absence of a push
+   * token. That made privacy an accident of the token being missing: minting a
+   * token for any unrelated feature would have silently started uploading
+   * every wallet address. This flag makes the upload an explicit choice.
+   *
+   * First read migrates so nobody's behaviour changes today: a device that
+   * already holds a push token was already subscribing and keeps doing so; a
+   * device without one resolves to off, which is the posture it already had.
+   */
+  async function _isOnchainSubscriptionEnabled() {
+    try {
+      const stored = await AsyncStorage.getItem(ONCHAIN_SUBSCRIPTIONS_ENABLED);
+      if (stored !== null) return stored === '1';
+      const hadToken = !!(await Notifications.getPushToken());
+      await AsyncStorage.setItem(ONCHAIN_SUBSCRIPTIONS_ENABLED, hadToken ? '1' : '0');
+      return hadToken;
+    } catch (_) {
+      // Fail closed: on a storage error never upload wallet data.
+      return false;
+    }
+  }
+
+  Notifications.isOnchainSubscriptionEnabled = _isOnchainSubscriptionEnabled;
+
+  Notifications.setOnchainSubscriptionEnabled = async function (enabled) {
+    return AsyncStorage.setItem(ONCHAIN_SUBSCRIPTIONS_ENABLED, enabled ? '1' : '0');
+  };
+
+  /**
+   * Acquire a push token for the Bark capsule-expiry wake WITHOUT opting the
+   * user into onchain address uploads.
+   *
+   * The wake needs a token: `arkExpiryToGroundControl` returns early without
+   * one, so the server is never told when a capsule expires and never wakes
+   * the device. Until now the only path that minted a token was
+   * `tryToObtainPermissions`, reached solely from legacy BlueWallet screens
+   * the Cypher Box flow never visits, which left Bark's safety net dependent
+   * on an unrelated privacy toggle.
+   *
+   * Ordering matters. `_isOnchainSubscriptionEnabled` migrates an unset flag
+   * by inferring consent from token presence. Resolving it FIRST pins it to
+   * the pre-token answer (no token, so off); minting first would make the next
+   * read conclude the user had already agreed to upload addresses.
+   *
+   * The caller's toggle is the consent, so this goes straight to the OS
+   * prompt rather than through the `tryToObtainPermissions` pre-prompt, and
+   * deliberately ignores the global "no and don't ask" flag: flipping the
+   * capsule-reminders switch is a fresh, explicit request.
+   *
+   * Never rejects, and never hangs: configureNotifications only resolves once
+   * onRegister fires, so a denied prompt would leave it pending forever. A
+   * timeout bounds that. Returning false on timeout is safe, since a late
+   * grant still stores the token via onRegister.
+   */
+  Notifications.ensurePushTokenForArk = async function () {
+    if (!Notifications.isNotificationsCapable) return false;
+    try {
+      await _isOnchainSubscriptionEnabled();
+      if (await Notifications.getPushToken()) {
+        if (!alreadyConfigured) configureNotifications();
+        return true;
+      }
+      return await Promise.race([
+        configureNotifications(),
+        new Promise(resolve => setTimeout(() => resolve(false), 60000)),
+      ]);
+    } catch (err) {
+      console.warn('[Ark] push token acquisition failed:', err);
+      return false;
+    }
+  };
+
+  /**
    * Should be called when user is most interested in receiving push notifications.
    * If we dont have a token it will show alert asking whether
    * user wants to receive notifications, and if yes - will configure push notifications.
@@ -226,6 +338,9 @@ function Notifications(props) {
   Notifications.majorTomToGroundControl = async function (addresses, hashes, txids) {
     if (!Array.isArray(addresses) || !Array.isArray(hashes) || !Array.isArray(txids))
       throw new Error('no addresses or hashes or txids provided');
+    // Consent gate. Checked here rather than at the ~20 call sites so a new
+    // caller cannot upload wallet data by forgetting to ask.
+    if (!(await _isOnchainSubscriptionEnabled())) return;
     const pushToken = await Notifications.getPushToken();
     if (!pushToken || !pushToken.token || !pushToken.os) return;
 
@@ -243,6 +358,45 @@ function Notifications(props) {
         },
       }),
     );
+  };
+
+  /**
+   * Registers (or re-registers) this device's earliest Ark capsule expiry
+   * with GroundControl, so the server's scheduler can send a silent
+   * content-available maintenance push (payload: { arkMaintenance: 1 })
+   * a few hours before the deadline. Idempotent upsert keyed by token:
+   * the server keeps ONE expiry per device; every call replaces it.
+   *
+   * Server contract (endpoint to be added on the GroundControl VPS):
+   *   POST /arkExpiry  { token, os, expiryAtMs }
+   *   expiryAtMs === 0 clears the subscription (no live capsules left).
+   *
+   * Fire-and-forget: the endpoint doesn't exist server-side yet, so all
+   * failures are swallowed — the local reminder schedule is the fallback.
+   *
+   * @param expiryAtMs {number} epoch ms of the EARLIEST live capsule expiry
+   * @returns {Promise<object|undefined>}
+   */
+  Notifications.arkExpiryToGroundControl = async function (expiryAtMs) {
+    if (!Number.isFinite(expiryAtMs) || expiryAtMs < 0) return;
+    const pushToken = await Notifications.getPushToken();
+    if (!pushToken || !pushToken.token || !pushToken.os) return;
+
+    const api = new Frisbee({ baseURI });
+    try {
+      return await api.post(
+        '/arkExpiry',
+        Object.assign({}, _getHeaders(), {
+          body: {
+            token: pushToken.token,
+            os: pushToken.os,
+            expiryAtMs,
+          },
+        }),
+      );
+    } catch (_) {
+      // Server support lands separately; silent by design.
+    }
   };
 
   /**

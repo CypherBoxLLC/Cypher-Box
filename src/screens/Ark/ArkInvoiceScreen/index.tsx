@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 
 import { ScreenLayout } from "@Cypher/component-library";
@@ -16,6 +16,11 @@ import styles from "./styles";
 // CustomKeyboard already accept a `colors_` override, so this is purely
 // a presentation swap.
 const ARK_GRADIENT = [colors.ark.gradient1, colors.ark.gradient2];
+// Warning-yellow gradient for the small-amount "Create anyways" CTA and the
+// dust note. A sub-700-sat receive can leave un-refreshable dust that expires.
+const WARN_YELLOW = ['#FFD54F', '#FFB300'];
+// COPY: Bam finalizes.
+const SMALL_RECEIVE_SATS = 700;
 
 /**
  * Amount entry for an Ark BOLT11 invoice.
@@ -35,6 +40,11 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
     const [sats, setSats] = useState("");
     const [usd, setUSD] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+
+    // Small-amount warning: in sats mode the typed value is the sat amount; in
+    // fiat mode CustomKeyboard mirrors the sat equivalent into `usd`.
+    const currentSats = Math.round(isSats ? Number(sats) : Number(usd)) || 0;
+    const smallAmountWarn = currentSats > 0 && currentSats <= SMALL_RECEIVE_SATS;
 
     const handleCreate = async () => {
         if (!sats) {
@@ -108,8 +118,13 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
                     colors_={ARK_GRADIENT}
                 />
             </View>
+            {smallAmountWarn && (
+                <Text style={{ textAlign: 'center', marginHorizontal: 24, marginBottom: 6, fontSize: 12, color: '#FFD54F', lineHeight: 17 }}>
+                    Small amounts can leave un-refreshable dust that expires. Receiving above 700 sats keeps them refreshable.
+                </Text>
+            )}
             <CustomKeyboard
-                title="Create invoice"
+                title={smallAmountWarn ? "Create anyways" : "Create invoice"}
                 onPress={handleCreate}
                 disabled={!sats.length || isLoading}
                 prevSats={sats}
@@ -119,6 +134,7 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
                 matchedRate={matchedRate}
                 currency={currency}
                 colors_={ARK_GRADIENT}
+                buttonColors_={smallAmountWarn ? WARN_YELLOW : undefined}
                 // Invoices have no "max" semantics — the receiver picks
                 // any amount they want to be paid. MAX is a send-side
                 // affordance (drain the wallet); suppress it on receive.

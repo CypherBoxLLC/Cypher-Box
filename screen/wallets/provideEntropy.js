@@ -1,7 +1,7 @@
 import React, { useReducer, useState } from 'react';
 import PropTypes from 'prop-types';
 import BN from 'bignumber.js';
-import { Dimensions, PixelRatio, View, ScrollView, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
+import { Alert, Dimensions, PixelRatio, View, ScrollView, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { Icon } from 'react-native-elements';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
@@ -209,7 +209,15 @@ Buttons.propTypes = {
 
 const Entropy = () => {
   const [entropy, dispatch] = useReducer(eReducer, initialState);
-  const { onGenerated } = useRoute().params;
+  // Optional params (all default to legacy BlueWallet behaviour when absent):
+  //   minBits     — Save refuses below this many collected bits. BlueWallet
+  //                 happily saves ANY amount (even 0 bytes, silently padded
+  //                 with device RNG downstream) — for the Cypher Box hot-vault
+  //                 flow that low-entropy path is a footgun, so the caller
+  //                 passes 128 and Save hard-blocks under it.
+  //   limit       — display target for the counter ("N of {limit} bits").
+  //   instruction — one-line how-to rendered under the dice grid.
+  const { onGenerated, minBits, limit, instruction } = useRoute().params;
   const navigation = useNavigation();
   const [tab, setTab] = useState(1);
   const [show, setShow] = useState(false);
@@ -226,13 +234,21 @@ const Entropy = () => {
   const push = v => v && dispatch({ type: 'push', value: v.value, bits: v.bits });
   const pop = () => dispatch({ type: 'pop' });
   const save = () => {
+    if (minBits && entropy.bits < minBits) {
+      Alert.alert(
+        loc.entropy.title,
+        `Not enough entropy yet: ${entropy.bits} of ${minBits} bits. Keep rolling until the counter reaches ${minBits}.`,
+      );
+      return;
+    }
     navigation.pop();
     const buf = convertToBuffer(entropy);
     onGenerated(buf);
   };
 
   const hex = entropyToHex(entropy);
-  let bits = entropy.bits.toString();
+  const limitDisplay = limit || ENTROPY_LIMIT;
+  let bits = Math.min(entropy.bits, limitDisplay).toString();
   bits = ' '.repeat(bits.length < 3 ? 3 - bits.length : 0) + bits;
 
   return (
@@ -240,7 +256,7 @@ const Entropy = () => {
       <BlueSpacing20 />
       <TouchableOpacity accessibilityRole="button" onPress={() => setShow(!show)}>
         <View style={[styles.entropy, stylesHook.entropy]}>
-          <Text style={[styles.entropyText, stylesHook.entropyText]}>{show ? hex : `${bits} of 256 bits`}</Text>
+          <Text style={[styles.entropyText, stylesHook.entropyText]}>{show ? hex : `${bits} of ${limitDisplay} bits`}</Text>
         </View>
       </TouchableOpacity>
 
@@ -267,6 +283,8 @@ const Entropy = () => {
       {tab === 1 && <Dice sides={6} push={push} />}
       {tab === 2 && <Dice sides={20} push={push} />}
 
+      {instruction ? <Text style={[styles.instructionText, stylesHook.entropyText]}>{instruction}</Text> : null}
+
       <Buttons pop={pop} save={save} colors={colors} />
     </SafeArea>
   );
@@ -289,6 +307,13 @@ const styles = StyleSheet.create({
   entropyText: {
     fontSize: 15,
     fontFamily: 'Courier',
+  },
+  instructionText: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginHorizontal: 20,
+    marginBottom: 90,
+    opacity: 0.7,
   },
   coinRoot: {
     flex: 1,

@@ -150,7 +150,12 @@ export type AppEvent =
             | "skipped-vtxo-gone"
             | "refresh-now"
             | "use-immediately"
-            | "auto-skipped";
+            | "auto-skipped"
+            // 0.6.0 auto-refresh design (spendable-during-refresh + real
+            // expiry + SDK estimate as a pre-flight gate):
+            | "auto-refresh"      // safely refreshable -> refreshed silently
+            | "too-small-notice"  // below the refresh floor -> spend-it notice
+            | "too-soon-notice";  // inside the 28h exit-runway window -> spend-it notice
         /** Short prefix of the VTXO id (12 chars) for readability in the activity row. */
         vtxoIdPrefix?: string;
         /** Amount the user is being prompted about; absent on auto-skipped events. */

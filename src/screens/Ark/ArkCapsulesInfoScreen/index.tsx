@@ -1,17 +1,34 @@
 import React from "react";
-import { ScrollView, View } from "react-native";
+import { Linking, ScrollView, View } from "react-native";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
+
+const SECOND_FEES_URL = "https://second.tech/pricing";
 
 /**
  * Plain-language "what you need to know about your lightning capsules" surface.
  *
  * Reached from the circular "?" button on the Capsules tab. Pure educational
  * content — no actions, no state. Copy written for a normal user, not someone
- * who knows the protocol terms. Fees in the bottom section are quoted directly
- * from Second's published Ark fee schedule (https://second.tech/docs/learn/fees)
- * so they stay honest rather than estimated.
+ * who knows the protocol terms.
+ *
+ * Fees in the bottom section are quoted from Second's published fee schedule
+ * (SECOND_FEES_URL) so they stay honest rather than estimated. But Second
+ * reserves the right to change that schedule at any time by posting a new
+ * version, and nothing notifies us when they do. A stale number here reads to a
+ * user as a fee *we* quoted, so the section carries an explicit last-checked
+ * date and a link to the live schedule. When you re-verify these, bump the date
+ * in the copy below.
+ *
+ * This already bit us once. The schedule used to be quoted from
+ * second.tech/docs/learn/fees, which has since become a fee-philosophy page
+ * with no numbers on it; the live schedule moved to second.tech/pricing (the
+ * same URL Second's own ToS incorporates by reference). In the meantime the
+ * refresh row here had the rule backwards: it said the fee tracked the
+ * capsule's *age* and was free while the capsule was young. It actually tracks
+ * time *remaining* before expiry and is free in the last two days. Verified
+ * against second.tech/pricing on 2026-08-12.
  */
 export default function ArkCapsulesInfoScreen() {
     return (
@@ -25,12 +42,18 @@ export default function ArkCapsulesInfoScreen() {
                         Your Bark balance is held as a collection of small lightning capsules
                         (VTXOs). Each capsule has an expiry date. To keep your funds fully
                         self-custodial, meaning you can always recover them yourself without
-                        needing the Bark server's permission, each capsule must be refreshed
+                        needing the Second.tech server's permission, each capsule must be refreshed
                         before it expires.
                     </Body>
                     <Body>
-                        If a capsule expires without being refreshed, the funds inside are lost
-                        forever. There is no recovery.
+                        If a capsule expires without being refreshed, the Second.tech server can
+                        sweep the funds at any time. Recovery after expiry is not guaranteed, so
+                        treat the expiry date as a hard deadline.
+                    </Body>
+                    <Body>
+                        Keeping capsules refreshed also pays off if you ever run an Emergency
+                        Exit: fresh capsules make the exit cheaper in fees, faster to settle,
+                        and more private.
                     </Body>
                 </Section>
 
@@ -59,17 +82,16 @@ export default function ArkCapsulesInfoScreen() {
                     </Body>
                 </Section>
 
-                <Section title="Some balance may briefly be unspendable">
+                <Section title="Your balance stays spendable while it refreshes">
                     <Body>
-                        This is most noticeable after you receive over Lightning. Lightning
-                        payments land in a form that needs one more step before they're fully
-                        self-custodial, and Cypher Box converts them automatically. While
-                        that's happening, the affected capsules show as Refreshing and you
-                        won't be able to spend them.
+                        Refreshing no longer locks your funds. When a capsule is refreshing,
+                        including the automatic step right after you receive over Lightning,
+                        you can keep spending it the whole time. There is no waiting for the
+                        refresh to finish before your balance is usable.
                     </Body>
                     <Body>
-                        Refreshing usually takes less than an hour. Your balance comes
-                        right back the moment it finishes.
+                        A refresh usually finishes within about an hour and gives the capsule
+                        a fresh full life. Just leave the app running until it completes.
                     </Body>
                 </Section>
 
@@ -103,19 +125,43 @@ export default function ArkCapsulesInfoScreen() {
                     />
                     <StatusRow
                         title="Refreshing"
-                        body="Being converted into a fresh capsule. Temporarily unspendable until it finishes."
+                        body="Being given a fresh full life. It stays spendable the whole time, usually under an hour, so you can keep using it while it refreshes."
                     />
                     <StatusRow
                         title="In-flight"
-                        body="Being used in another operation: an outgoing send, withdrawal, or boarding. Same kind of brief lock as Refreshing."
+                        body="Being used in another operation: an outgoing send, withdrawal, or boarding. Briefly locked until that operation completes."
                     />
+                </Section>
+
+                <Section title="Tiny capsules (dust)">
+                    <Body>
+                        A capsule at or below 500 sats is too small to refresh on its own, so
+                        the network will not let it renew alone. To keep dust alive, tap Dust
+                        refresh on the capsule: it batches several tiny capsules together, so
+                        their combined size clears the minimum, and consolidates them into one
+                        healthy capsule.
+                    </Body>
+                    <Body>
+                        Because the amounts are tiny, the fee for a dust batch can sometimes be
+                        close to or more than the dust itself, so it is a judgment call. If it
+                        is not worth it, just spend the dust as part of a normal payment before
+                        it expires. Receiving at least about 700 sats at a time avoids dust in
+                        the first place.
+                    </Body>
                 </Section>
 
                 <Section title="Fees">
                     <Body>
-                        These are the fees the Bark server charges. They vary with how old
-                        the capsule is. Younger capsules cost less.
+                        These are the fees the Bark server charges. The refresh fee depends
+                        on how much time is left before a capsule expires, not on how old
+                        the capsule is. The closer to expiry, the cheaper the refresh.
                     </Body>
+                    <Body>
+                        Second.tech sets these fees, not Cypher Box, and can change them at
+                        any time. The figures below were checked in August 2026. For the
+                        current schedule, see:
+                    </Body>
+                    <LinkRow label="second.tech/pricing" url={SECOND_FEES_URL} />
                     <FeeRow
                         title="Receiving from Lightning"
                         body="0%, free."
@@ -126,7 +172,7 @@ export default function ArkCapsulesInfoScreen() {
                     />
                     <FeeRow
                         title="Refreshing"
-                        body="0% to 0.5% of the amount, depending on the capsule's age. 0% if the capsule is less than 2 days old."
+                        body="Free within 2 days of expiry. 0.2% with under 7 days left, 0.4% with under 14 days left, 0.5% at 14 days or more. The reminders fire inside the cheapest part of that range, so following them costs little or nothing."
                     />
                     <FeeRow
                         title="Sending over Lightning"
@@ -196,6 +242,23 @@ function StatusRow({ title, body }: { title: string; body: string }) {
                 {body}
             </Text>
         </View>
+    );
+}
+
+function LinkRow({ label, url }: { label: string; url: string }) {
+    return (
+        <Text
+            onPress={() => Linking.openURL(url)}
+            style={{
+                fontSize: 13,
+                color: colors.ark?.light ?? colors.pink.default,
+                lineHeight: 19,
+                marginBottom: 12,
+                textDecorationLine: 'underline',
+            }}
+        >
+            {label}
+        </Text>
     );
 }
 

@@ -48,7 +48,6 @@ import screenHeight from "@Cypher/style-guide/screenHeight";
 import { getFiatRate } from "../../../models/fiatUnit";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { convertFiatToUSD, fetchedRate, mostRecentFetchedRate } from "../../../blue_modules/currency";
-import { authorize } from "react-native-app-auth";
 import { getBalances, getStrikeRates } from "@Cypher/api/strikeAPIs";
 import ReceivedListNew from "./ReceivedListNew";
 import { connect as connectCoinosSocket, disconnect as disconnectCoinosSocket, setOnPaymentReceived, registerPushToken, setUsername as setCoinosUsername } from "@Cypher/services/coinosSocket";
@@ -69,31 +68,9 @@ interface Props {
   route: any;
 }
 
-const config = {
-  id: 'strike',
-  name: 'Strike',
-  type: 'oauth',
-  issuer: "https://auth.strike.me", // Strike Identity Server URL
-  clientId: "cypherbox",
-  clientSecret: "", // DO NOT hardcode secrets in client-side code
-  redirectUrl: "cypherbox://oauth/callback", // Must match the redirect URI in your Strike app settings
-  scopes: ["offline_access", "partner.balances.read", "partner.currency-exchange-quote.read", "partner.account.profile.read", "profile", "openid", "partner.invoice.read", "partner.invoice.create", "partner.invoice.quote.generate", "partner.invoice.quote.read", "partner.rates.ticker"], // Specify necessary scopes
-  //clientAuthMethod: "post",
-  //wellKnown: `https://auth.strike.me/.well-known/openid-configuration`,
-  // authorization: {
-  //     params: {
-  //         scope: 'partner.invoice.read offline_access',
-  //         response_type: 'code',
-  //     }
-  // },
-  idToken: false,
-  checks: ['pkce', 'state'],
-  // serviceConfiguration: {
-  //   authorizationEndpoint: "https://auth.strike.me/oauth/authorize",
-  //   tokenEndpoint: "https://auth.strike.me/oauth/token",
-  //   revocationEndpoint: "https://auth.strike.me/oauth/revoke",
-  // },
-};
+// The Strike OAuth config that used to sit here fed a login handler that no
+// control ever called. Both are gone; CheckingAccountLogin owns the single
+// Strike login, and this screen reaches it via dispatchNavigate.
 
 export const calculatePercentage = (withdrawThreshold: number, reserveAmount: number) => {
   const threshold = Number(withdrawThreshold);
@@ -179,7 +156,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, setStrikeToken, setStrikeAuth, clearStrikeAuth, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
+  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, clearStrikeAuth, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
   // Ark boot restore: reopens the wallet from on-disk state (datadir +
   // Keychain mnemonic) once per mount, and reconciles zustand so the
   // carousel reflects reality. Handles Metro reload + zustand/disk drift.
@@ -529,19 +506,11 @@ export default function HomeScreen({ route }: Props) {
       }
   };
 
-  const handleStrikeLogin = async () => {
-      try {
-          const result = await authorize(config);
-          setStrikeToken(result.accessToken);
-          setStrikeAuth(true);
-          // Immediately load Strike data after login instead of waiting for focus/effect
-          await loadStrikeData();
-      } catch (error) {
-          console.error("OAuth error", error);
-      } finally {
-        setIsLoading(false)
-      }
-  };
+  // A third Strike login used to live here. It was unreachable (defined but
+  // never wired to any control) and could not have worked anyway: it exchanged
+  // the code in-app with an empty clientSecret against a confidential client.
+  // The single working flow is CheckingAccountLogin, reached from this screen
+  // via dispatchNavigate('CheckingAccountLogin').
 
   const tokenRefreshedRef = useRef(false);
 

@@ -122,7 +122,7 @@ export default function GetStartedScreen({ route }: Props) {
         if (hasAcceptedTermsOfService) {
             AsyncStorage.setItem('hasAcceptedTermsOfService', JSON.stringify(true))
             // Keep in sync with CURRENT_TOS_VERSION in SplashScreen.
-            AsyncStorage.setItem('acceptedTosVersion', '2026-06')
+            AsyncStorage.setItem('acceptedTosVersion', '2026-08')
             const routeName = isHandset ? 'Navigation' : 'DrawerRoot'
 
             dispatchNavigate(routeName)

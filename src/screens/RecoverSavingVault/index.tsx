@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { Alert, ActivityIndicator, Animated, TouchableOpacity, View } from 'react-native';
+import { Alert, ActivityIndicator, Animated, Switch, TouchableOpacity, View } from 'react-native';
 import styles from './styles';
 import { ScreenLayout, Text, Input, Button } from '@Cypher/component-library';
 import { colors } from '@Cypher/style-guide';
@@ -14,6 +14,7 @@ import {
     listHotVaultKeychainBackupsWithMeta,
     resetHotVaultBackupFully,
     HotVaultBackupSummary,
+    HotVaultMeta,
 } from '@Cypher/services/hotVaultKeychain';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 
@@ -36,6 +37,11 @@ export default function RecoverSavingVault({ route }: Props) {
 
     const [loading, setLoading] = useState(false);
     const [keychainLoading, setKeychainLoading] = useState(false);
+    // Optional BIP39 passphrase for manual recovery. Toggle-gated exactly
+    // like creation: nothing is typed or applied unless the user opts in.
+    // Used as typed — never trimmed, never stored.
+    const [usePassphrase, setUsePassphrase] = useState(false);
+    const [recoverPassphrase, setRecoverPassphrase] = useState('');
     const [keychainBackups, setKeychainBackups] = useState<HotVaultBackupSummary[]>([]);
     const [pendingDeleteID, setPendingDeleteID] = useState<string | null>(null);
     const autoAttempted = useRef(false);
@@ -44,6 +50,20 @@ export default function RecoverSavingVault({ route }: Props) {
     // Lift the whole content block when the keyboard shows so words 11/12
     // stay visible while typing (the grid slides up under the header).
     const keyboardLift = useKeyboardLift(40);
+    // Extra lift while the PASSPHRASE field is focused: it sits at the very
+    // bottom of the layout, so the base 40pt lift leaves it fully under the
+    // keyboard. Focus-driven rather than keyboard-driven so the 12-word grid
+    // keeps its gentle 40pt behaviour and only the passphrase entry rides
+    // the content up above the keyboard.
+    const passphraseLift = useRef(new Animated.Value(0)).current;
+    const totalLift = useRef(Animated.add(keyboardLift, passphraseLift)).current;
+    const liftForPassphrase = (focused: boolean) => {
+        Animated.timing(passphraseLift, {
+            toValue: focused ? -210 : 0,
+            duration: 220,
+            useNativeDriver: true,
+        }).start();
+    };
 
     // Auto-recover from Keychain on mount — mimics password-autofill UX.
     //
@@ -68,7 +88,7 @@ export default function RecoverSavingVault({ route }: Props) {
             setKeychainBackups(summaries);
             if (summaries.length === 1 && !autoAttempted.current) {
                 autoAttempted.current = true;
-                handleKeychainRecover(summaries[0].walletID);
+                handleKeychainRecover(summaries[0].walletID, summaries[0].meta);
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,6 +154,7 @@ export default function RecoverSavingVault({ route }: Props) {
     const fastImportHotVault = (
         mnemonic: string,
         restoredWalletID?: string,
+        passphrase?: string,
     ) => {
         if (importing.current) return;
         const w = new HDSegwitBech32Wallet();
@@ -145,7 +166,25 @@ export default function RecoverSavingVault({ route }: Props) {
             );
             return;
         }
+        // BIP39 passphrase: applied exactly as typed BEFORE getID() — the
+        // wallet ID hash includes the passphrase, which is what makes the
+        // Keychain-path verification below possible.
+        if (passphrase) {
+            w.setPassphrase(passphrase);
+        }
         const id = w.getID();
+        // Keychain path verification: the words came from OUR OWN Keychain
+        // entry, whose walletID was derived from words+passphrase at save
+        // time. A mismatch here can only mean the passphrase is wrong,
+        // missing, or extra — importing anyway would surface an empty
+        // stranger wallet and read as "my funds are gone". Hard stop.
+        if (restoredWalletID && restoredWalletID !== id) {
+            Alert.alert(
+                'Passphrase mismatch',
+                'The recovered words are correct, but the passphrase does not match this vault. Check the passphrase (it is case-sensitive and spaces count) and try again. Nothing was imported.',
+            );
+            return;
+        }
         setWalletID(id);
         if (restoredWalletID && restoredWalletID === id) {
             setHotVaultKeychainBackup(id, true);
@@ -193,7 +232,10 @@ export default function RecoverSavingVault({ route }: Props) {
      * onWallet callback rehydrate the zustand "backed up" flag so the
      * Settings UI stays in sync post-recovery.
      */
-    const handleKeychainRecover = async (walletID: string) => {
+    const handleKeychainRecover = async (
+        walletID: string,
+        knownMeta?: HotVaultMeta | null,
+    ) => {
         if (keychainLoading || loading) return;
         setKeychainLoading(true);
         const result = await getHotVaultSeedFromKeychain(walletID);
@@ -209,6 +251,38 @@ export default function RecoverSavingVault({ route }: Props) {
             // entirely. We know this came from our own Keychain and is
             // therefore an HDSegwitBech32Wallet. Saves 3–8s of perceived
             // latency compared to the generic handleImport path.
+            //
+            // Passphrase vaults: the Keychain holds the words only (the
+            // passphrase is deliberately never stored), so the meta flag
+            // routes through a secure prompt first. fastImportHotVault's
+            // walletID check then verifies the entered passphrase actually
+            // reproduces this vault. iOS-only Alert.prompt is fine here —
+            // the iPhone Keychain flow is an iOS-only feature.
+            // Prefer the meta the caller passed in. The single-backup
+            // auto-recover fires from the mount effect immediately after
+            // setKeychainBackups(), so reading `keychainBackups` state here
+            // would see the stale pre-commit [] and miss hasPassphrase. The
+            // state lookup is only a fallback for callers that don't thread it.
+            const meta =
+                knownMeta !== undefined
+                    ? knownMeta
+                    : keychainBackups.find(s => s.walletID === walletID)?.meta;
+            if (meta?.hasPassphrase) {
+                Alert.prompt(
+                    'Vault passphrase',
+                    'This vault is passphrase-protected. Enter the passphrase to finish recovery.',
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                            text: 'Recover',
+                            onPress: (text?: string) =>
+                                fastImportHotVault(result.mnemonic, walletID, text || ''),
+                        },
+                    ],
+                    'secure-text',
+                );
+                return;
+            }
             fastImportHotVault(result.mnemonic, walletID);
             return;
         }
@@ -378,7 +452,7 @@ export default function RecoverSavingVault({ route }: Props) {
                             <TouchableOpacity
                                 key={walletID}
                                 style={styles.keychainButton}
-                                onPress={() => handleKeychainRecover(walletID)}
+                                onPress={() => handleKeychainRecover(walletID, meta)}
                                 disabled={keychainLoading || loading}
                                 activeOpacity={0.8}
                             >
@@ -401,7 +475,7 @@ export default function RecoverSavingVault({ route }: Props) {
                         <View key={walletID} style={styles.keychainRowWrap}>
                             <TouchableOpacity
                                 style={styles.keychainRow}
-                                onPress={() => handleKeychainRecover(walletID)}
+                                onPress={() => handleKeychainRecover(walletID, meta)}
                                 disabled={
                                     isBusyOther ||
                                     isDeleting ||
@@ -466,7 +540,7 @@ export default function RecoverSavingVault({ route }: Props) {
 
     return (
         <ScreenLayout title="Enter Your Seed phrase" showToolbar isBackButton disableScroll>
-            <Animated.View style={[styles.container, { transform: [{ translateY: keyboardLift }] }]}>
+            <Animated.View style={[styles.container, { transform: [{ translateY: totalLift }] }]}>
                 {loading ?
                     <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />
                     :
@@ -519,10 +593,40 @@ export default function RecoverSavingVault({ route }: Props) {
                                 ))}
                             </View>
                         </View>
+                        {/* Opt-in passphrase for manual recovery, mirroring
+                            the creation screen's toggle-gated field. */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, marginHorizontal: 20 }}>
+                            <Text bold style={{ color: '#FFF', fontSize: 14, flex: 1 }}>
+                                Optional Passphrase
+                            </Text>
+                            <Switch
+                                value={usePassphrase}
+                                onValueChange={setUsePassphrase}
+                                trackColor={{ false: '#3a3a3a', true: colors.green }}
+                                thumbColor={'#FFF'}
+                            />
+                        </View>
+                        {usePassphrase && (
+                            <Input
+                                onChange={setRecoverPassphrase}
+                                value={recoverPassphrase}
+                                label="Passphrase"
+                                autoCapitalize="none"
+                                secureTextEntry
+                                onFocus={() => liftForPassphrase(true)}
+                                onBlur={() => liftForPassphrase(false)}
+                                textInputStyle={{ color: '#FFF' }}
+                                style={{ marginHorizontal: 20, marginTop: 6 }}
+                            />
+                        )}
                         <Button
                             text="Recover"
                             onPress={() =>
-                                fastImportHotVault(secretWords.join(' '))
+                                fastImportHotVault(
+                                    secretWords.join(' '),
+                                    undefined,
+                                    usePassphrase && recoverPassphrase ? recoverPassphrase : undefined,
+                                )
                             }
                             style={styles.button}
                             textStyle={styles.btnText}

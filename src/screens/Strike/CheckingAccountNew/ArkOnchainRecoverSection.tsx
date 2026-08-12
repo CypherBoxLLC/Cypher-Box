@@ -51,6 +51,8 @@ const MIN_BOARD_SATS = 50000;
 export default function ArkOnchainRecoverSection() {
     const arkBalanceDetail = useAuthStore((s) => s.arkBalanceDetail);
     const walletID = useAuthStore((s) => s.walletID);
+    const arkExitFeeReserveSats = useAuthStore((s) => s.arkExitFeeReserveSats);
+    const setArkExitFeeReserveSats = useAuthStore((s) => s.setArkExitFeeReserveSats);
     const { wallets } = useContext(BlueStorageContext);
 
     const confirmedSats = arkBalanceDetail?.onchainBoardingSats ?? 0;
@@ -256,6 +258,12 @@ export default function ArkOnchainRecoverSection() {
 
     if (confirmedSats <= 0 && confirmingSats <= 0) return null;
 
+    // Armed exit-fee reserve: these boarding funds are the user's intentional
+    // CPFP reserve for a future unilateral exit (sync.ts keeps them on-chain
+    // rather than auto-boarding). Don't surface them as a stuck deposit; the
+    // reserve is managed/released from the Settings exit-fee screen.
+    if ((arkExitFeeReserveSats ?? 0) > 0) return null;
+
     const belowMin = confirmedSats > 0 && confirmedSats < MIN_BOARD_SATS;
     const headlineSats = confirmedSats > 0 ? confirmedSats : confirmingSats;
     const statusText =
@@ -302,6 +310,31 @@ export default function ArkOnchainRecoverSection() {
                         >
                             <RNText style={{ color: "#1C1C1C", fontWeight: "700", fontSize: 14 }}>
                                 {busy ? "Working…" : "Recover to a Bitcoin address"}
+                            </RNText>
+                        </TouchableOpacity>
+                    )}
+                    {/* Opt-in alternative to recovering: keep these funds as the
+                        exit-fee reserve. Arms arkExitFeeReserveSats, which hides
+                        this card (and the home banner) and tells sync.ts to hold
+                        them on-chain for a future unilateral exit. */}
+                    {confirmedSats > 0 && (
+                        <TouchableOpacity
+                            onPress={() => {
+                                setArkExitFeeReserveSats(confirmedSats);
+                                SimpleToast.show("Kept on-chain for exit fees.", SimpleToast.SHORT);
+                            }}
+                            activeOpacity={0.7}
+                            style={{
+                                marginTop: 8,
+                                paddingVertical: 10,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: accent,
+                                alignItems: "center",
+                            }}
+                        >
+                            <RNText style={{ color: accent, fontWeight: "700", fontSize: 13 }}>
+                                Leave on-chain funds as exit fees
                             </RNText>
                         </TouchableOpacity>
                     )}

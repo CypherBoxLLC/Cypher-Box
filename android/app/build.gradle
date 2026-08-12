@@ -99,15 +99,20 @@ android {
         applicationId "io.cypherbox.btc"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 33
-        versionName "0.1.6"
+        versionCode 34
+        versionName "0.1.7"
         testBuildType System.getProperty('testBuildType', 'debug')
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         missingDimensionStrategy 'react-native-camera', 'general' //add this line
         manifestPlaceholders["appAuthRedirectScheme"] = "cypherbox" // Add this line
-        // Only ship ARM ABIs — x86/x86_64 are emulator-only and bloat the APK
+        // arm64-v8a ONLY. Do NOT add armeabi-v7a back: the ship build compiles
+        // native modules with -PreactNativeArchitectures=arm64-v8a, so an
+        // armeabi-v7a split ships WITHOUT Realm, Reanimated, the bark JSI lib and
+        // others, which crashes every 32-bit device at launch (UnsatisfiedLinkError).
+        // Play then simply reports the app as incompatible on 32-bit rather than
+        // serving a broken build. x86/x86_64 are emulator-only.
         ndk {
-            abiFilters "armeabi-v7a", "arm64-v8a"
+            abiFilters "arm64-v8a"
         }
     }
 

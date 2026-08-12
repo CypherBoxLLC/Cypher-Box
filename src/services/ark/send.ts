@@ -6,6 +6,7 @@ import {
 } from '@secondts/bark-react-native';
 import bolt11 from 'bolt11';
 
+import { assertNoActiveArkExit } from './exit';
 import { ensureArkWalletHandleReady } from './restore';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
@@ -121,6 +122,7 @@ export async function estimateArkSendFee(
     dest: ArkDestination,
     amountSats: number,
 ): Promise<ArkSendFeeView> {
+    assertNoActiveArkExit();
     const handle = await requireHandle();
     const amount = BigInt(amountSats);
 
@@ -282,6 +284,7 @@ export async function executeArkSend(
     amountSats: number,
     comment?: string,
 ): Promise<ArkSendResult> {
+    assertNoActiveArkExit();
     const handle = await requireHandle();
     const amount = BigInt(amountSats);
 

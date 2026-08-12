@@ -24,6 +24,12 @@ import {
 } from "@Cypher/services/lightningSwap";
 import { getFiatRate } from "../../../models/fiatUnit";
 
+// Warning-yellow gradient for the small-amount "Swap anyways" CTA + dust note.
+// A sub-700-sat swap into Bark can leave un-refreshable dust that expires.
+// COPY: Bam finalizes.
+const WARN_YELLOW = ['#FFD54F', '#FFB300'];
+const SMALL_RECEIVE_SATS = 700;
+
 export default function SwapAmount() {
     const navigation = useNavigation();
     const route = useRoute();
@@ -432,6 +438,12 @@ export default function SwapAmount() {
         );
     }
 
+    // Small-amount warning for a swap INTO Bark: a sub-700-sat receive can
+    // leave un-refreshable dust that expires. Sats mode types the sat amount;
+    // fiat mode mirrors the sat equivalent into `usd`.
+    const currentSats = Math.round(isSats ? Number(sats) : Number(usd)) || 0;
+    const smallBarkSwapWarn = sendTo === 'ark' && currentSats > 0 && currentSats <= SMALL_RECEIVE_SATS;
+
     return (
         <ScreenLayout disableScroll showToolbar isBackButton title="Lightning Swap">
             <View style={styles.main}>
@@ -467,6 +479,11 @@ export default function SwapAmount() {
                         </Text>
                     );
                 })()}
+                {smallBarkSwapWarn && (
+                    <Text style={{ textAlign: 'center', marginTop: 8, marginHorizontal: 8, fontSize: 12, color: '#FFD54F', lineHeight: 17 }}>
+                        Small amounts can leave un-refreshable dust that expires. Swapping above 700 sats keeps them refreshable.
+                    </Text>
+                )}
             </View>
             {loading ? (
                 <View style={styles.loadingView}>
@@ -501,7 +518,7 @@ export default function SwapAmount() {
                 </View>
             ) : (
                 <CustomKeyboard
-                    title="Swap"
+                    title={smallBarkSwapWarn ? "Swap anyways" : "Swap"}
                     prevSats={sats}
                     onPress={handleSwap}
                     setSATS={setSats}
@@ -511,6 +528,7 @@ export default function SwapAmount() {
                     matchedRate={matchedRate}
                     currency={currency}
                     colors_={[colors.pink.extralight, colors.pink.default]}
+                    buttonColors_={smallBarkSwapWarn ? WARN_YELLOW : undefined}
                     // Effective max = balance minus reserved fee headroom.
                     // Coinos/Strike keep the full balance (their estimate
                     // returns null → reserve=0). Ark deducts the routing

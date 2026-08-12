@@ -5,79 +5,89 @@ import ecc from '../../blue_modules/noble_ecc';
 const bip32 = BIP32Factory(ecc);
 
 /**
- * Derivation node + index for the Ark unilateral-exit destination on a Hot
- * Vault wallet.
+ * LEGACY Ark exit destination slot: m/84'/0'/0'/2/0 (node 2).
  *
- * BIP84 standardly uses node=0 (external/receive) and node=1 (change). We
- * reserve node=2 — and specifically slot (2,0) — as a Cypher-Box-internal
- * convention for "this address is the destination of any auto-eject /
- * unilateral exit from Ark".
+ * This was a Cypher-Box-internal "reserved slot" convention, but the Hot Vault
+ * is a BlueWallet HDsegwitBech32 whose class only derives and scans node 0
+ * (receive) and node 1 (change) (see class/wallets/abstract-hd-electrum-wallet.ts,
+ * _getNodeAddressByIndex, which throws on any other node). Nothing in the app
+ * ever scanned node 2, so exit funds swept there landed on the user's seed but
+ * were invisible and unspendable in-app: not in the Hot Vault balance/history,
+ * not owned by bark's onchain wallet, not covered by ArkOnchainRecoverSection
+ * (that reads bark's onchain BOARD reserve). Recovery required importing the
+ * seed into a wallet that supports the custom path.
  *
- * Why a reserved slot rather than the next-unused receive address:
- *   - Hot Vault transaction history can label these UTXOs distinctly
- *     ("Auto-eject from Ark") without burning a public-facing receive
- *     address that the user may have shared as a QR.
- *   - A receive address the user shared with someone won't accidentally
- *     collide with auto-eject UTXOs in the same UTXO — keeping the
- *     auto-eject behaviour from leaking metadata to that counterparty.
- *   - Stable across runs: no race with the user spending their own next
- *     receive address mid-flight, and the same address is regenerable
- *     from the seed alone if the wallet is ever rebuilt.
- *
- * Cross-wallet compatibility caveat: most other wallets (Sparrow,
- * Electrum, BlueWallet itself) only scan node=0 and node=1 by default.
- * If a user imports the same seed elsewhere, auto-eject UTXOs at (2,0)
- * won't appear in the other wallet's history without manually adding
- * the path. We document this in Settings; advanced users who care can
- * fall back to the manual "custom address" override.
- *
- * Full BIP84 mainnet path: m/84'/0'/0'/2/0.
+ * Exits now go to a scanned node-1 change address (deriveArkExitAddress below).
+ * These constants + deriveLegacyReservedSlotAddress remain ONLY so the one-time
+ * migration in useArkExitDestinationBackfill can recognise a persisted legacy
+ * address and repoint it.
  */
-export const ARK_EXIT_NODE = 2;
-export const ARK_EXIT_INDEX = 0;
+export const ARK_EXIT_LEGACY_NODE = 2;
+export const ARK_EXIT_LEGACY_INDEX = 0;
 
 /**
- * Derive the reserved-slot Ark exit address from a Hot Vault wallet.
- *
- * Uses the wallet's existing public primitives (`getXpub`, `_zpubToXpub`,
- * `_hdNodeToAddress`) so the address format follows whatever the wallet
- * itself produces — bech32 for BIP84 Hot Vaults (the default), p2sh-segwit
- * for legacy BIP49 vaults, etc. The reserved-slot convention is
- * format-independent.
- *
- * Returns null on any failure: missing wallet, missing xpub, derivation
- * error, or an address-derivation primitive the wallet doesn't expose.
- * Callers should treat null as "leave `arkExitDestinationAddress` unset"
- * rather than as a hard error — auto-eject simply won't fire until the
- * user manually configures a destination via Settings.
- *
- * Why we don't pass through `wallet._getNodeAddressByIndex`: that helper
- * caches `_node0` / `_node1` and explicitly throws on any other node —
- * extending it would be invasive and tied to AbstractHDElectrumWallet's
- * internal state. Re-deriving once from the xpub on this code path is
- * cheap and self-contained.
+ * Re-derive the legacy m/84'/0'/0'/2/0 address for a Hot Vault. Used ONLY to
+ * detect a persisted legacy exit destination during migration. Returns null on
+ * any failure (treated as "not a legacy address, leave it alone").
  */
-export function deriveArkExitAddress(wallet: any | null | undefined): string | null {
+export function deriveLegacyReservedSlotAddress(
+    wallet: any | null | undefined,
+): string | null {
     if (!wallet) return null;
     try {
         const zpub = typeof wallet.getXpub === 'function' ? wallet.getXpub() : null;
-        if (!zpub || typeof zpub !== 'string') {
-            console.warn('[ArkExitDestination] wallet.getXpub() returned non-string');
-            return null;
-        }
+        if (!zpub || typeof zpub !== 'string') return null;
         const xpub =
             typeof wallet._zpubToXpub === 'function'
                 ? wallet._zpubToXpub(zpub)
                 : zpub;
         const hdNode = bip32.fromBase58(xpub);
-        const slotNode = hdNode.derive(ARK_EXIT_NODE).derive(ARK_EXIT_INDEX);
-        if (typeof wallet._hdNodeToAddress !== 'function') {
-            console.warn('[ArkExitDestination] wallet has no _hdNodeToAddress');
+        const slotNode = hdNode
+            .derive(ARK_EXIT_LEGACY_NODE)
+            .derive(ARK_EXIT_LEGACY_INDEX);
+        if (typeof wallet._hdNodeToAddress !== 'function') return null;
+        const address = wallet._hdNodeToAddress(slotNode);
+        return typeof address === 'string' && address ? address : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Derive the Ark unilateral-exit destination for a Hot Vault wallet.
+ *
+ * Uses a node-1 (change) address the wallet itself derives and scans, via the
+ * wallet's own primitives, so exit funds land where fetchBalance /
+ * fetchTransactions already look and weOwnAddress() recognises them. This
+ * mirrors the recover-prefill in ArkOnchainRecoverSection (resolveHotVaultAddress).
+ * A change address (rather than a public receive address) keeps auto-eject UTXOs
+ * out of a receive address the user may have shared as a QR.
+ *
+ * Returns null on any failure (missing wallet, missing derivation primitives,
+ * derivation error). Callers treat null as "leave arkExitDestinationAddress
+ * unset" rather than a hard error: auto-eject simply won't fire until a
+ * destination is configured (auto-derived here, or manually via Settings).
+ */
+export function deriveArkExitAddress(
+    wallet: any | null | undefined,
+): string | null {
+    if (!wallet) return null;
+    try {
+        if (
+            typeof wallet._getInternalAddressByIndex !== 'function' ||
+            typeof wallet.getNextFreeChangeAddressIndex !== 'function'
+        ) {
+            console.warn(
+                '[ArkExitDestination] wallet lacks change-address derivation primitives',
+            );
             return null;
         }
-        const address = wallet._hdNodeToAddress(slotNode);
+        const index = wallet.getNextFreeChangeAddressIndex();
+        const address = wallet._getInternalAddressByIndex(index);
         if (typeof address !== 'string' || !address) {
-            console.warn('[ArkExitDestination] _hdNodeToAddress returned non-string');
+            console.warn(
+                '[ArkExitDestination] _getInternalAddressByIndex returned non-string',
+            );
             return null;
         }
         return address;

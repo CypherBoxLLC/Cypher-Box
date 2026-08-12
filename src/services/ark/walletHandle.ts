@@ -12,6 +12,7 @@ import {
 
 import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
 import { deleteArkDatadir, ensureArkDatadir } from './datadir';
+import { ensureBackgroundArkSeed } from './backgroundKeychain';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
@@ -156,26 +157,24 @@ export async function createArkWallet(
     await ensureUniffi();
     const datadir = await ensureArkDatadir();
 
-    // bark 0.11.3 consolidated open-or-create into a single `Wallet.open` with
-    // `createIfNotExists`, so the old open-then-catch-then-`Wallet.create`
-    // fallback (and the 0-byte `bark.sqlite` trap that sat between them)
-    // collapse to one call. If the 0-byte-sqlite schema-init bug still occurs
-    // with the consolidated open, re-add a guarded cleanup here — verify during
-    // device testing.
+    // bark consolidated open-or-create into a single `Wallet.open` with
+    // `createIfNotExists`; this is the create-open path.
     //
-    // ⚠ UNRESOLVED — blocks recovery-from-seed. bark 0.11.3 removed the
-    // `forceRescan` argument the old `Wallet.create` took and exposes no rescan
-    // entry point in its type surface. Our recover flow relies on it to
-    // reconstruct VTXOs from the ASP for a restored seed. Until Second.tech
-    // confirms the 0.11.3 rescan path, fail LOUD rather than silently open
-    // without a rescan (which would hide funds).
-    if (forceRescan) {
-        throw new Error(
-            'Ark rescan (forceRescan) is not yet wired for bark 0.11.3 — the SDK ' +
-            'removed the rescan argument. Recovery-from-seed is blocked pending ' +
-            'the Second.tech rescan API. Do not ship this path.',
-        );
-    }
+    // Recovery-from-seed (bark 0.15.0): the recovery mailbox scan runs
+    // automatically on the open that CREATES the wallet locally, reconstructing
+    // the VTXOs the ASP still tracks for this seed. `WalletOpenArgs.skipRecovery`
+    // opts out of that scan. We map our `forceRescan` flag straight onto it:
+    //   - forceRescan = true  (recover-from-seed) -> skipRecovery = false (scan)
+    //   - forceRescan = false (brand-new seed)    -> skipRecovery = true  (skip;
+    //     a freshly generated seed has nothing on the mailbox to recover).
+    // After a recovery open we read `handle.recoveryReport()` for observability.
+    //
+    // ⚠ Phase 2 / Second.tech: confirm that an undefined/empty recoveryReport
+    // means "nothing to recover" and NOT "scan failed" — bark logs a failed scan
+    // and lets open succeed anyway, so the two are fund-safety-distinct (an
+    // empty report on a funded seed would silently hide funds). This unblocks the
+    // recovery-from-seed path that 0.11.3 could not wire (SDK had no rescan API).
+    const skipRecovery = !forceRescan;
 
     // runDaemon: false on the create/recover path too (matches openArkWallet).
     // The 0.11.3 SDK daemon defaults ON and runs its own maintenance-refresh
@@ -192,11 +191,17 @@ export async function createArkWallet(
     for (let attempt = 0; attempt < ESPLORA_URLS.length; attempt++) {
         const config = createArkConfig({ esploraAddress: ESPLORA_URLS[attempt] });
         try {
+            // bark 0.15.0: create the onchain (BDK) wallet on this same esplora
+            // and pin it at open (methods no longer take it per-call). A network
+            // failure here is caught below and rotates esplora just like an open
+            // failure would.
+            const onchain = await OnchainWallet.default_(ARK_NETWORK, mnemonic, config, datadir);
+            onchainHandle = onchain;
             handle = await Wallet.open(
                 ARK_NETWORK,
                 mnemonic,
                 config,
-                WalletOpenArgs.create({ datadir, createIfNotExists: true, runDaemon: false }),
+                WalletOpenArgs.create({ datadir, createIfNotExists: true, runDaemon: false, onchain, skipRecovery }),
             );
             break;
         } catch (err) {
@@ -241,20 +246,43 @@ export async function createArkWallet(
             await clearArkWalletHandle();
             await deleteArkDatadir();
             const freshDatadir = await ensureArkDatadir();
+            const onchain = await OnchainWallet.default_(ARK_NETWORK, mnemonic, config, freshDatadir);
+            onchainHandle = onchain;
             handle = await Wallet.open(
                 ARK_NETWORK,
                 mnemonic,
                 config,
-                WalletOpenArgs.create({ datadir: freshDatadir, createIfNotExists: true, runDaemon: false }),
+                WalletOpenArgs.create({ datadir: freshDatadir, createIfNotExists: true, runDaemon: false, onchain, skipRecovery }),
             );
             console.log('[Ark] Wallet.create retry after residue wipe succeeded');
             break;
         }
     }
+    if (!handle) {
+        // The loop either sets handle + breaks or throws; a null here would be
+        // an unexpected fall-through. Throw rather than hand back a null handle
+        // (also narrows the type for the return + recoveryReport read below).
+        throw new Error('Ark wallet create/open produced no handle');
+    }
     cachedMnemonic = mnemonic;
     if (__DEV__) console.log('[Ark] Opened-or-created wallet in datadir');
+    // bark 0.15.0: on a recovery open, surface the recovery-scan outcome. An
+    // undefined report means the scan was skipped OR failed (see the fund-safety
+    // note above); a present report buckets every VTXO the scan looked at.
+    if (forceRescan && handle) {
+        try {
+            const report = handle.recoveryReport();
+            console.log(
+                '[Ark recover] recoveryReport:',
+                report ? JSON.stringify(report) : 'none (skipped or scan failed)',
+            );
+        } catch (repErr) {
+            console.warn('[Ark recover] recoveryReport() threw:', repErr);
+        }
+    }
     startWatcher();
-    await tryEagerSpawnOnchainHandle('createArkWallet open');
+    // Onchain wallet was created + pinned at open above (bark 0.15.0), so no
+    // separate post-open spawn is needed.
     return handle;
 }
 
@@ -284,18 +312,28 @@ export async function openArkWallet(
     // explicit handle.sync()), and the movement-notification stream was
     // confirmed on device to keep firing without it (1266 notifications over
     // a full send/receive QA session).
+    // bark 0.15.0: create the onchain (BDK) wallet on the SAME provider and pin
+    // it at open (methods no longer take it per-call). A network failure here
+    // propagates to the boot retry loop (restore.ts), which rotates esplora just
+    // as it does for a Wallet.open failure. Opening an EXISTING wallet
+    // (createIfNotExists:false) does not run the recovery scan.
+    const onchain = await OnchainWallet.default_(ARK_NETWORK, mnemonic, config, datadir);
+    onchainHandle = onchain;
     handle = await Wallet.open(
         ARK_NETWORK,
         mnemonic,
         config,
-        WalletOpenArgs.create({ datadir, createIfNotExists: false, runDaemon: false }),
+        WalletOpenArgs.create({ datadir, createIfNotExists: false, runDaemon: false, onchain }),
     );
     // Pin the on-chain (BDK) handle to the SAME provider that just worked, so
     // board detection doesn't fail against a provider that's blocking us.
     sessionEsploraUrl = chosenEsplora;
     cachedMnemonic = mnemonic;
     startWatcher();
-    await tryEagerSpawnOnchainHandle('openArkWallet');
+    // Background-refresh backstop: while the toggle is on (default), keep a
+    // background-readable copy of the seed so a background wake can open the
+    // wallet without a biometric prompt. Fire-and-forget; retried on next open.
+    void ensureBackgroundArkSeed(mnemonic);
     return handle;
 }
 
@@ -445,22 +483,11 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
     throw lastErr instanceof Error ? lastErr : new Error('Failed to spawn onchain wallet');
 }
 
-/**
- * Best-effort proactive spawn of the on-chain handle right after the Ark
- * wallet handle is opened. Swallows errors — failure here just means the
- * lazy path in `ensureArkOnchainHandle` (or the first call to
- * `getArkOnchainAddress`) will spawn it later.
- *
- * Why eagerly: `syncArkWallet` calls `onchain.sync()` to detect deposits
- * at boarding addresses. If the onchain handle isn't already present, the
- * sync routine skips that step — meaning a board sitting unboarded on
- * chain stays invisible until the user manually opens the receive screen.
- * Eager spawn closes that gap for the cold-start case.
- */
-async function tryEagerSpawnOnchainHandle(context: string): Promise<void> {
-    try {
-        await ensureArkOnchainHandle();
-    } catch (err) {
-        if (__DEV__) console.log('[Ark] eager onchain spawn skipped (' + context + '):', err);
-    }
-}
+// bark 0.15.0: the onchain (BDK) wallet is now created and pinned at
+// Wallet.open (WalletOpenArgs.onchain) in openArkWallet/createArkWallet, so the
+// former `tryEagerSpawnOnchainHandle` post-open backstop is obsolete and was
+// removed. `ensureArkOnchainHandle` below remains as the lazy fallback for
+// direct on-chain ops (sync/balance) when the cached handle was lost (e.g. hot
+// reload) — but note a fallback-spawned handle is NOT pinned to an already-open
+// Wallet, so Wallet methods (board/exit) need the handle from open. See the
+// migration doc: this is a Phase-2/device-QA item.

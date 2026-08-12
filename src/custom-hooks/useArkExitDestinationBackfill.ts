@@ -1,6 +1,9 @@
 import { useContext, useEffect } from 'react';
 
-import { deriveArkExitAddress } from '@Cypher/services/arkExitDestination';
+import {
+    deriveArkExitAddress,
+    deriveLegacyReservedSlotAddress,
+} from '@Cypher/services/arkExitDestination';
 import useAuthStore from '@Cypher/stores/authStore';
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -28,9 +31,10 @@ import { BlueStorageContext } from '../../blue_modules/storage-context';
  *   - `walletID=null` → no Hot Vault, can't derive (auto-eject simply
  *     stays disabled until the user creates a Hot Vault)
  *   - `arkExitDestinationAddress` already set → respect the existing
- *     value. Either it was auto-derived previously and we don't need
- *     to recompute, or the user manually overrode it via Settings; in
- *     both cases overwriting is wrong.
+ *     value, with ONE exception: if it's the legacy node-2 reserved slot
+ *     (which the Hot Vault never scanned, leaving exit funds invisible),
+ *     migrate it once to a scanned node-1 address. A manual custom override
+ *     never matches the legacy derivation, so it's left untouched.
  *   - `wallets` not yet loaded → wait for the next render with a
  *     populated array.
  *
@@ -68,7 +72,6 @@ export default function useArkExitDestinationBackfill(): void {
         );
         if (!arkAuth) return;
         if (!walletID) return;
-        if (arkExitDestinationAddress) return;
         if (!Array.isArray(wallets) || wallets.length === 0) return;
 
         const hotVault = wallets.find(
@@ -82,6 +85,26 @@ export default function useArkExitDestinationBackfill(): void {
             return;
         }
 
+        if (arkExitDestinationAddress) {
+            // One-time migration off the legacy node-2 reserved slot
+            // (m/84'/0'/0'/2/0), which the Hot Vault never scanned, so exit
+            // funds landed invisible + unspendable in-app. Only repoint when
+            // the saved value IS that auto-derived legacy address; a manual
+            // custom override won't match, so it's left untouched.
+            const legacy = deriveLegacyReservedSlotAddress(hotVault);
+            if (legacy && arkExitDestinationAddress === legacy) {
+                const fresh = deriveArkExitAddress(hotVault);
+                if (fresh && fresh !== legacy) {
+                    console.log(
+                        '[ArkExitBackfill] migrating exit destination off legacy node-2 slot ->',
+                        fresh,
+                    );
+                    setArkExitDestinationAddress(fresh);
+                }
+            }
+            return;
+        }
+
         const address = deriveArkExitAddress(hotVault);
         if (!address) {
             // Helper already logged the specific failure mode.
@@ -89,7 +112,7 @@ export default function useArkExitDestinationBackfill(): void {
         }
 
         console.log(
-            '[ArkExitBackfill] auto-set arkExitDestinationAddress from Hot Vault reserved slot:',
+            '[ArkExitBackfill] auto-set arkExitDestinationAddress from Hot Vault change address:',
             address,
         );
         setArkExitDestinationAddress(address);

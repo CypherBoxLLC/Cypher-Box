@@ -5,65 +5,106 @@ import SimpleToast from 'react-native-simple-toast';
 
 import {
     ARK_ARKOOR_ASSUMED_DAYS,
+    ARK_EXIT_RUNWAY_HOURS,
+    ARK_REFRESH_MIN_SATS,
     ArkRefreshInFlightError,
+    AVG_BLOCK_MINUTES,
     cancelVtxoExpiryWarnings,
+    estimateArkRefreshFee,
     refreshArkVtxosDelegatedAndSync,
     scheduleVtxoExpiryWarnings,
 } from '@Cypher/services/ark';
-import { SPEND_GRACE_MS } from '@Cypher/services/ark/refreshDeferral';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 /**
- * Foreground orchestrator for the "new Arkoor received" prompt.
+ * Foreground orchestrator for a received Bark capsule (Lightning receive /
+ * arkoor).
  *
  * Why this exists
  * ---------------
- * Lightning receives into Ark materialise as arkoor VTXOs with a hard ~3-day
- * TTL (see ARK_ARKOOR_ASSUMED_DAYS in services/ark/config.ts for the
- * empirical source). The SDK does not expose the TTL via `expiryHeight` —
- * arkoor VTXOs report `expiryHeight === 0`, which the existing
- * useArkSync scheduler explicitly skips (it can't compute a wall-clock
- * expiry from height=0). So small Lightning receives silently sit with a
- * 3-day fuse and zero in-app warning.
+ * A received capsule has a short TTL (about 3 days). On bark 0.6.0 it carries
+ * a REAL expiryHeight and, importantly, stays SPENDABLE during a refresh
+ * round. Both facts change the old design: the app used to pop a "spend now
+ * vs refresh now" fork because refreshing locked the funds, and it assumed a
+ * flat 3-day fuse because the SDK reported expiryHeight 0. Neither holds now.
  *
- * This hook closes that gap by:
- *   1. Detecting new arkoor VTXOs (kind === 'arkoor') the moment they
- *      appear in zustand (useArkSync writes vtxos every 30s — that's our
- *      detection cadence; sub-30s latency is fine for a popup UI).
- *   2. Showing a foreground Alert.alert with the educational copy + two
- *      explicit choices. Refresh now → locks the VTXO into the next round
- *      (~1h on mainnet) but extends the TTL by another full lifetime.
- *      Use immediately → keeps the VTXO spendable but accepts the 3-day
- *      fuse, and schedules OS-level 24h+2h push warnings as a fallback.
+ * What this hook does
+ * -------------------
+ *   1. Schedules OS-level expiry warnings the moment a receive is observed
+ *      (movementWatcher pushes it into arkArkoorPromptState), as the safety
+ *      net for a user who is backgrounded or never returns.
+ *   2. For the oldest pending receive, in foreground, decides automatically
+ *      (see step 2): auto-refresh silently when it is economically safe, or
+ *      show a one-button "too small, spend it" notice with the real
+ *      countdown. No user fork.
  *
- * The hook is intentionally self-contained — no changes to
- * movementWatcher or useArkSync. State lives in zustand
- * (arkArkoorPromptState) so a kill-and-relaunch doesn't re-prompt for a
- * VTXO the user already saw, and the dismissed list survives across the
- * arkoor's lifetime so the 24h push can still fire from a cold boot.
+ * Auto-refresh is gated on the SDK's own refresh estimate so it can never
+ * (a) turn a refreshable capsule into unrefreshable dust (post-fee output
+ * must clear the refresh floor) or (b) drag unrelated capsules into the
+ * round (the estimate must spend only this capsule). Validated on-device
+ * 2026-08-08: a 600-sat receive estimated a 2-sat fee and vtxosSpent =
+ * [itself].
  *
- * Limitations called out in advance
- * ---------------------------------
- * - One Alert.alert at a time. If multiple arkoors arrive simultaneously
- *   (rare — would require two near-instant Lightning receives) the second
- *   prompt waits until the first is dismissed. UX is acceptable; per-vtxo
- *   queueing keeps the user from being stacked into modal hell.
- * - Foreground-only: if the user is backgrounded when the arkoor arrives,
- *   the popup fires on next foreground because the state is persisted.
- *   The 24h push (scheduled at first observation, not at dismissal) is the
- *   safety net for users who never return.
- * - "Refresh now" calls refreshArkVtxosDelegatedAndSync, which returns as
- *   soon as the ASP accepts the delegation (seconds); the round then
- *   completes in the background. We fire and forget either way. The existing
- *   per-row spinning refresh icon on the Capsules tab surfaces in-flight
- *   state if the user navigates there.
+ * Self-contained: no changes to movementWatcher or useArkSync. State lives
+ * in zustand (arkArkoorPromptState) so a kill-and-relaunch does not re-decide
+ * a capsule already handled, and the dismissed list survives so the expiry
+ * warnings still fire from a cold boot.
  */
+// Force-release the single-flight decision slot if a decision's native I/O
+// (estimate / submit / an Alert whose callbacks never fire) never settles, so
+// a hang can't pin the feature off for the whole session.
+const ARKOOR_DECISION_WATCHDOG_MS = 90 * 1000;
+// Back-off before retrying auto-refresh for a capsule that hit a busy round
+// slot (one round per wallet), long enough for a typical round to progress
+// or clear before we try again.
+const ARKOOR_INFLIGHT_BACKOFF_MS = 2 * 60 * 1000;
+// Grace window before an entry whose vtxo is absent from `arkVtxos` is
+// pruned. movementWatcher queues a received capsule from bark's real-time
+// MovementUpdated notification, which lands ~1-2s BEFORE the vtxo fetch
+// writes the new vtxo into `arkVtxos`. Pruning purely on "id absent from
+// arkVtxos" inside that window deletes the just-received entry before the
+// decision effect can act on it, which silently killed auto-refresh
+// (observed on-device: entry queued 19:48:03.236, pruned .353, vtxo landed
+// only at 19:48:05.3). Only prune once the vtxo has had time to appear and
+// genuinely didn't (spent / refreshed-away).
+const ARKOOR_PRUNE_GRACE_MS = 30 * 1000;
+
+/**
+ * Human "time left" for a received capsule. On bark 0.6.0 a received capsule
+ * carries a REAL expiryHeight (confirmed on-device 2026-08-08), so we compute
+ * the actual remaining time from the chain tip. Falls back to the
+ * ARK_ARKOOR_ASSUMED_DAYS estimate only when the height is unknown (older
+ * arkoors report expiryHeight 0). Returns '' when nothing can be computed.
+ */
+function formatCapsuleTimeLeft(
+    expiryHeight: number | undefined,
+    tip: number | null,
+    observedAt: number | undefined,
+): string {
+    let ms: number;
+    if (expiryHeight && expiryHeight > 0 && typeof tip === 'number') {
+        const blocksLeft = expiryHeight - tip;
+        if (blocksLeft <= 0) return 'less than an hour';
+        ms = blocksLeft * AVG_BLOCK_MINUTES * 60 * 1000;
+    } else if (observedAt) {
+        ms = observedAt + ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000 - Date.now();
+    } else {
+        return '';
+    }
+    if (ms <= 0) return 'less than an hour';
+    const totalHours = Math.floor(ms / (60 * 60 * 1000));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h`;
+    return 'less than an hour';
+}
+
 export default function useArkoorReceivePrompt(): void {
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
     const arkArkoorPromptState = useAuthStore((s) => s.arkArkoorPromptState);
     const setArkArkoorPromptState = useAuthStore((s) => s.setArkArkoorPromptState);
-    const bgRefreshEnabled = useAuthStore((s) => s.arkBgRefreshEnabled);
     const isArkAuth = useAuthStore((s) => s.isArkAuth);
     // NB: `arkArkoorPromptEnabled` exists in the store for back-compat but
     // is no longer read. The popup is always on — see the field's
@@ -119,21 +160,31 @@ export default function useArkoorReceivePrompt(): void {
         for (const [id, entry] of Object.entries(arkArkoorPromptState)) {
             if (entry.status !== 'pending' && entry.status !== 'dismissed') continue;
             if (scheduledRef.current.has(id)) continue;
+            const liveVtxo = arkVtxos.find((v) => v.id === id);
+            // Only schedule the ~3-day ASSUMPTION for capsules whose real
+            // expiry is genuinely unknown (height 0), the ones useArkSync
+            // skips. On bark 0.6.0 a received capsule carries a REAL
+            // expiryHeight and useArkSync schedules it accurately from that
+            // (same OS notification ids); re-arming an assumed deadline here
+            // would override the accurate one after a relaunch (scheduledRef
+            // is in-process; useArkSync's persisted map won't re-correct) and
+            // fire near-expiry warnings too late for a sub-3-day capsule. If
+            // the vtxo has not landed in the store yet, wait for it rather
+            // than guess.
+            if (!liveVtxo) continue;
+            if (liveVtxo.expiryHeight > 0) {
+                scheduledRef.current.add(id); // owned by useArkSync
+                continue;
+            }
             const assumedExpiryAtMs =
                 entry.observedAt + ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
-            // Sats may not be populated on legacy entries; fall back to the
-            // arkVtxos read for the live record. Either way the notification
-            // formatter handles the undefined path gracefully.
-            const satsForNotif =
-                entry.sats ??
-                arkVtxos.find((v) => v.id === id)?.sats ??
-                undefined;
+            const satsForNotif = entry.sats ?? liveVtxo.sats ?? undefined;
             try {
                 scheduleVtxoExpiryWarnings(id, assumedExpiryAtMs, satsForNotif);
                 scheduledRef.current.add(id);
                 if (__DEV__) {
                     console.log(
-                        '[useArkoorReceivePrompt] scheduled arkoor expiry warnings for',
+                        '[useArkoorReceivePrompt] scheduled assumed expiry warnings for',
                         id.slice(0, 12),
                         'assumedExpiryAt=', new Date(assumedExpiryAtMs).toISOString(),
                     );
@@ -145,7 +196,7 @@ export default function useArkoorReceivePrompt(): void {
                 );
             }
         }
-    }, [arkArkoorPromptState, isArkAuth]);
+    }, [arkArkoorPromptState, isArkAuth, arkVtxos]);
 
     // Step 1b: prune entries whose vtxo no longer exists in the wallet
     // (spent, exited, refreshed-and-replaced). Keeps the map from growing
@@ -163,10 +214,18 @@ export default function useArkoorReceivePrompt(): void {
         // fresh reload and produced no Activity-feed event at all.
         if (arkVtxos.length === 0) return;
         const livingIds = new Set(arkVtxos.map((v) => v.id));
+        const now = Date.now();
         const next: typeof arkArkoorPromptState = {};
         let mutated = false;
         for (const [id, entry] of Object.entries(arkArkoorPromptState)) {
             if (livingIds.has(id)) {
+                next[id] = entry;
+            } else if (now - (entry.observedAt ?? 0) < ARKOOR_PRUNE_GRACE_MS) {
+                // Vtxo not in arkVtxos YET: the receive's MovementUpdated
+                // notification outran the vtxo fetch. Keep it through the
+                // grace window so the decision effect can act once the vtxo
+                // lands. Without this the entry is deleted ~2s before its
+                // vtxo appears and auto-refresh never fires.
                 next[id] = entry;
             } else {
                 mutated = true;
@@ -181,250 +240,230 @@ export default function useArkoorReceivePrompt(): void {
         if (mutated) setArkArkoorPromptState(next);
     }, [arkVtxos, arkArkoorPromptState, isArkAuth, setArkArkoorPromptState]);
 
-    // Step 2: when at least one entry is 'pending' AND enabled AND
-    // foreground, fire the prompt for the first pending one. The Alert
-    // resolves asynchronously via button callbacks; promptInFlight ensures
-    // we don't race a second alert on top.
-    // Per-vtxo per-reason skip-log dedupe. Without this, the effect fires
-    // a skip event on every render of the host screen while a pending
-    // vtxo is queued — that floods the activity feed with duplicate
-    // "skipped" rows. We log a skip reason at most once per
-    // (vtxoId, reason) pair until the entry's status changes or it's
-    // pruned.
-    const loggedSkipRef = useRef<Set<string>>(new Set());
+    // Step 2: automatic refresh decision for the oldest pending arkoor.
+    //
+    // Design (validated on-device 2026-08-08). On bark 0.6.0 a received
+    // capsule keeps a REAL expiryHeight and stays SPENDABLE during a refresh
+    // round, so the old "spend now vs refresh now" fork is obsolete. We now
+    // decide automatically, gated on the SDK's own refresh estimate:
+    //
+    //   - Auto-refresh, silently, if the estimate spends ONLY this capsule
+    //     (no filler / whole-balance-into-a-round risk) AND the post-fee
+    //     output still clears the refresh floor (so we never turn a
+    //     refreshable capsule into unrefreshable dust). Confirmed live: a
+    //     600-sat receive estimated a 2-sat fee and vtxosSpent = [itself].
+    //   - Otherwise, a one-button notice: too small to refresh on its own,
+    //     spend it before it expires, with the REAL countdown.
+    //
+    // Foreground-gated: the estimate needs the open wallet, and the toast /
+    // notice are foreground UI. A backgrounded receive is still covered by
+    // the OS expiry warnings scheduled in step 1a and is decided on next
+    // foreground. `promptInFlight` serializes one decision at a time and is
+    // claimed synchronously before the async estimate so a re-render can't
+    // double-decide.
+    //
+    // COPY: the user-facing strings below are Bam's draft; final wording is
+    // his to set.
     useEffect(() => {
-        if (!isArkAuth) return;
-        // Find the oldest pending entry (FIFO so the user always sees
-        // arkoors in the order they arrived).
-        const pendingIds = Object.entries(arkArkoorPromptState)
-            .filter(([, e]) => e.status === 'pending')
+        if (!isArkAuth || !appIsActive || promptInFlight.current) return;
+
+        const now = Date.now();
+        const firstId = Object.entries(arkArkoorPromptState)
+            // Skip entries backed off after a busy round slot until their
+            // defer window passes (see the in-flight branch below).
+            .filter(([, e]) => e.status === 'pending' && (e.deferUntil == null || e.deferUntil <= now))
             .sort((a, b) => a[1].observedAt - b[1].observedAt)
-            .map(([id]) => id);
-        if (pendingIds.length === 0) return;
-        const firstId = pendingIds[0];
-        const entry = arkArkoorPromptState[firstId];
-        const vtxoIdPrefix = firstId.slice(0, 12);
-        // Sats source order:
-        //   1. movementWatcher's push wrote it onto the prompt-state entry — preferred.
-        //   2. If a legacy entry has no `sats` (persisted before that field
-        //      existed), fall back to looking it up in arkVtxos.
-        //   3. If still unknown, the alert renders with "your new sats"
-        //      copy without a number — better than dropping the prompt.
-        const vtxoFromList = arkVtxos.find((v) => v.id === firstId);
-        const sats =
-            entry?.sats ??
-            vtxoFromList?.sats ??
-            null;
+            .map(([id]) => id)[0];
+        if (!firstId) return;
 
-        // Skip-reason logging. Record once per (id, reason) so we don't
-        // spam the activity feed on every host re-render.
-        const logSkip = (
-            outcome: 'skipped-background' | 'skipped-in-flight',
-        ) => {
-            const dedupeKey = `${firstId}:${outcome}`;
-            if (loggedSkipRef.current.has(dedupeKey)) return;
-            loggedSkipRef.current.add(dedupeKey);
-            recordEvent({
-                kind: 'arkoor-prompt',
-                outcome,
-                vtxoIdPrefix,
-                sats: sats ?? undefined,
-            });
-        };
-        if (!appIsActive) {
-            logSkip('skipped-background');
-            return;
-        }
-        if (promptInFlight.current) {
-            logSkip('skipped-in-flight');
-            return;
-        }
-
-        // Past every skip gate — actually fire the alert. Clear stale
-        // skip log entries for this id so a future status change (e.g.
-        // user backgrounds the app then returns and we re-fire) is
-        // observable.
-        for (const r of ['skipped-background', 'skipped-in-flight']) {
-            loggedSkipRef.current.delete(`${firstId}:${r}`);
-        }
+        // Claim the single-flight slot synchronously, BEFORE any await, so a
+        // re-render during the estimate returns early instead of re-deciding.
         promptInFlight.current = true;
-        recordEvent({
-            kind: 'arkoor-prompt',
-            outcome: 'fired',
-            vtxoIdPrefix,
-            sats: sats ?? undefined,
-        });
-        const autoRefreshNote = bgRefreshEnabled
-            ? '\n\nAuto-refresh is on, so this will refresh on its own before expiry. You can still lock it in now if you want certainty.'
-            : '';
-        const amountPhrase = sats != null ? `${sats.toLocaleString()} sats` : `sats`;
-        const body =
-            `You just received ${amountPhrase} to your Bark Vault.\n\n` +
-            `These sats expire in about ${ARK_ARKOOR_ASSUMED_DAYS} days unless they're refreshed into a long-life capsule. ` +
-            `Refreshing locks these sats for up to an hour while it finishes in the background, and you don't need to keep the app open.` +
-            autoRefreshNote;
-        const dontRefreshLabel =
-            sats != null
-                ? `Don't refresh the ${sats.toLocaleString()} sats — I'll spend them now`
-                : `Don't refresh — I'll spend them now`;
 
-        Alert.alert(
-            'New sats in your Bark Vault',
-            body,
-            [
-                {
-                    text: dontRefreshLabel,
-                    style: 'destructive',
-                    onPress: () => {
-                        try {
-                            recordEvent({
-                                kind: 'arkoor-prompt',
-                                outcome: 'use-immediately',
-                                vtxoIdPrefix,
-                                sats: sats ?? undefined,
-                            });
-                            const cur = useAuthStore.getState().arkArkoorPromptState;
-                            const existing = cur[firstId];
-                            const nowTs = Date.now();
-                            // Create-or-update so the "spend immediately" grace always
-                            // holds, even if the pending entry is somehow missing.
-                            // deferUntil holds auto-refresh off this vtxo for
-                            // SPEND_GRACE_MS, then it refreshes normally.
-                            setArkArkoorPromptState({
-                                ...cur,
-                                [firstId]: {
-                                    ...(existing ?? { observedAt: nowTs, sats: sats ?? undefined }),
-                                    status: 'dismissed',
-                                    dismissedAt: nowTs,
-                                    deferUntil: nowTs + SPEND_GRACE_MS,
-                                },
-                            });
-                            console.log(
-                                '[useArkoorReceivePrompt] use-immediately grace stamped',
-                                firstId.slice(0, 12),
-                                'deferUntil=now+', Math.round(SPEND_GRACE_MS / 3600000), 'h',
-                                'existingFound=', !!existing,
-                            );
-                            // Re-arm OS push warnings — idempotent per id, so this
-                            // is a no-op if they were already scheduled at
-                            // observation time. Belt + suspenders in case the
-                            // observation-time schedule was lost (uninstalled
-                            // notif app, denied permissions then re-granted, etc).
-                            const exp = (existing?.observedAt ?? Date.now()) +
-                                ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
-                            try {
-                                scheduleVtxoExpiryWarnings(firstId, exp, sats ?? undefined);
-                            } catch (err) {
-                                console.warn(
-                                    '[useArkoorReceivePrompt] re-schedule on dismiss threw:',
-                                    err,
-                                );
-                            }
-                        } finally {
-                            promptInFlight.current = false;
-                        }
-                    },
-                },
-                {
-                    text: 'Refresh now (recommended)',
-                    onPress: () => {
-                        try {
-                            recordEvent({
-                                kind: 'arkoor-prompt',
-                                outcome: 'refresh-now',
-                                vtxoIdPrefix,
-                                sats: sats ?? undefined,
-                            });
-                            const cur = useAuthStore.getState().arkArkoorPromptState;
-                            const existing = cur[firstId];
-                            if (existing) {
-                                setArkArkoorPromptState({
-                                    ...cur,
-                                    [firstId]: { ...existing, status: 'refreshed' },
-                                });
-                            }
-                            // We're committing to refresh — the OS-queued 24h/2h
-                            // pushes for this arkoor are now phantom warnings (the
-                            // funds will be safe once the round completes).
-                            // Cancel them. If refresh ends up failing, the user
-                            // can retry from the Capsules tab; we accept the
-                            // tradeoff of "no fallback push on a failed refresh"
-                            // for "no phantom warning on a successful refresh"
-                            // because failed refreshes are visible in-app.
-                            try {
-                                cancelVtxoExpiryWarnings(firstId);
-                            } catch (err) {
-                                console.warn(
-                                    '[useArkoorReceivePrompt] cancel on refresh threw:',
-                                    err,
-                                );
-                            }
-                            // Fire-and-forget. refreshArkVtxosDelegatedAndSync
-                            // resolves as soon as the ASP accepts the delegation
-                            // (seconds); the round then completes in the
-                            // background. The per-row spinning icon on the
-                            // Capsules tab is the user-visible in-flight signal,
-                            // and we don't block here so the dismissal feels
-                            // immediate.
-                            refreshArkVtxosDelegatedAndSync([firstId], sats ?? undefined).catch((err) => {
-                                console.warn(
-                                    '[useArkoorReceivePrompt] refreshArkVtxosDelegatedAndSync threw:',
-                                    err?.message ?? err,
-                                );
-                                // The optimistic 'refreshed' status + expiry-warning
-                                // cancel above ran BEFORE this submit (so the prompt
-                                // would not re-fire mid-flight). On ANY failure that
-                                // optimism is wrong: nothing is refreshing, and leaving
-                                // the warnings cancelled lets the arkoor's expiry fuse
-                                // run down with zero signal. So for every failure,
-                                // restore the safety net: mark the entry 'dismissed'
-                                // (spendable, protected, no re-prompt spam) and re-arm
-                                // the expiry warnings. Only the toast copy differs by
-                                // cause; the per-row Capsules refresh stays as the
-                                // manual retry.
-                                const cur = useAuthStore.getState().arkArkoorPromptState;
-                                const existing2 = cur[firstId];
-                                if (existing2) {
+        void (async () => {
+            let released = false;
+            // Watchdog: the native I/O below (estimate, submit, or an Alert
+            // whose callbacks never fire) must never pin promptInFlight true
+            // for the session, which would silently kill the feature for every
+            // later receive. Force-release after a generous ceiling.
+            const watchdog = setTimeout(() => {
+                if (released) return;
+                console.warn('[arkoor auto-refresh] decision watchdog fired; releasing');
+                released = true;
+                promptInFlight.current = false;
+            }, ARKOOR_DECISION_WATCHDOG_MS);
+            const release = () => {
+                if (released) return;
+                released = true;
+                clearTimeout(watchdog);
+                promptInFlight.current = false;
+            };
+            try {
+                const entry = useAuthStore.getState().arkArkoorPromptState[firstId];
+                if (!entry || entry.status !== 'pending') { release(); return; }
+                // Prefer the live store (fresher than this render's closure) so a
+                // sync that landed the vtxo between render and here is seen.
+                const vtxo =
+                    useAuthStore.getState().arkVtxos.find((v) => v.id === firstId) ??
+                    arkVtxos.find((v) => v.id === firstId);
+                // The exit-runway floor below needs the vtxo's REAL expiry. A
+                // received capsule's vtxo lags its MovementUpdated notification by
+                // ~2s; if it hasn't materialised yet, defer to the next tick (the
+                // prune grace window holds the entry) rather than decide blind and
+                // risk auto-refreshing a sub-28h capsule. If it never lands, the
+                // grace window drops the entry and the foreground sweep is the
+                // backstop once the vtxo settles.
+                if (!vtxo) { release(); return; }
+                // Use the ACTUAL vtxo amount, not the movement total in the
+                // entry. A receive can split into multiple outputs (e.g. a 700
+                // receive leaving a 673 capsule + a 27-sat dust piece); the
+                // movement records 700 but THIS capsule may be dust. Deciding on
+                // the movement total made the decision try to refresh a 27-sat
+                // dust vtxo, which the ASP rejects ("amount must be >= 330 sats")
+                // and which inflated the refresh-fail streak. entry.sats is only
+                // a fallback for the rare case the vtxo carries no amount.
+                const sats = vtxo.sats ?? entry.sats ?? null;
+                const vtxoIdPrefix = firstId.slice(0, 12);
+                const amountPhrase = sats != null ? `${sats.toLocaleString()} sats` : 'these sats';
+
+                // Ask the SDK what refreshing JUST this capsule would do: the
+                // fee, and crucially which vtxos the round would consume.
+                let feeSats: number | null = null;
+                let spendsOnlySelf = false;
+                try {
+                    const est = await estimateArkRefreshFee([firstId]);
+                    feeSats = est.feeSats;
+                    spendsOnlySelf = est.vtxosSpent.length === 1 && est.vtxosSpent[0] === firstId;
+                } catch (estErr: any) {
+                    // Wallet not ready / transient network. Leave the arkoor
+                    // pending; a later tick (next sync writes arkVtxos, ~30s)
+                    // retries. Not a tight loop: this effect only re-runs when
+                    // one of its deps changes.
+                    console.warn('[arkoor auto-refresh] estimate failed, will retry:', estErr?.message ?? estErr);
+                    release();
+                    return;
+                }
+
+                const outputSats = sats != null && feeSats != null ? sats - feeSats : null;
+                const belowFloor = outputSats != null && outputSats < ARK_REFRESH_MIN_SATS;
+                // Exit-runway floor: never AUTO-refresh a capsule within 28h of
+                // expiry (24h unilateral-exit runway + 4h grace). A delegated
+                // round that hangs instead of finalizing would eat the exit
+                // window; below the floor the user should spend/exit, not
+                // refresh. Older arkoors report expiryHeight 0 (unknown, ~3-day
+                // assumed), which is safely above the floor.
+                const tip = useAuthStore.getState().arkChainTipHeight;
+                const runwayBlocks = Math.round((ARK_EXIT_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES);
+                const blocksLeft =
+                    vtxo.expiryHeight > 0 && typeof tip === 'number'
+                        ? vtxo.expiryHeight - tip
+                        : null;
+                const belowExitRunway = blocksLeft != null && blocksLeft < runwayBlocks;
+                const safeToAutoRefresh =
+                    spendsOnlySelf &&
+                    outputSats != null &&
+                    outputSats >= ARK_REFRESH_MIN_SATS &&
+                    !belowExitRunway;
+
+                if (__DEV__) {
+                    console.log('[arkoor decision]', JSON.stringify({
+                        id: vtxoIdPrefix, sats, feeSats, outputSats,
+                        spendsOnlySelf, safeToAutoRefresh, belowFloor,
+                        belowExitRunway, blocksLeft, expiryHeight: vtxo.expiryHeight,
+                    }));
+                }
+
+                if (safeToAutoRefresh) {
+                    recordEvent({ kind: 'arkoor-prompt', outcome: 'auto-refresh', vtxoIdPrefix, sats: sats ?? undefined });
+                    // Optimistically mark refreshed so it isn't re-selected
+                    // while the round runs.
+                    const cur = useAuthStore.getState().arkArkoorPromptState;
+                    const ex = cur[firstId];
+                    if (ex) setArkArkoorPromptState({ ...cur, [firstId]: { ...ex, status: 'refreshed' } });
+                    if (sats != null) {
+                        SimpleToast.show(`Received ${sats.toLocaleString()} sats. Refreshing to keep them longer.`, SimpleToast.SHORT);
+                    }
+                    // Fire-and-forget. Expiry warnings stay armed until the
+                    // refreshed replacement lands and the prune (step 1b)
+                    // cancels them; see the failure handler for why we never
+                    // cancel up-front.
+                    refreshArkVtxosDelegatedAndSync([firstId], sats ?? undefined)
+                        .catch((err) => {
+                            console.warn('[arkoor auto-refresh] submit failed:', err?.message ?? err);
+                            const c2 = useAuthStore.getState().arkArkoorPromptState;
+                            const e2 = c2[firstId];
+                            if (err instanceof ArkRefreshInFlightError) {
+                                // A round is already running (another capsule, a
+                                // tap refresh, or a background wake). Do NOT give
+                                // up: back the capsule off to 'pending' with a
+                                // defer window so it auto-refreshes once the slot
+                                // frees. No toast (would spam on every retry
+                                // while the round runs).
+                                if (e2) {
                                     setArkArkoorPromptState({
-                                        ...cur,
-                                        [firstId]: {
-                                            ...existing2,
-                                            status: 'dismissed',
-                                            dismissedAt: Date.now(),
-                                        },
+                                        ...c2,
+                                        [firstId]: { ...e2, status: 'pending', deferUntil: Date.now() + ARKOOR_INFLIGHT_BACKOFF_MS },
                                     });
                                 }
-                                const exp2 = (existing2?.observedAt ?? Date.now()) +
-                                    ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
-                                try {
-                                    scheduleVtxoExpiryWarnings(firstId, exp2, sats ?? undefined);
-                                } catch (schedErr) {
-                                    console.warn(
-                                        '[useArkoorReceivePrompt] re-schedule after refresh failure threw:',
-                                        schedErr,
-                                    );
+                            } else {
+                                // Real failure: nothing is refreshing. Mark
+                                // dismissed (spendable, protected), keep the
+                                // warnings armed, and tell the user it's safe.
+                                if (e2) {
+                                    setArkArkoorPromptState({ ...c2, [firstId]: { ...e2, status: 'dismissed', dismissedAt: Date.now() } });
                                 }
-                                SimpleToast.show(
-                                    err instanceof ArkRefreshInFlightError
-                                        ? 'A refresh is already running. These sats stay spendable, refresh them from Capsules once it finishes.'
-                                        : 'Refresh did not go through. Your sats are still spendable and protected. Try again from Capsules.',
-                                    SimpleToast.LONG,
-                                );
-                            });
-                        } finally {
-                            promptInFlight.current = false;
-                        }
-                    },
-                },
-            ],
-            { cancelable: false },
-        );
-    }, [
-        arkArkoorPromptState,
-        isArkAuth,
-        arkVtxos,
-        bgRefreshEnabled,
-        setArkArkoorPromptState,
-        appIsActive,
-    ]);
+                                const exp = (e2?.observedAt ?? Date.now()) + ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
+                                try { scheduleVtxoExpiryWarnings(firstId, exp, sats ?? undefined); } catch (schedErr) {
+                                    console.warn('[arkoor auto-refresh] re-schedule after failure threw:', schedErr);
+                                }
+                                SimpleToast.show('These sats are safe and spendable. You can refresh them from Capsules.', SimpleToast.LONG);
+                            }
+                        })
+                        .finally(release);
+                    return;
+                }
+
+                // NOTICE path (too small to refresh, or the estimate would pull
+                // other capsules in, a safety fallback we did not observe in QA
+                // but refuse to auto-fire on). This shows an Alert, so re-check
+                // foreground AFTER the await: if the app backgrounded during the
+                // estimate, leave the capsule 'pending' and re-decide on next
+                // foreground rather than queue a phantom modal.
+                if (AppState.currentState !== 'active') { release(); return; }
+
+                // Distinguish "too small to refresh" from "too close to expiry
+                // to refresh safely" (the exit-runway floor) so the activity log
+                // is not mislabelled for a large near-expiry capsule.
+                const noticeOutcome = belowExitRunway && !belowFloor ? 'too-soon-notice' : 'too-small-notice';
+                recordEvent({ kind: 'arkoor-prompt', outcome: noticeOutcome, vtxoIdPrefix, sats: sats ?? undefined });
+                const cur = useAuthStore.getState().arkArkoorPromptState;
+                const ex = cur[firstId] ?? { observedAt: Date.now(), sats: sats ?? undefined };
+                setArkArkoorPromptState({ ...cur, [firstId]: { ...ex, status: 'dismissed', dismissedAt: Date.now() } });
+                const exp = (ex.observedAt ?? Date.now()) + ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000;
+                try { scheduleVtxoExpiryWarnings(firstId, exp, sats ?? undefined); } catch (schedErr) {
+                    console.warn('[arkoor auto-refresh] notice re-schedule threw:', schedErr);
+                }
+                const timeLeft = formatCapsuleTimeLeft(vtxo.expiryHeight, tip, ex.observedAt);
+                // Reason wording matches why we did NOT auto-refresh: too small
+                // (below the refresh floor), too soon (inside the exit-runway
+                // window), or neutral for the filler / unknown-size fallback so a
+                // large capsule is never mislabelled. COPY: Bam finalizes.
+                const reasonLine = belowFloor
+                    ? 'They are too small to refresh on their own. '
+                    : belowExitRunway
+                        ? 'They are close to expiring. '
+                        : '';
+                Alert.alert(
+                    'New sats in your Bark Vault',
+                    `You received ${amountPhrase}. ${reasonLine}` +
+                        `Spend them in a payment before they expire${timeLeft ? ` (in ${timeLeft})` : ''}.`,
+                    [{ text: 'OK', onPress: release }],
+                    { cancelable: false, onDismiss: release },
+                );
+            } catch (outerErr: any) {
+                console.warn('[arkoor auto-refresh] decision threw:', outerErr?.message ?? outerErr);
+                release();
+            }
+        })();
+    }, [arkArkoorPromptState, isArkAuth, arkVtxos, appIsActive, setArkArkoorPromptState]);
 }

@@ -44,7 +44,6 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
 import rowStyles from "../../HotStorageVault/ListView/styles";
-import ArkOnchainRecoverSection from "./ArkOnchainRecoverSection";
 
 /**
  * ArkCapsules — VTXO management surface for the Ark wallet menu.
@@ -202,6 +201,14 @@ interface VtxoRowData {
      */
     pendingRound: boolean;
     /**
+     * True when this VTXO is actively being unilaterally exited (bark exit
+     * record in Processing/claimable state — see ArkVtxoView.exiting). bark
+     * still reports it Spendable until the exit leaf confirms, but spending
+     * or refreshing it would race the user's own exit, so the row renders
+     * locked: no selection, no refresh, "Exiting on-chain" label.
+     */
+    exiting: boolean;
+    /**
      * Recoverability classification for the per-row badge.
      *
      * The TRUTH about Ark/Bark recovery: VTXOs cannot be reconstructed
@@ -246,6 +253,12 @@ interface VtxoRowProps {
      * the funds become spendable again immediately.
      */
     onCancelIcon: () => void;
+    /**
+     * Tap on the "Dust refresh" button shown on a below-floor (dust) capsule.
+     * Sweeps ALL dust capsules into one via a delegated round (a lone one
+     * can't refresh, but bark 0.6.1 takes a batch whose sum clears dust).
+     */
+    onDustRefresh: () => void;
     /**
      * True while the user-initiated cancel is in flight (between tap and
      * post-cancel sync). Drives a "Cancelling" UI state — the per-row
@@ -305,7 +318,7 @@ function formatTimeLeftDetailed(daysLeft: number): string {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCancelling, roundIntervalSecs, failedAttempts }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustRefresh, isCancelling, roundIntervalSecs, failedAttempts }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = formatCapsuleAmount(vtxo.sats);
 
@@ -386,35 +399,76 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
     // resurrect an expired VTXO), badge instead of refresh/select, and
     // tap opens an explainer instead of toggling selection.
     const isExpired = isExpiredCapsule(vtxo);
-    const labelColor = isTransientForLabel
+    // Too small to refresh: below the round minimum and otherwise a normal
+    // spendable capsule. The server rejects sub-minimum inputs, so it can't
+    // join a refresh round — non-selectable for batch/refresh. Excludes
+    // expired + in-flight, which have their own states.
+    const isDust = !isExpired && !isTransient && vtxo.sats < ARK_REFRESH_MIN_SATS;
+    // Actively-exiting row: locked treatment (no select / no refresh) with
+    // its own label. Takes precedence over the expiry countdown; transient
+    // (mid-round) can't co-occur with it (an exiting VTXO reads Spendable).
+    const isExiting = vtxo.exiting;
+    // isExiting OUTRANKS the transient (locked/in-flight) treatment: after
+    // the exit's leaf tx confirms, bark reports the VTXO in a locked-ish
+    // state, and the generic "Refreshing or In-flight" label would shadow
+    // the exit story (observed live during the AwaitingDelta phase).
+    const labelColor = isExiting
         ? colors.ark.light
-        : isExpired
-            ? '#888'
-            : view.color;
-    const labelText = isTransientForLabel
-        ? (isCancelling
-            ? 'Cancelling\n(takes less than 3 hours)'
-            : (failedAttempts && failedAttempts > 0
-                ? `Refreshing or In-flight\n⚠️ ${failedAttempts} refresh attempt${failedAttempts === 1 ? '' : 's'} failed`
-                : 'Refreshing or In-flight\n(takes less than 3 hours)'))
-        : isExpired
-            ? 'Expired'
-            : vtxo.unknownExpiry
-                ? vtxo.kind
-                : formatExpiryLeft(vtxo.daysLeft);
+        : isTransientForLabel
+            ? colors.ark.light
+            : isExpired
+                ? '#888'
+                : view.color;
+    const labelText = isExiting
+        ? 'Exiting on-chain\n(sweeps after the ~24h timelock)'
+        : isTransientForLabel
+            ? (isCancelling
+                ? 'Cancelling\n(takes less than an hour)'
+                : (failedAttempts && failedAttempts > 0
+                    ? `Refreshing or In-flight\n⚠️ ${failedAttempts} refresh attempt${failedAttempts === 1 ? '' : 's'} failed`
+                    : 'Refreshing or In-flight\n(takes less than an hour)'))
+            : isExpired
+                ? 'Expired'
+                : vtxo.unknownExpiry
+                    ? vtxo.kind
+                    : formatExpiryLeft(vtxo.daysLeft);
     // Reflect real expiry even mid-round (arkoor daysLeft=Infinity still
     // reads full/green, no deadline). Matches the red countdown text.
     const ringDaysLeft = vtxo.daysLeft;
 
-    // Explainer for expired capsules — the only "action" the row keeps.
-    // Copy matches the header tagline's "lost forever" framing so the
-    // user gets the same story everywhere.
+    // Explainer for expired capsules, the only "action" the row keeps.
+    //
+    // Deliberately does NOT claim the funds are unrecoverable. Second.tech
+    // allows refreshes after the expiry height, during a grace window before
+    // the ASP sweeps, so "lost forever" stated a certainty we cannot back and
+    // told users to give up at the point they might still have acted. What we
+    // can honestly say is that the server may sweep at any time and recovery
+    // is not guaranteed.
+    //
+    // The same correction was applied to every other surface that carried the
+    // "lost forever" / "cannot be recovered" framing: the header tagline
+    // below, the useArkSync expiry alert, the Settings and
+    // CheckingAccountCreated reminder copy, and ArkCapsulesInfoScreen. Keep
+    // them in step if this wording changes again.
     const showExpiredExplainer = () => {
         Alert.alert(
             'Capsule expired',
-            `This ${vtxo.sats.toLocaleString()}-sat capsule reached its expiry without a successful refresh. ` +
-            'After expiry the Ark server can sweep the funds, and they can no longer be refreshed, sent, or recovered. ' +
-            'Refresh your remaining capsules before they expire, or they are lost forever.',
+            `This ${vtxo.sats.toLocaleString()}-sat capsule passed its expiry without a successful refresh.\n\n` +
+            'After expiry the Second.tech server can sweep these funds at any time, so they may already be gone. ' +
+            'Recovery is not guaranteed.\n\n' +
+            "Refresh your other capsules before they expire so this doesn't happen to them.",
+            [{ text: 'OK' }],
+        );
+    };
+
+    // Same non-selectable pattern as expired, for a capsule below the refresh
+    // floor: tapping the greyed row explains why it can't be refreshed. COPY:
+    // Bam finalizes.
+    const showDustExplainer = () => {
+        Alert.alert(
+            'Too small to refresh',
+            `This ${vtxo.sats.toLocaleString()}-sat capsule is below the ~${ARK_REFRESH_MIN_SATS}-sat round minimum, so it can't be refreshed on its own.\n\n` +
+            'Spend it in a payment before it expires. A normal send folds it in.',
             [{ text: 'OK' }],
         );
     };
@@ -462,7 +516,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
         // changing.
         <Animated.View style={[
             rowStyles.main,
-            { height: 100, paddingTop: 0, justifyContent: 'center', opacity: pulseAnim },
+            { height: 100, paddingTop: 0, justifyContent: 'center', opacity: isDust ? 0.5 : pulseAnim },
         ]}>
             <LinearGradient
                 colors={['#3A3A3A', '#1C1C1C']}
@@ -509,7 +563,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
             <TouchableOpacity
                 activeOpacity={0.7}
                 style={rowStyles.container}
-                onPress={isExpired ? showExpiredExplainer : onPress}
+                onPress={isExpired ? showExpiredExplainer : isDust ? showDustExplainer : onPress}
             >
                 {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
                     bump the size column from 1.8 → 2.8 so the time-left +
@@ -596,24 +650,26 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                             <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
                                 {labelText}
                             </Text>
-                            <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
-                                {" - "}
-                            </Text>
-                            <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
-                                {recoverabilityText}
-                            </Text>
+                            {!isTransientForLabel && (
+                                <>
+                                    <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
+                                        {" - "}
+                                    </Text>
+                                    <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
+                                        {recoverabilityText}
+                                    </Text>
+                                </>
+                            )}
                         </View>
                     )}
                 </View>
                 {isExpired ? (
                     // Expired action area: no refresh icon, no checkbox —
-                    // neither operation is reachable on a VTXO that's past
-                    // its expiry height (ASP can sweep it at any time, and
-                    // bark's refresh on an expired input hangs the round).
-                    // The badge expands to the combined width of the icon
-                    // + select columns (flex 2). Dust-vs-non-dust changes
-                    // only the label text — visual treatment is identical.
-                    // Outer row tap opens the expiry explainer for both.
+                    // neither is reachable on a VTXO past its expiry height
+                    // (the ASP can sweep it at any time, and bark's refresh on
+                    // an expired input hangs the round). The badge expands to
+                    // the combined width of the icon + select columns (flex 2).
+                    // Outer row tap opens the expiry explainer.
                     <View
                         style={{
                             flex: 2,
@@ -632,6 +688,35 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                             {vtxo.sats <= ARK_VTXO_DUST_SATS ? 'EXPIRED DUST' : 'EXPIRED'}
                         </RNText>
                     </View>
+                ) : isDust ? (
+                    // Dust action area: a lone sub-floor capsule can't refresh
+                    // on its own (its round output would fall below the dust
+                    // limit), but bark 0.6.1 accepts a DELEGATED batch whose
+                    // SUM clears dust. This button sweeps ALL dust capsules
+                    // into one; it shows on every dust row so the action is
+                    // reachable from any of them. COPY: Bam finalizes.
+                    <TouchableOpacity
+                        style={{
+                            flex: 2,
+                            marginRight: 8,
+                            marginVertical: 6,
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: '#FFFFFF',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingVertical: 6,
+                            paddingHorizontal: 4,
+                        }}
+                        onPress={onDustRefresh}
+                        delayPressIn={0}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.6}
+                    >
+                        <RNText style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '700', textAlign: 'center' }}>
+                            DUST REFRESH
+                        </RNText>
+                    </TouchableOpacity>
                 ) : (
                     <>
                         {/* Refresh icon Touchable — independent of the row's
@@ -643,15 +728,16 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                             pixel-perfect aim. */}
                         <TouchableOpacity
                             style={[rowStyles.label, { alignItems: 'flex-start' }]}
-                            onPress={isTransient ? onCancelIcon : onRefreshIcon}
+                            onPress={isExiting ? undefined : isTransient ? onCancelIcon : onRefreshIcon}
                             delayPressIn={0}
                             hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
                             activeOpacity={0.6}
                             // Disable the touchable while a cancel is in
                             // flight — both to prevent double-firing the
                             // cancel handler and to give the "Cancelling"
-                            // text a visually-locked feel.
-                            disabled={isTransient && isCancelling}
+                            // text a visually-locked feel. Exiting rows have
+                            // no action at all (the exit can't be cancelled).
+                            disabled={(isTransient && isCancelling) || isExiting}
                         >
                             {/* Three visual states for the row's action slot:
                                   - idle (not transient): spinning refresh-cw,
@@ -663,7 +749,14 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                                     standing in for the X, non-tappable, so
                                     the user can't spam-tap the cancel button
                                     while waiting for bark to settle. */}
-                            {isTransient ? (
+                            {isExiting ? (
+                                // No action while exiting — empty slot keeps
+                                // the column widths stable. Checked BEFORE
+                                // isTransient so an exiting VTXO in bark's
+                                // locked-ish post-confirm state never shows
+                                // the cancel X (exits can't be cancelled).
+                                null
+                            ) : isTransient ? (
                                 isCancelling ? (
                                     <Text bold style={{ color: colors.redLight, fontSize: 12 }}>
                                         Cancelling
@@ -683,7 +776,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, isCance
                                 queueing new refresh actions over a cancel
                                 they're still waiting on. The outer slot
                                 stays so row column widths don't shift. */}
-                            {!isCancelling && (
+                            {!isCancelling && !isExiting && (
                                 <View style={rowStyles.checkbox}>
                                     {selected && <Image source={Yes} />}
                                 </View>
@@ -882,9 +975,11 @@ interface ArkCapsulesProps {
  */
 const TAP_REFRESH_IMMINENT_DAYS = 14;
 
-// Countdown window for the refresh-wait reminder. Each in-flight round gets a
-// 3h timer counting down from when it started (its first-seen timestamp).
-const REFRESH_WAIT_WINDOW_MS = 3 * 60 * 60 * 1000;
+// Countdown window for the refresh-wait reminder. A delegated round finishes
+// within the hour, so each in-flight round gets a 1h timer counting down from
+// when it started (its first-seen timestamp); past it the round is treated as
+// stuck and the banner offers Cancel.
+const REFRESH_WAIT_WINDOW_MS = 60 * 60 * 1000;
 // A stuck refresh becomes worth bailing on (swap the capsule to another
 // wallet, retry later) well before the 12h `nearExpiry` gate, a failing
 // round shouldn't be allowed to burn down a multi-day runway. The Capsules
@@ -1006,7 +1101,7 @@ function RefreshWaitBanner({
             ) : (
                 <>
                     <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
-                        {`PLEASE COME BACK IN 3 HOURS TO MAKE SURE THE REFRESH HAS COMPLETED${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
+                        {`PLEASE COME BACK IN 1 HOUR TO MAKE SURE THE REFRESH HAS COMPLETED${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
                     </Text>
                     {extras.slice(0, MAX_EXTRA_REFRESH_LINES).map((x, i) => (
                         <Text
@@ -1041,6 +1136,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // X button reappears, inviting users to spam-tap it.
     const cancelling = useArkCancelling();
     const arkVtxos = useAuthStore((s) => s.arkVtxos);
+    const arkRefreshingVtxoIds = useAuthStore((s) => s.arkRefreshingVtxoIds);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const setArkPendingLnReceives = useAuthStore((s) => s.setArkPendingLnReceives);
     const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
@@ -1133,21 +1229,20 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         };
     }, [arkLastSyncedAt, chainTipHeight]);
 
-    // Sum of sats currently locked in pending refresh rounds. Same derivation
-    // as ArkWallet/index.tsx (Locked-state VTXO sats), to avoid the SDK's
-    // `arkBalanceDetail.pendingInRoundSats` over-counting bug where each
-    // queued round contributes its expected output, so re-tapping refresh
-    // 5 times against the same VTXO inflates the figure 5×.
+    // Sum of sats currently in a pending refresh round we submitted. Driven by
+    // the client-tracked ids (authStore arkRefreshingVtxoIds) — same approach
+    // as ArkWallet/index.tsx. bark 0.6.0 no longer marks a mid-refresh VTXO
+    // `Locked` (it stays `Spendable`), so the old "sum Locked VTXOs" derivation
+    // silently returned 0; and its `arkBalanceDetail.pendingInRoundSats` lags
+    // the submission by seconds-to-minutes, so we don't use that either.
     //
-    // Used to disable the Refresh action button when a round is in flight,
-    // so users don't accidentally queue duplicate rounds at the ASP and
-    // think it speeds completion.
+    // Used to disable the Refresh action button while a round is in flight, so
+    // users don't queue duplicate rounds at the ASP thinking it speeds things.
     const pendingRoundSats = useMemo(() => {
-        return arkVtxos.reduce(
-            (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
-            0,
-        );
-    }, [arkVtxos]);
+        if (arkRefreshingVtxoIds.length === 0) return 0;
+        const set = new Set(arkRefreshingVtxoIds);
+        return arkVtxos.reduce((sum, v) => (set.has(v.id) ? sum + v.sats : sum), 0);
+    }, [arkVtxos, arkRefreshingVtxoIds]);
 
     // Track refresh attempts that have queued a round but haven't visibly
     // resolved yet. Each successful `refreshIds` call bumps this; it resets
@@ -1169,10 +1264,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // full green ring and hide the "Xd left" line — still visible, but with
     // no misleading time estimate.
     const rows: VtxoRowData[] = useMemo(() => {
+        const refreshingSet = new Set(arkRefreshingVtxoIds);
         const mapped = arkVtxos.map((v) => {
             const stateLower = v.state.toLowerCase();
             const kindLower = v.kind.toLowerCase();
-            const pendingRound = stateLower === "locked";
+            // bark 0.6.0: a mid-refresh VTXO stays `Spendable` (not `Locked`),
+            // so drive the "Refreshing…" row treatment off the client-tracked
+            // ids too (see authStore arkRefreshingVtxoIds).
+            const pendingRound = stateLower === "locked" || refreshingSet.has(v.id);
 
             // Tri-state recoverability — see VtxoRowData.recoverability
             // for the full reasoning. Quick summary: a Pubkey/Spendable
@@ -1202,6 +1301,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     unknownExpiry: true,
                     kind: v.kind,
                     pendingRound,
+                    exiting: v.exiting ?? false,
                     recoverability,
                 };
             }
@@ -1213,6 +1313,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 unknownExpiry: false,
                 kind: v.kind,
                 pendingRound,
+                exiting: v.exiting ?? false,
                 recoverability,
             };
         });
@@ -1228,7 +1329,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             if (aDead !== bDead) return aDead ? 1 : -1;
             return 0;
         });
-    }, [arkVtxos, chainTipHeight, arkLastBackupAt]);
+    }, [arkVtxos, chainTipHeight, arkLastBackupAt, arkRefreshingVtxoIds]);
 
     // Auto-refresh when the user landed here from a tapped expiry-warning
     // notification. The scheduler's tap handler set arkPendingTapRefresh
@@ -1267,7 +1368,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         const deferredIds = buildDeferredVtxoIds(promptState);
 
         const batch = buildRefreshBatch({
-            vtxos: rows.map((r) => ({
+            // Exiting capsules are out of scope for refresh batches — the
+            // exit owns them (and one riding along would trip refreshIds'
+            // exiting gate and block the whole batch).
+            vtxos: rows.filter((r) => !r.exiting).map((r) => ({
                 id: r.id,
                 sats: r.sats,
                 daysLeft: r.daysLeft,
@@ -1337,6 +1441,16 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     }, [arkPendingTapRefresh, rows, setArkPendingTapRefresh]);
 
     const toggle = (id: string) => {
+        // Exiting capsules can't be selected for send/refresh — the exit
+        // owns them until it completes (see VtxoRowData.exiting).
+        const row = rows.find((r) => r.id === id);
+        if (row?.exiting) {
+            SimpleToast.show(
+                'This capsule is exiting on-chain and can no longer be spent or refreshed.',
+                SimpleToast.SHORT,
+            );
+            return;
+        }
         setSelectedIds((prev) =>
             prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
         );
@@ -1404,6 +1518,19 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         if (expiredSelected.length > 0) {
             SimpleToast.show(
                 `${expiredSelected.length} capsule(s) already expired and can no longer be refreshed`,
+                SimpleToast.LONG,
+            );
+            return;
+        }
+
+        // Actively-exiting capsules can't ride a round either — the exit
+        // owns them now (see VtxoRowData.exiting).
+        const exitingSelected = rows.filter(
+            (r) => ids.includes(r.id) && r.exiting,
+        );
+        if (exitingSelected.length > 0) {
+            SimpleToast.show(
+                `${exitingSelected.length} capsule(s) are exiting on-chain and can no longer be refreshed`,
                 SimpleToast.LONG,
             );
             return;
@@ -1754,7 +1881,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         const freshPromptState =
             useAuthStore.getState().arkArkoorPromptState ?? {};
         const freshDeferredIds = buildDeferredVtxoIds(freshPromptState);
-        const projected = freshVtxos.map((v) => {
+        // Exiting VTXOs excluded for the same reason as the tap-refresh
+        // batch above: the exit owns them.
+        const projected = freshVtxos.filter((v) => !v.exiting).map((v) => {
             const pending = v.state.toLowerCase() === 'locked';
             if (v.expiryHeight === 0 || freshTip === null) {
                 return {
@@ -1806,6 +1935,96 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
      *  has to opt in before the round commits. */
     const handleRowRefresh = (vtxoId: string) => {
         void refreshIds([vtxoId]);
+    };
+
+    /**
+     * Sweep every below-floor (dust) capsule into a single fresh one.
+     *
+     * A lone sub-floor capsule can't join a round on its own — its round
+     * output would fall below the dust limit and the ASP rejects it. But
+     * bark 0.6.1 accepts a DELEGATED batch whose per-input values are each
+     * below the floor as long as the SUM clears the dust limit, folding them
+     * into one capsule for a negligible fee (measured at ~1 sat on device).
+     * Every dust row's "Dust refresh" button calls this, so the action is
+     * reachable from any of them; it always operates on the whole dust set.
+     *
+     * Resyncs first (a stale/spent id poisons the whole round), gates on the
+     * dust total clearing the dust limit, previews the fee, then submits via
+     * the same delegated path the manual refresh uses. COPY: Bam finalizes.
+     */
+    const handleDustRefresh = () => {
+        void (async () => {
+            try {
+                await syncArkWallet();
+                await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+            } catch (syncErr: any) {
+                console.warn(
+                    '[Ark dust-refresh] pre-submit resync failed, proceeding with last-known set:',
+                    syncErr?.message ?? syncErr,
+                );
+            }
+            const dust = (useAuthStore.getState().arkVtxos ?? []).filter(
+                (v) => v.sats < ARK_REFRESH_MIN_SATS && v.state.toLowerCase() === 'spendable',
+            );
+            const ids = dust.map((v) => v.id);
+            const total = dust.reduce((acc, v) => acc + v.sats, 0);
+            if (ids.length === 0) {
+                SimpleToast.show('No dust capsules to refresh.', SimpleToast.SHORT);
+                return;
+            }
+            if (total <= ARK_VTXO_DUST_SATS) {
+                SimpleToast.show(
+                    `Only ${total} sats of dust so far. It needs to total more than ${ARK_VTXO_DUST_SATS} sats before it can be swept into one capsule.`,
+                    SimpleToast.LONG,
+                );
+                return;
+            }
+            setRefreshing(true);
+            try {
+                const fee = await estimateArkRefreshFee(ids);
+                const confirmed = await new Promise<boolean>((resolve) => {
+                    Alert.alert(
+                        'Sweep dust?',
+                        `Combine ${ids.length} tiny capsule${ids.length === 1 ? '' : 's'} (${total} sats) into one for ~${fee.feeSats} sats. ` +
+                        `It finishes in the background within the hour, so you can close the app once it's submitted.`,
+                        [
+                            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                            { text: 'Sweep', onPress: () => resolve(true) },
+                        ],
+                        { cancelable: true, onDismiss: () => resolve(false) },
+                    );
+                });
+                if (!confirmed) {
+                    setRefreshing(false);
+                    return;
+                }
+                queuedRoundsCountRef.current += 1;
+                setQueuedRoundsCount(queuedRoundsCountRef.current);
+                await refreshArkVtxosDelegatedAndSync(ids, total);
+                SimpleToast.show(
+                    'Dust sweep submitted. It finishes in the background within the hour.',
+                    SimpleToast.LONG,
+                );
+            } catch (err: any) {
+                if (err instanceof ArkRefreshInFlightError) {
+                    SimpleToast.show(
+                        'A refresh is already running. Wait for it to finish, then try again.',
+                        SimpleToast.LONG,
+                    );
+                } else {
+                    console.warn(
+                        '[Ark dust-refresh] failed tag=', err?.tag,
+                        'inner=', err?.inner?.errorMessage ?? err?.message ?? String(err),
+                    );
+                    SimpleToast.show(
+                        'Dust sweep failed. Your funds are safe, nothing was spent.',
+                        SimpleToast.LONG,
+                    );
+                }
+            } finally {
+                setRefreshing(false);
+            }
+        })();
     };
 
     /**
@@ -2074,7 +2293,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                        Your lightning capsules (VTXOs) must be refreshed before they expire, or they are lost forever.{' '}
+                        Your lightning capsules (VTXOs) must be refreshed before they expire. Once expired, recovery is not guaranteed.{' '}
                         <Text
                             bold
                             style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
@@ -2217,26 +2436,59 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 user learns that. Round-based "consolidation" was removed: the
                 round minimum is per-input, not aggregate, so it always failed. */}
             {strandedDust.dust.length > 0 && (
-                <View
-                    style={{
-                        marginHorizontal: 20,
-                        marginTop: 6,
-                        marginBottom: 6,
-                        paddingVertical: 10,
-                        paddingHorizontal: 14,
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: '#FF7A68',
-                        backgroundColor: '#1a0f0d',
-                    }}
-                >
-                    <RNText style={{ fontSize: 13, color: '#FF7A68', fontWeight: '700', marginBottom: 4 }}>
-                        {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} cannot be refreshed
-                    </RNText>
-                    <RNText style={{ fontSize: 12, color: '#ddd' }}>
-                        Below the {ARK_REFRESH_MIN_SATS}-sat round minimum ({strandedDust.total.toLocaleString()} sats total). Spend {strandedDust.dust.length === 1 ? 'it' : 'them'} in a payment before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}. A normal send folds {strandedDust.dust.length === 1 ? 'it' : 'them'} in.
-                    </RNText>
-                </View>
+                strandedDust.total > ARK_VTXO_DUST_SATS ? (
+                    // Sweepable: their combined value clears the dust limit, so
+                    // bark 0.6.1 folds them into one capsule in a single
+                    // delegated round. Tappable — same action as the per-capsule
+                    // "Dust refresh" button. COPY: Bam finalizes.
+                    <TouchableOpacity
+                        onPress={handleDustRefresh}
+                        activeOpacity={0.7}
+                        style={{
+                            marginHorizontal: 20,
+                            marginTop: 6,
+                            marginBottom: 6,
+                            paddingVertical: 10,
+                            paddingHorizontal: 14,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: '#FFFFFF',
+                            backgroundColor: '#15171c',
+                        }}
+                    >
+                        <RNText style={{ fontSize: 13, color: '#FFFFFF', fontWeight: '700', marginBottom: 4 }}>
+                            {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} ({strandedDust.total.toLocaleString()} sats) can be combined
+                        </RNText>
+                        <RNText style={{ fontSize: 12, color: '#ddd' }}>
+                            Tap here (or "Dust refresh" on a capsule) to combine {strandedDust.dust.length === 1 ? 'it' : 'them'} into one capsule before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}.
+                        </RNText>
+                    </TouchableOpacity>
+                ) : (
+                    // Truly stranded: combined value is still below the dust
+                    // limit, so a consolidating round would produce a sub-dust
+                    // output the ASP rejects. The only way out is to spend them
+                    // (a normal payment folds them in). COPY: Bam finalizes.
+                    <View
+                        style={{
+                            marginHorizontal: 20,
+                            marginTop: 6,
+                            marginBottom: 6,
+                            paddingVertical: 10,
+                            paddingHorizontal: 14,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: '#FF7A68',
+                            backgroundColor: '#1a0f0d',
+                        }}
+                    >
+                        <RNText style={{ fontSize: 13, color: '#FF7A68', fontWeight: '700', marginBottom: 4 }}>
+                            {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} cannot be refreshed yet
+                        </RNText>
+                        <RNText style={{ fontSize: 12, color: '#ddd' }}>
+                            Only {strandedDust.total.toLocaleString()} sats total, below the {ARK_VTXO_DUST_SATS}-sat dust limit. Spend {strandedDust.dust.length === 1 ? 'it' : 'them'} in a payment before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}. A normal send folds {strandedDust.dust.length === 1 ? 'it' : 'them'} in.
+                        </RNText>
+                    </View>
+                )
             )}
 
             {/* Column header row — matches Hot Vault's layout */}
@@ -2268,6 +2520,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         onPress={() => toggle(item.id)}
                         onRefreshIcon={() => handleRowRefresh(item.id)}
                         onCancelIcon={handleRowCancel}
+                        onDustRefresh={handleDustRefresh}
                         isCancelling={cancelling}
                         roundIntervalSecs={arkRoundIntervalSecs}
                         failedAttempts={arkRefreshFailStreak}
@@ -2315,8 +2568,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 }
                 // Stuck on-chain (boarding) funds capsule + recover action,
                 // rendered under the last VTXO so it scrolls with the list.
-                ListFooterComponent={<ArkOnchainRecoverSection />}
-                style={{ marginTop: 10 }}
+                style={{ marginTop: 10, flex: 1 }}
             />
 
             {/* Action row — Send (consume selected capsules as a payment)

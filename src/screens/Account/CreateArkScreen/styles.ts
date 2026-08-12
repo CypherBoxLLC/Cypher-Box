@@ -12,6 +12,7 @@ interface Style {
     toggleSub: TextStyle;
     infoText: TextStyle;
     bullet: TextStyle;
+    link: TextStyle;
     divider: ViewStyle;
     button: ViewStyle;
     btnText: TextStyle;
@@ -79,6 +80,14 @@ export default StyleSheet.create<Style>({
         fontSize: 13,
         lineHeight: 20,
         marginBottom: 2,
+    },
+    link: {
+        color: colors.ark.light,
+        fontSize: 13,
+        lineHeight: 20,
+        marginLeft: 10,
+        marginBottom: 2,
+        textDecorationLine: "underline",
     },
     divider: {
         height: 1,

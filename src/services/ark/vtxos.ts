@@ -1,4 +1,5 @@
 import { getArkWalletHandle } from './walletHandle';
+import { barkStateTag, isActiveExit } from './barkState';
 
 /**
  * Plain-JS view of one VTXO, suitable for the UI.
@@ -16,6 +17,17 @@ export type ArkVtxoView = {
     kind: string;
     /** "spendable" | "spent" | "locked" — we filter to spendable for the capsule UI. */
     state: string;
+    /**
+     * True when this VTXO has an ACTIVE unilateral-exit record in bark's exit
+     * subsystem (state Processing… or claimable). bark keeps reporting such a
+     * VTXO as `Spendable` in allVtxos()/balance() until the exit's leaf tx
+     * confirms on-chain, but spending it cooperatively mid-exit races the
+     * user's own exit (fraud-window dispute), so the app must treat it as
+     * locked: excluded from spendable balance (applyExpiredVtxoFilter),
+     * unselectable and unrefreshable in the capsule UI.
+     * Optional for persist-compat with rows written before this field.
+     */
+    exiting?: boolean;
 };
 
 export type ArkVtxoList = {
@@ -43,11 +55,15 @@ export type ArkVtxoList = {
  * We compare case-insensitively to be resilient to either casing, and
  * show both Spendable and Locked so mid-round / pending-finalization
  * VTXOs don't vanish from the UI for ~10–30s while a round completes.
- * Spent is hidden (historical only — already consumed by a round or
- * send). Any unknown state is shown by default rather than hidden,
- * so future SDK additions don't silently disappear capsules.
+ * Spent and Exited are hidden (both terminal): Spent was consumed by a
+ * round or send; Exited means a completed unilateral exit whose value is
+ * now an on-chain output, tracked by the exit subsystem, not a spendable
+ * capsule. Without hiding Exited, a fully-exited VTXO lingers forever as
+ * a stale "Refreshing" capsule (bark keeps returning it from allVtxos()
+ * as state=Exited, never Spent). Any unknown state is shown by default
+ * rather than hidden, so future SDK additions don't silently disappear.
  */
-const HIDDEN_STATES = new Set(['spent']);
+const HIDDEN_STATES = new Set(['spent', 'exited']);
 
 export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
     const handle = getArkWalletHandle();
@@ -57,12 +73,34 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
     }
 
     const raw = await handle.allVtxos();
+
+    // Cross-reference the exit subsystem: bark reports actively-exiting
+    // VTXOs as Spendable until the exit leaf confirms, so without this the
+    // UI/balance offers coins that are mid-exit (see `exiting` docs above).
+    // Best-effort: an empty set on failure just means no lock this tick.
+    let activeExitIds = new Set<string>();
+    try {
+        const exits = await handle.getExitVtxos();
+        activeExitIds = new Set(
+            (exits ?? [])
+                // bark 0.6.1: exit `state` is a tagged-enum object now; use the
+                // shared not-terminal liveness check (Start/Processing/
+                // AwaitingDelta/Claimable/ClaimInProgress = active).
+                .filter((e: any) => isActiveExit(e))
+                .map((e: any) => String(e.vtxoId)),
+        );
+    } catch { /* handle busy or exit subsystem unavailable — no lock */ }
+
     const all: ArkVtxoView[] = raw.map((v) => ({
         id: v.id,
         sats: Number(v.amountSats),
         expiryHeight: v.expiryHeight,
         kind: v.kind,
-        state: v.state,
+        // bark 0.6.1: `state` is a tagged-enum object; flatten to its variant
+        // string so ArkVtxoView.state stays a plain string and every
+        // downstream `.toLowerCase()` comparison keeps working.
+        state: barkStateTag(v.state),
+        exiting: activeExitIds.has(v.id),
     }));
 
     // Diagnostic: surface every VTXO state + kind we see from the SDK, so

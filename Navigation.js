@@ -134,6 +134,16 @@ const HotVaultStack = createNativeStackNavigator();
 const HotVaultFlow = () => (
   <HotVaultStack.Navigator screenOptions={{ headerShown: false }}>
     <HotVaultStack.Screen name="SavingVaultIntro" component={SavingVaultIntro} />
+    {/* BlueWallet's dice/coin entropy screen, reachable from the hot-vault
+        instruction page ("create your own entropy"). Registered here (in
+        addition to AddWalletStack) because cross-stack navigate can't reach
+        the legacy add-wallet flow from SavingVaultIntro. Header re-enabled
+        per-screen so the user has a back affordance besides Save. */}
+    <HotVaultStack.Screen
+      name="ProvideEntropy"
+      component={ProvideEntropy}
+      options={{ headerShown: true, title: loc.entropy.title }}
+    />
     <HotVaultStack.Screen
       name="SavingVault"
       component={SavingVault}

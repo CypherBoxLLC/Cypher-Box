@@ -15,6 +15,7 @@ import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import SimpleToast from "react-native-simple-toast";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Image, Platform, TouchableOpacity, View } from "react-native";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -63,6 +64,7 @@ export default function ArkWallet({
         reserveArkAmount,
         arkVtxos,
         arkChainTipHeight,
+        arkRefreshingVtxoIds,
         arkBgRefreshEnabled,
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
@@ -70,6 +72,8 @@ export default function ArkWallet({
         arkRefreshStuck,
         setArkRefreshStuck,
         arkBalanceDetail,
+        arkExitFeeReserveSats,
+        setArkExitFeeReserveSats,
         walletID,
     } = useAuthStore();
 
@@ -160,6 +164,12 @@ export default function ArkWallet({
         // Optimistically suppressed right after a successful recover, until the
         // next sync writes the real (cleared) balance.
         if (boardingHiddenAfterRecover) return null;
+        // When the user has armed an on-chain exit-fee reserve, these boarding
+        // funds are their intentional CPFP reserve for a future unilateral exit
+        // (sync.ts keeps them on-chain instead of auto-boarding), not a stuck
+        // deposit — so don't nag. The reserve is managed/released from the
+        // Settings exit-fee screen.
+        if ((arkExitFeeReserveSats ?? 0) > 0) return null;
         const confirmed = arkBalanceDetail?.onchainBoardingSats ?? 0;
         const confirming = arkBalanceDetail?.onchainConfirmingSats ?? 0;
         if (confirmed <= 0 && confirming <= 0) return null;
@@ -179,7 +189,7 @@ export default function ArkWallet({
             sats: confirming, color: colors.green, stuck: false,
             label: `Boarding (on-chain): ${confirming} sats. Confirming.`,
         };
-    }, [arkBalanceDetail, minBoardSats, boardingHiddenAfterRecover]);
+    }, [arkBalanceDetail, minBoardSats, boardingHiddenAfterRecover, arkExitFeeReserveSats]);
 
     /**
      * F3 — drain a stuck on-chain boarding deposit back to the Hot Vault.
@@ -280,36 +290,35 @@ export default function ArkWallet({
     // StrikeWallet). Other combos are untouched.
     const allThreeLightning = isAuth && isStrikeAuth && isArkAuth;
 
-    // Non-zero means there's an in-flight round (refresh / send / board).
+    // The capsules mid-refresh: ids we submitted for refresh that are still in
+    // the wallet. Driven by our OWN tracking (set the instant the user taps),
+    // NOT bark's `pendingInRoundSats` — that field lags the submission by
+    // seconds-to-minutes on 0.6.0, so gating on it left the animation blank
+    // during the wait. useArkSync prunes an id only when its VTXO leaves the
+    // wallet (refreshed away or spent), so the capsule spins for the whole round.
     //
-    // We DERIVE this from the Locked VTXO amounts rather than using
-    // `arkBalanceDetail.pendingInRoundSats` directly, because the SDK's
-    // raw field sums both sides of the round (input + expected output ≈
-    // 2× the real amount). With the headline balance now including the
-    // Locked-VTXO amount, showing the raw 2× number in the subtitle
-    // confused users — they saw e.g. "9980 sats" on the card and
-    // "19911 sats pending" just below, and reasonably thought we were
-    // double-counting.
-    //
-    // Summing Locked VTXOs from `arkVtxos` gives the exact post-fee
-    // retained amount that's currently tied up in the round. When no
-    // round is pending, this is 0 and the subtitle is hidden.
-    const pendingRoundSats = useMemo(() => {
-        return arkVtxos.reduce(
-            (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
-            0,
-        );
-    }, [arkVtxos]);
+    // bark 0.6.0 background: a VTXO in a pending delegated round now stays
+    // `Spendable` (no longer `Locked`), which is why the pre-0.6 "sum Locked
+    // VTXOs" approach silently returned 0 and the "Refreshing" UI vanished.
+    const refreshingIds = useMemo(() => {
+        if (arkRefreshingVtxoIds.length === 0) return new Set<string>();
+        const present = new Set(arkVtxos.map((v) => v.id));
+        return new Set(arkRefreshingVtxoIds.filter((id) => present.has(id)));
+    }, [arkVtxos, arkRefreshingVtxoIds]);
 
-    // Count of locked VTXOs (mid-round). Paired with pendingRoundSats
-    // so the status banner can render "Refreshing N capsules · X sats"
-    // and tell the user why their headline balance dropped.
-    const pendingRoundCount = useMemo(() => {
-        return arkVtxos.reduce(
-            (n, v) => (v.state.toLowerCase() === 'locked' ? n + 1 : n),
-            0,
-        );
-    }, [arkVtxos]);
+    // Sats mid-refresh, for the "+ Refreshing X sats" line. Sum the tracked
+    // VTXOs directly (available the instant we submit); fall back to bark's
+    // `pendingInRoundSats` for a refresh we didn't originate (e.g. background
+    // maintenance).
+    const pendingRoundSats = refreshingIds.size > 0
+        ? arkVtxos.reduce((sum, v) => (refreshingIds.has(v.id) ? sum + v.sats : sum), 0)
+        : (arkBalanceDetail?.pendingInRoundSats ?? 0);
+
+    // Count of capsules mid-round, for "Refreshing N capsules · X sats". Falls
+    // back to 1 when sats are in a round but no tracked id matches.
+    const pendingRoundCount = refreshingIds.size > 0
+        ? refreshingIds.size
+        : (pendingRoundSats > 0 ? 1 : 0);
 
     // Surface a nudge when the soonest-expiring VTXO is under a week out, so
     // users don't need to dig into the capsules tab to notice. VTXOs with
@@ -359,13 +368,13 @@ export default function ArkWallet({
                     : 30;
                 return {
                     color: getCapsuleColorBand(daysLeft).color,
-                    refreshing: v.state.toLowerCase() === 'locked',
+                    refreshing: refreshingIds.has(v.id),
                     daysLeft,
                 };
             })
             .sort((a, b) => a.daysLeft - b.daysLeft)
             .map(({ color, refreshing }) => ({ color, refreshing }));
-    }, [arkVtxos, arkChainTipHeight]);
+    }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
     /**
      * Count of dust capsules that haven't expired yet. A "dust capsule" is
@@ -386,12 +395,15 @@ export default function ArkWallet({
             if (v.sats > ARK_VTXO_DUST_SATS) continue;
             if (v.state.toLowerCase() !== 'spendable') continue;
             if (v.expiryHeight === 0) continue;
+            // bark 0.6.1 keeps a delegated-refreshing VTXO Spendable, so skip
+            // any dust capsule already mid-sweep — it isn't "needs action".
+            if (refreshingIds.has(v.id)) continue;
             const blocks = v.expiryHeight - arkChainTipHeight;
             if (blocks <= 0) continue; // already expired — different kind of problem
             count++;
         }
         return count;
-    }, [arkVtxos, arkChainTipHeight]);
+    }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
     /**
      * Single status line surfaced under the Ark balance.
@@ -453,7 +465,7 @@ export default function ArkWallet({
         //    tab. Render "here" as an underlined link to invite the tap.
         if (dustCapsuleCount > 0) {
             return {
-                text: 'Attention: you have dust ark capsules that cannot be refreshed and might expire. Batch refresh them here.',
+                text: 'Attention: you have dust ark capsules that might expire. Batch refresh or spend them here.',
                 linkText: 'here',
                 tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
                 error: true,
@@ -658,6 +670,7 @@ export default function ArkWallet({
                             )}
                             {!isLoading && boardingView && (
                                 boardingView.stuck ? (
+                                    <>
                                     <TouchableOpacity
                                         onPress={handleRecoverBoard}
                                         disabled={recovering}
@@ -675,6 +688,26 @@ export default function ArkWallet({
                                             </Text>
                                         </Text>
                                     </TouchableOpacity>
+                                    {/* Opt-in alternative to recovering: mark these
+                                        funds as the exit-fee reserve. Arms
+                                        arkExitFeeReserveSats, which suppresses this
+                                        banner (here + the capsules card) and tells
+                                        sync.ts to hold them on-chain for a future
+                                        unilateral exit. */}
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setArkExitFeeReserveSats(boardingView.sats);
+                                            SimpleToast.show('Kept on-chain for exit fees.', SimpleToast.SHORT);
+                                        }}
+                                        activeOpacity={0.7}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Leave on-chain funds as exit fees"
+                                    >
+                                        <Text h4 style={[styles.alert, { color: colors.gray.light, textDecorationLine: 'underline' }]}>
+                                            Leave on-chain funds as exit fees
+                                        </Text>
+                                    </TouchableOpacity>
+                                    </>
                                 ) : (
                                     <Text h4 style={[styles.alert, { color: boardingView.color }]}>
                                         {boardingView.label}

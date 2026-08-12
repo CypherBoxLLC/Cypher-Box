@@ -601,6 +601,17 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
               </View>
             </View>
 
+            {/* Bark receive advice: small receives can leave sub-refreshable
+                dust that expires; nudge larger amounts. COPY: Bam finalizes. */}
+            {selectedItem === 5 && (
+              <Text
+                center
+                style={{ marginHorizontal: 24, marginTop: 8, fontSize: 12, color: '#FFD54F', opacity: 0.95, lineHeight: 17 }}
+              >
+                Tip: receive above 700 sats at a time, via a Lightning invoice or your Bark address, so they stay refreshable and don't expire as dust.
+              </Text>
+            )}
+
             {/* Tabs */}
             {tabs.length > 0 && (
               <CustomTabView
