@@ -501,6 +501,28 @@ export default function useArkSync(): UseArkSync {
                         console.warn('[Ark exit] mid-exit store refresh failed:', uiErr?.message ?? uiErr);
                     }
 
+                    // Keep the backup fresh DURING the exit too. The normal
+                    // sync path below (which runs the auto-backup) is skipped
+                    // while an exit is in progress, so without this the local
+                    // .cbark stops updating and arkLastBackupAt goes stale for
+                    // the whole ~24h+ exit: the capsule reads "not backed up"
+                    // and a mid-exit recover would restore a pre-exit snapshot.
+                    // The datadir now carries the exit state, so a snapshot here
+                    // is exactly what a mid-exit recovery needs to resume. Runs
+                    // after this tick's exit drive (progress/drain/sync already
+                    // completed above), so no datadir contention. Same
+                    // fire-and-forget contract as the normal-path backup:
+                    // getCachedArkMnemonic() (no biometric), never awaited,
+                    // errors swallowed.
+                    const exitBackupMnemonic = getCachedArkMnemonic();
+                    if (exitBackupMnemonic) {
+                        writeArkAutoBackup(exitBackupMnemonic)
+                            .then(({ createdAt }) => setArkLastBackupAt(createdAt))
+                            .catch((err) => {
+                                if (__DEV__) console.warn('[Ark auto-backup] mid-exit backup failed:', err?.message ?? err);
+                            });
+                    }
+
                     if (exitActive) {
                         // Exit txs are live (broadcasting / awaiting confs /
                         // awaiting CSV). Keep the flag set and keep driving —
