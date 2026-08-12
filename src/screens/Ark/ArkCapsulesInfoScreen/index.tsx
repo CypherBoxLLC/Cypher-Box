@@ -50,6 +50,11 @@ export default function ArkCapsulesInfoScreen() {
                         sweep the funds at any time. Recovery after expiry is not guaranteed, so
                         treat the expiry date as a hard deadline.
                     </Body>
+                    <Body>
+                        Keeping capsules refreshed also pays off if you ever run an Emergency
+                        Exit: fresh capsules make the exit cheaper in fees, faster to settle,
+                        and more private.
+                    </Body>
                 </Section>
 
                 <Section title="How reminders keep your capsules safe">
@@ -77,17 +82,16 @@ export default function ArkCapsulesInfoScreen() {
                     </Body>
                 </Section>
 
-                <Section title="Some balance may briefly be unspendable">
+                <Section title="Your balance stays spendable while it refreshes">
                     <Body>
-                        This is most noticeable after you receive over Lightning. Lightning
-                        payments land in a form that needs one more step before they're fully
-                        self-custodial, and Cypher Box converts them automatically. While
-                        that's happening, the affected capsules show as Refreshing and you
-                        won't be able to spend them.
+                        Refreshing no longer locks your funds. When a capsule is refreshing,
+                        including the automatic step right after you receive over Lightning,
+                        you can keep spending it the whole time. There is no waiting for the
+                        refresh to finish before your balance is usable.
                     </Body>
                     <Body>
-                        Refreshing usually takes less than an hour. Your balance comes
-                        right back the moment it finishes.
+                        A refresh usually finishes within about an hour and gives the capsule
+                        a fresh full life. Just leave the app running until it completes.
                     </Body>
                 </Section>
 
@@ -121,12 +125,29 @@ export default function ArkCapsulesInfoScreen() {
                     />
                     <StatusRow
                         title="Refreshing"
-                        body="Being converted into a fresh capsule. Temporarily unspendable until it finishes."
+                        body="Being given a fresh full life. It stays spendable the whole time, usually under an hour, so you can keep using it while it refreshes."
                     />
                     <StatusRow
                         title="In-flight"
-                        body="Being used in another operation: an outgoing send, withdrawal, or boarding. Same kind of brief lock as Refreshing."
+                        body="Being used in another operation: an outgoing send, withdrawal, or boarding. Briefly locked until that operation completes."
                     />
+                </Section>
+
+                <Section title="Tiny capsules (dust)">
+                    <Body>
+                        A capsule at or below 500 sats is too small to refresh on its own, so
+                        the network will not let it renew alone. To keep dust alive, tap Dust
+                        refresh on the capsule: it batches several tiny capsules together, so
+                        their combined size clears the minimum, and consolidates them into one
+                        healthy capsule.
+                    </Body>
+                    <Body>
+                        Because the amounts are tiny, the fee for a dust batch can sometimes be
+                        close to or more than the dust itself, so it is a judgment call. If it
+                        is not worth it, just spend the dust as part of a normal payment before
+                        it expires. Receiving at least about 700 sats at a time avoids dust in
+                        the first place.
+                    </Body>
                 </Section>
 
                 <Section title="Fees">
