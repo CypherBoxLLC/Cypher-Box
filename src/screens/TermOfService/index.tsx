@@ -184,6 +184,9 @@ const TermsOfService = () => {
                     <Text style={styles.paragraph}>
                         If you use our Services to create a Vault, the software will use an algorithm to generate a random 12-word phrase as a seed to a BIP39 hierarchical wallet. This 12-word phrase is called a backup seedphrase, and if reproduced exactly, stores all the information needed to recover your Vault(s) if access through the App or phone password, Face ID, or other authentication means is lost or otherwise not available.
                     </Text>
+                    <Text style={styles.paragraph}>
+                        When you create a hot storage Vault, you may optionally supply your own randomness (entropy) for the 12-word seedphrase using the in-app dice or coin entropy tool, instead of relying solely on your device's random number generator. If you choose this option, the security of your Vault depends entirely on the quality and unpredictability of the randomness you provide. You are responsible for generating sufficient, genuinely random entropy: predictable, patterned, biased, or reused inputs can produce a weak seedphrase that a third party may be able to guess or reproduce, which can result in the theft or complete loss of your funds. Cypher Box LLC has no responsibility and will not be liable for any loss arising from insufficient or predictable entropy that you choose to provide.
+                    </Text>
                     <Text style={[styles.paragraph, styles.bold]}>
                         Cypher Box LLC does not store, have access to, or have any way or means of recovering your backup seedphrase.
                     </Text>
@@ -192,6 +195,9 @@ const TermsOfService = () => {
                     </Text>
                     <Text style={styles.paragraph}>
                         If you permanently forget or lose your backup seedphrase, you will NEVER be able to recover any cryptocurrency in your Vault, and you will suffer a complete, irrecoverable, and catastrophic loss of all Digital Assets in your Vault. It is your responsibility to safeguard and retain your backup seedphrase. Cypher Box has no responsibility and will not be liable for any loss or damage you suffer from the loss or misappropriation of your seedphrases.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        You may also optionally protect a hot storage Vault with a BIP39 passphrase (sometimes called a "25th word"). A passphrase is applied on top of your 12-word seedphrase and is NEVER stored, transmitted, displayed after creation, or backed up anywhere by the App, by Cypher Box LLC, or by any third party. It is something that only you know. Recovering a passphrase-protected Vault requires BOTH the exact 12-word seedphrase AND the exact passphrase, which is case-sensitive and space-sensitive. If you permanently forget or lose your passphrase, you will NEVER be able to recover any cryptocurrency in that Vault EVEN IF you still possess the correct 12-word seedphrase, and you will suffer a complete, irrecoverable, and catastrophic loss of all Digital Assets in that Vault. It is your responsibility to memorize your passphrase and to record it, together with your seedphrase, on your physical backup. Cypher Box LLC does not store, have access to, or have any means of recovering your passphrase, and has no responsibility and will not be liable for any loss or damage you suffer from the loss or misappropriation of your passphrase.
                     </Text>
                     <Text style={styles.paragraph}>
                         The same risks and responsibilities apply to the seedphrase of any Bark Vault you create under Section 5. The Bark Vault seedphrase is generated and stored separately from your other Vault seedphrases. The optional encrypted cloud backup described in Section 5 is provided for your convenience and does not change the foregoing: Cypher Box LLC does not have access to the backup file or the encryption key, and is not liable for any loss arising from the loss of access to your cloud storage account, the loss of the encryption material protecting the backup, or any failure of the cloud storage service.
@@ -249,6 +255,8 @@ const TermsOfService = () => {
                         <Text style={styles.listItem}>• Financial loss due to custodian(s) censoring your transactions.</Text>
                         <Text style={styles.listItem}>• Financial loss due to Vault(s) access being brute-forced.</Text>
                         <Text style={styles.listItem}>• Financial loss due to forgotten or lost seedphrases or passwords.</Text>
+                        <Text style={styles.listItem}>• Financial loss due to a forgotten or lost hot storage Vault passphrase, even where the 12-word seedphrase is still held.</Text>
+                        <Text style={styles.listItem}>• Financial loss due to weak, predictable, or insufficient entropy that you supply when generating a seedphrase.</Text>
                         <Text style={styles.listItem}>• Financial loss due to inability to transact.</Text>
                         <Text style={styles.listItem}>• Financial loss due to errors calculating network fees.</Text>
                         <Text style={styles.listItem}>• Financial loss due to incorrectly constructed transactions or mistyped bitcoin addresses.</Text>
