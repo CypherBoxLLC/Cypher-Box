@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Switch, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Switch, TouchableOpacity, View } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { HeaderWithLine } from "@Cypher/components";
@@ -15,6 +15,8 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 import styles from "./styles";
+
+const SECOND_TERMS_URL = "https://second.tech/terms";
 
 /**
  * CreateArkScreen — Ark wallet creation flow.
@@ -120,9 +122,9 @@ export default function CreateArkScreen() {
                 if (result.reason !== "already-open") {
                     setExistingError(
                         result.reason === "no-keychain"
-                            ? "Seed phrase isn't on this device — tap Reset to start over."
+                            ? "Seed phrase isn't on this device. Tap Reset to start over."
                             : result.reason === "open-failed"
-                            ? "Wallet state and seed don't match — tap Reset to start over."
+                            ? "Wallet state and seed don't match. Tap Reset to start over."
                             : `Couldn't reopen wallet (${result.reason}).`,
                     );
                     setOpeningExisting(false);
@@ -166,7 +168,7 @@ export default function CreateArkScreen() {
                     style: "destructive",
                     onPress: () => {
                         Alert.alert(
-                            "Last chance — really reset?",
+                            "Last chance, really reset?",
                             "Tap 'Reset & wipe' to permanently delete the Ark wallet state on this device. This cannot be undone from inside the app.",
                             [
                                 { text: "Cancel", style: "cancel" },
@@ -365,6 +367,14 @@ export default function CreateArkScreen() {
                     <Text style={styles.bullet}>• Single server operator (Second.tech) sees your payment activity.</Text>
                     <Text style={styles.bullet}>• Balance state is on-device. Back up your app before wiping.</Text>
                     <Text style={styles.bullet}>• Can receive Lightning payments and on-chain deposits (board).</Text>
+                    {/* Second's terms bind anyone whose wallet connects to their
+                        Ark server, so Bark Vault users are their users too even
+                        though they never see a Second-branded screen. Surface the
+                        link here, at the moment of funding, not only in our ToS. */}
+                    <Text style={styles.bullet}>• You also become a Second.tech user under their own terms:</Text>
+                    <Text style={styles.link} onPress={() => Linking.openURL(SECOND_TERMS_URL)}>
+                        second.tech/terms
+                    </Text>
                 </View>
 
                 <Button

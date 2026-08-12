@@ -1,17 +1,34 @@
 import React from "react";
-import { ScrollView, View } from "react-native";
+import { Linking, ScrollView, View } from "react-native";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
+
+const SECOND_FEES_URL = "https://second.tech/pricing";
 
 /**
  * Plain-language "what you need to know about your lightning capsules" surface.
  *
  * Reached from the circular "?" button on the Capsules tab. Pure educational
  * content — no actions, no state. Copy written for a normal user, not someone
- * who knows the protocol terms. Fees in the bottom section are quoted directly
- * from Second's published Ark fee schedule (https://second.tech/docs/learn/fees)
- * so they stay honest rather than estimated.
+ * who knows the protocol terms.
+ *
+ * Fees in the bottom section are quoted from Second's published fee schedule
+ * (SECOND_FEES_URL) so they stay honest rather than estimated. But Second
+ * reserves the right to change that schedule at any time by posting a new
+ * version, and nothing notifies us when they do. A stale number here reads to a
+ * user as a fee *we* quoted, so the section carries an explicit last-checked
+ * date and a link to the live schedule. When you re-verify these, bump the date
+ * in the copy below.
+ *
+ * This already bit us once. The schedule used to be quoted from
+ * second.tech/docs/learn/fees, which has since become a fee-philosophy page
+ * with no numbers on it; the live schedule moved to second.tech/pricing (the
+ * same URL Second's own ToS incorporates by reference). In the meantime the
+ * refresh row here had the rule backwards: it said the fee tracked the
+ * capsule's *age* and was free while the capsule was young. It actually tracks
+ * time *remaining* before expiry and is free in the last two days. Verified
+ * against second.tech/pricing on 2026-08-12.
  */
 export default function ArkCapsulesInfoScreen() {
     return (
@@ -114,9 +131,16 @@ export default function ArkCapsulesInfoScreen() {
 
                 <Section title="Fees">
                     <Body>
-                        These are the fees the Bark server charges. They vary with how old
-                        the capsule is. Younger capsules cost less.
+                        These are the fees the Bark server charges. The refresh fee depends
+                        on how much time is left before a capsule expires, not on how old
+                        the capsule is. The closer to expiry, the cheaper the refresh.
                     </Body>
+                    <Body>
+                        Second.tech sets these fees, not Cypher Box, and can change them at
+                        any time. The figures below were checked in August 2026. For the
+                        current schedule, see:
+                    </Body>
+                    <LinkRow label="second.tech/pricing" url={SECOND_FEES_URL} />
                     <FeeRow
                         title="Receiving from Lightning"
                         body="0%, free."
@@ -127,7 +151,7 @@ export default function ArkCapsulesInfoScreen() {
                     />
                     <FeeRow
                         title="Refreshing"
-                        body="0% to 0.5% of the amount, depending on the capsule's age. 0% if the capsule is less than 2 days old."
+                        body="Free within 2 days of expiry. 0.2% with under 7 days left, 0.4% with under 14 days left, 0.5% at 14 days or more. The reminders fire inside the cheapest part of that range, so following them costs little or nothing."
                     />
                     <FeeRow
                         title="Sending over Lightning"
@@ -197,6 +221,23 @@ function StatusRow({ title, body }: { title: string; body: string }) {
                 {body}
             </Text>
         </View>
+    );
+}
+
+function LinkRow({ label, url }: { label: string; url: string }) {
+    return (
+        <Text
+            onPress={() => Linking.openURL(url)}
+            style={{
+                fontSize: 13,
+                color: colors.ark?.light ?? colors.pink.default,
+                lineHeight: 19,
+                marginBottom: 12,
+                textDecorationLine: 'underline',
+            }}
+        >
+            {label}
+        </Text>
     );
 }
 
