@@ -145,7 +145,10 @@ export default function CheckingAccountLogin() {
   };
 
   const openArkInfo = () => {
-    Linking.openURL("https://second.tech");
+    // Bark Vault "Learn more" opens our own how-to guide rather than the ASP's
+    // marketing site, so the user gets the app-specific safety guidance
+    // (refresh habit, dust, exit funding, offline-phone warning).
+    Linking.openURL("https://cypherbox.io/how-to-use-your-bark-vault/");
   };
 
   // Opens the standalone custodial-risk explainer (CheckingAccountIntro,
