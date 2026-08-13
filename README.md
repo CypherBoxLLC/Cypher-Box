@@ -1,6 +1,6 @@
 # ⚡ Cypher Box — A Fun Way to Play Bitcoin
 
-[![Release](https://img.shields.io/badge/release-v0.1.6-f7931a)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
+[![Release](https://img.shields.io/badge/release-v0.1.7-f7931a)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
 [![Reproducible build](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml/badge.svg)](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-lightgrey)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
@@ -57,6 +57,8 @@ Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark
 
 * Keys generated and stored on-device, never leave it
 * SegWit-first, BIP39, RBF + CPFP
+* **Roll your own entropy**: generate the 12 words from your own dice or coin rolls instead of the device RNG
+* **Optional BIP39 passphrase** ("25th word"), never stored anywhere: recovery needs the seed *and* the passphrase
 * **Coin control** with UTXO visualization: label, consolidate, pick coins
 * Cold Vault: watch-only + PSBT signing with **BBQr animated QR** for airgapped hardware
 * Custom Electrum server support, plausible deniability
@@ -116,8 +118,8 @@ npm start
 
 ## 🗺 Roadmap
 
-* ⏳ Bark SDK 0.11.x upgrade: offline wallet open, truthful send status, stuck-payment recovery
-* ⏳ iOS TestFlight → App Store release
+* ✅ Bark SDK upgrade (bark 0.6.1): capsules stay spendable while refreshing, dust consolidation, safer exit
+* ⏳ iOS App Store release (in review)
 * ⏳ Incoming on-chain transaction notifications with capsule visuals
 * ⏳ Revive the e2e test suite on RN 0.77
 
