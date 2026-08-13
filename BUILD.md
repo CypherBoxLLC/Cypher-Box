@@ -127,18 +127,68 @@ The release build is **unsigned** unless `android/keystore.properties` exists
 container, and reproducible builds run without it. Signing is a separate manual
 step on the release machine:
 
-1. Decrypt the upload key into tmpfs (never to disk):
-   `age -d -i <yubikey-identity> cypherbox-upload-key.jks.age > /dev/shm/upload.jks`
-2. Sign the unsigned APK/AAB with `apksigner` (`$ANDROID_HOME/build-tools/35.0.0/apksigner`):
-   ```sh
-   apksigner sign --ks /dev/shm/upload.jks \
-     --ks-pass pass:"$KS_PASS" --key-pass pass:"$KEY_PASS" \
-     --in app-release-unsigned.apk --out app-release.apk
-   ```
-   (`$KS_PASS` / `$KEY_PASS` read from `pass`, never echoed.) For an AAB, sign
-   with `jarsigner`, or let Play App Signing re-sign (Google holds the app key;
-   the upload key only authorises the upload).
-3. `shred -u /dev/shm/upload.jks`.
+The upload key is stored age-encrypted (`cypherbox-upload-key.jks.age`) and is
+decryptable only with a YubiKey-backed age identity (hardware touch + PIV PIN).
+Both live outside the repository, on the release machine only.
+
+Keep no decrypted copy on disk between releases. A plaintext `.jks` left behind
+anywhere defeats the hardware key completely, because anything able to read the
+account simply uses that copy instead of the encrypted one.
+
+Note for macOS: the build host has no `/dev/shm` and no `shred`. Decrypt to a
+temp path and overwrite it with `rm -P` immediately after signing.
+
+### AAB (the Play artifact)
+
+An AAB is a JAR-format container, so it is signed with `jarsigner`, not
+`apksigner`. Key alias is `upload`.
+
+```sh
+# 1. decrypt (prompts for YubiKey touch + PIV PIN)
+age -d -i "$AGE_IDENTITY" "$UPLOAD_KEY_AGE" > /tmp/upload.jks
+
+# 2. sign
+jarsigner -keystore /tmp/upload.jks \
+  -signedjar cypherbox-<version>-signed.aab \
+  cypherbox-real-config-unsigned.aab upload
+
+# 3. wipe the decrypted key
+rm -P /tmp/upload.jks
+```
+
+Two warnings are expected and harmless: "the signer's certificate is
+self-signed" (all Android signing certs are) and the PKIX "certificate chain is
+invalid" note on verify (a self-signed cert has no chain to build). Ignore
+keytool's suggestion to migrate the keystore to PKCS12; it rewrites the key
+file in place.
+
+### APK (side-load and walletscrutiny)
+
+```sh
+apksigner sign --ks /tmp/upload.jks \
+  --in app-release-unsigned.apk --out app-release.apk
+```
+
+### Verify before uploading
+
+```sh
+jarsigner -verify -verbose:summary cypherbox-<version>-signed.aab
+# expect: jar verified.
+
+unzip -l cypherbox-<version>-signed.aab | grep -oE "lib/[a-z0-9_-]+/" | sort -u
+# expect: lib/arm64-v8a/ ONLY (a v7a split ships without the Realm/Reanimated/
+# bark libs and crashes at launch; this happened in 0.1.6)
+```
+
+The signing certificate SHA-256 must match the upload certificate shown in Play
+Console under Test and release > Setup > App integrity. Under Play App Signing
+the upload key only authorises the upload: Google holds the app signing key and
+re-signs, so a compromised upload key can be reset without affecting installed
+users.
+
+Keystore credentials are supplied at signing time from the release machine's
+secret store and are never echoed, never passed on a command line that lands in
+shell history, and never committed.
 
 `android/keystore.properties` and `*.jks` are gitignored and must never be
 committed (verified: nothing matching is tracked). Per-release, publish: source commit
