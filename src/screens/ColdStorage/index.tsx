@@ -97,6 +97,23 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [satsEditable, setSatsEditable] = useState(false);
     const fUtxo = utxo.filter(({ txid, vout }) => ids.includes(`${txid}:${vout}`));
     const balance = fUtxo ? fUtxo.reduce((prev, curr) => prev + curr.value, 0) : wallet?.getBalance();
+    // The capsules the user picked, and the ONLY coins this screen may spend.
+    //
+    // Selecting capsules is mandatory in Cypher Box: you cannot send from a
+    // vault without choosing coins first. Every entry point into this screen
+    // passes both `utxo` and `ids`, and Capsules gates each of its four send
+    // paths on `ids.length > 0`. So `fUtxo` is always the full picture of what
+    // the user chose.
+    //
+    // Previously the unfiltered `utxo` was handed to createTransaction, so
+    // coinselect (which sorts descending and takes the largest) spent whatever
+    // coin it liked, and the change figure on the confirm screen, derived from
+    // the selection, could be wrong by orders of magnitude.
+    //
+    // There is deliberately NO whole-wallet fallback here. If the selection is
+    // ever empty that is a bug in the caller, and quietly spending the rest of
+    // the vault is the worst available response to it.
+    const selectedUtxo = fUtxo;
     const allBalance = formatBalanceWithoutSuffix(balance, BitcoinUnit.BTC, true);
     const balanceWallet = !wallet?.hideBalance && formatBalance(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const balanceWithoutSuffix = !wallet?.hideBalance && formatBalanceWithoutSuffix(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
@@ -306,7 +323,10 @@ export default function ColdStorage({ route, navigation }: Props) {
       const fees = networkTransactionFees;
       const change = getChangeAddressFast();
       const requestedSatPerByte = Number(feeRate);
-      const lutxo = utxo || wallet.getUtxo();
+      // Estimate against the SAME inputs the send will really use, otherwise the
+      // quoted fee is for a different transaction than the one built below.
+      if (!selectedUtxo || selectedUtxo.length === 0) return; // nothing selected: nothing to quote
+      const lutxo = selectedUtxo;
       let frozen = 0;
       if (!utxo) {
         // if utxo is not limited search for frozen outputs and calc it's balance
@@ -546,7 +566,16 @@ export default function ColdStorage({ route, navigation }: Props) {
             ? changeDepositAddress
             : await getChangeAddressAsync();
         const requestedSatPerByte = Number(feeRate);
-        const lutxo = utxo || wallet.getUtxo();
+        // Spend the capsules the user selected, and only those. See the note on
+        // `selectedUtxo` above for why there is no whole-wallet fallback.
+        const lutxo = selectedUtxo;
+        if (!lutxo || lutxo.length === 0) {
+            Alert.alert(
+                'No capsules selected',
+                'Go back and choose which capsules to spend before sending.',
+            );
+            return;
+        }
         console.log({ requestedSatPerByte, lutxo: lutxo.length });
 
         const targets = [];
