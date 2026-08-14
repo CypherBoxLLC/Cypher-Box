@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 
 import useAuthStore from '@Cypher/stores/authStore';
 
+import { sumMidRoundVtxos } from './vtxos';
+
 /**
  * Global "cancel-in-flight" state for the Ark capsule refresh UI.
  *
@@ -34,11 +36,12 @@ let storeUnsub: (() => void) | null = null;
 let safetyTimer: ReturnType<typeof setTimeout> | null = null;
 
 function pendingRoundSatsFromStore(): number {
-    const arkVtxos = useAuthStore.getState().arkVtxos;
-    return arkVtxos.reduce(
-        (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
-        0,
-    );
+    const s = useAuthStore.getState();
+    // Must count delegated refreshes too. This value is the signal for "the
+    // round has let go of the funds", so counting only `Locked` made it read 0
+    // for the entire life of a delegated round and cleared the cancelling gate
+    // immediately. See isVtxoMidRound.
+    return sumMidRoundVtxos(s.arkVtxos, s.arkRefreshingVtxoIds).sats;
 }
 
 function notify(): void {

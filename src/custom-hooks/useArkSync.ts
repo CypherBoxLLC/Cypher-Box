@@ -18,6 +18,7 @@ import {
     fetchArkVtxos,
     fetchChainTipHeight,
     fetchArkExitVtxos,
+    isVtxoMidRound,
     fetchClaimableExitVtxos,
     fetchPendingExitsTotalSats,
     getArkWalletHandle,
@@ -1042,12 +1043,18 @@ export default function useArkSync(): UseArkSync {
                     const seen = nextFirstSeen[String(r.id)];
                     return seen != null && now - seen > stuckThresholdMs;
                 });
+                const refreshingIdsForStuck =
+                    useAuthStore.getState().arkRefreshingVtxoIds ?? [];
                 // "stuckSats" = sum of Locked VTXO amounts. The SDK doesn't
                 // expose a vtxo→round link, so this is the total locked across
                 // all rounds, not strictly the stuck-round subset. Fine for a
                 // banner headline since the user cancels all stuck rounds anyway.
+                // Includes delegated refreshes, which stay `Spendable` for the
+                // whole round: testing `Locked` alone meant a wedged delegated
+                // round reported 0 stuck sats and the rescue banner never
+                // appeared for the very case it exists to catch.
                 const lockedVtxos = (vtxos?.all ?? []).filter(
-                    (v) => v.state.toLowerCase() === 'locked',
+                    (v) => isVtxoMidRound(v, refreshingIdsForStuck),
                 );
                 const lockedSats = lockedVtxos.reduce((sum, v) => sum + v.sats, 0);
                 // nearExpiry: is any Locked VTXO inside the swap-out window of
@@ -1119,9 +1126,15 @@ export default function useArkSync(): UseArkSync {
                 if (stuckNow && useAuthStore.getState().arkBgRefreshEnabled) {
                     const blockMs2 = AVG_BLOCK_MINUTES * 60 * 1000;
                     const nowMs2 = Date.now();
+                    const refreshingIdsForAutoCancel =
+                        useAuthStore.getState().arkRefreshingVtxoIds ?? [];
                     let anyWithinAutoCancel = false;
                     for (const v of vtxos.all) {
-                        if (v.state.toLowerCase() !== 'locked') continue;
+                        // Same union as the stuck-sats sum above: a delegated
+                        // round leaves the VTXO Spendable, so a Locked-only
+                        // test skipped every delegated refresh and the
+                        // auto-cancel safety net never armed for them.
+                        if (!isVtxoMidRound(v, refreshingIdsForAutoCancel)) continue;
                         if (v.expiryHeight <= 0) continue;
                         const expiryAtMs = nowMs2 + Math.max(0, v.expiryHeight - tip) * blockMs2;
                         const msLeft = expiryAtMs - nowMs2;
@@ -1229,7 +1242,11 @@ export default function useArkSync(): UseArkSync {
             if (tip !== null && vtxos) {
                 for (const v of vtxos.spendable) {
                     if (v.expiryHeight === 0) continue;
-                    if (v.state.toLowerCase() === 'locked') continue;
+                    // Skip anything mid-round: its expiry is the pre-refresh
+                    // one, and escalating on it would raise the blocking rescue
+                    // Alert while a refresh is already in flight fixing it.
+                    // Locked alone missed every delegated refresh.
+                    if (isVtxoMidRound(v, state.arkRefreshingVtxoIds ?? [])) continue;
                     const blocks = v.expiryHeight - tip;
                     // Skip already-expired VTXOs: they can't be refreshed (the
                     // ASP can sweep them at any time past expiry), so they must

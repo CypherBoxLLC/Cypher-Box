@@ -1,7 +1,7 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
-import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
@@ -138,7 +138,10 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         let minBlocks = Infinity;
         for (const v of arkVtxos) {
             if (v.expiryHeight === 0) continue;
-            if (v.state.toLowerCase() === 'locked') continue;
+            // Mid-round VTXOs carry their PRE-refresh expiry, so counting them
+            // shows an alarming "expires soon" while a refresh is already in
+            // flight extending it. Locked alone missed delegated refreshes.
+            if (isVtxoMidRound(v, arkRefreshingVtxoIds)) continue;
             const blocks = v.expiryHeight - arkChainTipHeight;
             // Skip already-expired VTXOs (they stay in the store so the
             // Capsules tab can render them) — "refresh soon" is wrong
@@ -178,21 +181,16 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         return count;
     }, [arkVtxos, arkChainTipHeight, arkRefreshingVtxoIds]);
 
-    // VTXOs currently mid-round (state === 'locked' — refresh / send / board
-    // in flight). The headline balance EXCLUDES these (only spendable
-    // capsules count), so without surfacing this the user sees their
-    // balance drop with no explanation while a refresh is in progress.
-    const pendingRound = useMemo(() => {
-        if (!arkVtxos) return { count: 0, sats: 0 };
-        let count = 0;
-        let sats = 0;
-        for (const v of arkVtxos) {
-            if (v.state.toLowerCase() !== 'locked') continue;
-            count++;
-            sats += v.sats;
-        }
-        return { count, sats };
-    }, [arkVtxos]);
+    // VTXOs currently mid-round (refresh / send / board in flight). The
+    // headline balance EXCLUDES these (only spendable capsules count), so
+    // without surfacing this the user sees their balance drop with no
+    // explanation while a refresh is in progress. Testing `Locked` alone
+    // reintroduced exactly that symptom for delegated refreshes, which leave
+    // the VTXO Spendable. See isVtxoMidRound.
+    const pendingRound = useMemo(
+        () => sumMidRoundVtxos(arkVtxos, arkRefreshingVtxoIds),
+        [arkVtxos, arkRefreshingVtxoIds],
+    );
 
     /**
      * Unified status line for the shared Send/Receive row's status slot.

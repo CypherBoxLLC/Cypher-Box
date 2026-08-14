@@ -43,7 +43,7 @@ export type { ArkBalanceSummary } from './balance';
 export { estimateArkOnchainRecover, recoverArkOnchainBoard } from './recoverOnchainBoard';
 export type { ArkOnchainRecoverEstimate, ArkOnchainRecoverResult } from './recoverOnchainBoard';
 
-export { fetchArkVtxos } from './vtxos';
+export { fetchArkVtxos, isVtxoMidRound, sumMidRoundVtxos } from './vtxos';
 export type { ArkVtxoView, ArkVtxoList } from './vtxos';
 
 export { tryClaimArkLightningReceives, fetchArkPendingLightningReceives, driveArkPendingLightningSends } from './lightning';
