@@ -1152,15 +1152,28 @@ export async function writeArkAutoBackup(
         );
     }
 
+    // Per-destination outcomes. Every channel below is deliberately
+    // silent-fail, which is right for an every-tick background write, but it
+    // means "this function resolved" is NOT evidence that anything was stored.
+    // Two things downstream depend on knowing the difference:
+    //   1. the legacy-backup cleanup, which DELETES the previous snapshot and
+    //      must not run unless a current one demonstrably exists somewhere;
+    //   2. `arkLastBackupAt`, which drives the "Backed up" state in the capsule
+    //      UI and must not be stamped for a tick that wrote nothing.
+    let wroteLocal = localWrite.ok;
+    let wroteICloud = false;
+    let wroteDrive = false;
+    let wroteSaf = false;
+
     // iCloud mirror — silent-fail per the auto-backup contract (next sync
-    // tick retries). The local copy already succeeded so the wallet is
-    // recoverable from this device regardless of iCloud outcome.
+    // tick retries).
     let iCloudPath: string | null = null;
     if (Platform.OS === 'ios') {
         try {
             iCloudPath = await getICloudBackupPathForFingerprint(fingerprint);
             if (iCloudPath) {
                 await atomicWriteFile(iCloudPath, blob, 'utf8');
+                wroteICloud = true;
             }
         } catch (err: any) {
             if (__DEV__) {
@@ -1188,6 +1201,7 @@ export async function writeArkAutoBackup(
     try {
         if (await isGoogleDriveConnected()) {
             await uploadArkBackupToDrive(blob, fingerprint);
+            wroteDrive = true;
             if (__DEV__) console.log('[Ark auto-backup] Drive upload OK');
         }
     } catch (err: any) {
@@ -1208,6 +1222,7 @@ export async function writeArkAutoBackup(
         const saved = await getSavedSafBackupFolder();
         if (saved) {
             await writeArkBackupToSaf(blob, fingerprint);
+            wroteSaf = true;
             if (__DEV__) console.log('[Ark auto-backup] SAF folder write OK');
         }
     } catch (err: any) {
@@ -1229,6 +1244,25 @@ export async function writeArkAutoBackup(
     // files are gone (existence checks short-circuit fast). Best-effort
     // — errors swallowed inside the helper so the auto-backup tick
     // never breaks on a stale legacy file.
+    //
+    // GATED on at least one destination having actually taken this tick's
+    // snapshot. Every channel above is silent-fail, so without this gate a tick
+    // where the local write AND every mirror failed still deleted the previous
+    // good backup, and could leave the wallet with no `.cbark` anywhere. For a
+    // Bark vault that file carries the pre-signed exit chain, so losing every
+    // copy also loses the ability to exit unilaterally.
+    const wroteSomewhere = wroteLocal || wroteICloud || wroteDrive || wroteSaf;
+
+    if (!wroteSomewhere) {
+        // Nothing was stored. Do NOT delete the legacy snapshot, and do NOT
+        // resolve: callers stamp `arkLastBackupAt` (and the capsule UI reads
+        // "Backed up") off a successful resolve. Every call site already has a
+        // .catch, so throwing here is contained and simply skips the stamp.
+        throw new Error(
+            'Ark auto-backup wrote nothing: local, iCloud, Drive and SAF all failed or were unavailable',
+        );
+    }
+
     try {
         await migrateLegacyBackupsForActiveWallet(mnemonic);
     } catch (err: any) {
