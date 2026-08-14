@@ -1,7 +1,7 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
-import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, sumMidRoundVtxos } from "@Cypher/services/ark";
+import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
