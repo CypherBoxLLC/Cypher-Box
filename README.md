@@ -1,4 +1,4 @@
-# ⚡ Cypher Box — A Fun Way to Play Bitcoin
+# ⚡ Cypher Box - A Fun Way to Play Bitcoin
 
 [![Release](https://img.shields.io/badge/release-v0.1.7-f7931a)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
 [![Reproducible build](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml/badge.svg)](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml)
@@ -20,7 +20,7 @@ Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built 
 | ⚡ **Lightning Accounts** | Custodial (Strike / Coinos) | Lightning | First sats, everyday spending |
 | ⛵ **Bark Vault** | **Self-custodial** | Ark protocol (L2) | Lightning speed, your keys, experimental |
 | 🔥 **Hot Vault** | Self-custodial | Bitcoin on-chain | Savings on your device |
-| 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Hardware-signed savings |
+| 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Offline Hardware-signed savings |
 
 Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, withdraw Lightning to vaults.
 
@@ -35,8 +35,10 @@ Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, wit
 * Swap between accounts, withdraw to vaults, top-up from vaults
 
 ## ⛵ Bark Vault — non-custodial Lightning (Ark protocol)
-  
-Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). Self-custodial: you can always exit to the chain without the server's permission.
+
+Read full user guide: https://cypherbox.io/how-to-use-your-bark-vault/
+Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). Self-custodial: you can exit to the chain without the server's permission (not completed ⏳).
+
 
 * Send & receive over Lightning, receive on Ark addresses, board from on-chain
 * **Capsule dashboard** with color-coded expiry at a glance:
@@ -119,8 +121,7 @@ npm start
 ## 🗺 Roadmap
 
 * ✅ Bark SDK upgrade (bark 0.6.1): capsules stay spendable while refreshing, dust consolidation, safer exit
-* ⏳ iOS App Store release (in review)
-* ⏳ Incoming on-chain transaction notifications with capsule visuals
+* ⏳ Currently the unilateral exit doesn't deliver a full protection against the ASP going down (wallet doesn't open if ASP is down, small fix will be added in the next release).
 * ⏳ Revive the e2e test suite on RN 0.77
 
 ---
