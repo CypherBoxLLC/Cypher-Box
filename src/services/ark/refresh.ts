@@ -1,4 +1,5 @@
 import { getArkWalletHandle, getCachedArkMnemonic } from './walletHandle';
+import { assertNoActiveArkExitAsync } from './exit';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
 import { writeArkAutoBackup } from './backup';
@@ -83,6 +84,16 @@ export async function refreshArkVtxos(
     totalSats?: number,
 ): Promise<ArkRefreshResult> {
     const handle = requireHandle();
+
+    // A refresh is a COOPERATIVE round: it spends the VTXO and hands the ASP a
+    // new one. Running it against a coin that is mid-unilateral-exit commits
+    // the same coin twice, once cooperatively and once on-chain, and one of the
+    // two loses. bark does not protect against this (confirmed with Second
+    // 2026-08-13: "we allow VTXOs to be marked for exit and for the user to
+    // still spend them"), and the lock/unlock API they suggest is not exposed
+    // in bark-react-native 0.16.1, so the client is the only thing standing
+    // here.
+    await assertNoActiveArkExitAsync('Refreshing capsules');
 
     // Serialize rounds: one refresh at a time, per wallet. The in-process
     // flag catches same-process races; the pendingRoundStates probe catches
@@ -240,6 +251,10 @@ export async function refreshArkVtxosDelegated(
 ): Promise<ArkDelegatedRefreshResult> {
     const handle = requireHandle();
 
+    // Same exit guard as the self-signed path: a delegated round is still a
+    // cooperative spend of the VTXO. See refreshArkVtxos.
+    await assertNoActiveArkExitAsync('Refreshing capsules');
+
     // Cross-caller submission guard. `refreshSubmissionInFlight` is shared
     // with the self-signed path and now also with delegated maintenance, so
     // an arkoor auto-refresh, a Capsules tap-refresh, and a background wake
@@ -375,6 +390,15 @@ export async function refreshArkVtxosDelegatedAndSync(
  */
 export async function maintenanceArkDelegated(): Promise<void> {
     const handle = requireHandle();
+
+    // The highest-risk caller of the exit guard. `maintenanceDelegated()`
+    // chooses its own VTXOs inside bark, so there is no input list to filter:
+    // the only lever is whether to call it at all. It also runs headless from a
+    // silent-push wake, outside useArkSync's exit early-return, which is why
+    // the guard is the async one that asks bark's DB rather than trusting a
+    // possibly-unhydrated store.
+    await assertNoActiveArkExitAsync('Background refresh');
+
     // Same cross-caller guard as refreshArkVtxosDelegated: the background wake
     // must not submit a maintenance round while another submission is mid-
     // flight or a round is already ongoing (previously this path had no check

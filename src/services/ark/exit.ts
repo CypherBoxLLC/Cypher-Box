@@ -152,6 +152,52 @@ export async function fetchArkExitVtxos(): Promise<ExitVtxo[]> {
 }
 
 /**
+ * Does bark's own DB hold any NON-TERMINAL exit record?
+ *
+ * The authoritative "is an exit live" signal, and deliberately independent of
+ * zustand: the background-refresh wake runs headless and can execute before the
+ * store has rehydrated, at which point `arkExitInProgress` reads its default
+ * `false` and the sync guard silently passes. This one asks bark.
+ *
+ * Non-terminal means Processing (broadcasting), any Awaiting* phase (including
+ * the ~24h AwaitingDelta CSV wait), or claimable. Matching only Processing
+ * would report "no exit" for most of the exit's life.
+ *
+ * Returns false when the handle is unavailable or the read throws: callers use
+ * this to BLOCK an action, and a failed read is not evidence of an exit. The
+ * sync-flag check in `assertNoActiveArkExit` remains the first line of defence.
+ */
+export async function hasActiveArkExitRecords(): Promise<boolean> {
+    try {
+        const handle = getArkWalletHandle();
+        if (!handle) return false;
+        const exits = await handle.getExitVtxos();
+        return (exits ?? []).some(
+            (v) => /^(Processing|Awaiting)/.test(String(v.state)) || v.isClaimable,
+        );
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Async companion to `assertNoActiveArkExit` for paths that can run before the
+ * store is hydrated (background wake) or that are about to hand VTXOs to the
+ * ASP for a cooperative round.
+ *
+ * Checks the cheap sync signals first, then bark's DB.
+ */
+export async function assertNoActiveArkExitAsync(action = 'This action'): Promise<void> {
+    const s = useAuthStore.getState();
+    const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
+    if (s.arkExitInProgress || exitingVtxo || (await hasActiveArkExitRecords())) {
+        throw new Error(
+            `${action} is unavailable while an Emergency Exit is in progress.`,
+        );
+    }
+}
+
+/**
  * Subset of `getExitVtxos` filtered to only those whose CSV timelock has
  * matured AND whose on-chain confirmations are sufficient for `drainExits`
  * to succeed. Empty until the first exit ripens (~24h post-start on
