@@ -201,6 +201,7 @@ export {
     classifyArkDestination,
     estimateArkSendFee,
     executeArkSend,
+    isArkSendIndeterminate,
     labelForDestinationKind,
 } from './send';
 export type {
