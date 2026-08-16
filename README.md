@@ -121,7 +121,6 @@ npm start
 ## 🗺 Roadmap
 
 * ✅ Bark SDK upgrade (bark 0.6.1): capsules stay spendable while refreshing, dust consolidation, safer exit
-* ⏳ Currently the unilateral exit doesn't deliver a full protection against the ASP going down (wallet doesn't open if ASP is down, small fix will be added in the next release).
 * ⏳ Revive the e2e test suite on RN 0.77
 
 ---
