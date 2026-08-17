@@ -9,6 +9,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { selectCapsules } from "@Cypher/helpers/capsuleSelection";
 import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import Clipboard from '@react-native-clipboard/clipboard'
 import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
@@ -95,7 +96,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [feeUSD, setFeeUSD] = useState(1);
     const [feesEditable, setFeesEditable] = useState(false);
     const [satsEditable, setSatsEditable] = useState(false);
-    const fUtxo = utxo.filter(({ txid, vout }) => ids.includes(`${txid}:${vout}`));
+    const fUtxo = selectCapsules(utxo, ids);
     const balance = fUtxo ? fUtxo.reduce((prev, curr) => prev + curr.value, 0) : wallet?.getBalance();
     // The capsules the user picked, and the ONLY coins this screen may spend.
     //
