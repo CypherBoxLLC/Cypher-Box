@@ -122,6 +122,7 @@ npm start
 
 * ✅ Bark SDK upgrade (bark 0.6.1): capsules stay spendable while refreshing, dust consolidation, safer exit
 * ⏳ Revive the e2e test suite on RN 0.77
+* ⏳ **Bring your own chain source**: point the Bark Vault at your own esplora endpoint (Umbrel, Start9, self-hosted Electrs) instead of a public block explorer, so your addresses never leave your node. Bitcoin Core RPC to follow. Changing the chain source touches refresh, unilateral exit, backup and recovery, so it ships only after all four are re-tested end to end.
 
 ---
 
