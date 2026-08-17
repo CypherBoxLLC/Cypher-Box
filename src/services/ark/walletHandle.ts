@@ -405,15 +405,28 @@ export function getArkOnchainHandle(): OnchainWalletInterface | null {
  * SQLite FDs before nulling the ref.
  */
 export function rotateArkOnchainEsplora(): void {
-    // The onchain sync failed on the current provider. We used to cycle to the
-    // NEXT provider in ESPLORA_URLS — but the only fallback is blockstream,
-    // which chronically bot-blocks bark's client and (with no SDK-side esplora
-    // timeout) hangs the onchain sync ~90s. Observed 2026-07-09: that hang
-    // froze the JS thread and starved a stuck fee estimate. So reset to the
-    // reliable primary (mempool) instead of rotating onto the bad endpoint. If
-    // we're already on the primary, a transient failure just retries it next
-    // tick rather than pinning us to a dead provider.
-    if (sessionEsploraUrl === ESPLORA_URL) return; // already on primary
+    // Advance to the NEXT provider in ESPLORA_URLS, wrapping at the end.
+    //
+    // This used to "reset to the reliable primary" instead of rotating, written
+    // when the primary was mempool and blockstream was the endpoint worth
+    // avoiding. The 2026-07-09 flip made blockstream the primary and turned
+    // that logic inside out: `sessionEsploraUrl === ESPLORA_URL` is true for a
+    // handle already pinned to blockstream, so the early return fired and the
+    // on-chain wallet could never rotate off a provider that was bot-blocking
+    // it. It retried the dead endpoint every tick forever.
+    //
+    // The visible damage was on the exit path: `onchain.sync()` kept throwing,
+    // `setLastOnchainBalanceSats` was never reached, the exit-fee wallet read 0
+    // sats, and Emergency Exit sat gated behind "Fund exit fees first" while the
+    // funds were on-chain the whole time. Observed on device 2026-08-16.
+    //
+    // The wallet-open loop in restore.ts already rotates this way and recovers
+    // from the same bot-block, so this brings the on-chain handle in line with it.
+    if (ESPLORA_URLS.length < 2) return;
+    const current = ESPLORA_URLS.indexOf(sessionEsploraUrl);
+    // Unknown current provider (-1) lands on index 0, i.e. the primary.
+    const next = ESPLORA_URLS[(current + 1) % ESPLORA_URLS.length];
+    if (next === sessionEsploraUrl) return;
     if (onchainHandle && typeof (onchainHandle as any).uniffiDestroy === 'function') {
         try {
             (onchainHandle as any).uniffiDestroy();
@@ -422,8 +435,8 @@ export function rotateArkOnchainEsplora(): void {
         }
     }
     onchainHandle = null;
-    sessionEsploraUrl = ESPLORA_URL;
-    if (__DEV__) console.log('[Ark] onchain esplora reset to primary ->', ESPLORA_URL);
+    sessionEsploraUrl = next;
+    if (__DEV__) console.log('[Ark] onchain esplora rotated ->', next);
 }
 
 /**

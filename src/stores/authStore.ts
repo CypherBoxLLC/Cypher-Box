@@ -629,12 +629,27 @@ const createAuthStore = (
             arkLastBackupAt: null,
             arkRoundIntervalSecs: null,
             arkExitInProgress: false,
-            arkExitDestinationAddress: null,
             arkExitStartedAt: null,
             arkExitDrained: false,
             arkExitStartedSats: null,
-            arkExitFeeReserveSats: 0,
             arkUseHotVaultSeed: false,
+            // arkExitDestinationAddress and arkExitFeeReserveSats are
+            // deliberately NOT reset here. Both are user-chosen exit-funding
+            // settings, and clearArkAuth is not only a logout: the boot path
+            // calls it on a `no-datadir` restore result
+            // (useArkRestoreOnBoot.ts:99), so a transient read on a device that
+            // does have a vault silently discarded both.
+            //
+            // Observed on device 2026-08-16. The reserve went to 0, which flips
+            // sync.ts out of the "hold funds on-chain" branch and into
+            // boardAll(), i.e. boarding away the very sats set aside to pay for
+            // a unilateral exit. And the nulled destination let
+            // useArkExitDestinationBackfill (which only fills when unset)
+            // substitute a fresh Hot Vault address, so a live exit was
+            // redirected away from the address the user had chosen.
+            //
+            // Same reasoning as the kept thresholds below and as
+            // arkArkoorPromptEnabled.
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout
 
