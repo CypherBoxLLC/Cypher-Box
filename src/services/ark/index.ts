@@ -209,3 +209,14 @@ export type {
     ArkSendFeeView,
     ArkSendResult,
 } from './send';
+
+export {
+    MIN_USEFUL_FUNDING_SATS,
+    buildExitFundingSources,
+    hasUsableExitFundingSource,
+} from './exitFundingSources';
+export type {
+    ExitFundingSource,
+    ExitFundingSourceId,
+    ExitFundingSourceState,
+} from './exitFundingSources';

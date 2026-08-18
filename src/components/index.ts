@@ -37,3 +37,4 @@ export { default as CircularView } from './CircularView';
 export { default as CustomTabView } from './CustomTabView';
 export { default as VaultCapsules } from './VaultCapsules';
 export { default as StrikeSignupSheet, type StrikeSignupSheetRef } from './StrikeSignupSheet';
+export { default as ExitFundingSourceList } from './ExitFundingSourceList';
