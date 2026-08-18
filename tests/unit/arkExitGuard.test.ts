@@ -79,18 +79,33 @@ describe('hasActiveArkExitRecords', () => {
     });
 
     it('is false once every record is terminal', async () => {
+        // The terminal set is exactly Claimed / VtxoAlreadySpent / Canceled,
+        // per the SDK's generated ExitState_Tags. This case used to assert on
+        // 'Done' and 'Exited', which are not ExitState variants at all, so it
+        // proved nothing about real terminal detection.
         mockGetExitVtxos.mockResolvedValue([
-            { state: 'Done', isClaimable: false },
-            { state: 'Exited', isClaimable: false },
+            { state: 'Claimed', isClaimable: false },
+            { state: 'VtxoAlreadySpent', isClaimable: false },
+            { state: 'Canceled', isClaimable: false },
         ]);
         await expect(hasActiveArkExitRecords()).resolves.toBe(false);
     });
 
     it('is true when only ONE of several records is still active', async () => {
         mockGetExitVtxos.mockResolvedValue([
-            { state: 'Done', isClaimable: false },
-            { state: 'Exited', isClaimable: false },
+            { state: 'Claimed', isClaimable: false },
+            { state: 'VtxoAlreadySpent', isClaimable: false },
             { state: 'Processing', isClaimable: false },
+        ]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(true);
+    });
+
+    it('treats an unrecognised state as ACTIVE, not complete', async () => {
+        // Deliberate asymmetry. Mis-reading an in-flight exit as finished is
+        // what retired an exit early and deleted a wallet mid-exit (2026-07-31);
+        // mis-reading a finished exit as live only delays a refresh.
+        mockGetExitVtxos.mockResolvedValue([
+            { state: 'SomeFutureSdkState', isClaimable: false },
         ]);
         await expect(hasActiveArkExitRecords()).resolves.toBe(true);
     });
@@ -105,6 +120,95 @@ describe('hasActiveArkExitRecords', () => {
     it('is false when getExitVtxos resolves null rather than an array', async () => {
         mockGetExitVtxos.mockResolvedValue(null);
         await expect(hasActiveArkExitRecords()).resolves.toBe(false);
+    });
+});
+
+/**
+ * bark 0.6.1 turned `ExitVtxo.state` from a plain string into a UniFFI
+ * tagged-enum object. Every fixture above uses the OLD string shape, which is
+ * why this suite stayed green while the guard was broken in production: the
+ * implementation regexed `String(v.state)` for /^(Processing|Awaiting)/, and
+ * against a real object that is "[object Object]", which matches nothing. The
+ * check silently collapsed to `v.isClaimable`.
+ *
+ * Read off the device on 2026-08-18 during a live mainnet exit with 2794 sats
+ * in flight: three capsules AwaitingDelta, one ClaimInProgress, every one of
+ * them isClaimable=false. hasActiveArkExitRecords() returned false, so the
+ * cooperative-round guard was open for essentially the whole exit.
+ *
+ * These fixtures are those exact payloads. They fail against the regex.
+ */
+describe('hasActiveArkExitRecords with bark 0.6.1 tagged-enum states', () => {
+    const awaitingDelta = {
+        state: {
+            tag: 'AwaitingDelta',
+            inner: {
+                tipHeight: 962962,
+                confirmedBlock: { height: 962957, hash: '0000000000000000000217a2e759c9143db1946b6a49ddf6a07c2c59b7e9341c' },
+                claimableHeight: 963101,
+            },
+        },
+        isClaimable: false,
+    };
+    const claimInProgress = {
+        state: {
+            tag: 'ClaimInProgress',
+            inner: {
+                tipHeight: 963060,
+                claimableSince: { height: 963046, hash: '00000000000000000000e17fac82dcb0cb9c5d78a7dfc2328c3bb970fd2a2cbc' },
+                claimTxid: 'fcdfa310ecd61bdbea44d03d88412a7756ad65a8c0483c1f5ca6bd8d7d558482',
+            },
+        },
+        isClaimable: false,
+    };
+
+    it('is true during AwaitingDelta, the ~24h CSV wait', async () => {
+        mockGetExitVtxos.mockResolvedValue([awaitingDelta]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(true);
+    });
+
+    it('is true during ClaimInProgress, after the claim is broadcast', async () => {
+        mockGetExitVtxos.mockResolvedValue([claimInProgress]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(true);
+    });
+
+    it('is true for the exact 4-capsule set read off the device', async () => {
+        mockGetExitVtxos.mockResolvedValue([
+            claimInProgress,
+            awaitingDelta,
+            awaitingDelta,
+            awaitingDelta,
+        ]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(true);
+    });
+
+    it.each(['Start', 'Processing', 'AwaitingDelta', 'Claimable', 'ClaimInProgress'])(
+        'is true for tagged-enum %s',
+        async (tag) => {
+            mockGetExitVtxos.mockResolvedValue([{ state: { tag }, isClaimable: false }]);
+            await expect(hasActiveArkExitRecords()).resolves.toBe(true);
+        },
+    );
+
+    it.each(['Claimed', 'VtxoAlreadySpent', 'Canceled'])(
+        'is false for terminal tagged-enum %s',
+        async (tag) => {
+            mockGetExitVtxos.mockResolvedValue([{ state: { tag }, isClaimable: false }]);
+            await expect(hasActiveArkExitRecords()).resolves.toBe(false);
+        },
+    );
+
+    it('blocks a background refresh mid-exit with a clean store', async () => {
+        // The end-to-end shape of the production bug: store flag lost (or not
+        // yet hydrated), bark holding a live AwaitingDelta exit. Before the
+        // fix this resolved, letting a cooperative round spend a coin already
+        // committed on-chain.
+        mockStoreState.arkExitInProgress = false;
+        mockStoreState.arkVtxos = [];
+        mockGetExitVtxos.mockResolvedValue([awaitingDelta]);
+        await expect(assertNoActiveArkExitAsync('Background refresh')).rejects.toThrow(
+            /Emergency Exit is in progress/,
+        );
     });
 });
 

@@ -38,6 +38,7 @@ import type { ExitClaimTransaction, ExitVtxo } from '@secondts/bark-react-native
 
 import useAuthStore from '@Cypher/stores/authStore';
 
+import { isActiveExit } from './barkState';
 import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
 
 /**
@@ -163,6 +164,15 @@ export async function fetchArkExitVtxos(): Promise<ExitVtxo[]> {
  * the ~24h AwaitingDelta CSV wait), or claimable. Matching only Processing
  * would report "no exit" for most of the exit's life.
  *
+ * Liveness MUST go through isActiveExit. This function used to regex
+ * `String(v.state)` for /^(Processing|Awaiting)/, which bark 0.6.1 broke when
+ * it turned `state` into a tagged-enum object: `String({tag:'AwaitingDelta'})`
+ * is "[object Object]", the regex never matched, and the whole check collapsed
+ * to `v.isClaimable`. Verified live on 2026-08-18 against an exit with 2794
+ * sats in flight (three AwaitingDelta, one ClaimInProgress, all
+ * isClaimable=false): this returned FALSE, so the guard it feeds was open for
+ * essentially the entire exit.
+ *
  * Returns false when the handle is unavailable or the read throws: callers use
  * this to BLOCK an action, and a failed read is not evidence of an exit. The
  * sync-flag check in `assertNoActiveArkExit` remains the first line of defence.
@@ -172,9 +182,7 @@ export async function hasActiveArkExitRecords(): Promise<boolean> {
         const handle = getArkWalletHandle();
         if (!handle) return false;
         const exits = await handle.getExitVtxos();
-        return (exits ?? []).some(
-            (v) => /^(Processing|Awaiting)/.test(String(v.state)) || v.isClaimable,
-        );
+        return (exits ?? []).some((v) => isActiveExit(v));
     } catch {
         return false;
     }

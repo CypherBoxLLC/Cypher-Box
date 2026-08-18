@@ -48,6 +48,7 @@ import {
   getICloudBackupPath,
   getICloudBackupPathForFingerprint,
   getLastLocalBackupNote,
+  isActiveExit,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
   probeAspReachable,
@@ -957,12 +958,18 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // phases), which left this panel blank mid-exit. Derive the figure
         // from the per-VTXO exit records and keep the SDK total as a
         // lower bound for whatever later phase it does count.
+        //
+        // Liveness goes through isActiveExit, NOT a regex on String(v.state):
+        // bark 0.6.1 made `state` a tagged-enum object, so the old
+        // /^(Processing|Awaiting)/ test matched "[object Object]" never,
+        // activeSats was always 0, and this fell back to the exact SDK quirk
+        // the code above exists to work around.
         const [vtxos, pendingTotal] = await Promise.all([
           fetchArkExitVtxos(),
           fetchPendingExitsTotalSats(),
         ]);
         const activeSats = vtxos
-          .filter((v) => /^(Processing|Awaiting)/.test(String(v.state)) || v.isClaimable)
+          .filter((v) => isActiveExit(v))
           .reduce((acc, v) => acc + Number(v.amountSats), 0);
         if (!cancelled) setPendingExitSats(Math.max(activeSats, pendingTotal));
       } catch {
@@ -1904,10 +1911,14 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // Live per-VTXO read when the handle is open; otherwise the
                 // persisted at-start snapshot, so the amount survives
                 // reloads and closed-handle windows.
-                const shownSats =
-                  pendingExitSats && pendingExitSats > 0
-                    ? pendingExitSats
-                    : (arkExitStartedSats ?? pendingExitSats);
+                //
+                // `null` (no live read yet) is the ONLY case the snapshot
+                // should cover. The old form fell back to it whenever the
+                // live figure was 0 too, so once every capsule was claimed
+                // the panel re-displayed the original at-start total and kept
+                // showing it for the rest of the exit (observed live: 3671
+                // sats pinned on screen with 0 actually pending).
+                const shownSats = pendingExitSats ?? arkExitStartedSats;
                 return shownSats == null || shownSats <= 0
                   ? 'Broadcasting exit transactions…'
                   : `${shownSats.toLocaleString()} sats pending exit. Funds sweep automatically once the ~24h CSV timelock expires.`;
