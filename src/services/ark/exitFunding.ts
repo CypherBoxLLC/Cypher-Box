@@ -99,6 +99,58 @@ export type ExitFeeConvertEstimate = {
  * mempool.space rather than the configured esplora (blockstream), which the
  * codebase repeatedly notes bot-blocks bark's client.
  */
+/** Claim-fee bounds. The claim is NOT the exit-tree CPFP and must not be priced
+ *  like it: see fetchClaimFeeRateSatPerVb. Floor 1 because anything below the
+ *  relay minimum is unrelayable; ceiling because an unbounded spike would
+ *  reproduce the exact bug this exists to prevent. */
+const CLAIM_RATE_MIN = 1;
+const CLAIM_RATE_MAX = 5;
+
+/**
+ * Fee rate for the exit CLAIM, which is a different problem from the exit-tree
+ * CPFP that `fetchFastFeeRateSatPerVb` prices.
+ *
+ * The CPFP children are time-critical: the exit tree has to confirm before the
+ * VTXO expires, so paying for speed there is buying something real, and it is
+ * paid out of the on-chain reserve.
+ *
+ * A claim is the opposite. It spends an output whose CSV has already matured,
+ * it races nothing, and its fee comes out of the claimed value itself. Paying
+ * a "fastest" rate there buys no safety and directly destroys small claims.
+ *
+ * Observed live 2026-08-19 on a real mainnet exit: with no rate passed, bark
+ * priced a single-capsule claim at 779 sats against a 698 sat output and
+ * refused to build it ("Claim Fee Exceeds Output: Cost to claim exits was
+ * 0.00000779 BTC, but the total output was 0.00000698 BTC"). That is ~6.6
+ * sat/vB over the measured 117.5 vB claim, at a moment when the mempool wanted
+ * 1. The two claims that had already succeeded went at 1.1 and 1.9 sat/vB. The
+ * failure is caught and retried every drive tick, so the exit sat in an
+ * infinite retry loop that could never succeed.
+ *
+ * So: take the 1-hour rate, not the fastest, and clamp it.
+ */
+export async function fetchClaimFeeRateSatPerVb(): Promise<number> {
+    const clamp = (n: number) =>
+        Math.min(CLAIM_RATE_MAX, Math.max(CLAIM_RATE_MIN, Math.ceil(n)));
+    try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch('https://mempool.space/api/v1/fees/recommended', {
+            signal: controller.signal,
+        });
+        clearTimeout(t);
+        if (!res.ok) return CLAIM_RATE_MIN;
+        const rec = await res.json();
+        const raw = Number(rec?.hourFee ?? rec?.economyFee);
+        if (!isFinite(raw) || raw <= 0) return CLAIM_RATE_MIN;
+        return clamp(raw);
+    } catch {
+        // Unreachable fee API. Floor rather than the reserve's congestion hedge:
+        // an over-priced claim does not fail slowly, it fails permanently.
+        return CLAIM_RATE_MIN;
+    }
+}
+
 export async function fetchFastFeeRateSatPerVb(): Promise<number> {
     try {
         const controller = new AbortController();

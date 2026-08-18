@@ -162,6 +162,7 @@ export { estimateArkOffboardFee, offboardArkVtxos } from './offboard';
 export type { ArkOffboardFeeView } from './offboard';
 export {
     computeExitFeeReserveSats,
+    fetchClaimFeeRateSatPerVb,
     convertToExitFees,
     estimateExitFeeConvert,
     fetchFastFeeRateSatPerVb,
