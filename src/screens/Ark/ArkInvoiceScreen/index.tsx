@@ -5,7 +5,13 @@ import SimpleToast from "react-native-simple-toast";
 import { ScreenLayout } from "@Cypher/component-library";
 import { CustomKeyboard, GradientInput } from "@Cypher/components";
 import { getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
-import { createArkLightningInvoice } from "@Cypher/services/ark";
+import {
+    ARK_SERVER_URL,
+    ESPLORA_URLS,
+    arkNetworkFaultMessage,
+    classifyArkNetworkFault,
+    createArkLightningInvoice,
+} from "@Cypher/services/ark";
 import { colors } from "@Cypher/style-guide";
 
 import styles from "./styles";
@@ -97,8 +103,21 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
             });
         } catch (err) {
             console.error("Ark invoice creation failed:", err);
+            // Minting an invoice needs the Ark server, so this fails whenever
+            // the ASP is unreachable. Naming the side that is down beats
+            // pasting a raw SDK string, and it decides whether "try mobile
+            // data" is useful advice or a waste of the user's time. Falls back
+            // to the raw message when the cause is not recognisable.
+            const faultMsg = arkNetworkFaultMessage(
+                classifyArkNetworkFault(err, {
+                    chainUrls: ESPLORA_URLS,
+                    arkUrl: ARK_SERVER_URL,
+                }),
+            );
             SimpleToast.show(
-                `Failed to create Ark invoice: ${(err as Error)?.message ?? "unknown error"}`,
+                faultMsg
+                    ? `Could not create the invoice. ${faultMsg}`
+                    : `Failed to create Ark invoice: ${(err as Error)?.message ?? "unknown error"}`,
                 SimpleToast.LONG,
             );
         } finally {

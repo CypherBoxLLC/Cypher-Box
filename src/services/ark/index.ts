@@ -8,6 +8,7 @@ export {
     ARK_EXIT_RUNWAY_HOURS,
     ARK_SWEEP_MAX_RUNWAY_HOURS,
     ESPLORA_URL,
+    ESPLORA_URLS,
     createArkConfig,
 } from './config';
 
@@ -209,3 +210,10 @@ export type {
     ArkSendFeeView,
     ArkSendResult,
 } from './send';
+
+export {
+    arkErrorText,
+    arkNetworkFaultMessage,
+    classifyArkNetworkFault,
+} from './networkFault';
+export type { ArkNetworkFault } from './networkFault';
