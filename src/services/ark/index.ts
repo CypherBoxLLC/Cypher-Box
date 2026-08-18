@@ -220,3 +220,12 @@ export type {
     ExitFundingSourceId,
     ExitFundingSourceState,
 } from './exitFundingSources';
+
+export { planExitFunding } from './exitFundingPlan';
+export type { ExitFundingPlan, ExitFundingPlanInput } from './exitFundingPlan';
+export { fundExitFeesFromCoinos } from './exitFundingCoinos';
+export type {
+    CoinosExitFundingDeps,
+    CoinosExitFundingRequest,
+    CoinosExitFundingResult,
+} from './exitFundingCoinos';
