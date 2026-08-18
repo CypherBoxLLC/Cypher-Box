@@ -1026,6 +1026,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     };
   }, [exitFundingOpen]);
 
+  // Convert is unavailable mid-exit (cooperative offboard, ASP-gated), and its
+  // tab button disappears. If that was the selected tab the sheet would render
+  // nothing at all, so fall back to the path that always works.
+  useEffect(() => {
+    if (arkExitInProgress && fundingTab === 'convert') setFundingTab('receive');
+  }, [arkExitInProgress, fundingTab]);
+
   // Debounced fee estimate for the CONVERT tab. Skipped when the ASP is known
   // unreachable (the offboard would fail) or the amount is empty/invalid.
   useEffect(() => {
@@ -1926,6 +1933,38 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 Started {new Date(arkExitStartedAt).toLocaleString()}. Funds sweep to the destination when the timelock expires; the vault stays afterwards.
               </Text>
             )}
+
+            {/* FEE RESERVE, DURING THE EXIT.
+                Previously this whole section was replaced by the panel above,
+                so the one moment the reserve matters most was the one moment
+                the user could neither see it nor top it up. Worse, the panel
+                promises funds sweep automatically while removing the means to
+                make that true: every exit branch needs a CPFP broadcast and
+                every claim needs a fee, and running dry strands capsules
+                mid-exit until someone tops up.
+                Observed live 2026-08-18 on a five-capsule exit that ran out at
+                699 sats with four claims still owed.
+                The receive path is ASP-independent, so it works during an
+                outage, which is exactly when an exit is running. */}
+            <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#2A2A2A' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, color: '#AAA' }}>Fee reserve on-chain</Text>
+                <Text bold style={{ fontSize: 13, color: onchainReserveSats > 0 ? colors.green : '#FFD54F' }}>
+                  {onchainReserveSats.toLocaleString()} sats
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: '#777', marginTop: 6, lineHeight: 15 }}>
+                Pays the miner fees for each capsule's exit and claim. If it runs
+                out, the remaining capsules wait until you top it up.
+              </Text>
+              <TouchableOpacity
+                onPress={() => setExitFundingOpen(true)}
+                activeOpacity={0.7}
+                style={{ marginTop: 10, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                <Text bold style={{ fontSize: 13, color: '#FFF' }}>Top up exit fees</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <>
@@ -2478,7 +2517,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
               {/* Tab switch */}
               <View style={{ flexDirection: 'row', marginBottom: 14, borderRadius: 10, backgroundColor: '#222', padding: 3 }}>
-                {(['receive', 'wallet', 'convert'] as const).map((tab) => {
+                {((arkExitInProgress
+                  ? (['receive', 'wallet'] as const)
+                  : (['receive', 'wallet', 'convert'] as const)) as readonly ('receive' | 'wallet' | 'convert')[]).map((tab) => {
                   const active = fundingTab === tab;
                   return (
                     <TouchableOpacity
