@@ -486,6 +486,18 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
             const config = createArkConfig({ esploraAddress: esploraUrl });
             // bark 0.11.3 OnchainWallet.default_ signature adds a leading network arg.
             onchainHandle = await OnchainWallet.default_(ARK_NETWORK, mnemonic, config, datadir);
+            // Record the provider that ACTUALLY worked, not the one we asked
+            // for. This loop falls through to the alternate when the preferred
+            // endpoint cannot spawn, and without this `sessionEsploraUrl` keeps
+            // naming a provider we are not using. rotateArkOnchainEsplora then
+            // computes "next" from that stale value and can rotate straight
+            // onto the endpoint that just failed.
+            //
+            // Seen live 2026-08-18: a sync failed against mempool.space and the
+            // very next line read "rotated -> https://mempool.space/api",
+            // because the recorded session still said blockstream. The rotation
+            // was a no-op exactly when it was needed.
+            sessionEsploraUrl = esploraUrl;
             if (__DEV__) console.log('[Ark] Spawned onchain wallet via', esploraUrl);
             return onchainHandle;
         } catch (err) {
