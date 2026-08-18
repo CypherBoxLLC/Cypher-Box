@@ -209,3 +209,6 @@ export type {
     ArkSendFeeView,
     ArkSendResult,
 } from './send';
+
+export { decideExitClaimBatch } from './exitClaimBatch';
+export type { ExitClaimBatchInput, ExitClaimBatchDecision } from './exitClaimBatch';

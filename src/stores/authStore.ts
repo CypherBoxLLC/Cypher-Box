@@ -242,6 +242,15 @@ export type AuthStateType = {
      */
     arkExitStartedAt: number | null;
     /**
+     * When the current exit first had ANY claimable capsule, epoch ms.
+     *
+     * Drives the claim batching window: each claim is its own on-chain
+     * transaction with its own fee, so sweeping five capsules one at a time
+     * costs five fees where one would do. Persisted rather than held in a ref
+     * because the exit outlives the process by a day or more.
+     */
+    arkExitClaimBatchSince: number | null;
+    /**
      * Spendable sats captured at the moment the exit was started. Display
      * fallback for the "X sats pending exit" panel: the SDK's live counters
      * read 0 mid-broadcast (see useArkSync exit block) and any live read
@@ -291,6 +300,7 @@ export type AuthStateType = {
     setArkExitInProgress: (state: boolean) => void;
     setArkExitDestinationAddress: (state: string | null) => void;
     setArkExitStartedAt: (state: number | null) => void;
+    setArkExitClaimBatchSince: (state: number | null) => void;
     setArkExitDrained: (state: boolean) => void;
     setArkExitStartedSats: (state: number | null) => void;
     setArkExitFeeReserveSats: (state: number) => void;
@@ -512,6 +522,7 @@ const createAuthStore = (
     arkExitInProgress: false,
     arkExitDestinationAddress: null,
     arkExitStartedAt: null,
+    arkExitClaimBatchSince: null,
     arkExitDrained: false,
     arkExitStartedSats: null,
     arkExitFeeReserveSats: 0,
@@ -588,6 +599,7 @@ const createAuthStore = (
     setArkExitInProgress: (state: boolean) => set({ arkExitInProgress: state }),
     setArkExitDestinationAddress: (state: string | null) => set({ arkExitDestinationAddress: state }),
     setArkExitStartedAt: (state: number | null) => set({ arkExitStartedAt: state }),
+    setArkExitClaimBatchSince: (state: number | null) => set({ arkExitClaimBatchSince: state }),
     setArkExitDrained: (state: boolean) => set({ arkExitDrained: state }),
     setArkExitStartedSats: (state: number | null) => set({ arkExitStartedSats: state }),
     setArkExitFeeReserveSats: (state: number) => set({ arkExitFeeReserveSats: state }),
@@ -631,6 +643,7 @@ const createAuthStore = (
             arkExitInProgress: false,
             arkExitDestinationAddress: null,
             arkExitStartedAt: null,
+            arkExitClaimBatchSince: null,
             arkExitDrained: false,
             arkExitStartedSats: null,
             arkExitFeeReserveSats: 0,

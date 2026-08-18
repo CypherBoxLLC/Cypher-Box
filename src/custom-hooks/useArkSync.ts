@@ -18,6 +18,7 @@ import {
     fetchArkVtxos,
     fetchChainTipHeight,
     fetchArkExitVtxos,
+    decideExitClaimBatch,
     fetchClaimableExitVtxos,
     fetchPendingExitsTotalSats,
     getArkWalletHandle,
@@ -115,6 +116,20 @@ const URGENCY_THRESHOLD_BLOCKS = Math.round(
 // in practice: switch networks and retry, then Emergency Exit while
 // there is still time. Re-shown at most once per gap window so the sync
 // tick doesn't nag while the user is following the steps.
+/**
+ * How long the claim sweep waits for slower capsules before going without them.
+ *
+ * Each claim is one transaction paying one fee, and drainExits already batches
+ * every claimable capsule into it, so the only thing that costs money is
+ * claiming more than once. Six hours comfortably covers capsules whose exit
+ * branches confirmed a few blocks apart, which is the normal case, while
+ * bounding how long a healthy capsule can be held up by a wedged sibling.
+ *
+ * Safe to wait: past its CSV a claimable exit output is an ordinary UTXO only
+ * this wallet can spend. There is no deadline and nobody to race.
+ */
+const EXIT_CLAIM_BATCH_MAX_WAIT_MS = 6 * 60 * 60 * 1000;
+
 const REFRESH_FAIL_ESCALATE_STREAK = 3;
 const REFRESH_FAIL_ALERT_GAP_MS = 6 * 60 * 60 * 1000;
 
@@ -421,7 +436,58 @@ export default function useArkSync(): UseArkSync {
 
                     const claimable = await fetchClaimableExitVtxos();
                     _stamp(`fetchClaimableExitVtxos: ${claimable.length} ready`);
-                    if (claimable.length > 0 && arkExitDestinationAddress) {
+
+                    // CLAIM BATCHING.
+                    //
+                    // drainExits([]) already sweeps every currently-claimable
+                    // capsule into ONE transaction, so the cost of claiming is
+                    // per-claim, not per-capsule. Firing the moment the first
+                    // capsule ripens therefore pays a separate fee for each one.
+                    // Observed on a five-capsule exit: the first claim cost 225
+                    // sats to move 877, and four more were queued behind it, on
+                    // an exit-fee wallet that had already dropped from 3654 to
+                    // 699 sats. Five fees where one would have done.
+                    //
+                    // Capsules ripen apart because each has its own exit branch
+                    // and its own CSV, timed from when THAT branch's tx
+                    // confirmed. A single block between two confirmations is
+                    // enough to split the batch.
+                    //
+                    // So wait for the stragglers, but never indefinitely: one
+                    // wedged leaf must not hold the others hostage. Claim when
+                    // nothing else is still working its way through, or when the
+                    // window expires, whichever comes first.
+                    //
+                    // Waiting is safe. Past its CSV a claimable exit output is
+                    // an ordinary UTXO that only this wallet can spend, with no
+                    // deadline and nobody to race.
+                    const exitVtxosForBatch = await fetchArkExitVtxos();
+                    const stillProgressing = exitVtxosForBatch.filter(
+                        (v) => isActiveExit(v) && !v.isClaimable,
+                    ).length;
+
+                    const batchDecision = decideExitClaimBatch({
+                        claimableCount: claimable.length,
+                        stillProgressingCount: stillProgressing,
+                        batchSince: useAuthStore.getState().arkExitClaimBatchSince ?? null,
+                        now: Date.now(),
+                        maxWaitMs: EXIT_CLAIM_BATCH_MAX_WAIT_MS,
+                    });
+                    if (
+                        (useAuthStore.getState().arkExitClaimBatchSince ?? null) !==
+                        batchDecision.batchSince
+                    ) {
+                        useAuthStore.getState().setArkExitClaimBatchSince(batchDecision.batchSince);
+                    }
+                    const claimBatchReady = batchDecision.claim;
+                    if (claimable.length > 0 && !claimBatchReady) {
+                        _stamp(
+                            `exit claim held for batching (${batchDecision.reason}): ` +
+                            `${claimable.length} ready, ${stillProgressing} still progressing`,
+                        );
+                    }
+
+                    if (claimable.length > 0 && arkExitDestinationAddress && claimBatchReady) {
                         // claimArkExitsToAddress now finalizes AND broadcasts the
                         // claim (drainExits alone only builds a PSBT). Gate
                         // arkExitDrained on a real broadcast txid: a non-throwing
@@ -437,6 +503,10 @@ export default function useArkSync(): UseArkSync {
                                     `exit claim broadcast txid=${claim.txid} fee=${claim.feeSats} sats`,
                                 );
                                 setArkExitDrained(true);
+                                // Batch consumed. A later capsule ripening
+                                // opens a fresh window rather than inheriting
+                                // this one's elapsed time.
+                                useAuthStore.getState().setArkExitClaimBatchSince(null);
                             } else {
                                 _stamp('exit claim returned no txid, NOT marking drained');
                             }
@@ -456,7 +526,9 @@ export default function useArkSync(): UseArkSync {
                     // block comment above). `pendingTotal` is kept only as a
                     // belt-and-suspenders OR-term in case a future SDK
                     // version starts counting something we don't model.
-                    const exitVtxos = await fetchArkExitVtxos();
+                    // Reuses the list fetched for the batching decision above:
+                    // this runs every drive tick and the call is not cheap.
+                    const exitVtxos = exitVtxosForBatch;
                     // bark 0.6.1: count in-flight exits by the not-terminal
                     // check so we never under-count active exits, which would
                     // retire an exit early (the mid-exit wallet-deletion bug).
