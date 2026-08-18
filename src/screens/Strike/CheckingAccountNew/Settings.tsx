@@ -3,7 +3,7 @@ import QRCode from "react-native-qrcode-svg";
 
 import { Copy, StrikeFull } from "@Cypher/assets/images";
 import { GradientSwitch, Text } from "@Cypher/component-library";
-import { GradientView } from "@Cypher/components";
+import { ExitFundingSourceList, GradientView } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import React, { useContext, useEffect, useState } from "react";
@@ -57,6 +57,7 @@ import {
   startArkEmergencyExit,
   writeAndVerifyArkBackup,
   writeArkBackupToTempFile,
+  buildExitFundingSources,
 } from "@Cypher/services/ark";
 import type { ExitFeeConvertEstimate } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
@@ -338,6 +339,8 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
 export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'actions' }) {
   const {
     clearArkAuth,
+    isAuth,
+    isStrikeAuth,
     walletID,
     coldStorageWalletID,
     arkBalanceDetail,
@@ -901,7 +904,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // `null` while the first computation is in flight.
   const [recommendedReserveSats, setRecommendedReserveSats] = useState<number | null>(null);
   const [exitFundingOpen, setExitFundingOpen] = useState(false);
-  const [fundingTab, setFundingTab] = useState<'receive' | 'convert'>('receive');
+  const [fundingTab, setFundingTab] = useState<'receive' | 'wallet' | 'convert'>('receive');
   const [onchainFundAddr, setOnchainFundAddr] = useState<string | null>(null);
   // ASP reachability for the CONVERT (cooperative-offboard) tab. null = probing.
   const [aspReachable, setAspReachable] = useState<boolean | null>(null);
@@ -2475,7 +2478,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
               {/* Tab switch */}
               <View style={{ flexDirection: 'row', marginBottom: 14, borderRadius: 10, backgroundColor: '#222', padding: 3 }}>
-                {(['receive', 'convert'] as const).map((tab) => {
+                {(['receive', 'wallet', 'convert'] as const).map((tab) => {
                   const active = fundingTab === tab;
                   return (
                     <TouchableOpacity
@@ -2484,7 +2487,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: active ? (colors.ark?.light ?? colors.pink.default) : 'transparent' }}
                     >
                       <Text bold style={{ fontSize: 12, color: active ? '#1C1C1C' : '#AAA' }}>
-                        {tab === 'receive' ? 'Receive Bitcoin' : 'Convert from balance'}
+                        {tab === 'receive'
+                          ? 'Receive Bitcoin'
+                          : tab === 'wallet'
+                            ? 'From a wallet'
+                            : 'Convert from balance'}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -2523,6 +2530,47 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   ) : (
                     <ActivityIndicator color={colors.ark?.light ?? colors.pink.default} style={{ marginVertical: 24 }} />
                   )}
+                </>
+              )}
+
+              {fundingTab === 'wallet' && (
+                <>
+                  <Text style={{ fontSize: 12, color: '#CCC', marginBottom: 12, lineHeight: 17 }}>
+                    Send {exitFeeShortfallSats.toLocaleString()} sats on-chain from one of your
+                    wallets. The address is filled in for you.
+                  </Text>
+                  {/* Sources that cannot be used are listed too, dimmed and with
+                      a reason. Hiding them makes the feature look broken to
+                      someone expecting their wallet to appear. */}
+                  <ExitFundingSourceList
+                    shortfallSats={exitFeeShortfallSats}
+                    sources={buildExitFundingSources({
+                      coinos: { connected: !!isAuth },
+                      strike: { connected: !!isStrikeAuth },
+                      hotVault: { walletID: walletID ?? null },
+                      coldVault: { walletID: coldStorageWalletID ?? null },
+                      shortfallSats: exitFeeShortfallSats,
+                    })}
+                    onSelect={(id) => {
+                      // Only CoinOS has a provider today. The others stay in the
+                      // list so the roadmap is visible, but must not pretend to
+                      // work.
+                      if (id !== 'coinos') {
+                        SimpleToast.show('Coming soon for this wallet', SimpleToast.SHORT);
+                        return;
+                      }
+                      setExitFundingOpen(false);
+                      (navigation as any).navigate('ArkExitFundingConfirmScreen', {
+                        sourceId: 'coinos',
+                        sourceLabel: 'CoinOS',
+                        shortfallSats: exitFeeShortfallSats,
+                        // Balance is read on the confirm screen; null means
+                        // "unknown", which plans for the full shortfall rather
+                        // than refusing.
+                        availableSats: null,
+                      });
+                    }}
+                  />
                 </>
               )}
 
