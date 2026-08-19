@@ -10,7 +10,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { ArkSettingsBody } from "./Settings";
 
 import { btc } from "@Cypher/helpers/coinosHelper";
-import { blocksToDays } from "@Cypher/services/ark";
+import { blocksToDays, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 
 interface AccountProps {
@@ -31,6 +31,10 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
     reserveArkAmount,
   } = useAuthStore();
   const arkVtxos = useAuthStore((s) => s.arkVtxos);
+  // Needed because a delegated refresh leaves the VTXO `Spendable`: without
+  // this the counts below read zero for the whole round and this card
+  // contradicts the home card it was written to mirror.
+  const arkRefreshingVtxoIds = useAuthStore((s) => s.arkRefreshingVtxoIds);
   const navigation = useNavigation();
 
   // Mirror ArkWallet's pendingRound derivation so the in-tab Ark Card
@@ -39,20 +43,12 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
   // this, the Vault menu's Ark Card would display "0 sats ~ $0.00"
   // whenever the homescreen card was correctly showing a refresh in
   // flight, contradicting the home view.
-  const pendingRoundSats = useMemo(
-    () => arkVtxos.reduce(
-      (sum, v) => (v.state.toLowerCase() === 'locked' ? sum + v.sats : sum),
-      0,
-    ),
-    [arkVtxos],
+  const midRound = useMemo(
+    () => sumMidRoundVtxos(arkVtxos, arkRefreshingVtxoIds),
+    [arkVtxos, arkRefreshingVtxoIds],
   );
-  const pendingRoundCount = useMemo(
-    () => arkVtxos.reduce(
-      (n, v) => (v.state.toLowerCase() === 'locked' ? n + 1 : n),
-      0,
-    ),
-    [arkVtxos],
-  );
+  const pendingRoundSats = midRound.sats;
+  const pendingRoundCount = midRound.count;
 
   // Same per-VTXO capsule-slot data as the homescreen ArkWallet card —
   // see ArkWallet/index.tsx for the rationale. Kept in sync visually so
@@ -68,13 +64,13 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
           : 30;
         return {
           color: getCapsuleColorBand(daysLeft).color,
-          refreshing: v.state.toLowerCase() === 'locked',
+          refreshing: isVtxoMidRound(v, arkRefreshingVtxoIds),
           daysLeft,
         };
       })
       .sort((a, b) => a.daysLeft - b.daysLeft)
       .map(({ color, refreshing }) => ({ color, refreshing }));
-  }, [arkVtxos, arkChainTipHeight]);
+  }, [arkVtxos, arkChainTipHeight, arkRefreshingVtxoIds]);
 
   const handleCoinosLogout = () => {
     clearAuth();
