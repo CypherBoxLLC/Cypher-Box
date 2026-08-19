@@ -32,6 +32,7 @@ import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods, revokeStrikeT
 import {
   AUTO_BACKUP_PATH,
   computeExitFeeReserveSats,
+  resolveExitReserveTarget,
   connectGoogleDrive,
   convertToExitFees,
   disconnectGoogleDrive,
@@ -917,13 +918,18 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const [reserveTargetInput, setReserveTargetInput] = useState('');
 
   const onchainReserveSats: number = arkBalanceDetail?.onchainBoardingSats ?? 0;
-  // Reserve target: the user's chosen hold amount if they've set/armed one
-  // (persisted), otherwise the computed recommendation. Drives the gate, the
-  // funded state, and (via arkExitFeeReserveSats) how much auto-board keeps
-  // on-chain. While recommended is still null (first compute) and nothing is
+  // Reserve target: the GREATER of what the user armed and what an exit is
+  // currently estimated to cost. Drives the gate, the funded state and the
+  // shortfall. While recommended is still null (first compute) and nothing is
   // armed, the target is 0 so we don't gate; the button shows "checking".
-  const reserveTargetSats: number =
-    (arkExitFeeReserveSats ?? 0) > 0 ? arkExitFeeReserveSats : (recommendedReserveSats ?? 0);
+  //
+  // This used to be `armed > 0 ? armed : recommended`, which let a stale armed
+  // figure declare the reserve funded no matter how far the estimate had moved.
+  // See resolveExitReserveTarget for the device case that exposed it.
+  const reserveTargetSats: number = resolveExitReserveTarget({
+    armedSats: arkExitFeeReserveSats,
+    recommendedSats: recommendedReserveSats,
+  });
   const exitFeeGated = reserveTargetSats > 0 && onchainReserveSats < reserveTargetSats;
   const exitFeeShortfallSats = Math.max(0, reserveTargetSats - onchainReserveSats);
   // The user armed a target below the recommended safe amount (warn them).

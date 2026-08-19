@@ -242,3 +242,5 @@ export type {
 
 export { decideExitClaimBatch } from './exitClaimBatch';
 export type { ExitClaimBatchInput, ExitClaimBatchDecision } from './exitClaimBatch';
+
+export { resolveExitReserveTarget } from './exitReserveTarget';
