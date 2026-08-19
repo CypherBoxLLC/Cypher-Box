@@ -1,7 +1,7 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
-import { ARK_VTXO_DUST_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound } from "@Cypher/services/ark";
+import { ARK_REFRESH_MIN_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
@@ -154,28 +154,40 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d — refresh soon`
         : null;
 
-    // Count of dust capsules (≤ ARK_VTXO_DUST_SATS = 330 sats) that are
-    // still spendable and haven't expired. These can't be refreshed
-    // individually (refresh fee > capsule value) — only batch refresh on
-    // the Capsules tab consolidates them into above-dust outputs.
-    const dustCapsuleCount = useMemo(() => {
-        if (!arkVtxos || arkChainTipHeight == null) return 0;
+    // Dust capsules: below the PER-INPUT refresh floor (ARK_REFRESH_MIN_SATS,
+    // 500 sats), still spendable, not expired, not already mid-sweep. Below
+    // that floor a capsule cannot join a round on its own; it can only be
+    // folded into a dust-only delegated batch, or spent. Returns the total too,
+    // because whether batching produces a HEALTHY capsule or just a smaller
+    // dust one depends on the sum, and the two cases need different advice.
+    const dustCapsules = useMemo(() => {
+        if (!arkVtxos || arkChainTipHeight == null) return { count: 0, sats: 0 };
         // bark 0.6.1 keeps a delegated-refreshing VTXO Spendable (not Locked),
         // so a dust capsule mid-sweep still looks spendable here. Exclude the
         // client-tracked refreshing set so the "needs action" dust warning
         // doesn't fire on capsules that are already being consolidated.
         const refreshing = new Set(arkRefreshingVtxoIds ?? []);
         let count = 0;
+        let sats = 0;
         for (const v of arkVtxos) {
-            if (v.sats > ARK_VTXO_DUST_SATS) continue;
+            // ARK_REFRESH_MIN_SATS (500), not ARK_VTXO_DUST_SATS (330). The
+            // refresh floor is what decides whether a capsule can be rescued on
+            // its own, and it is PER INPUT: below it, a capsule cannot join a
+            // round and can only be swept as part of a dust-only delegated
+            // batch, or spent. The Capsules tab already draws the line there
+            // (see strandedDust), so counting at 330 here left a whole band
+            // invisible on Home. Observed on device 2026-08-20: two 400 sat
+            // capsules on a 1d 21h fuse, flagged in Capsules, silent on Home.
+            if (v.sats >= ARK_REFRESH_MIN_SATS) continue;
             if (v.state.toLowerCase() !== 'spendable') continue;
             if (v.expiryHeight === 0) continue;
             if (refreshing.has(v.id)) continue;
             const blocks = v.expiryHeight - arkChainTipHeight;
             if (blocks <= 0) continue;
             count++;
+            sats += v.sats;
         }
-        return count;
+        return { count, sats };
     }, [arkVtxos, arkChainTipHeight, arkRefreshingVtxoIds]);
 
     // VTXOs currently mid-round (state === 'locked' — refresh / send / board
@@ -264,7 +276,21 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             }
         }
 
-        if (dustCapsuleCount > 0) {
+        if (dustCapsules.count > 0) {
+            // Two different situations, and only one of them has a clean fix.
+            // When the dust TOTAL clears the refresh floor, a dust-only
+            // delegated batch folds them into one healthy capsule for about a
+            // sat, which resets both the value problem and the expiry clock.
+            // Below that, batching still reduces the capsule count but the
+            // result is itself dust, so spending is the honest advice.
+            if (dustCapsules.sats >= ARK_REFRESH_MIN_SATS) {
+                return {
+                    text: 'You have dust Bark capsules above 500 sats, tap here to batch refresh',
+                    linkText: 'here',
+                    tapTab: 0, // Capsules tab
+                    error: true,
+                };
+            }
             return {
                 text: 'Attention: you have dust ark capsules that might expire. Batch refresh or spend them here.',
                 linkText: 'here',
@@ -298,7 +324,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         return null;
     }, [
         expiryWarning,
-        dustCapsuleCount,
+        dustCapsules,
         notificationsEnabled,
         arkIosBackupReminderActive,
         pendingRound,
