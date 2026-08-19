@@ -238,3 +238,6 @@ export type {
     CoinosExitFundingRequest,
     CoinosExitFundingResult,
 } from './exitFundingCoinos';
+
+export { decideExitClaimBatch } from './exitClaimBatch';
+export type { ExitClaimBatchInput, ExitClaimBatchDecision } from './exitClaimBatch';
