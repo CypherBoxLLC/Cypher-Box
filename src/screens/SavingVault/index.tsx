@@ -84,10 +84,12 @@ export default function SavingVault() {
                     mnemonic,
                     {
                         createdAt: Date.now(),
-                        // Keychain stores the words only; this flag makes the
-                        // recovery flow prompt for the (never-stored)
-                        // passphrase after the biometric read.
-                        hasPassphrase: !!wallet?.getPassphrase?.(),
+                        // No passphrase flag. Recording whether this vault has a
+                        // passphrase is what let the recovery flow announce a
+                        // hidden wallet exists, defeating the point of having
+                        // one. Keychain recovery is passphrase-agnostic now: it
+                        // opens the words as-is and stays silent. See
+                        // HotVaultMeta in services/hotVaultKeychain.
                     },
                 );
                 if (result.ok) {
