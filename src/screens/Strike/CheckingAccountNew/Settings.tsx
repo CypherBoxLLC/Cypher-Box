@@ -1912,13 +1912,30 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // persisted at-start snapshot, so the amount survives
                 // reloads and closed-handle windows.
                 //
-                // `null` (no live read yet) is the ONLY case the snapshot
-                // should cover. The old form fell back to it whenever the
-                // live figure was 0 too, so once every capsule was claimed
-                // the panel re-displayed the original at-start total and kept
-                // showing it for the rest of the exit (observed live: 3671
-                // sats pinned on screen with 0 actually pending).
-                const shownSats = pendingExitSats ?? arkExitStartedSats;
+                // Three sources, best first. Getting this ladder wrong is
+                // what made the panel lie in two different ways.
+                //
+                // 1. `pendingExitSats`, the live per-VTXO poll above.
+                // 2. the store's `pendingExitSats`, refreshed by useArkSync's
+                //    exit drive and persisted (the store has no partialize, so
+                //    it survives a cold launch). This rung is why the panel
+                //    stops quoting a stale total: the local poll calls
+                //    fetchArkExitVtxos, which THROWS while the wallet handle
+                //    is closed, and the effect swallows it, so on a cold
+                //    launch with the vault still locked the local value stays
+                //    null for as long as the user takes to authenticate.
+                // 3. `arkExitStartedSats`, the at-start snapshot, only when
+                //    nothing better has ever been recorded.
+                //
+                // Rung 3 must never outrank rung 2, because the snapshot is
+                // fixed at exit start and does NOT decrement as capsules are
+                // claimed. Observed live: 1801 of 3671 sats already recovered
+                // and confirmed on chain, vault locked after a relaunch, and
+                // the panel still reading "3671 sats pending exit".
+                const shownSats =
+                  pendingExitSats ??
+                  arkBalanceDetail?.pendingExitSats ??
+                  arkExitStartedSats;
                 return shownSats == null || shownSats <= 0
                   ? 'Broadcasting exit transactions…'
                   : `${shownSats.toLocaleString()} sats pending exit. Funds sweep automatically once the ~24h CSV timelock expires.`;
