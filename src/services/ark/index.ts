@@ -209,3 +209,5 @@ export type {
     ArkSendFeeView,
     ArkSendResult,
 } from './send';
+
+export { resolveExitReserveTarget } from './exitReserveTarget';
