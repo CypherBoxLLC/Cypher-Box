@@ -48,6 +48,7 @@ import {
   getICloudBackupPath,
   getICloudBackupPathForFingerprint,
   getLastLocalBackupNote,
+  isActiveExit,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
   probeAspReachable,
@@ -957,12 +958,18 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // phases), which left this panel blank mid-exit. Derive the figure
         // from the per-VTXO exit records and keep the SDK total as a
         // lower bound for whatever later phase it does count.
+        //
+        // Liveness goes through isActiveExit, NOT a regex on String(v.state):
+        // bark 0.6.1 made `state` a tagged-enum object, so the old
+        // /^(Processing|Awaiting)/ test matched "[object Object]" never,
+        // activeSats was always 0, and this fell back to the exact SDK quirk
+        // the code above exists to work around.
         const [vtxos, pendingTotal] = await Promise.all([
           fetchArkExitVtxos(),
           fetchPendingExitsTotalSats(),
         ]);
         const activeSats = vtxos
-          .filter((v) => /^(Processing|Awaiting)/.test(String(v.state)) || v.isClaimable)
+          .filter((v) => isActiveExit(v))
           .reduce((acc, v) => acc + Number(v.amountSats), 0);
         if (!cancelled) setPendingExitSats(Math.max(activeSats, pendingTotal));
       } catch {
@@ -1904,10 +1911,31 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // Live per-VTXO read when the handle is open; otherwise the
                 // persisted at-start snapshot, so the amount survives
                 // reloads and closed-handle windows.
+                //
+                // Three sources, best first. Getting this ladder wrong is
+                // what made the panel lie in two different ways.
+                //
+                // 1. `pendingExitSats`, the live per-VTXO poll above.
+                // 2. the store's `pendingExitSats`, refreshed by useArkSync's
+                //    exit drive and persisted (the store has no partialize, so
+                //    it survives a cold launch). This rung is why the panel
+                //    stops quoting a stale total: the local poll calls
+                //    fetchArkExitVtxos, which THROWS while the wallet handle
+                //    is closed, and the effect swallows it, so on a cold
+                //    launch with the vault still locked the local value stays
+                //    null for as long as the user takes to authenticate.
+                // 3. `arkExitStartedSats`, the at-start snapshot, only when
+                //    nothing better has ever been recorded.
+                //
+                // Rung 3 must never outrank rung 2, because the snapshot is
+                // fixed at exit start and does NOT decrement as capsules are
+                // claimed. Observed live: 1801 of 3671 sats already recovered
+                // and confirmed on chain, vault locked after a relaunch, and
+                // the panel still reading "3671 sats pending exit".
                 const shownSats =
-                  pendingExitSats && pendingExitSats > 0
-                    ? pendingExitSats
-                    : (arkExitStartedSats ?? pendingExitSats);
+                  pendingExitSats ??
+                  arkBalanceDetail?.pendingExitSats ??
+                  arkExitStartedSats;
                 return shownSats == null || shownSats <= 0
                   ? 'Broadcasting exit transactions…'
                   : `${shownSats.toLocaleString()} sats pending exit. Funds sweep automatically once the ~24h CSV timelock expires.`;

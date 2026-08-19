@@ -25,6 +25,10 @@ export type ArkBgRefreshOutcome =
     | 'dust_stranded'
     | 'no_seed'
     | 'disabled'
+    // Deliberately skipped because a unilateral exit is in flight: a
+    // cooperative round would commit the same coin twice. Not a failure, and
+    // must not count toward the consecutive-failure escalation.
+    | 'exit_in_progress'
     | 'error';
 
 export type ArkBgRefreshTelemetryEntry = {

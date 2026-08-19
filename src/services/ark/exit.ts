@@ -38,6 +38,7 @@ import type { ExitClaimTransaction, ExitVtxo } from '@secondts/bark-react-native
 
 import useAuthStore from '@Cypher/stores/authStore';
 
+import { isActiveExit } from './barkState';
 import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
 
 /**
@@ -149,6 +150,59 @@ export async function fetchHasPendingExits(): Promise<boolean> {
 export async function fetchArkExitVtxos(): Promise<ExitVtxo[]> {
     const handle = requireWallet();
     return await handle.getExitVtxos();
+}
+
+/**
+ * Does bark's own DB hold any NON-TERMINAL exit record?
+ *
+ * The authoritative "is an exit live" signal, and deliberately independent of
+ * zustand: the background-refresh wake runs headless and can execute before the
+ * store has rehydrated, at which point `arkExitInProgress` reads its default
+ * `false` and the sync guard silently passes. This one asks bark.
+ *
+ * Non-terminal means Processing (broadcasting), any Awaiting* phase (including
+ * the ~24h AwaitingDelta CSV wait), or claimable. Matching only Processing
+ * would report "no exit" for most of the exit's life.
+ *
+ * Liveness MUST go through isActiveExit. This function used to regex
+ * `String(v.state)` for /^(Processing|Awaiting)/, which bark 0.6.1 broke when
+ * it turned `state` into a tagged-enum object: `String({tag:'AwaitingDelta'})`
+ * is "[object Object]", the regex never matched, and the whole check collapsed
+ * to `v.isClaimable`. Verified live on 2026-08-18 against an exit with 2794
+ * sats in flight (three AwaitingDelta, one ClaimInProgress, all
+ * isClaimable=false): this returned FALSE, so the guard it feeds was open for
+ * essentially the entire exit.
+ *
+ * Returns false when the handle is unavailable or the read throws: callers use
+ * this to BLOCK an action, and a failed read is not evidence of an exit. The
+ * sync-flag check in `assertNoActiveArkExit` remains the first line of defence.
+ */
+export async function hasActiveArkExitRecords(): Promise<boolean> {
+    try {
+        const handle = getArkWalletHandle();
+        if (!handle) return false;
+        const exits = await handle.getExitVtxos();
+        return (exits ?? []).some((v) => isActiveExit(v));
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Async companion to `assertNoActiveArkExit` for paths that can run before the
+ * store is hydrated (background wake) or that are about to hand VTXOs to the
+ * ASP for a cooperative round.
+ *
+ * Checks the cheap sync signals first, then bark's DB.
+ */
+export async function assertNoActiveArkExitAsync(action = 'This action'): Promise<void> {
+    const s = useAuthStore.getState();
+    const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
+    if (s.arkExitInProgress || exitingVtxo || (await hasActiveArkExitRecords())) {
+        throw new Error(
+            `${action} is unavailable while an Emergency Exit is in progress.`,
+        );
+    }
 }
 
 /**
