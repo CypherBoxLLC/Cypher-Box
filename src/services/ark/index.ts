@@ -218,3 +218,23 @@ export {
     classifyArkNetworkFault,
 } from './networkFault';
 export type { ArkNetworkFault } from './networkFault';
+
+export {
+    MIN_USEFUL_FUNDING_SATS,
+    buildExitFundingSources,
+    hasUsableExitFundingSource,
+} from './exitFundingSources';
+export type {
+    ExitFundingSource,
+    ExitFundingSourceId,
+    ExitFundingSourceState,
+} from './exitFundingSources';
+
+export { planExitFunding } from './exitFundingPlan';
+export type { ExitFundingPlan, ExitFundingPlanInput } from './exitFundingPlan';
+export { fundExitFeesFromCoinos } from './exitFundingCoinos';
+export type {
+    CoinosExitFundingDeps,
+    CoinosExitFundingRequest,
+    CoinosExitFundingResult,
+} from './exitFundingCoinos';

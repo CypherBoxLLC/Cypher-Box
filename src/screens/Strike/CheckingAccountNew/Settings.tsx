@@ -3,7 +3,7 @@ import QRCode from "react-native-qrcode-svg";
 
 import { Copy, StrikeFull } from "@Cypher/assets/images";
 import { GradientSwitch, Text } from "@Cypher/component-library";
-import { GradientView } from "@Cypher/components";
+import { ExitFundingSourceList, GradientView } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import React, { useContext, useEffect, useState } from "react";
@@ -58,6 +58,7 @@ import {
   startArkEmergencyExit,
   writeAndVerifyArkBackup,
   writeArkBackupToTempFile,
+  buildExitFundingSources,
 } from "@Cypher/services/ark";
 import type { ExitFeeConvertEstimate } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
@@ -339,6 +340,8 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
 export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'actions' }) {
   const {
     clearArkAuth,
+    isAuth,
+    isStrikeAuth,
     walletID,
     coldStorageWalletID,
     arkBalanceDetail,
@@ -902,7 +905,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // `null` while the first computation is in flight.
   const [recommendedReserveSats, setRecommendedReserveSats] = useState<number | null>(null);
   const [exitFundingOpen, setExitFundingOpen] = useState(false);
-  const [fundingTab, setFundingTab] = useState<'receive' | 'convert'>('receive');
+  const [fundingTab, setFundingTab] = useState<'receive' | 'wallet' | 'convert'>('receive');
   const [onchainFundAddr, setOnchainFundAddr] = useState<string | null>(null);
   // ASP reachability for the CONVERT (cooperative-offboard) tab. null = probing.
   const [aspReachable, setAspReachable] = useState<boolean | null>(null);
@@ -1029,6 +1032,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       cancelled = true;
     };
   }, [exitFundingOpen]);
+
+  // Convert is unavailable mid-exit (cooperative offboard, ASP-gated), and its
+  // tab button disappears. If that was the selected tab the sheet would render
+  // nothing at all, so fall back to the path that always works.
+  useEffect(() => {
+    if (arkExitInProgress && fundingTab === 'convert') setFundingTab('receive');
+  }, [arkExitInProgress, fundingTab]);
 
   // Debounced fee estimate for the CONVERT tab. Skipped when the ASP is known
   // unreachable (the offboard would fail) or the amount is empty/invalid.
@@ -1951,6 +1961,38 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 Started {new Date(arkExitStartedAt).toLocaleString()}. Funds sweep to the destination when the timelock expires; the vault stays afterwards.
               </Text>
             )}
+
+            {/* FEE RESERVE, DURING THE EXIT.
+                Previously this whole section was replaced by the panel above,
+                so the one moment the reserve matters most was the one moment
+                the user could neither see it nor top it up. Worse, the panel
+                promises funds sweep automatically while removing the means to
+                make that true: every exit branch needs a CPFP broadcast and
+                every claim needs a fee, and running dry strands capsules
+                mid-exit until someone tops up.
+                Observed live 2026-08-18 on a five-capsule exit that ran out at
+                699 sats with four claims still owed.
+                The receive path is ASP-independent, so it works during an
+                outage, which is exactly when an exit is running. */}
+            <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#2A2A2A' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, color: '#AAA' }}>Fee reserve on-chain</Text>
+                <Text bold style={{ fontSize: 13, color: onchainReserveSats > 0 ? colors.green : '#FFD54F' }}>
+                  {onchainReserveSats.toLocaleString()} sats
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: '#777', marginTop: 6, lineHeight: 15 }}>
+                Pays the miner fees for each capsule's exit and claim. If it runs
+                out, the remaining capsules wait until you top it up.
+              </Text>
+              <TouchableOpacity
+                onPress={() => setExitFundingOpen(true)}
+                activeOpacity={0.7}
+                style={{ marginTop: 10, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                <Text bold style={{ fontSize: 13, color: '#FFF' }}>Top up exit fees</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <>
@@ -2503,7 +2545,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
               {/* Tab switch */}
               <View style={{ flexDirection: 'row', marginBottom: 14, borderRadius: 10, backgroundColor: '#222', padding: 3 }}>
-                {(['receive', 'convert'] as const).map((tab) => {
+                {((arkExitInProgress
+                  ? (['receive', 'wallet'] as const)
+                  : (['receive', 'wallet', 'convert'] as const)) as readonly ('receive' | 'wallet' | 'convert')[]).map((tab) => {
                   const active = fundingTab === tab;
                   return (
                     <TouchableOpacity
@@ -2512,7 +2556,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: active ? (colors.ark?.light ?? colors.pink.default) : 'transparent' }}
                     >
                       <Text bold style={{ fontSize: 12, color: active ? '#1C1C1C' : '#AAA' }}>
-                        {tab === 'receive' ? 'Receive Bitcoin' : 'Convert from balance'}
+                        {tab === 'receive'
+                          ? 'Receive Bitcoin'
+                          : tab === 'wallet'
+                            ? 'From a wallet'
+                            : 'Convert from balance'}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -2551,6 +2599,47 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   ) : (
                     <ActivityIndicator color={colors.ark?.light ?? colors.pink.default} style={{ marginVertical: 24 }} />
                   )}
+                </>
+              )}
+
+              {fundingTab === 'wallet' && (
+                <>
+                  <Text style={{ fontSize: 12, color: '#CCC', marginBottom: 12, lineHeight: 17 }}>
+                    Send {exitFeeShortfallSats.toLocaleString()} sats on-chain from one of your
+                    wallets. The address is filled in for you.
+                  </Text>
+                  {/* Sources that cannot be used are listed too, dimmed and with
+                      a reason. Hiding them makes the feature look broken to
+                      someone expecting their wallet to appear. */}
+                  <ExitFundingSourceList
+                    shortfallSats={exitFeeShortfallSats}
+                    sources={buildExitFundingSources({
+                      coinos: { connected: !!isAuth },
+                      strike: { connected: !!isStrikeAuth },
+                      hotVault: { walletID: walletID ?? null },
+                      coldVault: { walletID: coldStorageWalletID ?? null },
+                      shortfallSats: exitFeeShortfallSats,
+                    })}
+                    onSelect={(id) => {
+                      // Only CoinOS has a provider today. The others stay in the
+                      // list so the roadmap is visible, but must not pretend to
+                      // work.
+                      if (id !== 'coinos') {
+                        SimpleToast.show('Coming soon for this wallet', SimpleToast.SHORT);
+                        return;
+                      }
+                      setExitFundingOpen(false);
+                      (navigation as any).navigate('ArkExitFundingConfirmScreen', {
+                        sourceId: 'coinos',
+                        sourceLabel: 'CoinOS',
+                        shortfallSats: exitFeeShortfallSats,
+                        // Balance is read on the confirm screen; null means
+                        // "unknown", which plans for the full shortfall rather
+                        // than refusing.
+                        availableSats: null,
+                      });
+                    }}
+                  />
                 </>
               )}
 
