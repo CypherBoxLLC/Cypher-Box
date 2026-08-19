@@ -11,6 +11,7 @@ import {
     classifyArkDestination,
     estimateArkSendFee,
     executeArkSend,
+    isArkSendIndeterminate,
     labelForDestinationKind,
     type ArkDestination,
     type ArkSendFeeView,
@@ -149,8 +150,15 @@ export default function ArkSendReviewScreen({ route }: Props) {
         setAmountSats(sendAllAmount); // triggers re-estimate via the effect
     }, [sendAllAmount]);
 
+    // Latched once a send returns an INDETERMINATE outcome (see
+    // isArkSendIndeterminate). Never cleared: the whole point is that this
+    // screen must not offer to send again, because a retry to an ln-address
+    // mints a fresh invoice and can pay the recipient a second time.
+    const [sendIndeterminate, setSendIndeterminate] = useState(false);
+
     const canSend =
-        destinationValid && !!fee && grossWithinBalance && !isEstimating && !isSending;
+        destinationValid && !!fee && grossWithinBalance && !isEstimating && !isSending &&
+        !sendIndeterminate;
 
     const runSend = useCallback(async () => {
         if (!canSend || !fee) return;
@@ -167,9 +175,17 @@ export default function ArkSendReviewScreen({ route }: Props) {
             });
         } catch (err: any) {
             console.error('[ArkSendReview] send failed:', err);
-            setErrorMsg(
-                `Send failed: ${err?.message ?? 'unknown error'}. Your funds were not moved.`,
-            );
+            if (isArkSendIndeterminate(err)) {
+                // Outcome UNKNOWN. Do not claim the funds are safe, and do not
+                // re-arm Send: the payment may still settle, and a retry to an
+                // ln-address would mint a new invoice and pay twice.
+                setSendIndeterminate(true);
+                setErrorMsg(err?.message ?? 'This payment may still be in flight. Do not send it again.');
+            } else {
+                setErrorMsg(
+                    `Send failed: ${err?.message ?? 'unknown error'}. Your funds were not moved.`,
+                );
+            }
         } finally {
             setIsSending(false);
         }
