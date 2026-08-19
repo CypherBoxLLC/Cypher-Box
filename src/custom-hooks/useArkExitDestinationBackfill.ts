@@ -1,4 +1,4 @@
-import { useContext, useEffect } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 
 import {
     deriveArkExitAddress,
@@ -59,17 +59,38 @@ export default function useArkExitDestinationBackfill(): void {
         (s) => s.setArkExitDestinationAddress,
     );
 
+    // Last logged input signature. `wallets` arrives from context with a fresh
+    // array identity on nearly every provider render, so this effect re-runs
+    // constantly even when nothing it cares about changed.
+    const lastLoggedRef = useRef<string | null>(null);
+
     useEffect(() => {
         // Diagnostic: surface which guard short-circuits us so we can tell
         // "no Hot Vault" from "already set" from "wallets not loaded yet".
         // Cheap; remove once the feature has shipped a couple of releases.
-        console.log(
-            '[ArkExitBackfill] tick',
-            'arkAuth=', arkAuth,
-            'walletID=', walletID ? `${walletID.slice(0, 8)}…` : null,
-            'destination=', arkExitDestinationAddress ? `${arkExitDestinationAddress.slice(0, 12)}…` : null,
-            'walletsLen=', Array.isArray(wallets) ? wallets.length : 'not-array',
-        );
+        //
+        // Logged only when the inputs actually change. Unconditionally, this
+        // fired about once a second for an entire session (observed live during
+        // a 36h unilateral exit) and buried the exit-drive lines sitting next
+        // to it, which is the opposite of what a diagnostic is for. The effect
+        // body below is already a no-op once the destination is set, so it is
+        // only the log that needed rate-limiting, not the work.
+        const signature = [
+            arkAuth,
+            walletID ?? '',
+            arkExitDestinationAddress ?? '',
+            Array.isArray(wallets) ? wallets.length : 'not-array',
+        ].join('|');
+        if (lastLoggedRef.current !== signature) {
+            lastLoggedRef.current = signature;
+            console.log(
+                '[ArkExitBackfill] tick',
+                'arkAuth=', arkAuth,
+                'walletID=', walletID ? `${walletID.slice(0, 8)}…` : null,
+                'destination=', arkExitDestinationAddress ? `${arkExitDestinationAddress.slice(0, 12)}…` : null,
+                'walletsLen=', Array.isArray(wallets) ? wallets.length : 'not-array',
+            );
+        }
         if (!arkAuth) return;
         if (!walletID) return;
         if (!Array.isArray(wallets) || wallets.length === 0) return;
