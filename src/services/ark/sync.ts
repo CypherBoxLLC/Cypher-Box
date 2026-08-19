@@ -1,5 +1,7 @@
 import useAuthStore from '@Cypher/stores/authStore';
 
+import { decideAutoBoard } from './autoBoardDecision';
+
 import { ensureArkOnchainHandle, getArkWalletHandle, rotateArkOnchainEsplora, setLastOnchainBalanceSats } from './walletHandle';
 
 // Flat board-fee headroom (sats) subtracted from the boardable surplus when an
@@ -112,41 +114,31 @@ export async function syncArkWallet(): Promise<boolean> {
             //      touched the exit-funding flow) keeps the exact old boardAll
             //      behavior.
             const authState = useAuthStore.getState();
-            const reserveSats = authState.arkExitFeeReserveSats ?? 0;
-            const canBoard =
-                !authState.arkExitInProgress &&
-                onchainBal.confirmedSats > 0n &&
-                arkBal.pendingBoardSats === 0n;
-            if (canBoard && reserveSats > 0) {
-                // Board only the surplus above the reserve. Subtract a flat
-                // board-fee headroom so boardAmount's own fee can't dip the
-                // leftover below the reserve. Only board when the surplus
-                // clears the server board minimum (a smaller surplus can never
-                // board and would retry-storm), otherwise hold it on-chain.
-                const confirmed = Number(onchainBal.confirmedSats);
-                const excess = confirmed - reserveSats - BOARD_FEE_HEADROOM_SATS;
-                if (excess >= MIN_BOARD_SATS) {
-                    console.log(
-                        '[Ark sync] auto-board (reserve armed): boarding surplus',
-                        excess, 'sats; keeping', reserveSats, 'on-chain for exit fees',
-                    );
-                    try {
-                        await handle.boardAmount(BigInt(excess));
-                        console.log('[Ark sync] auto-board: boardAmount initiated');
-                    } catch (boardErr) {
-                        console.warn('[Ark sync] auto-board: boardAmount failed:', boardErr);
-                    }
-                } else if (__DEV__) {
-                    console.log(
-                        '[Ark sync] auto-board held: surplus', excess,
-                        'below board minimum; keeping funds on-chain for exit fees',
-                    );
+            const boardDecision = decideAutoBoard({
+                confirmedSats: Number(onchainBal.confirmedSats),
+                pendingBoardSats: Number(arkBal.pendingBoardSats),
+                exitInProgress: authState.arkExitInProgress,
+                armedReserveSats: authState.arkExitFeeReserveSats,
+                recommendedReserveSats: authState.arkExitRecommendedReserveSats,
+                minBoardSats: MIN_BOARD_SATS,
+                boardFeeHeadroomSats: BOARD_FEE_HEADROOM_SATS,
+            });
+            if (boardDecision.action === 'board-amount') {
+                console.log(
+                    '[Ark sync] auto-board: boarding surplus', boardDecision.sats,
+                    'sats; keeping', boardDecision.holdSats, 'on-chain for exit fees',
+                );
+                try {
+                    await handle.boardAmount(BigInt(boardDecision.sats));
+                    console.log('[Ark sync] auto-board: boardAmount initiated');
+                } catch (boardErr) {
+                    console.warn('[Ark sync] auto-board: boardAmount failed:', boardErr);
                 }
-            } else if (canBoard) {
+            } else if (boardDecision.action === 'board-all') {
                 console.log(
                     '[Ark sync] auto-board: detected',
                     String(onchainBal.confirmedSats),
-                    'sats unboarded onchain, initiating boardAll',
+                    'sats unboarded onchain and nothing to hold, initiating boardAll',
                 );
                 try {
                     await handle.boardAll();
@@ -154,8 +146,14 @@ export async function syncArkWallet(): Promise<boolean> {
                 } catch (boardErr) {
                     console.warn('[Ark sync] auto-board: boardAll failed:', boardErr);
                 }
-            } else if (authState.arkExitInProgress && onchainBal.confirmedSats > 0n && __DEV__) {
-                console.log('[Ark sync] auto-board skipped: exit in progress, holding on-chain funds for exit fees');
+            } else if (boardDecision.action === 'hold' && __DEV__) {
+                console.log(
+                    '[Ark sync] auto-board held: surplus', boardDecision.surplusSats,
+                    'below board minimum; keeping', boardDecision.holdSats,
+                    'on-chain for exit fees',
+                );
+            } else if (boardDecision.action === 'skip' && __DEV__) {
+                console.log('[Ark sync] auto-board skipped:', boardDecision.reason);
             }
 
             // Progress any pending boards through their phases. No-op when

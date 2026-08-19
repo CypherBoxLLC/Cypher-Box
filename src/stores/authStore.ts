@@ -278,6 +278,13 @@ export type AuthStateType = {
      * the user opens the "Fund exit fees" flow; reset on wallet teardown.
      */
     arkExitFeeReserveSats: number;
+    /**
+     * Last computed exit-cost estimate (computeExitFeeReserveSats). Persisted
+     * ONLY so the sync loop's auto-board can see it: the estimate is computed
+     * on the exit settings screen, but auto-board runs headless and would
+     * otherwise hold just what the user armed and board the rest away.
+     */
+    arkExitRecommendedReserveSats: number | null;
     arkUseHotVaultSeed: boolean;
     withdrawArkThreshold: any | null;
     reserveArkAmount: number;
@@ -304,6 +311,7 @@ export type AuthStateType = {
     setArkExitDrained: (state: boolean) => void;
     setArkExitStartedSats: (state: number | null) => void;
     setArkExitFeeReserveSats: (state: number) => void;
+    setArkExitRecommendedReserveSats: (state: number | null) => void;
     setArkUseHotVaultSeed: (state: boolean) => void;
     setWithdrawArkThreshold: (state: any) => void;
     setReserveArkAmount: (state: number) => void;
@@ -526,6 +534,7 @@ const createAuthStore = (
     arkExitDrained: false,
     arkExitStartedSats: null,
     arkExitFeeReserveSats: 0,
+    arkExitRecommendedReserveSats: null,
     arkUseHotVaultSeed: false,
     withdrawArkThreshold: 500000,
     reserveArkAmount: 100000,
@@ -603,6 +612,8 @@ const createAuthStore = (
     setArkExitDrained: (state: boolean) => set({ arkExitDrained: state }),
     setArkExitStartedSats: (state: number | null) => set({ arkExitStartedSats: state }),
     setArkExitFeeReserveSats: (state: number) => set({ arkExitFeeReserveSats: state }),
+    setArkExitRecommendedReserveSats: (state: number | null) =>
+        set({ arkExitRecommendedReserveSats: state }),
     setArkUseHotVaultSeed: (state: boolean) => set({ arkUseHotVaultSeed: state }),
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
     setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),

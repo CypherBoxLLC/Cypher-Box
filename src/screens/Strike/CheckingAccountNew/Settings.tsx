@@ -357,6 +357,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     arkExitStartedSats,
     setArkExitStartedSats,
     setArkExitFeeReserveSats,
+    setArkExitRecommendedReserveSats,
   } = useAuthStore() as any;
   const arkIosBackupReminderActive = useAuthStore((s) => s.arkIosBackupReminderActive);
   const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
@@ -1003,7 +1004,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     (async () => {
       try {
         const r = await computeExitFeeReserveSats();
-        if (!cancelled) setRecommendedReserveSats(r.recommendedSats);
+        if (!cancelled) {
+          setRecommendedReserveSats(r.recommendedSats);
+          // Persist it: auto-board runs in the sync loop with no access to this
+          // screen, and without the estimate it would hold only the armed
+          // reserve and board the rest away.
+          setArkExitRecommendedReserveSats(r.recommendedSats);
+        }
       } catch (err) {
         // Leave any prior recommendation in place; a transient failure
         // shouldn't flip a gated wallet to ungated.
