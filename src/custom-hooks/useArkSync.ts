@@ -9,6 +9,7 @@ import {
     cancelVtxoExpiryWarnings,
     cancelVtxoStuckSwapWarnings,
     claimArkExitsToAddress,
+    fetchClaimFeeRateSatPerVb,
     getArkCancelling,
     setArkCancelling,
     fetchArkBalance,
@@ -495,9 +496,20 @@ export default function useArkSync(): UseArkSync {
                         // return is NOT proof the funds left, and treating it as
                         // such pinned the exit "active" forever (the claim VTXO
                         // stayed claimable because nothing was ever relayed).
+                        let claimRateForLog = 0;
                         try {
+                            // Price the claim explicitly. Passing undefined lets
+                            // bark pick, and it picks for speed: observed live
+                            // bidding 779 sats to sweep a 698 sat output, which
+                            // it then refuses to build. The claim races nothing
+                            // once the CSV has matured, and its fee comes out of
+                            // the claimed value, so the 1-hour rate is correct
+                            // and "fastest" is actively harmful.
+                            const claimRate = await fetchClaimFeeRateSatPerVb();
+                            claimRateForLog = claimRate;
                             const claim = await claimArkExitsToAddress(
                                 arkExitDestinationAddress,
+                                BigInt(claimRate),
                             );
                             if (claim.txid) {
                                 _stamp(
@@ -516,10 +528,24 @@ export default function useArkSync(): UseArkSync {
                             // as-is so the next cycle retries; the claim VTXO
                             // stays listClaimableExits()-visible until the tx
                             // actually lands, which is the correct retry gate.
-                            console.warn(
-                                '[Ark exit] claim sweep failed (will retry next cycle):',
-                                claimErr?.message ?? claimErr,
-                            );
+                            // "Claim Fee Exceeds Output" is not a transient
+                            // failure and retrying identically cannot fix it:
+                            // the capsule is worth less than it costs to sweep
+                            // at the current rate. Name it, so it is not just
+                            // an anonymous warning repeating every drive tick.
+                            const msg = String(claimErr?.message ?? claimErr);
+                            if (/Claim Fee Exceeds Output/i.test(msg)) {
+                                console.warn(
+                                    '[Ark exit] claim UNECONOMIC at',
+                                    claimRateForLog, 'sat/vB:', msg,
+                                    '- will retry, but this cannot clear until the fee rate drops or more capsules ripen and batch.',
+                                );
+                            } else {
+                                console.warn(
+                                    '[Ark exit] claim sweep failed (will retry next cycle):',
+                                    msg,
+                                );
+                            }
                         }
                     }
 
