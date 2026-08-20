@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Vibration, View } from 'react-native';
+import { Image, ImageBackground, Vibration, View } from 'react-native';
 import Animated, {
     Easing,
     useAnimatedStyle,
@@ -10,7 +10,7 @@ import Animated, {
 import { ScreenLayout, Text } from '@Cypher/component-library';
 import { GradientButton, GradientCard } from '@Cypher/components';
 import Ring from '@Cypher/components/RingEffect';
-import { Electrik } from '@Cypher/assets/images';
+import { Bitcoin, BitcoinTower, Electrik } from '@Cypher/assets/images';
 import { dispatchReset } from '@Cypher/helpers/navigation';
 import { getStrikeCurrency } from '@Cypher/helpers/coinosHelper';
 import { colors } from '@Cypher/style-guide';
@@ -37,6 +37,19 @@ import styles from '../../Transaction/styles';
  *   value:    net sats sent (string)
  *   valueUsd: fiat equivalent (string, already formatted to 2dp)
  *   currency: fiat currency code
+ *
+ * Everything below is optional and exists because this screen is no longer
+ * only a Lightning send. The exit-fee top-up lands here too, and it is an
+ * ON-CHAIN deposit that is not usable until it confirms. Shown unchanged, it
+ * told that user "Payment Sent / 0 sats / Lightning Network": the wrong amount,
+ * the wrong rail, and an air of finality the transaction had not earned.
+ *
+ *   title:        headline, default 'Payment Sent'
+ *   networkLabel: rail under the animation, default 'Lightning Network'
+ *   isOnchain:    swap the Lightning bolt for the Bitcoin visual the on-chain
+ *                 broadcast screen already uses
+ *   note:         a line under the amount for anything the user still has to
+ *                 know, e.g. that an on-chain deposit has to confirm first
  */
 
 interface Props {
@@ -45,6 +58,10 @@ interface Props {
             value?: string | number;
             valueUsd?: string;
             currency?: string;
+            title?: string;
+            networkLabel?: string;
+            isOnchain?: boolean;
+            note?: string;
         };
     };
 }
@@ -53,6 +70,10 @@ export default function ArkSendSuccessScreen({ route }: Props) {
     const value = String(route?.params?.value ?? '0');
     const valueUsd = route?.params?.valueUsd ?? '0.00';
     const currency = route?.params?.currency ?? 'USD';
+    const title = route?.params?.title ?? 'Payment Sent';
+    const networkLabel = route?.params?.networkLabel ?? 'Lightning Network';
+    const isOnchain = route?.params?.isOnchain === true;
+    const note = route?.params?.note;
 
     const [response, setResponse] = useState(false);
     const fadeInOpacity = useSharedValue(0);
@@ -85,7 +106,7 @@ export default function ArkSendSuccessScreen({ route }: Props) {
                     {response && (
                         <Animated.View style={animatedStyle}>
                             <Text h1 semibold center>
-                                Payment Sent
+                                {title}
                             </Text>
                             <Text semibold center style={styles.sats}>
                                 {value} sats
@@ -94,6 +115,20 @@ export default function ArkSendSuccessScreen({ route }: Props) {
                                 {getStrikeCurrency(currency)}
                                 {valueUsd}
                             </Text>
+                            {!!note && (
+                                <Text
+                                    center
+                                    style={{
+                                        fontSize: 13,
+                                        color: '#BBB',
+                                        lineHeight: 18,
+                                        marginTop: 10,
+                                        paddingHorizontal: 24,
+                                    }}
+                                >
+                                    {note}
+                                </Text>
+                            )}
                         </Animated.View>
                     )}
                 </View>
@@ -113,27 +148,56 @@ export default function ArkSendSuccessScreen({ route }: Props) {
                             Transaction screen note). White ark gradient stands
                             in for Strike's pink; the dark inner circles keep
                             the bolt readable. */}
-                        <GradientCard
-                            style={styles.gradient}
-                            linearStyle={styles.gradient}
-                            colors_={[colors.ark.gradient1, colors.ark.gradient2]}
-                        >
-                            <View style={styles.inner}>
-                                <GradientCard
-                                    style={styles.gradientInner}
-                                    linearStyle={styles.gradientInner}
-                                    colors_={[colors.ark.gradient1, colors.ark.gradient2]}
-                                >
-                                    <View style={styles.inside}>
-                                        <Image
-                                            source={Electrik}
-                                            style={styles.image}
-                                            resizeMode="contain"
-                                        />
-                                    </View>
-                                </GradientCard>
-                            </View>
-                        </GradientCard>
+                        {isOnchain ? (
+                            // The same Bitcoin visual the on-chain broadcast
+                            // screen uses. A Lightning bolt over an on-chain
+                            // deposit is not a styling detail: it tells the
+                            // user the wrong thing about what just happened
+                            // and about how soon they can use it.
+                            <ImageBackground
+                                source={BitcoinTower}
+                                style={styles.image}
+                                resizeMode="contain"
+                            >
+                                <Image
+                                    source={Bitcoin}
+                                    // Matches TransactionBroadCast's `bitcoin`
+                                    // style, which the shared Transaction
+                                    // stylesheet does not carry.
+                                    style={{
+                                        width: 60,
+                                        height: 60,
+                                        marginTop: 60,
+                                        justifyContent: 'center',
+                                        alignSelf: 'center',
+                                        position: 'absolute',
+                                    }}
+                                    resizeMode="contain"
+                                />
+                            </ImageBackground>
+                        ) : (
+                            <GradientCard
+                                style={styles.gradient}
+                                linearStyle={styles.gradient}
+                                colors_={[colors.ark.gradient1, colors.ark.gradient2]}
+                            >
+                                <View style={styles.inner}>
+                                    <GradientCard
+                                        style={styles.gradientInner}
+                                        linearStyle={styles.gradientInner}
+                                        colors_={[colors.ark.gradient1, colors.ark.gradient2]}
+                                    >
+                                        <View style={styles.inside}>
+                                            <Image
+                                                source={Electrik}
+                                                style={styles.image}
+                                                resizeMode="contain"
+                                            />
+                                        </View>
+                                    </GradientCard>
+                                </View>
+                            </GradientCard>
+                        )}
                     </View>
                 )}
 
@@ -142,7 +206,7 @@ export default function ArkSendSuccessScreen({ route }: Props) {
                 {response && (
                     <>
                         <Text semibold center style={styles.text}>
-                            Lightning Network
+                            {networkLabel}
                         </Text>
                         {/* White button → black label for contrast (the
                             white-on-white trap the rest of the Ark UI hit). */}
