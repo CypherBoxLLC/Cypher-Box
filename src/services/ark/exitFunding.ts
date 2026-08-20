@@ -22,8 +22,19 @@ import useAuthStore from '@Cypher/stores/authStore';
 
 import { barkStateTag } from './barkState';
 import { assertNoActiveArkExit } from './exit';
-import type { ExitEconomicPolicy, ExitTriageResult, ExitTriageVtxo } from './exitTriage';
-import { RESERVE_FLOOR_SATS, SPIKE_MULT, triageArkExit } from './exitTriage';
+import type {
+    ExitEconomicPolicy,
+    ExitFeeUrgency,
+    ExitTriageResult,
+    ExitTriageVtxo,
+} from './exitTriage';
+import {
+    RESERVE_FLOOR_SATS,
+    SPIKE_MULT,
+    exitFeeUrgency,
+    triageArkExit,
+    urgencyFromSlackBlocks,
+} from './exitTriage';
 import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
@@ -133,6 +144,80 @@ export async function fetchClaimFeeRateSatPerVb(): Promise<number> {
     }
 }
 
+/**
+ * Which mempool.space rate each urgency band bids at. See ExitFeeUrgency for
+ * why the exit tree is not always in a hurry.
+ *
+ * `minimumFee` is deliberately absent. It is the relay floor, not a target, and
+ * an exit tx that fails to confirm does not merely arrive late, it can leave the
+ * capsule to be swept.
+ */
+const URGENCY_RATE_FIELD: Record<ExitFeeUrgency, string> = {
+    relaxed: 'economyFee',
+    moderate: 'hourFee',
+    soon: 'halfHourFee',
+    urgent: 'fastestFee',
+};
+
+/**
+ * Fee rate for the exit-tree CPFP children, at the urgency the capsules
+ * actually have.
+ *
+ * Falls back to the fastest rate present in the response, and then to the
+ * congestion-hedge constant, so a malformed or partial response bids HIGH.
+ * Under-bidding here risks the capsule; over-bidding only parks sats on-chain
+ * that stay the user's own.
+ */
+export type ExitFeeRateTable = Record<ExitFeeUrgency, number>;
+
+/**
+ * All four bands in ONE fetch.
+ *
+ * Fetched together because pricing the exit takes two passes (see
+ * computeArkExitPlan) and a second call between them would let the market move
+ * underneath the comparison, as well as costing a round trip on the exit path.
+ *
+ * Every fallback bids HIGH: a missing field falls back to the fastest rate in
+ * the response, an unusable response to the congestion hedge. Under-bidding
+ * risks the capsule, over-bidding only parks sats that stay the user's own.
+ */
+export async function fetchExitFeeRates(): Promise<ExitFeeRateTable> {
+    const flat = (r: number): ExitFeeRateTable => ({
+        relaxed: r, moderate: r, soon: r, urgent: r,
+    });
+    try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch('https://mempool.space/api/v1/fees/recommended', {
+            signal: controller.signal,
+        });
+        clearTimeout(t);
+        if (!res.ok) return flat(RESERVE_FEE_FALLBACK_RATE);
+        const rec = await res.json();
+        const fastest = Number(rec?.fastestFee);
+        if (!isFinite(fastest) || fastest <= 0) return flat(RESERVE_FEE_FALLBACK_RATE);
+        const pick = (band: ExitFeeUrgency) => {
+            const v = Number(rec?.[URGENCY_RATE_FIELD[band]]);
+            return Math.max(1, Math.ceil(isFinite(v) && v > 0 ? v : fastest));
+        };
+        return {
+            relaxed: pick('relaxed'),
+            moderate: pick('moderate'),
+            soon: pick('soon'),
+            urgent: pick('urgent'),
+        };
+    } catch {
+        return flat(RESERVE_FEE_FALLBACK_RATE);
+    }
+}
+
+/** One band, for callers that already know their urgency (the exit drive). */
+export async function fetchExitTreeFeeRateSatPerVb(
+    urgency: ExitFeeUrgency,
+): Promise<number> {
+    return (await fetchExitFeeRates())[urgency];
+}
+
 export async function fetchFastFeeRateSatPerVb(): Promise<number> {
     try {
         const controller = new AbortController();
@@ -199,23 +284,64 @@ async function readExitCandidates(): Promise<ExitTriageVtxo[] | null> {
  *
  * Returns null only when there is no wallet handle or the VTXO read failed.
  */
+/**
+ * Deadline height from the most recent plan, for the caller to persist when it
+ * actually starts an exit. Module-level rather than on the result so the plan
+ * type stays a pure description of the exit set.
+ */
+let lastExitFeeDeadlineHeight: number | null = null;
+
+/** Deadline height the last computed plan was priced against. */
+export function getLastExitFeeDeadlineHeight(): number | null {
+    return lastExitFeeDeadlineHeight;
+}
+
 export async function computeArkExitPlan(
     opts?: { economicPolicy?: ExitEconomicPolicy },
 ): Promise<ExitTriageResult | null> {
     const vtxos = await readExitCandidates();
     if (!vtxos) return null;
 
-    const feeRateSatPerVb = await fetchFastFeeRateSatPerVb();
     const s = useAuthStore.getState();
+    const chainTipHeight = s.arkChainTipHeight ?? null;
+    const vtxoExitDeltaBlocks = s.arkVtxoExitDeltaBlocks ?? null;
 
-    const plan = triageArkExit({
-        vtxos,
-        feeRateSatPerVb,
-        chainTipHeight: s.arkChainTipHeight ?? null,
-        vtxoExitDeltaBlocks: s.arkVtxoExitDeltaBlocks ?? null,
-        maxVtxoExitDepth: s.arkMaxVtxoExitDepth ?? null,
-        economicPolicy: opts?.economicPolicy,
-    });
+    const rates = await fetchExitFeeRates();
+    const runTriage = (feeRateSatPerVb: number) =>
+        triageArkExit({
+            vtxos,
+            feeRateSatPerVb,
+            chainTipHeight,
+            vtxoExitDeltaBlocks,
+            maxVtxoExitDepth: s.arkMaxVtxoExitDepth ?? null,
+            economicPolicy: opts?.economicPolicy,
+        });
+
+    // Pricing and selection depend on each other: the rate decides which
+    // capsules are worth exiting, and which capsules are being exited decides
+    // how urgent the rate has to be. Resolved in two passes rather than a fixed
+    // point, because the first pass IS the old behaviour and is therefore always
+    // a safe answer to fall back to.
+    //
+    // Pass 1 prices at the fastest rate, unconditionally, exactly as before. Its
+    // selection is what reveals the real urgency.
+    const urgentPlan = runTriage(rates.urgent);
+    let urgency = exitFeeUrgency(urgentPlan.selected);
+    let plan = urgentPlan;
+
+    if (rates[urgency.urgency] < rates.urgent) {
+        // Pass 2 at the rate the runway actually justifies. A cheaper rate can
+        // only ADD capsules, so re-read the urgency of that larger set: if a
+        // newcomer is tighter than anything in pass 1, the cheaper rate was not
+        // justified after all and pass 1 stands.
+        const relaxedPlan = runTriage(rates[urgency.urgency]);
+        const recheck = exitFeeUrgency(relaxedPlan.selected);
+        if (rates[recheck.urgency] <= rates[urgency.urgency]) {
+            plan = relaxedPlan;
+            urgency = recheck;
+        }
+    }
+    lastExitFeeDeadlineHeight = urgency.deadlineHeight;
 
     if (__DEV__) {
         console.log(
@@ -226,6 +352,8 @@ export async function computeArkExitPlan(
             'reserve=', plan.reserveSats, 'over totalExitVb=', plan.totalExitVb,
             'at', plan.feeRateSatPerVb, 'sat/vB (claim at', plan.claimFeeRateSatPerVb,
             '); policy=', plan.economicPolicy,
+            '; urgency=', urgency.urgency, 'slack=', urgency.tightestSlackBlocks, 'blocks',
+            '; rates=', JSON.stringify(rates),
             '; netLoss=', plan.netLossSats, '; overridable=', plan.overridableCount,
             plan.usedAssumedExitDelta ? '; exit delta ASSUMED' : '',
         );
@@ -318,6 +446,39 @@ export async function fetchArkExitParams(): Promise<void> {
     } catch (err) {
         if (__DEV__) console.warn('[Ark exit-funding] arkInfo (exit params) threw:', err);
     }
+}
+
+/**
+ * Fee rate the exit drive should bid for its CPFP children RIGHT NOW.
+ *
+ * `progressExits` used to be called with no rate at all, so bark chose one and
+ * whatever it chose had nothing to do with the reserve the user had been asked
+ * to fund. That was survivable only because the reserve was sized at the
+ * fastest rate and therefore almost always generous. Now that the reserve is
+ * priced to the runway, the bid has to be priced the same way or the two can
+ * disagree in the dangerous direction.
+ *
+ * Re-derived every tick from the persisted deadline height and the current tip,
+ * so a capsule drifting toward its expiry starts bidding harder on its own.
+ * Costs one small fee-API call and no wallet read.
+ *
+ * Returns undefined when there is no deadline to price against, which leaves
+ * the SDK's own choice in place rather than inventing one.
+ */
+export async function fetchArkExitDriveFeeRate(): Promise<bigint | undefined> {
+    const s = useAuthStore.getState();
+    const deadline = s.arkExitFeeDeadlineHeight;
+    const tip = s.arkChainTipHeight;
+    if (typeof deadline !== 'number' || typeof tip !== 'number') return undefined;
+    const urgency = urgencyFromSlackBlocks(deadline - tip);
+    const rate = await fetchExitTreeFeeRateSatPerVb(urgency);
+    if (__DEV__) {
+        console.log(
+            '[Ark exit-drive] bidding', rate, 'sat/vB;',
+            'urgency=', urgency, 'slack=', deadline - tip, 'blocks',
+        );
+    }
+    return BigInt(Math.max(1, Math.ceil(rate)));
 }
 
 /**

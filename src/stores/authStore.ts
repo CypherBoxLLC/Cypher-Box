@@ -240,6 +240,17 @@ export type AuthStateType = {
      */
     arkMaxVtxoExitDepth: number | null;
     /**
+     * Block height by which the tightest capsule in an in-flight exit must have
+     * cleared its timelock. Written when the exit starts.
+     *
+     * The exit drive prices its CPFP bids from how much runway is left, and the
+     * runway shrinks every block over an exit that runs for days. Persisting the
+     * DEADLINE rather than the urgency band lets the drive re-derive the band
+     * each tick against the current tip, with no extra wallet read and no stale
+     * band. Null means unknown, which the pricing treats as most urgent.
+     */
+    arkExitFeeDeadlineHeight: number | null;
+    /**
      * Unilateral-exit state — set when user taps "Emergency Exit" in
      * Settings. While true, `useArkSync` switches modes: it stops issuing
      * normal sync/refresh calls (they'd race the exit machinery) and instead
@@ -324,6 +335,7 @@ export type AuthStateType = {
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
     setArkRoundIntervalSecs: (state: number | null) => void;
+    setArkExitFeeDeadlineHeight: (state: number | null) => void;
     setArkExitParams: (state: {
         vtxoExitDeltaBlocks: number | null;
         maxVtxoExitDepth: number | null;
@@ -553,6 +565,7 @@ const createAuthStore = (
     arkRoundIntervalSecs: null,
     arkVtxoExitDeltaBlocks: null,
     arkMaxVtxoExitDepth: null,
+    arkExitFeeDeadlineHeight: null,
     arkExitInProgress: false,
     arkExitDestinationAddress: null,
     arkExitStartedAt: null,
@@ -631,6 +644,7 @@ const createAuthStore = (
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
     setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
+    setArkExitFeeDeadlineHeight: (state: number | null) => set({ arkExitFeeDeadlineHeight: state }),
     setArkExitParams: (state) => set({
         arkVtxoExitDeltaBlocks: state.vtxoExitDeltaBlocks,
         arkMaxVtxoExitDepth: state.maxVtxoExitDepth,
@@ -688,6 +702,7 @@ const createAuthStore = (
             // wallet triaging against that worst case until the next arkInfo
             // fetch lands, which excludes capsules that had the runway all
             // along. Same reasoning as arkBgRefreshEnabled below.
+            arkExitFeeDeadlineHeight: null,
             arkExitInProgress: false,
             arkExitStartedAt: null,
             arkExitClaimBatchSince: null,

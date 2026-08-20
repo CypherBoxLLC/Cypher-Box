@@ -39,6 +39,7 @@ import {
   disconnectGoogleDrive,
   describeExitExclusion,
   estimateExitFeeConvert,
+  getLastExitFeeDeadlineHeight,
   estimateArkOnchainRecover,
   recoverArkOnchainBoard,
   fetchArkExitVtxos,
@@ -360,6 +361,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     setArkExitStartedSats,
     setArkExitFeeReserveSats,
     setArkExitRecommendedReserveSats,
+    setArkExitFeeDeadlineHeight,
   } = useAuthStore() as any;
   const arkIosBackupReminderActive = useAuthStore((s) => s.arkIosBackupReminderActive);
   const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
@@ -1425,6 +1427,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             onPress: async () => {
               try {
                 await startArkEmergencyExit(exitPlan.selectedIds);
+                // Persist what the reserve was priced against, so the drive can
+                // re-derive its bid each tick as the runway shrinks.
+                setArkExitFeeDeadlineHeight(getLastExitFeeDeadlineHeight());
                 setArkExitDestinationAddress(address);
                 setArkExitStartedAt(Date.now());
                 // Fresh exit: clear any stale "drained" flag from a prior exit

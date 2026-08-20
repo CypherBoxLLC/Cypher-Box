@@ -220,6 +220,9 @@ export type ExitTriageEntry = {
     blocksUntilExpiry: number | null;
     /** Blocks of runway this capsule needs: confirmation budget + CSV delta. */
     requiredRunwayBlocks: number;
+    /** Absolute height the capsule expires at, so callers can turn slack back
+     *  into a fixed deadline that stays valid as the chain advances. */
+    expiryHeight: number;
     included: boolean;
     reason?: ExitExclusionReason;
     notes: ExitTriageNote[];
@@ -356,6 +359,115 @@ export function claimRateFromExitRate(feeRateSatPerVb: number): number {
     return Math.min(CLAIM_RATE_MAX, Math.max(CLAIM_RATE_MIN, rate));
 }
 
+/**
+ * How much of a hurry the exit tree is actually in.
+ *
+ * The reserve used to be priced at the mempool's "fastest" rate unconditionally.
+ * That is the wrong question. The exit tree is not racing the next block, it is
+ * racing the capsule's EXPIRY, because a capsule the server sweeps before its
+ * exit clears the CSV is lost. A capsule with weeks of runway has no reason to
+ * bid for next-block confirmation, and paying for it inflates the reserve the
+ * user is asked to fund by several times.
+ *
+ * Measured 2026-08-20: the live wallet's capsules sat about 3,700 blocks clear
+ * of the runway they needed, roughly 26 days, while the app priced their exit at
+ * a fastestFee of 7 against an economyFee of 2. That is a 3.5x over-demand for
+ * urgency that did not exist.
+ *
+ * This is the same mistake #187 fixed for the claim, in the other direction:
+ * there, a rate chosen for speed made a claim impossible to build. Here it makes
+ * a reserve impossible to fund.
+ *
+ * Bands are deliberately conservative and the drive re-evaluates on every tick,
+ * so a capsule that drifts toward its expiry climbs the bands and starts bidding
+ * harder well before it is in trouble.
+ */
+export type ExitFeeUrgency = 'relaxed' | 'moderate' | 'soon' | 'urgent';
+
+/** Spare blocks ABOVE the runway a capsule needs, per band. */
+export const URGENCY_RELAXED_BLOCKS = 1008; // ~1 week
+export const URGENCY_MODERATE_BLOCKS = 288; // ~2 days
+export const URGENCY_SOON_BLOCKS = 144; // ~1 day
+
+export type ExitFeeUrgencyResult = {
+    urgency: ExitFeeUrgency;
+    /** Spare blocks the tightest exitable capsule has, null when unknowable. */
+    tightestSlackBlocks: number | null;
+    /**
+     * Block height by which the tightest capsule's exit must have cleared.
+     * Fixed, unlike the slack, so persisting THIS lets the drive re-derive
+     * urgency each tick against the current tip without another wallet read,
+     * and without the band going stale as the exit runs for days.
+     */
+    deadlineHeight: number | null;
+    /** Capsules the band was derived from. */
+    consideredCount: number;
+};
+
+/**
+ * Band for a given slack. Split out so the exit drive can re-derive urgency
+ * from a persisted deadline height and the current tip, using the same
+ * thresholds the reserve was sized with.
+ */
+export function urgencyFromSlackBlocks(slackBlocks: number | null): ExitFeeUrgency {
+    if (slackBlocks == null || !Number.isFinite(slackBlocks)) return 'urgent';
+    if (slackBlocks >= URGENCY_RELAXED_BLOCKS) return 'relaxed';
+    if (slackBlocks >= URGENCY_MODERATE_BLOCKS) return 'moderate';
+    if (slackBlocks >= URGENCY_SOON_BLOCKS) return 'soon';
+    return 'urgent';
+}
+
+/**
+ * Urgency for an exit set, from the tightest slack in it.
+ *
+ * Takes triaged ENTRIES, not raw capsules, and that is the whole point. An
+ * earlier version read the candidate list and got it backwards on the first
+ * real wallet it saw: two dust capsules 22 blocks from their runway priced the
+ * entire exit as urgent, when neither was going to be exited at all. Pricing
+ * has to follow selection, or capsules the exit is abandoning still get to
+ * decide what it pays.
+ *
+ * Entries already carry `blocksUntilExpiry` and `requiredRunwayBlocks`, so this
+ * is a min over their difference and nothing more.
+ *
+ * An empty set, or one whose runway cannot be read, yields 'urgent'.
+ * Over-reserving parks sats the user still owns; under-reserving stalls the
+ * exit and can cost the capsule, so unknown resolves toward paying more.
+ */
+export function exitFeeUrgency(
+    entries: readonly ExitTriageEntry[],
+): ExitFeeUrgencyResult {
+    let tightest: number | null = null;
+    let deadlineHeight: number | null = null;
+    let consideredCount = 0;
+
+    for (const e of entries ?? []) {
+        if (e.blocksUntilExpiry == null) continue;
+        const slack = e.blocksUntilExpiry - e.requiredRunwayBlocks;
+        consideredCount++;
+        if (tightest == null || slack < tightest) tightest = slack;
+    }
+
+    if (tightest != null && entries.length > 0) {
+        // Recover the absolute height the tightest capsule must clear by, so
+        // the drive can re-derive urgency later against a fresh tip.
+        for (const e of entries) {
+            if (e.blocksUntilExpiry == null) continue;
+            if (e.blocksUntilExpiry - e.requiredRunwayBlocks === tightest) {
+                deadlineHeight = e.expiryHeight - e.requiredRunwayBlocks;
+                break;
+            }
+        }
+    }
+
+    return {
+        urgency: urgencyFromSlackBlocks(tightest),
+        tightestSlackBlocks: tightest,
+        deadlineHeight,
+        consideredCount,
+    };
+}
+
 // --- Triage ----------------------------------------------------------------
 
 /**
@@ -426,6 +538,7 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
             economic,
             blocksUntilExpiry,
             requiredRunwayBlocks: runway,
+            expiryHeight: Math.max(0, Math.floor(Number(v.expiryHeight) || 0)),
         };
 
         const exclude = (reason: ExitExclusionReason) => {
