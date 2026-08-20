@@ -466,9 +466,29 @@ export default function useArkSync(): UseArkSync {
                     // an ordinary UTXO that only this wallet can spend, with no
                     // deadline and nobody to race.
                     const exitVtxosForBatch = await fetchArkExitVtxos();
-                    const stillProgressing = exitVtxosForBatch.filter(
+                    const stragglers = exitVtxosForBatch.filter(
                         (v) => isActiveExit(v) && !v.isClaimable,
-                    ).length;
+                    );
+                    const stillProgressing = stragglers.length;
+
+                    // The ripening schedule is knowable in advance:
+                    // AwaitingDelta carries the exact block each straggler
+                    // becomes claimable at, fixed from the moment its leaf
+                    // confirmed. Handing those to the decision lets it wait on
+                    // the chain rather than on a clock, which is what makes the
+                    // whole exit land as one UTXO instead of several. A
+                    // straggler still Processing has no such height yet, and
+                    // those are what the wall-clock backstop is for.
+                    const pendingClaimableHeights: number[] = [];
+                    let unknownScheduleCount = 0;
+                    for (const v of stragglers) {
+                        const h = Number(
+                            (v.state as { inner?: { claimableHeight?: number } })?.inner
+                                ?.claimableHeight ?? 0,
+                        );
+                        if (Number.isFinite(h) && h > 0) pendingClaimableHeights.push(h);
+                        else unknownScheduleCount += 1;
+                    }
 
                     const batchDecision = decideExitClaimBatch({
                         claimableCount: claimable.length,
@@ -476,6 +496,9 @@ export default function useArkSync(): UseArkSync {
                         batchSince: useAuthStore.getState().arkExitClaimBatchSince ?? null,
                         now: Date.now(),
                         maxWaitMs: EXIT_CLAIM_BATCH_MAX_WAIT_MS,
+                        tipHeight: useAuthStore.getState().arkChainTipHeight ?? null,
+                        pendingClaimableHeights,
+                        unknownScheduleCount,
                     });
                     if (
                         (useAuthStore.getState().arkExitClaimBatchSince ?? null) !==
@@ -487,7 +510,10 @@ export default function useArkSync(): UseArkSync {
                     if (claimable.length > 0 && !claimBatchReady) {
                         _stamp(
                             `exit claim held for batching (${batchDecision.reason}): ` +
-                            `${claimable.length} ready, ${stillProgressing} still progressing`,
+                            `${claimable.length} ready, ${stillProgressing} still progressing` +
+                            (batchDecision.blocksUntilAllReady != null
+                                ? `, ${batchDecision.blocksUntilAllReady} blocks to go`
+                                : ''),
                         );
                     }
 
