@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import SimpleToast from 'react-native-simple-toast';
 
-import { ScreenLayout, Text } from '@Cypher/component-library';
-import { SwipeButton } from '@Cypher/components';
+import { Input, ScreenLayout, Text } from '@Cypher/component-library';
+import { GradientCard, SwipeButton } from '@Cypher/components';
 import { colors } from '@Cypher/style-guide';
 import { formatNumber } from '@Cypher/helpers/coinosHelper';
 import useAuthStore from '@Cypher/stores/authStore';
@@ -84,11 +84,19 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
 
     const [address, setAddress] = useState<string | null>(null);
     const [feeSats, setFeeSats] = useState<number | null>(null);
+    // What the user wants to LAND on-chain. Seeded with the shortfall, because
+    // that is the number that clears the gate, but editable: the exit accepts
+    // partial funding and a user may only want to part-fund it now.
+    const [amountText, setAmountText] = useState(
+        shortfallSats > 0 ? String(Math.floor(shortfallSats)) : '',
+    );
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
     // Why preparation failed, if it did. Distinct from a plan that simply is
     // not fundable: this one means we never got far enough to compute a plan.
     const [prepError, setPrepError] = useState<string | null>(null);
+    // Debounce handle for re-estimating the fee as the amount is typed.
+    const feeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Latched once an outcome becomes unknown. Never cleared: the point is that
     // this screen must not offer to send again. Mirrors the Ark send review.
     const [indeterminate, setIndeterminate] = useState(false);
@@ -145,15 +153,62 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
         };
     }, [shortfallSats]);
 
+    /** Digits only. An empty or zero field is "nothing to send", not an error
+     *  to shout about while the user is still typing. */
+    const amountSats = useMemo(() => {
+        const digits = amountText.replace(/[^0-9]/g, '');
+        const n = digits ? parseInt(digits, 10) : 0;
+        return Number.isFinite(n) ? n : 0;
+    }, [amountText]);
+
     const plan = useMemo(
         () =>
             planExitFunding({
-                shortfallSats,
+                // The field is the target now. planExitFunding calls it a
+                // shortfall because that is what seeds it, but it only ever
+                // means "sats the user wants to land".
+                shortfallSats: amountSats,
                 availableSats,
                 feeSats: feeSats ?? 0,
             }),
-        [shortfallSats, availableSats, feeSats],
+        [amountSats, availableSats, feeSats],
     );
+
+    /** True once the field no longer covers the gap the exit reported. */
+    const underSuggested = shortfallSats > 0 && amountSats > 0 && amountSats < shortfallSats;
+
+    // The fee depends on the amount, so a fee quoted for the mount-time
+    // shortfall goes stale the moment the field is edited, and "Leaves your
+    // wallet" is built from it. Re-estimate on a debounce rather than per
+    // keystroke: this is a network call to CoinOS.
+    useEffect(() => {
+        if (!address || amountSats <= 0) return;
+        if (feeTimer.current) clearTimeout(feeTimer.current);
+        let cancelled = false;
+        feeTimer.current = setTimeout(() => {
+            (async () => {
+                try {
+                    const raw = await withTimeout(
+                        bitcoinSendFee(amountSats, address, 0),
+                        PREPARE_TIMEOUT_MS,
+                        'Estimating the network fee',
+                    );
+                    const parsed =
+                        typeof raw === 'string' && raw.trim().startsWith('{')
+                            ? JSON.parse(raw)
+                            : null;
+                    if (!cancelled) setFeeSats(Number(parsed?.fee ?? 0) || 0);
+                } catch {
+                    // Keep the last estimate. A failed re-quote makes the
+                    // preview less precise; it must not blank the screen.
+                }
+            })();
+        }, 500);
+        return () => {
+            cancelled = true;
+            if (feeTimer.current) clearTimeout(feeTimer.current);
+        };
+    }, [amountSats, address]);
 
     // Reasons the swipe can never succeed, as opposed to "not yet". Ordered so
     // the most specific wins: an indeterminate send outranks a bad plan.
@@ -165,9 +220,11 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
             ? 'Cannot continue until the deposit address is available.'
             : sourceId !== 'coinos'
               ? `Funding from ${sourceLabel} is not available yet.`
-              : !plan.ok
-                ? plan.reason
-                : null;
+              : amountSats <= 0
+                ? 'Enter an amount to send.'
+                : !plan.ok
+                  ? plan.reason
+                  : null;
 
     const fiat = (sats: number) =>
         rate > 0 ? `${currencySymbol}${((sats / SATS_PER_BTC) * rate).toFixed(2)}` : '';
@@ -183,7 +240,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
         try {
             const res = await fundExitFeesFromCoinos(
                 {
-                    shortfallSats,
+                    shortfallSats: amountSats,
                     availableSats,
                     currentReserveSats: arkExitFeeReserveSats ?? 0,
                     idempotencyKey: idempotencyKey.current,
@@ -227,11 +284,21 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
         }
     };
 
-    const Row = ({ label, value, hint }: { label: string; value: string; hint?: string }) => (
+    const Row = ({
+        label,
+        value,
+        hint,
+        wrap,
+    }: {
+        label: string;
+        value: string;
+        hint?: string;
+        wrap?: boolean;
+    }) => (
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 }}>
             <Text style={{ fontSize: 14, color: '#BBB' }}>{label}</Text>
             <View style={{ alignItems: 'flex-end', flex: 1, paddingLeft: 12 }}>
-                <Text bold style={{ fontSize: 14 }} numberOfLines={1}>
+                <Text bold style={{ fontSize: 14 }} numberOfLines={wrap ? 2 : 1}>
                     {value}
                 </Text>
                 {!!hint && <Text style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{hint}</Text>}
@@ -241,7 +308,11 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
 
     return (
         <ScreenLayout disableScroll showToolbar isBackButton title="Fund exit fees">
-            <View style={{ paddingHorizontal: 20, flex: 1 }}>
+            <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 16 }}
+                keyboardShouldPersistTaps="handled"
+            >
                 {loading ? (
                     <ActivityIndicator color={colors.pink.default} style={{ marginTop: 40 }} />
                 ) : (
@@ -281,6 +352,42 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                             money-moving confirmation. A details panel is the
                             plain bordered View the sibling Ark review screens
                             use. */}
+                        {/* Amount. GradientCard's fixed 60px height is
+                            CORRECT here: it is the single-field pill the rest
+                            of the app uses for exactly this, which is why the
+                            details panel below is a plain View instead. */}
+                        <GradientCard
+                            style={{ marginTop: 12 }}
+                            colors_={
+                                amountSats > 0
+                                    ? [colors.pink.extralight, colors.pink.default]
+                                    : [colors.gray.thin, colors.gray.thin2]
+                            }
+                        >
+                            <Input
+                                value={amountText}
+                                onChange={(t: string) => setAmountText(t.replace(/[^0-9]/g, ''))}
+                                keyboardType="number-pad"
+                                label="Amount in sats"
+                                maxLength={12}
+                            />
+                        </GradientCard>
+
+                        {shortfallSats > 0 && (
+                            <Text
+                                style={{
+                                    fontSize: 12,
+                                    color: underSuggested ? '#FFD54F' : '#888',
+                                    marginTop: 8,
+                                    lineHeight: 17,
+                                }}
+                            >
+                                {underSuggested
+                                    ? `Suggested ${formatNumber(shortfallSats)} sats. Less than that still helps: the exit runs as far as these fees allow.`
+                                    : `Suggested ${formatNumber(shortfallSats)} sats, which is what the exit is short by.`}
+                            </Text>
+                        )}
+
                         <View
                             style={{
                                 marginTop: 12,
@@ -292,7 +399,13 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                         >
                             <View style={{ padding: 16 }}>
                                 <Row label="From" value={sourceLabel} />
-                                <Row label="To" value="Bark on-chain reserve" hint={address ?? undefined} />
+                                <Row label="To" value="Bark on-chain wallet" />
+                                <Row
+                                    wrap
+                                    label="Address"
+                                    value={address ?? 'Preparing...'}
+                                    hint={address ? 'Deposit lands here and stays on-chain' : undefined}
+                                />
                                 {plan.ok ? (
                                     <>
                                         <Row
@@ -337,7 +450,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
 
                     </>
                 )}
-            </View>
+            </ScrollView>
 
             <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
                 {blockedReason ? (
