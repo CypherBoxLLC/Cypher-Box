@@ -131,3 +131,161 @@ describe('the batch we actually lived through', () => {
         expect(d.reason).toBe('all-ready');
     });
 });
+
+// --- Height-aware batching -------------------------------------------------
+//
+// The three capsules still in flight on the 2026-08-17/20 mainnet exit reported
+// these ripening heights. The spread is what makes a wall-clock ceiling wrong.
+const H = [963101, 963142, 963145];
+
+describe('one exit, one UTXO: waiting on the schedule rather than a clock', () => {
+  it('holds past the wall-clock ceiling while the tip has not reached the last height', () => {
+    // 6h after the first capsule ripened the tip is ~36 blocks on, still 8
+    // short of 963145. The old rule fired here and split the exit in two.
+    const d = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 2,
+      batchSince: T0,
+      now: T0 + MAX_WAIT,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: 963137,
+      pendingClaimableHeights: [963142, 963145],
+      unknownScheduleCount: 0,
+    });
+    expect(d.claim).toBe(false);
+    expect(d.reason).toBe('waiting-for-schedule');
+    expect(d.blocksUntilAllReady).toBe(8);
+  });
+
+  it('sweeps once the tip reaches the last scheduled height', () => {
+    const d = decideExitClaimBatch({
+      claimableCount: 3,
+      stillProgressingCount: 0,
+      batchSince: T0,
+      now: T0 + 8 * 60 * 60 * 1000,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: 963145,
+      pendingClaimableHeights: [],
+      unknownScheduleCount: 0,
+    });
+    expect(d.claim).toBe(true);
+    expect(d.reason).toBe('all-ready');
+  });
+
+  it('reports blocks remaining so the wait can be shown honestly', () => {
+    const d = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 2,
+      batchSince: T0,
+      now: T0 + 60_000,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: H[0],
+      pendingClaimableHeights: [H[1], H[2]],
+      unknownScheduleCount: 0,
+    });
+    expect(d.blocksUntilAllReady).toBe(44);
+  });
+
+  it('still bounds the wait when a straggler has no known ripening height', () => {
+    // Still Processing, so no leaf has confirmed and there is no schedule to
+    // wait on. This is the case the wall-clock ceiling is actually for.
+    const held = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 1,
+      batchSince: T0,
+      now: T0 + MAX_WAIT - 1,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: 963137,
+      pendingClaimableHeights: [],
+      unknownScheduleCount: 1,
+    });
+    expect(held.claim).toBe(false);
+    expect(held.reason).toBe('waiting');
+
+    const expired = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 1,
+      batchSince: T0,
+      now: T0 + MAX_WAIT,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: 963137,
+      pendingClaimableHeights: [],
+      unknownScheduleCount: 1,
+    });
+    expect(expired.claim).toBe(true);
+    expect(expired.reason).toBe('window-expired');
+  });
+
+  it('does not wait on a schedule when one straggler of several is unscheduled', () => {
+    // A known height for two of three proves nothing about the third.
+    const d = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 3,
+      batchSince: T0,
+      now: T0 + MAX_WAIT,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: 963137,
+      pendingClaimableHeights: [963142, 963145],
+      unknownScheduleCount: 1,
+    });
+    expect(d.claim).toBe(true);
+    expect(d.reason).toBe('window-expired');
+  });
+
+  it('falls back to the clock when the chain tip is unreadable', () => {
+    const d = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 2,
+      batchSince: T0,
+      now: T0 + MAX_WAIT,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: null,
+      pendingClaimableHeights: [963142, 963145],
+      unknownScheduleCount: 0,
+    });
+    expect(d.claim).toBe(true);
+    expect(d.reason).toBe('window-expired');
+  });
+
+  it('stops waiting on a schedule the tip has already passed', () => {
+    // Heights reached but bark still does not call them claimable: they need
+    // confirmations, or they are wedged. Bound it rather than hold forever.
+    const d = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 1,
+      batchSince: T0,
+      now: T0 + MAX_WAIT,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: 963200,
+      pendingClaimableHeights: [963145],
+      unknownScheduleCount: 0,
+    });
+    expect(d.claim).toBe(true);
+    expect(d.reason).toBe('window-expired');
+  });
+
+  it('infers the unscheduled count when the caller does not pass one', () => {
+    const d = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 2,
+      batchSince: T0,
+      now: T0 + 60_000,
+      maxWaitMs: MAX_WAIT,
+      tipHeight: 963137,
+      pendingClaimableHeights: [963142, 963145],
+    });
+    expect(d.reason).toBe('waiting-for-schedule');
+  });
+
+  it('keeps the old behaviour when no schedule is supplied at all', () => {
+    const d = decideExitClaimBatch({
+      claimableCount: 1,
+      stillProgressingCount: 1,
+      batchSince: T0,
+      now: T0 + 60_000,
+      maxWaitMs: MAX_WAIT,
+    });
+    expect(d.claim).toBe(false);
+    expect(d.reason).toBe('waiting');
+  });
+});
