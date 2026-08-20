@@ -417,6 +417,131 @@ export function urgencyFromSlackBlocks(slackBlocks: number | null): ExitFeeUrgen
     return 'urgent';
 }
 
+export type ExitFeeRateTable = Record<ExitFeeUrgency, number>;
+
+/**
+ * Last-resort rate per band, used only when every fee source is unreachable.
+ *
+ * NOT a flat constant, and that distinction is the whole point. The first
+ * version of this fell back to a single congestion hedge for every band, which
+ * quietly undid the runway pricing at exactly the moment it could not be
+ * checked: observed live 2026-08-20 with mempool.space down, a wallet with 26
+ * days of runway was priced at 10 sat/vB and its forced exit demanded 120,720
+ * sats instead of about 24,000.
+ *
+ * The hedge exists because we cannot see the market, so it should scale with
+ * how little time we have to correct a bad guess. With weeks of runway an
+ * under-bid is recoverable, since the drive re-prices every tick and the band
+ * climbs as the runway shrinks. An over-bid is not recoverable in the same way:
+ * it is charged immediately, as a reserve the user has to go and fund.
+ */
+export const EXIT_FEE_FALLBACK_RATES: ExitFeeRateTable = {
+    relaxed: 2,
+    moderate: 5,
+    soon: 8,
+    urgent: 10,
+};
+
+/**
+ * Confirmation target, in blocks, that each band asks an esplora
+ * `/fee-estimates` map for. Esplora keys targets directly, which fits the bands
+ * better than a provider's named tiers do.
+ */
+export const ESPLORA_TARGET_FOR_BAND: Record<ExitFeeUrgency, number> = {
+    urgent: 1,
+    soon: 3,
+    moderate: 6,
+    relaxed: 144,
+};
+
+const BANDS: ExitFeeUrgency[] = ['relaxed', 'moderate', 'soon', 'urgent'];
+
+/**
+ * Fill gaps and force the table to be non-decreasing from relaxed to urgent.
+ *
+ * A fee source is not obliged to be sane. Providers have been seen returning
+ * equal tiers, missing fields, and occasionally an inverted pair, and an
+ * inverted table would have a RELAXED exit bidding more than an urgent one,
+ * which is the exact failure this whole path exists to prevent. Missing entries
+ * inherit the next band up, so a gap always resolves toward paying more.
+ */
+export function normaliseExitFeeRates(
+    partial: Partial<Record<ExitFeeUrgency, number>>,
+): ExitFeeRateTable | null {
+    const clean = (n: unknown): number | null => {
+        const v = Number(n);
+        return Number.isFinite(v) && v > 0 ? Math.max(1, Math.ceil(v)) : null;
+    };
+    const out: Partial<ExitFeeRateTable> = {};
+    for (const b of BANDS) {
+        const v = clean(partial[b]);
+        if (v != null) out[b] = v;
+    }
+    if (Object.keys(out).length === 0) return null;
+
+    // Fill downward from urgent so a missing band inherits the dearer neighbour.
+    let carry: number | null = null;
+    for (let i = BANDS.length - 1; i >= 0; i--) {
+        const b = BANDS[i];
+        if (out[b] == null) out[b] = carry ?? undefined;
+        else carry = out[b] as number;
+    }
+    // Anything still unset sits below every known band; take the cheapest known.
+    const known = BANDS.map((b) => out[b]).filter((v): v is number => v != null);
+    const cheapest = Math.min(...known);
+    for (const b of BANDS) if (out[b] == null) out[b] = cheapest;
+
+    // Monotonic: a cheaper band may never exceed a dearer one.
+    for (let i = BANDS.length - 2; i >= 0; i--) {
+        const b = BANDS[i];
+        const next = BANDS[i + 1];
+        if ((out[b] as number) > (out[next] as number)) out[b] = out[next];
+    }
+    return out as ExitFeeRateTable;
+}
+
+/** Bands from mempool.space's named tiers. Null when the shape is unusable. */
+export function ratesFromMempoolRecommended(rec: unknown): ExitFeeRateTable | null {
+    const r = rec as Record<string, unknown> | null | undefined;
+    if (!r) return null;
+    return normaliseExitFeeRates({
+        relaxed: r.economyFee as number,
+        moderate: r.hourFee as number,
+        soon: r.halfHourFee as number,
+        urgent: r.fastestFee as number,
+    });
+}
+
+/**
+ * Bands from an esplora `/fee-estimates` map of confirmation target to sat/vB.
+ *
+ * For a band's target, take the largest available target at or below it. Longer
+ * targets carry lower fees, so rounding DOWN the target rounds the fee up,
+ * which is the safe direction when the exact target is missing.
+ */
+export function ratesFromEsploraEstimates(estimates: unknown): ExitFeeRateTable | null {
+    const m = estimates as Record<string, unknown> | null | undefined;
+    if (!m || typeof m !== 'object') return null;
+    const targets = Object.keys(m)
+        .map((k) => ({ blocks: Number(k), rate: Number(m[k]) }))
+        .filter((t) => Number.isFinite(t.blocks) && t.blocks > 0 && Number.isFinite(t.rate) && t.rate > 0)
+        .sort((a, b) => a.blocks - b.blocks);
+    if (targets.length === 0) return null;
+
+    const pick = (band: ExitFeeUrgency) => {
+        const want = ESPLORA_TARGET_FOR_BAND[band];
+        let best = targets[0];
+        for (const t of targets) if (t.blocks <= want) best = t;
+        return best.rate;
+    };
+    return normaliseExitFeeRates({
+        relaxed: pick('relaxed'),
+        moderate: pick('moderate'),
+        soon: pick('soon'),
+        urgent: pick('urgent'),
+    });
+}
+
 /**
  * Urgency for an exit set, from the tightest slack in it.
  *

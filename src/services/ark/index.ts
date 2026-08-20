@@ -176,10 +176,19 @@ export {
     probeAspReachable,
 } from './exitFunding';
 export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
-export { describeExitExclusion, exitFeeUrgency, triageArkExit, urgencyFromSlackBlocks } from './exitTriage';
+export {
+    describeExitExclusion,
+    exitFeeUrgency,
+    normaliseExitFeeRates,
+    ratesFromEsploraEstimates,
+    ratesFromMempoolRecommended,
+    triageArkExit,
+    urgencyFromSlackBlocks,
+} from './exitTriage';
 export type {
     ExitEconomicPolicy,
     ExitExclusionReason,
+    ExitFeeRateTable,
     ExitFeeUrgency,
     ExitTriageEntry,
     ExitTriageResult,

@@ -21,17 +21,22 @@
 import useAuthStore from '@Cypher/stores/authStore';
 
 import { barkStateTag } from './barkState';
+import { ESPLORA_URLS } from './config';
 import { assertNoActiveArkExit } from './exit';
 import type {
     ExitEconomicPolicy,
+    ExitFeeRateTable,
     ExitFeeUrgency,
     ExitTriageResult,
     ExitTriageVtxo,
 } from './exitTriage';
 import {
+    EXIT_FEE_FALLBACK_RATES,
     RESERVE_FLOOR_SATS,
     SPIKE_MULT,
     exitFeeUrgency,
+    ratesFromEsploraEstimates,
+    ratesFromMempoolRecommended,
     triageArkExit,
     urgencyFromSlackBlocks,
 } from './exitTriage';
@@ -145,21 +150,6 @@ export async function fetchClaimFeeRateSatPerVb(): Promise<number> {
 }
 
 /**
- * Which mempool.space rate each urgency band bids at. See ExitFeeUrgency for
- * why the exit tree is not always in a hurry.
- *
- * `minimumFee` is deliberately absent. It is the relay floor, not a target, and
- * an exit tx that fails to confirm does not merely arrive late, it can leave the
- * capsule to be swept.
- */
-const URGENCY_RATE_FIELD: Record<ExitFeeUrgency, string> = {
-    relaxed: 'economyFee',
-    moderate: 'hourFee',
-    soon: 'halfHourFee',
-    urgent: 'fastestFee',
-};
-
-/**
  * Fee rate for the exit-tree CPFP children, at the urgency the capsules
  * actually have.
  *
@@ -168,50 +158,60 @@ const URGENCY_RATE_FIELD: Record<ExitFeeUrgency, string> = {
  * Under-bidding here risks the capsule; over-bidding only parks sats on-chain
  * that stay the user's own.
  */
-export type ExitFeeRateTable = Record<ExitFeeUrgency, number>;
-
 /**
- * All four bands in ONE fetch.
+ * All four bands, from the best source that answers.
  *
- * Fetched together because pricing the exit takes two passes (see
- * computeArkExitPlan) and a second call between them would let the market move
- * underneath the comparison, as well as costing a round trip on the exit path.
+ * Three sources, in order, because a single fee API is a single point of
+ * failure and it fired on the first day: mempool.space was unreachable from
+ * both the device and the dev machine on 2026-08-20, which collapsed every band
+ * to one constant and undid the runway pricing entirely.
  *
- * Every fallback bids HIGH: a missing field falls back to the fastest rate in
- * the response, an unusable response to the congestion hedge. Under-bidding
- * risks the capsule, over-bidding only parks sats that stay the user's own.
+ *   1. mempool.space named tiers, the richest signal
+ *   2. esplora /fee-estimates, keyed by confirmation target, across the same
+ *      providers the wallet already rotates (blockstream answered when
+ *      mempool.space did not)
+ *   3. band-aware constants, which still respect urgency rather than flattening
+ *
+ * Fetched as a table rather than one band at a time because pricing the exit
+ * takes more than one pass (see computeArkExitPlan) and refetching between them
+ * would let the market move underneath the comparison.
  */
 export async function fetchExitFeeRates(): Promise<ExitFeeRateTable> {
-    const flat = (r: number): ExitFeeRateTable => ({
-        relaxed: r, moderate: r, soon: r, urgent: r,
-    });
-    try {
-        const controller = new AbortController();
-        const t = setTimeout(() => controller.abort(), 4000);
-        const res = await fetch('https://mempool.space/api/v1/fees/recommended', {
-            signal: controller.signal,
-        });
-        clearTimeout(t);
-        if (!res.ok) return flat(RESERVE_FEE_FALLBACK_RATE);
-        const rec = await res.json();
-        const fastest = Number(rec?.fastestFee);
-        if (!isFinite(fastest) || fastest <= 0) return flat(RESERVE_FEE_FALLBACK_RATE);
-        const pick = (band: ExitFeeUrgency) => {
-            const v = Number(rec?.[URGENCY_RATE_FIELD[band]]);
-            return Math.max(1, Math.ceil(isFinite(v) && v > 0 ? v : fastest));
-        };
-        return {
-            relaxed: pick('relaxed'),
-            moderate: pick('moderate'),
-            soon: pick('soon'),
-            urgent: pick('urgent'),
-        };
-    } catch {
-        return flat(RESERVE_FEE_FALLBACK_RATE);
+    const get = async (url: string): Promise<unknown | null> => {
+        try {
+            const controller = new AbortController();
+            const t = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(t);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch {
+            return null;
+        }
+    };
+
+    const recommended = await get('https://mempool.space/api/v1/fees/recommended');
+    const fromMempool = ratesFromMempoolRecommended(recommended);
+    if (fromMempool) return fromMempool;
+
+    for (const base of ESPLORA_URLS) {
+        const est = await get(`${base}/fee-estimates`);
+        const fromEsplora = ratesFromEsploraEstimates(est);
+        if (fromEsplora) {
+            if (__DEV__) console.log('[Ark exit-funding] fee rates via esplora', base, fromEsplora);
+            return fromEsplora;
+        }
     }
+
+    if (__DEV__) {
+        console.warn(
+            '[Ark exit-funding] every fee source unreachable; using band-aware fallback',
+            EXIT_FEE_FALLBACK_RATES,
+        );
+    }
+    return EXIT_FEE_FALLBACK_RATES;
 }
 
-/** One band, for callers that already know their urgency (the exit drive). */
 export async function fetchExitTreeFeeRateSatPerVb(
     urgency: ExitFeeUrgency,
 ): Promise<number> {
@@ -319,25 +319,32 @@ export async function computeArkExitPlan(
 
     // Pricing and selection depend on each other: the rate decides which
     // capsules are worth exiting, and which capsules are being exited decides
-    // how urgent the rate has to be. Resolved in two passes rather than a fixed
-    // point, because the first pass IS the old behaviour and is therefore always
-    // a safe answer to fall back to.
-    //
-    // Pass 1 prices at the fastest rate, unconditionally, exactly as before. Its
-    // selection is what reveals the real urgency.
+    // how urgent the rate has to be. Resolved by probing rather than iterating
+    // to a fixed point, because the dearest pass IS the old behaviour and is
+    // therefore always a safe answer to fall back to.
     const urgentPlan = runTriage(rates.urgent);
-    let urgency = exitFeeUrgency(urgentPlan.selected);
     let plan = urgentPlan;
+    let urgency = exitFeeUrgency(urgentPlan.selected);
+
+    if (urgentPlan.selected.length === 0 && rates.relaxed < rates.urgent) {
+        // Nothing survives at the dearest rate, so there is no selection to read
+        // an urgency off, and taking the empty set's 'urgent' at face value
+        // pins the rate high and keeps the answer permanently empty. Probe the
+        // cheapest band: if anything IS exitable down there, its own runway
+        // decides the real rate below.
+        const cheapest = runTriage(rates.relaxed);
+        if (cheapest.selected.length > 0) urgency = exitFeeUrgency(cheapest.selected);
+    }
 
     if (rates[urgency.urgency] < rates.urgent) {
-        // Pass 2 at the rate the runway actually justifies. A cheaper rate can
-        // only ADD capsules, so re-read the urgency of that larger set: if a
-        // newcomer is tighter than anything in pass 1, the cheaper rate was not
-        // justified after all and pass 1 stands.
-        const relaxedPlan = runTriage(rates[urgency.urgency]);
-        const recheck = exitFeeUrgency(relaxedPlan.selected);
-        if (rates[recheck.urgency] <= rates[urgency.urgency]) {
-            plan = relaxedPlan;
+        // Price at what the runway justifies. A cheaper rate can only ADD
+        // capsules, so re-read the urgency of that larger set: if a newcomer is
+        // tighter than anything already counted, the cheaper rate was not
+        // justified after all and the dearest pass stands.
+        const cheaperPlan = runTriage(rates[urgency.urgency]);
+        const recheck = exitFeeUrgency(cheaperPlan.selected);
+        if (cheaperPlan.selected.length > 0 && rates[recheck.urgency] <= rates[urgency.urgency]) {
+            plan = cheaperPlan;
             urgency = recheck;
         }
     }

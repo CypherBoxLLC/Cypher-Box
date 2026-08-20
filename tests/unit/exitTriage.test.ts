@@ -1,7 +1,11 @@
 import {
   ASSUMED_EXIT_DELTA_BLOCKS,
+  EXIT_FEE_FALLBACK_RATES,
   claimRateFromExitRate,
   exitFeeUrgency,
+  normaliseExitFeeRates,
+  ratesFromEsploraEstimates,
+  ratesFromMempoolRecommended,
   URGENCY_SOON_BLOCKS,
   ExitTriageVtxo,
   RESERVE_FLOOR_SATS,
@@ -695,5 +699,96 @@ describe('exit-tree pricing: how much of a hurry the tree is actually in', () =>
     expect(u.deadlineHeight! - TIP).toBe(u.tightestSlackBlocks);
     expect(u.deadlineHeight! - (TIP + 3000)).toBe(845);
     expect(urgencyFromSlackBlocks(u.deadlineHeight! - (TIP + 3000))).toBe('moderate');
+  });
+});
+
+describe('fee sources: what happens when the market cannot be read', () => {
+  it('maps mempool.space named tiers onto the bands', () => {
+    const r = ratesFromMempoolRecommended({
+      fastestFee: 7, halfHourFee: 6, hourFee: 5, economyFee: 2, minimumFee: 1,
+    })!;
+    expect(r).toEqual({ relaxed: 2, moderate: 5, soon: 6, urgent: 7 });
+  });
+
+  it('maps an esplora fee-estimates map onto the bands', () => {
+    // Real shape, read off blockstream 2026-08-20.
+    const r = ratesFromEsploraEstimates({
+      '1': 5.2, '2': 4.586, '3': 4.3, '4': 4.178, '6': 3.9, '8': 3.285,
+      '10': 1.069, '15': 1.003, '144': 1.001, '504': 1.0,
+    })!;
+    // relaxed asks for target 144, urgent for target 1.
+    expect(r.relaxed).toBe(2);
+    expect(r.urgent).toBe(6);
+    expect(r.relaxed).toBeLessThanOrEqual(r.urgent);
+  });
+
+  it('rounds a missing esplora target DOWN, which rounds the fee up', () => {
+    // Longer targets are cheaper, so falling back to a shorter one is the safe
+    // direction when the exact target is absent.
+    const r = ratesFromEsploraEstimates({ '1': 20, '6': 9, '25': 3 })!;
+    // relaxed wants 144, the longest available is 25.
+    expect(r.relaxed).toBe(3);
+    expect(r.moderate).toBe(9);
+    expect(r.urgent).toBe(20);
+  });
+
+  it('never lets a cheaper band cost more than a dearer one', () => {
+    // An inverted table would have a RELAXED exit outbidding an urgent one,
+    // which is the exact failure this path exists to prevent.
+    const r = normaliseExitFeeRates({ relaxed: 50, moderate: 4, soon: 3, urgent: 2 })!;
+    expect(r).toEqual({ relaxed: 2, moderate: 2, soon: 2, urgent: 2 });
+    expect(r.relaxed).toBeLessThanOrEqual(r.moderate);
+    expect(r.moderate).toBeLessThanOrEqual(r.soon);
+    expect(r.soon).toBeLessThanOrEqual(r.urgent);
+  });
+
+  it('fills a missing band from the dearer neighbour, not the cheaper one', () => {
+    const r = normaliseExitFeeRates({ relaxed: 2, urgent: 9 })!;
+    expect(r).toEqual({ relaxed: 2, moderate: 9, soon: 9, urgent: 9 });
+  });
+
+  it('rejects unusable shapes rather than inventing a table', () => {
+    expect(ratesFromMempoolRecommended(null)).toBeNull();
+    expect(ratesFromMempoolRecommended({})).toBeNull();
+    expect(ratesFromEsploraEstimates(null)).toBeNull();
+    expect(ratesFromEsploraEstimates({})).toBeNull();
+    expect(ratesFromEsploraEstimates({ '1': 0, '6': -3 })).toBeNull();
+    expect(normaliseExitFeeRates({})).toBeNull();
+  });
+
+  it('keeps urgency meaningful when every fee source is unreachable', () => {
+    // The defect this replaces: a single flat congestion hedge for every band,
+    // which quietly undid the runway pricing at exactly the moment it could not
+    // be checked. Observed live with mempool.space down, a wallet with 26 days
+    // of runway was priced at 10 sat/vB.
+    const f = EXIT_FEE_FALLBACK_RATES;
+    expect(f.relaxed).toBeLessThan(f.urgent);
+    expect(f.relaxed).toBeLessThanOrEqual(f.moderate);
+    expect(f.moderate).toBeLessThanOrEqual(f.soon);
+    expect(f.soon).toBeLessThanOrEqual(f.urgent);
+
+    // 6,036 vB of exit set, the live wallet forced through.
+    const flat = reserveSatsForExitVb(6036, f.urgent);
+    const banded = reserveSatsForExitVb(6036, f.relaxed);
+    expect(flat).toBe(120_720);
+    expect(banded).toBe(24_144);
+  });
+
+  it('prices a relaxed wallet cheaply even blind, and an urgent one dearly', () => {
+    const relaxedSet = triageArkExit({
+      vtxos: [v({ id: 'roomy', sats: 200_000, expiryHeight: TIP + 9000 })],
+      feeRateSatPerVb: EXIT_FEE_FALLBACK_RATES.relaxed,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(exitFeeUrgency(relaxedSet.selected).urgency).toBe('relaxed');
+
+    const urgentSet = triageArkExit({
+      vtxos: [v({ id: 'tight', sats: 200_000, expiryHeight: TIP + 156 + 10 })],
+      feeRateSatPerVb: EXIT_FEE_FALLBACK_RATES.urgent,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(exitFeeUrgency(urgentSet.selected).urgency).toBe('urgent');
   });
 });
