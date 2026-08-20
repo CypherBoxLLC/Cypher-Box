@@ -15,6 +15,7 @@ import {
     fetchArkBalance,
     fetchArkPendingLightningReceives,
     fetchArkPendingRoundStates,
+    fetchArkExitParams,
     fetchArkRoundIntervalSecs,
     fetchArkVtxos,
     fetchChainTipHeight,
@@ -264,6 +265,7 @@ export default function useArkSync(): UseArkSync {
     const setArkLastBackupAt = useAuthStore((s) => s.setArkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
     const setArkRoundIntervalSecs = useAuthStore((s) => s.setArkRoundIntervalSecs);
+    const arkVtxoExitDeltaBlocks = useAuthStore((s) => s.arkVtxoExitDeltaBlocks);
     const arkExitInProgress = useAuthStore((s) => s.arkExitInProgress);
     const arkExitDestinationAddress = useAuthStore((s) => s.arkExitDestinationAddress);
     const setArkExitInProgress = useAuthStore((s) => s.setArkExitInProgress);
@@ -1507,7 +1509,19 @@ export default function useArkSync(): UseArkSync {
                 if (secs != null) setArkRoundIntervalSecs(secs);
             });
         };
+
+        // Same shape, different reason: `vtxoExitDelta` and `maxVtxoExitDepth`
+        // are server-side static config too, but the exit path is not allowed
+        // to ask for them (the user pressing Emergency Exit may be doing it
+        // BECAUSE the server is gone). Cache them while it is reachable so exit
+        // triage can measure a capsule's runway against the real CSV rather
+        // than the worst case it has to assume without them.
+        const maybeFetchExitParams = () => {
+            if (arkVtxoExitDeltaBlocks != null) return;
+            void fetchArkExitParams();
+        };
         maybeFetchRoundInterval();
+        maybeFetchExitParams();
 
         // Fast retry: catch the wallet handle the moment boot finishes.
         let pollTries = 0;
@@ -1519,6 +1533,7 @@ export default function useArkSync(): UseArkSync {
                 clearInterval(fastPollId);
                 void sync();
                 maybeFetchRoundInterval();
+                maybeFetchExitParams();
             } else if (pollTries >= POLL_MAX_TRIES) {
                 clearInterval(fastPollId);
             }
@@ -1531,7 +1546,7 @@ export default function useArkSync(): UseArkSync {
             clearInterval(id);
             clearInterval(fastPollId);
         };
-    }, [isArkAuth, sync, arkRoundIntervalSecs, setArkRoundIntervalSecs]);
+    }, [isArkAuth, sync, arkRoundIntervalSecs, setArkRoundIntervalSecs, arkVtxoExitDeltaBlocks]);
 
     // Foreground kick — refresh the moment the user returns to the app,
     // regardless of where the interval is in its cycle.

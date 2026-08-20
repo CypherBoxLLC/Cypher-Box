@@ -18,48 +18,24 @@
  * of this reserve.
  */
 
+import useAuthStore from '@Cypher/stores/authStore';
+
 import { barkStateTag } from './barkState';
 import { assertNoActiveArkExit } from './exit';
+import type { ExitTriageResult, ExitTriageVtxo } from './exitTriage';
+import { RESERVE_FLOOR_SATS, SPIKE_MULT, triageArkExit } from './exitTriage';
 import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
 
 // --- Tunable sizing constants ----------------------------------------------
 //
-// The reserve is grounded in the SDK's own per-VTXO exit-cost data
-// (`Vtxo.exitTxWeightWu` = weight of the full unilateral exit tx chain, and
-// `Vtxo.exitDepth` = number of levels in that chain), so it tracks real exit
-// cost rather than a blind guess. The multipliers add headroom for the
-// multi-block window an exit spans (a fee spike mid-exit is its weak spot, and
-// per Bark's Peter you want runway to "refill the onchain wallet if you run
-// out"). All values are intentionally conservative: over-reserving is
-// harmless (the extra sats stay the user's own on-chain, and the auto-board
-// pipeline boards any excess above the reserve back into Ark later), while
-// under-reserving stalls the exit.
+// The per-capsule cost model (CPFP_CHILD_VB, FALLBACK_VB_PER_VTXO, SPIKE_MULT,
+// RESERVE_FLOOR_SATS) moved to ./exitTriage, which is the module that decides
+// which capsules the reserve is FOR. Keeping two copies would let the number
+// the user is asked to fund drift from the set it was sized over. Only the
+// fee-rate fallback, which is about fetching rather than costing, stays here.
 
-/** Per exit-tree level: the CPFP child (anchor input + funding input + change)
- *  that bumps that level. Upper-bounded; matches RECOVER_EST_VSIZE in
- *  ./recoverOnchainBoard.ts. Applied `exitDepth` times per VTXO. */
-const CPFP_CHILD_VB = 150;
-/** Headroom multiplier over the current fee rate, for a fee spike during the
- *  (multi-block) exit window. */
-const SPIKE_MULT = 2.0;
-/** Lower bound whenever there is anything to exit, so a low fee rate (or a
- *  runtime `exitTxWeightWu` of 0) still reserves enough for at least one CPFP
- *  child at a moderate rate. Kept below the 50k board minimum so it doesn't
- *  over-hoard on-chain.
- *
- *  Sized to the stated rationale (one CPFP child ~150 vB at a moderate rate
- *  with the spike buffer), not a flat 10k. The old 10k floor over-reserved
- *  small exits by 2-4x their real cost and, combined with the (soft) fee gate,
- *  made a well-funded small vault look unfundable for exit. This is guidance
- *  only now: the exit stays startable via "Start exit anyway" whenever there
- *  is any on-chain balance, so the floor no longer blocks — it just sets the
- *  auto-board hold target. */
-const RESERVE_FLOOR_SATS = 5_000;
-/** Fallback per-VTXO vsize used only if the SDK returns `exitTxWeightWu === 0`
- *  at runtime (the type says it's populated; guard anyway). */
-const FALLBACK_VB_PER_VTXO = 200;
 /** Fee-rate fallback (sat/vB) when the mempool fetch fails. Deliberately not
  *  tiny, since an emergency exit may run during congestion, but not the old
  *  20 either: on a flaky network the fee fetch fails often, and 20 sat/vB
@@ -74,12 +50,18 @@ export type ExitFeeReserve = {
     /** Recommended sats to hold on-chain to fund the exit. 0 when nothing is
      *  exitable (so a nothing-to-exit wallet is never gated). */
     recommendedSats: number;
-    /** Count of VTXOs the reserve was sized over. */
+    /** Count of VTXOs the reserve was sized over: the SELECTED set, not the
+     *  wallet. */
     vtxoCount: number;
     /** Fee rate (sat/vB) the recommendation was computed at. */
     feeRateSatPerVb: number;
-    /** Summed exit vsize across the exitable VTXOs (pre-multiplier). */
+    /** Summed exit vsize across the SELECTED VTXOs (pre-multiplier). */
     totalExitVb: number;
+    /** Capsules triage dropped from the exit set. */
+    excludedCount: number;
+    /** Face value of those capsules, which is what the user is being asked to
+     *  give up. Never allow this to be non-zero without naming them. */
+    excludedSats: number;
 };
 
 export type ExitFeeConvertEstimate = {
@@ -170,16 +152,98 @@ export async function fetchFastFeeRateSatPerVb(): Promise<number> {
 }
 
 /**
- * Compute the recommended on-chain fee reserve for a full-wallet exit.
+ * Read every capsule the exit could touch, in the flat shape ./exitTriage
+ * wants.
  *
- * Reads `handle.allVtxos()` fresh (the store's `ArkVtxoView` drops
- * `exitTxWeightWu` / `exitDepth`, so the cached VTXO list can't be reused).
- * (allVtxos is a JS-thread-blocking UniFFI call; call this off the render
- * path.) Filters to non-spent VTXOs, mirroring the wallet-exit set that
- * `startExitForEntireWallet` marks.
+ * Reads `handle.allVtxos()` fresh: the store's `ArkVtxoView` drops
+ * `exitTxWeightWu` and `exitDepth`, which are exactly the two fields the whole
+ * cost model turns on, so the cached VTXO list cannot be reused. allVtxos is a
+ * JS-thread-blocking UniFFI call, so keep this off the render path.
+ */
+async function readExitCandidates(): Promise<ExitTriageVtxo[] | null> {
+    const handle = getArkWalletHandle();
+    if (!handle) return null;
+    try {
+        const vtxos = await handle.allVtxos();
+        return (vtxos ?? []).map((v) => ({
+            id: v.id,
+            sats: Number(v.amountSats ?? 0n),
+            exitDepth: Number(v.exitDepth ?? 0),
+            exitTxWeightWu: Number(v.exitTxWeightWu ?? 0n),
+            expiryHeight: Number(v.expiryHeight ?? 0),
+            // bark 0.6.1: `state` is a tagged-enum object; flatten to its
+            // variant string so triage can compare it.
+            stateTag: barkStateTag(v.state),
+            registered: v.registered,
+        }));
+    } catch (err) {
+        if (__DEV__) console.warn('[Ark exit-funding] allVtxos threw:', err);
+        return null;
+    }
+}
+
+/**
+ * Decide which capsules an emergency exit should actually exit, and what that
+ * costs. This is the function the exit-start path calls: its `selectedIds` go
+ * to `startExitForVtxos`, and its `excluded` list is what the user has to be
+ * shown before they commit.
  *
- * Returns `recommendedSats: 0` when the wallet handle is unset or there is
- * nothing exitable.
+ * Takes no ASP call. `vtxoExitDelta` comes from the persisted cache written
+ * while the server was last reachable, and a missing cache makes the temporal
+ * axis assume the worst rather than skip (see ./exitTriage). That is the whole
+ * point: the exit path has to work against a server that is gone.
+ *
+ * Returns null only when there is no wallet handle or the VTXO read failed.
+ */
+export async function computeArkExitPlan(): Promise<ExitTriageResult | null> {
+    const vtxos = await readExitCandidates();
+    if (!vtxos) return null;
+
+    const feeRateSatPerVb = await fetchFastFeeRateSatPerVb();
+    const s = useAuthStore.getState();
+
+    const plan = triageArkExit({
+        vtxos,
+        feeRateSatPerVb,
+        chainTipHeight: s.arkChainTipHeight ?? null,
+        vtxoExitDeltaBlocks: s.arkVtxoExitDeltaBlocks ?? null,
+        maxVtxoExitDepth: s.arkMaxVtxoExitDepth ?? null,
+    });
+
+    if (__DEV__) {
+        console.log(
+            '[Ark exit-triage] selected', plan.selected.length, 'of',
+            plan.selected.length + plan.excluded.length, 'capsules;',
+            plan.selectedSats, 'sats in,', plan.netRecoverableSats, 'recoverable;',
+            'excluded', plan.excluded.length, 'holding', plan.excludedSats, 'sats;',
+            'reserve=', plan.reserveSats, 'over totalExitVb=', plan.totalExitVb,
+            'at', plan.feeRateSatPerVb, 'sat/vB (claim at', plan.claimFeeRateSatPerVb,
+            plan.usedAssumedExitDelta ? '; exit delta ASSUMED' : '',
+        );
+        for (const e of plan.excluded) {
+            console.log(
+                `[Ark exit-triage] excluded ${e.id} ${e.sats} sats depth=${e.exitDepth}`,
+                `perVtxoVb=${e.perVtxoVb} reason=${e.reason}`,
+            );
+        }
+    }
+
+    return plan;
+}
+
+/**
+ * Recommended on-chain fee reserve, sized over the capsules the exit will
+ * ACTUALLY exit.
+ *
+ * It used to sum every non-spent VTXO, which billed the user for two things
+ * they never get back. Measured on the QA wallet 2026-08-20: dust that triage
+ * now discards was 66% of the demanded reserve (32,120 down to 10,808), and ten
+ * already-`Exited` capsules, which bark keeps returning from `allVtxos()`
+ * forever, added another 14,504 sats of reserve for value that was already
+ * on-chain.
+ *
+ * Returns `recommendedSats: 0` when the wallet handle is unset or nothing
+ * survives triage, so a wallet with nothing worth exiting is never gated.
  */
 export async function computeExitFeeReserveSats(): Promise<ExitFeeReserve> {
     const empty: ExitFeeReserve = {
@@ -187,55 +251,64 @@ export async function computeExitFeeReserveSats(): Promise<ExitFeeReserve> {
         vtxoCount: 0,
         feeRateSatPerVb: 0,
         totalExitVb: 0,
+        excludedCount: 0,
+        excludedSats: 0,
     };
 
-    const handle = getArkWalletHandle();
-    if (!handle) return empty;
-
-    let vtxos;
-    try {
-        vtxos = await handle.allVtxos();
-    } catch (err) {
-        if (__DEV__) console.warn('[Ark exit-funding] allVtxos threw:', err);
-        return empty;
-    }
-
-    const exitable = (vtxos ?? []).filter(
-        // bark 0.6.1: `state` is a tagged-enum object; read its variant string.
-        // Same semantics as before: exclude already-spent vtxos from the
-        // exit-fee estimate.
-        (v) => barkStateTag(v.state).toLowerCase() !== 'spent',
-    );
-    if (exitable.length === 0) return empty;
-
-    let totalExitVb = 0;
-    for (const v of exitable) {
-        const chainVb = Math.ceil(Number(v.exitTxWeightWu ?? 0n) / 4);
-        const perVtxoVb =
-            Math.max(chainVb, FALLBACK_VB_PER_VTXO) +
-            Math.max(0, Number(v.exitDepth ?? 0)) * CPFP_CHILD_VB;
-        totalExitVb += perVtxoVb;
-    }
-
-    const feeRateSatPerVb = await fetchFastFeeRateSatPerVb();
-    const computed = Math.ceil(totalExitVb * feeRateSatPerVb * SPIKE_MULT);
-    const recommendedSats = Math.max(RESERVE_FLOOR_SATS, computed);
+    const plan = await computeArkExitPlan();
+    if (!plan) return empty;
 
     if (__DEV__) {
         console.log(
             '[Ark exit-funding] reserve:',
-            recommendedSats, 'sats over', exitable.length, 'vtxos;',
-            'totalExitVb=', totalExitVb,
-            'feeRate=', feeRateSatPerVb, 'sat/vB; spikeMult=', SPIKE_MULT,
+            plan.reserveSats, 'sats over', plan.selected.length, 'selected vtxos;',
+            'totalExitVb=', plan.totalExitVb,
+            'feeRate=', plan.feeRateSatPerVb, 'sat/vB; spikeMult=', SPIKE_MULT,
+            '; floor=', RESERVE_FLOOR_SATS,
         );
     }
 
     return {
-        recommendedSats,
-        vtxoCount: exitable.length,
-        feeRateSatPerVb,
-        totalExitVb,
+        recommendedSats: plan.reserveSats,
+        vtxoCount: plan.selected.length,
+        feeRateSatPerVb: plan.feeRateSatPerVb,
+        totalExitVb: plan.totalExitVb,
+        excludedCount: plan.excluded.length,
+        excludedSats: plan.excludedSats,
     };
+}
+
+/**
+ * Cache the server's exit-relevant protocol constants so the exit path never
+ * has to ask for them.
+ *
+ * `vtxoExitDelta` is the CSV a broadcast exit output sits out before it can be
+ * claimed, and it is what exit triage measures a capsule's remaining runway
+ * against. The exit path is not allowed to call the ASP (a user who pressed the
+ * trustless button must get the trustless path, and the server may simply be
+ * gone), so this has to be fetched while the server is still reachable and
+ * persisted. A missing cache is handled, not fatal: triage assumes the worst
+ * plausible delta, which errs toward disclosing an exclusion rather than
+ * committing reserve to a capsule the server can sweep mid-exit.
+ *
+ * Called once per session from the sync loop, next to the round-interval
+ * fetch. Never throws.
+ */
+export async function fetchArkExitParams(): Promise<void> {
+    const handle = getArkWalletHandle();
+    if (!handle) return;
+    try {
+        const info = await handle.arkInfo();
+        if (!info) return;
+        const delta = Number(info.vtxoExitDelta);
+        const maxDepth = Number(info.maxVtxoExitDepth);
+        useAuthStore.getState().setArkExitParams({
+            vtxoExitDeltaBlocks: Number.isFinite(delta) && delta > 0 ? delta : null,
+            maxVtxoExitDepth: Number.isFinite(maxDepth) && maxDepth > 0 ? maxDepth : null,
+        });
+    } catch (err) {
+        if (__DEV__) console.warn('[Ark exit-funding] arkInfo (exit params) threw:', err);
+    }
 }
 
 /**
