@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import SimpleToast from 'react-native-simple-toast';
 
 import { ScreenLayout, Text } from '@Cypher/component-library';
-import { GradientCard, SwipeButton } from '@Cypher/components';
+import { SwipeButton } from '@Cypher/components';
 import { colors } from '@Cypher/style-guide';
 import { formatNumber } from '@Cypher/helpers/coinosHelper';
 import useAuthStore from '@Cypher/stores/authStore';
@@ -270,7 +270,26 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                                 </Text>
                             </View>
                         )}
-                        <GradientCard disabled style={{ marginTop: 12 }}>
+                        {/* NOT GradientCard. That component hard-codes
+                            height: 60 on both its wrapper and its gradient,
+                            because it is the single-row input pill, and every
+                            other caller overrides it via linearStyle. Used here
+                            for a five-row details panel it clipped everything
+                            below the first row: observed on device as a screen
+                            showing only "From CoinOS", with the amount, the
+                            network fee and the total silently invisible on a
+                            money-moving confirmation. A details panel is the
+                            plain bordered View the sibling Ark review screens
+                            use. */}
+                        <View
+                            style={{
+                                marginTop: 12,
+                                borderRadius: 20,
+                                borderWidth: 1,
+                                borderColor: '#333',
+                                backgroundColor: '#1a1a1a',
+                            }}
+                        >
                             <View style={{ padding: 16 }}>
                                 <Row label="From" value={sourceLabel} />
                                 <Row label="To" value="Bark on-chain reserve" hint={address ?? undefined} />
@@ -302,7 +321,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                                     </Text>
                                 )}
                             </View>
-                        </GradientCard>
+                        </View>
 
                         {plan.ok && plan.partial && (
                             <Text style={{ fontSize: 12, color: '#FFD54F', marginTop: 12, lineHeight: 17 }}>
