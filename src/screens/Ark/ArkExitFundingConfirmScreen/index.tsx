@@ -18,6 +18,7 @@ import {
     getTransactionHistory,
     sendBitcoinPayment,
 } from '@Cypher/api/coinOSApis';
+import { getFiatRate } from '../../../../models/fiatUnit';
 
 /**
  * Preparing the deposit needs bark's on-chain (BDK) wallet, and spawning that
@@ -97,6 +98,26 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
     const [prepError, setPrepError] = useState<string | null>(null);
     // Debounce handle for re-estimating the fee as the amount is typed.
     const feeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // The caller does not pass a rate, so every fiat figure here and on the
+    // success screen rendered as 0.00. Fetch it the same way the non-Strike
+    // rails do in SwapAmount. Failure just leaves the fiat hints blank.
+    const [fetchedRate, setFetchedRate] = useState(0);
+    useEffect(() => {
+        if (rate > 0) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = (await getFiatRate('USD')) || 0;
+                if (!cancelled) setFetchedRate(r);
+            } catch {
+                // Leave fiat blank rather than showing a wrong number.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [rate]);
+    const effectiveRate = rate > 0 ? rate : fetchedRate;
     // Latched once an outcome becomes unknown. Never cleared: the point is that
     // this screen must not offer to send again. Mirrors the Ark send review.
     const [indeterminate, setIndeterminate] = useState(false);
@@ -227,7 +248,9 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                   : null;
 
     const fiat = (sats: number) =>
-        rate > 0 ? `${currencySymbol}${((sats / SATS_PER_BTC) * rate).toFixed(2)}` : '';
+        effectiveRate > 0
+            ? `${currencySymbol}${((sats / SATS_PER_BTC) * effectiveRate).toFixed(2)}`
+            : '';
 
     const feePct =
         plan.ok && plan.sendSats > 0 && feeSats
@@ -264,11 +287,25 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
             if (res.ok) {
                 navigation.replace('ArkSendSuccessScreen', {
                     title: 'Exit fees funded',
+                    // These three were never passed, so the success screen fell
+                    // back to its defaults and reported "0 sats" for a real
+                    // deposit. It reads them; send them.
+                    value: String(res.sentSats),
+                    valueUsd:
+                        effectiveRate > 0
+                            ? ((res.sentSats / SATS_PER_BTC) * effectiveRate).toFixed(2)
+                            : '0.00',
+                    currency: currencySymbol === '$' ? 'USD' : currencySymbol,
+                    // On-chain, not Lightning. The default rail label and the
+                    // bolt both said otherwise.
+                    isOnchain: true,
+                    networkLabel: 'Bitcoin Network',
                     // The deposit is worthless until it confirms, and saying so
-                    // here is what stops "nothing happened" a minute later.
-                    message: res.partial
-                        ? `Sent ${formatNumber(res.sentSats)} sats. That is less than the full shortfall, so top up again if the exit still reports a gap. Emergency Exit unlocks once it confirms on-chain.`
-                        : `Sent ${formatNumber(res.sentSats)} sats. Emergency Exit unlocks once it confirms on-chain.`,
+                    // here is what stops "nothing happened" a minute later. The
+                    // amount is displayed above now, so it is not repeated.
+                    note: res.partial
+                        ? 'That is less than the full shortfall, so top up again if the exit still reports a gap. Emergency Exit unlocks once it confirms on-chain.'
+                        : 'Emergency Exit unlocks once it confirms on-chain.',
                     txid: res.txid ?? undefined,
                 });
                 return;
