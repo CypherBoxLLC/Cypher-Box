@@ -14,6 +14,7 @@ import {
     fetchArkBalance,
     fetchArkPendingLightningReceives,
     fetchArkPendingRoundStates,
+    fetchArkExitDriveFeeRate,
     fetchArkExitParams,
     fetchArkRoundIntervalSecs,
     fetchArkVtxos,
@@ -405,8 +406,19 @@ export default function useArkSync(): UseArkSync {
                     } catch (syncErr: any) {
                         console.warn('[Ark exit] pre-drive wallet sync failed (continuing):', syncErr?.message ?? syncErr);
                     }
-                    const progressResult = await progressArkExits();
-                    _stamp('progressArkExits done');
+                    // Bid at the runway-derived rate rather than letting bark
+                    // pick. Passing nothing meant the rate actually paid had no
+                    // relationship to the reserve the user was asked to fund;
+                    // now both come from how much runway the tightest capsule
+                    // has left, re-derived here every tick as that shrinks.
+                    let driveFeeRate: bigint | undefined;
+                    try {
+                        driveFeeRate = await fetchArkExitDriveFeeRate();
+                    } catch (rateErr: any) {
+                        console.warn('[Ark exit] drive fee-rate lookup failed, letting the SDK choose:', rateErr?.message ?? rateErr);
+                    }
+                    const progressResult = await progressArkExits(driveFeeRate);
+                    _stamp(`progressArkExits done${driveFeeRate != null ? ` at ${driveFeeRate} sat/vB` : ''}`);
                     // Diagnostic: the per-VTXO progress payload is the only
                     // signal of WHERE the state machine is (build?
                     // broadcast? awaiting confs?). Serialize defensively;

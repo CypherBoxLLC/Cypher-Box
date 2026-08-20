@@ -165,15 +165,20 @@ export {
     computeExitFeeReserveSats,
     convertToExitFees,
     estimateExitFeeConvert,
+    fetchArkExitDriveFeeRate,
     fetchArkExitParams,
+    fetchExitFeeRates,
+    fetchExitTreeFeeRateSatPerVb,
     fetchFastFeeRateSatPerVb,
+    getLastExitFeeDeadlineHeight,
     probeAspReachable,
 } from './exitFunding';
 export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
-export { describeExitExclusion, triageArkExit } from './exitTriage';
+export { describeExitExclusion, exitFeeUrgency, triageArkExit, urgencyFromSlackBlocks } from './exitTriage';
 export type {
     ExitEconomicPolicy,
     ExitExclusionReason,
+    ExitFeeUrgency,
     ExitTriageEntry,
     ExitTriageResult,
     ExitTriageVtxo,

@@ -1,12 +1,15 @@
 import {
   ASSUMED_EXIT_DELTA_BLOCKS,
   claimRateFromExitRate,
+  exitFeeUrgency,
+  URGENCY_SOON_BLOCKS,
   ExitTriageVtxo,
   RESERVE_FLOOR_SATS,
   perVtxoExitVb,
   requiredRunwayBlocks,
   reserveSatsForExitVb,
   triageArkExit,
+  urgencyFromSlackBlocks,
 } from '../../src/services/ark/exitTriage';
 
 // Every capsule below is a real one, read off the QA wallet on 2026-08-20.
@@ -594,5 +597,103 @@ describe('economic policy: how far past the economics the user may go', () => {
     // 84,504 sats of reserve to recover 2,330. The user has to see that.
     expect(forced.netRecoverableSats).toBe(2330);
     expect(forced.netLossSats).toBe(82174);
+  });
+});
+
+describe('exit-tree pricing: how much of a hurry the tree is actually in', () => {
+  it('reads the live wallet as relaxed, not urgent', () => {
+    // The mistake this replaces: the app priced these at a fastestFee of 7 when
+    // the exit set sat ~3,800 blocks clear of the runway it needed, about 26
+    // days. That is a 3.5x over-demand for urgency that did not exist.
+    const u = exitFeeUrgency(triage().selected);
+    expect(u.urgency).toBe('relaxed');
+    // Tightest of the six selected is a depth-3 at 967241: 4007 - 162 = 3845.
+    expect(u.tightestSlackBlocks).toBe(3845);
+    expect(u.deadlineHeight).toBe(967241 - 162);
+    expect(u.consideredCount).toBe(6);
+  });
+
+  it('does not let capsules the exit is abandoning decide what it pays', () => {
+    // This is why urgency reads the SELECTED set and not the candidates. The
+    // two 400s are 22 and 34 blocks off their runway, so pricing the candidate
+    // list called the whole exit urgent on behalf of two capsules that were
+    // never going to be exited.
+    const plan = triage();
+    const dust = plan.excluded.map((e) => e.blocksUntilExpiry! - e.requiredRunwayBlocks);
+    expect(Math.min(...dust)).toBeLessThan(URGENCY_SOON_BLOCKS);
+    expect(exitFeeUrgency([...plan.selected, ...plan.excluded]).urgency).toBe('urgent');
+    expect(exitFeeUrgency(plan.selected).urgency).toBe('relaxed');
+  });
+
+  it.each([
+    [5000, 'relaxed'],
+    [1008, 'relaxed'],
+    [1007, 'moderate'],
+    [288, 'moderate'],
+    [287, 'soon'],
+    [144, 'soon'],
+    [143, 'urgent'],
+    [1, 'urgent'],
+  ])('%s blocks of slack is %s', (slack, band) => {
+    expect(urgencyFromSlackBlocks(slack as number)).toBe(band);
+    // And end to end, through a real triage at a rate that keeps it selected.
+    const r = triageArkExit({
+      vtxos: [v({ id: 'x', sats: 200_000, expiryHeight: TIP + 156 + (slack as number) })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual(['x']);
+    expect(exitFeeUrgency(r.selected).urgency).toBe(band);
+  });
+
+  it('bids as if urgent when the chain tip is unreadable', () => {
+    // Over-reserving parks sats the user still owns. Under-reserving stalls the
+    // exit and can cost the capsule. Unknown resolves toward paying more.
+    const u = exitFeeUrgency(triage({ chainTipHeight: null }).selected);
+    expect(u.urgency).toBe('urgent');
+    expect(u.tightestSlackBlocks).toBeNull();
+    expect(u.deadlineHeight).toBeNull();
+    expect(urgencyFromSlackBlocks(null)).toBe('urgent');
+  });
+
+  it('bids as if urgent when nothing was selected', () => {
+    expect(exitFeeUrgency([]).urgency).toBe('urgent');
+    expect(exitFeeUrgency(triage({ economicPolicy: 'profitable-only' }).selected).urgency)
+      .toBe('urgent');
+  });
+
+  it('prices off the tightest member, not the average', () => {
+    const r = triageArkExit({
+      vtxos: [
+        v({ id: 'roomy', sats: 200_000, expiryHeight: TIP + 9000 }),
+        v({ id: 'tight', sats: 200_000, expiryHeight: TIP + 156 + 200 }),
+      ],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toHaveLength(2);
+    expect(exitFeeUrgency(r.selected).urgency).toBe('soon');
+  });
+
+  it('climbs the bands on its own as an exit runs and the runway shrinks', () => {
+    // The drive re-derives from the persisted deadline against the live tip, so
+    // a capsule drifting toward expiry starts bidding harder with nobody
+    // recomputing a plan.
+    const deadline = TIP + 1200;
+    expect(urgencyFromSlackBlocks(deadline - TIP)).toBe('relaxed');
+    expect(urgencyFromSlackBlocks(deadline - (TIP + 300))).toBe('moderate');
+    expect(urgencyFromSlackBlocks(deadline - (TIP + 1000))).toBe('soon');
+    expect(urgencyFromSlackBlocks(deadline - (TIP + 1100))).toBe('urgent');
+  });
+
+  it('gives the drive a deadline that stays fixed as the chain advances', () => {
+    const u = exitFeeUrgency(triage().selected);
+    // Persisting the deadline rather than the band is what keeps it honest over
+    // a multi-day exit: slack recomputed against a later tip is smaller.
+    expect(u.deadlineHeight! - TIP).toBe(u.tightestSlackBlocks);
+    expect(u.deadlineHeight! - (TIP + 3000)).toBe(845);
+    expect(urgencyFromSlackBlocks(u.deadlineHeight! - (TIP + 3000))).toBe('moderate');
   });
 });
