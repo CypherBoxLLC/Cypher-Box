@@ -10,8 +10,11 @@
  *
  * Phase contract (matches the Bark SDK shape):
  *
- *   1. `startArkEmergencyExit()` → `wallet.startExitForEntireWallet()`
- *      Marks every VTXO for exit. No on-chain txs broadcast yet.
+ *   1. `startArkEmergencyExit(ids)` → `wallet.startExitForVtxos(ids)`
+ *      Marks the triaged VTXO set for exit. No on-chain txs broadcast yet.
+ *      The set comes from `computeArkExitPlan` in ./exitFunding, which drops
+ *      capsules that cannot be exited, cannot clear their timelock before
+ *      expiry, or would cost more reserve than they can ever return.
  *
  *   2. `progressArkExits()` → `wallet.progressExits(onchain, feeRate?)`
  *      Builds + broadcasts the actual on-chain exit txs as inputs become
@@ -74,17 +77,35 @@ function requireWallet() {
 }
 
 /**
- * Kick off unilateral exit for ALL VTXOs in this wallet. No destination is
- * needed yet — the destination is supplied at `claimArkExitsToAddress` time
- * (we save it in zustand at start so the auto-claim loop has it).
+ * Kick off a unilateral exit for a CHOSEN set of VTXOs. No destination is
+ * needed yet: it is supplied at `claimArkExitsToAddress` time (we save it in
+ * zustand at start so the auto-claim loop has it).
+ *
+ * Takes ids rather than exiting the whole wallet. `startExitForEntireWallet()`
+ * marks every VTXO, dust included, and the on-chain reserve is then sized over
+ * all of it. Measured on the QA wallet 2026-08-20 at 1 sat/vB: two 400-sat
+ * capsules on deep exit trees were 10,656 of the 16,060 vB the exit would cost,
+ * 66% of the reserve for 16% of the value, and neither could ever return more
+ * than it consumed. The reserve that dust eats is the reserve the healthy
+ * capsules need, so it does not merely waste money, it decides which capsules
+ * get stranded when the reserve runs dry.
+ *
+ * Callers pass `computeArkExitPlan().selectedIds` (see ./exitFunding), and must
+ * have shown the user every excluded capsule by name and amount first. Refuses
+ * an empty set rather than falling back to the whole wallet: a silent fallback
+ * would reintroduce exactly the behaviour this replaces.
  */
-export async function startArkEmergencyExit(): Promise<void> {
+export async function startArkEmergencyExit(vtxoIds: readonly string[]): Promise<void> {
     const handle = requireWallet();
+    const ids = (vtxoIds ?? []).filter((id) => !!id);
+    if (ids.length === 0) {
+        throw new Error('No capsules can be exited right now.');
+    }
     // Spawn the onchain wallet eagerly — progressExits() needs it on the very
     // next tick. Catching here surfaces a clean error to the UI rather than
     // letting the first sync-cycle progress call fail with "not initialized".
     await ensureArkOnchainHandle();
-    await handle.startExitForEntireWallet();
+    await handle.startExitForVtxos([...ids]);
 }
 
 /**

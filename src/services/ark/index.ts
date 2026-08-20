@@ -161,13 +161,22 @@ export {
 export { estimateArkOffboardFee, offboardArkVtxos } from './offboard';
 export type { ArkOffboardFeeView } from './offboard';
 export {
+    computeArkExitPlan,
     computeExitFeeReserveSats,
     convertToExitFees,
     estimateExitFeeConvert,
+    fetchArkExitParams,
     fetchFastFeeRateSatPerVb,
     probeAspReachable,
 } from './exitFunding';
 export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
+export { describeExitExclusion, triageArkExit } from './exitTriage';
+export type {
+    ExitExclusionReason,
+    ExitTriageEntry,
+    ExitTriageResult,
+    ExitTriageVtxo,
+} from './exitTriage';
 export type { ArkRefreshFeeView, ArkRefreshResult, ArkDelegatedRefreshResult } from './refresh';
 
 export { setArkBackgroundRefreshEnabled } from './backgroundRefresh';

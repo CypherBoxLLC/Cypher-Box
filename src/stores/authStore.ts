@@ -220,6 +220,26 @@ export type AuthStateType = {
      */
     arkRoundIntervalSecs: number | null;
     /**
+     * CSV delay in blocks a unilateral exit output must sit out before it can
+     * be claimed (`ArkInfo.vtxoExitDelta`, observed 144 on mainnet). Cached
+     * from the same one-shot arkInfo fetch as `arkRoundIntervalSecs`.
+     *
+     * Cached rather than fetched on demand because the exit path must never
+     * call the ASP: the user pressed the trustless button precisely because the
+     * server may be gone. Exit triage needs this to work out whether a capsule
+     * has the runway to clear its timelock before it expires, and a null makes
+     * it assume the worst plausible delta rather than skip the check.
+     */
+    arkVtxoExitDeltaBlocks: number | null;
+    /**
+     * `ArkInfo.maxVtxoExitDepth` (observed 100). Past this the server refuses
+     * to cosign further out-of-round spends of a capsule, so exit or refresh
+     * are the only moves left with it. Surfaced as a disclosure during exit
+     * triage; it never excludes a capsule, since being un-spendable through the
+     * server is an argument FOR exiting it.
+     */
+    arkMaxVtxoExitDepth: number | null;
+    /**
      * Unilateral-exit state — set when user taps "Emergency Exit" in
      * Settings. While true, `useArkSync` switches modes: it stops issuing
      * normal sync/refresh calls (they'd race the exit machinery) and instead
@@ -288,6 +308,10 @@ export type AuthStateType = {
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
     setArkRoundIntervalSecs: (state: number | null) => void;
+    setArkExitParams: (state: {
+        vtxoExitDeltaBlocks: number | null;
+        maxVtxoExitDepth: number | null;
+    }) => void;
     setArkExitInProgress: (state: boolean) => void;
     setArkExitDestinationAddress: (state: string | null) => void;
     setArkExitStartedAt: (state: number | null) => void;
@@ -509,6 +533,8 @@ const createAuthStore = (
     arkLastSyncedAt: null,
     arkLastBackupAt: null,
     arkRoundIntervalSecs: null,
+    arkVtxoExitDeltaBlocks: null,
+    arkMaxVtxoExitDepth: null,
     arkExitInProgress: false,
     arkExitDestinationAddress: null,
     arkExitStartedAt: null,
@@ -585,6 +611,10 @@ const createAuthStore = (
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
     setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
+    setArkExitParams: (state) => set({
+        arkVtxoExitDeltaBlocks: state.vtxoExitDeltaBlocks,
+        arkMaxVtxoExitDepth: state.maxVtxoExitDepth,
+    }),
     setArkExitInProgress: (state: boolean) => set({ arkExitInProgress: state }),
     setArkExitDestinationAddress: (state: string | null) => set({ arkExitDestinationAddress: state }),
     setArkExitStartedAt: (state: number | null) => set({ arkExitStartedAt: state }),
@@ -628,6 +658,13 @@ const createAuthStore = (
             arkLastSyncedAt: null,
             arkLastBackupAt: null,
             arkRoundIntervalSecs: null,
+            // arkVtxoExitDeltaBlocks / arkMaxVtxoExitDepth are deliberately NOT
+            // reset. They are the server's protocol constants, not wallet
+            // state, and exit triage falls back to a worst-case delta whenever
+            // they are null. Clearing them here would leave a freshly recovered
+            // wallet triaging against that worst case until the next arkInfo
+            // fetch lands, which excludes capsules that had the runway all
+            // along. Same reasoning as arkBgRefreshEnabled below.
             arkExitInProgress: false,
             arkExitDestinationAddress: null,
             arkExitStartedAt: null,

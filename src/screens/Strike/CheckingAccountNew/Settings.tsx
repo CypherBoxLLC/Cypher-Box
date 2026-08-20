@@ -31,10 +31,12 @@ import styles from "./styles";
 import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods, revokeStrikeToken } from "@Cypher/api/strikeAPIs";
 import {
   AUTO_BACKUP_PATH,
+  computeArkExitPlan,
   computeExitFeeReserveSats,
   connectGoogleDrive,
   convertToExitFees,
   disconnectGoogleDrive,
+  describeExitExclusion,
   estimateExitFeeConvert,
   estimateArkOnchainRecover,
   recoverArkOnchainBoard,
@@ -58,7 +60,7 @@ import {
   writeAndVerifyArkBackup,
   writeArkBackupToTempFile,
 } from "@Cypher/services/ark";
-import type { ExitFeeConvertEstimate } from "@Cypher/services/ark";
+import type { ExitFeeConvertEstimate, ExitTriageResult } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -1230,19 +1232,78 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const startExitWithAddress = async (destLabel: string, address: string) => {
     setExitPickerOpen(false);
     setExitStarting(true);
-    // Re-estimate the exit-fee cost NOW: fee rates move between screen mount and
-    // this tap, so the warning must reflect the current shortfall rather than a
-    // stale mount-time number. If the on-chain fee wallet is short, advise the
-    // user to top up. It's a stall warning, not a hard block (progressExits
-    // resumes the moment fees are added).
+    // Triage NOW, not at screen mount: fee rates and the chain tip both move
+    // between mount and this tap, and both change which capsules are worth
+    // exiting. The plan decides the exit set AND sizes the reserve over that
+    // set, so the shortfall quoted below is for the capsules actually being
+    // exited rather than for every capsule in the wallet.
+    let plan: ExitTriageResult | null = null;
     let freshRecommended = recommendedReserveSats ?? 0;
     try {
-      const fresh = await computeExitFeeReserveSats();
-      freshRecommended = fresh.recommendedSats;
-      setRecommendedReserveSats(fresh.recommendedSats);
+      plan = await computeArkExitPlan();
+      if (plan) {
+        freshRecommended = plan.reserveSats;
+        setRecommendedReserveSats(plan.reserveSats);
+      }
     } catch {
       // Keep the last computed recommendation on a transient failure.
     }
+
+    // The capsule read failed, so there is no exit set to hand the SDK. Say
+    // that, rather than letting startArkEmergencyExit reject an empty list with
+    // copy that would read as "you have nothing worth exiting".
+    if (!plan) {
+      setExitStarting(false);
+      Alert.alert(
+        'Emergency Exit',
+        "Couldn't read your capsules just now, so the exit wasn't started. Try again in a moment.",
+      );
+      return;
+    }
+
+    // Nothing survived triage. Say why rather than starting an exit that would
+    // spend the reserve and return nothing.
+    if (plan.selectedIds.length === 0) {
+      setExitStarting(false);
+      Alert.alert(
+        'Emergency Exit',
+        plan.excluded.length === 0
+          ? 'There are no capsules to exit.'
+          : `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} can be recovered by an emergency exit right now:\n\n` +
+            plan.excluded
+              .map(
+                (e) =>
+                  `${e.sats.toLocaleString()} sats: ${describeExitExclusion(e.reason)}`,
+              )
+              .join('\n') +
+            '\n\nThey stay in your vault and stay spendable.',
+      );
+      return;
+    }
+
+    // Narrowed alias: `plan` is a let, so the null checks above do not survive
+    // into the Alert's onPress closure.
+    const exitPlan = plan;
+
+    // Principle: never silently abandon funds. Every capsule left behind is
+    // named, with its amount and the reason, BEFORE the user commits.
+    const exclusionNotice =
+      plan.excluded.length > 0
+        ? `${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} holding ${plan.excludedSats.toLocaleString()} sats will NOT be exited:\n` +
+          plan.excluded
+            .map(
+              (e) =>
+                `  ${e.sats.toLocaleString()} sats: ${describeExitExclusion(e.reason)}`,
+            )
+            .join('\n') +
+          '\n\nThey stay in your vault and stay spendable. Sending them, or combining them, recovers more than an exit would.\n\n'
+        : '';
+
+    // Principle: never silently spend more than the funds are worth. The
+    // reserve sits next to what comes back, so a reserve larger than the value
+    // is impossible to miss.
+    const costNotice = `Exiting ${plan.selected.length} capsule${plan.selected.length === 1 ? '' : 's'} holding ${plan.selectedSats.toLocaleString()} sats. About ${plan.netRecoverableSats.toLocaleString()} sats reach your address, and it needs about ${plan.reserveSats.toLocaleString()} sats of on-chain miner fees to get there.\n\n`;
+
     const shortfall = Math.max(0, freshRecommended - onchainReserveSats);
     const underfunded = freshRecommended > 0 && shortfall > 0;
     const underfundedPrefix = underfunded
@@ -1251,7 +1312,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     try {
       Alert.alert(
         'Emergency Exit',
-        underfundedPrefix +
+        exclusionNotice +
+          costNotice +
+          underfundedPrefix +
           `Forces your VTXO capsules onto the Bitcoin chain. Funds arrive at your ${destLabel} after a ~24-hour wait set by Bitcoin. Once you start, this can't be cancelled.\n\n` +
           'Only start this if your soonest capsule is at least 1 day from expiry. The exit txs must confirm on-chain before then, so it is not a last-minute rescue.\n\n' +
           `${address}\n\n` +
@@ -1267,7 +1330,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             style: 'destructive',
             onPress: async () => {
               try {
-                await startArkEmergencyExit();
+                await startArkEmergencyExit(exitPlan.selectedIds);
                 setArkExitDestinationAddress(address);
                 setArkExitStartedAt(Date.now());
                 // Fresh exit: clear any stale "drained" flag from a prior exit
@@ -1278,7 +1341,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // txs broadcast and any live read needs an open handle, so
                 // this persisted figure is what the status panel falls back
                 // to across reloads.
-                const startedSats = Number(arkBalanceDetail?.spendableSats ?? 0);
+                // The exit set, not the wallet: triage may have left capsules
+                // behind, and quoting the whole spendable balance here would
+                // report a total the exit can never deliver.
+                const startedSats = exitPlan.selectedSats;
                 setArkExitStartedSats(startedSats > 0 ? startedSats : null);
                 setArkExitInProgress(true);
                 // Activity log: read pending sats fresh — the exit just
