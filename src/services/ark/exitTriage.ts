@@ -170,6 +170,34 @@ export type ExitTriageNote =
 
 export type ExitEconomicVerdict = 'profitable' | 'marginal' | 'uneconomic';
 
+/**
+ * How far past the economics the user has chosen to go.
+ *
+ * The economic axis is the only one with an override, and that is deliberate.
+ * The other two exclusions are not judgement calls the user can overrule:
+ * a structurally unexitable capsule has nothing to broadcast, and a capsule
+ * inside its expiry runway loses BOTH itself and the reserve spent on it when
+ * the server sweeps it mid-exit. Neither is a trade the user could want.
+ *
+ * Within the economic axis there is still one hard floor. A capsule whose own
+ * claim fee is at least its whole value ('returns-nothing') cannot deliver
+ * anything at any price: bark refuses to build a claim whose fee exceeds its
+ * output, and the drive then rebuilds that same doomed claim forever. Forcing
+ * one in does not cost the user money to rescue funds, it wedges the batch and
+ * rescues nothing. So no policy includes it.
+ *
+ *   'profitable-only'     only capsules whose reserve cost comes back
+ *   'default'             the above, plus capsules under water by less than
+ *                         MAX_RESERVE_MULTIPLE
+ *   'recover-everything'  the above, plus capsules whose reserve cost dwarfs
+ *                         what they return. This is spec principle 4: the user
+ *                         may knowingly spend more than the funds are worth,
+ *                         for instance to deny a hostile server a hostage.
+ *                         Callers MUST state the loss in sats before applying
+ *                         it, or the "knowingly" is a fiction.
+ */
+export type ExitEconomicPolicy = 'profitable-only' | 'default' | 'recover-everything';
+
 export type ExitTriageEntry = {
     id: string;
     sats: number;
@@ -214,11 +242,9 @@ export type TriageArkExitInput = {
     vtxoExitDeltaBlocks: number | null;
     /** Cached `ArkInfo.maxVtxoExitDepth`, for the disclosure note only. */
     maxVtxoExitDepth?: number | null;
-    /** Whether capsules that cost more reserve than they return, but by less
-     *  than MAX_RESERVE_MULTIPLE, are exited. Default true: excluding them
-     *  abandons real value to save a trivial amount of reserve. Exposed so the
-     *  UI can offer the opt-out spec principle 4 calls for. */
-    includeMarginal?: boolean;
+    /** How far past the economics the user has chosen to go. Defaults to
+     *  'default'. See ExitEconomicPolicy. */
+    economicPolicy?: ExitEconomicPolicy;
 };
 
 export type ExitTriageResult = {
@@ -246,6 +272,21 @@ export type ExitTriageResult = {
     reserveSats: number;
     /** Selected capsules that cost more reserve than they return. */
     underWaterCount: number;
+    /**
+     * Sats the selected set spends beyond what it recovers, 0 when it is not
+     * under water. This is the number the user has to be shown before a
+     * 'recover-everything' exit, since it IS the loss they are accepting.
+     */
+    netLossSats: number;
+    /**
+     * Capsules excluded purely on the economic ratio, which a
+     * 'recover-everything' policy would bring back. Lets the UI offer the
+     * override only when it would actually change something.
+     */
+    overridableCount: number;
+    /** Face value of those capsules. */
+    overridableSats: number;
+    economicPolicy: ExitEconomicPolicy;
     feeRateSatPerVb: number;
     claimFeeRateSatPerVb: number;
     /** True when the temporal axis ran on ASSUMED_EXIT_DELTA_BLOCKS. */
@@ -329,7 +370,7 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
         input.claimFeeRateSatPerVb == null
             ? claimRateFromExitRate(feeRate)
             : Math.max(0, Number(input.claimFeeRateSatPerVb) || 0);
-    const includeMarginal = input.includeMarginal !== false;
+    const policy: ExitEconomicPolicy = input.economicPolicy ?? 'default';
 
     const usedAssumedExitDelta =
         input.vtxoExitDeltaBlocks == null || !Number.isFinite(input.vtxoExitDeltaBlocks);
@@ -419,15 +460,20 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
             notes.push('expiry-unknown');
         }
 
-        // Economic.
-        if (economic === 'uneconomic') {
-            exclude(
-                netRecoveredSats <= 0 ? 'returns-nothing' : 'reserve-dwarfs-value',
-            );
+        // Economic. The only axis the user can overrule, and even here a
+        // capsule that cannot return anything at all is never included.
+        if (netRecoveredSats <= 0) {
+            exclude('returns-nothing');
             continue;
         }
-        if (economic === 'marginal') {
-            if (!includeMarginal) {
+        if (economic === 'uneconomic') {
+            if (policy !== 'recover-everything') {
+                exclude('reserve-dwarfs-value');
+                continue;
+            }
+            notes.push('under-water');
+        } else if (economic === 'marginal') {
+            if (policy === 'profitable-only') {
                 exclude('reserve-dwarfs-value');
                 continue;
             }
@@ -444,6 +490,9 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
     excluded.sort((a, b) => b.sats - a.sats || a.id.localeCompare(b.id));
 
     const totalExitVb = selected.reduce((acc, e) => acc + e.perVtxoVb, 0);
+    const reserveSats = reserveSatsForExitVb(totalExitVb, feeRate);
+    const netRecoverableSats = selected.reduce((acc, e) => acc + e.netRecoveredSats, 0);
+    const overridable = excluded.filter((e) => e.reason === 'reserve-dwarfs-value');
 
     return {
         selectedIds: selected.map((e) => e.id),
@@ -451,11 +500,15 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
         excluded,
         skippedTerminalCount,
         selectedSats: selected.reduce((acc, e) => acc + e.sats, 0),
-        netRecoverableSats: selected.reduce((acc, e) => acc + e.netRecoveredSats, 0),
+        netRecoverableSats,
         excludedSats: excluded.reduce((acc, e) => acc + e.sats, 0),
         totalExitVb,
-        reserveSats: reserveSatsForExitVb(totalExitVb, feeRate),
-        underWaterCount: selected.filter((e) => e.economic === 'marginal').length,
+        reserveSats,
+        underWaterCount: selected.filter((e) => e.economic !== 'profitable').length,
+        netLossSats: Math.max(0, reserveSats - netRecoverableSats),
+        overridableCount: overridable.length,
+        overridableSats: overridable.reduce((acc, e) => acc + e.sats, 0),
+        economicPolicy: policy,
         feeRateSatPerVb: feeRate,
         claimFeeRateSatPerVb: claimRate,
         usedAssumedExitDelta,

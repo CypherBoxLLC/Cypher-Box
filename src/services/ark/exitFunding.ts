@@ -22,7 +22,7 @@ import useAuthStore from '@Cypher/stores/authStore';
 
 import { barkStateTag } from './barkState';
 import { assertNoActiveArkExit } from './exit';
-import type { ExitTriageResult, ExitTriageVtxo } from './exitTriage';
+import type { ExitEconomicPolicy, ExitTriageResult, ExitTriageVtxo } from './exitTriage';
 import { RESERVE_FLOOR_SATS, SPIKE_MULT, triageArkExit } from './exitTriage';
 import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
@@ -193,9 +193,15 @@ async function readExitCandidates(): Promise<ExitTriageVtxo[] | null> {
  * axis assume the worst rather than skip (see ./exitTriage). That is the whole
  * point: the exit path has to work against a server that is gone.
  *
+ * `economicPolicy` is how far past the economics the user has chosen to go.
+ * Callers must leave it at the default until the user has been shown the loss
+ * in sats and asked (spec principle 4); it is not a retry knob.
+ *
  * Returns null only when there is no wallet handle or the VTXO read failed.
  */
-export async function computeArkExitPlan(): Promise<ExitTriageResult | null> {
+export async function computeArkExitPlan(
+    opts?: { economicPolicy?: ExitEconomicPolicy },
+): Promise<ExitTriageResult | null> {
     const vtxos = await readExitCandidates();
     if (!vtxos) return null;
 
@@ -208,6 +214,7 @@ export async function computeArkExitPlan(): Promise<ExitTriageResult | null> {
         chainTipHeight: s.arkChainTipHeight ?? null,
         vtxoExitDeltaBlocks: s.arkVtxoExitDeltaBlocks ?? null,
         maxVtxoExitDepth: s.arkMaxVtxoExitDepth ?? null,
+        economicPolicy: opts?.economicPolicy,
     });
 
     if (__DEV__) {
@@ -218,6 +225,8 @@ export async function computeArkExitPlan(): Promise<ExitTriageResult | null> {
             'excluded', plan.excluded.length, 'holding', plan.excludedSats, 'sats;',
             'reserve=', plan.reserveSats, 'over totalExitVb=', plan.totalExitVb,
             'at', plan.feeRateSatPerVb, 'sat/vB (claim at', plan.claimFeeRateSatPerVb,
+            '); policy=', plan.economicPolicy,
+            '; netLoss=', plan.netLossSats, '; overridable=', plan.overridableCount,
             plan.usedAssumedExitDelta ? '; exit delta ASSUMED' : '',
         );
         for (const e of plan.excluded) {

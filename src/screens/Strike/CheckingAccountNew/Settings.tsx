@@ -63,7 +63,7 @@ import {
   writeArkBackupToTempFile,
   buildExitFundingSources,
 } from "@Cypher/services/ark";
-import type { ExitFeeConvertEstimate, ExitTriageResult } from "@Cypher/services/ark";
+import type { ExitEconomicPolicy, ExitFeeConvertEstimate, ExitTriageResult } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -1259,7 +1259,18 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     return /^(bc1|tb1|bcrt1|[13]|[mn2])[a-zA-Z0-9]+$/.test(t);
   };
 
-  const startExitWithAddress = async (destLabel: string, address: string) => {
+  /**
+   * `economicPolicy` is how far past the economics the user has agreed to go.
+   * It only ever moves off the default by the user tapping through the
+   * override prompt below, which states the loss in sats first. Never raise it
+   * silently: the whole point of spec principle 4 is that overspending is a
+   * choice, and a choice nobody was offered is not one.
+   */
+  const startExitWithAddress = async (
+    destLabel: string,
+    address: string,
+    economicPolicy: ExitEconomicPolicy = 'default',
+  ) => {
     setExitPickerOpen(false);
     setExitStarting(true);
     // Triage NOW, not at screen mount: fee rates and the chain tip both move
@@ -1270,7 +1281,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     let plan: ExitTriageResult | null = null;
     let freshRecommended = recommendedReserveSats ?? 0;
     try {
-      plan = await computeArkExitPlan();
+      plan = await computeArkExitPlan({ economicPolicy });
       if (plan) {
         freshRecommended = plan.reserveSats;
         setRecommendedReserveSats(plan.reserveSats);
@@ -1291,22 +1302,54 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       return;
     }
 
-    // Nothing survived triage. Say why rather than starting an exit that would
-    // spend the reserve and return nothing.
-    if (plan.selectedIds.length === 0) {
+    // The override, offered only where it would change something. Re-planning
+    // with 'recover-everything' is what actually applies it, so the figures in
+    // the confirm dialog afterwards are the forced ones, not these.
+    const forcePrompt = (bodyPrefix: string) => {
       setExitStarting(false);
       Alert.alert(
         'Emergency Exit',
-        plan.excluded.length === 0
-          ? 'There are no capsules to exit.'
-          : `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} can be recovered by an emergency exit right now:\n\n` +
-            plan.excluded
-              .map(
-                (e) =>
-                  `${e.sats.toLocaleString()} sats: ${describeExitExclusion(e.reason)}`,
-              )
-              .join('\n') +
-            '\n\nThey stay in your vault and stay spendable.',
+        bodyPrefix +
+          `\n\nYou can exit ${plan!.overridableCount === 1 ? 'it' : 'them'} anyway. ` +
+          'That is sometimes worth it, for instance to get your funds out of a server you no longer trust, ' +
+          'but it costs more in miner fees than the funds are worth.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Exit anyway',
+            style: 'destructive',
+            onPress: () => {
+              void startExitWithAddress(destLabel, address, 'recover-everything');
+            },
+          },
+        ],
+      );
+    };
+
+    // Nothing survived triage. Say why rather than starting an exit that would
+    // spend the reserve and return nothing.
+    if (plan.selectedIds.length === 0) {
+      const list = plan.excluded
+        .map((e) => `  ${e.sats.toLocaleString()} sats: ${describeExitExclusion(e.reason)}`)
+        .join('\n');
+      if (plan.excluded.length === 0) {
+        setExitStarting(false);
+        Alert.alert('Emergency Exit', 'There are no capsules to exit.');
+        return;
+      }
+      if (plan.overridableCount === plan.excluded.length) {
+        forcePrompt(
+          `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} ` +
+            `can be recovered economically right now:\n${list}`,
+        );
+        return;
+      }
+      setExitStarting(false);
+      Alert.alert(
+        'Emergency Exit',
+        `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} can be recovered by an emergency exit right now:\n\n` +
+          list +
+          '\n\nThey stay in your vault and stay spendable.',
       );
       return;
     }
@@ -1332,7 +1375,14 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     // Principle: never silently spend more than the funds are worth. The
     // reserve sits next to what comes back, so a reserve larger than the value
     // is impossible to miss.
-    const costNotice = `Exiting ${plan.selected.length} capsule${plan.selected.length === 1 ? '' : 's'} holding ${plan.selectedSats.toLocaleString()} sats. About ${plan.netRecoverableSats.toLocaleString()} sats reach your address, and it needs about ${plan.reserveSats.toLocaleString()} sats of on-chain miner fees to get there.\n\n`;
+    const costNotice =
+      `Exiting ${plan.selected.length} capsule${plan.selected.length === 1 ? '' : 's'} holding ${plan.selectedSats.toLocaleString()} sats. About ${plan.netRecoverableSats.toLocaleString()} sats reach your address, and it needs about ${plan.reserveSats.toLocaleString()} sats of on-chain miner fees to get there.\n\n` +
+      // The loss, in sats, whenever the exit spends more than it returns. This
+      // is the sentence that makes an overridden exit a choice rather than a
+      // surprise, so it is not conditional on how the policy got here.
+      (plan.netLossSats > 0
+        ? `That is about ${plan.netLossSats.toLocaleString()} sats MORE in fees than the funds are worth.\n\n`
+        : '');
 
     const shortfall = Math.max(0, freshRecommended - onchainReserveSats);
     const underfunded = freshRecommended > 0 && shortfall > 0;
@@ -1355,6 +1405,20 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             style: 'cancel',
             onPress: () => setExitStarting(false),
           },
+          // Partial case: some capsules are worth exiting and some are being
+          // left behind on cost alone. Naming them without offering the choice
+          // would satisfy principle 3 and quietly ignore principle 4.
+          ...(plan.overridableCount > 0
+            ? [
+                {
+                  text: `Include all ${(plan.selected.length + plan.overridableCount)}`,
+                  style: 'destructive' as const,
+                  onPress: () => {
+                    void startExitWithAddress(destLabel, address, 'recover-everything');
+                  },
+                },
+              ]
+            : []),
           {
             text: 'Start exit',
             style: 'destructive',

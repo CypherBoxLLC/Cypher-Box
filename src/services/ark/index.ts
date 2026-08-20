@@ -174,6 +174,7 @@ export {
 export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
 export { describeExitExclusion, triageArkExit } from './exitTriage';
 export type {
+    ExitEconomicPolicy,
     ExitExclusionReason,
     ExitTriageEntry,
     ExitTriageResult,

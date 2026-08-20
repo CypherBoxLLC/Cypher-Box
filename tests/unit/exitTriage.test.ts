@@ -472,12 +472,127 @@ describe('reserve sizing', () => {
   });
 });
 
-describe('marginal opt-out', () => {
-  it('can be told to exit only capsules that pay for themselves', () => {
-    const r = triage({ includeMarginal: false });
-    // At 1 sat/vB nothing in this wallet clears its own reserve cost, which is
-    // the finding, not a bug. Default-on is what keeps the exit useful.
+describe('economic policy: how far past the economics the user may go', () => {
+  it('profitable-only exits nothing in this wallet, which is the finding, not a bug', () => {
+    const r = triage({ economicPolicy: 'profitable-only' });
+    // At 1 sat/vB nothing here clears its own reserve cost. Defaulting to
+    // 'default' rather than this is what keeps the exit useful at all.
     expect(r.selectedIds).toEqual([]);
     expect(r.excluded).toHaveLength(8);
+  });
+
+  it('recover-everything brings back the capsules excluded on the ratio', () => {
+    // Spec principle 4: the user may knowingly spend more than the funds are
+    // worth, for instance to deny a hostile server a hostage.
+    const forced = triage({ economicPolicy: 'recover-everything' });
+    expect(forced.selectedIds).toHaveLength(8);
+    expect(forced.excluded).toHaveLength(0);
+    expect(forced.totalExitVb).toBe(16060);
+    expect(forced.reserveSats).toBe(32120);
+  });
+
+  it('offers the override only when it would change something', () => {
+    const d = triage();
+    expect(d.overridableCount).toBe(2);
+    expect(d.overridableSats).toBe(800);
+    // Nothing left to force once it has been applied.
+    expect(triage({ economicPolicy: 'recover-everything' }).overridableCount).toBe(0);
+  });
+
+  it('states the loss the override accepts', () => {
+    const forced = triage({ economicPolicy: 'recover-everything' });
+    // 32,120 of reserve to recover 4,382 net. That gap is the choice.
+    expect(forced.netRecoverableSats).toBe(4990 - 8 * 76);
+    expect(forced.netLossSats).toBe(32120 - (4990 - 8 * 76));
+    expect(forced.underWaterCount).toBe(8);
+  });
+
+  it('reports no loss when the selected set actually pays for itself', () => {
+    const r = triageArkExit({
+      vtxos: [v({ id: 'big', sats: 500_000 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selected[0].economic).toBe('profitable');
+    expect(r.netLossSats).toBe(0);
+    expect(r.underWaterCount).toBe(0);
+  });
+
+  it('NEVER forces in a capsule that cannot return anything at any price', () => {
+    // bark refuses to build a claim whose fee exceeds its output and the drive
+    // rebuilds that same doomed claim forever, so this is not a trade the user
+    // could want: it wedges the batch and rescues nothing.
+    const r = triageArkExit({
+      vtxos: [
+        v({ id: 'hopeless', sats: 200 }),
+        v({ id: 'forceable', sats: 400, exitDepth: 17, exitTxWeightWu: 12377 }),
+      ],
+      feeRateSatPerVb: 5,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
+    });
+    expect(r.selectedIds).toEqual(['forceable']);
+    expect(r.excluded.map((e) => e.reason)).toEqual(['returns-nothing']);
+  });
+
+  it('NEVER forces past the expiry runway, whatever the policy', () => {
+    // Overriding this does not cost the user money to rescue funds, it loses
+    // the capsule AND the reserve when the server sweeps it mid-exit.
+    const r = triageArkExit({
+      vtxos: [v({ id: 'fuse', sats: 20_000, expiryHeight: TIP + 40 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
+    });
+    expect(r.selectedIds).toEqual([]);
+    expect(r.excluded[0].reason).toBe('too-close-to-expiry');
+  });
+
+  it('NEVER forces in a structurally unexitable capsule', () => {
+    const r = triageArkExit({
+      vtxos: [
+        v({ id: 'chainless', sats: 20_000, exitDepth: 0, exitTxWeightWu: 0 }),
+        v({ id: 'gone', sats: 9000, stateTag: 'Exited' }),
+      ],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
+    });
+    expect(r.selectedIds).toEqual([]);
+    expect(r.excluded.map((e) => e.reason)).toEqual(['no-exit-chain']);
+    expect(r.skippedTerminalCount).toBe(1);
+  });
+
+  it('reproduces the live 7 sat/vB wall and the way through it', () => {
+    // Measured on device 2026-08-20: mempool fastestFee 7, all seven capsules
+    // excluded, so Emergency Exit refuses. The override is what lets a user
+    // proceed anyway, with the cost stated.
+    const live = [
+      v({ id: 'aa2c257e', sats: 800, exitDepth: 2, exitTxWeightWu: 1325, expiryHeight: 967351 }),
+      v({ id: 'd4ec1101', sats: 700, exitDepth: 2, exitTxWeightWu: 1325, expiryHeight: 967253 }),
+      v({ id: '1f6627c2', sats: 698, exitDepth: 2, exitTxWeightWu: 1325, expiryHeight: 967241 }),
+      v({ id: '9211887d', sats: 698, exitDepth: 3, exitTxWeightWu: 2337, expiryHeight: 967241 }),
+      v({ id: 'a6e24d2f', sats: 698, exitDepth: 3, exitTxWeightWu: 2337, expiryHeight: 967241 }),
+      v({ id: 'bc672cb8', sats: 698, exitDepth: 3, exitTxWeightWu: 2337, expiryHeight: 967241 }),
+      v({ id: 'ec46d966', sats: 698, exitDepth: 3, exitTxWeightWu: 2337, expiryHeight: 967241 }),
+    ];
+    const at7 = { vtxos: live, feeRateSatPerVb: 7, chainTipHeight: 963334, vtxoExitDeltaBlocks: 144 };
+
+    const blocked = triageArkExit(at7);
+    expect(blocked.selectedIds).toEqual([]);
+    expect(blocked.excludedSats).toBe(4990);
+    expect(blocked.overridableCount).toBe(7);
+
+    const forced = triageArkExit({ ...at7, economicPolicy: 'recover-everything' });
+    expect(forced.selectedIds).toHaveLength(7);
+    expect(forced.totalExitVb).toBe(6036);
+    expect(forced.reserveSats).toBe(84504);
+    // 84,504 sats of reserve to recover 2,330. The user has to see that.
+    expect(forced.netRecoverableSats).toBe(2330);
+    expect(forced.netLossSats).toBe(82174);
   });
 });
