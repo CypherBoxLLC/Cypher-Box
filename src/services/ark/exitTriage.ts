@@ -84,6 +84,38 @@ export const BLOCKS_PER_EXIT_LEVEL = 6;
 /** Floor on the confirmation budget, so a shallow tree still gets real runway. */
 export const MIN_CONFIRMATION_BUDGET_BLOCKS = 6;
 
+/**
+ * Minimum remaining life, in blocks, for a capsule to be worth exiting.
+ * 4 days at 10 minute blocks.
+ *
+ * This is an ECONOMIC floor, not a safety one. The temporal axis above already
+ * refuses capsules that cannot clear their timelock in time; those are unsafe.
+ * A capsule with three days left is perfectly safe to exit, and still a bad
+ * idea, because of what a short remaining life usually means about how it got
+ * there.
+ *
+ * Capsules do not arrive near expiry in good condition. They get there by
+ * failing to refresh, repeatedly: a cancelled round, a server that would not
+ * cosign, an app that was never opened. Every one of those failures leaves the
+ * capsule where it was and lets the clock run, and the ones that involve
+ * out-of-round spending push `exitDepth` up as well. So the population of
+ * nearly-expired capsules is disproportionately the deep, expensive ones, which
+ * is exactly the population an exit handles worst: cost is linear in depth and
+ * the value is unchanged.
+ *
+ * Refreshing one resets BOTH the depth and the expiry clock, for about a sat.
+ * That is worth an order of magnitude more than exiting it, so the honest
+ * advice is to refresh first and exit later.
+ *
+ * The obvious objection is that refreshing needs the ASP, and a user reaching
+ * for a unilateral exit may have no ASP to reach. That is real, and it is why
+ * this is a default rather than a law: 'recover-everything' includes these
+ * capsules, so a user facing a genuinely dead server can still take them, with
+ * the cost stated. What this stops is the common case, where an exit quietly
+ * spends a fortune dragging out stragglers the user could have refreshed.
+ */
+export const MIN_FRESHNESS_BLOCKS = 4 * 24 * 6;
+
 /** CSV delta assumed when `ArkInfo.vtxoExitDelta` was never cached.
  *
  *  The exit path must not call the ASP (spec principle 2), so a missing cache
@@ -153,6 +185,9 @@ export type ExitExclusionReason =
     | 'no-exit-chain'
     /** Temporal: the server can sweep it before the exit clears its CSV. */
     | 'too-close-to-expiry'
+    /** Temporal/economic: safe to exit, but too near expiry to be worth it.
+     *  Refreshing resets its depth and its clock for a fraction of the cost. */
+    | 'refresh-before-exiting'
     /** Economic: its own claim fee is at least its whole value. */
     | 'returns-nothing'
     /** Economic: the reserve it consumes dwarfs what it returns. */
@@ -718,6 +753,22 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
             notes.push('under-water');
         }
 
+        // Freshness, last, so a capsule that is ALSO uneconomic is reported as
+        // uneconomic. Ordering here is not cosmetic, it is the advice: telling
+        // someone to refresh a 400-sat capsule is useless, because it is below
+        // the per-input round minimum and cannot be refreshed alone. "Costs
+        // more than it holds" is the true and actionable reason for that one.
+        // This exclusion is for capsules that are worth exiting on the numbers
+        // and are merely stale, where refreshing genuinely is the better move.
+        if (
+            blocksUntilExpiry != null &&
+            blocksUntilExpiry < MIN_FRESHNESS_BLOCKS &&
+            policy !== 'recover-everything'
+        ) {
+            exclude('refresh-before-exiting');
+            continue;
+        }
+
         selected.push({ ...base, included: true, notes });
     }
 
@@ -730,7 +781,9 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
     const totalExitVb = selected.reduce((acc, e) => acc + e.perVtxoVb, 0);
     const reserveSats = reserveSatsForExitVb(totalExitVb, feeRate);
     const netRecoverableSats = selected.reduce((acc, e) => acc + e.netRecoveredSats, 0);
-    const overridable = excluded.filter((e) => e.reason === 'reserve-dwarfs-value');
+    const overridable = excluded.filter(
+        (e) => e.reason === 'reserve-dwarfs-value' || e.reason === 'refresh-before-exiting',
+    );
 
     return {
         selectedIds: selected.map((e) => e.id),
@@ -764,6 +817,8 @@ export function describeExitExclusion(reason: ExitExclusionReason | undefined): 
             return 'no exit chain available';
         case 'too-close-to-expiry':
             return 'too close to expiry to exit safely';
+        case 'refresh-before-exiting':
+            return 'expiring soon, refresh it instead of exiting it';
         case 'returns-nothing':
             return 'network fee is more than it holds';
         case 'reserve-dwarfs-value':
