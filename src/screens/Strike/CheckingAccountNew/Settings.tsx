@@ -31,6 +31,7 @@ import styles from "./styles";
 import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods, revokeStrikeToken } from "@Cypher/api/strikeAPIs";
 import {
   AUTO_BACKUP_PATH,
+  areBgNotificationsEnabled,
   computeExitFeeReserveSats,
   connectGoogleDrive,
   convertToExitFees,
@@ -440,6 +441,56 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   //   user's signal, and the OS prompt fires on enable).
   // - [DEMO] Fire refresh alarm now button (Play submission demo).
 
+  /**
+   * Whether the OS will actually deliver a notification, as opposed to whether
+   * the user has asked us to send them.
+   *
+   * These are two different facts and the screen used to show only the second.
+   * `arkBgRefreshEnabled` defaults to true, and iOS resets notification
+   * permission on every install, so after any reinstall or recovery the switch
+   * came back green while nothing could be delivered. Permission is only
+   * requested inside setArkBackgroundRefreshEnabled(true), which runs when the
+   * switch is FLIPPED, so a switch that was already on never asked.
+   *
+   * That is the worst failure available to this particular control: its own
+   * subtext promises five reminders and warns that recovery is not guaranteed
+   * once a capsule expires, so a user reading it has affirmative evidence of
+   * protection they do not have.
+   *
+   * null while the first probe is in flight; treated as "not blocked" so the
+   * UI does not flash a warning before it knows anything.
+   */
+  const [osNotifPermission, setOsNotifPermission] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const probe = () => {
+      areBgNotificationsEnabled()
+        .then((ok) => {
+          if (!cancelled) setOsNotifPermission(ok);
+        })
+        .catch(() => {
+          // A failed probe is not evidence of a revoked permission. Assume
+          // granted rather than accuse the OS of blocking us.
+          if (!cancelled) setOsNotifPermission(true);
+        });
+    };
+    probe();
+    // Re-probe on foreground: granting permission happens in iOS Settings,
+    // outside this app, so returning is the only moment we learn about it.
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') probe();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
+  /** The user asked for reminders but the OS will not deliver them. */
+  const remindersBlockedByOs = arkBgRefreshEnabled && osNotifPermission === false;
+  /** What the control should SAY, which is whether reminders can arrive. */
+  const remindersEffectivelyOn = arkBgRefreshEnabled && osNotifPermission !== false;
+
   const handleToggleBgRefresh = async (next: boolean) => {
     if (togglingBgRefresh) return;
     setTogglingBgRefresh(true);
@@ -450,6 +501,23 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // into a background-readable Keychain entry for headless wakes;
         // that machinery is gone.
         await setArkBackgroundRefreshEnabled(true);
+        // Did the OS actually agree? iOS prompts at most once per install, so
+        // a user who declined earlier gets no prompt and no permission, and
+        // reporting "Reminders enabled" there would be the same lie in a
+        // different place. Send them where they can actually grant it.
+        const granted = await areBgNotificationsEnabled();
+        setOsNotifPermission(granted);
+        if (!granted) {
+          Alert.alert(
+            "Reminders need notification permission",
+            "Cypher Box cannot warn you before a capsule expires until notifications are allowed for it in system settings.",
+            [
+              { text: "Not now", style: "cancel" },
+              { text: "Open Settings", onPress: () => void Linking.openSettings() },
+            ],
+          );
+          return;
+        }
         SimpleToast.show("Reminders enabled", SimpleToast.SHORT);
       } else {
         await setArkBackgroundRefreshEnabled(false);
@@ -1867,7 +1935,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 Notify me before capsules expire
               </RNText>
               <Switch
-                value={arkBgRefreshEnabled}
+                // The EFFECTIVE state, not the stored preference. A green
+                // switch has to mean "a reminder will reach you".
+                value={remindersEffectivelyOn}
                 onValueChange={handleToggleBgRefresh}
                 disabled={togglingBgRefresh}
                 trackColor={{ false: '#3a3a3a', true: colors.green }}
@@ -1877,14 +1947,19 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             <Text
               style={{
                 fontSize: 12,
-                color: arkBgRefreshEnabled ? '#888' : colors.redLight,
+                color: remindersEffectivelyOn ? '#888' : colors.redLight,
                 marginTop: 6,
                 lineHeight: 16,
               }}
             >
-              {arkBgRefreshEnabled
-                ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
-                : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
+              {/* Three states, because "the user wants reminders" and
+                  "reminders can arrive" are different facts and only the
+                  second one protects anybody. COPY: Bam finalizes. */}
+              {remindersBlockedByOs
+                ? '⚠ Reminders are blocked. You turned them on, but notifications are not allowed for Cypher Box in system settings, so none will arrive. Tap the switch to fix this.'
+                : remindersEffectivelyOn
+                  ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
+                  : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
             </Text>
 
           </View>
