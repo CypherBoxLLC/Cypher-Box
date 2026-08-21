@@ -2,6 +2,7 @@ import RNFS from 'react-native-fs';
 import * as Keychain from 'react-native-keychain';
 
 import { ESPLORA_URLS } from './config';
+import { ESPLORA_OPEN_ATTEMPTS } from './esploraProviders';
 import { ARK_DATADIR } from './datadir';
 import { cacheArkMnemonicForReopen, getArkWalletHandle, getCachedArkMnemonic, openArkWallet } from './walletHandle';
 
@@ -17,7 +18,9 @@ const KEYCHAIN_SERVICE = 'ark-seed-phrase';
  * few times before giving up. Only transient connection errors are retried; a
  * genuine seed/datadir mismatch fails fast.
  */
-const OPEN_ATTEMPTS = 5;
+// Kept in ./esploraProviders alongside the list it has to outnumber: a count
+// below the provider count silently makes the last entries unreachable.
+const OPEN_ATTEMPTS = ESPLORA_OPEN_ATTEMPTS;
 const OPEN_RETRY_DELAY_MS = 6000;
 
 // Guards against two opens running against the same datadir at once — the

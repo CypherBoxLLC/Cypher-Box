@@ -1,5 +1,7 @@
 import { Config, Network } from '@secondts/bark-react-native';
 
+import { ESPLORA_FALLBACK_URLS } from './esploraProviders';
+
 /**
  * Master kill-switch for the Ark feature.
  *
@@ -148,7 +150,12 @@ export const ESPLORA_URL = 'https://blockstream.info/api';
  * targets the same datadir (BarkError.Database or worse). A hang behaves
  * exactly as it did before this list existed.
  */
-export const ESPLORA_URLS = [ESPLORA_URL, 'https://mempool.space/api'];
+/**
+ * Rotation list for the open-with-retry loop. The list, the attempt count and
+ * the invariant tying them together live in ./esploraProviders, which is pure
+ * and therefore unit-testable; config.ts cannot be imported under jest.
+ */
+export const ESPLORA_URLS: string[] = [...ESPLORA_FALLBACK_URLS];
 
 export function createArkConfig(overrides?: Partial<Parameters<typeof Config.create>[0]>) {
     return Config.create({
