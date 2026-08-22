@@ -1,5 +1,14 @@
 import { colors, widths } from "@Cypher/style-guide";
-import { ImageStyle, StyleSheet, TextStyle, ViewStyle } from "react-native";
+import { ImageStyle, Platform, StyleSheet, TextStyle, ViewStyle } from "react-native";
+
+// The UTXO capsule squares off its top-right and bottom-left corners on iOS,
+// keeping the curve only on the top-left/bottom-right diagonal. Android keeps
+// the uniform radius: `widths` is `Dimensions.get('screen').width`, which on
+// Android reports the full display rather than the usable window, so the card
+// resolves wider there and the capsule sits clear of the card's corner. On iOS
+// the slot is narrower and the capsule sits hard against it, where the
+// asymmetric radius reads as deliberate rather than cramped.
+const IS_IOS = Platform.OS === 'ios';
 
 interface Style {
     container: ViewStyle;
@@ -114,10 +123,18 @@ export default StyleSheet.create<Style>({
         // so the BUY button below stays put.
         transform: [{ translateX: -30 }, { translateY: -30 }],
         justifyContent: 'center',
-        borderRadius: 20,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: IS_IOS ? 0 : 20,
+        borderBottomLeftRadius: IS_IOS ? 0 : 20,
+        borderBottomRightRadius: 20,
     },
     fiatBalanceBox3: {
-        borderRadius: 18,
+        // Mirrors fiatBalanceBox2 one step in, so the inner fill follows the
+        // outer shape instead of relying on the parent's overflow clip.
+        borderTopLeftRadius: 18,
+        borderTopRightRadius: IS_IOS ? 0 : 18,
+        borderBottomLeftRadius: IS_IOS ? 0 : 18,
+        borderBottomRightRadius: 18,
         width: 115,
         height: 88,
     },
