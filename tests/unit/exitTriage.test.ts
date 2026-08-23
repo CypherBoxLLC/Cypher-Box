@@ -1,6 +1,7 @@
 import {
   ASSUMED_EXIT_DELTA_BLOCKS,
   EXIT_FEE_FALLBACK_RATES,
+  MIN_FRESHNESS_BLOCKS,
   claimRateFromExitRate,
   exitFeeUrgency,
   normaliseExitFeeRates,
@@ -286,6 +287,9 @@ describe('temporal axis', () => {
   it('scales the confirmation budget with tree depth', () => {
     // Same expiry, same value; only the depth differs.
     const runway = TIP + 160;
+    // recover-everything to get past the 4-day freshness floor: what is under
+    // test here is the runway, and a capsule this close to expiry only reaches
+    // the exit set when the user has explicitly forced it.
     const r = triageArkExit({
       vtxos: [
         v({ id: 'shallow', sats: 20_000, exitDepth: 2, expiryHeight: runway }),
@@ -294,6 +298,7 @@ describe('temporal axis', () => {
       feeRateSatPerVb: 1,
       chainTipHeight: TIP,
       vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
     });
     expect(requiredRunwayBlocks(2, EXIT_DELTA)).toBe(156);
     expect(requiredRunwayBlocks(3, EXIT_DELTA)).toBe(162);
@@ -308,12 +313,14 @@ describe('temporal axis', () => {
       feeRateSatPerVb: 1,
       chainTipHeight: TIP,
       vtxoExitDeltaBlocks: EXIT_DELTA,
+     economicPolicy: 'recover-everything',
     });
     const uncached = triageArkExit({
       vtxos: [near],
       feeRateSatPerVb: 1,
       chainTipHeight: TIP,
       vtxoExitDeltaBlocks: null,
+     economicPolicy: 'recover-everything',
     });
     expect(cached.selectedIds).toEqual(['near']);
     expect(cached.usedAssumedExitDelta).toBe(false);
@@ -646,6 +653,7 @@ describe('exit-tree pricing: how much of a hurry the tree is actually in', () =>
       feeRateSatPerVb: 1,
       chainTipHeight: TIP,
       vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
     });
     expect(r.selectedIds).toEqual(['x']);
     expect(exitFeeUrgency(r.selected).urgency).toBe(band);
@@ -676,6 +684,7 @@ describe('exit-tree pricing: how much of a hurry the tree is actually in', () =>
       feeRateSatPerVb: 1,
       chainTipHeight: TIP,
       vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
     });
     expect(r.selectedIds).toHaveLength(2);
     expect(exitFeeUrgency(r.selected).urgency).toBe('soon');
@@ -790,5 +799,163 @@ describe('fee sources: what happens when the market cannot be read', () => {
       vtxoExitDeltaBlocks: EXIT_DELTA,
     });
     expect(exitFeeUrgency(urgentSet.selected).urgency).toBe('urgent');
+  });
+});
+
+describe('freshness floor: refresh a stale capsule, do not exit it', () => {
+  const fresh = (id: string, daysLeft: number, over: Partial<ExitTriageVtxo> = {}) =>
+    v({ id, sats: 20_000, expiryHeight: TIP + Math.round(daysLeft * 144), ...over });
+
+  it('excludes a capsule with under 4 days left even though it is safe to exit', () => {
+    // 3 days clears the runway easily (156 blocks for depth 2), so the temporal
+    // axis is happy. This is an economic call, not a safety one.
+    const r = triageArkExit({
+      vtxos: [fresh('stale', 3)],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual([]);
+    expect(r.excluded[0].reason).toBe('refresh-before-exiting');
+    expect(r.excluded[0].blocksUntilExpiry).toBeGreaterThan(r.excluded[0].requiredRunwayBlocks);
+  });
+
+  it.each([
+    [0.5, false],
+    [3, false],
+    [3.9, false],
+    [4, true],
+    [10, true],
+    [27, true],
+  ])('%s days left -> exited=%s', (days, kept) => {
+    const r = triageArkExit({
+      vtxos: [fresh('c', days as number)],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds.length === 1).toBe(kept);
+  });
+
+  it('applies to every capsule kind, not just arkoor', () => {
+    // Freshness decides, not provenance. A stale round output is just as deep
+    // and just as expensive as a stale arkoor one.
+    const r = triageArkExit({
+      vtxos: [
+        fresh('stale-registered', 2, { registered: true }),
+        fresh('stale-unregistered', 2, { registered: false }),
+        fresh('healthy', 20),
+      ],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual(['healthy']);
+    expect(r.excluded.map((e) => e.reason)).toEqual([
+      'refresh-before-exiting',
+      'refresh-before-exiting',
+    ]);
+  });
+
+  it('still hard-excludes a capsule inside its runway, which is a different fault', () => {
+    // Under 4 days AND inside the runway. The safety exclusion has to win, or
+    // the override would let a user take a capsule the server can sweep
+    // out from under the exit.
+    const r = triageArkExit({
+      vtxos: [v({ id: 'doomed', sats: 20_000, expiryHeight: TIP + 40 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
+    });
+    expect(r.selectedIds).toEqual([]);
+    expect(r.excluded[0].reason).toBe('too-close-to-expiry');
+  });
+
+  it('lets a user with no server left take them anyway', () => {
+    // Refreshing needs the ASP. A user reaching for a unilateral exit may have
+    // no ASP to reach, so this default must not become a law.
+    const r = triageArkExit({
+      vtxos: [fresh('stale', 3)],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
+    });
+    expect(r.selectedIds).toEqual(['stale']);
+  });
+
+  it('offers the override when freshness is the only thing holding a capsule back', () => {
+    const r = triageArkExit({
+      vtxos: [fresh('stale', 3), fresh('healthy', 20)],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual(['healthy']);
+    expect(r.overridableCount).toBe(1);
+    expect(r.overridableSats).toBe(20_000);
+  });
+
+  it('does not fire when the chain tip is unreadable', () => {
+    // No tip means no idea how fresh anything is. Guessing "stale" would
+    // abandon a healthy wallet on a failed network read.
+    const r = triageArkExit({
+      vtxos: [fresh('c', 3)],
+      feeRateSatPerVb: 1,
+      chainTipHeight: null,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual(['c']);
+    expect(r.selected[0].notes).toContain('expiry-unknown');
+  });
+
+  it('leaves tonight\'s live wallet untouched', () => {
+    // All seven sit ~27 days out, so the floor is inert here. Recorded so a
+    // future change to the threshold shows up against real capsules.
+    const r = triage();
+    expect(r.selectedIds).toHaveLength(6);
+    // The two 400s ARE under 4 days, but they are reported as uneconomic,
+    // which is the reason a user can act on: below the per-input round
+    // minimum, they cannot be refreshed alone anyway.
+    expect(r.excluded.map((e) => e.reason)).toEqual([
+      'reserve-dwarfs-value',
+      'reserve-dwarfs-value',
+    ]);
+  });
+});
+
+describe('how the freshness floor and the fee bands interact', () => {
+  it('makes the urgent bands unreachable by default, which is coherent', () => {
+    // Not a coincidence worth leaving undocumented. The floor keeps anything
+    // under 576 blocks out of the exit set, and the runway is ~156, so a
+    // selected capsule always has 420+ blocks of slack and can never read
+    // 'soon' or 'urgent'. Exit only fresh capsules, and fresh capsules are
+    // never in a hurry, so the exit never bids for speed.
+    const justFresh = v({ id: 'edge', sats: 200_000, expiryHeight: TIP + MIN_FRESHNESS_BLOCKS });
+    const r = triageArkExit({
+      vtxos: [justFresh],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual(['edge']);
+    const u = exitFeeUrgency(r.selected);
+    expect(u.tightestSlackBlocks).toBe(MIN_FRESHNESS_BLOCKS - 156);
+    expect(['relaxed', 'moderate']).toContain(u.urgency);
+  });
+
+  it('still bids urgently when the user forces a stale capsule in', () => {
+    // Which is exactly when bidding high is right: the capsule the user
+    // overrode the floor for is the one actually racing its expiry.
+    const r = triageArkExit({
+      vtxos: [v({ id: 'forced', sats: 200_000, expiryHeight: TIP + 200 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+      economicPolicy: 'recover-everything',
+    });
+    expect(r.selectedIds).toEqual(['forced']);
+    expect(exitFeeUrgency(r.selected).urgency).toBe('urgent');
   });
 });
