@@ -52,6 +52,32 @@ export default function BuyBitcoin({ navigation, route }: any) {
         }
     }, [info])
 
+    /**
+     * Skip this screen when the amount was already chosen.
+     *
+     * The UTXO capsule vending machine picks a size before navigating here, so
+     * the keyboard has nothing left to ask. Forward to the confirmation screen,
+     * where Edit Amount comes back here if the user wants a different figure.
+     *
+     * Routed THROUGH this screen rather than from StrikeView straight to
+     * ReviewPayment so the confirmation gets exactly the params handleSendNext
+     * builds (`sender`, `recommendedFee`, the fiat/sats pair). Rebuilding those
+     * at the call site is how a money path picks up a subtle mismatch.
+     *
+     * Waits for `recommendedFee`, which handleSendNext passes on and a BUY routed
+     * to cold storage needs. Fires once: `advancedRef` stops it bouncing the user
+     * forward again when they come BACK here via Edit Amount.
+     */
+    const advancedRef = useRef(false);
+    useEffect(() => {
+        if (!info?.autoAdvance) return;
+        if (advancedRef.current) return;
+        if (!sats || Number(sats) <= 0) return;
+        if (!recommendedFee) return;
+        advancedRef.current = true;
+        handleSendNext();
+    }, [info?.autoAdvance, sats, recommendedFee]);
+
     useEffect(() => {
         if (!sender.startsWith('ln') && !sender.includes('@') && !recommendedFee) {
             const init = async () => {

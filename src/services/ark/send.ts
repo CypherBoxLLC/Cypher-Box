@@ -6,6 +6,7 @@ import {
 } from '@secondts/bark-react-native';
 import bolt11 from 'bolt11';
 
+import { decideChangeRefresh } from './changeRefresh';
 import { assertNoActiveArkExit } from './exit';
 import { ensureArkWalletHandleReady } from './restore';
 import { fetchArkBalance } from './balance';
@@ -300,6 +301,83 @@ async function dispatchLnSend(
  */
 const MAX_LN_SEND_ATTEMPTS = 4;
 
+/**
+ * Fold change that a send has deepened back into a round.
+ *
+ * See ./changeRefresh for why depth matters and why send time is the right
+ * moment. This is the plumbing: read the raw capsule list (the store's
+ * ArkVtxoView drops `exitDepth`, which is the field the whole rule turns on),
+ * ask the pure rule about each one, and submit whatever qualifies as a single
+ * round.
+ *
+ * Never throws. The send has already succeeded by the time this runs, and a
+ * failed or skipped refresh costs the user nothing beyond staying deep until
+ * the next opportunity.
+ */
+async function maybeRefreshDeepenedChange(): Promise<void> {
+    // Lazy requires, deliberately. Importing ./config at module scope drags the
+    // SDK's `Network` enum into send.ts's graph, and any suite that mocks the
+    // SDK without it fails to even load (arkSendIndeterminate.test.ts did).
+    // ./changeRefresh stays a top-level import because it is pure and
+    // import-free. Same pattern as notificationHandler.ts and
+    // backgroundRefresh.ts, which lazy-require for the same reason.
+    /* eslint-disable @typescript-eslint/no-var-requires */
+    const { ARK_EXIT_RUNWAY_HOURS, ARK_REFRESH_MIN_SATS } = require('./config');
+    const { AVG_BLOCK_MINUTES, fetchChainTipHeight } = require('./chainTip');
+    const { barkStateTag } = require('./barkState');
+    const { refreshArkVtxosDelegatedAndSync } = require('./refresh');
+    const { getArkWalletHandle } = require('./walletHandle');
+    const useAuthStore = require('@Cypher/stores/authStore').default;
+    /* eslint-enable @typescript-eslint/no-var-requires */
+
+    const handle = getArkWalletHandle();
+    if (!handle) return;
+
+    const store = useAuthStore.getState();
+    // Cheapest guard first: an active exit rules out every capsule, so do not
+    // pay for allVtxos() to be told so seven times.
+    if (store.arkExitInProgress) return;
+
+    const tip = await fetchChainTipHeight();
+    if (tip == null) return; // cannot evaluate the runway floor; assume unsafe
+
+    const minRunwayBlocks = Math.round((ARK_EXIT_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES);
+    const refreshing = new Set(store.arkRefreshingVtxoIds ?? []);
+
+    // allVtxos() is a JS-thread-blocking UniFFI call, so this runs after the
+    // send has resolved and off the render path, alongside the sync above.
+    const vtxos: any[] = (await handle.allVtxos()) ?? [];
+
+    const ids: string[] = [];
+    let totalSats = 0;
+    for (const v of vtxos) {
+        const sats = Number(v.amountSats ?? 0n);
+        const expiryHeight = Number(v.expiryHeight ?? 0);
+        const decision = decideChangeRefresh({
+            exitDepth: Number(v.exitDepth ?? 0),
+            sats,
+            blocksUntilExpiry: expiryHeight > 0 ? expiryHeight - tip : null,
+            stateTag: barkStateTag(v.state),
+            alreadyRefreshing: refreshing.has(v.id),
+            exitInProgress: false, // already returned above
+            minSats: ARK_REFRESH_MIN_SATS,
+            minRunwayBlocks,
+        });
+        if (decision.refresh) {
+            ids.push(v.id);
+            totalSats += sats;
+        }
+    }
+
+    if (ids.length === 0) return;
+
+    console.log(
+        `[Ark send] folding ${ids.length} deepened capsule(s) back into a round,`,
+        totalSats, 'sats',
+    );
+    await refreshArkVtxosDelegatedAndSync(ids, totalSats);
+}
+
 export async function executeArkSend(
     dest: ArkDestination,
     amountSats: number,
@@ -504,6 +582,26 @@ export async function executeArkSend(
     } catch (err) {
         console.warn('[Ark send] post-send sync/refresh failed:', err);
     }
+
+    // Fold deepened change back into a round, while the app is definitionally
+    // open. An arkoor spend appends a level to its change, and exitDepth is
+    // exactly the number of transactions a unilateral exit must broadcast and
+    // confirm, so unfolded change makes the wallet progressively more expensive
+    // and slower to exit. Nothing else does this: foregroundSweep only reaches a
+    // capsule in its final week, and useArkoorReceivePrompt is scoped to
+    // capsules that ARRIVE, not to change from the user's own send.
+    //
+    // Evaluates every spendable capsule rather than only the change, because
+    // baseFeeSats is charged per ROUND: if the change is deep enough to be worth
+    // a round, any other deep capsule rides along for free. The change is
+    // necessarily included when it qualifies.
+    //
+    // Best-effort and non-fatal throughout. The send already succeeded, and
+    // decideChangeRefresh owns every safety guard (exit in progress, dust,
+    // runway floor, state, already-in-flight).
+    void maybeRefreshDeepenedChange().catch((err) =>
+        console.warn('[Ark send] post-send change refresh failed:', err),
+    );
 
     // Activity log: only Lightning kinds map to the wallet-cross-cutting
     // "ln-sent" event in the Activity feed. Ark-to-ark and on-chain Ark

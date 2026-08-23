@@ -1422,6 +1422,22 @@ export default function ReviewPayment({ navigation, route }: Props) {
     };
 
     const editAmountClickHandler = () => {
+        // A BUY or SELL arrived from the UTXO capsule vending machine, so its
+        // amount belongs on the Strike keyboard, not the on-chain send screen.
+        // autoAdvance is explicitly false: the user tapped Edit Amount, so
+        // stopping on the keyboard IS the request. Without it the spread below
+        // carries autoAdvance:true back in and bounces them straight here again.
+        if (type === 'BUY' || type === 'SELL') {
+            dispatchNavigate('BuyBitcoin', {
+                ...route.params,
+                currency,
+                matchedRate,
+                fiatAmount: Number(isSats ? converted : value) || undefined,
+                fiatType: type,
+                autoAdvance: false,
+            });
+            return;
+        }
         dispatchNavigate('SendScreen', {
             ...route.params,
             currency,
@@ -1533,7 +1549,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 </View>
                             )}
                         </View>
-                        {isWithdrawal &&
+                        {(isWithdrawal || type === 'BUY' || type === 'SELL') &&
                             <TouchableOpacity activeOpacity={0.7} onPress={editAmountClickHandler} style={{
                                 borderWidth: 3,
                                 borderColor: colors.white,
