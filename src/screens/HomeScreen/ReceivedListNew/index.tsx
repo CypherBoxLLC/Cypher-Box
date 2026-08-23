@@ -620,14 +620,19 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
               </View>
             </View>
 
-            {/* Bark receive advice: small receives can leave sub-refreshable
-                dust that expires; nudge larger amounts. COPY: Bam finalizes. */}
-            {selectedItem === 5 && (
+            {/* Bark-address specific, so it is gated to that tab: "this address"
+                only means something while the Bark address is on screen.
+                The point is that expiry reminders are LOCAL alarms scheduled by
+                the app when it SEES the capsule, so a payment made to a shared
+                address while the app is closed has no reminder attached to it at
+                all. Sits with the tip above rather than under the QR so the
+                advice reads as one block. COPY: Bam finalizes. */}
+            {selectedItem === 5 && tab === 2 && (
               <Text
                 center
                 style={{ marginHorizontal: 24, marginTop: 8, fontSize: 12, color: '#FFD54F', opacity: 0.95, lineHeight: 17 }}
               >
-                Tip: receive above 700 sats at a time, via a Lightning invoice or your Bark address, so they stay refreshable and don't expire as dust.
+                To receive 700-sat or above capsule from another Bark user. Need to be present with the app being open when you receive to this address.
               </Text>
             )}
 
