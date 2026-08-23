@@ -1424,9 +1424,8 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const editAmountClickHandler = () => {
         // A BUY or SELL arrived from the UTXO capsule vending machine, so its
         // amount belongs on the Strike keyboard, not the on-chain send screen.
-        // autoAdvance is explicitly false: the user tapped Edit Amount, so
-        // stopping on the keyboard IS the request. Without it the spread below
-        // carries autoAdvance:true back in and bounces them straight here again.
+        // This is the only way back to that keyboard now that the vending
+        // machine goes straight to confirmation.
         if (type === 'BUY' || type === 'SELL') {
             dispatchNavigate('BuyBitcoin', {
                 ...route.params,
@@ -1434,7 +1433,6 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 matchedRate,
                 fiatAmount: Number(isSats ? converted : value) || undefined,
                 fiatType: type,
-                autoAdvance: false,
             });
             return;
         }
@@ -1537,17 +1535,6 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginRight: 15, marginTop: 10 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
                             <TextViewV2 keytext={type == 'SELL' ? "You will sell: " : type == 'BUY' ? "You will receive: " : "Recipient will get: "} text={isSats ? `${value} sats ~ ${getStrikeCurrency(currency || 'USD')}${converted}` : `${getStrikeCurrency(currency || 'USD')}${value} ~ ${converted} sats`} textStyle={styles.price} containerStyle={{ marginBottom: 10 }} />
-                            {type === 'BUY' && (
-                                // UTXO-tier capsule next to the amount —
-                                // visualizes the purchased sat-bucket
-                                // (white/orange/green/blue) so the user
-                                // sees what tier their purchase lands in
-                                // before they slide to confirm. Same
-                                // CustomProgressBar used in StrikeView.
-                                <View style={{ marginLeft: 8, marginTop: 2 }}>
-                                    <CustomProgressBar value={Number(isSats ? value : converted) || 0} />
-                                </View>
-                            )}
                         </View>
                         {(isWithdrawal || type === 'BUY' || type === 'SELL') &&
                             <TouchableOpacity activeOpacity={0.7} onPress={editAmountClickHandler} style={{
@@ -1563,6 +1550,17 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             </TouchableOpacity>
                         }
                     </View>
+                    {type === 'BUY' && (
+                        // UTXO-tier capsule, on its own line under the amount.
+                        // It used to sit inline beside the amount text, which was
+                        // fine while Edit Amount was withdrawal-only and the two
+                        // never appeared together. Edit Amount now also shows for
+                        // BUY, and in a space-between row the capsule and the
+                        // button collided. Its own line keeps both readable.
+                        <View style={{ marginLeft: 15, marginBottom: 10 }}>
+                            <CustomProgressBar value={Number(isSats ? value : converted) || 0} />
+                        </View>
+                    )}
                     <TextViewV2 keytext={type === 'BUY' ? "Spent from: " : "Sent from: "} text={receiveType ? "Coinos Lightning Account" : type == 'SELL' || type == 'BUY' ? "Strike Fiat Account" : "Strike Lightning Account"} containerStyle={{ marginBottom: 10 }} />
                     {isWithdrawal && to.length > 0 ?
                         <View style={{
