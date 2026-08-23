@@ -150,16 +150,6 @@ export default function ArkReceiveScreen() {
                                         Instant VTXO capsule transfer from another Bark user.
                                         No fees, no confirmations.
                                     </Text>
-                                    {/* A capsule that lands here is short-lived, and the
-                                        expiry reminders are LOCAL alarms scheduled by the
-                                        foreground sync loop and the arkoor receive hook.
-                                        Nothing schedules them while the app is closed, so a
-                                        payment that arrives to a shared address on a closed
-                                        app has no reminder attached to it at all. Same amber
-                                        treatment as the on-chain minimum below. */}
-                                    <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 6, fontWeight: '600' }}>
-                                        Open the app soon after you're paid here. Capsules arriving at this address are short-lived, and reminders can only be set while the app is open.
-                                    </Text>
                                 </View>
                                 <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
                             </View>

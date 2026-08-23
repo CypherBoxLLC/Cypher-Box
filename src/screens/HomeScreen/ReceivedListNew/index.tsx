@@ -958,6 +958,16 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     <Text semibold style={styles.bitcoinAddressText}>
                       Receive 0% fee payments from another Bark user
                     </Text>
+                    {/* A capsule arriving here is short-lived, and the expiry
+                        reminders are LOCAL alarms scheduled by the foreground
+                        sync loop and the arkoor receive hook. Nothing schedules
+                        them while the app is closed, so a payment made to a
+                        shared Bark address on a closed app has no reminder
+                        attached to it at all. Same amber treatment as the tip at
+                        the top of this sheet. */}
+                    <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 8, fontWeight: '600', textAlign: 'center' }}>
+                      Open the app soon after you're paid here. Capsules arriving at this address are short-lived, and reminders can only be set while the app is open.
+                    </Text>
                   </>
                 )}
               </View>
