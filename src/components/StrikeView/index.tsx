@@ -162,7 +162,13 @@ function StrikeView({ showLogo = false, isShowButtons = false,
         // SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
         return
       }
-      dispatchNavigate('SendScreen', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatType: "BUY" });
+      // Affordable capsule: go to the Strike purchase screen with the chosen
+      // size prefilled. This previously routed to the generic Send flow, so
+      // picking a capsule the user COULD afford opened a bitcoin send instead
+      // of a purchase, while picking one they could NOT afford (the branch
+      // above) correctly opened the purchase screen. `fiatTotal` is passed so
+      // the MAX button still has the balance to work from.
+      dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "BUY" });
     }
 
     const sellClickHandler = () => {
@@ -176,12 +182,16 @@ function StrikeView({ showLogo = false, isShowButtons = false,
             SimpleToast.show('Amount cannot be 0', SimpleToast.SHORT);
             return
         }
-        if(Number(strikeUser?.[0]?.available) < dollarStrikeText){
+        // `available` is BTC, `dollarStrikeText` is sats, so this compared
+        // across units and was true for every realistic balance. That sent
+        // SELL down the insufficient-funds branch every time, which hid the
+        // same mis-route the BUY path had.
+        if(Number(strikeUser?.[0]?.available) * SATS < dollarStrikeText){
             // SimpleToast.show('Amount is exceeded', SimpleToast.SHORT);
             dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "SELL" });    
             return
         }
-        dispatchNavigate('SendScreen', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatType: "SELL" });    
+        dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "SELL" });    
     }
 
     const handleStrikeLogout = async () => {
