@@ -168,7 +168,12 @@ function StrikeView({ showLogo = false, isShowButtons = false,
       // of a purchase, while picking one they could NOT afford (the branch
       // above) correctly opened the purchase screen. `fiatTotal` is passed so
       // the MAX button still has the balance to work from.
-      dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "BUY" });
+      // autoAdvance: the size is already chosen here, so the keyboard screen has
+      // nothing left to ask. BuyBitcoin forwards straight to the confirmation
+      // screen, where the amount stays editable. Routed through BuyBitcoin rather
+      // than jumping to ReviewPayment directly so the confirmation receives
+      // exactly the params BuyBitcoin already builds.
+      dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "BUY", autoAdvance: true });
     }
 
     const sellClickHandler = () => {
@@ -191,7 +196,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
             dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "SELL" });    
             return
         }
-        dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "SELL" });    
+        dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "SELL", autoAdvance: true });    
     }
 
     const handleStrikeLogout = async () => {
