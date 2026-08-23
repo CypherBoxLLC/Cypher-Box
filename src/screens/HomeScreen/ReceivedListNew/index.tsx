@@ -631,6 +631,22 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
               </Text>
             )}
 
+            {/* Bark-address specific, so it is gated to that tab: "this address"
+                only means something while the Bark address is on screen.
+                The point is that expiry reminders are LOCAL alarms scheduled by
+                the app when it SEES the capsule, so a payment made to a shared
+                address while the app is closed has no reminder attached to it at
+                all. Sits with the tip above rather than under the QR so the
+                advice reads as one block. COPY: Bam finalizes. */}
+            {selectedItem === 5 && tab === 2 && (
+              <Text
+                center
+                style={{ marginHorizontal: 24, marginTop: 6, fontSize: 12, color: '#FFD54F', opacity: 0.95, lineHeight: 17 }}
+              >
+                To receive 700-sat or above capsule from another Bark user. You need to be present with the app being open when you receive to this address.
+              </Text>
+            )}
+
             {/* Tabs */}
             {tabs.length > 0 && (
               <CustomTabView
@@ -957,16 +973,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     </View>
                     <Text semibold style={styles.bitcoinAddressText}>
                       Receive 0% fee payments from another Bark user
-                    </Text>
-                    {/* A capsule arriving here is short-lived, and the expiry
-                        reminders are LOCAL alarms scheduled by the foreground
-                        sync loop and the arkoor receive hook. Nothing schedules
-                        them while the app is closed, so a payment made to a
-                        shared Bark address on a closed app has no reminder
-                        attached to it at all. Same amber treatment as the tip at
-                        the top of this sheet. */}
-                    <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 8, fontWeight: '600', textAlign: 'center' }}>
-                      Open the app soon after you're paid here. Capsules arriving at this address are short-lived, and reminders can only be set while the app is open.
                     </Text>
                   </>
                 )}
