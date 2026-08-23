@@ -3,7 +3,7 @@ import QRCode from "react-native-qrcode-svg";
 
 import { Copy, StrikeFull } from "@Cypher/assets/images";
 import { GradientSwitch, Text } from "@Cypher/component-library";
-import { GradientView } from "@Cypher/components";
+import { ExitFundingSourceList, GradientView } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import React, { useContext, useEffect, useState } from "react";
@@ -31,11 +31,16 @@ import styles from "./styles";
 import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods, revokeStrikeToken } from "@Cypher/api/strikeAPIs";
 import {
   AUTO_BACKUP_PATH,
+  areBgNotificationsEnabled,
+  computeArkExitPlan,
   computeExitFeeReserveSats,
+  resolveExitReserveTarget,
   connectGoogleDrive,
   convertToExitFees,
   disconnectGoogleDrive,
+  describeExitExclusion,
   estimateExitFeeConvert,
+  getLastExitFeeDeadlineHeight,
   estimateArkOnchainRecover,
   recoverArkOnchainBoard,
   fetchArkExitVtxos,
@@ -48,6 +53,7 @@ import {
   getICloudBackupPath,
   getICloudBackupPathForFingerprint,
   getLastLocalBackupNote,
+  isActiveExit,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
   probeAspReachable,
@@ -57,8 +63,9 @@ import {
   startArkEmergencyExit,
   writeAndVerifyArkBackup,
   writeArkBackupToTempFile,
+  buildExitFundingSources,
 } from "@Cypher/services/ark";
-import type { ExitFeeConvertEstimate } from "@Cypher/services/ark";
+import type { ExitEconomicPolicy, ExitFeeConvertEstimate, ExitTriageResult } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -338,6 +345,8 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
 export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'actions' }) {
   const {
     clearArkAuth,
+    isAuth,
+    isStrikeAuth,
     walletID,
     coldStorageWalletID,
     arkBalanceDetail,
@@ -352,6 +361,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     arkExitStartedSats,
     setArkExitStartedSats,
     setArkExitFeeReserveSats,
+    setArkExitRecommendedReserveSats,
+    setArkExitFeeDeadlineHeight,
   } = useAuthStore() as any;
   const arkIosBackupReminderActive = useAuthStore((s) => s.arkIosBackupReminderActive);
   const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
@@ -440,6 +451,56 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   //   user's signal, and the OS prompt fires on enable).
   // - [DEMO] Fire refresh alarm now button (Play submission demo).
 
+  /**
+   * Whether the OS will actually deliver a notification, as opposed to whether
+   * the user has asked us to send them.
+   *
+   * These are two different facts and the screen used to show only the second.
+   * `arkBgRefreshEnabled` defaults to true, and iOS resets notification
+   * permission on every install, so after any reinstall or recovery the switch
+   * came back green while nothing could be delivered. Permission is only
+   * requested inside setArkBackgroundRefreshEnabled(true), which runs when the
+   * switch is FLIPPED, so a switch that was already on never asked.
+   *
+   * That is the worst failure available to this particular control: its own
+   * subtext promises five reminders and warns that recovery is not guaranteed
+   * once a capsule expires, so a user reading it has affirmative evidence of
+   * protection they do not have.
+   *
+   * null while the first probe is in flight; treated as "not blocked" so the
+   * UI does not flash a warning before it knows anything.
+   */
+  const [osNotifPermission, setOsNotifPermission] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const probe = () => {
+      areBgNotificationsEnabled()
+        .then((ok) => {
+          if (!cancelled) setOsNotifPermission(ok);
+        })
+        .catch(() => {
+          // A failed probe is not evidence of a revoked permission. Assume
+          // granted rather than accuse the OS of blocking us.
+          if (!cancelled) setOsNotifPermission(true);
+        });
+    };
+    probe();
+    // Re-probe on foreground: granting permission happens in iOS Settings,
+    // outside this app, so returning is the only moment we learn about it.
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') probe();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
+  /** The user asked for reminders but the OS will not deliver them. */
+  const remindersBlockedByOs = arkBgRefreshEnabled && osNotifPermission === false;
+  /** What the control should SAY, which is whether reminders can arrive. */
+  const remindersEffectivelyOn = arkBgRefreshEnabled && osNotifPermission !== false;
+
   const handleToggleBgRefresh = async (next: boolean) => {
     if (togglingBgRefresh) return;
     setTogglingBgRefresh(true);
@@ -450,6 +511,23 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // into a background-readable Keychain entry for headless wakes;
         // that machinery is gone.
         await setArkBackgroundRefreshEnabled(true);
+        // Did the OS actually agree? iOS prompts at most once per install, so
+        // a user who declined earlier gets no prompt and no permission, and
+        // reporting "Reminders enabled" there would be the same lie in a
+        // different place. Send them where they can actually grant it.
+        const granted = await areBgNotificationsEnabled();
+        setOsNotifPermission(granted);
+        if (!granted) {
+          Alert.alert(
+            "Reminders need notification permission",
+            "Cypher Box cannot warn you before a capsule expires until notifications are allowed for it in system settings.",
+            [
+              { text: "Not now", style: "cancel" },
+              { text: "Open Settings", onPress: () => void Linking.openSettings() },
+            ],
+          );
+          return;
+        }
         SimpleToast.show("Reminders enabled", SimpleToast.SHORT);
       } else {
         await setArkBackgroundRefreshEnabled(false);
@@ -901,7 +979,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // `null` while the first computation is in flight.
   const [recommendedReserveSats, setRecommendedReserveSats] = useState<number | null>(null);
   const [exitFundingOpen, setExitFundingOpen] = useState(false);
-  const [fundingTab, setFundingTab] = useState<'receive' | 'convert'>('receive');
+  const [fundingTab, setFundingTab] = useState<'receive' | 'wallet' | 'convert'>('receive');
   const [onchainFundAddr, setOnchainFundAddr] = useState<string | null>(null);
   // ASP reachability for the CONVERT (cooperative-offboard) tab. null = probing.
   const [aspReachable, setAspReachable] = useState<boolean | null>(null);
@@ -913,13 +991,18 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const [reserveTargetInput, setReserveTargetInput] = useState('');
 
   const onchainReserveSats: number = arkBalanceDetail?.onchainBoardingSats ?? 0;
-  // Reserve target: the user's chosen hold amount if they've set/armed one
-  // (persisted), otherwise the computed recommendation. Drives the gate, the
-  // funded state, and (via arkExitFeeReserveSats) how much auto-board keeps
-  // on-chain. While recommended is still null (first compute) and nothing is
+  // Reserve target: the GREATER of what the user armed and what an exit is
+  // currently estimated to cost. Drives the gate, the funded state and the
+  // shortfall. While recommended is still null (first compute) and nothing is
   // armed, the target is 0 so we don't gate; the button shows "checking".
-  const reserveTargetSats: number =
-    (arkExitFeeReserveSats ?? 0) > 0 ? arkExitFeeReserveSats : (recommendedReserveSats ?? 0);
+  //
+  // This used to be `armed > 0 ? armed : recommended`, which let a stale armed
+  // figure declare the reserve funded no matter how far the estimate had moved.
+  // See resolveExitReserveTarget for the device case that exposed it.
+  const reserveTargetSats: number = resolveExitReserveTarget({
+    armedSats: arkExitFeeReserveSats,
+    recommendedSats: recommendedReserveSats,
+  });
   const exitFeeGated = reserveTargetSats > 0 && onchainReserveSats < reserveTargetSats;
   const exitFeeShortfallSats = Math.max(0, reserveTargetSats - onchainReserveSats);
   // The user armed a target below the recommended safe amount (warn them).
@@ -957,12 +1040,18 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // phases), which left this panel blank mid-exit. Derive the figure
         // from the per-VTXO exit records and keep the SDK total as a
         // lower bound for whatever later phase it does count.
+        //
+        // Liveness goes through isActiveExit, NOT a regex on String(v.state):
+        // bark 0.6.1 made `state` a tagged-enum object, so the old
+        // /^(Processing|Awaiting)/ test matched "[object Object]" never,
+        // activeSats was always 0, and this fell back to the exact SDK quirk
+        // the code above exists to work around.
         const [vtxos, pendingTotal] = await Promise.all([
           fetchArkExitVtxos(),
           fetchPendingExitsTotalSats(),
         ]);
         const activeSats = vtxos
-          .filter((v) => /^(Processing|Awaiting)/.test(String(v.state)) || v.isClaimable)
+          .filter((v) => isActiveExit(v))
           .reduce((acc, v) => acc + Number(v.amountSats), 0);
         if (!cancelled) setPendingExitSats(Math.max(activeSats, pendingTotal));
       } catch {
@@ -987,7 +1076,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     (async () => {
       try {
         const r = await computeExitFeeReserveSats();
-        if (!cancelled) setRecommendedReserveSats(r.recommendedSats);
+        if (!cancelled) {
+          setRecommendedReserveSats(r.recommendedSats);
+          // Persist it: auto-board runs in the sync loop with no access to this
+          // screen, and without the estimate it would hold only the armed
+          // reserve and board the rest away.
+          setArkExitRecommendedReserveSats(r.recommendedSats);
+        }
       } catch (err) {
         // Leave any prior recommendation in place; a transient failure
         // shouldn't flip a gated wallet to ungated.
@@ -1022,6 +1117,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       cancelled = true;
     };
   }, [exitFundingOpen]);
+
+  // Convert is unavailable mid-exit (cooperative offboard, ASP-gated), and its
+  // tab button disappears. If that was the selected tab the sheet would render
+  // nothing at all, so fall back to the path that always works.
+  useEffect(() => {
+    if (arkExitInProgress && fundingTab === 'convert') setFundingTab('receive');
+  }, [arkExitInProgress, fundingTab]);
 
   // Debounced fee estimate for the CONVERT tab. Skipped when the ASP is known
   // unreachable (the offboard would fail) or the amount is empty/invalid.
@@ -1227,22 +1329,131 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     return /^(bc1|tb1|bcrt1|[13]|[mn2])[a-zA-Z0-9]+$/.test(t);
   };
 
-  const startExitWithAddress = async (destLabel: string, address: string) => {
+  /**
+   * `economicPolicy` is how far past the economics the user has agreed to go.
+   * It only ever moves off the default by the user tapping through the
+   * override prompt below, which states the loss in sats first. Never raise it
+   * silently: the whole point of spec principle 4 is that overspending is a
+   * choice, and a choice nobody was offered is not one.
+   */
+  const startExitWithAddress = async (
+    destLabel: string,
+    address: string,
+    economicPolicy: ExitEconomicPolicy = 'default',
+  ) => {
     setExitPickerOpen(false);
     setExitStarting(true);
-    // Re-estimate the exit-fee cost NOW: fee rates move between screen mount and
-    // this tap, so the warning must reflect the current shortfall rather than a
-    // stale mount-time number. If the on-chain fee wallet is short, advise the
-    // user to top up. It's a stall warning, not a hard block (progressExits
-    // resumes the moment fees are added).
+    // Triage NOW, not at screen mount: fee rates and the chain tip both move
+    // between mount and this tap, and both change which capsules are worth
+    // exiting. The plan decides the exit set AND sizes the reserve over that
+    // set, so the shortfall quoted below is for the capsules actually being
+    // exited rather than for every capsule in the wallet.
+    let plan: ExitTriageResult | null = null;
     let freshRecommended = recommendedReserveSats ?? 0;
     try {
-      const fresh = await computeExitFeeReserveSats();
-      freshRecommended = fresh.recommendedSats;
-      setRecommendedReserveSats(fresh.recommendedSats);
+      plan = await computeArkExitPlan({ economicPolicy });
+      if (plan) {
+        freshRecommended = plan.reserveSats;
+        setRecommendedReserveSats(plan.reserveSats);
+      }
     } catch {
       // Keep the last computed recommendation on a transient failure.
     }
+
+    // The capsule read failed, so there is no exit set to hand the SDK. Say
+    // that, rather than letting startArkEmergencyExit reject an empty list with
+    // copy that would read as "you have nothing worth exiting".
+    if (!plan) {
+      setExitStarting(false);
+      Alert.alert(
+        'Emergency Exit',
+        "Couldn't read your capsules just now, so the exit wasn't started. Try again in a moment.",
+      );
+      return;
+    }
+
+    // The override, offered only where it would change something. Re-planning
+    // with 'recover-everything' is what actually applies it, so the figures in
+    // the confirm dialog afterwards are the forced ones, not these.
+    const forcePrompt = (bodyPrefix: string) => {
+      setExitStarting(false);
+      Alert.alert(
+        'Emergency Exit',
+        bodyPrefix +
+          `\n\nYou can exit ${plan!.overridableCount === 1 ? 'it' : 'them'} anyway. ` +
+          'That is sometimes worth it, for instance to get your funds out of a server you no longer trust, ' +
+          'but it costs more in miner fees than the funds are worth.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Exit anyway',
+            style: 'destructive',
+            onPress: () => {
+              void startExitWithAddress(destLabel, address, 'recover-everything');
+            },
+          },
+        ],
+      );
+    };
+
+    // Nothing survived triage. Say why rather than starting an exit that would
+    // spend the reserve and return nothing.
+    if (plan.selectedIds.length === 0) {
+      const list = plan.excluded
+        .map((e) => `  ${e.sats.toLocaleString()} sats: ${describeExitExclusion(e.reason)}`)
+        .join('\n');
+      if (plan.excluded.length === 0) {
+        setExitStarting(false);
+        Alert.alert('Emergency Exit', 'There are no capsules to exit.');
+        return;
+      }
+      if (plan.overridableCount === plan.excluded.length) {
+        forcePrompt(
+          `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} ` +
+            `can be recovered economically right now:\n${list}`,
+        );
+        return;
+      }
+      setExitStarting(false);
+      Alert.alert(
+        'Emergency Exit',
+        `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} can be recovered by an emergency exit right now:\n\n` +
+          list +
+          '\n\nThey stay in your vault and stay spendable.',
+      );
+      return;
+    }
+
+    // Narrowed alias: `plan` is a let, so the null checks above do not survive
+    // into the Alert's onPress closure.
+    const exitPlan = plan;
+
+    // Principle: never silently abandon funds. Every capsule left behind is
+    // named, with its amount and the reason, BEFORE the user commits.
+    const exclusionNotice =
+      plan.excluded.length > 0
+        ? `${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} holding ${plan.excludedSats.toLocaleString()} sats will NOT be exited:\n` +
+          plan.excluded
+            .map(
+              (e) =>
+                `  ${e.sats.toLocaleString()} sats: ${describeExitExclusion(e.reason)}`,
+            )
+            .join('\n') +
+          '\n\nThey stay in your vault and stay spendable. Sending them, or combining them, recovers more than an exit would.\n\n'
+        : '';
+
+    // Principle: never silently spend more than the funds are worth. The
+    // reserve sits next to what comes back, so a reserve larger than the value
+    // is impossible to miss.
+    const costNotice =
+      `Exiting ${plan.selected.length} capsule${plan.selected.length === 1 ? '' : 's'} holding ${plan.selectedSats.toLocaleString()} sats. About ${plan.netRecoverableSats.toLocaleString()} sats reach your address, and it needs about ${plan.reserveSats.toLocaleString()} sats of on-chain miner fees to get there.\n\n` +
+      // The loss, in sats, whenever the exit spends more than it returns. This
+      // is the sentence that makes an overridden exit a choice rather than a
+      // surprise, so it is not conditional on how the policy got here.
+      (plan.netLossSats > 0
+        ? `That is about ${plan.netLossSats.toLocaleString()} sats MORE in fees than the funds are worth.\n\n`
+        : '');
+
     const shortfall = Math.max(0, freshRecommended - onchainReserveSats);
     const underfunded = freshRecommended > 0 && shortfall > 0;
     const underfundedPrefix = underfunded
@@ -1251,7 +1462,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     try {
       Alert.alert(
         'Emergency Exit',
-        underfundedPrefix +
+        exclusionNotice +
+          costNotice +
+          underfundedPrefix +
           `Forces your VTXO capsules onto the Bitcoin chain. Funds arrive at your ${destLabel} after a ~24-hour wait set by Bitcoin. Once you start, this can't be cancelled.\n\n` +
           'Only start this if your soonest capsule is at least 1 day from expiry. The exit txs must confirm on-chain before then, so it is not a last-minute rescue.\n\n' +
           `${address}\n\n` +
@@ -1262,12 +1475,29 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             style: 'cancel',
             onPress: () => setExitStarting(false),
           },
+          // Partial case: some capsules are worth exiting and some are being
+          // left behind on cost alone. Naming them without offering the choice
+          // would satisfy principle 3 and quietly ignore principle 4.
+          ...(plan.overridableCount > 0
+            ? [
+                {
+                  text: `Include all ${(plan.selected.length + plan.overridableCount)}`,
+                  style: 'destructive' as const,
+                  onPress: () => {
+                    void startExitWithAddress(destLabel, address, 'recover-everything');
+                  },
+                },
+              ]
+            : []),
           {
             text: 'Start exit',
             style: 'destructive',
             onPress: async () => {
               try {
-                await startArkEmergencyExit();
+                await startArkEmergencyExit(exitPlan.selectedIds);
+                // Persist what the reserve was priced against, so the drive can
+                // re-derive its bid each tick as the runway shrinks.
+                setArkExitFeeDeadlineHeight(getLastExitFeeDeadlineHeight());
                 setArkExitDestinationAddress(address);
                 setArkExitStartedAt(Date.now());
                 // Fresh exit: clear any stale "drained" flag from a prior exit
@@ -1278,7 +1508,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // txs broadcast and any live read needs an open handle, so
                 // this persisted figure is what the status panel falls back
                 // to across reloads.
-                const startedSats = Number(arkBalanceDetail?.spendableSats ?? 0);
+                // The exit set, not the wallet: triage may have left capsules
+                // behind, and quoting the whole spendable balance here would
+                // report a total the exit can never deliver.
+                const startedSats = exitPlan.selectedSats;
                 setArkExitStartedSats(startedSats > 0 ? startedSats : null);
                 setArkExitInProgress(true);
                 // Activity log: read pending sats fresh — the exit just
@@ -1867,7 +2100,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 Notify me before capsules expire
               </RNText>
               <Switch
-                value={arkBgRefreshEnabled}
+                // The EFFECTIVE state, not the stored preference. A green
+                // switch has to mean "a reminder will reach you".
+                value={remindersEffectivelyOn}
                 onValueChange={handleToggleBgRefresh}
                 disabled={togglingBgRefresh}
                 trackColor={{ false: '#3a3a3a', true: colors.green }}
@@ -1877,14 +2112,19 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             <Text
               style={{
                 fontSize: 12,
-                color: arkBgRefreshEnabled ? '#888' : colors.redLight,
+                color: remindersEffectivelyOn ? '#888' : colors.redLight,
                 marginTop: 6,
                 lineHeight: 16,
               }}
             >
-              {arkBgRefreshEnabled
-                ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
-                : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
+              {/* Three states, because "the user wants reminders" and
+                  "reminders can arrive" are different facts and only the
+                  second one protects anybody. COPY: Bam finalizes. */}
+              {remindersBlockedByOs
+                ? '⚠ Reminders are blocked. You turned them on, but notifications are not allowed for Cypher Box in system settings, so none will arrive. Tap the switch to fix this.'
+                : remindersEffectivelyOn
+                  ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
+                  : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
             </Text>
 
           </View>
@@ -1904,10 +2144,31 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // Live per-VTXO read when the handle is open; otherwise the
                 // persisted at-start snapshot, so the amount survives
                 // reloads and closed-handle windows.
+                //
+                // Three sources, best first. Getting this ladder wrong is
+                // what made the panel lie in two different ways.
+                //
+                // 1. `pendingExitSats`, the live per-VTXO poll above.
+                // 2. the store's `pendingExitSats`, refreshed by useArkSync's
+                //    exit drive and persisted (the store has no partialize, so
+                //    it survives a cold launch). This rung is why the panel
+                //    stops quoting a stale total: the local poll calls
+                //    fetchArkExitVtxos, which THROWS while the wallet handle
+                //    is closed, and the effect swallows it, so on a cold
+                //    launch with the vault still locked the local value stays
+                //    null for as long as the user takes to authenticate.
+                // 3. `arkExitStartedSats`, the at-start snapshot, only when
+                //    nothing better has ever been recorded.
+                //
+                // Rung 3 must never outrank rung 2, because the snapshot is
+                // fixed at exit start and does NOT decrement as capsules are
+                // claimed. Observed live: 1801 of 3671 sats already recovered
+                // and confirmed on chain, vault locked after a relaunch, and
+                // the panel still reading "3671 sats pending exit".
                 const shownSats =
-                  pendingExitSats && pendingExitSats > 0
-                    ? pendingExitSats
-                    : (arkExitStartedSats ?? pendingExitSats);
+                  pendingExitSats ??
+                  arkBalanceDetail?.pendingExitSats ??
+                  arkExitStartedSats;
                 return shownSats == null || shownSats <= 0
                   ? 'Broadcasting exit transactions…'
                   : `${shownSats.toLocaleString()} sats pending exit. Funds sweep automatically once the ~24h CSV timelock expires.`;
@@ -1923,6 +2184,38 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 Started {new Date(arkExitStartedAt).toLocaleString()}. Funds sweep to the destination when the timelock expires; the vault stays afterwards.
               </Text>
             )}
+
+            {/* FEE RESERVE, DURING THE EXIT.
+                Previously this whole section was replaced by the panel above,
+                so the one moment the reserve matters most was the one moment
+                the user could neither see it nor top it up. Worse, the panel
+                promises funds sweep automatically while removing the means to
+                make that true: every exit branch needs a CPFP broadcast and
+                every claim needs a fee, and running dry strands capsules
+                mid-exit until someone tops up.
+                Observed live 2026-08-18 on a five-capsule exit that ran out at
+                699 sats with four claims still owed.
+                The receive path is ASP-independent, so it works during an
+                outage, which is exactly when an exit is running. */}
+            <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#2A2A2A' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, color: '#AAA' }}>Fee reserve on-chain</Text>
+                <Text bold style={{ fontSize: 13, color: onchainReserveSats > 0 ? colors.green : '#FFD54F' }}>
+                  {onchainReserveSats.toLocaleString()} sats
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: '#777', marginTop: 6, lineHeight: 15 }}>
+                Pays the miner fees for each capsule's exit and claim. If it runs
+                out, the remaining capsules wait until you top it up.
+              </Text>
+              <TouchableOpacity
+                onPress={() => setExitFundingOpen(true)}
+                activeOpacity={0.7}
+                style={{ marginTop: 10, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)' }}
+              >
+                <Text bold style={{ fontSize: 13, color: '#FFF' }}>Top up exit fees</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <>
@@ -2475,7 +2768,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
               {/* Tab switch */}
               <View style={{ flexDirection: 'row', marginBottom: 14, borderRadius: 10, backgroundColor: '#222', padding: 3 }}>
-                {(['receive', 'convert'] as const).map((tab) => {
+                {((arkExitInProgress
+                  ? (['receive', 'wallet'] as const)
+                  : (['receive', 'wallet', 'convert'] as const)) as readonly ('receive' | 'wallet' | 'convert')[]).map((tab) => {
                   const active = fundingTab === tab;
                   return (
                     <TouchableOpacity
@@ -2484,7 +2779,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: active ? (colors.ark?.light ?? colors.pink.default) : 'transparent' }}
                     >
                       <Text bold style={{ fontSize: 12, color: active ? '#1C1C1C' : '#AAA' }}>
-                        {tab === 'receive' ? 'Receive Bitcoin' : 'Convert from balance'}
+                        {tab === 'receive'
+                          ? 'Receive Bitcoin'
+                          : tab === 'wallet'
+                            ? 'From a wallet'
+                            : 'Convert from balance'}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -2523,6 +2822,47 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   ) : (
                     <ActivityIndicator color={colors.ark?.light ?? colors.pink.default} style={{ marginVertical: 24 }} />
                   )}
+                </>
+              )}
+
+              {fundingTab === 'wallet' && (
+                <>
+                  <Text style={{ fontSize: 12, color: '#CCC', marginBottom: 12, lineHeight: 17 }}>
+                    Send {exitFeeShortfallSats.toLocaleString()} sats on-chain from one of your
+                    wallets. The address is filled in for you.
+                  </Text>
+                  {/* Sources that cannot be used are listed too, dimmed and with
+                      a reason. Hiding them makes the feature look broken to
+                      someone expecting their wallet to appear. */}
+                  <ExitFundingSourceList
+                    shortfallSats={exitFeeShortfallSats}
+                    sources={buildExitFundingSources({
+                      coinos: { connected: !!isAuth },
+                      strike: { connected: !!isStrikeAuth },
+                      hotVault: { walletID: walletID ?? null },
+                      coldVault: { walletID: coldStorageWalletID ?? null },
+                      shortfallSats: exitFeeShortfallSats,
+                    })}
+                    onSelect={(id) => {
+                      // Only CoinOS has a provider today. The others stay in the
+                      // list so the roadmap is visible, but must not pretend to
+                      // work.
+                      if (id !== 'coinos') {
+                        SimpleToast.show('Coming soon for this wallet', SimpleToast.SHORT);
+                        return;
+                      }
+                      setExitFundingOpen(false);
+                      (navigation as any).navigate('ArkExitFundingConfirmScreen', {
+                        sourceId: 'coinos',
+                        sourceLabel: 'CoinOS',
+                        shortfallSats: exitFeeShortfallSats,
+                        // Balance is read on the confirm screen; null means
+                        // "unknown", which plans for the full shortfall rather
+                        // than refusing.
+                        availableSats: null,
+                      });
+                    }}
+                  />
                 </>
               )}
 

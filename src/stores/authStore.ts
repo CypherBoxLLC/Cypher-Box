@@ -220,6 +220,37 @@ export type AuthStateType = {
      */
     arkRoundIntervalSecs: number | null;
     /**
+     * CSV delay in blocks a unilateral exit output must sit out before it can
+     * be claimed (`ArkInfo.vtxoExitDelta`, observed 144 on mainnet). Cached
+     * from the same one-shot arkInfo fetch as `arkRoundIntervalSecs`.
+     *
+     * Cached rather than fetched on demand because the exit path must never
+     * call the ASP: the user pressed the trustless button precisely because the
+     * server may be gone. Exit triage needs this to work out whether a capsule
+     * has the runway to clear its timelock before it expires, and a null makes
+     * it assume the worst plausible delta rather than skip the check.
+     */
+    arkVtxoExitDeltaBlocks: number | null;
+    /**
+     * `ArkInfo.maxVtxoExitDepth` (observed 100). Past this the server refuses
+     * to cosign further out-of-round spends of a capsule, so exit or refresh
+     * are the only moves left with it. Surfaced as a disclosure during exit
+     * triage; it never excludes a capsule, since being un-spendable through the
+     * server is an argument FOR exiting it.
+     */
+    arkMaxVtxoExitDepth: number | null;
+    /**
+     * Block height by which the tightest capsule in an in-flight exit must have
+     * cleared its timelock. Written when the exit starts.
+     *
+     * The exit drive prices its CPFP bids from how much runway is left, and the
+     * runway shrinks every block over an exit that runs for days. Persisting the
+     * DEADLINE rather than the urgency band lets the drive re-derive the band
+     * each tick against the current tip, with no extra wallet read and no stale
+     * band. Null means unknown, which the pricing treats as most urgent.
+     */
+    arkExitFeeDeadlineHeight: number | null;
+    /**
      * Unilateral-exit state — set when user taps "Emergency Exit" in
      * Settings. While true, `useArkSync` switches modes: it stops issuing
      * normal sync/refresh calls (they'd race the exit machinery) and instead
@@ -241,6 +272,15 @@ export type AuthStateType = {
      * (don't auto-claim on a stale exit-in-progress flag from a crash).
      */
     arkExitStartedAt: number | null;
+    /**
+     * When the current exit first had ANY claimable capsule, epoch ms.
+     *
+     * Drives the claim batching window: each claim is its own on-chain
+     * transaction with its own fee, so sweeping five capsules one at a time
+     * costs five fees where one would do. Persisted rather than held in a ref
+     * because the exit outlives the process by a day or more.
+     */
+    arkExitClaimBatchSince: number | null;
     /**
      * Spendable sats captured at the moment the exit was started. Display
      * fallback for the "X sats pending exit" panel: the SDK's live counters
@@ -269,6 +309,13 @@ export type AuthStateType = {
      * the user opens the "Fund exit fees" flow; reset on wallet teardown.
      */
     arkExitFeeReserveSats: number;
+    /**
+     * Last computed exit-cost estimate (computeExitFeeReserveSats). Persisted
+     * ONLY so the sync loop's auto-board can see it: the estimate is computed
+     * on the exit settings screen, but auto-board runs headless and would
+     * otherwise hold just what the user armed and board the rest away.
+     */
+    arkExitRecommendedReserveSats: number | null;
     arkUseHotVaultSeed: boolean;
     withdrawArkThreshold: any | null;
     reserveArkAmount: number;
@@ -288,12 +335,19 @@ export type AuthStateType = {
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
     setArkRoundIntervalSecs: (state: number | null) => void;
+    setArkExitFeeDeadlineHeight: (state: number | null) => void;
+    setArkExitParams: (state: {
+        vtxoExitDeltaBlocks: number | null;
+        maxVtxoExitDepth: number | null;
+    }) => void;
     setArkExitInProgress: (state: boolean) => void;
     setArkExitDestinationAddress: (state: string | null) => void;
     setArkExitStartedAt: (state: number | null) => void;
+    setArkExitClaimBatchSince: (state: number | null) => void;
     setArkExitDrained: (state: boolean) => void;
     setArkExitStartedSats: (state: number | null) => void;
     setArkExitFeeReserveSats: (state: number) => void;
+    setArkExitRecommendedReserveSats: (state: number | null) => void;
     setArkUseHotVaultSeed: (state: boolean) => void;
     setWithdrawArkThreshold: (state: any) => void;
     setReserveArkAmount: (state: number) => void;
@@ -509,12 +563,17 @@ const createAuthStore = (
     arkLastSyncedAt: null,
     arkLastBackupAt: null,
     arkRoundIntervalSecs: null,
+    arkVtxoExitDeltaBlocks: null,
+    arkMaxVtxoExitDepth: null,
+    arkExitFeeDeadlineHeight: null,
     arkExitInProgress: false,
     arkExitDestinationAddress: null,
     arkExitStartedAt: null,
+    arkExitClaimBatchSince: null,
     arkExitDrained: false,
     arkExitStartedSats: null,
     arkExitFeeReserveSats: 0,
+    arkExitRecommendedReserveSats: null,
     arkUseHotVaultSeed: false,
     withdrawArkThreshold: 500000,
     reserveArkAmount: 100000,
@@ -585,12 +644,20 @@ const createAuthStore = (
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
     setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
+    setArkExitFeeDeadlineHeight: (state: number | null) => set({ arkExitFeeDeadlineHeight: state }),
+    setArkExitParams: (state) => set({
+        arkVtxoExitDeltaBlocks: state.vtxoExitDeltaBlocks,
+        arkMaxVtxoExitDepth: state.maxVtxoExitDepth,
+    }),
     setArkExitInProgress: (state: boolean) => set({ arkExitInProgress: state }),
     setArkExitDestinationAddress: (state: string | null) => set({ arkExitDestinationAddress: state }),
     setArkExitStartedAt: (state: number | null) => set({ arkExitStartedAt: state }),
+    setArkExitClaimBatchSince: (state: number | null) => set({ arkExitClaimBatchSince: state }),
     setArkExitDrained: (state: boolean) => set({ arkExitDrained: state }),
     setArkExitStartedSats: (state: number | null) => set({ arkExitStartedSats: state }),
     setArkExitFeeReserveSats: (state: number) => set({ arkExitFeeReserveSats: state }),
+    setArkExitRecommendedReserveSats: (state: number | null) =>
+        set({ arkExitRecommendedReserveSats: state }),
     setArkUseHotVaultSeed: (state: boolean) => set({ arkUseHotVaultSeed: state }),
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
     setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),
@@ -628,13 +695,37 @@ const createAuthStore = (
             arkLastSyncedAt: null,
             arkLastBackupAt: null,
             arkRoundIntervalSecs: null,
+            // arkVtxoExitDeltaBlocks / arkMaxVtxoExitDepth are deliberately NOT
+            // reset. They are the server's protocol constants, not wallet
+            // state, and exit triage falls back to a worst-case delta whenever
+            // they are null. Clearing them here would leave a freshly recovered
+            // wallet triaging against that worst case until the next arkInfo
+            // fetch lands, which excludes capsules that had the runway all
+            // along. Same reasoning as arkBgRefreshEnabled below.
+            arkExitFeeDeadlineHeight: null,
             arkExitInProgress: false,
-            arkExitDestinationAddress: null,
             arkExitStartedAt: null,
+            arkExitClaimBatchSince: null,
             arkExitDrained: false,
             arkExitStartedSats: null,
-            arkExitFeeReserveSats: 0,
             arkUseHotVaultSeed: false,
+            // arkExitDestinationAddress and arkExitFeeReserveSats are
+            // deliberately NOT reset here. Both are user-chosen exit-funding
+            // settings, and clearArkAuth is not only a logout: the boot path
+            // calls it on a `no-datadir` restore result
+            // (useArkRestoreOnBoot.ts:99), so a transient read on a device that
+            // does have a vault silently discarded both.
+            //
+            // Observed on device 2026-08-16. The reserve went to 0, which flips
+            // sync.ts out of the "hold funds on-chain" branch and into
+            // boardAll(), i.e. boarding away the very sats set aside to pay for
+            // a unilateral exit. And the nulled destination let
+            // useArkExitDestinationBackfill (which only fills when unset)
+            // substitute a fresh Hot Vault address, so a live exit was
+            // redirected away from the address the user had chosen.
+            //
+            // Same reasoning as the kept thresholds below and as
+            // arkArkoorPromptEnabled.
             allBTCWallets: get().allBTCWallets.filter(wallet => wallet !== 'ARK'),
             // Keep thresholds — don't reset on logout
 

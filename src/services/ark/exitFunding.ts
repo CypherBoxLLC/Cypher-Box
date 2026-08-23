@@ -18,48 +18,40 @@
  * of this reserve.
  */
 
+import useAuthStore from '@Cypher/stores/authStore';
+
 import { barkStateTag } from './barkState';
+import { ESPLORA_URLS } from './config';
 import { assertNoActiveArkExit } from './exit';
+import type {
+    ExitEconomicPolicy,
+    ExitFeeRateTable,
+    ExitFeeUrgency,
+    ExitTriageResult,
+    ExitTriageVtxo,
+} from './exitTriage';
+import {
+    EXIT_FEE_FALLBACK_RATES,
+    RESERVE_FLOOR_SATS,
+    SPIKE_MULT,
+    exitFeeUrgency,
+    ratesFromEsploraEstimates,
+    ratesFromMempoolRecommended,
+    triageArkExit,
+    urgencyFromSlackBlocks,
+} from './exitTriage';
 import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
 
 // --- Tunable sizing constants ----------------------------------------------
 //
-// The reserve is grounded in the SDK's own per-VTXO exit-cost data
-// (`Vtxo.exitTxWeightWu` = weight of the full unilateral exit tx chain, and
-// `Vtxo.exitDepth` = number of levels in that chain), so it tracks real exit
-// cost rather than a blind guess. The multipliers add headroom for the
-// multi-block window an exit spans (a fee spike mid-exit is its weak spot, and
-// per Bark's Peter you want runway to "refill the onchain wallet if you run
-// out"). All values are intentionally conservative: over-reserving is
-// harmless (the extra sats stay the user's own on-chain, and the auto-board
-// pipeline boards any excess above the reserve back into Ark later), while
-// under-reserving stalls the exit.
+// The per-capsule cost model (CPFP_CHILD_VB, FALLBACK_VB_PER_VTXO, SPIKE_MULT,
+// RESERVE_FLOOR_SATS) moved to ./exitTriage, which is the module that decides
+// which capsules the reserve is FOR. Keeping two copies would let the number
+// the user is asked to fund drift from the set it was sized over. Only the
+// fee-rate fallback, which is about fetching rather than costing, stays here.
 
-/** Per exit-tree level: the CPFP child (anchor input + funding input + change)
- *  that bumps that level. Upper-bounded; matches RECOVER_EST_VSIZE in
- *  ./recoverOnchainBoard.ts. Applied `exitDepth` times per VTXO. */
-const CPFP_CHILD_VB = 150;
-/** Headroom multiplier over the current fee rate, for a fee spike during the
- *  (multi-block) exit window. */
-const SPIKE_MULT = 2.0;
-/** Lower bound whenever there is anything to exit, so a low fee rate (or a
- *  runtime `exitTxWeightWu` of 0) still reserves enough for at least one CPFP
- *  child at a moderate rate. Kept below the 50k board minimum so it doesn't
- *  over-hoard on-chain.
- *
- *  Sized to the stated rationale (one CPFP child ~150 vB at a moderate rate
- *  with the spike buffer), not a flat 10k. The old 10k floor over-reserved
- *  small exits by 2-4x their real cost and, combined with the (soft) fee gate,
- *  made a well-funded small vault look unfundable for exit. This is guidance
- *  only now: the exit stays startable via "Start exit anyway" whenever there
- *  is any on-chain balance, so the floor no longer blocks — it just sets the
- *  auto-board hold target. */
-const RESERVE_FLOOR_SATS = 5_000;
-/** Fallback per-VTXO vsize used only if the SDK returns `exitTxWeightWu === 0`
- *  at runtime (the type says it's populated; guard anyway). */
-const FALLBACK_VB_PER_VTXO = 200;
 /** Fee-rate fallback (sat/vB) when the mempool fetch fails. Deliberately not
  *  tiny, since an emergency exit may run during congestion, but not the old
  *  20 either: on a flaky network the fee fetch fails often, and 20 sat/vB
@@ -74,12 +66,18 @@ export type ExitFeeReserve = {
     /** Recommended sats to hold on-chain to fund the exit. 0 when nothing is
      *  exitable (so a nothing-to-exit wallet is never gated). */
     recommendedSats: number;
-    /** Count of VTXOs the reserve was sized over. */
+    /** Count of VTXOs the reserve was sized over: the SELECTED set, not the
+     *  wallet. */
     vtxoCount: number;
     /** Fee rate (sat/vB) the recommendation was computed at. */
     feeRateSatPerVb: number;
-    /** Summed exit vsize across the exitable VTXOs (pre-multiplier). */
+    /** Summed exit vsize across the SELECTED VTXOs (pre-multiplier). */
     totalExitVb: number;
+    /** Capsules triage dropped from the exit set. */
+    excludedCount: number;
+    /** Face value of those capsules, which is what the user is being asked to
+     *  give up. Never allow this to be non-zero without naming them. */
+    excludedSats: number;
 };
 
 export type ExitFeeConvertEstimate = {
@@ -99,6 +97,127 @@ export type ExitFeeConvertEstimate = {
  * mempool.space rather than the configured esplora (blockstream), which the
  * codebase repeatedly notes bot-blocks bark's client.
  */
+/** Claim-fee bounds. The claim is NOT the exit-tree CPFP and must not be priced
+ *  like it: see fetchClaimFeeRateSatPerVb. Floor 1 because anything below the
+ *  relay minimum is unrelayable; ceiling because an unbounded spike would
+ *  reproduce the exact bug this exists to prevent. */
+const CLAIM_RATE_MIN = 1;
+const CLAIM_RATE_MAX = 5;
+
+/**
+ * Fee rate for the exit CLAIM, which is a different problem from the exit-tree
+ * CPFP that `fetchFastFeeRateSatPerVb` prices.
+ *
+ * The CPFP children are time-critical: the exit tree has to confirm before the
+ * VTXO expires, so paying for speed there is buying something real, and it is
+ * paid out of the on-chain reserve.
+ *
+ * A claim is the opposite. It spends an output whose CSV has already matured,
+ * it races nothing, and its fee comes out of the claimed value itself. Paying
+ * a "fastest" rate there buys no safety and directly destroys small claims.
+ *
+ * Observed live 2026-08-19 on a real mainnet exit: with no rate passed, bark
+ * priced a single-capsule claim at 779 sats against a 698 sat output and
+ * refused to build it ("Claim Fee Exceeds Output: Cost to claim exits was
+ * 0.00000779 BTC, but the total output was 0.00000698 BTC"). That is ~6.6
+ * sat/vB over the measured 117.5 vB claim, at a moment when the mempool wanted
+ * 1. The two claims that had already succeeded went at 1.1 and 1.9 sat/vB. The
+ * failure is caught and retried every drive tick, so the exit sat in an
+ * infinite retry loop that could never succeed.
+ *
+ * So: take the 1-hour rate, not the fastest, and clamp it.
+ */
+export async function fetchClaimFeeRateSatPerVb(): Promise<number> {
+    const clamp = (n: number) =>
+        Math.min(CLAIM_RATE_MAX, Math.max(CLAIM_RATE_MIN, Math.ceil(n)));
+    try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch('https://mempool.space/api/v1/fees/recommended', {
+            signal: controller.signal,
+        });
+        clearTimeout(t);
+        if (!res.ok) return CLAIM_RATE_MIN;
+        const rec = await res.json();
+        const raw = Number(rec?.hourFee ?? rec?.economyFee);
+        if (!isFinite(raw) || raw <= 0) return CLAIM_RATE_MIN;
+        return clamp(raw);
+    } catch {
+        // Unreachable fee API. Floor rather than the reserve's congestion hedge:
+        // an over-priced claim does not fail slowly, it fails permanently.
+        return CLAIM_RATE_MIN;
+    }
+}
+
+/**
+ * Fee rate for the exit-tree CPFP children, at the urgency the capsules
+ * actually have.
+ *
+ * Falls back to the fastest rate present in the response, and then to the
+ * congestion-hedge constant, so a malformed or partial response bids HIGH.
+ * Under-bidding here risks the capsule; over-bidding only parks sats on-chain
+ * that stay the user's own.
+ */
+/**
+ * All four bands, from the best source that answers.
+ *
+ * Three sources, in order, because a single fee API is a single point of
+ * failure and it fired on the first day: mempool.space was unreachable from
+ * both the device and the dev machine on 2026-08-20, which collapsed every band
+ * to one constant and undid the runway pricing entirely.
+ *
+ *   1. mempool.space named tiers, the richest signal
+ *   2. esplora /fee-estimates, keyed by confirmation target, across the same
+ *      providers the wallet already rotates (blockstream answered when
+ *      mempool.space did not)
+ *   3. band-aware constants, which still respect urgency rather than flattening
+ *
+ * Fetched as a table rather than one band at a time because pricing the exit
+ * takes more than one pass (see computeArkExitPlan) and refetching between them
+ * would let the market move underneath the comparison.
+ */
+export async function fetchExitFeeRates(): Promise<ExitFeeRateTable> {
+    const get = async (url: string): Promise<unknown | null> => {
+        try {
+            const controller = new AbortController();
+            const t = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(t);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch {
+            return null;
+        }
+    };
+
+    const recommended = await get('https://mempool.space/api/v1/fees/recommended');
+    const fromMempool = ratesFromMempoolRecommended(recommended);
+    if (fromMempool) return fromMempool;
+
+    for (const base of ESPLORA_URLS) {
+        const est = await get(`${base}/fee-estimates`);
+        const fromEsplora = ratesFromEsploraEstimates(est);
+        if (fromEsplora) {
+            if (__DEV__) console.log('[Ark exit-funding] fee rates via esplora', base, fromEsplora);
+            return fromEsplora;
+        }
+    }
+
+    if (__DEV__) {
+        console.warn(
+            '[Ark exit-funding] every fee source unreachable; using band-aware fallback',
+            EXIT_FEE_FALLBACK_RATES,
+        );
+    }
+    return EXIT_FEE_FALLBACK_RATES;
+}
+
+export async function fetchExitTreeFeeRateSatPerVb(
+    urgency: ExitFeeUrgency,
+): Promise<number> {
+    return (await fetchExitFeeRates())[urgency];
+}
+
 export async function fetchFastFeeRateSatPerVb(): Promise<number> {
     try {
         const controller = new AbortController();
@@ -118,16 +237,157 @@ export async function fetchFastFeeRateSatPerVb(): Promise<number> {
 }
 
 /**
- * Compute the recommended on-chain fee reserve for a full-wallet exit.
+ * Read every capsule the exit could touch, in the flat shape ./exitTriage
+ * wants.
  *
- * Reads `handle.allVtxos()` fresh (the store's `ArkVtxoView` drops
- * `exitTxWeightWu` / `exitDepth`, so the cached VTXO list can't be reused).
- * (allVtxos is a JS-thread-blocking UniFFI call; call this off the render
- * path.) Filters to non-spent VTXOs, mirroring the wallet-exit set that
- * `startExitForEntireWallet` marks.
+ * Reads `handle.allVtxos()` fresh: the store's `ArkVtxoView` drops
+ * `exitTxWeightWu` and `exitDepth`, which are exactly the two fields the whole
+ * cost model turns on, so the cached VTXO list cannot be reused. allVtxos is a
+ * JS-thread-blocking UniFFI call, so keep this off the render path.
+ */
+async function readExitCandidates(): Promise<ExitTriageVtxo[] | null> {
+    const handle = getArkWalletHandle();
+    if (!handle) return null;
+    try {
+        const vtxos = await handle.allVtxos();
+        return (vtxos ?? []).map((v) => ({
+            id: v.id,
+            sats: Number(v.amountSats ?? 0n),
+            exitDepth: Number(v.exitDepth ?? 0),
+            exitTxWeightWu: Number(v.exitTxWeightWu ?? 0n),
+            expiryHeight: Number(v.expiryHeight ?? 0),
+            // bark 0.6.1: `state` is a tagged-enum object; flatten to its
+            // variant string so triage can compare it.
+            stateTag: barkStateTag(v.state),
+            registered: v.registered,
+        }));
+    } catch (err) {
+        if (__DEV__) console.warn('[Ark exit-funding] allVtxos threw:', err);
+        return null;
+    }
+}
+
+/**
+ * Decide which capsules an emergency exit should actually exit, and what that
+ * costs. This is the function the exit-start path calls: its `selectedIds` go
+ * to `startExitForVtxos`, and its `excluded` list is what the user has to be
+ * shown before they commit.
  *
- * Returns `recommendedSats: 0` when the wallet handle is unset or there is
- * nothing exitable.
+ * Takes no ASP call. `vtxoExitDelta` comes from the persisted cache written
+ * while the server was last reachable, and a missing cache makes the temporal
+ * axis assume the worst rather than skip (see ./exitTriage). That is the whole
+ * point: the exit path has to work against a server that is gone.
+ *
+ * `economicPolicy` is how far past the economics the user has chosen to go.
+ * Callers must leave it at the default until the user has been shown the loss
+ * in sats and asked (spec principle 4); it is not a retry knob.
+ *
+ * Returns null only when there is no wallet handle or the VTXO read failed.
+ */
+/**
+ * Deadline height from the most recent plan, for the caller to persist when it
+ * actually starts an exit. Module-level rather than on the result so the plan
+ * type stays a pure description of the exit set.
+ */
+let lastExitFeeDeadlineHeight: number | null = null;
+
+/** Deadline height the last computed plan was priced against. */
+export function getLastExitFeeDeadlineHeight(): number | null {
+    return lastExitFeeDeadlineHeight;
+}
+
+export async function computeArkExitPlan(
+    opts?: { economicPolicy?: ExitEconomicPolicy },
+): Promise<ExitTriageResult | null> {
+    const vtxos = await readExitCandidates();
+    if (!vtxos) return null;
+
+    const s = useAuthStore.getState();
+    const chainTipHeight = s.arkChainTipHeight ?? null;
+    const vtxoExitDeltaBlocks = s.arkVtxoExitDeltaBlocks ?? null;
+
+    const rates = await fetchExitFeeRates();
+    const runTriage = (feeRateSatPerVb: number) =>
+        triageArkExit({
+            vtxos,
+            feeRateSatPerVb,
+            chainTipHeight,
+            vtxoExitDeltaBlocks,
+            maxVtxoExitDepth: s.arkMaxVtxoExitDepth ?? null,
+            economicPolicy: opts?.economicPolicy,
+        });
+
+    // Pricing and selection depend on each other: the rate decides which
+    // capsules are worth exiting, and which capsules are being exited decides
+    // how urgent the rate has to be. Resolved by probing rather than iterating
+    // to a fixed point, because the dearest pass IS the old behaviour and is
+    // therefore always a safe answer to fall back to.
+    const urgentPlan = runTriage(rates.urgent);
+    let plan = urgentPlan;
+    let urgency = exitFeeUrgency(urgentPlan.selected);
+
+    if (urgentPlan.selected.length === 0 && rates.relaxed < rates.urgent) {
+        // Nothing survives at the dearest rate, so there is no selection to read
+        // an urgency off, and taking the empty set's 'urgent' at face value
+        // pins the rate high and keeps the answer permanently empty. Probe the
+        // cheapest band: if anything IS exitable down there, its own runway
+        // decides the real rate below.
+        const cheapest = runTriage(rates.relaxed);
+        if (cheapest.selected.length > 0) urgency = exitFeeUrgency(cheapest.selected);
+    }
+
+    if (rates[urgency.urgency] < rates.urgent) {
+        // Price at what the runway justifies. A cheaper rate can only ADD
+        // capsules, so re-read the urgency of that larger set: if a newcomer is
+        // tighter than anything already counted, the cheaper rate was not
+        // justified after all and the dearest pass stands.
+        const cheaperPlan = runTriage(rates[urgency.urgency]);
+        const recheck = exitFeeUrgency(cheaperPlan.selected);
+        if (cheaperPlan.selected.length > 0 && rates[recheck.urgency] <= rates[urgency.urgency]) {
+            plan = cheaperPlan;
+            urgency = recheck;
+        }
+    }
+    lastExitFeeDeadlineHeight = urgency.deadlineHeight;
+
+    if (__DEV__) {
+        console.log(
+            '[Ark exit-triage] selected', plan.selected.length, 'of',
+            plan.selected.length + plan.excluded.length, 'capsules;',
+            plan.selectedSats, 'sats in,', plan.netRecoverableSats, 'recoverable;',
+            'excluded', plan.excluded.length, 'holding', plan.excludedSats, 'sats;',
+            'reserve=', plan.reserveSats, 'over totalExitVb=', plan.totalExitVb,
+            'at', plan.feeRateSatPerVb, 'sat/vB (claim at', plan.claimFeeRateSatPerVb,
+            '); policy=', plan.economicPolicy,
+            '; urgency=', urgency.urgency, 'slack=', urgency.tightestSlackBlocks, 'blocks',
+            '; rates=', JSON.stringify(rates),
+            '; netLoss=', plan.netLossSats, '; overridable=', plan.overridableCount,
+            plan.usedAssumedExitDelta ? '; exit delta ASSUMED' : '',
+        );
+        for (const e of plan.excluded) {
+            console.log(
+                `[Ark exit-triage] excluded ${e.id} ${e.sats} sats depth=${e.exitDepth}`,
+                `perVtxoVb=${e.perVtxoVb} reason=${e.reason}`,
+            );
+        }
+    }
+
+    return plan;
+}
+
+/**
+ * Recommended on-chain fee reserve, sized over the capsules the exit will
+ * ACTUALLY exit.
+ *
+ * It used to sum every non-spent VTXO, which billed the user for two things
+ * they never get back. Measured on the QA wallet 2026-08-20: dust that triage
+ * now discards was 66% of the demanded reserve (32,120 down to 10,808), and ten
+ * already-`Exited` capsules, which bark keeps returning from `allVtxos()`
+ * forever, added another 14,504 sats of reserve for value that was already
+ * on-chain.
+ *
+ * Returns `recommendedSats: 0` when the wallet handle is unset or nothing
+ * survives triage, so a wallet with nothing worth exiting is never gated.
  */
 export async function computeExitFeeReserveSats(): Promise<ExitFeeReserve> {
     const empty: ExitFeeReserve = {
@@ -135,55 +395,97 @@ export async function computeExitFeeReserveSats(): Promise<ExitFeeReserve> {
         vtxoCount: 0,
         feeRateSatPerVb: 0,
         totalExitVb: 0,
+        excludedCount: 0,
+        excludedSats: 0,
     };
 
-    const handle = getArkWalletHandle();
-    if (!handle) return empty;
-
-    let vtxos;
-    try {
-        vtxos = await handle.allVtxos();
-    } catch (err) {
-        if (__DEV__) console.warn('[Ark exit-funding] allVtxos threw:', err);
-        return empty;
-    }
-
-    const exitable = (vtxos ?? []).filter(
-        // bark 0.6.1: `state` is a tagged-enum object; read its variant string.
-        // Same semantics as before: exclude already-spent vtxos from the
-        // exit-fee estimate.
-        (v) => barkStateTag(v.state).toLowerCase() !== 'spent',
-    );
-    if (exitable.length === 0) return empty;
-
-    let totalExitVb = 0;
-    for (const v of exitable) {
-        const chainVb = Math.ceil(Number(v.exitTxWeightWu ?? 0n) / 4);
-        const perVtxoVb =
-            Math.max(chainVb, FALLBACK_VB_PER_VTXO) +
-            Math.max(0, Number(v.exitDepth ?? 0)) * CPFP_CHILD_VB;
-        totalExitVb += perVtxoVb;
-    }
-
-    const feeRateSatPerVb = await fetchFastFeeRateSatPerVb();
-    const computed = Math.ceil(totalExitVb * feeRateSatPerVb * SPIKE_MULT);
-    const recommendedSats = Math.max(RESERVE_FLOOR_SATS, computed);
+    const plan = await computeArkExitPlan();
+    if (!plan) return empty;
 
     if (__DEV__) {
         console.log(
             '[Ark exit-funding] reserve:',
-            recommendedSats, 'sats over', exitable.length, 'vtxos;',
-            'totalExitVb=', totalExitVb,
-            'feeRate=', feeRateSatPerVb, 'sat/vB; spikeMult=', SPIKE_MULT,
+            plan.reserveSats, 'sats over', plan.selected.length, 'selected vtxos;',
+            'totalExitVb=', plan.totalExitVb,
+            'feeRate=', plan.feeRateSatPerVb, 'sat/vB; spikeMult=', SPIKE_MULT,
+            '; floor=', RESERVE_FLOOR_SATS,
         );
     }
 
     return {
-        recommendedSats,
-        vtxoCount: exitable.length,
-        feeRateSatPerVb,
-        totalExitVb,
+        recommendedSats: plan.reserveSats,
+        vtxoCount: plan.selected.length,
+        feeRateSatPerVb: plan.feeRateSatPerVb,
+        totalExitVb: plan.totalExitVb,
+        excludedCount: plan.excluded.length,
+        excludedSats: plan.excludedSats,
     };
+}
+
+/**
+ * Cache the server's exit-relevant protocol constants so the exit path never
+ * has to ask for them.
+ *
+ * `vtxoExitDelta` is the CSV a broadcast exit output sits out before it can be
+ * claimed, and it is what exit triage measures a capsule's remaining runway
+ * against. The exit path is not allowed to call the ASP (a user who pressed the
+ * trustless button must get the trustless path, and the server may simply be
+ * gone), so this has to be fetched while the server is still reachable and
+ * persisted. A missing cache is handled, not fatal: triage assumes the worst
+ * plausible delta, which errs toward disclosing an exclusion rather than
+ * committing reserve to a capsule the server can sweep mid-exit.
+ *
+ * Called once per session from the sync loop, next to the round-interval
+ * fetch. Never throws.
+ */
+export async function fetchArkExitParams(): Promise<void> {
+    const handle = getArkWalletHandle();
+    if (!handle) return;
+    try {
+        const info = await handle.arkInfo();
+        if (!info) return;
+        const delta = Number(info.vtxoExitDelta);
+        const maxDepth = Number(info.maxVtxoExitDepth);
+        useAuthStore.getState().setArkExitParams({
+            vtxoExitDeltaBlocks: Number.isFinite(delta) && delta > 0 ? delta : null,
+            maxVtxoExitDepth: Number.isFinite(maxDepth) && maxDepth > 0 ? maxDepth : null,
+        });
+    } catch (err) {
+        if (__DEV__) console.warn('[Ark exit-funding] arkInfo (exit params) threw:', err);
+    }
+}
+
+/**
+ * Fee rate the exit drive should bid for its CPFP children RIGHT NOW.
+ *
+ * `progressExits` used to be called with no rate at all, so bark chose one and
+ * whatever it chose had nothing to do with the reserve the user had been asked
+ * to fund. That was survivable only because the reserve was sized at the
+ * fastest rate and therefore almost always generous. Now that the reserve is
+ * priced to the runway, the bid has to be priced the same way or the two can
+ * disagree in the dangerous direction.
+ *
+ * Re-derived every tick from the persisted deadline height and the current tip,
+ * so a capsule drifting toward its expiry starts bidding harder on its own.
+ * Costs one small fee-API call and no wallet read.
+ *
+ * Returns undefined when there is no deadline to price against, which leaves
+ * the SDK's own choice in place rather than inventing one.
+ */
+export async function fetchArkExitDriveFeeRate(): Promise<bigint | undefined> {
+    const s = useAuthStore.getState();
+    const deadline = s.arkExitFeeDeadlineHeight;
+    const tip = s.arkChainTipHeight;
+    if (typeof deadline !== 'number' || typeof tip !== 'number') return undefined;
+    const urgency = urgencyFromSlackBlocks(deadline - tip);
+    const rate = await fetchExitTreeFeeRateSatPerVb(urgency);
+    if (__DEV__) {
+        console.log(
+            '[Ark exit-drive] bidding', rate, 'sat/vB;',
+            'urgency=', urgency, 'slack=', deadline - tip, 'blocks',
+        );
+    }
+    return BigInt(Math.max(1, Math.ceil(rate)));
 }
 
 /**

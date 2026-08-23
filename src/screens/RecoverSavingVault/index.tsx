@@ -14,7 +14,6 @@ import {
     listHotVaultKeychainBackupsWithMeta,
     resetHotVaultBackupFully,
     HotVaultBackupSummary,
-    HotVaultMeta,
 } from '@Cypher/services/hotVaultKeychain';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 
@@ -88,7 +87,7 @@ export default function RecoverSavingVault({ route }: Props) {
             setKeychainBackups(summaries);
             if (summaries.length === 1 && !autoAttempted.current) {
                 autoAttempted.current = true;
-                handleKeychainRecover(summaries[0].walletID, summaries[0].meta);
+                handleKeychainRecover(summaries[0].walletID);
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,18 +172,17 @@ export default function RecoverSavingVault({ route }: Props) {
             w.setPassphrase(passphrase);
         }
         const id = w.getID();
-        // Keychain path verification: the words came from OUR OWN Keychain
-        // entry, whose walletID was derived from words+passphrase at save
-        // time. A mismatch here can only mean the passphrase is wrong,
-        // missing, or extra — importing anyway would surface an empty
-        // stranger wallet and read as "my funds are gone". Hard stop.
-        if (restoredWalletID && restoredWalletID !== id) {
-            Alert.alert(
-                'Passphrase mismatch',
-                'The recovered words are correct, but the passphrase does not match this vault. Check the passphrase (it is case-sensitive and spaces count) and try again. Nothing was imported.',
-            );
-            return;
-        }
+        // NO mismatch alert. The sidecar's walletID was derived from
+        // words+passphrase at save time, so a passphrase-free keychain import
+        // legitimately produces a different id. This used to hard-stop with
+        // "the passphrase does not match this vault", which told anyone holding
+        // the phone that a hidden wallet existed — the exact thing a BIP39
+        // passphrase is meant to conceal.
+        //
+        // A differing id is now simply the decoy, imported in silence. The
+        // `restoredWalletID === id` check below still runs, so the "backed up
+        // to Keychain" marker is only ever set on a vault that genuinely owns
+        // that keychain entry.
         setWalletID(id);
         if (restoredWalletID && restoredWalletID === id) {
             setHotVaultKeychainBackup(id, true);
@@ -232,10 +230,10 @@ export default function RecoverSavingVault({ route }: Props) {
      * onWallet callback rehydrate the zustand "backed up" flag so the
      * Settings UI stays in sync post-recovery.
      */
-    const handleKeychainRecover = async (
-        walletID: string,
-        knownMeta?: HotVaultMeta | null,
-    ) => {
+    // No `knownMeta` parameter by design: this flow must not be able to read
+    // the sidecar's passphrase state, because acting on it is what leaked the
+    // existence of a hidden wallet. The words are all it needs.
+    const handleKeychainRecover = async (walletID: string) => {
         if (keychainLoading || loading) return;
         setKeychainLoading(true);
         const result = await getHotVaultSeedFromKeychain(walletID);
@@ -252,37 +250,29 @@ export default function RecoverSavingVault({ route }: Props) {
             // therefore an HDSegwitBech32Wallet. Saves 3–8s of perceived
             // latency compared to the generic handleImport path.
             //
-            // Passphrase vaults: the Keychain holds the words only (the
-            // passphrase is deliberately never stored), so the meta flag
-            // routes through a secure prompt first. fastImportHotVault's
-            // walletID check then verifies the entered passphrase actually
-            // reproduces this vault. iOS-only Alert.prompt is fine here —
-            // the iPhone Keychain flow is an iOS-only feature.
-            // Prefer the meta the caller passed in. The single-backup
-            // auto-recover fires from the mount effect immediately after
-            // setKeychainBackups(), so reading `keychainBackups` state here
-            // would see the stale pre-commit [] and miss hasPassphrase. The
-            // state lookup is only a fallback for callers that don't thread it.
-            const meta =
-                knownMeta !== undefined
-                    ? knownMeta
-                    : keychainBackups.find(s => s.walletID === walletID)?.meta;
-            if (meta?.hasPassphrase) {
-                Alert.prompt(
-                    'Vault passphrase',
-                    'This vault is passphrase-protected. Enter the passphrase to finish recovery.',
-                    [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                            text: 'Recover',
-                            onPress: (text?: string) =>
-                                fastImportHotVault(result.mnemonic, walletID, text || ''),
-                        },
-                    ],
-                    'secure-text',
-                );
-                return;
-            }
+            // PASSPHRASE-AGNOSTIC BY DESIGN. This path imports the words with
+            // no passphrase and says nothing about whether one exists.
+            //
+            // A BIP39 passphrase is a deniability tool: under duress you hand
+            // over twelve words and the wallet they open is the only wallet
+            // anyone can see. This flow used to break that. It read a
+            // `hasPassphrase` flag from the keychain sidecar and, when set,
+            // announced "This vault is passphrase-protected" before prompting.
+            // Anyone holding the unlocked phone (which, under duress, is the
+            // whole premise) learned a hidden wallet existed. Clearing the flag
+            // did not help either: the sidecar's walletID was derived WITH the
+            // passphrase, so a passphrase-free import mismatched and the guard
+            // in fastImportHotVault said "the passphrase does not match this
+            // vault" instead. Both branches leaked.
+            //
+            // So: no prompt, no mismatch alert, no flag. The decoy opens
+            // silently, exactly as typing the words by hand would. Reaching the
+            // real vault means adding the passphrase on the manual recovery
+            // path below, which is where the toggle already lives.
+            //
+            // The cost, accepted deliberately: a passphrase user who taps this
+            // lands in their decoy with no explanation. Explaining it is the
+            // leak, so there is nothing to say here.
             fastImportHotVault(result.mnemonic, walletID);
             return;
         }
@@ -452,7 +442,7 @@ export default function RecoverSavingVault({ route }: Props) {
                             <TouchableOpacity
                                 key={walletID}
                                 style={styles.keychainButton}
-                                onPress={() => handleKeychainRecover(walletID, meta)}
+                                onPress={() => handleKeychainRecover(walletID)}
                                 disabled={keychainLoading || loading}
                                 activeOpacity={0.8}
                             >
@@ -475,7 +465,7 @@ export default function RecoverSavingVault({ route }: Props) {
                         <View key={walletID} style={styles.keychainRowWrap}>
                             <TouchableOpacity
                                 style={styles.keychainRow}
-                                onPress={() => handleKeychainRecover(walletID, meta)}
+                                onPress={() => handleKeychainRecover(walletID)}
                                 disabled={
                                     isBusyOther ||
                                     isDeleting ||

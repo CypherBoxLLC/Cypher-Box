@@ -23,6 +23,7 @@ import {
     fetchArkVtxos,
     getArkCancelling,
     getArkWalletHandle,
+    isVtxoMidRound,
     ArkRefreshInFlightError,
     refreshArkVtxosDelegatedAndSync,
     restoreArkWalletFromDisk,
@@ -1269,9 +1270,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const stateLower = v.state.toLowerCase();
             const kindLower = v.kind.toLowerCase();
             // bark 0.6.0: a mid-refresh VTXO stays `Spendable` (not `Locked`),
-            // so drive the "Refreshing…" row treatment off the client-tracked
-            // ids too (see authStore arkRefreshingVtxoIds).
-            const pendingRound = stateLower === "locked" || refreshingSet.has(v.id);
+            // so the "Refreshing…" row treatment is driven off the client-
+            // tracked ids too (see isVtxoMidRound).
+            const pendingRound = isVtxoMidRound(v, refreshingSet);
 
             // Tri-state recoverability — see VtxoRowData.recoverability
             // for the full reasoning. Quick summary: a Pubkey/Spendable
@@ -1884,7 +1885,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         // Exiting VTXOs excluded for the same reason as the tap-refresh
         // batch above: the exit owns them.
         const projected = freshVtxos.filter((v) => !v.exiting).map((v) => {
-            const pending = v.state.toLowerCase() === 'locked';
+            // Union, not Locked alone: a delegated round leaves the VTXO
+            // Spendable. Matches the row derivation above.
+            const pending = isVtxoMidRound(
+                v,
+                useAuthStore.getState().arkRefreshingVtxoIds ?? [],
+            );
             if (v.expiryHeight === 0 || freshTip === null) {
                 return {
                     id: v.id,

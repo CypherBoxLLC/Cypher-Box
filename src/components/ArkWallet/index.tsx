@@ -9,6 +9,7 @@ import {
     cancelArkPendingRound,
     estimateArkOnchainRecover,
     fetchArkMinBoardSats,
+    isVtxoMidRound,
     recoverArkOnchainBoard,
 } from "@Cypher/services/ark";
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
@@ -328,10 +329,12 @@ export default function ArkWallet({
         if (arkChainTipHeight === null || arkVtxos.length === 0) return null;
         let minBlocks = Infinity;
         for (const v of arkVtxos) {
-            // Skip arkoor (no own expiry) and Locked (mid-round — expiry
-            // countdown is meaningless until the round finalises).
+            // Skip arkoor (no own expiry) and anything mid-round (expiry
+            // countdown is meaningless until the round finalises). Includes
+            // delegated refreshes, which stay Spendable rather than Locked and
+            // whose expiryHeight is the pre-refresh one.
             if (v.expiryHeight === 0) continue;
-            if (v.state.toLowerCase() === 'locked') continue;
+            if (isVtxoMidRound(v, refreshingIds)) continue;
             const blocks = v.expiryHeight - arkChainTipHeight;
             // Skip already-expired VTXOs (they stay in the store so the
             // Capsules tab can render them) — "refresh soon" is wrong
@@ -341,7 +344,7 @@ export default function ArkWallet({
         }
         if (!isFinite(minBlocks)) return null;
         return Math.max(0, blocksToDays(minBlocks));
-    }, [arkVtxos, arkChainTipHeight]);
+    }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
     const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
         ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d — refresh soon`

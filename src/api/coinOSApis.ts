@@ -1,3 +1,7 @@
+import {
+  isNetworkShapedFailure,
+  markWithdrawIndeterminate,
+} from '@Cypher/services/coinos/withdrawGuard';
 import useAuthStore from '@Cypher/stores/authStore';
 import SimpleToast from "react-native-simple-toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -470,18 +474,40 @@ export const bitcoinSendFee = async (amount: number, address: string, feeRate: n
   }
 };
 
-export const sendBitcoinPayment = async (amount: number, address: string, feeRate: number, memo: string) => {
+export const sendBitcoinPayment = async (
+  amount: number,
+  address: string,
+  feeRate: number,
+  memo: string,
+  idempotencyKey?: string,
+) => {
   try {
     const response = await fetch(`${BASE_URL}/bitcoin/send`, await withAuthToken({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // Best-effort only. We have NOT confirmed CoinOS honours this, so
+        // nothing depends on it: the real duplicate protection is the
+        // history check and the indeterminate marker in
+        // services/coinos/withdrawGuard. Sending it costs nothing and helps
+        // if support exists or arrives later.
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
       body: feeRate === 0 ? JSON.stringify({ amount, address }) : JSON.stringify({ amount, address, feeRate, memo }),
     }));
     return await response.text();
   } catch (error) {
     console.error('Error sending bitcoin payment:', error);
+    // A network-shaped throw means the request's fate is UNKNOWN: CoinOS may
+    // well have accepted it and the reply was lost. Reporting that as a
+    // failure is what made the withdraw screen say "Please try again" and
+    // re-arm the button, which sends the money a second time. Flag it so
+    // callers can branch on a marker instead of guessing from the text.
+    if (isNetworkShapedFailure(error)) {
+      throw markWithdrawIndeterminate(
+        'This withdrawal may already have been sent. Check your CoinOS history before trying again.',
+      );
+    }
     throw error;
   }
 };

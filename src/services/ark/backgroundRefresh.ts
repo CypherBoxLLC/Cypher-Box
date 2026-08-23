@@ -10,6 +10,7 @@ import {
     writeBackgroundArkSeed,
 } from './backgroundKeychain';
 import { getArkWalletHandle, getCachedArkMnemonic, openArkWallet } from './walletHandle';
+import { hasActiveArkExitRecords } from './exit';
 import { maintenanceArkDelegated } from './refresh';
 import { syncArkWallet } from './sync';
 import { AVG_BLOCK_MINUTES, fetchChainTipHeight } from './chainTip';
@@ -160,6 +161,25 @@ export async function runArkBackgroundMaintenance(
 
     useAuthStore.getState().setArkBgRefreshLastAttempt(Date.now());
     console.log('[Ark bg-refresh] maintenance start, trigger=', trigger);
+
+    // Never run a cooperative round while a unilateral exit is in flight: it
+    // would spend a coin that is already committed on-chain. maintenanceArkDelegated
+    // enforces this too, but bail here so a deliberate skip is recorded as such
+    // rather than surfacing as an 'error' and feeding the consecutive-failure
+    // escalation. Checked after the seed read because the handle may not exist
+    // until openArkWallet runs below; hasActiveArkExitRecords returns false on
+    // a missing handle, and the in-call guard catches that case.
+    if (await hasActiveArkExitRecords()) {
+        console.log('[Ark bg-refresh] skipped: unilateral exit in progress');
+        void recordTelemetry({
+            at: startedAt,
+            trigger,
+            outcome: 'exit_in_progress',
+            elapsedMs: Date.now() - startedAt,
+        });
+        return;
+    }
+
     try {
         // Reuse a live handle if the process is already resident; otherwise open
         // from the background-readable seed (no biometric prompt).

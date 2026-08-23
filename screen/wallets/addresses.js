@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useContext, useRef, useEffect, useLayoutEffect } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Privacy from '../../blue_modules/Privacy';
 import { BlueStorageContext } from '../../blue_modules/storage-context';
@@ -92,15 +92,24 @@ const WalletAddresses = () => {
 
   const addressList = useRef();
 
+  // `wallet` can legitimately come back undefined, and every line below used to
+  // dereference it unconditionally. This screen is reached by walletID from six
+  // different flows, and that pointer can outlive the wallet it names: after a
+  // reset, a re-import, or any of the pointer drift the recovery flow already
+  // heals for. When it did, `wallet.getPreferredBalanceUnit()` threw during
+  // render, and a render-time throw has no error boundary above it, so release
+  // builds terminated the process outright. Reported from the field as tapping
+  // the address closing the app and forcing a fresh login.
   const wallet = wallets.find(w => w.getID() === walletID);
 
-  const balanceUnit = wallet.getPreferredBalanceUnit();
+  const balanceUnit = wallet ? wallet.getPreferredBalanceUnit() : undefined;
 
-  const isWatchOnly = wallet.type === WatchOnlyWallet.type;
+  const isWatchOnly = !!wallet && wallet.type === WatchOnlyWallet.type;
 
   const walletInstance = isWatchOnly ? wallet._hdWalletInstance : wallet;
 
-  const allowSignVerifyMessage = 'allowSignVerifyMessage' in wallet && wallet.allowSignVerifyMessage();
+  const allowSignVerifyMessage =
+    !!wallet && 'allowSignVerifyMessage' in wallet && wallet.allowSignVerifyMessage();
 
   const { colors } = useTheme();
 
@@ -134,6 +143,12 @@ const WalletAddresses = () => {
   }, [setOptions]);
 
   const getAddresses = () => {
+    // Second crash site for the same missing wallet: this runs from
+    // useFocusEffect, so the throw landed in an effect rather than in render,
+    // but it was just as fatal. Bail quietly and let the empty state below
+    // explain itself.
+    if (!walletInstance) return;
+
     const newAddresses = [];
 
     for (let index = 0; index <= walletInstance.next_free_change_address_index; index++) {
@@ -232,6 +247,24 @@ const WalletAddresses = () => {
     return <AddressItem {...item} balanceUnit={balanceUnit} walletID={walletID} allowSignVerifyMessage={allowSignVerifyMessage} isTouchable={isTouchable} navigateToReceive={navigateToReceive} />;
   };
 
+  // Placed after every hook above, so hook order stays identical on the render
+  // where the wallet is found and the one where it is not.
+  //
+  // Without this the list would sit on a permanent spinner, since its empty
+  // state renders an ActivityIndicator and no addresses will ever arrive. Say
+  // what happened instead: the screen is unusable either way, but a dead end
+  // the user can back out of beats one that looks like it is still loading.
+  if (!wallet) {
+    return (
+      <View style={[styles.root, stylesHook.root, styles.missingWallet]}>
+        <Text style={{ color: colors.foregroundColor, textAlign: 'center' }}>
+          This vault is no longer available on this device. Go back and open it
+          again from the home screen.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.root, stylesHook.root]}>
       <FlatList
@@ -260,5 +293,10 @@ export default WalletAddresses;
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  missingWallet: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
   },
 });

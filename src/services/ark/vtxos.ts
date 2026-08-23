@@ -37,6 +37,53 @@ export type ArkVtxoList = {
 };
 
 /**
+ * Is this VTXO committed to an in-flight round (refresh, send, board, offboard,
+ * lightning receive)?
+ *
+ * READ THIS BEFORE COMPARING `state` TO 'locked' ANYWHERE.
+ *
+ * `Locked` alone stopped being the answer at bark 0.6.0: a DELEGATED refresh
+ * leaves the VTXO `Spendable` for the whole round, so every surface that tested
+ * `state === 'locked'` to mean "refreshing" silently reported nothing in flight.
+ * That regression has now been fixed three separate times in three separate
+ * places (the refresh UI in 778e41d, then the home banners, then this sweep),
+ * which is why the predicate lives here instead of being re-derived per screen.
+ *
+ * `Locked` is still real: bark sets it for the pre-action subsystems (round,
+ * offboard, board, lightning receive). So this is a UNION, not a replacement.
+ * The client-tracked ids come from `arkRefreshingVtxoIds` in authStore, which
+ * the refresh paths maintain across the delegated round.
+ */
+export function isVtxoMidRound(
+    v: Pick<ArkVtxoView, 'id' | 'state'>,
+    refreshingIds: readonly string[] | ReadonlySet<string>,
+): boolean {
+    if (v.state.toLowerCase() === 'locked') return true;
+    return refreshingIds instanceof Set
+        ? refreshingIds.has(v.id)
+        : (refreshingIds as readonly string[]).includes(v.id);
+}
+
+/**
+ * Count and sats of everything mid-round. The headline balance excludes these,
+ * so a surface that under-reports here shows the user a balance drop with no
+ * explanation.
+ */
+export function sumMidRoundVtxos(
+    vtxos: readonly ArkVtxoView[] | null | undefined,
+    refreshingIds: readonly string[] | ReadonlySet<string>,
+): { count: number; sats: number } {
+    let count = 0;
+    let sats = 0;
+    for (const v of vtxos ?? []) {
+        if (!isVtxoMidRound(v, refreshingIds)) continue;
+        count++;
+        sats += v.sats;
+    }
+    return { count, sats };
+}
+
+/**
  * Fetch VTXO list from the local SQLite datadir.
  *
  * Returns null if the wallet handle isn't initialized. For a freshly-created
