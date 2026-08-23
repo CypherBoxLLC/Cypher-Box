@@ -40,6 +40,27 @@ export type ArkSendFeeView = {
     vtxosSpent: string[];
 };
 
+/**
+ * Error thrown when a send's outcome is UNKNOWN rather than failed: the HTLC is
+ * still live and may yet settle.
+ *
+ * This is the single most dangerous state in the send path, because the natural
+ * UI response to a thrown error ("it failed, try again") is exactly the wrong
+ * one. Retrying an ln-address or ln-offer mints a fresh invoice with a new
+ * payment hash, so the retry can settle alongside the original and pay the
+ * recipient twice, irreversibly.
+ *
+ * Callers MUST use `isArkSendIndeterminate()` before reporting an error, and
+ * when it is true they MUST NOT claim the funds are safe and MUST NOT re-enable
+ * their send control.
+ */
+export type ArkSendIndeterminateError = Error & { arkSendIndeterminate: true };
+
+/** True when the send's outcome is unknown and retrying risks paying twice. */
+export function isArkSendIndeterminate(err: unknown): boolean {
+    return !!err && (err as { arkSendIndeterminate?: boolean }).arkSendIndeterminate === true;
+}
+
 export type ArkSendResult = {
     /** Kind of send that was executed — helps callers route to the right toast. */
     kind: ArkDestinationKind;
@@ -368,9 +389,21 @@ export async function executeArkSend(
             const outcome = await waitForArkLightningSettlement(handle, resolvedInvoice);
             if (outcome === 'settled') { settled = true; break; }
             if (outcome === 'pending') {
-                throw new Error(
-                    'Lightning payment is still confirming. Check Activity before retrying so you do not send twice.',
-                );
+                // INDETERMINATE, not a failure. The HTLC is still live and may
+                // yet settle. Retrying an ln-address or ln-offer mints a FRESH
+                // invoice with a new payment hash, so a retry can settle
+                // alongside this one and pay the recipient twice.
+                //
+                // Flagged rather than left to string-matching so callers can
+                // branch on it reliably. A caller MUST NOT tell the user their
+                // funds are safe, and MUST NOT re-arm its send control, when
+                // this flag is set.
+                const indeterminate = new Error(
+                    'This payment may still be in flight. Do not send it again: wait for your ' +
+                    'balance to settle, or confirm with the recipient before retrying.',
+                ) as ArkSendIndeterminateError;
+                indeterminate.arkSendIndeterminate = true;
+                throw indeterminate;
             }
             // outcome === 'failed' -> HTLC refunded, funds back. Retry if attempts remain.
             console.log(

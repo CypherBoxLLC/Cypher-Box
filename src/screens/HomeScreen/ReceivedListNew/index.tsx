@@ -124,18 +124,37 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     if (selectedItem === 5) {
       let mounted = true;
       void (async () => {
-        try {
-          const [arkAddr, onchainAddr] = await Promise.all([
-            getArkAddress(),
-            getArkOnchainAddress(),
-          ]);
-          if (!mounted) return;
-          setArkAddress(arkAddr);
-          setArkOnchainAddress(onchainAddr);
-        } catch (err) {
-          if (!mounted) return;
-          console.warn('[Receive] Ark address fetch failed:', err);
-          SimpleToast.show('Failed to fetch Ark addresses', SimpleToast.SHORT);
+        // allSettled, NOT all. These are independent: the Ark address needs
+        // the Ark wallet, the on-chain address is a local BDK call. Promise.all
+        // discarded BOTH when either failed, so a locked wallet threw away a
+        // perfectly good on-chain address and left the sheet spinning on null
+        // state. That is how funding an exit became impossible: the on-chain
+        // address is the ASP-independent way in, and it was collateral damage
+        // from the Ark address failing.
+        const [arkRes, onchainRes] = await Promise.allSettled([
+          getArkAddress(),
+          getArkOnchainAddress(),
+        ]);
+        if (!mounted) return;
+        if (arkRes.status === 'fulfilled') setArkAddress(arkRes.value);
+        if (onchainRes.status === 'fulfilled') setArkOnchainAddress(onchainRes.value);
+
+        if (arkRes.status === 'rejected' || onchainRes.status === 'rejected') {
+          const reason = (arkRes.status === 'rejected' ? arkRes.reason : null)
+            ?? (onchainRes.status === 'rejected' ? onchainRes.reason : null);
+          console.warn('[Receive] Ark address fetch failed:', reason);
+          // Name the actual cause. "Failed to fetch Ark addresses" next to a
+          // spinner that never stops tells the user nothing they can act on,
+          // and the usual cause is simply that the wallet is not open yet.
+          const locked = /not initialized|not ready|no wallet/i.test(
+            String((reason as Error)?.message ?? reason ?? ''),
+          );
+          SimpleToast.show(
+            locked
+              ? 'Bark vault is locked. Open the vault first, then try again.'
+              : 'Could not fetch an address. Pull to retry.',
+            SimpleToast.LONG,
+          );
         }
       })();
       return () => {

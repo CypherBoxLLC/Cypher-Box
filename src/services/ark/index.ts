@@ -8,6 +8,7 @@ export {
     ARK_EXIT_RUNWAY_HOURS,
     ARK_SWEEP_MAX_RUNWAY_HOURS,
     ESPLORA_URL,
+    ESPLORA_URLS,
     createArkConfig,
 } from './config';
 
@@ -43,7 +44,7 @@ export type { ArkBalanceSummary } from './balance';
 export { estimateArkOnchainRecover, recoverArkOnchainBoard } from './recoverOnchainBoard';
 export type { ArkOnchainRecoverEstimate, ArkOnchainRecoverResult } from './recoverOnchainBoard';
 
-export { fetchArkVtxos } from './vtxos';
+export { fetchArkVtxos, isVtxoMidRound, sumMidRoundVtxos } from './vtxos';
 export type { ArkVtxoView, ArkVtxoList } from './vtxos';
 
 export { tryClaimArkLightningReceives, fetchArkPendingLightningReceives, driveArkPendingLightningSends } from './lightning';
@@ -161,13 +162,38 @@ export {
 export { estimateArkOffboardFee, offboardArkVtxos } from './offboard';
 export type { ArkOffboardFeeView } from './offboard';
 export {
+    computeArkExitPlan,
     computeExitFeeReserveSats,
+    fetchClaimFeeRateSatPerVb,
     convertToExitFees,
     estimateExitFeeConvert,
+    fetchArkExitDriveFeeRate,
+    fetchArkExitParams,
+    fetchExitFeeRates,
+    fetchExitTreeFeeRateSatPerVb,
     fetchFastFeeRateSatPerVb,
+    getLastExitFeeDeadlineHeight,
     probeAspReachable,
 } from './exitFunding';
 export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
+export {
+    describeExitExclusion,
+    exitFeeUrgency,
+    normaliseExitFeeRates,
+    ratesFromEsploraEstimates,
+    ratesFromMempoolRecommended,
+    triageArkExit,
+    urgencyFromSlackBlocks,
+} from './exitTriage';
+export type {
+    ExitEconomicPolicy,
+    ExitExclusionReason,
+    ExitFeeRateTable,
+    ExitFeeUrgency,
+    ExitTriageEntry,
+    ExitTriageResult,
+    ExitTriageVtxo,
+} from './exitTriage';
 export type { ArkRefreshFeeView, ArkRefreshResult, ArkDelegatedRefreshResult } from './refresh';
 
 export { setArkBackgroundRefreshEnabled } from './backgroundRefresh';
@@ -201,6 +227,7 @@ export {
     classifyArkDestination,
     estimateArkSendFee,
     executeArkSend,
+    isArkSendIndeterminate,
     labelForDestinationKind,
 } from './send';
 export type {
@@ -209,3 +236,35 @@ export type {
     ArkSendFeeView,
     ArkSendResult,
 } from './send';
+
+export {
+    arkErrorText,
+    arkNetworkFaultMessage,
+    classifyArkNetworkFault,
+} from './networkFault';
+export type { ArkNetworkFault } from './networkFault';
+
+export {
+    MIN_USEFUL_FUNDING_SATS,
+    buildExitFundingSources,
+    hasUsableExitFundingSource,
+} from './exitFundingSources';
+export type {
+    ExitFundingSource,
+    ExitFundingSourceId,
+    ExitFundingSourceState,
+} from './exitFundingSources';
+
+export { planExitFunding } from './exitFundingPlan';
+export type { ExitFundingPlan, ExitFundingPlanInput } from './exitFundingPlan';
+export { fundExitFeesFromCoinos } from './exitFundingCoinos';
+export type {
+    CoinosExitFundingDeps,
+    CoinosExitFundingRequest,
+    CoinosExitFundingResult,
+} from './exitFundingCoinos';
+
+export { decideExitClaimBatch } from './exitClaimBatch';
+export type { ExitClaimBatchInput, ExitClaimBatchDecision } from './exitClaimBatch';
+
+export { resolveExitReserveTarget } from './exitReserveTarget';

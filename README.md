@@ -37,7 +37,7 @@ Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, wit
 ## ⛵ Bark Vault — non-custodial Lightning (Ark protocol)
 
 Read full user guide: https://cypherbox.io/how-to-use-your-bark-vault/
-Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). Self-custodial: you can exit to the chain without the server's permission (not completed ⏳).
+Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). Self-custodial: you can exit to the chain without the server's permission.
 
 
 * Send & receive over Lightning, receive on Ark addresses, board from on-chain
@@ -122,6 +122,7 @@ npm start
 
 * ✅ Bark SDK upgrade (bark 0.6.1): capsules stay spendable while refreshing, dust consolidation, safer exit
 * ⏳ Revive the e2e test suite on RN 0.77
+* ⏳ **Bring your own chain source**: point the Bark Vault at your own esplora endpoint (Umbrel, Start9, self-hosted Electrs) instead of a public block explorer, so your addresses never leave your node. Bitcoin Core RPC to follow. Changing the chain source touches refresh, unilateral exit, backup and recovery, so it ships only after all four are re-tested end to end.
 
 ---
 

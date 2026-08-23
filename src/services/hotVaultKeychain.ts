@@ -72,15 +72,18 @@ export interface HotVaultMeta {
     version: 1;
     createdAt: number;
     label?: string | null;
-    /**
-     * True when the vault was created with a BIP39 passphrase. The keychain
-     * stores the WORDS ONLY (the passphrase is deliberately never persisted
-     * anywhere — it is the "something you know"); this flag tells the
-     * keychain-recovery flow to prompt for the passphrase after the
-     * biometric seed read. Reveals only that protection exists, never the
-     * protection itself. Absent on pre-feature backups (=> no prompt).
-     */
-    hasPassphrase?: boolean;
+    // DELIBERATELY NO `hasPassphrase`.
+    //
+    // It used to live here so keychain recovery could prompt for the passphrase
+    // after the biometric read, on the reasoning that it "reveals only that
+    // protection exists, never the protection itself". That reveal is the
+    // problem. A BIP39 passphrase is a deniability tool: its value is that
+    // nobody can tell the hidden wallet exists, so a flag saying one does
+    // defeats the feature for anyone holding the unlocked phone.
+    //
+    // Stale `hasPassphrase` values in sidecars written by older builds are
+    // ignored on read (see readHotVaultMeta) rather than migrated, since
+    // rewriting them would need the seed and a biometric prompt.
 }
 
 export type HotVaultKeychainSaveResult =
@@ -145,7 +148,7 @@ export async function backupHotVaultMeta(
             version: 1,
             createdAt: meta.createdAt,
             label: meta.label ?? null,
-            hasPassphrase: meta.hasPassphrase ?? false,
+            // No passphrase flag is written. See HotVaultMeta.
         };
         await Keychain.setGenericPassword(
             walletID,
@@ -184,7 +187,6 @@ export async function backupHotVaultSeedWithMeta(
     const metaResult = await backupHotVaultMeta(walletID, {
         createdAt: meta?.createdAt ?? Date.now(),
         label: meta?.label ?? null,
-        hasPassphrase: meta?.hasPassphrase ?? false,
     });
     // Deliberately don't bubble up meta failures — the seed is saved, and a
     // missing meta row just falls back to a walletID-only picker row. That's
@@ -270,12 +272,10 @@ export async function getHotVaultMeta(
             version: 1,
             createdAt: parsed.createdAt,
             label: typeof parsed.label === 'string' ? parsed.label : null,
-            // Preserve the passphrase flag across the read. Dropping it here
-            // (as an earlier version did) makes every recovered backup look
-            // passphrase-less, so the Recover flow skips the passphrase prompt
-            // and reconstructs the wrong wallet. Coerce to a strict boolean so
-            // legacy entries (field absent) read as false.
-            hasPassphrase: parsed.hasPassphrase === true,
+            // A legacy `parsed.hasPassphrase` is deliberately DROPPED rather
+            // than surfaced. Recovery is passphrase-agnostic now, so nothing
+            // may branch on it: acting on the flag is what told anyone holding
+            // the phone that a hidden wallet existed. See HotVaultMeta.
         };
     } catch (err) {
         console.warn('[HotVault] Meta read failed for', walletID, err);

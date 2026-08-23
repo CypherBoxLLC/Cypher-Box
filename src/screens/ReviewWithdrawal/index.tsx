@@ -4,6 +4,10 @@ import SimpleToast from 'react-native-simple-toast';
 import { Icon } from 'react-native-elements';
 import ReactNativeModal from 'react-native-modal';
 import styles from './styles';
+import {
+    findRecentMatchingWithdrawal,
+    isCoinosWithdrawIndeterminate,
+} from '@Cypher/services/coinos/withdrawGuard';
 import { Input, LoadingSpinner, ScreenLayout, Text } from '@Cypher/component-library';
 import { CoinOSSmall, ProgressBar2 } from '@Cypher/assets/images';
 import {
@@ -26,6 +30,7 @@ import {
     bitcoinSendFee,
     getCurrencyRates,
     getMe,
+    getTransactionHistory,
     sendBitcoinPayment,
     sendCoinsViaUsername,
     sendLightningPayment,
@@ -58,6 +63,14 @@ export default function ReviewWithdrawal({ route }: Props) {
     const [isStartLoading, setIsStartLoading] = useState(false);
     const [selectedFee, setSelectedFee] = useState<number | null>(null);
     const [selectedFeeName, setSelectedFeeName] = useState<string>('Select Fee');
+    // Latched once a withdrawal's outcome becomes UNKNOWN. Never cleared on
+    // this screen: the whole point is that it must not offer to send again.
+    const [sendIndeterminate, setSendIndeterminate] = useState(false);
+    // Stable per mount, so a retry of the SAME intended withdrawal carries the
+    // same key rather than looking like a fresh request.
+    const withdrawIdempotencyKey = useRef(
+        `cbx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    );
     const [estimatedFee, setEstimatedFee] = useState<number>(0);
     const [networkFee, setNetworkFee] = useState<number>(0);
     const [bamskiiFee, setBamskiiFee] = useState<number>(0);
@@ -263,7 +276,42 @@ export default function ReviewWithdrawal({ route }: Props) {
 
             console.log('selectedFee: ', selectedFee);
             try {
-                const sendResponse = await sendBitcoinPayment(remainingAmount, to, selectedFee, note);
+                // Pre-flight duplicate check. If a previous attempt reached
+                // CoinOS and only its reply was lost, the withdrawal is already
+                // in the history and sending again pays twice. Checking costs
+                // one request and is the only protection that does not depend
+                // on CoinOS honouring an idempotency key.
+                //
+                // A failed check must NOT block the send: being unable to read
+                // history is not evidence of a duplicate, and refusing here
+                // would strand the user.
+                try {
+                    const recent = await getTransactionHistory(0, 20);
+                    const dupe = findRecentMatchingWithdrawal(recent?.payments, {
+                        address: to,
+                        amountSats: remainingAmount,
+                        now: Date.now(),
+                    });
+                    if (dupe) {
+                        setSendIndeterminate(true);
+                        SimpleToast.show(
+                            'This withdrawal already went out a moment ago. Check your history rather than sending again.',
+                            SimpleToast.LONG,
+                        );
+                        setIsSendLoading(false);
+                        return;
+                    }
+                } catch (histErr) {
+                    console.warn('[CoinOS] duplicate pre-check failed, continuing:', histErr);
+                }
+
+                const sendResponse = await sendBitcoinPayment(
+                    remainingAmount,
+                    to,
+                    selectedFee,
+                    note,
+                    withdrawIdempotencyKey.current,
+                );
 
                 let jsonSend = null;
                 console.log('sendResponse: ', sendResponse);
@@ -281,7 +329,19 @@ export default function ReviewWithdrawal({ route }: Props) {
                 }
             } catch (error) {
                 console.error('Error Send to bitcoin:', error);
-                SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+                if (isCoinosWithdrawIndeterminate(error)) {
+                    // Outcome UNKNOWN. Never say it failed and never invite a
+                    // retry: the old copy here was literally "Please try again",
+                    // and following it sends the money a second time.
+                    setSendIndeterminate(true);
+                    SimpleToast.show(
+                        (error as Error)?.message ??
+                            'This withdrawal may already have been sent. Check your history before trying again.',
+                        SimpleToast.LONG,
+                    );
+                } else {
+                    SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+                }
             } finally {
                 setIsSendLoading(false);
             }
@@ -557,7 +617,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                 </GradientCard>
             </View>
             <View style={styles.container}>
-                <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
+                <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading || sendIndeterminate} />
                 {/* <GradientButton style={styles.invoiceButton} texStyle={{ fontFamily: 'Lato-Medium', }} title="Send" onPress={sendClickHandler} /> */}
             </View>
         </ScreenLayout>

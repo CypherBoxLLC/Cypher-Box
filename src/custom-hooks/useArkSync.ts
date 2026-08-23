@@ -9,15 +9,20 @@ import {
     cancelVtxoExpiryWarnings,
     cancelVtxoStuckSwapWarnings,
     claimArkExitsToAddress,
+    fetchClaimFeeRateSatPerVb,
     getArkCancelling,
     setArkCancelling,
     fetchArkBalance,
     fetchArkPendingLightningReceives,
     fetchArkPendingRoundStates,
+    fetchArkExitDriveFeeRate,
+    fetchArkExitParams,
     fetchArkRoundIntervalSecs,
     fetchArkVtxos,
     fetchChainTipHeight,
     fetchArkExitVtxos,
+    decideExitClaimBatch,
+    isVtxoMidRound,
     fetchClaimableExitVtxos,
     fetchPendingExitsTotalSats,
     getArkWalletHandle,
@@ -115,6 +120,20 @@ const URGENCY_THRESHOLD_BLOCKS = Math.round(
 // in practice: switch networks and retry, then Emergency Exit while
 // there is still time. Re-shown at most once per gap window so the sync
 // tick doesn't nag while the user is following the steps.
+/**
+ * How long the claim sweep waits for slower capsules before going without them.
+ *
+ * Each claim is one transaction paying one fee, and drainExits already batches
+ * every claimable capsule into it, so the only thing that costs money is
+ * claiming more than once. Six hours comfortably covers capsules whose exit
+ * branches confirmed a few blocks apart, which is the normal case, while
+ * bounding how long a healthy capsule can be held up by a wedged sibling.
+ *
+ * Safe to wait: past its CSV a claimable exit output is an ordinary UTXO only
+ * this wallet can spend. There is no deadline and nobody to race.
+ */
+const EXIT_CLAIM_BATCH_MAX_WAIT_MS = 6 * 60 * 60 * 1000;
+
 const REFRESH_FAIL_ESCALATE_STREAK = 3;
 const REFRESH_FAIL_ALERT_GAP_MS = 6 * 60 * 60 * 1000;
 
@@ -247,6 +266,7 @@ export default function useArkSync(): UseArkSync {
     const setArkLastBackupAt = useAuthStore((s) => s.setArkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
     const setArkRoundIntervalSecs = useAuthStore((s) => s.setArkRoundIntervalSecs);
+    const arkVtxoExitDeltaBlocks = useAuthStore((s) => s.arkVtxoExitDeltaBlocks);
     const arkExitInProgress = useAuthStore((s) => s.arkExitInProgress);
     const arkExitDestinationAddress = useAuthStore((s) => s.arkExitDestinationAddress);
     const setArkExitInProgress = useAuthStore((s) => s.setArkExitInProgress);
@@ -403,8 +423,19 @@ export default function useArkSync(): UseArkSync {
                     } catch (syncErr: any) {
                         console.warn('[Ark exit] pre-drive wallet sync failed (continuing):', syncErr?.message ?? syncErr);
                     }
-                    const progressResult = await progressArkExits();
-                    _stamp('progressArkExits done');
+                    // Bid at the runway-derived rate rather than letting bark
+                    // pick. Passing nothing meant the rate actually paid had no
+                    // relationship to the reserve the user was asked to fund;
+                    // now both come from how much runway the tightest capsule
+                    // has left, re-derived here every tick as that shrinks.
+                    let driveFeeRate: bigint | undefined;
+                    try {
+                        driveFeeRate = await fetchArkExitDriveFeeRate();
+                    } catch (rateErr: any) {
+                        console.warn('[Ark exit] drive fee-rate lookup failed, letting the SDK choose:', rateErr?.message ?? rateErr);
+                    }
+                    const progressResult = await progressArkExits(driveFeeRate);
+                    _stamp(`progressArkExits done${driveFeeRate != null ? ` at ${driveFeeRate} sat/vB` : ''}`);
                     // Diagnostic: the per-VTXO progress payload is the only
                     // signal of WHERE the state machine is (build?
                     // broadcast? awaiting confs?). Serialize defensively;
@@ -421,22 +452,114 @@ export default function useArkSync(): UseArkSync {
 
                     const claimable = await fetchClaimableExitVtxos();
                     _stamp(`fetchClaimableExitVtxos: ${claimable.length} ready`);
-                    if (claimable.length > 0 && arkExitDestinationAddress) {
+
+                    // CLAIM BATCHING.
+                    //
+                    // drainExits([]) already sweeps every currently-claimable
+                    // capsule into ONE transaction, so the cost of claiming is
+                    // per-claim, not per-capsule. Firing the moment the first
+                    // capsule ripens therefore pays a separate fee for each one.
+                    // Observed on a five-capsule exit: the first claim cost 225
+                    // sats to move 877, and four more were queued behind it, on
+                    // an exit-fee wallet that had already dropped from 3654 to
+                    // 699 sats. Five fees where one would have done.
+                    //
+                    // Capsules ripen apart because each has its own exit branch
+                    // and its own CSV, timed from when THAT branch's tx
+                    // confirmed. A single block between two confirmations is
+                    // enough to split the batch.
+                    //
+                    // So wait for the stragglers, but never indefinitely: one
+                    // wedged leaf must not hold the others hostage. Claim when
+                    // nothing else is still working its way through, or when the
+                    // window expires, whichever comes first.
+                    //
+                    // Waiting is safe. Past its CSV a claimable exit output is
+                    // an ordinary UTXO that only this wallet can spend, with no
+                    // deadline and nobody to race.
+                    const exitVtxosForBatch = await fetchArkExitVtxos();
+                    const stragglers = exitVtxosForBatch.filter(
+                        (v) => isActiveExit(v) && !v.isClaimable,
+                    );
+                    const stillProgressing = stragglers.length;
+
+                    // The ripening schedule is knowable in advance:
+                    // AwaitingDelta carries the exact block each straggler
+                    // becomes claimable at, fixed from the moment its leaf
+                    // confirmed. Handing those to the decision lets it wait on
+                    // the chain rather than on a clock, which is what makes the
+                    // whole exit land as one UTXO instead of several. A
+                    // straggler still Processing has no such height yet, and
+                    // those are what the wall-clock backstop is for.
+                    const pendingClaimableHeights: number[] = [];
+                    let unknownScheduleCount = 0;
+                    for (const v of stragglers) {
+                        const h = Number(
+                            (v.state as { inner?: { claimableHeight?: number } })?.inner
+                                ?.claimableHeight ?? 0,
+                        );
+                        if (Number.isFinite(h) && h > 0) pendingClaimableHeights.push(h);
+                        else unknownScheduleCount += 1;
+                    }
+
+                    const batchDecision = decideExitClaimBatch({
+                        claimableCount: claimable.length,
+                        stillProgressingCount: stillProgressing,
+                        batchSince: useAuthStore.getState().arkExitClaimBatchSince ?? null,
+                        now: Date.now(),
+                        maxWaitMs: EXIT_CLAIM_BATCH_MAX_WAIT_MS,
+                        tipHeight: useAuthStore.getState().arkChainTipHeight ?? null,
+                        pendingClaimableHeights,
+                        unknownScheduleCount,
+                    });
+                    if (
+                        (useAuthStore.getState().arkExitClaimBatchSince ?? null) !==
+                        batchDecision.batchSince
+                    ) {
+                        useAuthStore.getState().setArkExitClaimBatchSince(batchDecision.batchSince);
+                    }
+                    const claimBatchReady = batchDecision.claim;
+                    if (claimable.length > 0 && !claimBatchReady) {
+                        _stamp(
+                            `exit claim held for batching (${batchDecision.reason}): ` +
+                            `${claimable.length} ready, ${stillProgressing} still progressing` +
+                            (batchDecision.blocksUntilAllReady != null
+                                ? `, ${batchDecision.blocksUntilAllReady} blocks to go`
+                                : ''),
+                        );
+                    }
+
+                    if (claimable.length > 0 && arkExitDestinationAddress && claimBatchReady) {
                         // claimArkExitsToAddress now finalizes AND broadcasts the
                         // claim (drainExits alone only builds a PSBT). Gate
                         // arkExitDrained on a real broadcast txid: a non-throwing
                         // return is NOT proof the funds left, and treating it as
                         // such pinned the exit "active" forever (the claim VTXO
                         // stayed claimable because nothing was ever relayed).
+                        let claimRateForLog = 0;
                         try {
+                            // Price the claim explicitly. Passing undefined lets
+                            // bark pick, and it picks for speed: observed live
+                            // bidding 779 sats to sweep a 698 sat output, which
+                            // it then refuses to build. The claim races nothing
+                            // once the CSV has matured, and its fee comes out of
+                            // the claimed value, so the 1-hour rate is correct
+                            // and "fastest" is actively harmful.
+                            const claimRate = await fetchClaimFeeRateSatPerVb();
+                            claimRateForLog = claimRate;
                             const claim = await claimArkExitsToAddress(
                                 arkExitDestinationAddress,
+                                BigInt(claimRate),
                             );
                             if (claim.txid) {
                                 _stamp(
                                     `exit claim broadcast txid=${claim.txid} fee=${claim.feeSats} sats`,
                                 );
                                 setArkExitDrained(true);
+                                // Batch consumed. A later capsule ripening
+                                // opens a fresh window rather than inheriting
+                                // this one's elapsed time.
+                                useAuthStore.getState().setArkExitClaimBatchSince(null);
                             } else {
                                 _stamp('exit claim returned no txid, NOT marking drained');
                             }
@@ -445,10 +568,24 @@ export default function useArkSync(): UseArkSync {
                             // as-is so the next cycle retries; the claim VTXO
                             // stays listClaimableExits()-visible until the tx
                             // actually lands, which is the correct retry gate.
-                            console.warn(
-                                '[Ark exit] claim sweep failed (will retry next cycle):',
-                                claimErr?.message ?? claimErr,
-                            );
+                            // "Claim Fee Exceeds Output" is not a transient
+                            // failure and retrying identically cannot fix it:
+                            // the capsule is worth less than it costs to sweep
+                            // at the current rate. Name it, so it is not just
+                            // an anonymous warning repeating every drive tick.
+                            const msg = String(claimErr?.message ?? claimErr);
+                            if (/Claim Fee Exceeds Output/i.test(msg)) {
+                                console.warn(
+                                    '[Ark exit] claim UNECONOMIC at',
+                                    claimRateForLog, 'sat/vB:', msg,
+                                    '- will retry, but this cannot clear until the fee rate drops or more capsules ripen and batch.',
+                                );
+                            } else {
+                                console.warn(
+                                    '[Ark exit] claim sweep failed (will retry next cycle):',
+                                    msg,
+                                );
+                            }
                         }
                     }
 
@@ -456,7 +593,9 @@ export default function useArkSync(): UseArkSync {
                     // block comment above). `pendingTotal` is kept only as a
                     // belt-and-suspenders OR-term in case a future SDK
                     // version starts counting something we don't model.
-                    const exitVtxos = await fetchArkExitVtxos();
+                    // Reuses the list fetched for the batching decision above:
+                    // this runs every drive tick and the call is not cheap.
+                    const exitVtxos = exitVtxosForBatch;
                     // bark 0.6.1: count in-flight exits by the not-terminal
                     // check so we never under-count active exits, which would
                     // retire an exit early (the mid-exit wallet-deletion bug).
@@ -1042,12 +1181,18 @@ export default function useArkSync(): UseArkSync {
                     const seen = nextFirstSeen[String(r.id)];
                     return seen != null && now - seen > stuckThresholdMs;
                 });
+                const refreshingIdsForStuck =
+                    useAuthStore.getState().arkRefreshingVtxoIds ?? [];
                 // "stuckSats" = sum of Locked VTXO amounts. The SDK doesn't
                 // expose a vtxo→round link, so this is the total locked across
                 // all rounds, not strictly the stuck-round subset. Fine for a
                 // banner headline since the user cancels all stuck rounds anyway.
+                // Includes delegated refreshes, which stay `Spendable` for the
+                // whole round: testing `Locked` alone meant a wedged delegated
+                // round reported 0 stuck sats and the rescue banner never
+                // appeared for the very case it exists to catch.
                 const lockedVtxos = (vtxos?.all ?? []).filter(
-                    (v) => v.state.toLowerCase() === 'locked',
+                    (v) => isVtxoMidRound(v, refreshingIdsForStuck),
                 );
                 const lockedSats = lockedVtxos.reduce((sum, v) => sum + v.sats, 0);
                 // nearExpiry: is any Locked VTXO inside the swap-out window of
@@ -1119,9 +1264,15 @@ export default function useArkSync(): UseArkSync {
                 if (stuckNow && useAuthStore.getState().arkBgRefreshEnabled) {
                     const blockMs2 = AVG_BLOCK_MINUTES * 60 * 1000;
                     const nowMs2 = Date.now();
+                    const refreshingIdsForAutoCancel =
+                        useAuthStore.getState().arkRefreshingVtxoIds ?? [];
                     let anyWithinAutoCancel = false;
                     for (const v of vtxos.all) {
-                        if (v.state.toLowerCase() !== 'locked') continue;
+                        // Same union as the stuck-sats sum above: a delegated
+                        // round leaves the VTXO Spendable, so a Locked-only
+                        // test skipped every delegated refresh and the
+                        // auto-cancel safety net never armed for them.
+                        if (!isVtxoMidRound(v, refreshingIdsForAutoCancel)) continue;
                         if (v.expiryHeight <= 0) continue;
                         const expiryAtMs = nowMs2 + Math.max(0, v.expiryHeight - tip) * blockMs2;
                         const msLeft = expiryAtMs - nowMs2;
@@ -1229,7 +1380,11 @@ export default function useArkSync(): UseArkSync {
             if (tip !== null && vtxos) {
                 for (const v of vtxos.spendable) {
                     if (v.expiryHeight === 0) continue;
-                    if (v.state.toLowerCase() === 'locked') continue;
+                    // Skip anything mid-round: its expiry is the pre-refresh
+                    // one, and escalating on it would raise the blocking rescue
+                    // Alert while a refresh is already in flight fixing it.
+                    // Locked alone missed every delegated refresh.
+                    if (isVtxoMidRound(v, state.arkRefreshingVtxoIds ?? [])) continue;
                     const blocks = v.expiryHeight - tip;
                     // Skip already-expired VTXOs: they can't be refreshed (the
                     // ASP can sweep them at any time past expiry), so they must
@@ -1392,7 +1547,19 @@ export default function useArkSync(): UseArkSync {
                 if (secs != null) setArkRoundIntervalSecs(secs);
             });
         };
+
+        // Same shape, different reason: `vtxoExitDelta` and `maxVtxoExitDepth`
+        // are server-side static config too, but the exit path is not allowed
+        // to ask for them (the user pressing Emergency Exit may be doing it
+        // BECAUSE the server is gone). Cache them while it is reachable so exit
+        // triage can measure a capsule's runway against the real CSV rather
+        // than the worst case it has to assume without them.
+        const maybeFetchExitParams = () => {
+            if (arkVtxoExitDeltaBlocks != null) return;
+            void fetchArkExitParams();
+        };
         maybeFetchRoundInterval();
+        maybeFetchExitParams();
 
         // Fast retry: catch the wallet handle the moment boot finishes.
         let pollTries = 0;
@@ -1404,6 +1571,7 @@ export default function useArkSync(): UseArkSync {
                 clearInterval(fastPollId);
                 void sync();
                 maybeFetchRoundInterval();
+                maybeFetchExitParams();
             } else if (pollTries >= POLL_MAX_TRIES) {
                 clearInterval(fastPollId);
             }
@@ -1416,7 +1584,7 @@ export default function useArkSync(): UseArkSync {
             clearInterval(id);
             clearInterval(fastPollId);
         };
-    }, [isArkAuth, sync, arkRoundIntervalSecs, setArkRoundIntervalSecs]);
+    }, [isArkAuth, sync, arkRoundIntervalSecs, setArkRoundIntervalSecs, arkVtxoExitDeltaBlocks]);
 
     // Foreground kick — refresh the moment the user returns to the app,
     // regardless of where the interval is in its cycle.

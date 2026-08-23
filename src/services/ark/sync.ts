@@ -1,6 +1,8 @@
 import useAuthStore from '@Cypher/stores/authStore';
 
-import { getArkOnchainHandle, getArkWalletHandle, rotateArkOnchainEsplora, setLastOnchainBalanceSats } from './walletHandle';
+import { decideAutoBoard } from './autoBoardDecision';
+
+import { ensureArkOnchainHandle, getArkWalletHandle, rotateArkOnchainEsplora, setLastOnchainBalanceSats } from './walletHandle';
 
 // Flat board-fee headroom (sats) subtracted from the boardable surplus when an
 // exit-fee reserve is armed, so boardAmount's own fee can't erode the reserve
@@ -65,7 +67,20 @@ export async function syncArkWallet(): Promise<boolean> {
     if (!handle) return false;
     await handle.sync();
 
-    const onchain = getArkOnchainHandle();
+    // MUST be `ensure`, not `get`. `rotateArkOnchainEsplora()` nulls the handle
+    // so the next spawn picks a different esplora, but a bare
+    // `getArkOnchainHandle()` returns that null and the whole on-chain block
+    // below is skipped, silently and permanently: no sync, no balance, no
+    // error. One rotation killed the on-chain wallet for the rest of the
+    // process, `setLastOnchainBalanceSats` was never reached, and the exit-fee
+    // wallet read 0 sats so Emergency Exit stayed gated behind "Fund exit fees
+    // first" while the funds sat confirmed on-chain. Observed on device
+    // 2026-08-16; the rotate docstring already assumed this call site used
+    // `ensure`.
+    const onchain = await ensureArkOnchainHandle().catch((err) => {
+        console.warn('[Ark sync] onchain handle spawn failed:', err?.message ?? String(err));
+        return null;
+    });
     if (onchain) {
         try {
             const syncedSats = await onchain.sync();
@@ -99,41 +114,31 @@ export async function syncArkWallet(): Promise<boolean> {
             //      touched the exit-funding flow) keeps the exact old boardAll
             //      behavior.
             const authState = useAuthStore.getState();
-            const reserveSats = authState.arkExitFeeReserveSats ?? 0;
-            const canBoard =
-                !authState.arkExitInProgress &&
-                onchainBal.confirmedSats > 0n &&
-                arkBal.pendingBoardSats === 0n;
-            if (canBoard && reserveSats > 0) {
-                // Board only the surplus above the reserve. Subtract a flat
-                // board-fee headroom so boardAmount's own fee can't dip the
-                // leftover below the reserve. Only board when the surplus
-                // clears the server board minimum (a smaller surplus can never
-                // board and would retry-storm), otherwise hold it on-chain.
-                const confirmed = Number(onchainBal.confirmedSats);
-                const excess = confirmed - reserveSats - BOARD_FEE_HEADROOM_SATS;
-                if (excess >= MIN_BOARD_SATS) {
-                    console.log(
-                        '[Ark sync] auto-board (reserve armed): boarding surplus',
-                        excess, 'sats; keeping', reserveSats, 'on-chain for exit fees',
-                    );
-                    try {
-                        await handle.boardAmount(BigInt(excess));
-                        console.log('[Ark sync] auto-board: boardAmount initiated');
-                    } catch (boardErr) {
-                        console.warn('[Ark sync] auto-board: boardAmount failed:', boardErr);
-                    }
-                } else if (__DEV__) {
-                    console.log(
-                        '[Ark sync] auto-board held: surplus', excess,
-                        'below board minimum; keeping funds on-chain for exit fees',
-                    );
+            const boardDecision = decideAutoBoard({
+                confirmedSats: Number(onchainBal.confirmedSats),
+                pendingBoardSats: Number(arkBal.pendingBoardSats),
+                exitInProgress: authState.arkExitInProgress,
+                armedReserveSats: authState.arkExitFeeReserveSats,
+                recommendedReserveSats: authState.arkExitRecommendedReserveSats,
+                minBoardSats: MIN_BOARD_SATS,
+                boardFeeHeadroomSats: BOARD_FEE_HEADROOM_SATS,
+            });
+            if (boardDecision.action === 'board-amount') {
+                console.log(
+                    '[Ark sync] auto-board: boarding surplus', boardDecision.sats,
+                    'sats; keeping', boardDecision.holdSats, 'on-chain for exit fees',
+                );
+                try {
+                    await handle.boardAmount(BigInt(boardDecision.sats));
+                    console.log('[Ark sync] auto-board: boardAmount initiated');
+                } catch (boardErr) {
+                    console.warn('[Ark sync] auto-board: boardAmount failed:', boardErr);
                 }
-            } else if (canBoard) {
+            } else if (boardDecision.action === 'board-all') {
                 console.log(
                     '[Ark sync] auto-board: detected',
                     String(onchainBal.confirmedSats),
-                    'sats unboarded onchain, initiating boardAll',
+                    'sats unboarded onchain and nothing to hold, initiating boardAll',
                 );
                 try {
                     await handle.boardAll();
@@ -141,23 +146,41 @@ export async function syncArkWallet(): Promise<boolean> {
                 } catch (boardErr) {
                     console.warn('[Ark sync] auto-board: boardAll failed:', boardErr);
                 }
-            } else if (authState.arkExitInProgress && onchainBal.confirmedSats > 0n && __DEV__) {
-                console.log('[Ark sync] auto-board skipped: exit in progress, holding on-chain funds for exit fees');
+            } else if (boardDecision.action === 'hold' && __DEV__) {
+                console.log(
+                    '[Ark sync] auto-board held: surplus', boardDecision.surplusSats,
+                    'below board minimum; keeping', boardDecision.holdSats,
+                    'on-chain for exit fees',
+                );
+            } else if (boardDecision.action === 'skip' && __DEV__) {
+                console.log('[Ark sync] auto-board skipped:', boardDecision.reason);
             }
 
             // Progress any pending boards through their phases. No-op when
             // nothing is in flight. Safe to call on every tick.
             await handle.syncPendingBoards();
         } catch (oncErr) {
-            console.warn('[Ark sync] onchain sync / board pipeline failed:', oncErr);
-            // If the pinned esplora is bot-blocking us (BarkError.Network /
-            // ServerConnection / the "not a blockhash" 338-byte block page),
-            // drop the handle and rotate providers so the next tick re-spawns
-            // against the alternate endpoint instead of failing forever.
+            // Stringify own properties. A BarkError carries its detail in
+            // `inner.errorMessage`, and passing the object straight to
+            // console.warn collapses it to a bare "Error", which is what made
+            // this failure undiagnosable on device (2026-08-16).
             const detail = `${(oncErr as any)?.tag ?? ''} ${(oncErr as any)?.message ?? ''} ${(oncErr as any)?.inner?.errorMessage ?? ''}`;
-            if (/Network|ServerConnection|blockhash|hex string|timeout|timed out/i.test(detail)) {
-                rotateArkOnchainEsplora();
-            }
+            console.warn(
+                '[Ark sync] onchain sync / board pipeline failed:',
+                detail.trim() || JSON.stringify(oncErr, Object.getOwnPropertyNames(oncErr ?? {})),
+            );
+            // Rotate on ANY failure, not only errors whose text matches a known
+            // network signature. The regex that used to gate this skipped
+            // errors that did not stringify the expected way, and the on-chain
+            // handle then retried the same dead provider every tick forever:
+            // `onchain.sync()` never succeeded, `setLastOnchainBalanceSats` was
+            // never reached, so the exit-fee wallet read 0 sats for the entire
+            // process lifetime and Emergency Exit stayed gated behind "Fund
+            // exit fees first" while the funds sat confirmed on-chain.
+            //
+            // Rotating on a non-network error is harmless: it just re-spawns
+            // the on-chain handle against the other esplora on the next tick.
+            rotateArkOnchainEsplora();
         }
     }
 
