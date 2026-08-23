@@ -1532,7 +1532,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   correlationId,
                 });
                 SimpleToast.show(
-                  'Emergency exit started — broadcasting on-chain. Funds will sweep automatically once the timelock expires.',
+                  'Emergency exit started, broadcasting on-chain. It does not finish while the app is closed: reopen it after the timelock to collect.',
                   SimpleToast.LONG,
                 );
               } catch (err: any) {
@@ -2171,7 +2171,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   arkExitStartedSats;
                 return shownSats == null || shownSats <= 0
                   ? 'Broadcasting exit transactions…'
-                  : `${shownSats.toLocaleString()} sats pending exit. Funds sweep automatically once the ~24h CSV timelock expires.`;
+                  : `${shownSats.toLocaleString()} sats pending exit. Broadcasting, then a ~24h timelock. Reopen the app after that to collect; it does not progress while closed.`;
               })()}
             </Text>
             {arkExitDestinationAddress && (
@@ -2181,7 +2181,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             )}
             {arkExitStartedAt && (
               <Text style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                Started {new Date(arkExitStartedAt).toLocaleString()}. Funds sweep to the destination when the timelock expires; the vault stays afterwards.
+                Started {new Date(arkExitStartedAt).toLocaleString()}. Funds go to the destination when you reopen the app after the timelock; the vault stays afterwards.
               </Text>
             )}
 
