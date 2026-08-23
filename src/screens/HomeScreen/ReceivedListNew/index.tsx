@@ -620,17 +620,6 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
               </View>
             </View>
 
-            {/* Bark receive advice: small receives can leave sub-refreshable
-                dust that expires; nudge larger amounts. COPY: Bam finalizes. */}
-            {selectedItem === 5 && (
-              <Text
-                center
-                style={{ marginHorizontal: 24, marginTop: 8, fontSize: 12, color: '#FFD54F', opacity: 0.95, lineHeight: 17 }}
-              >
-                Tip: receive above 700 sats at a time, via a Lightning invoice or your Bark address, so they stay refreshable and don't expire as dust.
-              </Text>
-            )}
-
             {/* Bark-address specific, so it is gated to that tab: "this address"
                 only means something while the Bark address is on screen.
                 The point is that expiry reminders are LOCAL alarms scheduled by
@@ -641,9 +630,9 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             {selectedItem === 5 && tab === 2 && (
               <Text
                 center
-                style={{ marginHorizontal: 24, marginTop: 6, fontSize: 12, color: '#FFD54F', opacity: 0.95, lineHeight: 17 }}
+                style={{ marginHorizontal: 24, marginTop: 8, fontSize: 12, color: '#FFD54F', opacity: 0.95, lineHeight: 17 }}
               >
-                To receive 700-sat or above capsule from another Bark user. You need to be present with the app being open when you receive to this address.
+                To receive 700-sat or above capsule from another Bark user. Need to be present with the app being open when you receive to this address.
               </Text>
             )}
 
