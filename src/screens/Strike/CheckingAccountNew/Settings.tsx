@@ -1374,6 +1374,47 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       return;
     }
 
+    // What the plan could NOT verify. Built here, above every branch below,
+    // because all three of them mislead when it is non-empty, and the branch
+    // that misleads WORST is the one that reports nothing is recoverable: the
+    // fallback bands price at 10 sat/vB, which condemns a small wallet on a fee
+    // rate the app invented while unable to reach any fee source.
+    //
+    // The temporal axis is a hard exclusion when it can run: an exit that does
+    // not clear its CSV before expiry loses the capsule AND the reserve spent
+    // chasing it. Without a usable tip it cannot run, and triage deliberately
+    // includes rather than excludes, because refusing to exit on a failed tip
+    // read would disarm the emergency button for a network fault. That trade is
+    // only honest if the user is told, and until now they were not: the note
+    // was computed on every entry and rendered nowhere.
+    const buildUnverifiedNotice = (p: ExitTriageResult): string => {
+      const lines: string[] = [];
+      if (p.runwayUnverifiedCount > 0) {
+        lines.push(
+          `${p.runwayUnverifiedCount === p.selected.length ? 'These capsules' : `${p.runwayUnverifiedCount} of these capsules`} could not be checked against expiry, because there is no recent view of the chain. If one is closer to expiring than it looks, the exit can lose it and the fees spent on it.`,
+        );
+      } else if (p.tipUnavailable) {
+        lines.push(
+          'Your capsules could not be checked against expiry, because there is no recent view of the chain.',
+        );
+      }
+      if (p.feeRatesEstimated) {
+        lines.push(
+          'Fee estimates are unavailable, so the amounts here are a guess rather than the current market rate. Anything described as costing more than it is worth may be cheaper than this says.',
+        );
+      }
+      if (p.usedAssumedExitDelta) {
+        lines.push('The waiting period is assumed, not read from the server.');
+      }
+      if (lines.length === 0) return '';
+      return (
+        'You appear to be offline or unable to reach the chain.\n\n' +
+        lines.map((l) => `  ${l}`).join('\n\n') +
+        '\n\nReconnecting and trying again will give you real numbers. You can still go ahead: a network fault must not take away your way out.\n\n'
+      );
+    };
+    const unverifiedNotice = buildUnverifiedNotice(plan);
+
     // The override, offered only where it would change something. Re-planning
     // with 'recover-everything' is what actually applies it, so the figures in
     // the confirm dialog afterwards are the forced ones, not these.
@@ -1381,7 +1422,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       setExitStarting(false);
       Alert.alert(
         'Emergency Exit',
-        bodyPrefix +
+        unverifiedNotice +
+          bodyPrefix +
           `\n\nYou can exit ${plan!.overridableCount === 1 ? 'it' : 'them'} anyway. ` +
           'That is sometimes worth it, for instance to get your funds out of a server you no longer trust, ' +
           'but it costs more in miner fees than the funds are worth.',
@@ -1419,7 +1461,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       setExitStarting(false);
       Alert.alert(
         'Emergency Exit',
-        `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} can be recovered by an emergency exit right now:\n\n` +
+        unverifiedNotice +
+          `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} can be recovered by an emergency exit right now:\n\n` +
           list +
           '\n\nThey stay in your vault and stay spendable.',
       );
@@ -1496,7 +1539,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     try {
       Alert.alert(
         'Emergency Exit',
-        exclusionNotice +
+        unverifiedNotice +
+          exclusionNotice +
           capsuleNotice +
           costNotice +
           underfundedPrefix +

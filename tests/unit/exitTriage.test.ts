@@ -9,6 +9,8 @@ import {
   ratesFromMempoolRecommended,
   URGENCY_SOON_BLOCKS,
   ExitTriageVtxo,
+  ExitTriageNote,
+  describeExitNote,
   RESERVE_FLOOR_SATS,
   perVtxoExitVb,
   requiredRunwayBlocks,
@@ -551,6 +553,63 @@ describe('economic policy: how far past the economics the user may go', () => {
     expect(r.reserveSats).toBe(5000);
     expect(r.expectedSpendSats).toBe(632);
     expect(r.netLossSats).toBe(0);
+  });
+
+  it('includes a capsule whose runway it cannot check, and flags it', () => {
+    // A network fault must not disarm the emergency button, so an unknown tip
+    // includes rather than excludes. That is only defensible if it is
+    // disclosed, which is what runwayUnverifiedCount exists for: before it, the
+    // expiry-unknown note was computed on every entry and read by nothing.
+    const offline = triageArkExit({
+      vtxos: [v({ id: 'live', sats: 971, exitDepth: 2, exitTxWeightWu: 1325 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: null,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(offline.selectedIds).toEqual(['live']);
+    expect(offline.runwayUnverifiedCount).toBe(1);
+    expect(offline.selected[0].notes).toContain('expiry-unknown');
+    expect(offline.selected[0].blocksUntilExpiry).toBeNull();
+  });
+
+  it('does not flag runway when the tip is usable', () => {
+    const online = triageArkExit({
+      vtxos: [v({ id: 'live', sats: 971, exitDepth: 2, exitTxWeightWu: 1325 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(online.runwayUnverifiedCount).toBe(0);
+    expect(online.selected[0].notes).not.toContain('expiry-unknown');
+  });
+
+  it('loses the temporal exclusion entirely without a tip, which is why it must disclose', () => {
+    // Same capsule, one block from expiry. With a tip it is a HARD exclusion,
+    // because an exit that does not clear its CSV loses the capsule and the
+    // reserve. Without one it sails through, so the disclosure is the only
+    // thing standing between the user and that trade.
+    const doomed = v({ id: 'doomed', sats: 971, exitDepth: 2, exitTxWeightWu: 1325, expiryHeight: TIP + 1 });
+    const withTip = triageArkExit({
+      vtxos: [doomed], feeRateSatPerVb: 1, chainTipHeight: TIP, vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(withTip.selectedIds).toEqual([]);
+    expect(withTip.excluded[0].reason).toBe('too-close-to-expiry');
+
+    const withoutTip = triageArkExit({
+      vtxos: [doomed], feeRateSatPerVb: 1, chainTipHeight: null, vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(withoutTip.selectedIds).toEqual(['doomed']);
+    expect(withoutTip.runwayUnverifiedCount).toBe(1);
+  });
+
+  it('describes every note, so none can be added and left invisible', () => {
+    const notes: ExitTriageNote[] = ['expiry-unknown', 'beyond-server-depth-cap', 'under-water'];
+    for (const n of notes) {
+      const text = describeExitNote(n);
+      expect(typeof text).toBe('string');
+      expect(text.length).toBeGreaterThan(0);
+      expect(text).not.toBe('see details');
+    }
   });
 
   it('derives the collect-at runway instead of assuming ~24h', () => {

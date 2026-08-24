@@ -176,6 +176,18 @@ export async function fetchClaimFeeRateSatPerVb(): Promise<number> {
  * takes more than one pass (see computeArkExitPlan) and refetching between them
  * would let the market move underneath the comparison.
  */
+/**
+ * How old the cached chain tip may be before triage refuses to reason about
+ * runway with it.
+ *
+ * One hour, so roughly six blocks. Normal foreground use refreshes the tip far
+ * more often than this, so the threshold never fires in practice; what it
+ * catches is the case it exists for, a cold launch with no connectivity
+ * rehydrating a persisted tip from an arbitrarily long time ago. Six blocks of
+ * drift against a runway of ~156 is tolerable slop; six hundred is not.
+ */
+export const MAX_TIP_AGE_FOR_TRIAGE_MS = 60 * 60 * 1000;
+
 export async function fetchExitFeeRates(): Promise<ExitFeeRateTable> {
     const get = async (url: string): Promise<unknown | null> => {
         try {
@@ -210,6 +222,21 @@ export async function fetchExitFeeRates(): Promise<ExitFeeRateTable> {
         );
     }
     return EXIT_FEE_FALLBACK_RATES;
+}
+
+/**
+ * Same fetch, but says whether the answer came from the market or from
+ * constants. `fetchExitFeeRates` cannot: its return type is a bare
+ * Record<band, number> with nowhere to put the provenance, so a total network
+ * failure was indistinguishable from a live quote at the call site. The exit
+ * confirm dialog prices real money against these, so it has to know.
+ */
+export async function fetchExitFeeRatesWithSource(): Promise<{
+    rates: ExitFeeRateTable;
+    estimated: boolean;
+}> {
+    const rates = await fetchExitFeeRates();
+    return { rates, estimated: rates === EXIT_FEE_FALLBACK_RATES };
 }
 
 export async function fetchExitTreeFeeRateSatPerVb(
@@ -303,10 +330,20 @@ export async function computeArkExitPlan(
     if (!vtxos) return null;
 
     const s = useAuthStore.getState();
-    const chainTipHeight = s.arkChainTipHeight ?? null;
+    // A STALE tip is worse than no tip. `arkChainTipHeight` is persisted, so a
+    // cold launch offline rehydrates one that may be days old, and
+    // `expiryHeight - staleTip` then overstates every capsule's runway by
+    // exactly that staleness. Overstating runway is the unsafe direction on the
+    // one axis that is a hard exclusion. Past the threshold we hand triage null
+    // instead, which makes it disclose the gap rather than quietly trust a
+    // number it cannot justify.
+    const tipAgeMs =
+        s.arkChainTipHeightAt != null ? Date.now() - s.arkChainTipHeightAt : Infinity;
+    const tipIsFresh = s.arkChainTipHeight != null && tipAgeMs <= MAX_TIP_AGE_FOR_TRIAGE_MS;
+    const chainTipHeight = tipIsFresh ? (s.arkChainTipHeight as number) : null;
     const vtxoExitDeltaBlocks = s.arkVtxoExitDeltaBlocks ?? null;
 
-    const rates = await fetchExitFeeRates();
+    const { rates, estimated: feeRatesEstimated } = await fetchExitFeeRatesWithSource();
     const runTriage = (feeRateSatPerVb: number) =>
         triageArkExit({
             vtxos,
@@ -363,6 +400,8 @@ export async function computeArkExitPlan(
             '; rates=', JSON.stringify(rates),
             '; netLoss=', plan.netLossSats, '; overridable=', plan.overridableCount,
             plan.usedAssumedExitDelta ? '; exit delta ASSUMED' : '',
+            feeRatesEstimated ? '; fee rates FALLBACK' : '',
+            tipIsFresh ? '' : `; tip UNUSABLE (age ${Math.round(tipAgeMs / 60000)}m)`,
         );
         for (const e of plan.excluded) {
             console.log(
@@ -372,7 +411,9 @@ export async function computeArkExitPlan(
         }
     }
 
-    return plan;
+    // Provenance the pure triage cannot know. Carried on the plan so the confirm
+    // dialog can say which of its numbers are market-priced and which are not.
+    return { ...plan, feeRatesEstimated };
 }
 
 /**
