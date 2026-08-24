@@ -139,7 +139,14 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
             // on attempt 1 and never tries the working fallback, and the wallet
             // never opens (handle-not-ready spam, empty balance, exit gated).
             const transient = /ServerConnection|Connection|timeout|timed out|network|bad response from server|not a blockhash|failed to parse hex|Esplora client/i.test(detail);
-            if (!transient || attempt === OPEN_ATTEMPTS) break;
+            const stopping = !transient || attempt === OPEN_ATTEMPTS;
+            // LOG BEFORE DECIDING TO STOP. This used to break out of the loop
+            // before logging, so a non-transient failure left NO trace at all:
+            // the last thing on screen was "attempt 1/5 via blockstream", which
+            // reads as "it never rotated" when it may well have rotated and died
+            // silently on the next provider. Cost a live debugging session on
+            // 2026-08-24, where a rate-limited wallet would not open and the log
+            // could not say which providers had actually been tried.
             if (__DEV__) {
                 // Stringify the inner UniFFI payload inline: the tag alone
                 // (BarkError.ServerConnection) hides whether the failure was
@@ -149,9 +156,13 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
                     `[Ark restore] open attempt ${attempt}/${OPEN_ATTEMPTS} via ${esploraUrl} failed (${detail.trim()}); ` +
                     `inner=${e?.inner?.errorMessage ?? e?.inner?.message ?? 'n/a'} ` +
                     `raw=${JSON.stringify(e, Object.getOwnPropertyNames(e ?? {}))}; ` +
-                    `retrying in ${OPEN_RETRY_DELAY_MS}ms`,
+                    (stopping
+                        ? `GIVING UP (${!transient ? 'non-transient error' : 'attempts exhausted'}); ` +
+                          `providers tried: ${ESPLORA_URLS.slice(0, attempt).join(', ')}`
+                        : `retrying in ${OPEN_RETRY_DELAY_MS}ms via ${ESPLORA_URLS[attempt % ESPLORA_URLS.length]}`),
                 );
             }
+            if (stopping) break;
             await new Promise((r) => setTimeout(r, OPEN_RETRY_DELAY_MS));
         }
     }
