@@ -86,6 +86,24 @@ export async function fetchArkNextRequiredRefreshHeight(): Promise<number | null
  * — block heights are reserved for console / activity-log emission, users
  * see time copy only.
  */
+/**
+ * How long before a unilateral exit can be COLLECTED. Hours precision below
+ * three days, deliberately different from {@link formatBlocksUntil}.
+ *
+ * The exit wait is derived from depth: a depth-2 capsule needs 12 + 144 = 156
+ * blocks (~26h) and a depth-9 one needs 54 + 144 = 198 (~33h). `formatBlocksUntil`
+ * switches to days at 24h and renders BOTH as "in ~1d", which throws away the
+ * only reason the figure is derived rather than hardcoded. Expiry copy, which
+ * deals in weeks, still wants the coarse version.
+ */
+export function formatExitCollectWait(blocks: number): string {
+    if (blocks <= 0) return 'now';
+    const hours = blocksToHours(blocks);
+    if (hours < 1) return 'shortly';
+    if (hours < 72) return `in about ${Math.round(hours)} hours`;
+    return `in about ${Math.round(blocksToDays(blocks))} days`;
+}
+
 export function formatBlocksUntil(blocks: number): string {
     if (blocks <= 0) return 'now';
     const hours = blocksToHours(blocks);

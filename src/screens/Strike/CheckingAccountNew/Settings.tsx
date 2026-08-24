@@ -45,6 +45,8 @@ import {
   recoverArkOnchainBoard,
   fetchArkExitVtxos,
   fetchPendingExitsTotalSats,
+  formatBlocksUntil,
+  formatExitCollectWait,
   findAutoBackupForRecovery,
   getArkOnchainAddress,
   getAutoBackupPath,
@@ -1445,13 +1447,45 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     // Principle: never silently spend more than the funds are worth. The
     // reserve sits next to what comes back, so a reserve larger than the value
     // is impossible to miss.
+    // Every selected capsule, named, so the user can see what the totals are
+    // made of. Listed only when there is more than one: with a single capsule
+    // the row would just restate the line above it. Capped, with the remainder
+    // counted rather than dropped silently.
+    const CAPSULE_LIST_MAX = 6;
+    const capsuleNotice =
+      plan.selected.length > 1
+        ? 'Capsules being exited:\n' +
+          plan.selected
+            .slice(0, CAPSULE_LIST_MAX)
+            .map(
+              (e) =>
+                `  ${e.sats.toLocaleString()} sats: about ${e.netRecoveredSats.toLocaleString()} sats reach you, ` +
+                `collectable ${formatExitCollectWait(e.requiredRunwayBlocks)}, ` +
+                `expires ${e.blocksUntilExpiry != null ? formatBlocksUntil(e.blocksUntilExpiry) : 'unknown'}`,
+            )
+            .join('\n') +
+          (plan.selected.length > CAPSULE_LIST_MAX
+            ? `\n  and ${plan.selected.length - CAPSULE_LIST_MAX} more`
+            : '') +
+          '\n\n'
+        : '';
+
+    // Three DIFFERENT numbers, kept apart on purpose.
+    //
+    // What reaches you, what the fees are expected to cost, and what you must
+    // have available. The reserve is not a cost: it carries spike headroom and
+    // a 5,000 sat floor, and whatever is not spent stays in the on-chain
+    // wallet. Pricing the loss against the reserve told a user exiting one 971
+    // sat capsule that it cost 4,105 sats more than it was worth, when the
+    // expected spend was about 632 against 895 recovered.
     const costNotice =
-      `Exiting ${plan.selected.length} capsule${plan.selected.length === 1 ? '' : 's'} holding ${plan.selectedSats.toLocaleString()} sats. About ${plan.netRecoverableSats.toLocaleString()} sats reach your address, and it needs about ${plan.reserveSats.toLocaleString()} sats of on-chain miner fees to get there.\n\n` +
+      `Exiting ${plan.selected.length} capsule${plan.selected.length === 1 ? '' : 's'} holding ${plan.selectedSats.toLocaleString()} sats. About ${plan.netRecoverableSats.toLocaleString()} sats reach your address.\n\n` +
+      `Miner fees are expected to cost about ${plan.expectedSpendSats.toLocaleString()} sats. You need ${plan.reserveSats.toLocaleString()} sats sitting in your on-chain wallet as cover in case fees rise, and anything not spent stays yours.\n\n` +
       // The loss, in sats, whenever the exit spends more than it returns. This
       // is the sentence that makes an overridden exit a choice rather than a
       // surprise, so it is not conditional on how the policy got here.
       (plan.netLossSats > 0
-        ? `That is about ${plan.netLossSats.toLocaleString()} sats MORE in fees than the funds are worth.\n\n`
+        ? `That is about ${plan.netLossSats.toLocaleString()} sats MORE in expected fees than the funds are worth.\n\n`
         : '');
 
     const shortfall = Math.max(0, freshRecommended - onchainReserveSats);
@@ -1463,12 +1497,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       Alert.alert(
         'Emergency Exit',
         exclusionNotice +
+          capsuleNotice +
           costNotice +
           underfundedPrefix +
-          `Forces your VTXO capsules onto the Bitcoin chain. Funds arrive at your ${destLabel} after a ~24-hour wait set by Bitcoin. Once you start, this can't be cancelled.\n\n` +
+          `Forces your VTXO capsules onto the Bitcoin chain, into your ${destLabel}. Bitcoin enforces a waiting period first, ${formatExitCollectWait(exitPlan.collectableInBlocks)} for this exit. Once you start, this can't be cancelled.\n\n` +
           'Only start this if your soonest capsule is at least 1 day from expiry. The exit txs must confirm on-chain before then, so it is not a last-minute rescue.\n\n' +
           `${address}\n\n` +
-          'Cypher Box keeps the exit running in the background and sweeps the funds to this address when the timelock expires. The vault stays afterwards.',
+          // The wait does NOT run itself. The drive is foreground-only, so the
+          // claim fires when the user next opens the app. Saying otherwise was
+          // untrue for most of the 44 hours the 2026-08-22 exit ran.
+          `Come back and open the app ${formatExitCollectWait(exitPlan.collectableInBlocks)} to collect. It does not finish while the app is closed. The vault stays afterwards.`,
         [
           {
             text: 'Cancel',

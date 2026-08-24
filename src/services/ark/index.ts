@@ -221,6 +221,8 @@ export {
     cancelVtxoStuckSwapWarnings,
 } from './backgroundNotifications';
 
+export { formatBlocksUntil, formatExitCollectWait } from './expiry';
+
 export { registerArkNotificationTapHandler } from './notificationHandler';
 
 export {
