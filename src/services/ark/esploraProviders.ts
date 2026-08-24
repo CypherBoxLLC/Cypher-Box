@@ -60,3 +60,99 @@ export function esploraOperator(url: string): string {
     const host = url.replace(/^https?:\/\//, '').split('/')[0];
     return host.split('.').slice(-2).join('.');
 }
+
+/**
+ * How long a provider stays out of rotation after failing.
+ *
+ * Split by CAUSE, because the two failures have very different recovery times.
+ * A 429 from Blockstream is an hourly quota: coming back in five minutes just
+ * spends another request to be told the same thing. A connection failure is
+ * usually transient and the host may be back almost immediately.
+ *
+ * These are deliberately not equal, and that asymmetry is the whole point of
+ * tracking the cause rather than just "it failed".
+ */
+export const ESPLORA_RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
+export const ESPLORA_UNREACHABLE_COOLDOWN_MS = 5 * 60 * 1000;
+
+export type EsploraFailureKind = 'rate-limited' | 'unreachable';
+
+/** When a provider last failed, and why. Absent means never failed. */
+export type EsploraHealth = Record<string, { failedAt: number; kind: EsploraFailureKind }>;
+
+/**
+ * Classify an open/fetch failure so the cooldown can be sized to it.
+ *
+ * A 429 body reaches us disguised: Blockstream answers with a ~330 byte JSON
+ * notice, bark feeds it to a hex parser expecting a blockhash, and the error
+ * says "not a blockhash ... invalid hex string length 338". So the hex-length
+ * complaint IS a rate-limit tell in this specific context, unlike in
+ * networkFault.ts where it stays ambiguous because any error page produces it.
+ * Here the cost of guessing wrong is only a longer cooldown on one provider.
+ */
+export function classifyEsploraFailure(detail: string): EsploraFailureKind {
+    if (/\b429\b|too many requests|rate limit|request rate|exceeds the current limit/i.test(detail)) {
+        return 'rate-limited';
+    }
+    if (/invalid hex string length|not a blockhash|failed to parse hex/i.test(detail)) {
+        return 'rate-limited';
+    }
+    return 'unreachable';
+}
+
+function cooldownFor(kind: EsploraFailureKind): number {
+    return kind === 'rate-limited'
+        ? ESPLORA_RATE_LIMIT_COOLDOWN_MS
+        : ESPLORA_UNREACHABLE_COOLDOWN_MS;
+}
+
+/**
+ * Pick the provider to try next, skipping any still cooling down.
+ *
+ * Rules, in order:
+ *
+ *  1. Prefer providers in list order that are NOT cooling down. A healthy
+ *     wallet therefore keeps talking to exactly one provider, which is the
+ *     privacy property the list ordering already documents.
+ *  2. Among those, skip one whose OPERATOR just failed, so a Blockstream 429
+ *     does not immediately retry another Blockstream host. Falls back to
+ *     allowing the same operator if that leaves nothing.
+ *  3. If everything is cooling down, return the one whose cooldown expires
+ *     SOONEST rather than nothing. A stale provider is worth more than no
+ *     chain source at all, and the caller has no better option.
+ *
+ * Never returns null: the caller always needs somewhere to point.
+ */
+export function chooseEsploraProvider(args: {
+    urls: readonly string[];
+    health: EsploraHealth;
+    now: number;
+}): { url: string; coolingDown: boolean } {
+    const { urls, health, now } = args;
+    const isCooling = (u: string) => {
+        const h = health[u];
+        return h != null && now - h.failedAt < cooldownFor(h.kind);
+    };
+
+    const available = urls.filter((u) => !isCooling(u));
+    if (available.length > 0) {
+        // Avoid an operator that failed recently, even if a different host of
+        // theirs has no record of its own: a quota is per IP-and-operator, not
+        // per hostname.
+        const burnedOperators = new Set(
+            urls.filter(isCooling).map((u) => esploraOperator(u)),
+        );
+        const clean = available.filter((u) => !burnedOperators.has(esploraOperator(u)));
+        return { url: (clean[0] ?? available[0]) as string, coolingDown: false };
+    }
+
+    // Everything is cooling. Take whichever recovers first.
+    const soonest = [...urls].sort((a, b) => {
+        const ha = health[a];
+        const hb = health[b];
+        const ea = ha ? ha.failedAt + cooldownFor(ha.kind) : 0;
+        const eb = hb ? hb.failedAt + cooldownFor(hb.kind) : 0;
+        return ea - eb;
+    })[0];
+    return { url: soonest as string, coolingDown: true };
+}
