@@ -145,7 +145,7 @@ export const ASSUMED_EXIT_DELTA_BLOCKS = 288;
  *  It is scale-aware without being fee-rate-blind, because both sides move with
  *  the fee rate and the claim side eats the value: the same 698 at depth 2 is
  *  1.0x under water at 1 sat/vB, 9.9x at 5, and returns nothing at all at 20. */
-export const MAX_RESERVE_MULTIPLE = 2;
+export const MAX_FEE_MULTIPLE = 2;
 
 /** VTXO states that hold nothing to exit. `Exited` matters as much as `Spent`
  *  here: bark keeps returning a completed exit's VTXO from `allVtxos()` as
@@ -190,8 +190,11 @@ export type ExitExclusionReason =
     | 'refresh-before-exiting'
     /** Economic: its own claim fee is at least its whole value. */
     | 'returns-nothing'
-    /** Economic: the reserve it consumes dwarfs what it returns. */
-    | 'reserve-dwarfs-value';
+    /** Economic: the fees it costs dwarf what it returns. Named for FEES, not
+     *  for the reserve: the test is against this capsule's own exit-tree cost
+     *  at the bare rate, never against `reserveSats`. See the two-pot rule
+     *  above `ExitEconomicVerdict`. */
+    | 'fees-dwarf-value';
 
 /** Disclosures that do not change the decision but the user should still see. */
 export type ExitTriageNote =
@@ -203,6 +206,33 @@ export type ExitTriageNote =
     /** Included despite costing more reserve than it returns. */
     | 'under-water';
 
+/**
+ * THE TWO-POT RULE. Read this before touching anything economic here.
+ *
+ * An exit spends from two different pots and they must never be conflated:
+ *
+ *   EXPECTED SPEND   `exitTreeCostSats`, this capsule's own exit-tree vsize at
+ *                    the BARE fee rate. What the CPFP children actually pay.
+ *                    This, and only this, decides the verdict below.
+ *
+ *   RESERVE          `reserveSats`, what the user must have AVAILABLE. Carries
+ *                    SPIKE_MULT volatility headroom and a RESERVE_FLOOR_SATS
+ *                    minimum, is summed wallet-wide rather than per capsule,
+ *                    and whatever is not spent stays in their on-chain wallet.
+ *                    It is a funding requirement, NOT a cost, and it must never
+ *                    enter a profitability test.
+ *
+ * The gap is not small. On a single 971 sat capsule at 1 sat/vB the expected
+ * spend is 632 while the reserve is the 5,000 floor, eight times larger. On the
+ * measured 2026-08-22 mainnet exit, 3,585 was spent against a 12,072 reserve.
+ *
+ * This was not a hypothetical distinction. Everything here used to be NAMED for
+ * the reserve while being COMPUTED from spend, and `netLossSats` was duly
+ * implemented as `reserveSats - netRecoverableSats`. The confirm dialog then
+ * told a user that recovering 971 sats would cost 4,105 more than it was worth,
+ * on an exit that was mildly profitable. The names now match the arithmetic so
+ * the next reader is not misled the same way.
+ */
 export type ExitEconomicVerdict = 'profitable' | 'marginal' | 'uneconomic';
 
 /**
@@ -221,10 +251,10 @@ export type ExitEconomicVerdict = 'profitable' | 'marginal' | 'uneconomic';
  * one in does not cost the user money to rescue funds, it wedges the batch and
  * rescues nothing. So no policy includes it.
  *
- *   'profitable-only'     only capsules whose reserve cost comes back
+ *   'profitable-only'     only capsules whose fee cost comes back
  *   'default'             the above, plus capsules under water by less than
- *                         MAX_RESERVE_MULTIPLE
- *   'recover-everything'  the above, plus capsules whose reserve cost dwarfs
+ *                         MAX_FEE_MULTIPLE
+ *   'recover-everything'  the above, plus capsules whose fee cost dwarfs
  *                         what they return. This is spec principle 4: the user
  *                         may knowingly spend more than the funds are worth,
  *                         for instance to deny a hostile server a hostage.
@@ -740,7 +770,7 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
                 ? 'uneconomic'
                 : exitTreeCostSats <= netRecoveredSats
                   ? 'profitable'
-                  : exitTreeCostSats <= netRecoveredSats * MAX_RESERVE_MULTIPLE
+                  : exitTreeCostSats <= netRecoveredSats * MAX_FEE_MULTIPLE
                     ? 'marginal'
                     : 'uneconomic';
 
@@ -798,13 +828,13 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
         }
         if (economic === 'uneconomic') {
             if (policy !== 'recover-everything') {
-                exclude('reserve-dwarfs-value');
+                exclude('fees-dwarf-value');
                 continue;
             }
             notes.push('under-water');
         } else if (economic === 'marginal') {
             if (policy === 'profitable-only') {
-                exclude('reserve-dwarfs-value');
+                exclude('fees-dwarf-value');
                 continue;
             }
             notes.push('under-water');
@@ -851,7 +881,7 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
         0,
     );
     const overridable = excluded.filter(
-        (e) => e.reason === 'reserve-dwarfs-value' || e.reason === 'refresh-before-exiting',
+        (e) => e.reason === 'fees-dwarf-value' || e.reason === 'refresh-before-exiting',
     );
 
     return {
@@ -916,7 +946,7 @@ export function describeExitExclusion(reason: ExitExclusionReason | undefined): 
             return 'expiring soon, refresh it instead of exiting it';
         case 'returns-nothing':
             return 'network fee is more than it holds';
-        case 'reserve-dwarfs-value':
+        case 'fees-dwarf-value':
             return 'costs far more in fees than it holds';
         default:
             return 'cannot be exited';
