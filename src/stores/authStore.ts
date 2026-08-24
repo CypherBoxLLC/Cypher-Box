@@ -198,6 +198,13 @@ export type AuthStateType = {
     // Current chain tip height (from esplora). Needed to convert VTXO
     // expiryHeight → blocks-until-expiry for the depletion ring.
     arkChainTipHeight: number | null;
+    // Epoch ms the tip above was read. The tip is PERSISTED, so a cold launch
+    // offline rehydrates one that may be days old, and
+    // `expiryHeight - staleTip` then OVERSTATES a capsule's remaining runway by
+    // exactly that staleness. That is the unsafe direction on the exit's one
+    // hard exclusion, so anything reasoning about runway must check this first.
+    // Stamped automatically by setArkChainTipHeight; never set it by hand.
+    arkChainTipHeightAt: number | null;
     // Timestamp (ms) of the last successful balance+vtxo sync. Used to
     // decide whether to block the UI on a fresh fetch or serve cached.
     arkLastSyncedAt: number | null;
@@ -560,6 +567,7 @@ const createAuthStore = (
     arkExpiryNotifsScheduleVersion: 0,
     arkPendingLnReceives: [],
     arkChainTipHeight: null,
+    arkChainTipHeightAt: null,
     arkLastSyncedAt: null,
     arkLastBackupAt: null,
     arkRoundIntervalSecs: null,
@@ -640,7 +648,9 @@ const createAuthStore = (
     setArkScheduledStuckSwapNotifs: (state: Record<string, number>) => set({ arkScheduledStuckSwapNotifs: state }),
     setArkExpiryNotifsScheduleVersion: (state: number) => set({ arkExpiryNotifsScheduleVersion: state }),
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => set({ arkPendingLnReceives: state }),
-    setArkChainTipHeight: (state: number | null) => set({ arkChainTipHeight: state }),
+    // Stamps the read time with the value, so the two can never drift apart.
+    setArkChainTipHeight: (state: number | null) =>
+        set({ arkChainTipHeight: state, arkChainTipHeightAt: state == null ? null : Date.now() }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
     setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
@@ -692,6 +702,7 @@ const createAuthStore = (
             arkExpiryNotifsScheduleVersion: 0,
             arkPendingLnReceives: [],
             arkChainTipHeight: null,
+            arkChainTipHeightAt: null,
             arkLastSyncedAt: null,
             arkLastBackupAt: null,
             arkRoundIntervalSecs: null,

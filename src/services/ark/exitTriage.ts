@@ -354,6 +354,38 @@ export type ExitTriageResult = {
     claimFeeRateSatPerVb: number;
     /** True when the temporal axis ran on ASSUMED_EXIT_DELTA_BLOCKS. */
     usedAssumedExitDelta: boolean;
+    /**
+     * Selected capsules whose runway could NOT be checked, because no usable
+     * chain tip was available.
+     *
+     * The temporal axis is a hard exclusion when it can run: an exit that does
+     * not clear its CSV before expiry loses the capsule AND the reserve spent
+     * chasing it. Without a tip it cannot run at all, and the deliberate choice
+     * is to include rather than exclude, because refusing to exit on a failed
+     * tip read would disarm the emergency button for a network fault.
+     *
+     * That choice is only defensible if the user is TOLD. This count is what
+     * makes the telling possible: before it existed the `expiry-unknown` note
+     * was computed and read by nothing.
+     */
+    runwayUnverifiedCount: number;
+    /**
+     * True when triage ran with no usable chain tip, independent of what got
+     * selected. `runwayUnverifiedCount` counts SELECTED capsules, so it reads 0
+     * in the very case that misleads hardest: offline, the fallback bands price
+     * at 10 sat/vB, a small wallet has everything excluded as uneconomic, and
+     * the app reports "none of your capsules can be recovered" on the strength
+     * of a fee rate it invented.
+     */
+    tipUnavailable: boolean;
+    /**
+     * True when every fee source was unreachable and the bands came from
+     * EXIT_FEE_FALLBACK_RATES. The reserve and the whole economic axis are then
+     * priced off constants rather than the market, which the user is committing
+     * real money against. Set by the caller that fetched the rates, since
+     * triage itself is pure and only ever sees a number.
+     */
+    feeRatesEstimated: boolean;
 };
 
 // --- Cost model helpers ----------------------------------------------------
@@ -842,6 +874,9 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
         feeRateSatPerVb: feeRate,
         claimFeeRateSatPerVb: claimRate,
         usedAssumedExitDelta,
+        runwayUnverifiedCount: selected.filter((e) => e.notes.includes('expiry-unknown')).length,
+        tipUnavailable: tip == null,
+        feeRatesEstimated: false,
     };
 }
 
@@ -850,6 +885,27 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
  * product owner's to change; the contract this satisfies is that no capsule is
  * ever dropped without the user being told which one and why.
  */
+/**
+ * One-line text per disclosure note, for the confirm dialog.
+ *
+ * These do not change which capsules are exited, which is exactly why they were
+ * easy to leave unrendered: `ExitTriageNote` was defined, populated on every
+ * entry, and read by nothing at all. A note that reaches no user is not a
+ * disclosure, and the temporal axis explicitly relies on one.
+ */
+export function describeExitNote(note: ExitTriageNote): string {
+    switch (note) {
+        case 'expiry-unknown':
+            return 'could not check how close it is to expiry';
+        case 'beyond-server-depth-cap':
+            return 'past the server depth cap, so it can only be exited or refreshed';
+        case 'under-water':
+            return 'costs more in fees than it returns';
+        default:
+            return 'see details';
+    }
+}
+
 export function describeExitExclusion(reason: ExitExclusionReason | undefined): string {
     switch (reason) {
         case 'no-exit-chain':
