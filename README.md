@@ -22,7 +22,7 @@ Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built 
 | 🔥 **Hot Vault** | Self-custodial | Bitcoin on-chain | Savings on your device |
 | 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Offline Hardware-signed savings |
 
-Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, withdraw Lightning to vaults.
+Swap between rails in-app: Lightning ↔ Bark, top-up Lightning from vaults, withdraw from Lightning or Bark to vaults.
 
 ---
 
