@@ -22,6 +22,8 @@ import {
     fetchChainTipHeight,
     fetchArkExitVtxos,
     decideExitClaimBatch,
+    decideExitDriveCadence,
+    type ExitDriveSnapshot,
     isVtxoMidRound,
     fetchClaimableExitVtxos,
     fetchPendingExitsTotalSats,
@@ -287,6 +289,9 @@ export default function useArkSync(): UseArkSync {
     // Last wall-clock ms the exit machinery (progressExits/syncExits) ran.
     // Drives the ~2 min exit-drive throttle — see the exit block below.
     const exitDriveLastRunMsRef = useRef(0);
+    // What the LAST drive saw. Lets the next one pick a cadence without
+    // spending a request to find out what phase the exit is in.
+    const exitDriveSnapshotRef = useRef<ExitDriveSnapshot | null>(null);
     // Counter used by the idle-skip heuristic. Increments every cycle that
     // returns balance=0 and vtxos.all.length=0; resets the moment either
     // turns non-zero. We use this to avoid the 2s Bark `syncArkWallet`
@@ -401,8 +406,15 @@ export default function useArkSync(): UseArkSync {
                 // cuts the esplora load 4x. Skipped ticks do nothing at all
                 // (normal sync stays skipped while an exit is running).
                 const nowMs = Date.now();
-                if (nowMs - exitDriveLastRunMsRef.current < 120_000) {
-                    _stamp('exit drive skipped (throttle)');
+                const cadence = decideExitDriveCadence({
+                    last: exitDriveSnapshotRef.current,
+                    now: nowMs,
+                    lastRunAt: exitDriveLastRunMsRef.current,
+                });
+                if (!cadence.run) {
+                    _stamp(
+                        `exit drive skipped (${cadence.phase}, every ${Math.round(cadence.waitMs / 1000)}s)`,
+                    );
                     return;
                 }
                 exitDriveLastRunMsRef.current = nowMs;
@@ -501,6 +513,18 @@ export default function useArkSync(): UseArkSync {
                         if (Number.isFinite(h) && h > 0) pendingClaimableHeights.push(h);
                         else unknownScheduleCount += 1;
                     }
+
+                    // Cache what this drive observed so the NEXT one can pace
+                    // itself. Free: every field here was already fetched above.
+                    // Deliberately carries no chain tip. Both available tips are
+                    // frozen during an exit (the store's per #204, and bark's
+                    // ExitState.inner.tipHeight because it is stamped once on
+                    // entry), so anything paced off one computes a constant.
+                    exitDriveSnapshotRef.current = {
+                        claimableCount: claimable.length,
+                        awaitingCount: pendingClaimableHeights.length,
+                        processingCount: unknownScheduleCount,
+                    };
 
                     const batchDecision = decideExitClaimBatch({
                         claimableCount: claimable.length,
