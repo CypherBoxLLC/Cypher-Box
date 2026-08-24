@@ -13,6 +13,7 @@ import useAuthStore from '@Cypher/stores/authStore'
 import SimpleToast from "react-native-simple-toast";
 import { useNavigation } from '@react-navigation/native'
 import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout, revokeStrikeToken } from '@Cypher/api/strikeAPIs'
+import { bitcoinRecommendedFee } from '@Cypher/api/coinOSApis'
 import { colors } from '@Cypher/style-guide'
 
 interface Props {
@@ -145,6 +146,45 @@ function StrikeView({ showLogo = false, isShowButtons = false,
       }
     }
 
+    /**
+     * Straight to the confirmation screen, skipping the amount keyboard.
+     *
+     * Mirrors what BuyBitcoin's handleSendNext passes, because that screen is
+     * still reachable via Edit Amount on the confirmation screen and both paths
+     * must land ReviewPayment in the same shape.
+     *
+     * `recommendedFee` is fetched rather than omitted: a BUY routed to cold
+     * storage reads it. A failure here is non-fatal, the confirmation screen
+     * simply has no pre-fetched fee.
+     */
+    const goToBuyConfirmation = async (
+      fiatAmount: number,
+      satsAmount: number,
+      fiatType: 'BUY' | 'SELL',
+      fiatTotal: number,
+    ) => {
+      let recommendedFee: any;
+      try {
+        recommendedFee = await bitcoinRecommendedFee();
+      } catch (err) {
+        console.warn('[StrikeView] recommended fee lookup failed, continuing:', err);
+      }
+      dispatchNavigate('ReviewPayment', {
+        currency: safeCurrency,
+        matchedRate,
+        fiatAmount,
+        fiatTotal,
+        fiatType,
+        value: String(satsAmount),
+        converted: fiatAmount.toFixed(2),
+        isSats: true,
+        to: '',
+        fees: 0,
+        type: fiatType,
+        recommendedFee,
+      });
+    }
+
     const buyClickHandler = () => {
       const amt = Number(dollarStrikeText * (Number(matchedRate) || 0) * btc(1))
       console.log('amt: ', amt, strikeUser?.[1]?.available)
@@ -168,12 +208,13 @@ function StrikeView({ showLogo = false, isShowButtons = false,
       // of a purchase, while picking one they could NOT afford (the branch
       // above) correctly opened the purchase screen. `fiatTotal` is passed so
       // the MAX button still has the balance to work from.
-      // autoAdvance: the size is already chosen here, so the keyboard screen has
-      // nothing left to ask. BuyBitcoin forwards straight to the confirmation
-      // screen, where the amount stays editable. Routed through BuyBitcoin rather
-      // than jumping to ReviewPayment directly so the confirmation receives
-      // exactly the params BuyBitcoin already builds.
-      dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatTotal: Number(strikeUser?.[1]?.available), fiatType: "BUY", autoAdvance: true });
+      // The size is already chosen here, so the keyboard screen has nothing left
+      // to ask. Go straight to confirmation. Routing via BuyBitcoin made it
+      // render first and flash on screen, so its ReviewPayment params are built
+      // here instead: `to` is '' because BuyBitcoin's `sender` defaults to '' for
+      // a BUY, and `value` is the capsule size, which is what its own prefill
+      // round-trips back to (amt = sats * rate / 1e8, then sats = amt / rate * 1e8).
+      goToBuyConfirmation(amt, dollarStrikeText, "BUY", Number(strikeUser?.[1]?.available));
     }
 
     const sellClickHandler = () => {
@@ -196,7 +237,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
             dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: 0, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "SELL" });    
             return
         }
-        dispatchNavigate('BuyBitcoin', { currency: safeCurrency, matchedRate, fiatAmount: amt, fiatTotal: Number(strikeUser?.[0]?.available), fiatType: "SELL", autoAdvance: true });    
+        goToBuyConfirmation(amt, dollarStrikeText, "SELL", Number(strikeUser?.[0]?.available));
     }
 
     const handleStrikeLogout = async () => {
