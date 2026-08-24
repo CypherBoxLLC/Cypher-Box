@@ -2,7 +2,12 @@ import RNFS from 'react-native-fs';
 import * as Keychain from 'react-native-keychain';
 
 import { ESPLORA_URLS } from './config';
-import { ESPLORA_OPEN_ATTEMPTS } from './esploraProviders';
+import {
+    chooseEsploraProvider,
+    classifyEsploraFailure,
+    ESPLORA_OPEN_ATTEMPTS,
+    type EsploraHealth,
+} from './esploraProviders';
 import { ARK_DATADIR } from './datadir';
 import { cacheArkMnemonicForReopen, getArkWalletHandle, getCachedArkMnemonic, openArkWallet } from './walletHandle';
 
@@ -113,10 +118,31 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
  * (restoreArkWalletFromDisk, reopenArkWalletFromCache) own the openInFlight
  * guard around this.
  */
+/**
+ * Which providers have failed recently, and why.
+ *
+ * Module-level so it outlives a single open loop: the sync loop's self-heal
+ * calls this every tick, and without memory each call restarted at the first
+ * provider and re-earned the same 429. Resets on app restart, which is fine,
+ * the first failure re-learns it.
+ */
+const esploraHealth: EsploraHealth = {};
+
 async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
     let lastErr: Error | undefined;
     for (let attempt = 1; attempt <= OPEN_ATTEMPTS; attempt++) {
-        const esploraUrl = ESPLORA_URLS[(attempt - 1) % ESPLORA_URLS.length];
+        // Health-driven, not round-robin. The old `(attempt - 1) % len` walked
+        // the list blind, so a provider that had just answered 429 was tried
+        // again a few attempts later, spending a request to be told the same
+        // thing. Now a failure records WHY, and the chooser skips that provider
+        // for as long as the cause warrants: an hour for a quota, five minutes
+        // for an unreachable host.
+        const choice = chooseEsploraProvider({
+            urls: ESPLORA_URLS,
+            health: esploraHealth,
+            now: Date.now(),
+        });
+        const esploraUrl = choice.url;
         try {
             await openArkWallet(seed, { esploraUrl });
             if (__DEV__ && (attempt > 1 || esploraUrl !== ESPLORA_URLS[0])) {
@@ -138,6 +164,11 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
             // alongside the raw connection errors — otherwise the loop breaks
             // on attempt 1 and never tries the working fallback, and the wallet
             // never opens (handle-not-ready spam, empty balance, exit gated).
+            // Record the failure BEFORE deciding what to do, so the next
+            // attempt in this same loop already routes around this provider.
+            const kind = classifyEsploraFailure(detail);
+            esploraHealth[esploraUrl] = { failedAt: Date.now(), kind };
+
             const transient = /ServerConnection|Connection|timeout|timed out|network|bad response from server|not a blockhash|failed to parse hex|Esplora client/i.test(detail);
             const stopping = !transient || attempt === OPEN_ATTEMPTS;
             // LOG BEFORE DECIDING TO STOP. This used to break out of the loop
@@ -156,10 +187,11 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
                     `[Ark restore] open attempt ${attempt}/${OPEN_ATTEMPTS} via ${esploraUrl} failed (${detail.trim()}); ` +
                     `inner=${e?.inner?.errorMessage ?? e?.inner?.message ?? 'n/a'} ` +
                     `raw=${JSON.stringify(e, Object.getOwnPropertyNames(e ?? {}))}; ` +
+                    `classified=${kind}; ` +
                     (stopping
                         ? `GIVING UP (${!transient ? 'non-transient error' : 'attempts exhausted'}); ` +
-                          `providers tried: ${ESPLORA_URLS.slice(0, attempt).join(', ')}`
-                        : `retrying in ${OPEN_RETRY_DELAY_MS}ms via ${ESPLORA_URLS[attempt % ESPLORA_URLS.length]}`),
+                          `providers tried: ${Object.keys(esploraHealth).join(', ')}`
+                        : `retrying in ${OPEN_RETRY_DELAY_MS}ms`),
                 );
             }
             if (stopping) break;
