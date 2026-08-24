@@ -314,7 +314,29 @@ const MAX_LN_SEND_ATTEMPTS = 4;
  * failed or skipped refresh costs the user nothing beyond staying deep until
  * the next opportunity.
  */
+/**
+ * One change-refresh at a time, per JS process.
+ *
+ * `decideChangeRefresh` takes an `alreadyRefreshing` flag sourced from
+ * `arkRefreshingVtxoIds` in the store, and that is NOT sufficient on its own:
+ * the store is written after the round is submitted, so two calls that arrive
+ * close together both read an empty set and both submit.
+ *
+ * Observed live 2026-08-24: a single send produced two `folding 1 deepened
+ * capsule(s)` calls 91 seconds apart for the same capsule, the second landing
+ * while the first round was still `finalising`. It happened to be accepted that
+ * time, but the identical race between the receive hook and foregroundSweep an
+ * hour earlier produced `bad user input: input vtxo(s) unusable` from the ASP
+ * and left the wallet showing a stuck refresh until the round was re-driven.
+ *
+ * So the store flag stays (it is what stops OTHER callers colliding with us),
+ * and this module-level latch stops us colliding with ourselves. Same shape as
+ * `sweepInFlight` in ./foregroundSweep.
+ */
+let changeRefreshInFlight = false;
+
 async function maybeRefreshDeepenedChange(): Promise<void> {
+    if (changeRefreshInFlight) return;
     // Lazy requires, deliberately. Importing ./config at module scope drags the
     // SDK's `Network` enum into send.ts's graph, and any suite that mocks the
     // SDK without it fails to even load (arkSendIndeterminate.test.ts did).
@@ -375,7 +397,12 @@ async function maybeRefreshDeepenedChange(): Promise<void> {
         `[Ark send] folding ${ids.length} deepened capsule(s) back into a round,`,
         totalSats, 'sats',
     );
-    await refreshArkVtxosDelegatedAndSync(ids, totalSats);
+    changeRefreshInFlight = true;
+    try {
+        await refreshArkVtxosDelegatedAndSync(ids, totalSats);
+    } finally {
+        changeRefreshInFlight = false;
+    }
 }
 
 export async function executeArkSend(
