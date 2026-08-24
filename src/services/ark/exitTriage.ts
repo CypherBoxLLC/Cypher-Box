@@ -311,9 +311,34 @@ export type ExitTriageResult = {
     /** Selected capsules that cost more reserve than they return. */
     underWaterCount: number;
     /**
+     * What the exit is expected to SPEND in miner fees, summed over the
+     * selected capsules at the bare rate.
+     *
+     * Deliberately different from `reserveSats`, and the distinction is the
+     * whole point. `reserveSats` is what the user must have AVAILABLE: it
+     * carries SPIKE_MULT headroom and a RESERVE_FLOOR_SATS minimum, and
+     * whatever is not spent stays in their on-chain wallet. Measured on the
+     * 2026-08-22 mainnet exit: 3,585 spent against a 12,072 reserve, so 8,487
+     * came back.
+     *
+     * Conflating the two told a user exiting a single 971 sat capsule that it
+     * would cost 4,105 sats more than it was worth, when the expected spend was
+     * about 632 against 895 recovered. The floor alone accounted for the whole
+     * apparent loss, and it would have talked them out of a rational exit.
+     */
+    expectedSpendSats: number;
+    /**
+     * Blocks before the LAST selected capsule can be collected: confirmation
+     * budget plus the CSV delta. Derived rather than hardcoded, because a
+     * deeper capsule needs more confirmations before its CSV even starts.
+     */
+    collectableInBlocks: number;
+    /**
      * Sats the selected set spends beyond what it recovers, 0 when it is not
      * under water. This is the number the user has to be shown before a
      * 'recover-everything' exit, since it IS the loss they are accepting.
+     *
+     * Priced against `expectedSpendSats`, NOT `reserveSats`. See above.
      */
     netLossSats: number;
     /**
@@ -781,6 +806,18 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
     const totalExitVb = selected.reduce((acc, e) => acc + e.perVtxoVb, 0);
     const reserveSats = reserveSatsForExitVb(totalExitVb, feeRate);
     const netRecoverableSats = selected.reduce((acc, e) => acc + e.netRecoveredSats, 0);
+    // What the exit is actually expected to SPEND, as opposed to what the user
+    // must have available. Bare rate, no SPIKE_MULT and no floor: those two are
+    // headroom on the reserve, not costs anyone expects to pay.
+    const expectedSpendSats = selected.reduce((acc, e) => acc + e.exitTreeCostSats, 0);
+    // Runway the slowest selected capsule needs before it can be collected:
+    // its tree has to confirm and then sit out the CSV delta. This is the
+    // "come back at" figure, and it is why a hardcoded ~24h understates a deep
+    // wallet.
+    const collectableInBlocks = selected.reduce(
+        (acc, e) => Math.max(acc, e.requiredRunwayBlocks),
+        0,
+    );
     const overridable = excluded.filter(
         (e) => e.reason === 'reserve-dwarfs-value' || e.reason === 'refresh-before-exiting',
     );
@@ -796,7 +833,9 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
         totalExitVb,
         reserveSats,
         underWaterCount: selected.filter((e) => e.economic !== 'profitable').length,
-        netLossSats: Math.max(0, reserveSats - netRecoverableSats),
+        expectedSpendSats,
+        collectableInBlocks,
+        netLossSats: Math.max(0, expectedSpendSats - netRecoverableSats),
         overridableCount: overridable.length,
         overridableSats: overridable.reduce((acc, e) => acc + e.sats, 0),
         economicPolicy: policy,

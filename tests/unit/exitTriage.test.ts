@@ -513,12 +513,80 @@ describe('economic policy: how far past the economics the user may go', () => {
     expect(triage({ economicPolicy: 'recover-everything' }).overridableCount).toBe(0);
   });
 
-  it('states the loss the override accepts', () => {
+  it('states the loss the override accepts, priced on spend not reserve', () => {
     const forced = triage({ economicPolicy: 'recover-everything' });
-    // 32,120 of reserve to recover 4,382 net. That gap is the choice.
     expect(forced.netRecoverableSats).toBe(4990 - 8 * 76);
-    expect(forced.netLossSats).toBe(32120 - (4990 - 8 * 76));
+    // The loss is what the exit is expected to SPEND beyond what it returns.
+    // Pricing it against reserveSats instead would charge the user for the
+    // spike headroom and the floor, neither of which anyone expects to pay.
+    expect(forced.expectedSpendSats).toBe(16060);
+    expect(forced.netLossSats).toBe(16060 - (4990 - 8 * 76));
+    expect(forced.netLossSats).toBeLessThan(forced.reserveSats - forced.netRecoverableSats);
     expect(forced.underWaterCount).toBe(8);
+  });
+
+  it('keeps the reserve requirement and the expected spend apart', () => {
+    const forced = triage({ economicPolicy: 'recover-everything' });
+    // reserveSats carries SPIKE_MULT on top of the same vsize, so it is
+    // strictly the larger of the two and must never be quoted as the cost.
+    expect(forced.reserveSats).toBe(32120);
+    expect(forced.expectedSpendSats).toBe(forced.totalExitVb * forced.feeRateSatPerVb);
+    expect(forced.reserveSats).toBeGreaterThan(forced.expectedSpendSats);
+  });
+
+  it('does not call a single small capsule a 4,105 sat loss', () => {
+    // The live case from the device: one 971 sat capsule at depth 2, 1 sat/vB.
+    // reserveSats is 5,000 because of the floor, so the old reserve-priced
+    // model reported a 4,105 sat loss on an exit whose expected spend was 632
+    // against 895 recovered. It is mildly PROFITABLE, and the copy said the
+    // opposite.
+    const r = triageArkExit({
+      vtxos: [v({ id: 'live', sats: 971, exitDepth: 2, exitTxWeightWu: 1325 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual(['live']);
+    expect(r.netRecoverableSats).toBe(971 - 76);
+    expect(r.reserveSats).toBe(5000);
+    expect(r.expectedSpendSats).toBe(632);
+    expect(r.netLossSats).toBe(0);
+  });
+
+  it('derives the collect-at runway instead of assuming ~24h', () => {
+    // Confirmation budget (depth x 6, floored at 6) plus the CSV delta. A
+    // deeper capsule needs more confirmations before its CSV even starts, so a
+    // hardcoded 24h understates exactly where it matters most.
+    const shallow = triageArkExit({
+      vtxos: [v({ id: 'd2', sats: 971, exitDepth: 2, exitTxWeightWu: 1325 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: 144,
+    });
+    expect(shallow.collectableInBlocks).toBe(12 + 144);
+
+    const deep = triageArkExit({
+      vtxos: [v({ id: 'd9', sats: 500_000, exitDepth: 9, exitTxWeightWu: 1325 })],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: 144,
+    });
+    expect(deep.collectableInBlocks).toBe(54 + 144);
+    expect(deep.collectableInBlocks).toBeGreaterThan(shallow.collectableInBlocks);
+  });
+
+  it('paces the collect-at off the SLOWEST selected capsule', () => {
+    const mixed = triageArkExit({
+      vtxos: [
+        v({ id: 'shallow', sats: 500_000, exitDepth: 2, exitTxWeightWu: 1325 }),
+        v({ id: 'deep', sats: 500_000, exitDepth: 9, exitTxWeightWu: 1325 }),
+      ],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: 144,
+    });
+    expect(mixed.selectedIds).toHaveLength(2);
+    expect(mixed.collectableInBlocks).toBe(54 + 144);
   });
 
   it('reports no loss when the selected set actually pays for itself', () => {
@@ -607,7 +675,10 @@ describe('economic policy: how far past the economics the user may go', () => {
     expect(forced.reserveSats).toBe(84504);
     // 84,504 sats of reserve to recover 2,330. The user has to see that.
     expect(forced.netRecoverableSats).toBe(2330);
-    expect(forced.netLossSats).toBe(82174);
+    // Expected spend is the same vsize at the bare rate; the reserve doubles it
+    // for spike cover. The loss the user is accepting is the former.
+    expect(forced.expectedSpendSats).toBe(6036 * 7);
+    expect(forced.netLossSats).toBe(6036 * 7 - 2330);
   });
 });
 
