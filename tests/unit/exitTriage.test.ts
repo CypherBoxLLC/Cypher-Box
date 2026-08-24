@@ -10,6 +10,7 @@ import {
   URGENCY_SOON_BLOCKS,
   ExitTriageVtxo,
   ExitTriageNote,
+  SPIKE_MULT,
   describeExitNote,
   RESERVE_FLOOR_SATS,
   perVtxoExitVb,
@@ -113,8 +114,8 @@ describe('the exit set on the live wallet', () => {
       expect(e.reason).toBeTruthy();
     }
     expect(r.excluded.map((e) => e.reason)).toEqual([
-      'reserve-dwarfs-value',
-      'reserve-dwarfs-value',
+      'fees-dwarf-value',
+      'fees-dwarf-value',
     ]);
   });
 
@@ -154,7 +155,7 @@ describe('the threshold is not a sat amount', () => {
     });
     // 6000 vB chain + 7350 CPFP = 13,350 vB to return 2,924 sats.
     expect(r.selectedIds).toEqual([]);
-    expect(r.excluded[0].reason).toBe('reserve-dwarfs-value');
+    expect(r.excluded[0].reason).toBe('fees-dwarf-value');
   });
 });
 
@@ -219,7 +220,7 @@ describe('economic axis across the fee-rate matrix', () => {
       vtxoExitDeltaBlocks: EXIT_DELTA,
     });
     expect(r.selectedIds).toEqual([]);
-    expect(r.excluded[0].reason).toBe('reserve-dwarfs-value');
+    expect(r.excluded[0].reason).toBe('fees-dwarf-value');
   });
 
   it('excludes a capsule its own claim fee would swallow, and says so', () => {
@@ -252,7 +253,7 @@ describe('economic axis across the fee-rate matrix', () => {
     // Same capsule, same fee spike, but the claim costs 380 rather than 1,520,
     // so it is dropped for consuming reserve, not for returning nothing.
     expect(r.excluded[0].marginalClaimSats).toBe(380);
-    expect(r.excluded[0].reason).toBe('reserve-dwarfs-value');
+    expect(r.excluded[0].reason).toBe('fees-dwarf-value');
   });
 
   it('keeps the two costs in separate pots', () => {
@@ -553,6 +554,76 @@ describe('economic policy: how far past the economics the user may go', () => {
     expect(r.reserveSats).toBe(5000);
     expect(r.expectedSpendSats).toBe(632);
     expect(r.netLossSats).toBe(0);
+  });
+
+  describe('the two-pot rule: the verdict is priced on spend, never on the reserve', () => {
+    // This is the invariant whose absence produced the 4,105 sat phantom loss.
+    // Everything economic here used to be NAMED for the reserve while being
+    // COMPUTED from spend, so netLossSats was written as
+    // `reserveSats - netRecoverableSats` and the confirm dialog condemned a
+    // profitable exit. These pin the separation so it cannot drift back.
+
+    it('does not let the reserve floor change any verdict', () => {
+      // The floor moves reserveSats by 8x on this wallet and must move the
+      // verdict by nothing at all.
+      const small = triageArkExit({
+        vtxos: [v({ id: 'small', sats: 971, exitDepth: 2, exitTxWeightWu: 1325 })],
+        feeRateSatPerVb: 1,
+        chainTipHeight: TIP,
+        vtxoExitDeltaBlocks: EXIT_DELTA,
+      });
+      expect(small.reserveSats).toBe(RESERVE_FLOOR_SATS);
+      expect(small.reserveSats).toBeGreaterThan(small.expectedSpendSats * 7);
+      // Floor-dominated, and still profitable, because the floor is not a cost.
+      expect(small.selected[0].economic).toBe('profitable');
+      expect(small.netLossSats).toBe(0);
+    });
+
+    it('keeps expectedSpendSats free of SPIKE_MULT and of the floor', () => {
+      const r = triageArkExit({
+        vtxos: [
+          v({ id: 'a', sats: 500_000, exitDepth: 2, exitTxWeightWu: 1325 }),
+          v({ id: 'b', sats: 500_000, exitDepth: 3, exitTxWeightWu: 2337 }),
+        ],
+        feeRateSatPerVb: 3,
+        chainTipHeight: TIP,
+        vtxoExitDeltaBlocks: EXIT_DELTA,
+      });
+      // Spend is exactly vsize x rate. No headroom, no floor.
+      expect(r.expectedSpendSats).toBe(r.totalExitVb * r.feeRateSatPerVb);
+      // The reserve is that same vsize with the headroom applied.
+      expect(r.reserveSats).toBe(r.expectedSpendSats * SPIKE_MULT);
+    });
+
+    it('prices each capsule verdict on its OWN spend, not a wallet-wide share', () => {
+      // A healthy capsule sharing a wallet with an expensive one must not be
+      // dragged under by it. Wallet-wide reserve thinking would do exactly that.
+      const alone = triageArkExit({
+        vtxos: [v({ id: 'healthy', sats: 971, exitDepth: 2, exitTxWeightWu: 1325 })],
+        feeRateSatPerVb: 1, chainTipHeight: TIP, vtxoExitDeltaBlocks: EXIT_DELTA,
+      });
+      const withDeepNeighbour = triageArkExit({
+        vtxos: [
+          v({ id: 'healthy', sats: 971, exitDepth: 2, exitTxWeightWu: 1325 }),
+          v({ id: 'awful', sats: 400, exitDepth: 17, exitTxWeightWu: 2337 }),
+        ],
+        feeRateSatPerVb: 1, chainTipHeight: TIP, vtxoExitDeltaBlocks: EXIT_DELTA,
+      });
+      const healthyAlone = alone.selected.find((e) => e.id === 'healthy');
+      const healthyTogether = [...withDeepNeighbour.selected, ...withDeepNeighbour.excluded]
+        .find((e) => e.id === 'healthy');
+      expect(healthyAlone?.economic).toBe('profitable');
+      expect(healthyTogether?.economic).toBe('profitable');
+      expect(healthyTogether?.exitTreeCostSats).toBe(healthyAlone?.exitTreeCostSats);
+    });
+
+    it('never reports a loss larger than the exit can actually spend', () => {
+      // netLossSats is what the user is told they are giving up. It is bounded
+      // by expected spend by construction; against reserveSats it was not.
+      const forced = triage({ economicPolicy: 'recover-everything' });
+      expect(forced.netLossSats).toBeLessThanOrEqual(forced.expectedSpendSats);
+      expect(forced.netLossSats).toBeLessThan(forced.reserveSats);
+    });
   });
 
   it('includes a capsule whose runway it cannot check, and flags it', () => {
@@ -1049,8 +1120,8 @@ describe('freshness floor: refresh a stale capsule, do not exit it', () => {
     // which is the reason a user can act on: below the per-input round
     // minimum, they cannot be refreshed alone anyway.
     expect(r.excluded.map((e) => e.reason)).toEqual([
-      'reserve-dwarfs-value',
-      'reserve-dwarfs-value',
+      'fees-dwarf-value',
+      'fees-dwarf-value',
     ]);
   });
 });
