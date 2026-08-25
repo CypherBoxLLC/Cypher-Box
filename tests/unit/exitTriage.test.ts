@@ -11,6 +11,8 @@ import {
   ExitTriageVtxo,
   ExitTriageNote,
   SPIKE_MULT,
+  sharedAncestryVb,
+  CPFP_CHILD_VB,
   describeExitNote,
   RESERVE_FLOOR_SATS,
   perVtxoExitVb,
@@ -94,8 +96,10 @@ describe('the exit set on the live wallet', () => {
   it('sizes the reserve to the selected set, not the whole wallet', () => {
     const r = triage();
     // 632 + 632 + 1035*4 = 5,404 vB over the six, against 16,060 over all eight.
-    expect(r.totalExitVb).toBe(5404);
-    expect(r.reserveSats).toBe(10808);
+    // 4,804 not 5,404: the five capsules at expiry 967241 came from one round
+    // and share its tree root, which is now charged once (4 x CPFP_CHILD_VB).
+    expect(r.totalExitVb).toBe(4804);
+    expect(r.reserveSats).toBe(9608);
   });
 
   it('costs the discarded dust at two thirds of the untriaged exit', () => {
@@ -104,7 +108,8 @@ describe('the exit set on the live wallet', () => {
     const r = triage();
     const dust = r.excluded.reduce((a, e) => a + e.perVtxoVb, 0);
     expect(dust).toBe(10656);
-    expect(dust + r.totalExitVb).toBe(16060);
+    // Less the same shared root, now that siblings do not each pay for it.
+    expect(dust + r.totalExitVb).toBe(15460);
   });
 
   it('names every exclusion with an amount and a reason', () => {
@@ -504,8 +509,10 @@ describe('economic policy: how far past the economics the user may go', () => {
     const forced = triage({ economicPolicy: 'recover-everything' });
     expect(forced.selectedIds).toHaveLength(8);
     expect(forced.excluded).toHaveLength(0);
-    expect(forced.totalExitVb).toBe(16060);
-    expect(forced.reserveSats).toBe(32120);
+    // recover-everything also pulls in the two dust capsules, which share an
+    // expiry with each other, so five roots are deduped rather than four.
+    expect(forced.totalExitVb).toBe(15310);
+    expect(forced.reserveSats).toBe(30620);
   });
 
   it('offers the override only when it would change something', () => {
@@ -522,8 +529,9 @@ describe('economic policy: how far past the economics the user may go', () => {
     // The loss is what the exit is expected to SPEND beyond what it returns.
     // Pricing it against reserveSats instead would charge the user for the
     // spike headroom and the floor, neither of which anyone expects to pay.
-    expect(forced.expectedSpendSats).toBe(16060);
-    expect(forced.netLossSats).toBe(16060 - (4990 - 8 * 76));
+    expect(forced.expectedSpendSats).toBe(15310);
+    // Loss follows expectedSpendSats, which is now net of the shared roots.
+    expect(forced.netLossSats).toBe(15310 - (4990 - 8 * 76));
     expect(forced.netLossSats).toBeLessThan(forced.reserveSats - forced.netRecoverableSats);
     expect(forced.underWaterCount).toBe(8);
   });
@@ -532,7 +540,7 @@ describe('economic policy: how far past the economics the user may go', () => {
     const forced = triage({ economicPolicy: 'recover-everything' });
     // reserveSats carries SPIKE_MULT on top of the same vsize, so it is
     // strictly the larger of the two and must never be quoted as the cost.
-    expect(forced.reserveSats).toBe(32120);
+    expect(forced.reserveSats).toBe(30620);
     expect(forced.expectedSpendSats).toBe(forced.totalExitVb * forced.feeRateSatPerVb);
     expect(forced.reserveSats).toBeGreaterThan(forced.expectedSpendSats);
   });
@@ -554,6 +562,88 @@ describe('economic policy: how far past the economics the user may go', () => {
     expect(r.reserveSats).toBe(5000);
     expect(r.expectedSpendSats).toBe(632);
     expect(r.netLossSats).toBe(0);
+  });
+
+  describe('shared tree ancestry: siblings do not each pay for the same root', () => {
+    // Verified on chain 2026-08-22 across all seven capsules of a real exit:
+    // eleven distinct tree transactions and eleven CPFP children, 3,585 sats
+    // paid, against a per-capsule model that counted eighteen instances and
+    // predicted 6,036. The five capsules at expiry 967241 are exactly the five
+    // the chain walk found under 2a62cb07.
+
+    it('deducts one root per group of siblings, not one per sibling', () => {
+      const five = Array.from({ length: 5 }, (_, i) => ({ expiryHeight: 967241 }));
+      expect(sharedAncestryVb(five)).toBe(4 * CPFP_CHILD_VB);
+    });
+
+    it('deducts nothing when every capsule came from a different round', () => {
+      expect(sharedAncestryVb([
+        { expiryHeight: 967241 }, { expiryHeight: 967253 }, { expiryHeight: 967351 },
+      ])).toBe(0);
+    });
+
+    it('handles several groups at once', () => {
+      // The measured wallet: 5 under one root, and two singletons.
+      const live = [
+        ...Array.from({ length: 5 }, () => ({ expiryHeight: 967241 })),
+        { expiryHeight: 967253 },
+        { expiryHeight: 967351 },
+      ];
+      expect(sharedAncestryVb(live)).toBe(4 * CPFP_CHILD_VB);
+    });
+
+    it('never groups capsules whose expiry is unknown', () => {
+      // 0 means "we do not know", not "the same round as every other unknown".
+      // Grouping them would INVENT sharing and under-reserve.
+      expect(sharedAncestryVb([
+        { expiryHeight: 0 }, { expiryHeight: 0 }, { expiryHeight: 0 },
+      ])).toBe(0);
+    });
+
+    it('lowers the demanded reserve on a consolidated wallet', () => {
+      const sameRound = Array.from({ length: 5 }, (_, i) =>
+        v({ id: `s${i}`, sats: 5_000, exitDepth: 2, exitTxWeightWu: 1325, expiryHeight: TIP + 4000 }));
+      const r = triageArkExit({
+        vtxos: sameRound, feeRateSatPerVb: 5, chainTipHeight: TIP, vtxoExitDeltaBlocks: EXIT_DELTA,
+      });
+      expect(r.selectedIds).toHaveLength(5);
+      expect(r.sharedAncestryVb).toBe(4 * CPFP_CHILD_VB);
+      expect(r.totalExitVb).toBe(r.grossExitVb - r.sharedAncestryVb);
+      expect(r.totalExitVb).toBeLessThan(r.grossExitVb);
+    });
+
+    it('leaves a fragmented wallet untouched, where nothing is shared', () => {
+      const differentRounds = Array.from({ length: 5 }, (_, i) =>
+        v({ id: `d${i}`, sats: 5_000, exitDepth: 2, exitTxWeightWu: 1325, expiryHeight: TIP + 4000 + i * 100 }));
+      const r = triageArkExit({
+        vtxos: differentRounds, feeRateSatPerVb: 5, chainTipHeight: TIP, vtxoExitDeltaBlocks: EXIT_DELTA,
+      });
+      expect(r.sharedAncestryVb).toBe(0);
+      expect(r.totalExitVb).toBe(r.grossExitVb);
+    });
+
+    it('keeps every other safety margin intact', () => {
+      // The deduction reduces the BARE vsize. SPIKE_MULT still doubles it and
+      // the floor still applies underneath, which is what makes an imperfect
+      // sharing estimate survivable.
+      const sameRound = Array.from({ length: 5 }, (_, i) =>
+        v({ id: `k${i}`, sats: 500_000, exitDepth: 2, exitTxWeightWu: 1325, expiryHeight: TIP + 4000 }));
+      const r = triageArkExit({
+        vtxos: sameRound, feeRateSatPerVb: 5, chainTipHeight: TIP, vtxoExitDeltaBlocks: EXIT_DELTA,
+      });
+      expect(r.reserveSats).toBe(r.totalExitVb * r.feeRateSatPerVb * SPIKE_MULT);
+      expect(r.reserveSats).toBeGreaterThan(r.expectedSpendSats);
+    });
+
+    it('can never drive the vsize negative', () => {
+      expect(sharedAncestryVb([])).toBe(0);
+      const r = triageArkExit({
+        vtxos: [v({ id: 'one', sats: 5_000, exitDepth: 2, exitTxWeightWu: 1325 })],
+        feeRateSatPerVb: 1, chainTipHeight: TIP, vtxoExitDeltaBlocks: EXIT_DELTA,
+      });
+      expect(r.totalExitVb).toBeGreaterThan(0);
+      expect(r.sharedAncestryVb).toBe(0);
+    });
   });
 
   describe('the two-pot rule: the verdict is priced on spend, never on the reserve', () => {
@@ -801,14 +891,17 @@ describe('economic policy: how far past the economics the user may go', () => {
 
     const forced = triageArkExit({ ...at7, economicPolicy: 'recover-everything' });
     expect(forced.selectedIds).toHaveLength(7);
-    expect(forced.totalExitVb).toBe(6036);
-    expect(forced.reserveSats).toBe(84504);
+    // 5,436 not 6,036: the chain walk showed 2a62cb07 serving five capsules.
+    // The remaining gap to the 3,585 actually paid is 221c33d1's deeper
+    // sharing, which expiryHeight cannot see and is left over-counted.
+    expect(forced.totalExitVb).toBe(5436);
+    expect(forced.reserveSats).toBe(76104);
     // 84,504 sats of reserve to recover 2,330. The user has to see that.
     expect(forced.netRecoverableSats).toBe(2330);
     // Expected spend is the same vsize at the bare rate; the reserve doubles it
     // for spike cover. The loss the user is accepting is the former.
-    expect(forced.expectedSpendSats).toBe(6036 * 7);
-    expect(forced.netLossSats).toBe(6036 * 7 - 2330);
+    expect(forced.expectedSpendSats).toBe(5436 * 7);
+    expect(forced.netLossSats).toBe(5436 * 7 - 2330);
   });
 });
 
