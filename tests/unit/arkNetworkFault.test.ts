@@ -219,38 +219,62 @@ describe('describeArkFailure: the one-call form that call sites actually use', (
     });
 });
 
-describe('the vault-not-open message users actually hit offline', () => {
-    // Second device round, 2026-08-25: with the classifier wired in, airplane
-    // mode no longer shows a Reqwest trace. It surfaces the layer underneath,
-    // because opening the bark handle itself needs a connection and a JS reload
-    // drops it. The old string read "Ark wallet not open", then an em dash,
-    // then "cannot refresh VTXOs": jargon, a banned character, and no
-    // suggestion of what the user should actually do.
-    const NOT_OPEN = {
+describe('an offline refresh must produce ADVICE, not an internal state name', () => {
+    // Device round 3, 2026-08-25. After the classifier was wired in, airplane
+    // mode stopped showing a Reqwest trace and started showing "Ark wallet not
+    // open", because opening the bark handle needs a connection and a JS reload
+    // drops it. Renaming that string was not enough: it names no host, so it
+    // classifies as 'unknown' and no advice can be derived from it. The fix is
+    // to stop discarding the OPEN error, which does name the host.
+
+    /** What openWithRetry captures when the handle cannot open offline. */
+    const OPEN_FAILURE = {
+        tag: 'Inner',
         message:
-            'The vault is not open yet. It needs a connection to open, so check ' +
-            'yours and reopen the vault, then try again.',
+            'Exception.Inner: Reqwest(reqwest::Error { kind: Request, url: ' +
+            '"https://blockstream.info/api/blocks/tip/height", source: ' +
+            'ConnectError("dns error", "failed to lookup address information") })',
     };
 
-    it('passes through intact rather than being overwritten with a guess', () => {
-        // It names no host, so classification is 'unknown' and describeArkFailure
-        // must fall back to the message rather than inventing a cause. Claiming
-        // "your funds are safe" or "try mobile data" here would be a guess.
-        expect(classify(NOT_OPEN)).toBe('unknown');
-        const out = describeArkFailure(NOT_OPEN, 'Refresh failed', ENDPOINTS);
-        expect(out).toContain('Refresh failed:');
-        expect(out).toContain('reopen the vault');
+    it('turns the real open failure into a network instruction', () => {
+        expect(classify(OPEN_FAILURE)).toBe('chain-source');
+        const out = describeArkFailure(OPEN_FAILURE, 'Refresh failed', ENDPOINTS);
+        expect(out).toContain('try mobile data');
+        expect(out).not.toMatch(/Reqwest|ConnectError|wallet not open/i);
     });
 
-    it('never tells the user their wallet is corrupt or to reinstall', () => {
-        // The documented trap: "wallet will not open" is almost always the chain
-        // source, and reinstalling wipes the datadir.
-        const out = describeArkFailure(NOT_OPEN, 'Refresh failed', ENDPOINTS);
-        expect(out).not.toMatch(/corrupt|reinstall|delete|recover the vault/i);
+    it('yields advice a caller can show on its own, without a prefix', () => {
+        // The Alert path shows arkNetworkFaultMessage alone, so it has to read
+        // as a complete instruction rather than a fragment.
+        const advice = arkNetworkFaultMessage(classify(OPEN_FAILURE));
+        expect(advice).toBeTruthy();
+        expect(advice as string).toMatch(/mobile data/);
+        expect((advice as string).trim().endsWith('.')).toBe(true);
     });
 
-    it('carries no em dash, which is banned in user-facing copy', () => {
-        const out = describeArkFailure(NOT_OPEN, 'Refresh failed', ENDPOINTS);
-        expect(out).not.toContain('\u2014');
+    it('still refuses to invent advice when nothing names a host', () => {
+        // The generic last-resort message must not be dressed up as a
+        // diagnosis: "not open" can also mean locked or never created.
+        const generic = {
+            message:
+                'The vault could not be opened. It needs a connection, so check yours, ' +
+                'or switch between Wi-Fi and mobile data, then try again.',
+        };
+        expect(classify(generic)).toBe('unknown');
+        const out = describeArkFailure(generic, 'Refresh failed', ENDPOINTS);
+        expect(out).toContain('switch between Wi-Fi and mobile data');
+        expect(out).not.toMatch(/corrupt|reinstall|delete/i);
+    });
+
+    it('never tells the user to wait when waiting cannot work', () => {
+        // "Try again in a moment" was the old timeout text. Offline it is
+        // wrong: no amount of waiting opens the wallet.
+        const generic = {
+            message:
+                'The vault could not be opened. It needs a connection, so check yours, ' +
+                'or switch between Wi-Fi and mobile data, then try again.',
+        };
+        expect(generic.message).not.toMatch(/in a moment/i);
     });
 });
+

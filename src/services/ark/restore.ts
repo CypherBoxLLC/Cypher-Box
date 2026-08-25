@@ -276,7 +276,18 @@ export async function ensureArkWalletHandleReady(
     // Nudge a self-heal re-open. No-op when a boot open is already in flight
     // (we just wait for it) or the seed isn't cached yet (the boot hook owns
     // the first, biometric, Keychain read — don't trigger FaceID from here).
-    void reopenArkWalletFromCache().catch(() => {});
+    // KEEP the failure. This was `.catch(() => {})`, which discarded the only
+    // error that names the unreachable host, so every caller downstream could
+    // say nothing better than "wallet not open", with no cause and no advice.
+    // openWithRetry already returns it as `error` on 'open-failed'.
+    let openError: Error | undefined;
+    void reopenArkWalletFromCache()
+        .then((r) => {
+            if (!r.restored && r.error) openError = r.error;
+        })
+        .catch((e) => {
+            openError = e as Error;
+        });
     const start = Date.now();
     const POLL_MS = 300;
     while (!handle && Date.now() - start < timeoutMs) {
@@ -284,7 +295,15 @@ export async function ensureArkWalletHandleReady(
         handle = getArkWalletHandle();
     }
     if (!handle) {
-        throw new Error('Ark wallet is still starting up. Please try again in a moment.');
+        // Prefer the REAL failure. It names the chain source or the ASP, which
+        // is what lets the caller turn this into "switch to mobile data"
+        // instead of a shrug. "Try again in a moment" is actively WRONG advice
+        // when the cause is no connectivity: waiting never succeeds.
+        if (openError) throw openError;
+        throw new Error(
+            'The vault could not be opened. It needs a connection, so check yours, ' +
+            'or switch between Wi-Fi and mobile data, then try again.',
+        );
     }
     return handle;
 }
