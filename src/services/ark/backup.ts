@@ -623,7 +623,7 @@ async function _packDatadirIntoBlob(
 
     const relPaths = await listFilesRelative(datadir);
     if (relPaths.length === 0) {
-        throw new Error('Ark datadir is empty — nothing to back up');
+        throw new Error('Ark datadir is empty, so there is nothing to back up');
     }
 
     const files: BackupFileEntry[] = [];
@@ -909,7 +909,7 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
     try {
         envelope = JSON.parse(blob);
     } catch (err) {
-        throw new Error('Backup file is not valid JSON — wrong file?');
+        throw new Error('That backup file is not valid JSON. Is it the right file?');
     }
     if (typeof envelope !== 'object' || envelope === null) {
         throw new Error('Backup file is malformed');
@@ -937,20 +937,20 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
     try {
         plaintext = await Aes.decrypt(envelope.ct, keyHex, envelope.iv, 'aes-256-cbc');
     } catch (err) {
-        throw new Error('Decryption failed — seed may not match this backup');
+        throw new Error('Decryption failed. The seed may not match this backup.');
     }
 
     if (!plaintext) {
         // Aes.decrypt typically throws on key/padding mismatch, but defend
         // against an empty-output edge case the same way the prior code did.
-        throw new Error('Decryption produced empty output — seed does not match this backup');
+        throw new Error('Decryption produced nothing. That seed does not match this backup.');
     }
 
     let manifest: BackupManifest;
     try {
         manifest = JSON.parse(plaintext) as BackupManifest;
     } catch (err) {
-        throw new Error('Decrypted manifest is not valid JSON — backup may be corrupted');
+        throw new Error('The decrypted manifest is not valid JSON. The backup may be corrupted.');
     }
 
     if (!manifest || !Array.isArray(manifest.files)) {

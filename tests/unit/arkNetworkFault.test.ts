@@ -218,3 +218,39 @@ describe('describeArkFailure: the one-call form that call sites actually use', (
         expect(out.trim().endsWith('.')).toBe(true);
     });
 });
+
+describe('the vault-not-open message users actually hit offline', () => {
+    // Second device round, 2026-08-25: with the classifier wired in, airplane
+    // mode no longer shows a Reqwest trace. It surfaces the layer underneath,
+    // because opening the bark handle itself needs a connection and a JS reload
+    // drops it. The old string read "Ark wallet not open", then an em dash,
+    // then "cannot refresh VTXOs": jargon, a banned character, and no
+    // suggestion of what the user should actually do.
+    const NOT_OPEN = {
+        message:
+            'The vault is not open yet. It needs a connection to open, so check ' +
+            'yours and reopen the vault, then try again.',
+    };
+
+    it('passes through intact rather than being overwritten with a guess', () => {
+        // It names no host, so classification is 'unknown' and describeArkFailure
+        // must fall back to the message rather than inventing a cause. Claiming
+        // "your funds are safe" or "try mobile data" here would be a guess.
+        expect(classify(NOT_OPEN)).toBe('unknown');
+        const out = describeArkFailure(NOT_OPEN, 'Refresh failed', ENDPOINTS);
+        expect(out).toContain('Refresh failed:');
+        expect(out).toContain('reopen the vault');
+    });
+
+    it('never tells the user their wallet is corrupt or to reinstall', () => {
+        // The documented trap: "wallet will not open" is almost always the chain
+        // source, and reinstalling wipes the datadir.
+        const out = describeArkFailure(NOT_OPEN, 'Refresh failed', ENDPOINTS);
+        expect(out).not.toMatch(/corrupt|reinstall|delete|recover the vault/i);
+    });
+
+    it('carries no em dash, which is banned in user-facing copy', () => {
+        const out = describeArkFailure(NOT_OPEN, 'Refresh failed', ENDPOINTS);
+        expect(out).not.toContain('\u2014');
+    });
+});

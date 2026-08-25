@@ -73,7 +73,9 @@ export function assertNoActiveArkExit(): void {
 
 function requireWallet() {
     const handle = getArkWalletHandle();
-    if (!handle) throw new Error('Ark wallet not open — cannot run exit flow');
+    if (!handle) throw new Error(
+        'The vault is not open yet. It needs a connection to open, so check yours and reopen the vault, then try again.',
+    );
     return handle;
 }
 

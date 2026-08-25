@@ -466,7 +466,7 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
     if (!mnemonic) {
         const creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
         if (!creds || !creds.password) {
-            throw new Error('Ark seed not in Keychain — cannot spawn onchain wallet');
+            throw new Error('Ark seed not in Keychain, so the onchain wallet cannot start');
         }
         mnemonic = creds.password;
     }
