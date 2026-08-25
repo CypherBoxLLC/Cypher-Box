@@ -27,6 +27,7 @@ import TextViewV2 from '../Invoice/TextView';
 import useAuthStore from '@Cypher/stores/authStore';
 import {
     bitcoinRecommendedFee,
+    FALLBACK_FEE_TIERS,
     bitcoinSendFee,
     getCurrencyRates,
     getMe,
@@ -77,7 +78,14 @@ export default function ReviewWithdrawal({ route }: Props) {
     const [feeLoading, setFeeLoading] = useState<boolean>(false);
     const [isSendLoading, setIsSendLoading] = useState<boolean>(false);
     const [isModalVisible, setModalVisible] = useState(false);
-    const [recommendedFee, setRecommendedFee] = useState<any>([]);
+    // Seeded with the static tiers rather than []. handleUser() below awaits
+    // getMe() and getCurrencyRates() BEFORE the fee lookup, all in one try whose
+    // catch only logs, so anything slow or throwing up there leaves this state
+    // at its initial value. When that value was [] the selector rendered
+    // Object.entries([]) and produced no rows at all, which reads as a broken
+    // button rather than a network problem. Real tiers overwrite this the moment
+    // they arrive.
+    const [recommendedFee, setRecommendedFee] = useState<any>(FALLBACK_FEE_TIERS);
 
     const swipeButtonRef = useRef(null);
     const feeNames: Record<Fee, string> = {

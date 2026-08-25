@@ -15,7 +15,7 @@ import LinearGradient from "react-native-linear-gradient";
 import TextView from "./TextView";
 import TextViewV2 from "../Invoice/TextView"
 import useAuthStore from "@Cypher/stores/authStore";
-import { bitcoinRecommendedFee, bitcoinSendFee, getCurrencyRates, getMe, sendBitcoinPayment, sendCoinsViaUsername, sendLightningPayment } from "@Cypher/api/coinOSApis";
+import { FALLBACK_FEE_TIERS, bitcoinRecommendedFee, bitcoinSendFee, getCurrencyRates, getMe, sendBitcoinPayment, sendCoinsViaUsername, sendLightningPayment } from "@Cypher/api/coinOSApis";
 import { btc, formatNumber, getStrikeCurrency, matchKeyAndValue, SATS } from "@Cypher/helpers/coinosHelper";
 import { FeeSelection } from "./FeeSelection/FeeSelection";
 import bolt11 from "bolt11";
@@ -165,7 +165,12 @@ export default function ReviewPayment({ navigation, route }: Props) {
     // unreachable). Rendering the fee dropdown off an undefined object was
     // a hard crash in release builds. Self-heal: seed from the param, fetch
     // fresh rates if missing.
-    const [recommendedFee, setRecommendedFee] = useState<any>(recommendedFeeParam);
+    // Falls back to the static tiers when the caller did not pass any, for the
+    // same reason as ReviewWithdrawal: an absent value renders an empty
+    // selector, which is indistinguishable from a broken control.
+    const [recommendedFee, setRecommendedFee] = useState<any>(
+        recommendedFeeParam?.fastestFee != null ? recommendedFeeParam : FALLBACK_FEE_TIERS,
+    );
     useEffect(() => {
         if (recommendedFee?.fastestFee != null) return;
         let cancelled = false;
