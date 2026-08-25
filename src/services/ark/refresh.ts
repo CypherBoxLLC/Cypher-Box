@@ -1,4 +1,5 @@
 import { getArkWalletHandle, getCachedArkMnemonic } from './walletHandle';
+import { ensureArkWalletHandleReady } from './restore';
 import { assertNoActiveArkExitAsync } from './exit';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
@@ -17,12 +18,22 @@ export type ArkRefreshResult = {
     roundId: string | null;
 };
 
-function requireHandle() {
+/**
+ * The handle, opening it first if it is not up yet.
+ *
+ * This used to throw "Ark wallet not open" on the spot, which is the message a
+ * user meets most often offline: opening the bark handle needs a connection,
+ * and a JS reload drops it. It named an internal state, suggested nothing, and
+ * threw away any chance of finding out WHY.
+ *
+ * ensureArkWalletHandleReady both self-heals and, now that it keeps the open
+ * error, propagates a failure that NAMES the unreachable host. That is what
+ * lets the UI say "switch to mobile data" from evidence rather than a guess.
+ */
+async function requireHandle() {
     const handle = getArkWalletHandle();
-    if (!handle) {
-        throw new Error('Ark wallet not open — cannot refresh VTXOs');
-    }
-    return handle;
+    if (handle) return handle;
+    return await ensureArkWalletHandleReady();
 }
 
 /**
@@ -58,7 +69,7 @@ let refreshSubmissionInFlight = false;
 export async function estimateArkRefreshFee(
     vtxoIds: string[],
 ): Promise<ArkRefreshFeeView> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
     const estimate: FeeEstimate = await handle.estimateRefreshFee(vtxoIds);
     return {
         feeSats: Number(estimate.feeSats),
@@ -83,7 +94,7 @@ export async function refreshArkVtxos(
     vtxoIds: string[],
     totalSats?: number,
 ): Promise<ArkRefreshResult> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
 
     // A refresh is a COOPERATIVE round: it spends the VTXO and hands the ASP a
     // new one. Running it against a coin that is mid-unilateral-exit commits
@@ -194,7 +205,7 @@ export async function refreshArkVtxosAndSync(
     vtxoIds: string[],
     totalSats?: number,
 ): Promise<ArkRefreshResult> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
     const result = await refreshArkVtxos(vtxoIds, totalSats);
     // Pull the round outcome into the local datadir before we re-read.
     await handle.sync();
@@ -249,7 +260,7 @@ export async function refreshArkVtxosDelegated(
     vtxoIds: string[],
     totalSats?: number,
 ): Promise<ArkDelegatedRefreshResult> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
 
     // Same exit guard as the self-signed path: a delegated round is still a
     // cooperative spend of the VTXO. See refreshArkVtxos.
@@ -356,7 +367,7 @@ export async function refreshArkVtxosDelegatedAndSync(
     vtxoIds: string[],
     totalSats?: number,
 ): Promise<ArkDelegatedRefreshResult> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
     const result = await refreshArkVtxosDelegated(vtxoIds, totalSats);
     await handle.sync();
     await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
@@ -389,7 +400,7 @@ export async function refreshArkVtxosDelegatedAndSync(
  * swallows.
  */
 export async function maintenanceArkDelegated(): Promise<void> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
 
     // The highest-risk caller of the exit guard. `maintenanceDelegated()`
     // chooses its own VTXOs inside bark, so there is no input list to filter:
@@ -570,7 +581,7 @@ export async function fetchArkMinBoardSats(): Promise<number | null> {
  * in which case `wallet.sync()` will pick up the result.
  */
 export async function cancelArkPendingRound(roundId: number): Promise<void> {
-    const handle = requireHandle();
+    const handle = await requireHandle();
     try {
         await handle.cancelPendingRound(roundId);
     } catch (err: any) {

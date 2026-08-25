@@ -310,7 +310,7 @@ async function getAccessToken(): Promise<string> {
     if (!GoogleSignin) throw new Error('GoogleSignin module not loaded');
     const tokens = await GoogleSignin.getTokens();
     if (!tokens?.accessToken) {
-        throw new Error('Drive access token not available — re-connect Google Drive');
+        throw new Error('Google Drive access has expired. Reconnect Google Drive and try again.');
     }
     return tokens.accessToken as string;
 }
