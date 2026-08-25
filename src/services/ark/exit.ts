@@ -43,6 +43,7 @@ import useAuthStore from '@Cypher/stores/authStore';
 
 import { isActiveExit } from './barkState';
 import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
+import { runBroadcastCall } from './indeterminate';
 
 /**
  * Hard gate for every OUTGOING spend path (send, offboard, convert, swap
@@ -315,7 +316,10 @@ export async function claimArkExitsToAddress(
     const txHex = await finalizeExitClaimPsbtToHex(claim.psbtBase64);
 
     // 4. Broadcast. This is the step that was missing entirely.
-    const txid = await handle.broadcastTx(txHex);
+    // If this dies mid-call the claim may already be in a mempool. Reporting a
+    // clean failure would invite a second claim attempt against outputs that
+    // are already being spent.
+    const txid = await runBroadcastCall(() => handle.broadcastTx(txHex), 'claim');
     console.log(`[Ark exit] claim broadcast txid=${txid}`);
 
     return { txid, feeSats, psbtBase64: claim.psbtBase64 };

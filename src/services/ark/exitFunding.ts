@@ -43,6 +43,7 @@ import {
 import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
+import { runBroadcastCall } from './indeterminate';
 
 // --- Tunable sizing constants ----------------------------------------------
 //
@@ -589,7 +590,13 @@ export async function convertToExitFees(
     }
     const handle = await ensureArkWalletHandleReady();
     const address = await getArkOnchainAddress();
-    const txid = await handle.sendOnchain(address, BigInt(Math.floor(amountSats)));
+    // 'conversion' matches the tab the user is on ("Convert from balance").
+    // Deliberately not "offboard", which is bark's word and appears nowhere in
+    // the UI.
+    const txid = await runBroadcastCall(
+        () => handle.sendOnchain(address, BigInt(Math.floor(amountSats))),
+        'conversion',
+    );
     if (__DEV__) {
         console.log(
             '[Ark exit-funding] convert offboard broadcast',

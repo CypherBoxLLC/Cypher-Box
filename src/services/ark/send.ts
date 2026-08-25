@@ -6,6 +6,7 @@ import {
 } from '@secondts/bark-react-native';
 import bolt11 from 'bolt11';
 
+import { makeIndeterminate, runBroadcastCall } from './indeterminate';
 import { decideChangeRefresh } from './changeRefresh';
 import { assertNoActiveArkExit } from './exit';
 import { ensureArkWalletHandleReady } from './restore';
@@ -42,25 +43,15 @@ export type ArkSendFeeView = {
 };
 
 /**
- * Error thrown when a send's outcome is UNKNOWN rather than failed: the HTLC is
- * still live and may yet settle.
+ * Re-exported from ./indeterminate, which owns this now.
  *
- * This is the single most dangerous state in the send path, because the natural
- * UI response to a thrown error ("it failed, try again") is exactly the wrong
- * one. Retrying an ln-address or ln-offer mints a fresh invoice with a new
- * payment hash, so the retry can settle alongside the original and pay the
- * recipient twice, irreversibly.
- *
- * Callers MUST use `isArkSendIndeterminate()` before reporting an error, and
- * when it is true they MUST NOT claim the funds are safe and MUST NOT re-enable
- * their send control.
+ * The guard used to live here, wrapping the two calls inside executeArkSend.
+ * That covered the paths the bug was reported against and missed four others
+ * that broadcast without going through this function. Moving it to the SDK
+ * boundary is what makes it apply to all of them.
  */
-export type ArkSendIndeterminateError = Error & { arkSendIndeterminate: true };
-
-/** True when the send's outcome is unknown and retrying risks paying twice. */
-export function isArkSendIndeterminate(err: unknown): boolean {
-    return !!err && (err as { arkSendIndeterminate?: boolean }).arkSendIndeterminate === true;
-}
+export type { ArkSendIndeterminateError } from './indeterminate';
+export { isArkSendIndeterminate } from './indeterminate';
 
 export type ArkSendResult = {
     /** Kind of send that was executed — helps callers route to the right toast. */
@@ -503,12 +494,10 @@ export async function executeArkSend(
                 // branch on it reliably. A caller MUST NOT tell the user their
                 // funds are safe, and MUST NOT re-arm its send control, when
                 // this flag is set.
-                const indeterminate = new Error(
+                throw makeIndeterminate(
                     'This payment may still be in flight. Do not send it again: wait for your ' +
                     'balance to settle, or confirm with the recipient before retrying.',
-                ) as ArkSendIndeterminateError;
-                indeterminate.arkSendIndeterminate = true;
-                throw indeterminate;
+                );
             }
             // outcome === 'failed' -> HTLC refunded, funds back. Retry if attempts remain.
             console.log(
@@ -527,11 +516,17 @@ export async function executeArkSend(
                 // 0.11.3 sendArkoorPayment returns void (no vtxo/tx id
                 // surfaced). No caller reads the id for ark-to-ark sends, so
                 // leave it empty.
-                await handle.sendArkoorPayment(dest.value, amount);
+                await runBroadcastCall(
+                    () => handle.sendArkoorPayment(dest.value, amount),
+                    'payment',
+                );
                 id = '';
                 break;
             case 'onchain':
-                id = await handle.sendOnchain(dest.value, amount);
+                id = await runBroadcastCall(
+                    () => handle.sendOnchain(dest.value, amount),
+                    'withdrawal',
+                );
                 break;
             case 'unknown':
             default:
