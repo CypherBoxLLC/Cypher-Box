@@ -101,9 +101,18 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
         SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
     };
 
+    // The "Vault Addresses" button on this tab. Same picker as
+    // Settings > Show Addresses: tapping a row pins it as the address shown
+    // here. Left read-only in the first pass on the theory that a browsing
+    // surface and the thing it changes should not sit on one screen. That was
+    // wrong in practice, because this is the button people actually reach for
+    // when they want a different receive address, and an inert list next to the
+    // QR it would change reads as broken rather than informational.
     const addressHandler = () => {
         dispatchNavigate('WalletAddresses', {
             walletID: wallet.getID(),
+            isTouchable: true,
+            selectForVaultDisplay: true,
         });
     }
 
