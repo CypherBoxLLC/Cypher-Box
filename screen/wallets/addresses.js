@@ -117,6 +117,7 @@ const WalletAddresses = () => {
   const { colors } = useTheme();
 
   const { setOptions, navigate } = useNavigation();
+  const navigation = useNavigation();
 
   const [search, setSearch] = React.useState('');
 
@@ -196,7 +197,13 @@ const WalletAddresses = () => {
     // second one.
     if (selectForVaultDisplay) {
       setVaultDisplayAddress(walletID, item.address);
-      dispatchNavigate('HotStorageVault', { tapTab: 0 });
+      // goBack, NOT dispatchNavigate. CommonActions.navigate REPLACES params
+      // unless merge:true is set (StackRouter, v6.1.9), so navigating to
+      // HotStorageVault by name would wipe its `wallet` param and render the
+      // vault with nothing. goBack returns to the exact screen instance that
+      // pushed this list, params intact, which for the Vault Addresses button
+      // is already the tab the chosen address appears on.
+      navigation.goBack();
       return;
     }
     // BUY-flow deposit picker: navigate back to the ReviewPayment
