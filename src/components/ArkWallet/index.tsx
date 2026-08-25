@@ -159,8 +159,8 @@ export default function ArkWallet({
     //   confirmed < min  → STUCK (can never board; recover) [amber]
     //   confirmed >= min → boarding in progress [green]
     //   only unconfirmed → still confirming [green]
-    // Null = nothing to show (happy path). See .claude/ARK_STUCK_UTXO_UX_SPEC.md.
-    // The STUCK (below-min) row is tappable -> handleRecoverBoard (F3).
+    // Null = nothing to show (happy path).
+    // The STUCK (below-min) row is tappable -> handleRecoverBoard.
     const boardingView = useMemo(() => {
         // Optimistically suppressed right after a successful recover, until the
         // next sync writes the real (cleared) balance.
@@ -200,7 +200,7 @@ export default function ArkWallet({
      * wallet the funds came from for in-app top-ups), confirms amount + fee in
      * a modal, then calls the recover service. The bark SDK's OnchainWallet has
      * no utxos()/drain(), so the destination is a Hot Vault address rather than
-     * the esplora-resolved original sender (see ARK_STUCK_UTXO_UX_SPEC.md).
+     * the esplora-resolved original sender.
      */
     const handleRecoverBoard = React.useCallback(async () => {
         if (recovering) return;

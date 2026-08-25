@@ -338,8 +338,7 @@ export default function RecoverArkScreen() {
             // Distinguish by message shape: known network/server errors
             // get a connectivity message + a "your backup is intact"
             // reassurance, everything else stays as the original corrupt-
-            // file path. See .claude/OPEN_BUGS.md for the original
-            // diagnosis trail.
+            // file path.
             if (result.kind === 'matched') {
                 // restoreArkBackupBlob decrypts + validates the manifest BEFORE
                 // it touches disk or the network. An ArkRestoreApplyError means

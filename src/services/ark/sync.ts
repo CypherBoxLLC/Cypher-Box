@@ -41,8 +41,7 @@ const MIN_BOARD_SATS = 50_000;
  * `wallet.syncPendingBoards()` was called anywhere in the codebase. The
  * recovery was done via the bark CLI in 2.5 seconds against the same
  * ASP+esplora endpoints — proving the SDK works; only the wiring was
- * missing. See `.claude/SESSION_HANDOVER...md` (bark CLI session) for
- * the full debug trail.
+ * missing.
  *
  * Order matters and is intentional:
  *   1. `handle.sync()`              → vtxos + LN + round finalizations.

@@ -422,13 +422,13 @@ This block consolidates the ~95 commits between 2026-04-30 and 2026-05-19. The b
 
 ---
 
-- **2026-05-30** — Arkoor-receive popup feature shipped and verified end-to-end on mainnet. See [.claude/SESSION_HANDOVER.md](.claude/SESSION_HANDOVER.md) for the full session record. Summary:
+- **2026-05-30** — Arkoor-receive popup feature shipped and verified end-to-end on mainnet. Summary:
   - New hook [src/custom-hooks/useArkoorReceivePrompt.ts](src/custom-hooks/useArkoorReceivePrompt.ts) consumes `arkArkoorPromptState` entries that [src/services/ark/movementWatcher.ts](src/services/ark/movementWatcher.ts) pushes synchronously on every `MovementUpdated subsystem=receive status=successful`. Race-wins auto-refresh by ~2-3 seconds.
   - Popup uses `Alert.alert`. Two outcomes: "Refresh now (~1 hour, recommended)" runs `refreshArkVtxosAndSync` immediately; "Don't refresh the X sats, I'll spend them now" marks the entry `dismissed` and the bg-refresh orchestrator (in [backgroundRefresh.ts](src/services/ark/backgroundRefresh.ts)) honours that with a categorization-time gate AND a final-mile re-read just before round submit.
   - The opt-out toggle was REMOVED per direct user feedback ("what toggle do you mean") — the popup is now always on. Field `arkArkoorPromptEnabled` retained for persist back-compat, no longer read.
   - All outcomes (`fired`, `skipped-background`, `skipped-in-flight`, `skipped-vtxo-gone`, `refresh-now`, `use-immediately`, `auto-skipped`) surface in the Activity feed via a new `arkoor-prompt` event kind in [eventLogStore.ts](src/stores/eventLogStore.ts).
   - Live test signals captured: two real Strike→Ark receives (505 sats and 500 sats) both produced `outcome=fired`; user tapped each button once (refresh-now and use-immediately); state transitions correct.
-  - One UX bug found but NOT fixed this session: stuck-refresh false-positive. Rounds appear hung past expiry, "0 days left" countdown is misleading (it's the pre-refresh height, meaningless once Locked), tapping Cancel triggers a sync that reveals the round had already completed. Plan + priority breakdown in [.claude/SESSION_HANDOVER.md](.claude/SESSION_HANDOVER.md).
+  - One UX bug found but NOT fixed this session: stuck-refresh false-positive. Rounds appear hung past expiry, "0 days left" countdown is misleading (it's the pre-refresh height, meaningless once Locked), tapping Cancel triggers a sync that reveals the round had already completed.
   - Bark CLI tooling landed via parallel session: [scripts/bark/](scripts/bark) helpers + CLAUDE.md section. Used `bark dev vtxo decode` mid-session to confirm `exit_depth` is the real arkoor-vs-round signal (Rust core surfaces it, JS SDK strips it — upstream ask).
   - New CLAUDE.md rule: never use em-dash `—` in user-facing copy (telegraphs AI authorship). Applies to all user-readable English in the app; comments and docs exempt.
 

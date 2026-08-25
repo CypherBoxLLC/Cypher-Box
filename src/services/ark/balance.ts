@@ -49,7 +49,6 @@ export type ArkBalanceSummary = {
      * boarded into a VTXO yet. Below the server's minBoardAmountSats this is
      * stuck (can never board); at/above it, a board is in progress. Surfaced
      * separately so the UI can show a "Boarding (on-chain)" row + recovery.
-     * See .claude/ARK_STUCK_UTXO_UX_SPEC.md.
      */
     onchainBoardingSats: number;
     /** Unconfirmed on-chain boarding sats (still gaining confirmations). */

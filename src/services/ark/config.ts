@@ -104,7 +104,7 @@ export const ARK_SERVER_URL = 'https://ark.second.tech';
 // "Backup file is corrupt: BarkError.ServerConnection" toast on the recovery
 // screen (the .cbark was fine; `Wallet.open` was hitting 429 from esplora and
 // the catch upstream collapsed every wallet-open failure into one error
-// string). See .claude/OPEN_BUGS.md for the full diagnosis trail.
+// string).
 //
 // 2026-06-03: switched BACK to blockstream. mempool.space started timing out
 // on the exact endpoints `Wallet.open` needs (`/blocks/tip/height`,
