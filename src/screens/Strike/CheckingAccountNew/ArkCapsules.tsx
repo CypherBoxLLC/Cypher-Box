@@ -12,6 +12,9 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { formatCapsuleAmount } from "@Cypher/helpers/bitcoinUnits";
 
 import {
+    describeArkFailure,
+    ESPLORA_URLS,
+    ARK_SERVER_URL,
     ARK_REFRESH_MIN_SATS,
     ARK_VTXO_DUST_SATS,
     AVG_BLOCK_MINUTES,
@@ -1705,8 +1708,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 /BarkError\.Internal/i.test(msg) && totalSats > 0 && totalSats < 500;
             SimpleToast.show(
                 isInternalLikelyDust
-                    ? `Refresh rejected by Ark server. ${totalSats}-sat capsule is likely below the round's minimum size — consolidate it via a self-send before refreshing.`
-                    : `Refresh failed: ${msg || 'unknown error'}`,
+                    ? `Refresh rejected by Ark server. The ${totalSats}-sat capsule is likely below the round's minimum size. Consolidate it via a self-send before refreshing.`
+                    // Classify before falling back to the raw SDK text. Observed
+                    // on device: a refresh that could not resolve blockstream
+                    // showed the user a full Reqwest/hyper error, naming the
+                    // chain source it could not reach, while the classifier that
+                    // would have said "try mobile data" sat unused.
+                    : describeArkFailure(err, 'Refresh failed', { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }),
                 SimpleToast.LONG,
             );
         } finally {

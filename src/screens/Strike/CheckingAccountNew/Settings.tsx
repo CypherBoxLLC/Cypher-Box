@@ -30,6 +30,9 @@ import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { getStrikeProfile, getStrikeLimits, getBankPaymentMethods, revokeStrikeToken } from "@Cypher/api/strikeAPIs";
 import {
+  describeArkFailure,
+  ESPLORA_URLS,
+  ARK_SERVER_URL,
   AUTO_BACKUP_PATH,
   areBgNotificationsEnabled,
   computeArkExitPlan,
@@ -1620,7 +1623,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               } catch (err: any) {
                 console.warn('[Ark exit] start failed:', 'tag=', err?.tag, 'inner=', err?.inner?.errorMessage ?? err?.inner?.message, 'message=', err?.message ?? String(err));
                 SimpleToast.show(
-                  `Couldn't start exit: ${err?.message ?? 'unknown error'}`,
+                  describeArkFailure(err, "Couldn't start exit", { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }),
                   SimpleToast.LONG,
                 );
               } finally {

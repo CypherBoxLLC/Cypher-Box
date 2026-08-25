@@ -13,6 +13,7 @@ import {
     arkErrorText,
     arkNetworkFaultMessage,
     classifyArkNetworkFault,
+    describeArkFailure,
 } from '../../src/services/ark/networkFault';
 
 const ENDPOINTS = {
@@ -159,5 +160,61 @@ describe('rate limiting, which the raw symptom misreports as corruption', () => 
         expect(classify('https://ark.second.tech: 429 too many requests')).toBe(
             'ark-server',
         );
+    });
+});
+
+describe('describeArkFailure: the one-call form that call sites actually use', () => {
+    // The two-step form shipped tested and was wired into exactly ONE screen,
+    // so a refresh that could not reach blockstream showed the user a raw
+    // Reqwest error. These pin the shape that replaced it.
+
+    /** Verbatim from the device, 2026-08-25, airplane mode, tapping Refresh. */
+    const DEVICE_DNS_ERROR = {
+        tag: 'Inner',
+        message:
+            'Exception.Inner: Reqwest(reqwest::Error { kind: Request, url: ' +
+            '"https://blockstream.info/api/blocks/tip/height", source: ' +
+            'hyper_util::client::legacy::Error(Connect, ConnectError("dns error", ' +
+            'Custom { kind: Uncategorized, error: "failed to lookup address ' +
+            'information: nodename nor servname provided, or not known" })) })',
+    };
+
+    it('turns the exact error the user saw into advice, not a stack trace', () => {
+        const out = describeArkFailure(DEVICE_DNS_ERROR, 'Refresh failed', ENDPOINTS);
+        expect(out).toContain('Refresh failed.');
+        expect(out).toContain('try mobile data');
+        // The whole point: none of the SDK internals reach the user.
+        expect(out).not.toMatch(/Reqwest|hyper_util|ConnectError|Exception\.Inner/);
+    });
+
+    it('names the Ark server without suggesting a network switch', () => {
+        const out = describeArkFailure(
+            { message: 'error trying to connect to https://ark.second.tech' },
+            "Couldn't start exit",
+            ENDPOINTS,
+        );
+        expect(out).toContain("Couldn't start exit.");
+        expect(out).toContain('Ark server is not responding');
+        expect(out).not.toContain('mobile data');
+    });
+
+    it('falls back to the raw text when the cause is not recognisable', () => {
+        const out = describeArkFailure({ message: 'something odd' }, 'Send failed', ENDPOINTS);
+        expect(out).toBe('Send failed: something odd');
+    });
+
+    it('never renders an empty tail for a null error', () => {
+        expect(describeArkFailure(null, 'Send failed', ENDPOINTS)).toBe('Send failed: unknown error');
+        expect(describeArkFailure(undefined, 'Refresh failed', ENDPOINTS)).toBe(
+            'Refresh failed: unknown error',
+        );
+    });
+
+    it('keeps context and advice as separate sentences, so both survive', () => {
+        // Callers append their own clauses (for instance "Your funds were not
+        // moved."), so the string must end cleanly rather than mid-phrase.
+        const out = describeArkFailure(DEVICE_DNS_ERROR, 'Send failed', ENDPOINTS);
+        expect(out.startsWith('Send failed. ')).toBe(true);
+        expect(out.trim().endsWith('.')).toBe(true);
     });
 });

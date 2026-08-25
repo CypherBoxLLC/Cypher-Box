@@ -27,6 +27,8 @@ import {
     type ArkSendFeeView,
 } from '@Cypher/services/ark/send';
 import { fetchArkBalance } from '@Cypher/services/ark/balance';
+import { describeArkFailure } from '@Cypher/services/ark/networkFault';
+import { ARK_SERVER_URL, ESPLORA_URLS } from '@Cypher/services/ark/config';
 
 import TextViewV2 from '../../Invoice/TextView';
 import reviewStyles from '../../ReviewPayment/styles';
@@ -181,11 +183,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
             } catch (err: any) {
                 if (cancelled) return;
                 setFee(null);
-                setFeeError(
-                    err?.message
-                        ? `Fee estimate failed: ${err.message}`
-                        : 'Fee estimate failed.',
-                );
+                setFeeError(describeArkFailure(err, 'Fee estimate failed', { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }));
             } finally {
                 if (!cancelled) setIsEstimating(false);
             }
@@ -305,6 +303,12 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
             }
         } catch (err: any) {
             console.warn('[ArkWithdraw] send failed:', err);
+            // NOT routed through describeArkFailure, deliberately. Its
+            // 'ark-server' sentence asserts "Your funds are safe", and unlike
+            // ArkSendReviewScreen this path carries no isArkSendIndeterminate
+            // guard, so an ambiguous outcome would be reported as a definite
+            // one. That is the exact failure the indeterminate handling exists
+            // to prevent. Fix the guard first, then the copy.
             SimpleToast.show(
                 `Withdraw failed: ${err?.message ?? 'unknown error'}`,
                 SimpleToast.LONG,

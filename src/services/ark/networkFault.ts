@@ -137,3 +137,36 @@ export function arkNetworkFaultMessage(fault: ArkNetworkFault): string | null {
             return null;
     }
 }
+
+/**
+ * The whole pattern in one call: classify, and fall back to the raw SDK text
+ * only when the cause is not recognisable.
+ *
+ * This exists because the two-step version did not get used. `classifyArkNetworkFault`
+ * and `arkNetworkFaultMessage` shipped with unit tests and were wired into
+ * exactly ONE screen out of every Ark failure surface in the app, so a refresh
+ * that could not reach blockstream showed the user:
+ *
+ *     Refresh failed: Exception.Inner: Reqwest(reqwest::Error { kind: Request,
+ *     url: "https://blockstream.info/api/blocks/tip/height", source: ...
+ *     ConnectError("dns error", ...) })
+ *
+ * captured on device 2026-08-25. That string even names the chain source, so
+ * the classifier would have got it right had anyone asked it.
+ *
+ * Endpoints stay a parameter rather than being read from ./config, so this
+ * module keeps no import of the native bark binding and stays unit-testable.
+ *
+ * `context` is the action that failed, phrased so it reads before either
+ * ending: "Refresh failed", "Couldn't start exit".
+ */
+export function describeArkFailure(
+    err: unknown,
+    context: string,
+    endpoints: { chainUrls?: readonly string[]; arkUrl?: string | null },
+): string {
+    const fault = arkNetworkFaultMessage(classifyArkNetworkFault(err, endpoints));
+    if (fault) return `${context}. ${fault}`;
+    const raw = arkErrorText(err);
+    return raw ? `${context}: ${raw}` : `${context}: unknown error`;
+}

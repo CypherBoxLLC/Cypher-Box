@@ -242,6 +242,7 @@ export type {
 export {
     arkErrorText,
     arkNetworkFaultMessage,
+    describeArkFailure,
     classifyArkNetworkFault,
 } from './networkFault';
 export type { ArkNetworkFault } from './networkFault';

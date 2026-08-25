@@ -7,6 +7,9 @@ import { dispatchNavigate } from '@Cypher/helpers';
 import { getStrikeCurrency } from '@Cypher/helpers/coinosHelper';
 import { btc } from '@Cypher/helpers/bitcoinUnits';
 import {
+    describeArkFailure,
+    ESPLORA_URLS,
+    ARK_SERVER_URL,
     ARK_VTXO_DUST_SATS,
     classifyArkDestination,
     estimateArkSendFee,
@@ -115,7 +118,7 @@ export default function ArkSendReviewScreen({ route }: Props) {
                 if (cancelled) return;
                 setFee(null);
                 setErrorMsg(
-                    `Fee estimate failed: ${err?.message ?? 'unknown error'}`,
+                    describeArkFailure(err, 'Fee estimate failed', { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }),
                 );
             } finally {
                 if (!cancelled) setIsEstimating(false);
@@ -182,8 +185,12 @@ export default function ArkSendReviewScreen({ route }: Props) {
                 setSendIndeterminate(true);
                 setErrorMsg(err?.message ?? 'This payment may still be in flight. Do not send it again.');
             } else {
+                // Only reached once isArkSendIndeterminate has ruled out the
+                // ambiguous case above, so "not moved" is still a safe claim.
+                // Kept verbatim: the network sentence explains WHY, it does not
+                // replace the fund-safety assertion.
                 setErrorMsg(
-                    `Send failed: ${err?.message ?? 'unknown error'}. Your funds were not moved.`,
+                    `${describeArkFailure(err, 'Send failed', { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL })} Your funds were not moved.`,
                 );
             }
         } finally {
