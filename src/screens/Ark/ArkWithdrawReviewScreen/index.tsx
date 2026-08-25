@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Image,
     Linking,
     StyleSheet,
@@ -22,6 +23,7 @@ import { btc } from '@Cypher/helpers/bitcoinUnits';
 import {
     classifyArkDestination,
     estimateArkSendFee,
+    isArkSendIndeterminate,
     executeArkSend,
     type ArkDestination,
     type ArkSendFeeView,
@@ -118,6 +120,11 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
     const [feeError, setFeeError] = useState<string | null>(null);
     const [isEstimating, setIsEstimating] = useState<boolean>(false);
     const [isSendLoading, setIsSendLoading] = useState<boolean>(false);
+    // Set when a withdraw's outcome is UNKNOWN rather than failed. Latches the
+    // swipe control off for the rest of the screen's life: the contract on
+    // ArkSendIndeterminateError is that a caller MUST NOT re-arm its send
+    // control, because a retry can settle alongside the original.
+    const [sendIndeterminate, setSendIndeterminate] = useState<boolean>(false);
     const [isDone, setIsDone] = useState<boolean>(false);
     const [resultId, setResultId] = useState<string | null>(null);
 
@@ -237,6 +244,18 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
     // applicable so muscle memory carries over.
     const handleToggle = async (isToggled: boolean) => {
         if (!isToggled) return;
+        // HARD LATCH. Not re-arming the control is not achievable by simply
+        // declining to call swipeButtonRef.reset(): SwipeButton re-arms ITSELF
+        // three seconds after isLoading goes false, which the finally block
+        // always does. So the refusal has to live here, or the "do not send it
+        // again" instruction is advice the UI immediately contradicts.
+        if (sendIndeterminate) {
+            Alert.alert(
+                'Withdrawal may still be in flight',
+                'The previous attempt has not resolved yet. Sending again could pay twice. Wait for your balance to settle, then start a new withdrawal.',
+            );
+            return;
+        }
         if (!destinationLooksValid) {
             SimpleToast.show(
                 'Destination address is not a valid Bitcoin address',
@@ -303,17 +322,39 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
             }
         } catch (err: any) {
             console.warn('[ArkWithdraw] send failed:', err);
-            // NOT routed through describeArkFailure, deliberately. Its
-            // 'ark-server' sentence asserts "Your funds are safe", and unlike
-            // ArkSendReviewScreen this path carries no isArkSendIndeterminate
-            // guard, so an ambiguous outcome would be reported as a definite
-            // one. That is the exact failure the indeterminate handling exists
-            // to prevent. Fix the guard first, then the copy.
-            SimpleToast.show(
-                `Withdraw failed: ${err?.message ?? 'unknown error'}`,
-                SimpleToast.LONG,
-            );
-            swipeButtonRef.current?.reset();
+            if (isArkSendIndeterminate(err)) {
+                // Outcome UNKNOWN, not failed. Per the contract on
+                // ArkSendIndeterminateError: do not claim the funds are safe,
+                // and do NOT re-arm the swipe control. Re-arming is the whole
+                // danger, because a retry can settle alongside the original.
+                //
+                // Deliberately NOT routed through describeArkFailure: its
+                // 'ark-server' sentence asserts "Your funds are safe", which
+                // would invert the one thing this branch exists to say.
+                //
+                // Latent rather than live today, since this screen only ever
+                // sends to a Bitcoin address and the flag is raised solely on
+                // the Lightning HTLC-pending path. Guarded anyway: the contract
+                // is explicit, the cost is one branch, and the alternative is
+                // relying on a routing detail three modules away staying true.
+                setSendIndeterminate(true);
+                Alert.alert(
+                    'Withdrawal may still be in flight',
+                    err?.message ??
+                        'This withdrawal may still be in flight. Do not send it again: wait for your balance to settle before retrying.',
+                );
+            } else {
+                // Only reached once the ambiguous case is ruled out, so naming
+                // a definite outcome is safe here.
+                SimpleToast.show(
+                    describeArkFailure(err, 'Withdraw failed', {
+                        chainUrls: ESPLORA_URLS,
+                        arkUrl: ARK_SERVER_URL,
+                    }),
+                    SimpleToast.LONG,
+                );
+                swipeButtonRef.current?.reset();
+            }
         } finally {
             setIsSendLoading(false);
         }
