@@ -14,6 +14,7 @@ import {
     arkNetworkFaultMessage,
     classifyArkNetworkFault,
     describeArkFailure,
+    looksLikeConnectionLoss,
 } from '../../src/services/ark/networkFault';
 
 const ENDPOINTS = {
@@ -278,3 +279,53 @@ describe('an offline refresh must produce ADVICE, not an internal state name', (
     });
 });
 
+describe('telling a refusal apart from a dropped connection', () => {
+    // This decides whether a send reports "your funds were not moved" or "this
+    // may already have gone through". Getting it wrong in the second direction
+    // tells someone their money is untouched while it is confirming.
+    const loss = (e: unknown) => looksLikeConnectionLoss(e);
+
+    it('treats a dropped connection as ambiguous', () => {
+        expect(loss({ tag: 'ServerConnection', message: 'transport error' })).toBe(true);
+        expect(loss(new Error('operation timed out'))).toBe(true);
+        expect(loss(new Error('Network request timed out'))).toBe(true);
+        expect(loss(new Error('dns error: failed to lookup address information'))).toBe(true);
+        expect(loss(new Error('socket hang up'))).toBe(true);
+    });
+
+    it('treats a REFUSAL that merely names a host as definite', () => {
+        // A quota rejection is the server ANSWERING, not the line dropping. The
+        // request was refused, so the funds cannot have moved, and telling the
+        // user to go check a balance that cannot have changed is noise.
+        // This is why the rule is not built on classifyArkNetworkFault, which
+        // answers a different question.
+        expect(loss({ message: 'https://blockstream.info/api returned 429 Too Many Requests' })).toBe(false);
+    });
+
+    it('still catches a dropped connection that happens to name a host', () => {
+        expect(loss({ message: 'error connecting to https://ark.second.tech' })).toBe(true);
+    });
+
+    it('treats a REFUSAL as definite, so a real failure is still reported as one', () => {
+        // The server said no. The money certainly did not move, and claiming
+        // otherwise would make users hesitate to retry a send that plainly
+        // failed.
+        expect(loss(new Error('insufficient funds'))).toBe(false);
+        expect(loss(new Error('bad user input: invalid address'))).toBe(false);
+        expect(loss(new Error('amount below dust limit'))).toBe(false);
+        expect(loss({ tag: 'Internal', message: 'BarkError.Internal' })).toBe(false);
+    });
+
+    it('does not throw on null, undefined or a non-error', () => {
+        for (const v of [null, undefined, 0, '', {}, []]) {
+            expect(() => loss(v)).not.toThrow();
+        }
+    });
+
+    it('errs toward ambiguous, never toward a false all-clear', () => {
+        // The asymmetry is the point. A false "may have gone through" costs a
+        // balance check. A false "not moved" costs trust.
+        expect(loss(new Error('connection reset by peer'))).toBe(true);
+        expect(loss(new Error('request aborted'))).toBe(true);
+    });
+});

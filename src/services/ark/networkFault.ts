@@ -170,3 +170,31 @@ export function describeArkFailure(
     const raw = arkErrorText(err);
     return raw ? `${context}: ${raw}` : `${context}: unknown error`;
 }
+
+/**
+ * True when a failure looks like the connection dropped, rather than the
+ * operation being refused.
+ *
+ * The distinction matters at exactly one moment: a send call that hands a
+ * request to the ASP. If it was REFUSED (bad address, not enough funds) the
+ * money certainly did not move. If the CONNECTION died we cannot tell, because
+ * the server may already have signed and broadcast.
+ *
+ * Deliberately NOT built on `classifyArkNetworkFault`. That one answers "which
+ * side is unreachable", which is a different question and gives the wrong
+ * answer here: a 429 names a host but means the request was REFUSED, so the
+ * funds certainly did not move. Flagging that as ambiguous would tell users to
+ * go and check a balance that cannot have changed. Only the transport dying is
+ * ambiguous.
+ *
+ * Deliberately biased toward returning true. A false "may have gone through"
+ * costs a user one balance check. A false "your funds were not moved" costs
+ * them their trust that the wallet knows where their money is.
+ */
+export function looksLikeConnectionLoss(err: unknown): boolean {
+    const tag = (err as { tag?: string })?.tag ?? '';
+    const text = `${tag} ${arkErrorText(err)}`;
+    return /ServerConnection|connect|timed? ?out|network|unreachable|dns|socket|transport|aborted|reset by peer|broken pipe/i.test(
+        text,
+    );
+}

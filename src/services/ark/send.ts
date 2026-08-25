@@ -6,6 +6,7 @@ import {
 } from '@secondts/bark-react-native';
 import bolt11 from 'bolt11';
 
+import { looksLikeConnectionLoss } from './networkFault';
 import { decideChangeRefresh } from './changeRefresh';
 import { assertNoActiveArkExit } from './exit';
 import { ensureArkWalletHandleReady } from './restore';
@@ -60,6 +61,50 @@ export type ArkSendIndeterminateError = Error & { arkSendIndeterminate: true };
 /** True when the send's outcome is unknown and retrying risks paying twice. */
 export function isArkSendIndeterminate(err: unknown): boolean {
     return !!err && (err as { arkSendIndeterminate?: boolean }).arkSendIndeterminate === true;
+}
+
+/**
+ * Run the terminal send call, and report a connection failure as UNKNOWN rather
+ * than as a definite failure.
+ *
+ * `sendOnchain` / `sendArkoorPayment` hand the request to the ASP, which signs
+ * and broadcasts. If the connection dies during that call we cannot tell
+ * whether it got there. Until now the throw propagated as an ordinary error and
+ * the UI said, verbatim, "Your funds were not moved." That claim can be false:
+ * the transaction may already be confirming.
+ *
+ * The LN case gets this treatment because a retry there mints a fresh invoice
+ * and can pay twice. Onchain is NOT the same danger, and it is worth being
+ * clear why: a retry rebuilds from the same VTXOs, so if the first send really
+ * did land, the second fails on its own. Bitcoin's model blocks the
+ * double-spend. What it does not block is the app telling someone their money
+ * is untouched while it is on its way, which sends them looking for a balance
+ * that has legitimately gone.
+ *
+ * Deliberately biased toward flagging. A false "may have gone through" costs a
+ * user a balance check before retrying. A false "not moved" costs them their
+ * trust that the wallet knows where their money is.
+ */
+async function sendOrFlagIndeterminate<T>(
+    run: () => Promise<T>,
+    what: 'withdrawal' | 'payment',
+): Promise<T> {
+    try {
+        return await run();
+    } catch (err) {
+        // Refused means the money certainly did not move, so let it through as
+        // the definite failure it is. Only a dropped connection is ambiguous.
+        if (!looksLikeConnectionLoss(err)) {
+            throw err;
+        }
+
+        const indeterminate = new Error(
+            `This ${what} may already have gone through. Check your balance and your ` +
+            'transaction history before sending again.',
+        ) as ArkSendIndeterminateError;
+        indeterminate.arkSendIndeterminate = true;
+        throw indeterminate;
+    }
 }
 
 export type ArkSendResult = {
@@ -527,11 +572,17 @@ export async function executeArkSend(
                 // 0.11.3 sendArkoorPayment returns void (no vtxo/tx id
                 // surfaced). No caller reads the id for ark-to-ark sends, so
                 // leave it empty.
-                await handle.sendArkoorPayment(dest.value, amount);
+                await sendOrFlagIndeterminate(
+                    () => handle.sendArkoorPayment(dest.value, amount),
+                    'payment',
+                );
                 id = '';
                 break;
             case 'onchain':
-                id = await handle.sendOnchain(dest.value, amount);
+                id = await sendOrFlagIndeterminate(
+                    () => handle.sendOnchain(dest.value, amount),
+                    'withdrawal',
+                );
                 break;
             case 'unknown':
             default:
