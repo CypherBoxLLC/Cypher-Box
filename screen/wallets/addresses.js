@@ -10,6 +10,7 @@ import { AddressTypeTabs, TABS } from '../../components/addresses/AddressTypeTab
 import { WatchOnlyWallet } from '../../class';
 import { useTheme } from '../../components/themes';
 import { dispatchNavigate } from '@Cypher/helpers';
+import useAuthStore from '@Cypher/stores/authStore';
 
 export const totalBalance = ({ c, u } = { c: 0, u: 0 }) => c + u;
 
@@ -60,12 +61,14 @@ const WalletAddresses = () => {
   const [currentTab, setCurrentTab] = useState(TABS.EXTERNAL);
 
   const { wallets } = useContext(BlueStorageContext);
+  const { setVaultDisplayAddress } = useAuthStore();
 
   const {
     walletID,
     isTouchable,
     selectForReceive,
     selectForBuyDeposit,
+    selectForVaultDisplay,
     value,
     converted,
     isSats,
@@ -184,6 +187,16 @@ const WalletAddresses = () => {
         selectedVaultAddress: item.address,
         selectedVaultType: vaultTab ? 'cold' : 'hot',
       });
+      return;
+    }
+    // Vault-display picker: pin this address as the one the vault's Vault tab
+    // shows, then go back to that tab so the choice is visible immediately.
+    // Same CommonActions merge as the buy-deposit case below, which keeps the
+    // HotStorageVault instance (and its `wallet` param) rather than pushing a
+    // second one.
+    if (selectForVaultDisplay) {
+      setVaultDisplayAddress(walletID, item.address);
+      dispatchNavigate('HotStorageVault', { tapTab: 0 });
       return;
     }
     // BUY-flow deposit picker: navigate back to the ReviewPayment
