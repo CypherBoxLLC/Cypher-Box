@@ -395,7 +395,7 @@ export const sendInternalPayment = async (amount: number, hash: string) => {
 // Static mainnet fee tiers (sat/vB), used only when BOTH live sources are
 // unreachable. Conservative-but-usable so an on-chain withdraw is never
 // hard-blocked by a fee-endpoint outage. Same keys mempool.space returns.
-const FALLBACK_FEE_TIERS = {
+export const FALLBACK_FEE_TIERS = {
   fastestFee: 20,
   halfHourFee: 12,
   hourFee: 8,
@@ -410,15 +410,40 @@ const FALLBACK_FEE_TIERS = {
 // UNMOUNTED the whole fee selector in ReviewPayment and dead-ended the withdraw.
 // Now fall back to the blockstream esplora we already use, then to static tiers,
 // so the selector always has usable values and the flow never gets stuck.
+/**
+ * How long a single fee-source lookup may take before we move on.
+ *
+ * This is the load-bearing part of the fallback chain, not a nicety. Neither
+ * fetch below used to carry a timeout, and React Native's default is around 60s
+ * per request, so a source that HANGS rather than errors never yields. Observed
+ * on device 2026-08-25: mempool.space timed out, execution moved to blockstream,
+ * blockstream hung, and the static-tier return below was therefore unreachable.
+ * `recommendedFee` stayed at its initial empty value indefinitely and the fee
+ * selector rendered an empty list, which reads as a dead button.
+ *
+ * A three-tier fallback that can only ever reach tier one is not a fallback.
+ * 4s matches fetchExitFeeRates in services/ark/exitFunding.ts.
+ */
+const FEE_SOURCE_TIMEOUT_MS = 4000;
+
+const fetchWithTimeout = async (url: string) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FEE_SOURCE_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 export const bitcoinRecommendedFee = async () => {
   // Primary: mempool.space (native shape).
   try {
-    const response = await fetch(`https://mempool.space/api/v1/fees/recommended`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const response = await fetchWithTimeout(`https://mempool.space/api/v1/fees/recommended`);
     if (response.ok) {
       const data = await response.json();
       if (data?.fastestFee != null) return data;
@@ -431,12 +456,7 @@ export const bitcoinRecommendedFee = async () => {
   // blocks) to sat/vB. Already a trusted endpoint (the Ark esplora). Map its
   // targets onto mempool's tier shape so the UI is unchanged.
   try {
-    const response = await fetch(`https://blockstream.info/api/fee-estimates`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const response = await fetchWithTimeout(`https://blockstream.info/api/fee-estimates`);
     if (response.ok) {
       const est = await response.json();
       const pick = (target: string, fallback: number) =>
