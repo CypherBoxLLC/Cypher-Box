@@ -22,7 +22,7 @@ import {
     fetchChainTipHeight,
     fetchArkExitVtxos,
     decideExitClaimBatch,
-    decideExitDriveCadence,
+    decideExitDrivePlan,
     type ExitDriveSnapshot,
     isVtxoMidRound,
     fetchClaimableExitVtxos,
@@ -292,6 +292,10 @@ export default function useArkSync(): UseArkSync {
     // What the LAST drive saw. Lets the next one pick a cadence without
     // spending a request to find out what phase the exit is in.
     const exitDriveSnapshotRef = useRef<ExitDriveSnapshot | null>(null);
+    // Last wall-clock ms a cheap tip poll ran, and the tip it returned. The
+    // poll is what replaced using the full drive as the unit of polling.
+    const exitTipPollLastMsRef = useRef(0);
+    const exitTipHeightRef = useRef<number | null>(null);
     // Counter used by the idle-skip heuristic. Increments every cycle that
     // returns balance=0 and vtxos.all.length=0; resets the moment either
     // turns non-zero. We use this to avoid the 2s Bark `syncArkWallet`
@@ -406,17 +410,51 @@ export default function useArkSync(): UseArkSync {
                 // cuts the esplora load 4x. Skipped ticks do nothing at all
                 // (normal sync stays skipped while an exit is running).
                 const nowMs = Date.now();
-                const cadence = decideExitDriveCadence({
+                const plan = decideExitDrivePlan({
                     last: exitDriveSnapshotRef.current,
+                    tipHeight: exitTipHeightRef.current,
                     now: nowMs,
-                    lastRunAt: exitDriveLastRunMsRef.current,
+                    lastFullRunAt: exitDriveLastRunMsRef.current,
+                    lastTipPollAt: exitTipPollLastMsRef.current,
                 });
-                if (!cadence.run) {
+
+                if (plan.action === 'skip') {
                     _stamp(
-                        `exit drive skipped (${cadence.phase}, every ${Math.round(cadence.waitMs / 1000)}s)`,
+                        `exit drive skipped (${plan.phase}/${plan.reason}, every ` +
+                        `${Math.round(plan.waitMs / 1000)}s` +
+                        (plan.blocksToNext != null ? `, ${plan.blocksToNext} blocks to next` : '') +
+                        ')',
                     );
                     return;
                 }
+
+                if (plan.action === 'tip') {
+                    // ONE request, against ~20 for a full drive. This is the
+                    // whole change: asking "has anything happened" no longer
+                    // costs the same as doing the work.
+                    exitTipPollLastMsRef.current = nowMs;
+                    try {
+                        const tip = await fetchChainTipHeight();
+                        if (tip != null) {
+                            exitTipHeightRef.current = tip;
+                            // Closes #204 as a side effect: the store's tip was
+                            // frozen for the whole of an exit because the normal
+                            // sync path returns before refreshing it, which is
+                            // what left the VTXO capsule expiry displays stale
+                            // and over-optimistic. This is the only place it
+                            // advances mid-exit.
+                            setArkChainTipHeight(tip);
+                        }
+                        _stamp(
+                            `exit tip poll: ${tip ?? 'unreadable'}` +
+                            (plan.blocksToNext != null ? ` (${plan.blocksToNext} blocks to next)` : ''),
+                        );
+                    } catch (tipErr: any) {
+                        console.warn('[Ark exit] tip poll failed:', tipErr?.message ?? tipErr);
+                    }
+                    return;
+                }
+
                 exitDriveLastRunMsRef.current = nowMs;
                 try {
                     // Sync the wallet FIRST. The normal sync path below is
@@ -522,7 +560,7 @@ export default function useArkSync(): UseArkSync {
                     // entry), so anything paced off one computes a constant.
                     exitDriveSnapshotRef.current = {
                         claimableCount: claimable.length,
-                        awaitingCount: pendingClaimableHeights.length,
+                        awaitingHeights: pendingClaimableHeights,
                         processingCount: unknownScheduleCount,
                     };
 

@@ -268,8 +268,8 @@ export type {
 } from './exitFundingCoinos';
 
 export { decideExitClaimBatch } from './exitClaimBatch';
-export { decideExitDriveCadence } from './exitDriveCadence';
-export type { ExitDriveSnapshot, ExitDrivePhase } from './exitDriveCadence';
+export { decideExitDrivePlan } from './exitDriveCadence';
+export type { ExitDriveSnapshot, ExitDrivePhase, ExitDriveAction, ExitDrivePlan } from './exitDriveCadence';
 export type { ExitClaimBatchInput, ExitClaimBatchDecision } from './exitClaimBatch';
 
 export { resolveExitReserveTarget } from './exitReserveTarget';
