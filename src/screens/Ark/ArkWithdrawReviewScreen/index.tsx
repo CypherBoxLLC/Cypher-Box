@@ -729,8 +729,8 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                              *   - On-chain broadcast fee (actually paid to miners)
                              * Empirically on a 60k-sat withdrawal in 2026-05-30
                              * testing the split was ~55% ASP / ~45% on-chain.
-                             * The SDK doesn't expose the split yet (filed
-                             * upstream-ask in OPEN_BUGS.md). Until it does,
+                             * The SDK doesn't expose the split yet, and an
+                             * upstream ask is open for it. Until it does,
                              * tell the user the fee has two components so the
                              * "why did it broadcast at 2 sat/vb when I paid X"
                              * confusion has an answer. */}

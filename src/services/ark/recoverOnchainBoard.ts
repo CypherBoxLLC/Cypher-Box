@@ -3,8 +3,8 @@ import { ensureArkOnchainHandle } from './walletHandle';
 import { runBroadcastCall } from './indeterminate';
 
 /**
- * F3 (.claude/ARK_STUCK_UTXO_UX_SPEC.md): sweep a stuck on-chain Ark *boarding*
- * deposit back out to a Hot Vault address.
+ * Sweep a stuck on-chain Ark *boarding* deposit back out to a Hot Vault
+ * address.
  *
  * Context: funds sent to an Ark boarding address land in bark's BDK on-chain
  * wallet and must be *boarded* (an ASP round) to become a spendable VTXO. A

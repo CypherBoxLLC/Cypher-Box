@@ -12,7 +12,7 @@ import Aes from 'react-native-aes-crypto';
  * the recovery flow's `decryptBackupBlob` can pick up a truncated payload,
  * fail AES decrypt, and surface as `[Ark restore] decrypt of
  * fingerprint-matched blob failed: Error`. We hit this twice in one
- * 2026-05-30 session — see .claude/OPEN_BUGS.md Bug 1.
+ * 2026-05-30 session.
  *
  * Implementation note — why unlink + move, not just move:
  *   The first version of this helper assumed `RNFS.moveFile` was a thin wrap

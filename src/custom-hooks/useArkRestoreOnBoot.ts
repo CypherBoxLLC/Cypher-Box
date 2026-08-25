@@ -133,7 +133,7 @@ export default function useArkRestoreOnBoot(): ArkRestoreBootStatus {
             // home screen even though their wallet and funds were intact —
             // a particularly alarming UX since the obvious next click,
             // Recover, then collides with the .cbark atomic-write race
-            // (Bug 1 in .claude/OPEN_BUGS.md) and fails too, compounding
+            // and fails too, compounding
             // the "I lost my funds" panic.
             //
             // The safer treatment: re-confirm the datadir actually still

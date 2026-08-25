@@ -27,7 +27,7 @@ import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 // ark.second.tech server minimum board amount. Deposits below this can never
 // board into a VTXO, so they sit stuck in bark's on-chain (BDK) wallet until
 // recovered here. 50k is the known mainnet minimum (and the value
-// fetchArkMinBoardSats() falls back to). See .claude/ARK_STUCK_UTXO_UX_SPEC.md.
+// fetchArkMinBoardSats() falls back to).
 const MIN_BOARD_SATS = 50000;
 
 /**
