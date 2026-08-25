@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ListItem } from 'react-native-elements';
 import PropTypes from 'prop-types';
@@ -59,6 +59,16 @@ const AddressItem = ({ item, balanceUnit, walletID, allowSignVerifyMessage, isTo
     });
   };
 
+  // Exactly what the inline onPress did before. Selecting a row hands its
+  // PUBLIC receive address back to the caller and nothing else: no key
+  // material, no signing, no storage write. The sign/verify path is a menu
+  // action (onPressMenuItem -> navigateToSignVerify), gated on
+  // allowSignVerifyMessage, and is deliberately untouched by this.
+  const handleRowPress = () => {
+    menuRef.current?.dismissMenu();
+    navigateToReceive(item);
+  };
+
   const balance = formatBalance(item.balance, balanceUnit, true);
 
   const handleCopyPress = () => {
@@ -104,20 +114,28 @@ const AddressItem = ({ item, balanceUnit, walletID, allowSignVerifyMessage, isTo
     return actions;
   };
 
+  // TooltipMenu is platform-split and the two builds disagree about onPress.
+  //
+  // components/TooltipMenu.android.js wraps children in a TouchableOpacity and
+  // forwards props.onPress, so Android taps work and a second touchable there
+  // would double-fire.
+  //
+  // components/TooltipMenu.js, the iOS build, is `props => props.children`. It
+  // discards every prop including onPress, so on iOS a row relying on it to
+  // deliver a tap is completely inert. That is why picking an address from
+  // Receive > vault > View all vault addresses did nothing on iOS: the whole
+  // chain after the tap is correct (navigateToReceive hands the address to
+  // HomeScreen, which consumes selectedVaultAddress), but the tap was thrown
+  // away before it could start.
+  //
+  // Fixed here rather than in the shared stub on purpose. Five other files
+  // import TooltipMenu, and all of them are legacy screens nothing in src/
+  // navigates to, so changing the stub would alter five call sites to fix zero
+  // reachable bugs.
+  const tooltipDeliversTap = Platform.OS === 'android';
+
   const render = () => {
-    return (
-      <TooltipMenu
-        title={item.address}
-        ref={menuRef}
-        actions={getAvailableActions()}
-        onPressMenuItem={onToolTipPress}
-        previewQRCode
-        previewValue={item.address}
-        {...isTouchable && { onPress: () => {
-          menuRef.current?.dismissMenu();
-          navigateToReceive(item) 
-        }}}
-      >
+    const row = (
         <ListItem key={item.key} containerStyle={stylesHook.container}>
           <ListItem.Content style={stylesHook.list}>
             <ListItem.Title style={stylesHook.list} numberOfLines={1} ellipsizeMode="middle">
@@ -135,6 +153,25 @@ const AddressItem = ({ item, balanceUnit, walletID, allowSignVerifyMessage, isTo
             </Text>
           </View>
         </ListItem>
+    );
+
+    return (
+      <TooltipMenu
+        title={item.address}
+        ref={menuRef}
+        actions={getAvailableActions()}
+        onPressMenuItem={onToolTipPress}
+        previewQRCode
+        previewValue={item.address}
+        {...(isTouchable && tooltipDeliversTap && { onPress: handleRowPress })}
+      >
+        {isTouchable && !tooltipDeliversTap ? (
+          <TouchableOpacity onPress={handleRowPress} accessibilityRole="button">
+            {row}
+          </TouchableOpacity>
+        ) : (
+          row
+        )}
       </TooltipMenu>
     );
   };
