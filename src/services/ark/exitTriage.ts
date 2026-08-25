@@ -333,8 +333,14 @@ export type ExitTriageResult = {
     netRecoverableSats: number;
     /** Face value the user is being asked to abandon. */
     excludedSats: number;
-    /** Summed exit vsize over the SELECTED capsules only (spec 4.3). */
+    /** Summed exit vsize over the SELECTED capsules, after deducting shared
+     *  round roots. See sharedAncestryVb. */
     totalExitVb: number;
+    /** What the naive per-capsule sum would have been, before that deduction.
+     *  Kept so the saving is visible in logs rather than silently applied. */
+    grossExitVb: number;
+    /** vB removed as double-counted shared ancestry. */
+    sharedAncestryVb: number;
     /** Recommended on-chain reserve for the selected set. 0 when nothing is
      *  selected, so a nothing-to-exit wallet is never gated. */
     reserveSats: number;
@@ -436,6 +442,66 @@ export function perVtxoExitVb(v: Pick<ExitTriageVtxo, 'exitDepth' | 'exitTxWeigh
  * must return 0, NOT the floor, or a wallet with nothing exitable would be
  * gated on a 5,000 sat reserve it has no use for.
  */
+/**
+ * vB the per-capsule sum double-counts, because siblings share tree ancestors.
+ *
+ * THE OVER-COUNT, MEASURED
+ *
+ * `perVtxoVb` charges every capsule its own full chain. That is exact when
+ * capsules come from DIFFERENT rounds and wrong when several come from the
+ * same one, because a shared ancestor is broadcast once and CPFP-bumped once.
+ *
+ * Verified on chain 2026-08-22 by walking all seven capsules of a real exit:
+ * eleven distinct tree transactions, eleven CPFP children, 3,585 sats paid.
+ * Per-capsule accounting counted EIGHTEEN transaction instances and predicted
+ * 6,036. `2a62cb07` is paid once and serves five capsules; `221c33d1` once and
+ * serves four. Seven of the eighteen were the same transactions counted twice.
+ *
+ * WHY expiryHeight IDENTIFIES A SHARED ROOT
+ *
+ * The SDK gives no ancestry: `Vtxo` carries `exitDepth` and `exitTxWeightWu`
+ * and nothing else, and the latter exists expressly so clients can estimate
+ * "without loading the full genesis". So the tree cannot be walked here.
+ *
+ * A round reissues its outputs together, setting one expiry for all of them, so
+ * capsules sharing an `expiryHeight` came from the same round and therefore
+ * share that round's tree root. Checked against the measured exit: the five
+ * capsules at expiry 967241 are exactly the five the chain walk found under
+ * `2a62cb07`, and the capsules under the other two roots carry distinct
+ * expiries.
+ *
+ * DELIBERATELY CONSERVATIVE
+ *
+ * Only ONE level is deducted per group, the root that every member provably
+ * shares. Deeper sharing is real (`221c33d1` served four of those five) but
+ * invisible from here, so it is left over-counted rather than guessed at.
+ * On the measured exit this recovers four of the seven double-counted
+ * instances.
+ *
+ * The direction of risk is why. Over-reserving asks the user to have more on
+ * hand than needed, which is inconvenient. Under-reserving stalls an exit
+ * mid-flight, which is not. Every remaining safety margin is untouched: the
+ * SPIKE_MULT headroom still doubles the result and RESERVE_FLOOR_SATS still
+ * applies underneath it.
+ */
+export function sharedAncestryVb(
+    selected: readonly { expiryHeight: number }[],
+): number {
+    const byRound = new Map<number, number>();
+    for (const e of selected) {
+        const h = Math.floor(Number(e.expiryHeight) || 0);
+        // Expiry 0 means "unknown", not "the same round as every other
+        // unknown". Grouping those together would invent sharing.
+        if (h <= 0) continue;
+        byRound.set(h, (byRound.get(h) ?? 0) + 1);
+    }
+    let saving = 0;
+    for (const count of byRound.values()) {
+        if (count > 1) saving += (count - 1) * CPFP_CHILD_VB;
+    }
+    return saving;
+}
+
 export function reserveSatsForExitVb(totalExitVb: number, feeRateSatPerVb: number): number {
     if (totalExitVb <= 0) return 0;
     const rate = Math.max(0, Number(feeRateSatPerVb) || 0);
@@ -865,13 +931,28 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
     selected.sort((a, b) => b.netRecoveredSats - a.netRecoveredSats || a.id.localeCompare(b.id));
     excluded.sort((a, b) => b.sats - a.sats || a.id.localeCompare(b.id));
 
-    const totalExitVb = selected.reduce((acc, e) => acc + e.perVtxoVb, 0);
+    // Charge each shared round root once rather than once per sibling. See
+    // sharedAncestryVb: the per-capsule sum over-counted a measured seven-capsule
+    // exit by 68%, and the error grows in exactly the consolidated wallets this
+    // file argues for, because more siblings per round means more sharing.
+    const grossExitVb = selected.reduce((acc, e) => acc + e.perVtxoVb, 0);
+    const sharedVb = sharedAncestryVb(selected);
+    const totalExitVb = Math.max(0, grossExitVb - sharedVb);
     const reserveSats = reserveSatsForExitVb(totalExitVb, feeRate);
     const netRecoverableSats = selected.reduce((acc, e) => acc + e.netRecoveredSats, 0);
     // What the exit is actually expected to SPEND, as opposed to what the user
     // must have available. Bare rate, no SPIKE_MULT and no floor: those two are
     // headroom on the reserve, not costs anyone expects to pay.
-    const expectedSpendSats = selected.reduce((acc, e) => acc + e.exitTreeCostSats, 0);
+    //
+    // Derived from totalExitVb, which is NET of shared round roots, rather than
+    // summed from the per-capsule figures, which are gross. A shared ancestor is
+    // broadcast and bumped once, so the wallet only pays for it once.
+    //
+    // The per-capsule `exitTreeCostSats` stays gross on purpose: it decides
+    // whether THAT capsule is worth exiting, and a capsule cannot claim credit
+    // for a discount that exists only because a sibling happens to be in the
+    // same set. See the two-pot rule above ExitEconomicVerdict.
+    const expectedSpendSats = Math.ceil(totalExitVb * feeRate);
     // Runway the slowest selected capsule needs before it can be collected:
     // its tree has to confirm and then sit out the CSV delta. This is the
     // "come back at" figure, and it is why a hardcoded ~24h understates a deep
@@ -893,6 +974,8 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
         netRecoverableSats,
         excludedSats: excluded.reduce((acc, e) => acc + e.sats, 0),
         totalExitVb,
+        grossExitVb,
+        sharedAncestryVb: sharedVb,
         reserveSats,
         underWaterCount: selected.filter((e) => e.economic !== 'profitable').length,
         expectedSpendSats,

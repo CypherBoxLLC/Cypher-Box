@@ -395,6 +395,9 @@ export async function computeArkExitPlan(
             plan.selectedSats, 'sats in,', plan.netRecoverableSats, 'recoverable;',
             'excluded', plan.excluded.length, 'holding', plan.excludedSats, 'sats;',
             'reserve=', plan.reserveSats, 'over totalExitVb=', plan.totalExitVb,
+            (plan.sharedAncestryVb > 0
+                ? `(gross ${plan.grossExitVb}, shared ancestry -${plan.sharedAncestryVb})`
+                : ''),
             'at', plan.feeRateSatPerVb, 'sat/vB (claim at', plan.claimFeeRateSatPerVb,
             '); policy=', plan.economicPolicy,
             '; urgency=', urgency.urgency, 'slack=', urgency.tightestSlackBlocks, 'blocks',
