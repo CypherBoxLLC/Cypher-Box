@@ -1,5 +1,6 @@
 import { assertNoActiveArkExit } from './exit';
 import { getArkWalletHandle } from './walletHandle';
+import { runBroadcastCall } from './indeterminate';
 
 /**
  * Cooperative on-chain offboard of SPECIFIC VTXOs (coin control).
@@ -57,5 +58,8 @@ export async function offboardArkVtxos(
 ): Promise<string> {
     assertNoActiveArkExit();
     const handle = requireHandle();
-    return await handle.offboardVtxos(vtxoIds, address.trim());
+    return await runBroadcastCall(
+        () => handle.offboardVtxos(vtxoIds, address.trim()),
+        'transfer',
+    );
 }

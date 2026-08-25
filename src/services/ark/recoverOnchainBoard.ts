@@ -1,5 +1,6 @@
 import { ARK_VTXO_DUST_SATS, ESPLORA_URL } from './config';
 import { ensureArkOnchainHandle } from './walletHandle';
+import { runBroadcastCall } from './indeterminate';
 
 /**
  * F3 (.claude/ARK_STUCK_UTXO_UX_SPEC.md): sweep a stuck on-chain Ark *boarding*
@@ -150,7 +151,10 @@ export async function recoverArkOnchainBoard(
         '[Ark recover] draining onchain board:', confirmedSats,
         'sats; fee', feeSats, 'at', rate, 'sat/vB; sending', amount, 'to', destAddress,
     );
-    const txid = await onchain.send(destAddress, BigInt(amount), BigInt(rate));
+    const txid = await runBroadcastCall(
+        () => onchain.send(destAddress, BigInt(amount), BigInt(rate)),
+        'release',
+    );
     console.log('[Ark recover] drain broadcast, txid=', txid);
 
     // Best-effort: pull the spend into BDK's local state so the next balance

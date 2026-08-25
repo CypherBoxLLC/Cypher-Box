@@ -1242,7 +1242,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 Alert.alert('Release sent', `${res.sentSats.toLocaleString()} sats are on the way to your Hot Vault. They will appear there as a pending transaction.`);
               }
             } catch (e: any) {
-              Alert.alert('Release failed', String(e?.message || '') || 'The transaction could not be sent. Your funds are unchanged.');
+              // Same treatment as the top-up path: a dropped connection now
+              // arrives as a flagged message that says it may have gone
+              // through, so do not overwrite it with an "unchanged" claim.
+              Alert.alert('Release failed', String(e?.message || '') || 'The release could not be sent. Your funds are unchanged.');
             }
           },
         },
@@ -1272,9 +1275,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         SimpleToast.LONG,
       );
     } catch (e: any) {
+      // "Could not convert" is kept: the tab the user is on says "Convert from
+      // balance", so it matches. What was wrong is the body. "Offboard" is
+      // bark's word and appears nowhere in this UI, and "Your Ark funds are
+      // unchanged" is a claim a dropped connection can falsify. The service now
+      // raises a flagged indeterminate error in that case, whose message is
+      // already user-facing, so the fallback below applies only to refusals.
       Alert.alert(
         'Could not convert',
-        String(e?.message || '') || 'The offboard failed. Your Ark funds are unchanged.',
+        String(e?.message || '') ||
+          'The transfer could not be sent. Your vault balance is unchanged.',
       );
     } finally {
       setFundingBusy(false);

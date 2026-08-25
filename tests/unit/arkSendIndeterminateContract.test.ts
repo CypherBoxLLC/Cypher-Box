@@ -13,19 +13,13 @@
  * cover the predicate and the copy rules the screens depend on.
  */
 
-// send.ts imports the native bark binding at module load, which a plain unit
-// test cannot resolve. Mock the surface it touches so the REAL predicate is
-// exercised rather than a copy of it drifting alongside the original.
-jest.mock('@secondts/bark-react-native', () => ({
-    LightningSendStatus: {},
-    LightningSendStatus_Tags: { Settled: 'Settled', Pending: 'Pending', Failed: 'Failed' },
-    validateArkAddress: () => false,
-    FeeEstimate: {},
-    Network: { Bitcoin: 'Bitcoin' },
-    Config: {},
-}));
-
-import { isArkSendIndeterminate } from '../../src/services/ark/send';
+// No SDK mock needed any more: the guard now lives in its own module with no
+// bark imports, which is a large part of why it is usable from every call site.
+import {
+    isArkSendIndeterminate,
+    makeIndeterminate,
+    runBroadcastCall,
+} from '../../src/services/ark/indeterminate';
 import {
     arkNetworkFaultMessage,
     classifyArkNetworkFault,
@@ -82,5 +76,48 @@ describe('what an indeterminate outcome must never be told', () => {
         );
         expect(arkFault).toMatch(/funds are safe/i);
         expect(indeterminate().message).not.toMatch(/funds are safe/i);
+    });
+});
+
+describe('runBroadcastCall: the boundary every broadcasting call now goes through', () => {
+    it('passes a success straight through', async () => {
+        await expect(runBroadcastCall(async () => 'txid123', 'withdrawal')).resolves.toBe('txid123');
+    });
+
+    it('lets a REFUSAL through unchanged, so a real failure still reads as one', async () => {
+        const refusal = new Error('insufficient funds');
+        await expect(runBroadcastCall(async () => { throw refusal; }, 'withdrawal')).rejects.toBe(refusal);
+    });
+
+    it('converts a dropped connection into an indeterminate outcome', async () => {
+        let caught: unknown;
+        try {
+            await runBroadcastCall(async () => { throw new Error('transport error: connection reset'); }, 'withdrawal');
+        } catch (e) { caught = e; }
+        expect(isArkSendIndeterminate(caught)).toBe(true);
+        expect((caught as Error).message).toContain('may already have gone through');
+        expect((caught as Error).message).not.toMatch(/were not moved|are unchanged/i);
+    });
+
+    it('names the operation in the user\'s own words', async () => {
+        for (const what of ['withdrawal', 'payment', 'conversion', 'release', 'claim']) {
+            let caught: unknown;
+            try {
+                await runBroadcastCall(async () => { throw new Error('socket hang up'); }, what);
+            } catch (e) { caught = e; }
+            expect((caught as Error).message).toContain(what);
+        }
+    });
+
+    it('never leaks bark vocabulary into the sentence', async () => {
+        let caught: unknown;
+        try {
+            await runBroadcastCall(async () => { throw new Error('dns error'); }, 'conversion');
+        } catch (e) { caught = e; }
+        expect((caught as Error).message).not.toMatch(/offboard|vtxo|arkoor|bark|psbt/i);
+    });
+
+    it('makeIndeterminate always sets the flag callers branch on', () => {
+        expect(isArkSendIndeterminate(makeIndeterminate('anything'))).toBe(true);
     });
 });
