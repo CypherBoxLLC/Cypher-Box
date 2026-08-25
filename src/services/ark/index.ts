@@ -219,6 +219,8 @@ export {
     cancelVtxoExpiryWarnings,
     scheduleVtxoStuckSwapWarnings,
     cancelVtxoStuckSwapWarnings,
+    scheduleArkExitReadyNotice,
+    cancelArkExitReadyNotice,
 } from './backgroundNotifications';
 
 export { formatBlocksUntil, formatExitCollectWait } from './expiry';
@@ -269,6 +271,8 @@ export type {
 
 export { decideExitClaimBatch } from './exitClaimBatch';
 export { decideExitDrivePlan } from './exitDriveCadence';
+export { decideExitReadyNotice } from './exitReadyNotice';
+export type { ExitReadyNoticeInput, ExitReadyNoticeDecision } from './exitReadyNotice';
 export type { ExitDriveSnapshot, ExitDrivePhase, ExitDriveAction, ExitDrivePlan } from './exitDriveCadence';
 export type { ExitClaimBatchInput, ExitClaimBatchDecision } from './exitClaimBatch';
 

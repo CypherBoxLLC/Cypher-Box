@@ -5,6 +5,7 @@ import {
     applyExpiredVtxoFilter,
     ARK_ARKOOR_ASSUMED_DAYS,
     AVG_BLOCK_MINUTES,
+    cancelArkExitReadyNotice,
     cancelArkPendingRound,
     cancelVtxoExpiryWarnings,
     cancelVtxoStuckSwapWarnings,
@@ -23,6 +24,8 @@ import {
     fetchArkExitVtxos,
     decideExitClaimBatch,
     decideExitDrivePlan,
+    decideExitReadyNotice,
+    scheduleArkExitReadyNotice,
     type ExitDriveSnapshot,
     isVtxoMidRound,
     fetchClaimableExitVtxos,
@@ -296,6 +299,13 @@ export default function useArkSync(): UseArkSync {
     // poll is what replaced using the full drive as the unit of polling.
     const exitTipPollLastMsRef = useRef(0);
     const exitTipHeightRef = useRef<number | null>(null);
+    // The single "exit is ready to finish" alarm currently armed with the OS,
+    // and the value it should quote. Held in a ref rather than persisted: the
+    // alarm itself survives a kill (it is an OS-level entry under a fixed id),
+    // and the first drive after a cold launch re-derives and re-arms it, which
+    // replaces rather than duplicates. See services/ark/exitReadyNotice.ts.
+    const exitReadyArmedRef = useRef<{ targetHeight: number; fireAtMs: number } | null>(null);
+    const exitReadySatsRef = useRef<number | null>(null);
     // Counter used by the idle-skip heuristic. Increments every cycle that
     // returns balance=0 and vtxos.all.length=0; resets the moment either
     // turns non-zero. We use this to avoid the 2s Bark `syncArkWallet`
@@ -345,6 +355,78 @@ export default function useArkSync(): UseArkSync {
         const _t0 = Date.now();
         const _stamp = (label: string) => __DEV__ && console.log(`[ArkSync] ${label} +${Date.now() - _t0}ms`);
         _stamp('cycle start');
+
+        /**
+         * Keep the single "exit is ready to finish" alarm in step with what the
+         * exit is actually doing.
+         *
+         * Called from BOTH the cheap tip poll and the full drive. That matters:
+         * while waiting, a full drive runs at most every six hours, so an
+         * estimate refined only there would spend most of the wait stale. The
+         * tip poll runs every 2 to 10 minutes and already has the fresh tip.
+         *
+         * The decision itself is pure and lives in services/ark/exitReadyNotice.
+         */
+        const applyExitReadyNotice = (tip: number | null) => {
+            const snap = exitDriveSnapshotRef.current;
+            // No drive has observed a phase yet, so there is nothing to reason
+            // from. The first full drive of the session fills this in.
+            if (!snap) return;
+            const decision = decideExitReadyNotice({
+                claimableCount: snap.claimableCount,
+                awaitingHeights: snap.awaitingHeights,
+                processingCount: snap.processingCount,
+                tipHeight: tip,
+                now: Date.now(),
+                armed: exitReadyArmedRef.current,
+                blockMs: AVG_BLOCK_MINUTES * 60 * 1000,
+            });
+            try {
+                if (decision.action === 'arm' && decision.fireAtMs != null && decision.targetHeight != null) {
+                    scheduleArkExitReadyNotice(
+                        decision.fireAtMs,
+                        exitReadySatsRef.current ?? undefined,
+                    );
+                    exitReadyArmedRef.current = {
+                        targetHeight: decision.targetHeight,
+                        fireAtMs: decision.fireAtMs,
+                    };
+                    _stamp(
+                        `exit ready notice armed (${decision.reason}) for height ` +
+                        `${decision.targetHeight}${decision.provisional ? ' provisional' : ''}, ` +
+                        `about ${Math.round((decision.fireAtMs - Date.now()) / 60000)} min out`,
+                    );
+                } else if (decision.action === 'cancel') {
+                    // Unconditional, not gated on the ref: an alarm queued by a
+                    // previous session survives a kill, and this session starts
+                    // with no memory of it.
+                    if (exitReadyArmedRef.current) {
+                        _stamp(`exit ready notice cancelled (${decision.reason})`);
+                    }
+                    cancelArkExitReadyNotice();
+                    exitReadyArmedRef.current = null;
+                }
+            } catch (noticeErr: any) {
+                console.warn(
+                    '[Ark exit] exit-ready notice scheduling failed:',
+                    noticeErr?.message ?? noticeErr,
+                );
+            }
+        };
+
+        /**
+         * Drop the alarm unconditionally, for the moments where waiting for the
+         * next drive to work it out would be too late: the sweep has just
+         * broadcast, or the exit has just retired. An alarm that fires after
+         * the funds are on chain is worse than no alarm at all.
+         */
+        const retireExitReadyNotice = () => {
+            try {
+                cancelArkExitReadyNotice();
+            } catch { /* cancellation is best-effort, never fatal */ }
+            exitReadyArmedRef.current = null;
+            exitReadySatsRef.current = null;
+        };
         try {
             // ----- Emergency-exit path -----
             //
@@ -449,6 +531,10 @@ export default function useArkSync(): UseArkSync {
                             `exit tip poll: ${tip ?? 'unreadable'}` +
                             (plan.blocksToNext != null ? ` (${plan.blocksToNext} blocks to next)` : ''),
                         );
+                        // Fresh tip, so this is the cheapest and most frequent
+                        // chance to correct the "come back at" estimate. One
+                        // request already paid for.
+                        applyExitReadyNotice(tip ?? exitTipHeightRef.current);
                     } catch (tipErr: any) {
                         console.warn('[Ark exit] tip poll failed:', tipErr?.message ?? tipErr);
                     }
@@ -564,6 +650,23 @@ export default function useArkSync(): UseArkSync {
                         processingCount: unknownScheduleCount,
                     };
 
+                    // What the alarm should quote. Live, not the at-start
+                    // figure: an exit lands in pieces, so once part of it has
+                    // been claimed the at-start total names money that is
+                    // already in the user's on-chain wallet.
+                    const inFlightExitSats = exitVtxosForBatch
+                        .filter((v) => isActiveExit(v))
+                        .reduce((acc, v) => acc + Number(v.amountSats ?? 0), 0);
+                    exitReadySatsRef.current = inFlightExitSats > 0 ? inFlightExitSats : null;
+                    // Re-derive the alarm from what this drive just observed.
+                    // Runs BEFORE the claim below so a target pushed out by a
+                    // late leaf is armed even on a tick that also sweeps.
+                    applyExitReadyNotice(
+                        exitTipHeightRef.current ??
+                        useAuthStore.getState().arkChainTipHeight ??
+                        null,
+                    );
+
                     const batchDecision = decideExitClaimBatch({
                         claimableCount: claimable.length,
                         stillProgressingCount: stillProgressing,
@@ -622,6 +725,13 @@ export default function useArkSync(): UseArkSync {
                                 // opens a fresh window rather than inheriting
                                 // this one's elapsed time.
                                 useAuthStore.getState().setArkExitClaimBatchSince(null);
+                                // The sweep the alarm existed to prompt has
+                                // happened, with the app open. Drop it here and
+                                // not only on the next drive, so it cannot fire
+                                // about funds that are already on chain. If a
+                                // straggler is still ripening the next drive
+                                // arms a fresh one for the new target.
+                                retireExitReadyNotice();
                             } else {
                                 _stamp('exit claim returned no txid, NOT marking drained');
                             }
@@ -753,6 +863,7 @@ export default function useArkSync(): UseArkSync {
                             );
                         } else {
                             console.warn('[Ark exit] no exit ever materialised (nothing active, never drained, grace expired) — clearing exit-in-progress WITHOUT deleting the vault');
+                            retireExitReadyNotice();
                             setArkExitInProgress(false);
                             setArkExitDestinationAddress(null);
                             setArkExitStartedAt(null);
@@ -769,6 +880,7 @@ export default function useArkSync(): UseArkSync {
                         // "Delete Ark vault" flow exists for when the user
                         // actually wants the vault removed.
                         console.log('[Ark exit] complete — funds swept; vault kept');
+                        retireExitReadyNotice();
                         const correlationId = await getArkExitCorrelationId();
                         if (correlationId) {
                             recordEvent({

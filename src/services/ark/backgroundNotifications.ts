@@ -215,15 +215,28 @@ export function isArkExpiryWarningSource(s: unknown): s is ArkExpiryWarningSourc
 }
 
 /**
+ * The single "your exit is ready to finish" alarm. One per wallet, not one per
+ * capsule: the claim is batched, so it fires at the height the batch is
+ * waiting for. See services/ark/exitReadyNotice.ts for the schedule rule.
+ */
+export const ARK_EXIT_READY_SOURCE = 'ark-exit-ready';
+
+export function isArkExitReadySource(s: unknown): boolean {
+    return s === ARK_EXIT_READY_SOURCE;
+}
+
+/**
  * Every notification source whose tap should deep-link into the Capsules
  * tab: the expiry warnings (refresh is the action), payment-received
- * (see what landed), and refresh-complete (see the fresh capsules; the
- * visit also reconciles any stale locked/pulsing UI state). The tap
- * handler in notificationHandler.ts matches against this.
+ * (see what landed), refresh-complete (see the fresh capsules; the
+ * visit also reconciles any stale locked/pulsing UI state), and exit-ready
+ * (opening the app IS the action, since the claim only runs in foreground).
+ * The tap handler in notificationHandler.ts matches against this.
  */
 export function isArkCapsuleTapSource(s: unknown): boolean {
     return (
         isArkExpiryWarningSource(s) ||
+        isArkExitReadySource(s) ||
         s === 'ark-received' ||
         s === 'ark-refresh-complete'
     );
@@ -385,14 +398,17 @@ const STUCK_SWAP_SCHEDULE: ReadonlyArray<{
  * {@link cancelVtxoExpiryWarnings} so users don't get phantom alerts about
  * funds that already moved.
  */
-function notificationIdFor(vtxoId: string, kind: WarnKind | StuckSwapKind): string {
+function fnv1aNotificationId(tagged: string): string {
     let h = 2166136261;
-    const tagged = `${kind}:${vtxoId}`;
     for (let i = 0; i < tagged.length; i++) {
         h ^= tagged.charCodeAt(i);
         h = Math.imul(h, 16777619);
     }
     return String(h & 0x7fffffff);
+}
+
+function notificationIdFor(vtxoId: string, kind: WarnKind | StuckSwapKind): string {
+    return fnv1aNotificationId(`${kind}:${vtxoId}`);
 }
 
 // Migration: prior to the 2h -> 6h rollout the second warning was tagged
@@ -516,6 +532,57 @@ export function cancelVtxoStuckSwapWarnings(vtxoId: string): void {
         }
     } catch (err) {
         console.warn('[Ark notifications] cancelVtxoStuckSwapWarnings:', err);
+    }
+}
+
+/**
+ * Fixed id for the exit-ready alarm. There is one exit per wallet and one
+ * alarm per exit, so re-arming replaces the entry rather than stacking a
+ * second one, and cancelling needs nothing but this constant.
+ */
+const EXIT_READY_NOTIFICATION_ID = fnv1aNotificationId('ark-exit-ready:wallet');
+
+/**
+ * Arm the single "your exit is ready to finish" alarm for `fireAtMs`.
+ *
+ * Idempotent: the OS replaces an entry with the same id, so the caller can
+ * re-arm freely as the estimate is refined. Cancellation on claim or on the
+ * exit retiring is the caller's job via {@link cancelArkExitReadyNotice},
+ * so an alarm can never announce funds that already landed.
+ *
+ * Gated on the same reminders toggle as every other Ark alarm. That is where
+ * OS notification permission is requested, so scheduling around it would
+ * queue alarms the OS has never agreed to deliver.
+ */
+export function scheduleArkExitReadyNotice(fireAtMs: number, satsAmount?: number): void {
+    if (!useAuthStore.getState().arkBgRefreshEnabled) return;
+    if (!Number.isFinite(fireAtMs) || fireAtMs <= Date.now()) return;
+    ensureInit();
+    const satsKnown = satsAmount != null && Number.isFinite(satsAmount) && satsAmount > 0;
+    PushNotification.localNotificationSchedule({
+        id: EXIT_READY_NOTIFICATION_ID,
+        channelId: CHANNEL_ID,
+        title: 'Your exit is ready to finish',
+        message: satsKnown
+            ? `Open Cypher Box to collect ${Math.round(satsAmount as number).toLocaleString()} sats to your Bitcoin wallet.`
+            : 'Open Cypher Box to collect your funds to your Bitcoin wallet.',
+        date: new Date(fireAtMs),
+        priority: 'high',
+        importance: 'high',
+        playSound: true,
+        soundName: 'default',
+        userInfo: { source: ARK_EXIT_READY_SOURCE },
+        allowWhileIdle: true,
+    });
+}
+
+export function cancelArkExitReadyNotice(): void {
+    try {
+        PushNotification.cancelLocalNotification(EXIT_READY_NOTIFICATION_ID);
+    } catch (err) {
+        // Cancellation should never throw, but the library has been observed
+        // to no-throw-but-warn on stale ids. Swallow.
+        console.warn('[Ark notifications] cancelArkExitReadyNotice:', err);
     }
 }
 
