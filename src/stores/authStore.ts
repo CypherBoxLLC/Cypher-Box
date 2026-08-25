@@ -197,6 +197,15 @@ export type AuthStateType = {
     arkPendingLnReceives: ArkLightningReceiveView[];
     // Current chain tip height (from esplora). Needed to convert VTXO
     // expiryHeight → blocks-until-expiry for the depletion ring.
+    /**
+     * Address the vault's Vault tab should display, per walletID.
+     *
+     * Empty means "use a fresh next-free address", which is the default and
+     * what the tab did unconditionally before. Keyed by wallet so the hot and
+     * cold vaults are independent, and so a selection cannot follow the user
+     * onto a different wallet.
+     */
+    vaultDisplayAddress: Record<string, string>;
     arkChainTipHeight: number | null;
     // Epoch ms the tip above was read. The tip is PERSISTED, so a cold launch
     // offline rehydrates one that may be days old, and
@@ -338,6 +347,7 @@ export type AuthStateType = {
     setArkScheduledStuckSwapNotifs: (state: Record<string, number>) => void;
     setArkExpiryNotifsScheduleVersion: (state: number) => void;
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
+    setVaultDisplayAddress: (walletID: string, address: string | null) => void;
     setArkChainTipHeight: (state: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
@@ -566,6 +576,7 @@ const createAuthStore = (
     arkScheduledStuckSwapNotifs: {},
     arkExpiryNotifsScheduleVersion: 0,
     arkPendingLnReceives: [],
+    vaultDisplayAddress: {},
     arkChainTipHeight: null,
     arkChainTipHeightAt: null,
     arkLastSyncedAt: null,
@@ -648,6 +659,14 @@ const createAuthStore = (
     setArkScheduledStuckSwapNotifs: (state: Record<string, number>) => set({ arkScheduledStuckSwapNotifs: state }),
     setArkExpiryNotifsScheduleVersion: (state: number) => set({ arkExpiryNotifsScheduleVersion: state }),
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => set({ arkPendingLnReceives: state }),
+    setVaultDisplayAddress: (walletID: string, address: string | null) =>
+        set((state: any) => {
+            const next = { ...(state.vaultDisplayAddress ?? {}) };
+            // A null clears the pin and returns the tab to a fresh address.
+            if (address) next[walletID] = address;
+            else delete next[walletID];
+            return { vaultDisplayAddress: next };
+        }),
     // Stamps the read time with the value, so the two can never drift apart.
     setArkChainTipHeight: (state: number | null) =>
         set({ arkChainTipHeight: state, arkChainTipHeightAt: state == null ? null : Date.now() }),

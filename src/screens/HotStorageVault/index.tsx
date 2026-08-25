@@ -14,7 +14,8 @@ import useAuthStore from "@Cypher/stores/authStore";
 
 
 const HotStorageVault = ({ _, route }: any) => {
-    const { wallet, matchedRate, currency, to = null, toStrike = null } = useRoute().params as { wallet: any, matchedRate: string, currency: string, to: null | string, toStrike: null | string };
+    const routeParams = useRoute().params as { wallet: any, matchedRate: string, currency: string, to: null | string, toStrike: null | string, tapTab?: number };
+    const { wallet, matchedRate, currency, to = null, toStrike = null, tapTab } = routeParams;
     const [selectedTab, setSelectedTab] = useState(0);
     const [utxo, setUtxo] = useState(null);
     const { vaultTab } = useAuthStore();
@@ -24,6 +25,17 @@ const HotStorageVault = ({ _, route }: any) => {
             setSelectedTab(1)
         }
     }, [to, toStrike])
+
+    // Returning from the address picker: show the tab the choice affects, so
+    // the new QR is what the user sees rather than something they must go and
+    // find. Cleared straight after so re-selecting the Settings tab by hand
+    // does not get yanked back here.
+    useEffect(() => {
+        if (typeof tapTab === 'number') {
+            setSelectedTab(tapTab);
+            routeParams.tapTab = undefined;
+        }
+    }, [tapTab, routeParams])
 
     const onChangeSelectedTab = useCallback((id: number) => {
         setSelectedTab(id);

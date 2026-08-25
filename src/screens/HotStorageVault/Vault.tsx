@@ -28,15 +28,33 @@ const shortenAddress = (address: string) => {
 
 export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet: any, matchedRate: string, setSelectedTab: (tab: number) => void }) {
     const currency = btc(1);
-    const { vaultTab } = useAuthStore();
+    const { vaultTab, setVaultDisplayAddress } = useAuthStore();
     const balance = !wallet?.hideBalance && formatBalance(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const balanceWithoutSuffix = !wallet?.hideBalance && formatBalanceWithoutSuffix(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const { wallets, saveToDisk, sleep, isElectrumDisabled } = useContext(BlueStorageContext);
-    const [address, setAddress] = useState();
+    const [address, setAddress] = useState<string | undefined>();
     const [refreshing, setRefreshing] = useState(false);
     // const base64QrCodeRef = useRef(''); // disabled: toDataURL broken under Fabric/New Arch
 
     const obtainWalletAddress = async () => {
+        // A pinned address wins over generating a fresh one. Picked from
+        // Settings > Show Addresses, and kept per walletID so hot and cold are
+        // independent. Without this the useFocusEffect below would overwrite
+        // the choice with a next-free address every time the tab regained
+        // focus, which is to say immediately.
+        const pinned = useAuthStore.getState().vaultDisplayAddress?.[wallet?.getID?.()];
+        if (pinned) {
+            setAddress(pinned);
+            // Still subscribe it: the user picked it in order to be paid on it,
+            // and an unsubscribed address gets no incoming-payment push.
+            try {
+                const GroundControl = require('../../../blue_modules/groundControl');
+                await GroundControl.majorTomToGroundControl([pinned], [], []);
+            } catch (notifyErr) {
+                console.warn('[GroundControl] Failed to subscribe pinned address:', notifyErr);
+            }
+            return;
+        }
         let newAddress;
         try {
             if (!isElectrumDisabled) newAddress = await Promise.race([wallet.getAddressAsync(), sleep(1000)]);
@@ -62,13 +80,20 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
 
     }
 
+    // Subscribing to the pin (not just reading it in the callback) is what makes
+    // the tab update on arrival from the picker: navigation restores this tab
+    // without necessarily re-firing focus.
+    const pinnedAddress = useAuthStore(
+        (st: any) => st.vaultDisplayAddress?.[wallet?.getID?.()],
+    );
+
     useFocusEffect(
         useCallback(() => {
             if (wallet) {
                 obtainWalletAddress();
             }
             // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, [wallet]),
+        }, [wallet, pinnedAddress]),
     );
 
     const copyToClipboard = (text: string) => {
@@ -216,6 +241,23 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                         </TouchableOpacity> */}
                     </View>
 {/* address shown inside copy button above */}
+                    {pinnedAddress ? (
+                        // Without this there is no way back. The pin survives
+                        // every focus, so a user who picked an old address once
+                        // would keep seeing it forever with nothing on screen
+                        // explaining why it stopped advancing.
+                        <TouchableOpacity
+                            onPress={() => {
+                                setVaultDisplayAddress(wallet?.getID?.(), null);
+                                SimpleToast.show('Back to a fresh address', SimpleToast.SHORT);
+                            }}
+                            style={{ paddingHorizontal: 30, paddingTop: 10 }}
+                        >
+                            <Text style={{ fontSize: 13, color: colors.green, textAlign: 'center' }}>
+                                You chose this address. Tap to go back to a fresh one.
+                            </Text>
+                        </TouchableOpacity>
+                    ) : null}
                     {/* <Text h4 style={styles.infoText}>You can use this Bitcoin Network address of your vault to receive coins</Text> */}
                 </>
                 :

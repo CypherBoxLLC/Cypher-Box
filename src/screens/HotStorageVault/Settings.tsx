@@ -277,9 +277,13 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
         }).start();
     };
 
+    // Picks which address the Vault tab shows. Serves the cold vault too: this
+    // screen is shared, and the selection is keyed by walletID.
     const navigateToAddresses = () =>
         dispatchNavigate('WalletAddresses', {
             walletID: wallet.getID(),
+            isTouchable: true,
+            selectForVaultDisplay: true,
         });
 
     const navigateToXPub = () =>
