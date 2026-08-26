@@ -1,4 +1,5 @@
 import { ESPLORA_URLS } from './config';
+import { noteEsploraFailure, noteEsploraSuccess, orderedEsploraUrls } from './esploraHealth';
 
 /**
  * Fetch the current chain tip height, rotating across the esplora providers.
@@ -28,7 +29,12 @@ import { ESPLORA_URLS } from './config';
 const TIP_FETCH_TIMEOUT_MS = 8000;
 
 export async function fetchChainTipHeight(): Promise<number | null> {
-    for (const base of ESPLORA_URLS) {
+    // Health-ordered, not raw list order. This is the exit's dominant request
+    // source once #219 made the tip poll the unit of polling, so starting every
+    // one of several hundred polls at a provider that is mid-cooldown spends a
+    // request to be told the same 429 the open path already learned. Ordering
+    // only: every provider is still reachable, just later. See esploraHealth.ts.
+    for (const base of orderedEsploraUrls(ESPLORA_URLS)) {
         try {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), TIP_FETCH_TIMEOUT_MS);
@@ -38,16 +44,33 @@ export async function fetchChainTipHeight(): Promise<number | null> {
             } finally {
                 clearTimeout(timer);
             }
-            if (!res.ok) continue;
+            if (!res.ok) {
+                // A 429 arrives here as a plain non-ok response, so this is the
+                // branch that actually sees rate limiting. Feed the status text
+                // to the classifier rather than a bare "not ok".
+                noteEsploraFailure(base, `${res.status} ${res.statusText ?? ''}`);
+                continue;
+            }
             const text = (await res.text()).trim();
             // A real tip height is a bare integer in the ~800k–10M range. The
             // bot-block page is long HTML/JSON — reject anything non-numeric,
             // too long, or implausibly small so it can't be read as a tip.
-            if (!/^\d{5,8}$/.test(text)) continue;
+            if (!/^\d{5,8}$/.test(text)) {
+                // Junk where an integer belongs: a bot-block or error page,
+                // which in this context is the disguised rate-limit body.
+                noteEsploraFailure(base, text.slice(0, 200));
+                continue;
+            }
             const n = Number(text);
-            if (Number.isFinite(n) && n > 0) return n;
-        } catch {
-            // try the next provider
+            if (Number.isFinite(n) && n > 0) {
+                noteEsploraSuccess(base);
+                return n;
+            }
+        } catch (err) {
+            // Timeout or transport failure. Records as 'unreachable', which
+            // carries the short cooldown, so a blip does not sideline a
+            // provider for the full quota hour.
+            noteEsploraFailure(base, String((err as Error)?.message ?? err));
         }
     }
     return null;

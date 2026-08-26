@@ -6,8 +6,8 @@ import {
     chooseEsploraProvider,
     classifyEsploraFailure,
     ESPLORA_OPEN_ATTEMPTS,
-    type EsploraHealth,
 } from './esploraProviders';
+import { getEsploraHealth, noteEsploraFailure } from './esploraHealth';
 import { ARK_DATADIR } from './datadir';
 import { cacheArkMnemonicForReopen, getArkWalletHandle, getCachedArkMnemonic, openArkWallet } from './walletHandle';
 
@@ -117,17 +117,13 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
  * errors are retried; a genuine seed/datadir mismatch fails fast. Callers
  * (restoreArkWalletFromDisk, reopenArkWalletFromCache) own the openInFlight
  * guard around this.
- */
-/**
- * Which providers have failed recently, and why.
  *
- * Module-level so it outlives a single open loop: the sync loop's self-heal
- * calls this every tick, and without memory each call restarted at the first
- * provider and re-earned the same 429. Resets on app restart, which is fine,
- * the first failure re-learns it.
+ * Provider health is SHARED with every other JS-side chain caller rather than
+ * private to this file. It was module-level here so it outlived a single open
+ * loop, which was right as far as it went, but the tip poll and the exit fee
+ * lookups kept re-earning 429s this map already knew about. One IP means one
+ * quota, so one map. See esploraHealth.ts.
  */
-const esploraHealth: EsploraHealth = {};
-
 async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
     let lastErr: Error | undefined;
     for (let attempt = 1; attempt <= OPEN_ATTEMPTS; attempt++) {
@@ -139,7 +135,7 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
         // for an unreachable host.
         const choice = chooseEsploraProvider({
             urls: ESPLORA_URLS,
-            health: esploraHealth,
+            health: getEsploraHealth(),
             now: Date.now(),
         });
         const esploraUrl = choice.url;
@@ -167,7 +163,7 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
             // Record the failure BEFORE deciding what to do, so the next
             // attempt in this same loop already routes around this provider.
             const kind = classifyEsploraFailure(detail);
-            esploraHealth[esploraUrl] = { failedAt: Date.now(), kind };
+            noteEsploraFailure(esploraUrl, detail);
 
             const transient = /ServerConnection|Connection|timeout|timed out|network|bad response from server|not a blockhash|failed to parse hex|Esplora client/i.test(detail);
             const stopping = !transient || attempt === OPEN_ATTEMPTS;
@@ -190,7 +186,7 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
                     `classified=${kind}; ` +
                     (stopping
                         ? `GIVING UP (${!transient ? 'non-transient error' : 'attempts exhausted'}); ` +
-                          `providers tried: ${Object.keys(esploraHealth).join(', ')}`
+                          `providers tried: ${Object.keys(getEsploraHealth()).join(', ')}`
                         : `retrying in ${OPEN_RETRY_DELAY_MS}ms`),
                 );
             }
