@@ -58,6 +58,8 @@ export type {
 } from './history';
 
 export { fetchChainTipHeight, blocksToDays, AVG_BLOCK_MINUTES } from './chainTip';
+export { summariseExitPhase, approxDuration } from './exitPhaseSummary';
+export type { ExitPhase, ExitPhaseInput, ExitPhaseSummary } from './exitPhaseSummary';
 
 export { syncArkWallet } from './sync';
 

@@ -47,6 +47,8 @@ import {
   estimateArkOnchainRecover,
   recoverArkOnchainBoard,
   fetchArkExitVtxos,
+  summariseExitPhase,
+  AVG_BLOCK_MINUTES,
   fetchPendingExitsTotalSats,
   formatBlocksUntil,
   formatExitCollectWait,
@@ -70,7 +72,7 @@ import {
   writeArkBackupToTempFile,
   buildExitFundingSources,
 } from "@Cypher/services/ark";
-import type { ExitEconomicPolicy, ExitFeeConvertEstimate, ExitTriageResult } from "@Cypher/services/ark";
+import type { ExitEconomicPolicy, ExitFeeConvertEstimate, ExitTriageResult, ExitPhaseSummary } from "@Cypher/services/ark";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -972,6 +974,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const [externalAddrInput, setExternalAddrInput] = useState('');
   const [exitStarting, setExitStarting] = useState(false);
   const [pendingExitSats, setPendingExitSats] = useState<number | null>(null);
+  // Which phase the exit is in, derived from the SAME poll that produces the
+  // sats total. The panel used to print one sentence for the entire two-day
+  // run, so a stalled exit and a working one looked identical.
+  const [exitPhase, setExitPhase] = useState<ExitPhaseSummary | null>(null);
 
   // --- Exit-fee funding gate ---
   //
@@ -1035,6 +1041,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   useEffect(() => {
     if (!arkExitInProgress) {
       setPendingExitSats(null);
+      setExitPhase(null);
       return;
     }
     let cancelled = false;
@@ -1055,10 +1062,45 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
           fetchArkExitVtxos(),
           fetchPendingExitsTotalSats(),
         ]);
-        const activeSats = vtxos
-          .filter((v) => isActiveExit(v))
-          .reduce((acc, v) => acc + Number(v.amountSats), 0);
-        if (!cancelled) setPendingExitSats(Math.max(activeSats, pendingTotal));
+        const active = vtxos.filter((v) => isActiveExit(v));
+        const activeSats = active.reduce((acc, v) => acc + Number(v.amountSats), 0);
+
+        // Phase, off the SAME records. Free: `vtxos` is already in hand and
+        // this adds no request, which matters because chain-source budget is
+        // the exit's scarcest resource.
+        //
+        // A capsule is claimable, or waiting out its CSV with an exact
+        // ripening height, or still broadcasting with no height yet. That last
+        // group is the one the app is load-bearing for, and the one whose
+        // eventual height can push the finish line out.
+        const claimable = active.filter((v) => v.isClaimable);
+        const awaitingHeights: number[] = [];
+        let processingCount = 0;
+        for (const v of active) {
+          if (v.isClaimable) continue;
+          const h = Number(
+            (v.state as { inner?: { claimableHeight?: number } })?.inner?.claimableHeight ?? 0,
+          );
+          if (Number.isFinite(h) && h > 0) awaitingHeights.push(h);
+          else processingCount += 1;
+        }
+        // Live tip: the exit drive polls it itself and writes it here, which is
+        // what made a real countdown possible (the store's tip used to freeze
+        // for the whole exit, and bark's is stamped once on entry).
+        const tipHeight = useAuthStore.getState().arkChainTipHeight ?? null;
+
+        if (!cancelled) {
+          setPendingExitSats(Math.max(activeSats, pendingTotal));
+          setExitPhase(
+            summariseExitPhase({
+              claimableCount: claimable.length,
+              awaitingHeights,
+              processingCount,
+              tipHeight,
+              blockMinutes: AVG_BLOCK_MINUTES,
+            }),
+          );
+        }
       } catch {
         // Best-effort; the status panel falls back to "—" sats.
       }
@@ -2264,11 +2306,28 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   pendingExitSats ??
                   arkBalanceDetail?.pendingExitSats ??
                   arkExitStartedSats;
+                // The AMOUNT only. What is happening to it is the phase line
+                // below, which used to be baked into this sentence and so never
+                // changed for the whole run.
                 return shownSats == null || shownSats <= 0
-                  ? 'Broadcasting exit transactions…'
-                  : `${shownSats.toLocaleString()} sats pending exit. Broadcasting, then a ~24h timelock. Reopen the app after that to collect; it does not progress while closed.`;
+                  ? 'Exit in flight.'
+                  : `${shownSats.toLocaleString()} sats pending exit.`;
               })()}
             </Text>
+
+            {/* PHASE. The fix for a panel that read identically whether the
+                exit was progressing or wedged. Falls back to the previous
+                static sentence until the first poll returns, so a cold launch
+                with the vault still locked is never blank. */}
+            <Text style={{ fontSize: 13, color: '#DDD', marginBottom: 6 }}>
+              {exitPhase?.headline
+                ?? 'Broadcasting, then a timelock. Reopen the app after that to collect; it does not progress while closed.'}
+            </Text>
+            {exitPhase?.detail && (
+              <Text style={{ fontSize: 12, color: '#AAA', marginBottom: 6 }}>
+                {exitPhase.detail}
+              </Text>
+            )}
             {arkExitDestinationAddress && (
               <Text style={{ fontSize: 12, color: '#888' }} numberOfLines={1}>
                 → {arkExitDestinationAddress}
