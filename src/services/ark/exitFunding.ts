@@ -22,6 +22,7 @@ import useAuthStore from '@Cypher/stores/authStore';
 
 import { barkStateTag } from './barkState';
 import { ESPLORA_URLS } from './config';
+import { noteEsploraFailure, noteEsploraSuccess, orderedEsploraUrls } from './esploraHealth';
 import { assertNoActiveArkExit } from './exit';
 import type {
     ExitEconomicPolicy,
@@ -207,10 +208,23 @@ export async function fetchExitFeeRates(): Promise<ExitFeeRateTable> {
     const fromMempool = ratesFromMempoolRecommended(recommended);
     if (fromMempool) return fromMempool;
 
-    for (const base of ESPLORA_URLS) {
+    // Health-ordered: this runs on the screen the user is staring at while
+    // trying to fund an exit that cannot proceed without a rate, so spending
+    // the first attempt on a provider already known to be rate limited is the
+    // worst possible place to pay for blind ordering. See esploraHealth.ts.
+    for (const base of orderedEsploraUrls(ESPLORA_URLS)) {
         const est = await get(`${base}/fee-estimates`);
         const fromEsplora = ratesFromEsploraEstimates(est);
+        if (!est) {
+            // `get` swallows the cause and returns null for both a non-ok
+            // response and a throw, so the classifier cannot tell a 429 from a
+            // dead host here. Record it as unreachable, which takes the SHORT
+            // cooldown: under-penalising a quota costs one wasted request next
+            // time, over-penalising a healthy provider costs an hour.
+            noteEsploraFailure(base, 'fee-estimates unavailable');
+        }
         if (fromEsplora) {
+            noteEsploraSuccess(base);
             if (__DEV__) console.log('[Ark exit-funding] fee rates via esplora', base, fromEsplora);
             return fromEsplora;
         }

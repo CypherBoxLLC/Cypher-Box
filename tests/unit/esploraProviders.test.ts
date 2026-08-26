@@ -3,6 +3,7 @@ import {
     ESPLORA_OPEN_ATTEMPTS,
     esploraOperator,
     chooseEsploraProvider,
+    esploraUrlsByHealth,
     classifyEsploraFailure,
     ESPLORA_RATE_LIMIT_COOLDOWN_MS,
     type EsploraHealth,
@@ -136,5 +137,91 @@ describe('classifying an esplora failure', () => {
 
     it('treats a connection failure as unreachable, which cools down briefly', () => {
         expect(classifyEsploraFailure('ServerConnection: timed out')).toBe('unreachable');
+    });
+});
+
+describe('walking the list, for callers that try every provider in turn', () => {
+    // chooseEsploraProvider answers "which ONE", which is what bark's config
+    // needs. The JS-side callers (chainTip, exit fee lookups) walk the list
+    // until something answers, so handing them one URL would throw away the
+    // fallback. Same health rules, different shape.
+    const URLS = [
+        'https://blockstream.info/api',
+        'https://mempool.space/api',
+        'https://mempool.emzy.de/api',
+        'https://mempool.va1.mempool.space/api',
+    ];
+    const NOW = 1_700_000_000_000;
+    const order = (health: EsploraHealth, now = NOW) =>
+        esploraUrlsByHealth({ urls: URLS, health, now });
+
+    it('changes nothing at all when no provider has failed', () => {
+        // The safety property that makes this landable without ceremony: a
+        // fresh launch behaves exactly as the blind order did.
+        expect(order({})).toEqual(URLS);
+    });
+
+    it('never drops a provider, only demotes it', () => {
+        // A cooldown is a guess from ONE observation. A wrong guess must not
+        // be able to take a provider out of service.
+        const h: EsploraHealth = {
+            [URLS[0]]: { failedAt: NOW - 60_000, kind: 'rate-limited' },
+            [URLS[1]]: { failedAt: NOW - 10_000, kind: 'unreachable' },
+            [URLS[2]]: { failedAt: NOW - 10_000, kind: 'unreachable' },
+            [URLS[3]]: { failedAt: NOW - 10_000, kind: 'unreachable' },
+        };
+        expect([...order(h)].sort()).toEqual([...URLS].sort());
+    });
+
+    it('demotes a rate-limited provider below the healthy ones', () => {
+        // #194: several hundred tip polls over a two-day exit each started at
+        // blockstream, in the hour after blockstream had already answered 429.
+        const h: EsploraHealth = {
+            [URLS[0]]: { failedAt: NOW - 60_000, kind: 'rate-limited' },
+        };
+        expect(order(h)[0]).not.toBe(URLS[0]);
+        expect(order(h).indexOf(URLS[0])).toBe(URLS.length - 1);
+    });
+
+    it('demotes an operator sibling of a burned provider too', () => {
+        // A quota is per IP-and-operator, so a mempool.space 429 makes the
+        // regional mempool.space node a bad bet as well.
+        const h: EsploraHealth = {
+            [URLS[1]]: { failedAt: NOW - 60_000, kind: 'rate-limited' },
+        };
+        const o = order(h);
+        expect(o[0]).toBe(URLS[0]);
+        // The va1 sibling shares mempool.space, so it ranks below the
+        // independent community mirror despite coming first in list order.
+        expect(o.indexOf(URLS[2])).toBeLessThan(o.indexOf(URLS[3]));
+    });
+
+    it('puts the soonest-to-recover first when everything is cooling', () => {
+        // A stale provider beats no chain source, and the exit drive has no
+        // better option than to try something.
+        const h: EsploraHealth = {
+            [URLS[0]]: { failedAt: NOW, kind: 'rate-limited' },
+            [URLS[1]]: { failedAt: NOW, kind: 'unreachable' },
+            [URLS[2]]: { failedAt: NOW, kind: 'rate-limited' },
+            [URLS[3]]: { failedAt: NOW, kind: 'rate-limited' },
+        };
+        // unreachable carries the short cooldown, so it recovers first.
+        expect(order(h)[0]).toBe(URLS[1]);
+    });
+
+    it('restores a provider once its cooldown has expired', () => {
+        const h: EsploraHealth = {
+            [URLS[0]]: { failedAt: NOW - ESPLORA_RATE_LIMIT_COOLDOWN_MS - 1, kind: 'rate-limited' },
+        };
+        expect(order(h)).toEqual(URLS);
+    });
+
+    it('preserves list order inside a tier', () => {
+        // The privacy property the list ordering documents still holds.
+        const h: EsploraHealth = {
+            [URLS[0]]: { failedAt: NOW - 60_000, kind: 'rate-limited' },
+        };
+        const healthy = order(h).slice(0, 3);
+        expect(healthy).toEqual([URLS[1], URLS[2], URLS[3]]);
     });
 });

@@ -156,3 +156,68 @@ export function chooseEsploraProvider(args: {
     })[0];
     return { url: soonest as string, coolingDown: true };
 }
+
+/**
+ * The full provider list, reordered so the ones worth trying come first.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM chooseEsploraProvider
+ *
+ * `chooseEsploraProvider` answers "which ONE do I point the wallet at", which
+ * is what the open path needs: bark takes a single esplora address in its
+ * config. But the JS-side callers do not pick one, they WALK the list until
+ * something answers. Handing them a single URL would throw away the fallback
+ * that makes them work at all.
+ *
+ * So this returns every provider, in the order a walker should try them. Same
+ * health rules, different shape.
+ *
+ * NOTHING IS EVER DROPPED
+ *
+ * A cooling-down provider is demoted, never removed. Cooldowns are a guess
+ * built on one observed failure, and a wrong guess must not be able to take a
+ * provider out of service: the walker still reaches it after the healthy ones,
+ * which is strictly better than today's blind order and never worse. With an
+ * empty health map the output is `urls` unchanged, so a fresh launch behaves
+ * exactly as it did before.
+ *
+ * THE ORDER
+ *
+ *  1. Available, and no sibling host of the same operator is cooling down.
+ *     A quota is per IP-and-operator, so a Blockstream 429 makes every
+ *     Blockstream host a bad bet, not just the one that answered.
+ *  2. Available, but an operator sibling is cooling down.
+ *  3. Cooling down, soonest to recover first.
+ *
+ * List order is preserved inside each tier, so the privacy property the list
+ * ordering documents still holds: a healthy wallet talks to the first entry.
+ */
+export function esploraUrlsByHealth(args: {
+    urls: readonly string[];
+    health: EsploraHealth;
+    now: number;
+}): string[] {
+    const { urls, health, now } = args;
+    const isCooling = (u: string) => {
+        const h = health[u];
+        return h != null && now - h.failedAt < cooldownFor(h.kind);
+    };
+    const recoversAt = (u: string) => {
+        const h = health[u];
+        return h ? h.failedAt + cooldownFor(h.kind) : 0;
+    };
+
+    const burnedOperators = new Set(
+        urls.filter(isCooling).map((u) => esploraOperator(u)),
+    );
+
+    const clean: string[] = [];
+    const tainted: string[] = [];
+    const cooling: string[] = [];
+    for (const u of urls) {
+        if (isCooling(u)) cooling.push(u);
+        else if (burnedOperators.has(esploraOperator(u))) tainted.push(u);
+        else clean.push(u);
+    }
+    cooling.sort((a, b) => recoversAt(a) - recoversAt(b));
+    return [...clean, ...tainted, ...cooling];
+}
