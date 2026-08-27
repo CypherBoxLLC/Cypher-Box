@@ -34,10 +34,11 @@ Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, wit
 * Real-time payment notifications via a self-hosted relay
 * Swap between accounts, withdraw to vaults, top-up from vaults
 
-## ⛵ Bark Vault — non-custodial Lightning (Ark protocol)
+## ⛵ Bark Vault: non-custodial Lightning (Ark protocol)
 
-Read full user guide: https://cypherbox.io/how-to-use-your-bark-vault/
-Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). Self-custodial: you can exit to the chain without the server's permission.
+⚠️ Novel tech - use at your own risk - Please read full user guide before using this wallet: https://cypherbox.io/how-to-use-your-bark-vault/
+Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). 
+Self-custodial: you can exit to the chain without the server's permission.
 
 
 * Send & receive over Lightning, receive on Ark addresses, board from on-chain
