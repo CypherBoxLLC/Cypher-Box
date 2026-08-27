@@ -4,12 +4,41 @@ import {
   View,
   ScrollView,
   StyleSheet,
+  Platform,
   RefreshControlProps,
   TouchableOpacity,
   StatusBar,
   StatusBarStyle,
   Image,
 } from 'react-native';
+
+/**
+ * Which sides get an inset when a screen does not name its own.
+ *
+ * Android 16 (targetSdk 36) ENFORCES edge-to-edge and removed the
+ * windowOptOutEdgeToEdgeEnforcement escape hatch, so the app draws behind the
+ * system bars whether it asks to or not. Without a bottom inset, the last
+ * element on a screen sits under the navigation bar or the gesture pill, which
+ * is worst for the buttons that tend to live there: partly covered, and in the
+ * gesture strip where swipes get intercepted before the button sees them.
+ *
+ * 81 of the screens in this app render through ScreenLayout and none of them
+ * pass their own `edges`, so this default is the only thing standing between
+ * them and that.
+ *
+ * ANDROID ONLY, deliberately. On iOS a bottom inset also pads for the home
+ * indicator, which would shift the layout of every one of those screens. iOS
+ * has no edge-to-edge enforcement to answer for, so it keeps the existing
+ * three sides and stays visually unchanged.
+ *
+ * Safe on older Android: react-native-safe-area-context reports a bottom inset
+ * of 0 when the app is not drawing behind the navigation bar, so this is inert
+ * below Android 16 and correct on it.
+ */
+const DEFAULT_EDGES: ReadonlyArray<'top' | 'bottom' | 'left' | 'right'> =
+  Platform.OS === 'android'
+    ? ['right', 'left', 'top', 'bottom']
+    : ['right', 'left', 'top'];
 
 // *** Third Party Import
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -169,7 +198,7 @@ function ScreenLayout({
   return (
     <View style={styles.inner}>
       <SafeAreaView
-        edges={edges ? edges : ['right', 'left', 'top']}
+        edges={edges ? edges : DEFAULT_EDGES}
         style={StyleSheet.flatten([styles.inner, style])}>
         <StatusBar backgroundColor={colors.primary} barStyle={barStyle} />
         {renderContent()}
