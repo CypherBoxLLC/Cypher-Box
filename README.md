@@ -36,9 +36,10 @@ Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, wit
 
 ## ⛵ Bark Vault — non-custodial Lightning (Ark protocol)
 
-Read full user guide: https://cypherbox.io/how-to-use-your-bark-vault/
-Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). Self-custodial: you can exit to the chain without the server's permission.
+* Read full user guide: https://cypherbox.io/how-to-use-your-bark-vault/
 
+* Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark protocol](https://ark-protocol.org) and [Second's Bark SDK](https://gitlab.com/ark-bitcoin/bark). 
+Self-custodial: you can exit to the chain without the server's permission.
 
 * Send & receive over Lightning, receive on Ark addresses, board from on-chain
 * **Capsule dashboard** with color-coded expiry at a glance:
@@ -60,7 +61,7 @@ Your sats live in **lightning capsules (VTXOs)** on Bitcoin mainnet via the [Ark
 * Keys generated and stored on-device, never leave it
 * SegWit-first, BIP39, RBF + CPFP
 * **Roll your own entropy**: generate the 12 words from your own dice or coin rolls instead of the device RNG
-* **Optional BIP39 passphrase** ("25th word"), never stored anywhere: recovery needs the seed *and* the passphrase
+* **Optional BIP39 passphrase** never stored anywhere: recovery needs the seed *and* the passphrase
 * **Coin control** with UTXO visualization: label, consolidate, pick coins
 * Cold Vault: watch-only + PSBT signing with **BBQr animated QR** for airgapped hardware
 * Custom Electrum server support, plausible deniability
@@ -128,7 +129,7 @@ npm start
 
 ## 🛡 Responsible disclosure
 
-Found a vulnerability? Email **info@cypherbox.io** — please don't disclose publicly until it's resolved. Valid, responsible disclosures may qualify for a bounty based on severity. See [SECURITY.md](./SECURITY.md).
+Found a vulnerability? Email **info@cypherbox.io** - please don't disclose publicly until it's resolved. Valid, responsible disclosures may qualify for a bounty based on severity. See [SECURITY.md](./SECURITY.md).
 
 ---
 
