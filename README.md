@@ -1,6 +1,6 @@
 # ⚡ Cypher Box - A Fun Way to Play Bitcoin
 
-[![Release](https://img.shields.io/badge/release-v0.1.7-f7931a)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
+[![Release](https://img.shields.io/github/v/release/CypherBoxLLC/Cypher-Box?color=f7931a&label=release)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
 [![Reproducible build](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml/badge.svg)](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-lightgrey)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
