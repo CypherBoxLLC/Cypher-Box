@@ -163,3 +163,56 @@ describe('copy contract', () => {
     expect(at({ awaitingHeights: [TIP + 2] }).detail).toContain('2 blocks to go');
   });
 });
+
+describe('broadcast sub-progress, so a slow phase is not mistaken for a stalled one', () => {
+  // Live 2026-08-28: three capsules went AwaitingCpfpBroadcast -> confirmed
+  // shared parent -> one published and awaiting a block, over an hour, and the
+  // panel printed the same sentence the whole time. Every level has to confirm
+  // before the next can be relayed, so the phase legitimately does not move.
+
+  it('reports how many transactions are published', () => {
+    const r = at({ processingCount: 3, txAwaitingBroadcast: 2, txAwaitingConfirmation: 1 });
+    expect(r.phase).toBe('publishing');
+    expect(r.detail).toContain('1 of 3 published');
+  });
+
+  it('moves as each one goes out, which is the whole point', () => {
+    const a = at({ processingCount: 3, txAwaitingBroadcast: 3, txAwaitingConfirmation: 0 });
+    const b = at({ processingCount: 3, txAwaitingBroadcast: 1, txAwaitingConfirmation: 2 });
+    expect(a.detail).toContain('0 of 3 published');
+    expect(b.detail).toContain('2 of 3 published');
+    expect(a.detail).not.toBe(b.detail);
+  });
+
+  it('still explains the slowness, so the user knows it is expected', () => {
+    const r = at({ processingCount: 2, txAwaitingBroadcast: 1, txAwaitingConfirmation: 1 });
+    expect(r.detail).toContain('confirmation before the next');
+    expect(r.detail).toContain('Keep the app open');
+  });
+
+  it('mentions capsules already through to the timelock', () => {
+    const r = at({ processingCount: 3, txAwaitingBroadcast: 2, txAwaitingConfirmation: 1, awaitingHeights: [963_652] });
+    expect(r.detail).toContain('1 capsule is already through');
+  });
+
+  it('omits the count rather than printing 0 of 0 when the SDK gave nothing', () => {
+    // Older records, or a tick that returned no transaction list.
+    const r = at({ processingCount: 2 });
+    expect(r.detail).not.toContain('of 0');
+    expect(r.detail).toContain('Keep the app open');
+  });
+
+  it('never claims more published than exist', () => {
+    for (const [b, c] of [[0, 0], [5, 0], [0, 5], [2, 3]]) {
+      const r = at({ processingCount: 1, txAwaitingBroadcast: b, txAwaitingConfirmation: c });
+      const m = r.detail?.match(/(\d+) of (\d+) published/);
+      if (m) expect(Number(m[1])).toBeLessThanOrEqual(Number(m[2]));
+    }
+  });
+
+  it('keeps the copy contract: no em dash, no promise it finishes alone', () => {
+    const r = at({ processingCount: 3, txAwaitingBroadcast: 2, txAwaitingConfirmation: 1 });
+    expect(r.detail).not.toContain('\u2014');
+    expect(`${r.headline} ${r.detail}`.toLowerCase()).not.toMatch(/automatic|by itself|on its own/);
+  });
+});

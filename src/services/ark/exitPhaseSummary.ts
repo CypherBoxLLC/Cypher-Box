@@ -63,6 +63,16 @@ export type ExitPhaseInput = {
     awaitingHeights: readonly number[];
     /** Capsules still broadcasting, so no ripening height exists yet. */
     processingCount: number;
+    /**
+     * Exit-tree transactions on still-broadcasting capsules whose CPFP child
+     * has NOT been published yet (`AwaitingCpfpBroadcast`).
+     */
+    txAwaitingBroadcast?: number;
+    /**
+     * Exit-tree transactions already published and waiting on a block
+     * (`AwaitingConfirmation` / `AwaitingInputConfirmation`).
+     */
+    txAwaitingConfirmation?: number;
     /** Freshest tip known, or null when no chain source answered. */
     tipHeight: number | null;
     /** Minutes per block used to turn a height into a duration. */
@@ -140,12 +150,39 @@ export function summariseExitPhase(input: ExitPhaseInput): ExitPhaseSummary {
     // Publishing outranks waiting: if ANY capsule still needs a broadcast, the
     // app is load-bearing and the copy must not tell the user to leave.
     if (processing > 0) {
+        // SUB-PROGRESS, and why it earns its place.
+        //
+        // Phase alone is not enough here. Broadcasting is the slowest phase and
+        // the one that needs the user present, and every tree level has to
+        // CONFIRM before the next can be relayed (Bitcoin Core's TRUC policy:
+        // one unconfirmed parent, one child, and the CPFP anchor takes that
+        // slot). So the phase legitimately sits unchanged for an hour while
+        // real work happens underneath.
+        //
+        // Observed live 2026-08-28: three capsules went from
+        // AwaitingCpfpBroadcast, to a confirmed shared parent, to one published
+        // and awaiting a block, and the panel printed the same sentence
+        // throughout. From the user's side that is indistinguishable from a
+        // wedged exit, which is the exact confusion this panel exists to remove.
+        //
+        // So count transactions, not just capsules. Published means the CPFP
+        // child is out: waiting on a block, or already confirmed.
+        const pending = Math.max(0, Math.floor(input.txAwaitingBroadcast ?? 0));
+        const inFlight = Math.max(0, Math.floor(input.txAwaitingConfirmation ?? 0));
+        const totalTx = pending + inFlight;
+        // "N of M" where M is only the steps visible right now. A tree reveals
+        // more levels as they confirm, so this is deliberately not a total and
+        // not a percentage.
+        const progress = totalTx > 0
+            ? `${inFlight} of ${totalTx} published, waiting on a confirmation. `
+            : '';
+        const alsoWaiting = heights.length > 0
+            ? `${heights.length} ${plural(heights.length, 'capsule is', 'capsules are')} already through and waiting out the timelock. `
+            : '';
         return {
             phase: 'publishing',
             headline: `Publishing exit transactions for ${processing} ${plural(processing, 'capsule', 'capsules')}.`,
-            detail: heights.length > 0
-                ? `${heights.length} already published and waiting out the timelock. Keep the app open, each step needs it.`
-                : 'Keep the app open, each step needs it.',
+            detail: `${progress}${alsoWaiting}Each step needs a confirmation before the next can go, so this is slow. Keep the app open.`,
             // A capsule with no ripening height yet can push the finish line
             // out once its leaf confirms, so any figure here would be a floor
             // presented as an answer. Withheld rather than guessed.
