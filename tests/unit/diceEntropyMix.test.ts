@@ -12,14 +12,21 @@
  */
 
 import crypto from 'crypto';
-import { eReducer, getEntropy, convertToBuffer } from '../../screen/wallets/provideEntropy';
+import { eReducer, getEntropy, convertToBuffer, mixEntropy } from '../../screen/wallets/provideEntropy';
 const bip39 = require('bip39');
 
-/** Replay d6 faces (1..6) through the real reducer. */
+/**
+ * Replay d6 faces (1..6) through the real reducer, using the SAME face mapping
+ * the Dice component uses: (i + 1) % sides, which for a face f is f % 6. That
+ * makes die 6 digit 0, matching Ian Coleman's base-6 dice convention.
+ *
+ * Note this moves the all-zeros case. Under the old 0-based labelling the
+ * degenerate face was 1; it is now 6, which is the face that maps to digit 0.
+ */
 const roll = (faces: number[]) => {
     let state: any;
     for (const face of faces) {
-        const e = getEntropy(face - 1, 6);
+        const e = getEntropy(face % 6, 6);
         if (e) state = eReducer(state, { type: 'push', ...e });
     }
     return state;
@@ -29,20 +36,21 @@ const roll = (faces: number[]) => {
 const seedWithoutMix = (dice: Buffer) =>
     bip39.entropyToMnemonic(dice.slice(0, 16).toString('hex'));
 
-/** The behaviour now shipped in SavingVaultIntro: hash dice WITH the CSPRNG. */
+/**
+ * The shipped mix, imported rather than reimplemented. A local copy would keep
+ * passing even if the real derivation changed underneath it, which is exactly
+ * the failure this file exists to prevent.
+ */
 const seedWithMix = (dice: Buffer, rng: Buffer) =>
-    bip39.entropyToMnemonic(
-        crypto.createHash('sha256').update(Buffer.concat([dice.slice(0, 16), rng])).digest()
-            .slice(0, 16).toString('hex'),
-    );
+    bip39.entropyToMnemonic(mixEntropy(dice.slice(0, 16), rng).toString('hex'));
 
 const ALL_ZEROS = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
 describe('the degenerate input that reached the 128-bit gate', () => {
-    const lazy = convertToBuffer(roll(Array(64).fill(1)));
+    const lazy = convertToBuffer(roll(Array(64).fill(6)));
 
     it('really did satisfy the counter with zero entropy', () => {
-        expect(roll(Array(64).fill(1)).bits).toBeGreaterThanOrEqual(128);
+        expect(roll(Array(64).fill(6)).bits).toBeGreaterThanOrEqual(128);
         expect(lazy.slice(0, 16).equals(Buffer.alloc(16))).toBe(true);
     });
 
