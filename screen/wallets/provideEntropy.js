@@ -1,10 +1,23 @@
 import React, { useReducer, useState } from 'react';
 import PropTypes from 'prop-types';
 import BN from 'bignumber.js';
-import { Alert, Dimensions, PixelRatio, View, ScrollView, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
+import {
+  Alert,
+  Dimensions,
+  PixelRatio,
+  View,
+  ScrollView,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  useWindowDimensions,
+} from 'react-native';
 import { Icon } from 'react-native-elements';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
+import crypto from 'crypto';
+import { randomBytes } from '../../class/rng';
 import loc from '../../loc';
 import { BlueCurrentTheme, useTheme } from '../../components/themes';
 import { FContainer, FButton } from '../../components/FloatButtons';
@@ -25,10 +38,29 @@ export const eReducer = (state = initialState, action) => {
       if (value >= 2 ** bits) {
         throw new TypeError("Can't push value exceeding size in bits");
       }
-      if (state.bits === ENTROPY_LIMIT) return state;
-      if (state.bits + bits > ENTROPY_LIMIT) {
-        value = shiftRight(BN(value), bits + state.bits - ENTROPY_LIMIT);
-        bits = ENTROPY_LIMIT - state.bits;
+      if (action.limit) {
+        // A caller target (the vault flow passes 128). Stop by REFUSING the
+        // roll rather than truncating it, which is what keeps the result
+        // reproducible in an external tool.
+        //
+        // Direction is why. Our convertToBuffer keeps trailing bytes, and Ian
+        // Coleman keeps trailing bits (index.js: start = bits.length -
+        // bitsToUse). Truncating the last roll to land on exactly 128 would
+        // instead keep the LEADING 128 bits and the two would disagree by a
+        // bit shift. Letting the roll complete and refusing the next keeps the
+        // total in [target, target + 1], where his 32-bit rounding and our
+        // 8-bit rounding select the same trailing 128 bits. Without any stop
+        // the total can pass 135, where he keeps 16 bytes and we keep 17.
+        if (state.bits >= action.limit) return state;
+      } else {
+        // No target: upstream's behaviour at the hard 256-bit ceiling, which
+        // truncates the final push so the total lands exactly on the limit.
+        // Preserved for the legacy add-wallet caller, which passes no limit.
+        if (state.bits === ENTROPY_LIMIT) return state;
+        if (state.bits + bits > ENTROPY_LIMIT) {
+          value = shiftRight(BN(value), bits + state.bits - ENTROPY_LIMIT);
+          bits = ENTROPY_LIMIT - state.bits;
+        }
       }
       const entropy = shiftLeft(state.entropy, bits).plus(value);
       const items = [...state.items, bits];
@@ -75,6 +107,25 @@ export const getEntropy = (number, base) => {
   }
   return null;
 };
+
+/**
+ * Combine the user's collected entropy with device CSPRNG bytes.
+ *
+ * Hashing rather than concatenating, because concatenation would leave the
+ * user's bytes verbatim in the key and upstream's version pads to 32 bytes,
+ * emitting a 24-word seed against this app's fixed 12-word recovery flow.
+ * SHA-256 is a vetted conditioning function for exactly this (NIST SP 800-90B).
+ *
+ * The result is unpredictable if EITHER input is sound, which is the whole
+ * point: bad dice are carried by the RNG, and an attacker who controls the RNG
+ * still cannot predict the key without the dice.
+ */
+export const mixEntropy = (userBytes, rngBytes) =>
+  crypto
+    .createHash('sha256')
+    .update(Buffer.concat([userBytes, rngBytes]))
+    .digest()
+    .slice(0, 16);
 
 // cut entropy to bytes, convert to Buffer
 export const convertToBuffer = ({ entropy, bits }) => {
@@ -151,8 +202,25 @@ const Dice = ({ push, sides }) => {
 
   return (
     <ScrollView contentContainerStyle={[styles.diceContainer, stylesHook.diceContainer]}>
+      {/*
+        Face -> digit uses (i + 1) % sides, so the HIGHEST face is digit zero:
+        a d6 showing 6 is 0 in base 6. That is Ian Coleman's convention in
+        src/js/entropy.js, which rewrites die 6 to base-6 digit 0 and leaves
+        1 to 5 alone.
+
+        The bit scheme was already his. He maps four digits to two bits and two
+        to one, averaging (4*2 + 2*1)/6 bits per roll, which is the exact table
+        and the exact figure `getEntropy` produces. Only the labelling differed:
+        upstream used the 0-based index, making our die 1 his die 6. Rotating by
+        one makes the collected entropy byte-identical to his tool, so a user
+        can retype their rolls there and confirm this screen is honest.
+
+        No compatibility break. Seeds are stored as words, and the CSPRNG mix
+        already means no existing seed is reproducible from its rolls, so
+        nothing depends on the old labelling.
+      */}
       {[...Array(sides)].map((_, i) => (
-        <TouchableOpacity accessibilityRole="button" key={i} onPress={() => push(getEntropy(i, sides))}>
+        <TouchableOpacity accessibilityRole="button" key={i} onPress={() => push(getEntropy((i + 1) % sides, sides))}>
           <View style={[styles.diceRoot, { width: diceWidth }]}>
             {sides === 6 ? (
               <Icon style={styles.diceIcon} name={diceIcon(i + 1)} size={70} color="grey" type="font-awesome-5" />
@@ -217,7 +285,12 @@ const Entropy = () => {
   //                 passes 128 and Save hard-blocks under it.
   //   limit       — display target for the counter ("N of {limit} bits").
   //   instruction — one-line how-to rendered under the dice grid.
-  const { onGenerated, minBits, limit, instruction } = useRoute().params;
+  //   mixWithRng  — hash the collected entropy with 16 CSPRNG bytes and hand
+  //                 back the RESULT, showing the user every input so the
+  //                 derivation can be checked by hand. Off by default, so the
+  //                 legacy add-wallet caller still receives raw entropy for
+  //                 generateFromEntropy (which does its own concatenation).
+  const { onGenerated, minBits, limit, instruction, mixWithRng } = useRoute().params;
   const navigation = useNavigation();
   const [tab, setTab] = useState(1);
   const [show, setShow] = useState(false);
@@ -236,16 +309,24 @@ const Entropy = () => {
   // time, so N taps of one button push N*2 zero bits and the counter reports
   // them as full entropy.
   const [faces, setFaces] = useState([]);
+  // Set once the mix has run; holds every input to the derivation so the user
+  // can reproduce it. Never persisted and never leaves this screen.
+  const [verify, setVerify] = useState(null);
+  const [showVerify, setShowVerify] = useState(false);
   const push = v => {
     if (!v) return;
+    // Once the target is reached the reducer refuses the roll, so stop
+    // recording it too. Keeps `faces` meaning "rolls that counted", which is
+    // what the degeneracy check below is judging.
+    if (entropy.bits >= (limit || ENTROPY_LIMIT)) return;
     setFaces(f => [...f, `${v.value}:${v.bits}`]);
-    dispatch({ type: 'push', value: v.value, bits: v.bits });
+    dispatch({ type: 'push', value: v.value, bits: v.bits, limit: limit || ENTROPY_LIMIT });
   };
   const pop = () => {
     setFaces(f => f.slice(0, -1));
     dispatch({ type: 'pop' });
   };
-  const save = () => {
+  const save = async () => {
     if (minBits && entropy.bits < minBits) {
       Alert.alert(
         loc.entropy.title,
@@ -273,9 +354,23 @@ const Entropy = () => {
       );
       return;
     }
-    navigation.pop();
     const buf = convertToBuffer(entropy);
-    onGenerated(buf);
+    if (!mixWithRng) {
+      navigation.pop();
+      onGenerated(buf);
+      return;
+    }
+    // Show the derivation before committing to it. The user rolled dice
+    // precisely because they wanted to see where their key came from, so
+    // handing back a key they cannot check defeats the exercise.
+    const userBytes = buf.slice(0, 16);
+    const rng = await randomBytes(16);
+    setVerify({ user: userBytes, rng, final: mixEntropy(userBytes, rng) });
+  };
+
+  const acceptVerified = () => {
+    navigation.pop();
+    onGenerated(verify.final);
   };
 
   const hex = entropyToHex(entropy);
@@ -299,6 +394,51 @@ const Entropy = () => {
   const typicalThrows = Math.ceil(limitDisplay / AVG_BITS_PER_THROW[tab]);
   let bits = Math.min(entropy.bits, limitDisplay).toString();
   bits = ' '.repeat(bits.length < 3 ? 3 - bits.length : 0) + bits;
+
+  if (verify) {
+    const row = (label, buf) => (
+      <View style={styles.verifyRow}>
+        <Text style={[styles.verifyLabel, stylesHook.entropyText]}>{label}</Text>
+        <Text style={[styles.verifyHex, stylesHook.entropyText]}>{showVerify ? buf.toString('hex') : '.'.repeat(32)}</Text>
+      </View>
+    );
+    return (
+      <SafeArea>
+        <ScrollView contentContainerStyle={styles.verifyScroll}>
+          <Text style={[styles.verifyTitle, stylesHook.entropyText]}>Check where this key came from</Text>
+          <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
+            Nothing here is stored or sent anywhere. It is shown once so you can confirm this screen used your rolls honestly.
+          </Text>
+
+          <TouchableOpacity accessibilityRole="button" onPress={() => setShowVerify(!showVerify)} style={styles.verifyReveal}>
+            <Text bold style={styles.verifyRevealText}>
+              {showVerify ? 'Hide values' : 'Tap to reveal'}
+            </Text>
+          </TouchableOpacity>
+
+          {row('Your rolls', verify.user)}
+          {row('Phone randomness', verify.rng)}
+          {row('Final key entropy', verify.final)}
+
+          <Text style={[styles.verifyHow, stylesHook.entropyText]}>
+            To check your rolls: enter them at iancoleman.io/bip39, choose Dice, and the entropy shown there should equal "Your rolls"
+            above.
+          </Text>
+          <Text style={[styles.verifyHow, stylesHook.entropyText]}>
+            To check the rest: "Final key entropy" is the SHA-256 of your rolls followed by the phone randomness, cut to 16 bytes. Paste it
+            into the same page as hex entropy to see the 12 words you are about to get.
+          </Text>
+          <Text style={styles.verifyWarning}>
+            These values are your key. Anyone who copies them can spend your funds. Do not photograph them or type them into anything you do
+            not trust.
+          </Text>
+        </ScrollView>
+        <FContainer>
+          <FButton onPress={acceptVerified} text="Continue" />
+        </FContainer>
+      </SafeArea>
+    );
+  }
 
   return (
     <SafeArea>
@@ -371,6 +511,51 @@ const styles = StyleSheet.create({
   guidance: {
     marginHorizontal: 20,
     marginBottom: 90,
+  },
+  verifyScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 110,
+  },
+  verifyTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  verifyReveal: {
+    alignSelf: 'center',
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  verifyRevealText: {
+    fontSize: 13,
+    color: '#4a90d9',
+  },
+  verifyRow: {
+    marginTop: 12,
+  },
+  verifyLabel: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginBottom: 3,
+  },
+  verifyHex: {
+    fontSize: 13,
+    fontFamily: 'Courier',
+  },
+  verifyHow: {
+    fontSize: 12,
+    marginTop: 14,
+    opacity: 0.75,
+    lineHeight: 17,
+  },
+  verifyWarning: {
+    fontSize: 12,
+    marginTop: 16,
+    fontWeight: '600',
+    color: '#E0A030',
+    lineHeight: 17,
   },
   instructionText: {
     fontSize: 13,

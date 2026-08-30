@@ -7,8 +7,6 @@ import { Button, Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
 import { HDSegwitBech32Wallet } from "../../../class";
-import { randomBytes } from "../../../class/rng";
-import crypto from 'crypto';
 import loc from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -188,37 +186,22 @@ export default function SavingVaultIntro() {
       const w = new HDSegwitBech32Wallet();
       w.setLabel(label || loc.wallets.details_title);
       if (diceEntropy && diceEntropy.length >= 16) {
-        // 12-word seed from the user's dice rolls MIXED WITH THE DEVICE CSPRNG.
+        // Already mixed. The entropy screen hashes the user's rolls with 16
+        // device CSPRNG bytes and hands back the RESULT, having first shown
+        // every input so the derivation can be checked by hand.
         //
-        // The mix is not optional. The entropy screen counts BITS PUSHED, not
-        // entropy, and `getEntropy(face, 6)` returns the same value for the
-        // same face every time. So 64 taps of one button satisfied the 128-bit
-        // gate with 128 zero bits, and this line produced, verbatim:
+        // The mix is not optional, and it lives there rather than here so the
+        // user can see it. The counter on that screen measures BITS PUSHED,
+        // not entropy, and a face maps to the same value every time, so 64
+        // taps of one button once satisfied the 128-bit gate with 128 zero
+        // bits and produced the all-zeros BIP39 test vector, which is swept
+        // within seconds of being funded. Tapping one face was also the
+        // FASTEST way to fill the counter, so it was reachable by impatience.
         //
-        //   abandon abandon abandon ... abandon about
-        //
-        // the all-zeros BIP39 test vector, which is swept within seconds of
-        // being funded. Tapping one face is also the FASTEST way to fill the
-        // counter, so this was reachable by impatience alone.
-        //
-        // Upstream never had that hole: generateFromEntropy concatenates
-        // randomBytes(32 - user.length), so all-zero dice still yielded a seed
-        // with 128 real bits. We dropped it by accident, not by design, because
-        // that concat forces 32 bytes and would emit a 24-word seed against
-        // this app's fixed-12-word recovery flow.
-        //
-        // Hashing gets both: 16 bytes out, 12 words, two sources. It also
-        // preserves the reason for rolling in the first place, since an
-        // attacker who fully controls the RNG still cannot predict the result
-        // without the dice. Safe if EITHER source is sound, rather than only if
-        // the dice are.
-        const rngBytes = await randomBytes(16);
-        const mixed = crypto
-          .createHash('sha256')
-          .update(Buffer.concat([diceEntropy.slice(0, 16), rngBytes]))
-          .digest()
-          .slice(0, 16);
-        w.setSecret(bip39.entropyToMnemonic(mixed.toString('hex')));
+        // Hashing gets both sources into 16 bytes and 12 words. Safe if EITHER
+        // is sound, rather than only if the dice are. See mixEntropy in
+        // screen/wallets/provideEntropy.
+        w.setSecret(bip39.entropyToMnemonic(diceEntropy.slice(0, 16).toString('hex')));
       } else {
         await w.generate();   // BIP39 mnemonic — ~5ms on device
       }
@@ -343,6 +326,7 @@ export default function SavingVaultIntro() {
                                 dispatchNavigate('ProvideEntropy', {
                                     minBits: 128,
                                     limit: 128,
+                                    mixWithRng: true,
                                     onGenerated: (buf: Buffer) => {
                                         if (buf && buf.length >= 16) setDiceEntropy(buf);
                                     },
