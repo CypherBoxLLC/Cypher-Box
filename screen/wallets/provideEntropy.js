@@ -231,13 +231,45 @@ const Entropy = () => {
     },
   });
 
-  const push = v => v && dispatch({ type: 'push', value: v.value, bits: v.bits });
-  const pop = () => dispatch({ type: 'pop' });
+  // The raw face sequence, kept alongside the bit counter. The counter cannot
+  // see degeneracy: `getEntropy(face, 6)` maps a face to the same value every
+  // time, so N taps of one button push N*2 zero bits and the counter reports
+  // them as full entropy.
+  const [faces, setFaces] = useState([]);
+  const push = v => {
+    if (!v) return;
+    setFaces(f => [...f, `${v.value}:${v.bits}`]);
+    dispatch({ type: 'push', value: v.value, bits: v.bits });
+  };
+  const pop = () => {
+    setFaces(f => f.slice(0, -1));
+    dispatch({ type: 'pop' });
+  };
   const save = () => {
     if (minBits && entropy.bits < minBits) {
       Alert.alert(
         loc.entropy.title,
         `Not enough entropy yet: ${entropy.bits} of ${minBits} bits. Keep rolling until the counter reaches ${minBits}.`,
+      );
+      return;
+    }
+    // Refuse input that plainly carries no entropy, however many bits it
+    // pushed. This is a usability guard, not the security boundary: the seed
+    // is hashed with the device CSPRNG regardless, so a degenerate sequence is
+    // no longer dangerous. It is here so someone who believes they contributed
+    // 128 bits actually did, rather than being quietly carried by the RNG.
+    //
+    // Deliberately crude. It catches the cases a real die cannot produce and a
+    // bored finger easily can, and does not try to judge randomness beyond
+    // that: rejecting a legitimate but unlucky roll would be worse than
+    // accepting a lazy one that the mix already protects.
+    const distinct = new Set(faces).size;
+    if (faces.length >= 8 && distinct <= 2) {
+      Alert.alert(
+        loc.entropy.title,
+        distinct <= 1
+          ? 'Every entry is the same value, so this carries no randomness. Roll a real die and enter what it lands on.'
+          : 'These entries repeat only two values, so this carries very little randomness. Roll a real die and enter what it lands on.',
       );
       return;
     }
@@ -248,6 +280,23 @@ const Entropy = () => {
 
   const hex = entropyToHex(entropy);
   const limitDisplay = limit || ENTROPY_LIMIT;
+
+  // Wording and the expected number of throws, per tab. The counter above
+  // measures BITS PUSHED, which is exactly the thing that misled people here
+  // before: it cannot tell a real roll from a repeated tap. So the screen has
+  // to say in words what the number cannot.
+  //
+  // AVG_BITS_PER_THROW is the real yield of `getEntropy`, not log2(sides).
+  // A d6 maps faces 1-4 to 2 bits and faces 5-6 to 1 bit, averaging 10/6, and
+  // a d20 maps 16 values to 4 bits and 4 values to 2 bits, averaging 3.6. The
+  // encoding is lossy but sound: the bits it does emit are uniform, so 128 of
+  // them from real throws really are 128 bits.
+  const isCoin = tab === 0;
+  const sourceNoun = isCoin ? 'coin' : 'die';
+  const landedNoun = isCoin ? 'side' : 'face';
+  const throwsNoun = isCoin ? 'flips' : 'rolls';
+  const AVG_BITS_PER_THROW = [1, 10 / 6, 3.6];
+  const typicalThrows = Math.ceil(limitDisplay / AVG_BITS_PER_THROW[tab]);
   let bits = Math.min(entropy.bits, limitDisplay).toString();
   bits = ' '.repeat(bits.length < 3 ? 3 - bits.length : 0) + bits;
 
@@ -283,7 +332,18 @@ const Entropy = () => {
       {tab === 1 && <Dice sides={6} push={push} />}
       {tab === 2 && <Dice sides={20} push={push} />}
 
-      {instruction ? <Text style={[styles.instructionText, stylesHook.entropyText]}>{instruction}</Text> : null}
+      <View style={styles.guidance}>
+        {instruction ? <Text style={[styles.instructionText, stylesHook.entropyText]}>{instruction}</Text> : null}
+        <Text style={[styles.guidanceHow, stylesHook.entropyText]}>
+          {`${isCoin ? 'Flip' : 'Roll'} a real ${sourceNoun} and tap the ${landedNoun} it lands on. About ${typicalThrows} ${throwsNoun} fills the counter.`}
+        </Text>
+        <Text style={styles.guidanceWarning}>
+          {`Tapping the same ${landedNoun} over and over, or any pattern you make up, adds no randomness. The counter cannot tell the difference, but your key can.`}
+        </Text>
+        <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
+          Your phone always mixes in its own randomness, so doing this can only make your key stronger, never weaker.
+        </Text>
+      </View>
 
       <Buttons pop={pop} save={save} colors={colors} />
     </SafeArea>
@@ -308,12 +368,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: 'Courier',
   },
+  guidance: {
+    marginHorizontal: 20,
+    marginBottom: 90,
+  },
   instructionText: {
     fontSize: 13,
     textAlign: 'center',
-    marginHorizontal: 20,
-    marginBottom: 90,
     opacity: 0.7,
+  },
+  guidanceHow: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 4,
+    opacity: 0.9,
+  },
+  guidanceWarning: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 10,
+    fontWeight: '600',
+    color: '#E0A030',
+  },
+  guidanceCalm: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
+    opacity: 0.6,
   },
   coinRoot: {
     flex: 1,
