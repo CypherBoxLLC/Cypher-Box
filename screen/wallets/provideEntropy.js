@@ -330,7 +330,7 @@ const Entropy = () => {
     if (minBits && entropy.bits < minBits) {
       Alert.alert(
         loc.entropy.title,
-        `Not enough entropy yet: ${entropy.bits} of ${minBits} bits. Keep rolling until the counter reaches ${minBits}.`,
+        `Not enough yet. You are at ${entropy.bits} of ${minBits}. Keep rolling until it gets there.`,
       );
       return;
     }
@@ -349,8 +349,8 @@ const Entropy = () => {
       Alert.alert(
         loc.entropy.title,
         distinct <= 1
-          ? 'Every entry is the same value, so this carries no randomness. Roll a real die and enter what it lands on.'
-          : 'These entries repeat only two values, so this carries very little randomness. Roll a real die and enter what it lands on.',
+          ? 'Every tap is the same number, so there is no randomness here at all. Roll a real die and tap what it lands on.'
+          : 'These taps only use two numbers, so there is almost no randomness here. Roll a real die and tap what it lands on.',
       );
       return;
     }
@@ -407,7 +407,7 @@ const Entropy = () => {
         <ScrollView contentContainerStyle={styles.verifyScroll}>
           <Text style={[styles.verifyTitle, stylesHook.entropyText]}>Check where this key came from</Text>
           <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
-            Nothing here is stored or sent anywhere. It is shown once so you can confirm this screen used your rolls honestly.
+            None of this is saved or sent anywhere. It is shown once, so you can check for yourself that this screen really used your rolls.
           </Text>
 
           <TouchableOpacity accessibilityRole="button" onPress={() => setShowVerify(!showVerify)} style={styles.verifyReveal}>
@@ -417,24 +417,24 @@ const Entropy = () => {
           </TouchableOpacity>
 
           {row('Your rolls', verify.user)}
-          {row('Phone randomness', verify.rng)}
-          {row('Final key entropy', verify.final)}
+          {row("Your phone's randomness", verify.rng)}
+          {row('The result, which becomes your key', verify.final)}
 
           <Text style={styles.verifyWarning}>
-            Verify with throwaway rolls, not these. Typing your real rolls into a web page hands over half of what protects this key, and
-            leaves it resting on the phone alone. Either practise the check with rolls you discard, or download Ian Coleman's tool and run it
-            with this device offline.
+            Do this with practice rolls, not your real ones. Typing your real rolls into a website gives away one of the two things
+            protecting this key, and it would then rest on your phone's secure entropy generator only. Either do a practice run with rolls you
+            throw away afterwards, or download Ian Coleman's tool and run it with this device offline.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check the rolls: enter them in Ian Coleman's BIP39 tool, choose Dice, and the entropy it shows should equal "Your rolls" above.
-            That is the part that proves this screen read your dice honestly.
+            To check your rolls: type them into Ian Coleman's BIP39 tool and choose Dice. What it shows should match "Your rolls" above. That
+            is what proves this screen read your dice correctly.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check the rest: "Final key entropy" is the SHA-256 of your rolls followed by the phone randomness, cut to 16 bytes. Paste that
-            in as hex entropy to see the 12 words you are about to get.
+            To check the result: it is a SHA-256 hash of your rolls followed by your phone's randomness, shortened to 16 bytes. Paste it into
+            the same tool as hex entropy to see the 12 words you are about to get.
           </Text>
           <Text style={styles.verifyWarning}>
-            These values are your key. Anyone who copies them can spend your funds. Do not photograph them.
+            These values are your key. Anyone who copies them can spend your money. Do not photograph them.
           </Text>
         </ScrollView>
         <FContainer>
@@ -479,13 +479,13 @@ const Entropy = () => {
       <View style={styles.guidance}>
         {instruction ? <Text style={[styles.instructionText, stylesHook.entropyText]}>{instruction}</Text> : null}
         <Text style={[styles.guidanceHow, stylesHook.entropyText]}>
-          {`${isCoin ? 'Flip' : 'Roll'} a real ${sourceNoun} and tap the ${landedNoun} it lands on. About ${typicalThrows} ${throwsNoun} fills the counter.`}
+          {`${isCoin ? 'Flip' : 'Roll'} a real ${sourceNoun}, then tap the ${landedNoun} it landed on. It takes about ${typicalThrows} ${throwsNoun}.`}
         </Text>
         <Text style={styles.guidanceWarning}>
-          {`Tapping the same ${landedNoun} over and over, or any pattern you make up, adds no randomness. The counter cannot tell the difference, but your key can.`}
+          {`Tapping the same ${landedNoun} again and again, or any pattern you make up yourself, does not count as random. The number above still goes up, but your key gets no safer.`}
         </Text>
         <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
-          Your phone always mixes in its own randomness, so doing this can only make your key stronger, never weaker.
+          Your phone always adds randomness of its own as well, so doing this can only make your key safer, never weaker.
         </Text>
       </View>
 
