@@ -277,6 +277,17 @@ export type AuthStateType = {
      */
     arkExitInProgress: boolean;
     /**
+     * Has the user dismissed the "set battery to Unrestricted" notice shown
+     * during an exit? Persisted, because an exit spans days and many launches,
+     * and re-nagging someone who already did it is how a real warning gets
+     * trained into background noise.
+     *
+     * Nothing auto-clears this. The native isIgnoringBatteryOptimizations()
+     * went with the background-refresh machinery in b8226f9, so the app can no
+     * longer read the OS allowlist and has to take the user's word for it.
+     */
+    arkExitBatteryNoticeDismissed: boolean;
+    /**
      * Where the user wants the on-chain funds to land after the timelock.
      * Captured at exit-start so the auto-claim loop has the address without
      * reprompting the user. Bitcoin address (mainnet bech32 / legacy / etc).
@@ -358,6 +369,7 @@ export type AuthStateType = {
         maxVtxoExitDepth: number | null;
     }) => void;
     setArkExitInProgress: (state: boolean) => void;
+    setArkExitBatteryNoticeDismissed: (state: boolean) => void;
     setArkExitDestinationAddress: (state: string | null) => void;
     setArkExitStartedAt: (state: number | null) => void;
     setArkExitClaimBatchSince: (state: number | null) => void;
@@ -586,6 +598,7 @@ const createAuthStore = (
     arkMaxVtxoExitDepth: null,
     arkExitFeeDeadlineHeight: null,
     arkExitInProgress: false,
+    arkExitBatteryNoticeDismissed: false,
     arkExitDestinationAddress: null,
     arkExitStartedAt: null,
     arkExitClaimBatchSince: null,
@@ -679,6 +692,8 @@ const createAuthStore = (
         arkMaxVtxoExitDepth: state.maxVtxoExitDepth,
     }),
     setArkExitInProgress: (state: boolean) => set({ arkExitInProgress: state }),
+    setArkExitBatteryNoticeDismissed: (state: boolean) =>
+        set({ arkExitBatteryNoticeDismissed: state }),
     setArkExitDestinationAddress: (state: string | null) => set({ arkExitDestinationAddress: state }),
     setArkExitStartedAt: (state: number | null) => set({ arkExitStartedAt: state }),
     setArkExitClaimBatchSince: (state: number | null) => set({ arkExitClaimBatchSince: state }),
