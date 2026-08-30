@@ -420,17 +420,21 @@ const Entropy = () => {
           {row('Phone randomness', verify.rng)}
           {row('Final key entropy', verify.final)}
 
-          <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check your rolls: enter them at iancoleman.io/bip39, choose Dice, and the entropy shown there should equal "Your rolls"
-            above.
+          <Text style={styles.verifyWarning}>
+            Verify with throwaway rolls, not these. Typing your real rolls into a web page hands over half of what protects this key, and
+            leaves it resting on the phone alone. Either practise the check with rolls you discard, or download Ian Coleman's tool and run it
+            with this device offline.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check the rest: "Final key entropy" is the SHA-256 of your rolls followed by the phone randomness, cut to 16 bytes. Paste it
-            into the same page as hex entropy to see the 12 words you are about to get.
+            To check the rolls: enter them in Ian Coleman's BIP39 tool, choose Dice, and the entropy it shows should equal "Your rolls" above.
+            That is the part that proves this screen read your dice honestly.
+          </Text>
+          <Text style={[styles.verifyHow, stylesHook.entropyText]}>
+            To check the rest: "Final key entropy" is the SHA-256 of your rolls followed by the phone randomness, cut to 16 bytes. Paste that
+            in as hex entropy to see the 12 words you are about to get.
           </Text>
           <Text style={styles.verifyWarning}>
-            These values are your key. Anyone who copies them can spend your funds. Do not photograph them or type them into anything you do
-            not trust.
+            These values are your key. Anyone who copies them can spend your funds. Do not photograph them.
           </Text>
         </ScrollView>
         <FContainer>

@@ -335,7 +335,7 @@ export default function SavingVaultIntro() {
                             style={{ marginTop: 14 }}
                         >
                             <Text bold style={{ color: colors.green, fontSize: 14 }}>
-                                Optional: create your own entropy via your dice rolls 🎲
+                                Advanced: create your own entropy via your dice rolls 🎲
                             </Text>
                         </TouchableOpacity>
                     )}
