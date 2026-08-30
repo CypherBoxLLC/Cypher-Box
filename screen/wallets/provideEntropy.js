@@ -231,13 +231,45 @@ const Entropy = () => {
     },
   });
 
-  const push = v => v && dispatch({ type: 'push', value: v.value, bits: v.bits });
-  const pop = () => dispatch({ type: 'pop' });
+  // The raw face sequence, kept alongside the bit counter. The counter cannot
+  // see degeneracy: `getEntropy(face, 6)` maps a face to the same value every
+  // time, so N taps of one button push N*2 zero bits and the counter reports
+  // them as full entropy.
+  const [faces, setFaces] = useState([]);
+  const push = v => {
+    if (!v) return;
+    setFaces(f => [...f, `${v.value}:${v.bits}`]);
+    dispatch({ type: 'push', value: v.value, bits: v.bits });
+  };
+  const pop = () => {
+    setFaces(f => f.slice(0, -1));
+    dispatch({ type: 'pop' });
+  };
   const save = () => {
     if (minBits && entropy.bits < minBits) {
       Alert.alert(
         loc.entropy.title,
         `Not enough entropy yet: ${entropy.bits} of ${minBits} bits. Keep rolling until the counter reaches ${minBits}.`,
+      );
+      return;
+    }
+    // Refuse input that plainly carries no entropy, however many bits it
+    // pushed. This is a usability guard, not the security boundary: the seed
+    // is hashed with the device CSPRNG regardless, so a degenerate sequence is
+    // no longer dangerous. It is here so someone who believes they contributed
+    // 128 bits actually did, rather than being quietly carried by the RNG.
+    //
+    // Deliberately crude. It catches the cases a real die cannot produce and a
+    // bored finger easily can, and does not try to judge randomness beyond
+    // that: rejecting a legitimate but unlucky roll would be worse than
+    // accepting a lazy one that the mix already protects.
+    const distinct = new Set(faces).size;
+    if (faces.length >= 8 && distinct <= 2) {
+      Alert.alert(
+        loc.entropy.title,
+        distinct <= 1
+          ? 'Every entry is the same value, so this carries no randomness. Roll a real die and enter what it lands on.'
+          : 'These entries repeat only two values, so this carries very little randomness. Roll a real die and enter what it lands on.',
       );
       return;
     }
