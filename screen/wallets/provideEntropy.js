@@ -280,6 +280,23 @@ const Entropy = () => {
 
   const hex = entropyToHex(entropy);
   const limitDisplay = limit || ENTROPY_LIMIT;
+
+  // Wording and the expected number of throws, per tab. The counter above
+  // measures BITS PUSHED, which is exactly the thing that misled people here
+  // before: it cannot tell a real roll from a repeated tap. So the screen has
+  // to say in words what the number cannot.
+  //
+  // AVG_BITS_PER_THROW is the real yield of `getEntropy`, not log2(sides).
+  // A d6 maps faces 1-4 to 2 bits and faces 5-6 to 1 bit, averaging 10/6, and
+  // a d20 maps 16 values to 4 bits and 4 values to 2 bits, averaging 3.6. The
+  // encoding is lossy but sound: the bits it does emit are uniform, so 128 of
+  // them from real throws really are 128 bits.
+  const isCoin = tab === 0;
+  const sourceNoun = isCoin ? 'coin' : 'die';
+  const landedNoun = isCoin ? 'side' : 'face';
+  const throwsNoun = isCoin ? 'flips' : 'rolls';
+  const AVG_BITS_PER_THROW = [1, 10 / 6, 3.6];
+  const typicalThrows = Math.ceil(limitDisplay / AVG_BITS_PER_THROW[tab]);
   let bits = Math.min(entropy.bits, limitDisplay).toString();
   bits = ' '.repeat(bits.length < 3 ? 3 - bits.length : 0) + bits;
 
@@ -315,7 +332,18 @@ const Entropy = () => {
       {tab === 1 && <Dice sides={6} push={push} />}
       {tab === 2 && <Dice sides={20} push={push} />}
 
-      {instruction ? <Text style={[styles.instructionText, stylesHook.entropyText]}>{instruction}</Text> : null}
+      <View style={styles.guidance}>
+        {instruction ? <Text style={[styles.instructionText, stylesHook.entropyText]}>{instruction}</Text> : null}
+        <Text style={[styles.guidanceHow, stylesHook.entropyText]}>
+          {`${isCoin ? 'Flip' : 'Roll'} a real ${sourceNoun} and tap the ${landedNoun} it lands on. About ${typicalThrows} ${throwsNoun} fills the counter.`}
+        </Text>
+        <Text style={styles.guidanceWarning}>
+          {`Tapping the same ${landedNoun} over and over, or any pattern you make up, adds no randomness. The counter cannot tell the difference, but your key can.`}
+        </Text>
+        <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
+          Your phone always mixes in its own randomness, so doing this can only make your key stronger, never weaker.
+        </Text>
+      </View>
 
       <Buttons pop={pop} save={save} colors={colors} />
     </SafeArea>
@@ -340,12 +368,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: 'Courier',
   },
+  guidance: {
+    marginHorizontal: 20,
+    marginBottom: 90,
+  },
   instructionText: {
     fontSize: 13,
     textAlign: 'center',
-    marginHorizontal: 20,
-    marginBottom: 90,
     opacity: 0.7,
+  },
+  guidanceHow: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 4,
+    opacity: 0.9,
+  },
+  guidanceWarning: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 10,
+    fontWeight: '600',
+    color: '#E0A030',
+  },
+  guidanceCalm: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
+    opacity: 0.6,
   },
   coinRoot: {
     flex: 1,

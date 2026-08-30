@@ -327,7 +327,7 @@ export default function SavingVaultIntro() {
                     {diceEntropy ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
                             <Text bold style={{ color: colors.green, fontSize: 13, flex: 1 }}>
-                                ✓ 128 bits entropy generated via dice rolls
+                                ✓ Dice rolls added, mixed with your phone's randomness
                             </Text>
                             <TouchableOpacity
                                 onPress={() => setDiceEntropy(null)}
@@ -343,7 +343,6 @@ export default function SavingVaultIntro() {
                                 dispatchNavigate('ProvideEntropy', {
                                     minBits: 128,
                                     limit: 128,
-                                    instruction: 'Roll the dice 100 times and select which face it lands to build more entropy for your seedphrase',
                                     onGenerated: (buf: Buffer) => {
                                         if (buf && buf.length >= 16) setDiceEntropy(buf);
                                     },
