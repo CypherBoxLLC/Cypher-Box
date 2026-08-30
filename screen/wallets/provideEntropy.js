@@ -330,7 +330,7 @@ const Entropy = () => {
     if (minBits && entropy.bits < minBits) {
       Alert.alert(
         loc.entropy.title,
-        `Not enough yet. You are at ${entropy.bits} of ${minBits}. Keep rolling until it gets there.`,
+        `Not enough entropy yet: ${entropy.bits} of ${minBits} bits. Keep rolling until the counter reaches ${minBits}.`,
       );
       return;
     }
@@ -422,16 +422,18 @@ const Entropy = () => {
 
           <Text style={styles.verifyWarning}>
             Do this with practice rolls, not your real ones. Typing your real rolls into a website gives away one of the two things
-            protecting this key, and it would then rest on your phone's secure entropy generator only. Either do a practice run with rolls you
-            throw away afterwards, or download Ian Coleman's tool and run it with this device offline.
+            protecting this key, and it would then rest on your phone's secure entropy generator only. The safe way is a practice run: roll
+            a few times, check those, then throw them away and start again for real. If you do want to check your real rolls, put Ian
+            Coleman's tool on a separate computer, disconnect that computer from the internet, and check there. Not on this phone, and never
+            on a website.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check your rolls: type them into Ian Coleman's BIP39 tool and choose Dice. What it shows should match "Your rolls" above. That
-            is what proves this screen read your dice correctly.
+            To check your rolls: on that separate computer, type them into Ian Coleman's BIP39 tool and choose Dice. What it shows should
+            match "Your rolls" above. That is what proves this screen read your dice correctly.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check the result: it is a SHA-256 hash of your rolls followed by your phone's randomness, shortened to 16 bytes. Paste it into
-            the same tool as hex entropy to see the 12 words you are about to get.
+            To check the result: it is a SHA-256 hash of your rolls followed by your phone's randomness, shortened to 16 bytes. Paste it
+            into the same tool as hex entropy to see the 12 words you are about to get.
           </Text>
           <Text style={styles.verifyWarning}>
             These values are your key. Anyone who copies them can spend your money. Do not photograph them.
