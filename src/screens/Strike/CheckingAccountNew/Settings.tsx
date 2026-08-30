@@ -1076,13 +1076,33 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         const claimable = active.filter((v) => v.isClaimable);
         const awaitingHeights: number[] = [];
         let processingCount = 0;
+        // Per-TRANSACTION progress inside the broadcasting phase. Capsule counts
+        // alone leave the panel printing the same sentence for an hour while
+        // levels are actually confirming underneath, which reads as a stall.
+        // AwaitingCpfpBroadcast means its child has not gone out yet; the two
+        // Awaiting*Confirmation states mean it has and we are waiting on a block.
+        let txAwaitingBroadcast = 0;
+        let txAwaitingConfirmation = 0;
         for (const v of active) {
           if (v.isClaimable) continue;
           const h = Number(
             (v.state as { inner?: { claimableHeight?: number } })?.inner?.claimableHeight ?? 0,
           );
-          if (Number.isFinite(h) && h > 0) awaitingHeights.push(h);
-          else processingCount += 1;
+          if (Number.isFinite(h) && h > 0) {
+            awaitingHeights.push(h);
+            continue;
+          }
+          processingCount += 1;
+          const txs =
+            (v.state as { inner?: { transactions?: { status?: { tag?: string } }[] } })
+              ?.inner?.transactions ?? [];
+          for (const tx of txs) {
+            const tag = tx?.status?.tag;
+            if (tag === 'AwaitingCpfpBroadcast') txAwaitingBroadcast += 1;
+            else if (tag === 'AwaitingConfirmation' || tag === 'AwaitingInputConfirmation') {
+              txAwaitingConfirmation += 1;
+            }
+          }
         }
         // Live tip: the exit drive polls it itself and writes it here, which is
         // what made a real countdown possible (the store's tip used to freeze
@@ -1096,6 +1116,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               claimableCount: claimable.length,
               awaitingHeights,
               processingCount,
+              txAwaitingBroadcast,
+              txAwaitingConfirmation,
               tipHeight,
               blockMinutes: AVG_BLOCK_MINUTES,
             }),
