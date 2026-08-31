@@ -358,6 +358,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     coldStorageWalletID,
     arkBalanceDetail,
     arkExitInProgress,
+    arkExitBatteryNoticeDismissed,
+    setArkExitBatteryNoticeDismissed,
     arkExitDestinationAddress,
     arkExitStartedAt,
     arkExitFeeReserveSats,
@@ -2349,6 +2351,63 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               <Text style={{ fontSize: 12, color: '#AAA', marginBottom: 6 }}>
                 {exitPhase.detail}
               </Text>
+            )}
+
+            {/* BATTERY NOTICE, Android only, during an exit only.
+                An earlier version of this banner lived on the auto-refresh
+                setting and was dropped with FGS_DATA_SYNC in v0.1.1. It matters
+                far more here: the exit drive is foreground-only, so on a device
+                that is not battery-exempt the OS suspends the app the moment
+                the screen goes off and the exit stops dead. Measured on a
+                Galaxy A14 2026-08-29: zero progressExits calls and zero log
+                output across a lock window, with the process alive but frozen.
+
+                Deliberately NOT probed. The native
+                isIgnoringBatteryOptimizations() went with the background
+                machinery in b8226f9, so nothing can read the OS allowlist any
+                more. Rather than guess, this asks once and lets the user say it
+                is done; the dismissal is persisted because an exit spans days
+                and many launches.
+
+                Linking.openSettings() opens this app's own settings page,
+                which is where Battery > Unrestricted lives, and is the same
+                call three other prompts in this screen already use. */}
+            {Platform.OS === 'android' && !arkExitBatteryNoticeDismissed && (
+              <View
+                style={{
+                  marginTop: 4,
+                  marginBottom: 8,
+                  padding: 10,
+                  borderRadius: 8,
+                  backgroundColor: 'rgba(251, 146, 60, 0.12)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(251, 146, 60, 0.45)',
+                }}>
+                <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
+                  Set Cypher Box battery to Unrestricted
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
+                  The exit stops while your phone sleeps unless Cypher Box is
+                  allowed to run in the background. Open settings, choose
+                  Battery, and set it to Unrestricted.
+                </Text>
+                <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Linking.openSettings().catch((err) => {
+                        console.warn('[Ark exit battery notice] open settings failed:', err);
+                      });
+                    }}
+                    style={{ marginRight: 18 }}>
+                    <Text bold style={{ fontSize: 12, color: '#FB923C' }}>
+                      Open settings
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setArkExitBatteryNoticeDismissed(true)}>
+                    <Text style={{ fontSize: 12, color: '#888' }}>Already done</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             )}
             {arkExitDestinationAddress && (
               <Text style={{ fontSize: 12, color: '#888' }} numberOfLines={1}>
