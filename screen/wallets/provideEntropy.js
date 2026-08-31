@@ -487,7 +487,7 @@ const Entropy = () => {
           {`Tapping the same ${landedNoun} again and again, or any pattern you make up yourself, does not count as random. The number above still goes up, but your key gets no safer.`}
         </Text>
         <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
-          Your phone always adds randomness of its own as well, so doing this can only make your key safer, never weaker.
+          {`Your phone always adds randomness of its own as well, so adding real ${throwsNoun} can only make your key safer, never weaker.`}
         </Text>
       </View>
 
