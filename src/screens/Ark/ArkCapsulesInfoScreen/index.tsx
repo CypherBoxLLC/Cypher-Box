@@ -158,7 +158,7 @@ export default function ArkCapsulesInfoScreen() {
                     </Body>
                     <Body>
                         Second.tech sets these fees, not Cypher Box, and can change them at
-                        any time. The figures below were checked in August 2026. For the
+                        any time. The figures below were checked in September 2026. For the
                         current schedule, see:
                     </Body>
                     <LinkRow label="second.tech/pricing" url={SECOND_FEES_URL} />
@@ -172,7 +172,7 @@ export default function ArkCapsulesInfoScreen() {
                     />
                     <FeeRow
                         title="Refreshing"
-                        body="Free within 2 days of expiry. 0.2% with under 7 days left, 0.4% with under 14 days left, 0.5% at 14 days or more. The reminders fire inside the cheapest part of that range, so following them costs little or nothing."
+                        body="0.2% with under 2 days left, 0.4% from 2 to 7 days, and 0.5% with more than 7 days left. Refreshing is free while a capsule is inside the short grace window just after expiry. Refreshing early costs the most, so waiting for a reminder is cheaper than refreshing on sight. Reminders fire inside the 0.2% band."
                     />
                     <FeeRow
                         title="Sending over Lightning"

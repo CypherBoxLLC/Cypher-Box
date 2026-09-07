@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, Text as RNText, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, RefreshControl, Text as RNText, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Icon } from "react-native-elements";
 import Svg, { Circle } from "react-native-svg";
@@ -44,6 +44,12 @@ import {
     fetchArkNextRequiredRefreshHeight,
     formatBlocksUntil,
 } from "@Cypher/services/ark/expiry";
+// Same reason as the expiry import above: not re-exported through the barrel.
+import {
+    deriveVaultConnectivity,
+    effectiveChainTip,
+    type VaultConnectivity,
+} from "@Cypher/services/ark/chainTipFreshness";
 import { buildRefreshBatch } from "@Cypher/services/ark/refreshBatch";
 import { buildDeferredVtxoIds } from "@Cypher/services/ark/refreshDeferral";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -1129,9 +1135,99 @@ function RefreshWaitBanner({
     );
 }
 
+/**
+ * Vault connectivity traffic light.
+ *
+ * Exists because the vault UI used to look IDENTICAL whether esplora was
+ * answering or had been unreachable for a day. Every expiry number on this
+ * screen is `expiryHeight - chainTip`, and the cached tip is only overwritten
+ * on a successful fetch, so an outage froze every countdown at its last value
+ * and there was nothing on screen to say so. A frozen "25 days left" read
+ * exactly like a true one, and it failed in the optimistic direction.
+ *
+ * Green is deliberately quiet (a dot and a word) so the only thing that draws
+ * the eye is a vault that has actually lost contact.
+ *
+ * COPY: Bam finalizes. Placeholder strings below are factual but unstyled for
+ * voice, and are the only new user-facing text in this change.
+ */
+function VaultConnectivityPill({ conn }: { conn: VaultConnectivity }) {
+    const { level } = conn;
+    // Reuses the palette already used by the depletion ring in this file so
+    // the status colors read as one system: green #4ADE80, amber via the ark
+    // token, red #FF7A68 (the same red as the stranded-dust warning).
+    const color =
+        level === 'green' ? '#4ADE80' : level === 'yellow' ? colors.ark.light : '#FF7A68';
+
+    // Age is quoted from whichever signal is actually the problem, so the
+    // number the user sees matches the reason given.
+    const ageMs =
+        level === 'green'
+            ? 0
+            : Math.max(conn.tip.ageMs ?? 0, conn.syncAgeMs ?? 0);
+    const ageLabel = formatAgo(ageMs);
+
+    const label =
+        level === 'green'
+            ? 'Vault connected'
+            : level === 'yellow'
+                ? `Vault connection slow (updated ${ageLabel})`
+                : `Vault offline (last updated ${ageLabel})`;
+
+    return (
+        <View style={{ marginBottom: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View
+                    style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: color,
+                        marginRight: 7,
+                    }}
+                />
+                <RNText style={{ fontSize: 12, color, fontWeight: '700' }}>{label}</RNText>
+            </View>
+            {/* Only once the tip is too old to vouch for. The countdowns are
+                still shown (and still tick down, because the tip is advanced
+                by elapsed time rather than frozen), but the user is told they
+                are projections rather than reads. */}
+            {!conn.tip.trusted && (
+                <RNText style={{ fontSize: 11, color: '#ddd', marginTop: 3 }}>
+                    Times below are estimates until the vault reconnects.
+                </RNText>
+            )}
+        </View>
+    );
+}
+
+/**
+ * Coarse "how long ago" for the connectivity pill. Minutes then hours then
+ * days; never seconds, because the pill only appears once the tip is already
+ * minutes old and a ticking seconds counter would read as more precision than
+ * the underlying estimate has.
+ */
+function formatAgo(ms: number): string {
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${Math.max(1, mins)}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+}
+
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [refreshing, setRefreshing] = useState(false);
+    // Pull-to-refresh spinner. Deliberately NOT `refreshing` above: that one
+    // gates the round-submission path (dust sweep / per-row refresh), and
+    // reusing it would spin the list control whenever a round is being
+    // submitted and, worse, let a pull gesture read as a queued round.
+    const [pullRefreshing, setPullRefreshing] = useState(false);
+    // In-flight latch for the pull gesture. A ref, not the state above:
+    // setState is async, so two quick pulls can both pass a state check
+    // before either render lands. Same reason the round paths keep their
+    // own latches (see arkRefreshingVtxoIds, which is not a mutex).
+    const pullRefreshInFlight = useRef(false);
     // True between cancel-tap and the round actually clearing (NOT just
     // until our cancel call returns). bark's cancel can return failure
     // due to a transient internal-lock timeout while the round itself
@@ -1145,7 +1241,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const arkRefreshingVtxoIds = useAuthStore((s) => s.arkRefreshingVtxoIds);
     const arkPendingLnReceives = useAuthStore((s) => s.arkPendingLnReceives);
     const setArkPendingLnReceives = useAuthStore((s) => s.setArkPendingLnReceives);
-    const chainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
+    const rawChainTipHeight = useAuthStore((s) => s.arkChainTipHeight);
+    // Epoch ms the tip above was read. Already stamped by setArkChainTipHeight;
+    // until now its only consumer was the exit-funding triage, so the capsule
+    // countdowns trusted a tip of any age.
+    const arkChainTipHeightAt = useAuthStore((s) => s.arkChainTipHeightAt);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
     // Read-only on this screen — the toggle lives on the Ark Settings
@@ -1177,6 +1277,116 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // Consecutive refresh failures, drives the per-row "N refresh attempts
     // failed" copy while a capsule is stuck mid-refresh.
     const arkRefreshFailStreak = useAuthStore((s) => s.arkRefreshFailStreak);
+
+    // Slow clock for the staleness derivations below. 30s rather than the 1s
+    // used by the in-flight round countdown: the thresholds it feeds are
+    // minutes wide, and re-deriving the row list every second would be pure
+    // waste on a wallet with many capsules. It exists at all because the
+    // connectivity pill has to degrade on its own: if the sync loop is the
+    // thing that is wedged, no store write will arrive to re-render us.
+    const [nowTick, setNowTick] = useState(() => Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setNowTick(Date.now()), 30_000);
+        return () => clearInterval(t);
+    }, []);
+
+    /**
+     * The tip to actually compute expiry against.
+     *
+     * `arkChainTipHeight` is only written on a SUCCESSFUL esplora read, and
+     * the store is persisted with no partialize, so on an outage (or a cold
+     * launch with no connectivity) this screen used to render
+     * `expiryHeight - <last good tip>` and freeze every countdown at the value
+     * it had when contact was lost. That is the unsafe direction: it tells the
+     * user they have more runway than they do, and it survives the force-quit
+     * they would use to try to clear it.
+     *
+     * Advancing the cached tip by the elapsed block count is an estimate, but
+     * it is wrong in the direction that costs a round fee rather than the
+     * direction that costs the capsule. See services/ark/chainTipFreshness.
+     */
+    const chainTipHeight = useMemo(
+        () =>
+            effectiveChainTip({
+                tip: rawChainTipHeight,
+                fetchedAtMs: arkChainTipHeightAt,
+                nowMs: nowTick,
+            }),
+        [rawChainTipHeight, arkChainTipHeightAt, nowTick],
+    );
+
+    // Traffic light for the header. Folds in the sync stamp as well as the
+    // tip, because the two fail independently (esplora can answer while the
+    // wallet handle is wedged, and vice versa).
+    const connectivity = useMemo(
+        () =>
+            deriveVaultConnectivity({
+                tipFetchedAtMs: arkChainTipHeightAt,
+                lastSyncedAtMs: arkLastSyncedAt,
+                nowMs: nowTick,
+            }),
+        [arkChainTipHeightAt, arkLastSyncedAt, nowTick],
+    );
+
+    /**
+     * Pull-to-refresh: run the same read sequence the 30s `useArkSync` tick
+     * runs, on demand. Purely an affordance for "I am waiting on a Lightning
+     * receive to land" (and for on-device triage). It submits nothing.
+     *
+     * Same three calls, in the same order, as the pre-submit resync in
+     * `handleDustRefresh`: `syncArkWallet()` pulls round finalisations and
+     * incoming payments into the local datadir, then balance + vtxos read
+     * that datadir back into zustand, which is what re-renders this list.
+     *
+     * We do not touch `arkLastSyncedAt`, which is useArkSync's own cycle
+     * marker, and bumping it from here would fake a completed tick for every
+     * other screen keyed off it (ArkHistory reloads, the next-refresh-due
+     * effect below). The store writes inside fetchArkBalance/fetchArkVtxos
+     * are what this list actually renders from, so it updates regardless.
+     *
+     * Overlap with the tick is tolerable and already the norm on this screen
+     * (the dust resync and the stuck-round cancel both call `syncArkWallet`
+     * directly, and `syncArkWallet` carries its own exit-in-progress guard
+     * precisely because of that). The latch below only stops this gesture
+     * from stacking on itself.
+     */
+    const onPullRefresh = useCallback(() => {
+        if (pullRefreshInFlight.current) return;
+        pullRefreshInFlight.current = true;
+        setPullRefreshing(true);
+        void (async () => {
+            try {
+                await syncArkWallet();
+                await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+            } catch (err: any) {
+                console.warn(
+                    '[Ark pull-refresh] sync failed, keeping last-known state:',
+                    err?.message ?? err,
+                );
+                // Say so. A silent failure here is worse than no gesture at
+                // all: the user pulls, sees a spinner, sees the countdown not
+                // move, and reads that as "confirmed, still 25 days" when the
+                // truth is that we never reached the chain. The connectivity
+                // pill above is the persistent signal; this is the immediate
+                // one for the person who just asked.
+                //
+                // COPY: Bam finalizes the context prefix. Deliberately NOT
+                // "Refresh failed" (used below for a round submission) since
+                // this gesture submits nothing. The remedy text after the
+                // prefix is the existing shared network-fault copy.
+                SimpleToast.show(
+                    describeArkFailure(err, "Couldn't update", {
+                        chainUrls: ESPLORA_URLS,
+                        arkUrl: ARK_SERVER_URL,
+                    }),
+                    SimpleToast.LONG,
+                );
+            } finally {
+                pullRefreshInFlight.current = false;
+                setPullRefreshing(false);
+            }
+        })();
+    }, []);
 
     // Recover a stuck refresh from the Capsules tab. Mirrors the home-card
     // handler in ArkWallet — but that banner is invisible to a user sitting
@@ -2315,6 +2525,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 The on/off line is read-only — the actual toggle lives on
                 the Ark Settings tab. */}
             <View style={{ marginHorizontal: 20, marginTop: 14, marginBottom: 8, alignItems: 'flex-start' }}>
+                {/* Connectivity first: it qualifies every number below it.
+                    Every expiry figure on this screen is derived from the
+                    chain tip, so "can we currently see the chain" has to be
+                    readable before the countdowns are, not buried under
+                    them. */}
+                <VaultConnectivityPill conn={connectivity} />
                 <Text bold style={{ fontSize: 16, color: '#FFF', marginBottom: 6 }}>
                     Reminders:{' '}
                     <Text
@@ -2546,6 +2762,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 data={rows}
                 keyExtractor={(item) => item.id}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={pullRefreshing}
+                        onRefresh={onPullRefresh}
+                        tintColor="white"
+                    />
+                }
                 renderItem={({ item }) => (
                     <VtxoRow
                         vtxo={item}
