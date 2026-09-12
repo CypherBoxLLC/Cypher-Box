@@ -36,7 +36,17 @@ import { recordTelemetry } from './backgroundTelemetry';
  * best-effort backstop, and manual refresh remains the reliable habit we want
  * users to keep. The persisted flag name (arkBgRefreshEnabled) is unchanged.
  */
-export async function setArkBackgroundRefreshEnabled(enabled: boolean): Promise<void> {
+export async function setArkBackgroundRefreshEnabled(
+    enabled: boolean,
+    options: { requestNotificationPermission?: boolean } = {},
+): Promise<void> {
+    // requestNotificationPermission: pass false to arm reminders WITHOUT
+    // firing the OS permission dialog. The create flow uses that, because the
+    // dialog used to appear before the "Bark Vault Created!" screen had
+    // explained what reminders are for, so users were granting or denying a
+    // permission with no context. That screen now asks for consent in its own
+    // words when the user leaves it, and requests the OS permission only then.
+    const { requestNotificationPermission = true } = options;
     const store = useAuthStore.getState();
 
     if (enabled) {
@@ -54,10 +64,12 @@ export async function setArkBackgroundRefreshEnabled(enabled: boolean): Promise<
         // Request notification permission so the expiry reminders can
         // surface. The reminders work either way; declining just means the
         // user relies on the in-app banner as their signal.
-        try {
-            await ensureBgNotificationPermission();
-        } catch (notifErr) {
-            console.warn('[Ark reminders] notification permission threw:', notifErr);
+        if (requestNotificationPermission) {
+            try {
+                await ensureBgNotificationPermission();
+            } catch (notifErr) {
+                console.warn('[Ark reminders] notification permission threw:', notifErr);
+            }
         }
         // Acquire a push token so the server can wake this device before a
         // capsule expires. ensureBgNotificationPermission only unlocks LOCAL
