@@ -414,7 +414,12 @@ export default StyleSheet.create<Style>({
         borderRadius: 25,
         width: widths - 40,
         height: 128,
+        // Black fill on a black page: the white outline is what defines the
+        // card's edge, not a contrasting fill. (A grayish '#1E1E1E' fill was
+        // tried here and rejected.)
         backgroundColor: '#111111',
+        borderWidth: 1,
+        borderColor: '#FFFFFF',
         padding: 15,
         paddingStart: 20,
         paddingEnd: 10,

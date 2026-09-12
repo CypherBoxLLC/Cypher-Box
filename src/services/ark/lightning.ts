@@ -14,9 +14,70 @@ export type ArkLightningReceiveView = {
     paymentHash: string;
     invoice: string;
     amountSats: number;
+    /**
+     * Raw SDK progress string:
+     * "awaiting-payment" | "htlcs-ready" | "preimage-revealed" | "delivering" | "settled"
+     */
+    state: string;
+    /** Derived: money is parked at the ASP (state "htlcs-ready" or later). */
     hasHtlcVtxos: boolean;
+    /** Derived: preimage revealed (state "preimage-revealed" or later). */
     preimageRevealed: boolean;
 };
+
+/**
+ * Receive progress in order.
+ *
+ * bark core 0.6.1 (SDK 0.16.1) REPLACED the boolean pair `hasHtlcVtxos` /
+ * `preimageRevealed` on `LightningReceive` with this single `state` string.
+ * Reading the old fields off the new record yields `undefined`, which is
+ * falsy, so every consumer silently decided nothing was ever in flight:
+ * in-flight receives vanished from the UI and the swap settlement check
+ * never fired. We keep the two booleans on our own view type and DERIVE
+ * them here, so call sites stay unchanged and there is exactly one place
+ * that knows the SDK's encoding.
+ */
+const RECEIVE_STATE_ORDER = [
+    'awaiting-payment',
+    'htlcs-ready',
+    'preimage-revealed',
+    'delivering',
+    'settled',
+] as const;
+
+type RawLightningReceive = {
+    paymentHash: string;
+    invoice: string;
+    amountSats: bigint;
+    state: string;
+};
+
+/**
+ * Map an SDK `LightningReceive` onto our view.
+ *
+ * Unknown state: we rank it as "awaiting-payment", i.e. NOT in flight, and
+ * warn. That direction is deliberate. Inventing "the money is here" from a
+ * string we do not recognise is the worse failure for a wallet, and the warn
+ * makes a future SDK rename loud instead of silent, which is precisely what
+ * went wrong the last time this struct changed.
+ */
+function toReceiveView(r: RawLightningReceive): ArkLightningReceiveView {
+    const rank = (RECEIVE_STATE_ORDER as readonly string[]).indexOf(r.state);
+    if (rank < 0) {
+        console.warn(
+            '[Ark LN recv] unrecognised receive state:', r.state,
+            '- treating as awaiting-payment. The SDK struct may have changed again.',
+        );
+    }
+    return {
+        paymentHash: r.paymentHash,
+        invoice: r.invoice,
+        amountSats: Number(r.amountSats),
+        state: r.state,
+        hasHtlcVtxos: rank >= 1,
+        preimageRevealed: rank >= 2,
+    };
+}
 
 
 /**
@@ -95,16 +156,10 @@ export async function tryClaimArkLightningReceives(): Promise<ArkLightningReceiv
             'receives:',
             raw.map(
                 (r) =>
-                    `${Number(r.amountSats)}sats hasHtlc=${r.hasHtlcVtxos} preimageRevealed=${r.preimageRevealed} hash=${r.paymentHash.slice(0, 12)}…`,
+                    `${Number(r.amountSats)}sats state=${r.state} hash=${r.paymentHash.slice(0, 12)}…`,
             ),
         );
-        return raw.map((r) => ({
-            paymentHash: r.paymentHash,
-            invoice: r.invoice,
-            amountSats: Number(r.amountSats),
-            hasHtlcVtxos: r.hasHtlcVtxos,
-            preimageRevealed: r.preimageRevealed,
-        }));
+        return raw.map((r) => toReceiveView(r));
     } catch (err) {
         // Intermittent ASP unavailability or network flake — not worth
         // surfacing to the user. The 30s sync will retry. Logged in detail
@@ -213,13 +268,7 @@ export async function fetchArkPendingLightningReceives(): Promise<ArkLightningRe
 
     try {
         const raw = await handle.pendingLightningReceives();
-        return raw.map((r) => ({
-            paymentHash: r.paymentHash,
-            invoice: r.invoice,
-            amountSats: Number(r.amountSats),
-            hasHtlcVtxos: r.hasHtlcVtxos,
-            preimageRevealed: r.preimageRevealed,
-        }));
+        return raw.map((r) => toReceiveView(r));
     } catch (err) {
         console.warn('[Ark claim] pendingLightningReceives failed:', err);
         return [];
@@ -335,17 +384,15 @@ export async function getArkLightningReceiveStatus(
     if (!handle) return null;
 
     try {
-        const raw = await handle.lightningReceiveStatus(paymentHash);
+        // Renamed in SDK 0.16.1: lightningReceiveStatus -> lightningReceiveState.
+        // The old name no longer exists on the handle, so this threw a
+        // "not a function" TypeError on every call and the status probe
+        // always returned null through the catch below.
+        const raw = await handle.lightningReceiveState(paymentHash);
         if (!raw) return null;
-        return {
-            paymentHash: raw.paymentHash,
-            invoice: raw.invoice,
-            amountSats: Number(raw.amountSats),
-            hasHtlcVtxos: raw.hasHtlcVtxos,
-            preimageRevealed: raw.preimageRevealed,
-        };
+        return toReceiveView(raw);
     } catch (err) {
-        console.warn('[Ark cancel-ln-recv] lightningReceiveStatus failed:', err);
+        console.warn('[Ark cancel-ln-recv] lightningReceiveState failed:', err);
         return null;
     }
 }

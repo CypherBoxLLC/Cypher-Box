@@ -23,12 +23,40 @@ const BG_KEYCHAIN_SERVICE = 'ark-seed-phrase-bg';
 const BG_KEYCHAIN_ACCOUNT = 'ark';
 
 /**
+ * Did the user consent to keeping the seed on this device?
+ *
+ * `arkWallet.keychainSaved` records the outcome of the "save seed to Keystore"
+ * choice at create (ArkSeedPhraseScreen's toggle) and at recover. When it is
+ * not true, the user either declined or the save did not succeed, and in both
+ * cases there should be NO seed material sitting on the device.
+ *
+ * Anything other than an explicit `true` FAILS CLOSED, including wallets
+ * created before the field existed. Losing the unattended maintenance backstop
+ * is the lesser harm: the documented primary expectation is that the user
+ * opens the app before expiry, whereas the alternative is an un-gated copy of
+ * a mnemonic the user never agreed to store.
+ */
+function seedOnDeviceConsented(): boolean {
+    return useAuthStore.getState().arkWallet?.keychainSaved === true;
+}
+
+/**
  * Mirror the seed into the background-readable entry. Call ONLY with the
  * mnemonic already in hand (foreground — e.g. `getCachedArkMnemonic()` or just
  * after a wallet open). We never read the biometry-gated primary from here.
  */
 export async function writeBackgroundArkSeed(mnemonic: string): Promise<void> {
     if (!mnemonic) return;
+    if (!seedOnDeviceConsented()) {
+        // Arming the reminders toggle used to write this copy unconditionally,
+        // so a user who turned OFF "save seed to Keystore" still got their full
+        // 12 words written here with NO biometric gate, readable with a plain
+        // getGenericPassword by anyone holding the unlocked phone. Refuse, and
+        // clean up any copy an earlier build already wrote.
+        console.warn('[Ark bg] seed mirror skipped: no on-device seed consent recorded');
+        await deleteBackgroundArkSeed();
+        return;
+    }
     await Keychain.setGenericPassword(BG_KEYCHAIN_ACCOUNT, mnemonic, {
         service: BG_KEYCHAIN_SERVICE,
         // No accessControl: a background wake cannot answer a biometric prompt.
@@ -61,6 +89,13 @@ export async function ensureBackgroundArkSeed(mnemonic: string): Promise<void> {
     if (!mnemonic) return;
     try {
         if (!useAuthStore.getState().arkBgRefreshEnabled) return;
+        if (!seedOnDeviceConsented()) {
+            // Self-heal on every wallet open: remove a mirror written before
+            // this gate existed. Checked BEFORE the early-return below, which
+            // would otherwise treat an existing unwanted copy as "done".
+            await deleteBackgroundArkSeed();
+            return;
+        }
         if (await readBackgroundArkSeed()) return;
         await writeBackgroundArkSeed(mnemonic);
     } catch {

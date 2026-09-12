@@ -27,7 +27,7 @@ export const BlueStorageProvider = ({ children }) => {
   const getLanguageAsyncStorage = useAsyncStorage(LOC_STORAGE_KEY).getItem;
   const [isHandOffUseEnabled, setIsHandOffUseEnabled] = useState(false);
   const [isElectrumDisabled, setIsElectrumDisabled] = useState(true);
-  const [isPrivacyBlurEnabled, setIsPrivacyBlurEnabled] = useState(true);
+  const [isPrivacyBlurEnabled, setIsPrivacyBlurEnabled] = useState(false);
   const [currentSharedCosigner, setCurrentSharedCosigner] = useState('');
 
   useEffect(() => {
@@ -36,9 +36,6 @@ export const BlueStorageProvider = ({ children }) => {
 
   useEffect(() => {
     console.log(`Privacy blur: ${isPrivacyBlurEnabled}`);
-    if (!isPrivacyBlurEnabled) {
-      alert('Privacy blur has been disabled.');
-    }
   }, [isPrivacyBlurEnabled]);
 
   const setIsHandOffUseEnabledAsyncStorage = value => {

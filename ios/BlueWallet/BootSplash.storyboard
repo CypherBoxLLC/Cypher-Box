@@ -24,7 +24,11 @@
                             </imageView>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="Bcu-3y-fUS"/>
-                        <color key="backgroundColor" red="0.117647058823529" green="0.117647058823529" blue="0.117647058823529" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <!-- Standard dark. Was 0.117647 on all channels, i.e. #1E1E1E, which
+                             matched the old grayish app background and now flashes grey into a
+                             black app. Keep in step with bootsplash_background in
+                             android/app/src/main/res/values/colors.xml and colors.primary. -->
+                        <color key="backgroundColor" red="0" green="0" blue="0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="3lX-Ut-9ad" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="Fh9-Fy-1nT"/>
                             <constraint firstItem="3lX-Ut-9ad" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="nvB-Ic-PnI"/>

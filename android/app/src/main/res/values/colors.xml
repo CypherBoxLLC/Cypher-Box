@@ -1,5 +1,11 @@
 <resources>
     <color name="white">#FFF</color>
-    <color name="background_color">#1e1e1e</color>
-    <color name="bootsplash_background">#1E1E1E</color>
+    <!-- Standard dark, kept in step with colors.primary in
+         src/style-guide/colors.ts. Both were the grayish #1e1e1e.
+         bootsplash_background is the one that actually mattered: values-night
+         already overrode background_color to #000000, but never overrode the
+         splash color, so BootTheme painted grayish in every mode and the
+         splash flashed grey into a black app. -->
+    <color name="background_color">#000000</color>
+    <color name="bootsplash_background">#000000</color>
 </resources>

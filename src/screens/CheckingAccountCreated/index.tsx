@@ -12,7 +12,7 @@ import { formatNumber } from "@Cypher/helpers/coinosHelper";
 import { Picker } from "@react-native-picker/picker";
 import Modal from "react-native-modal";
 import { useRoute } from "@react-navigation/native";
-import { setArkBackgroundRefreshEnabled } from "@Cypher/services/ark";
+import { ensureBgNotificationPermission, setArkBackgroundRefreshEnabled } from "@Cypher/services/ark";
 import styles from "./styles";
 import LightningVaultCreate from "@Cypher/components/LightningVaultCreate/LightningVaultCreate";
 
@@ -44,7 +44,9 @@ export default function CheckingAccountCreated() {
         if (togglingBgRefresh) return;
         setTogglingBgRefresh(true);
         try {
-            await setArkBackgroundRefreshEnabled(next);
+            // No OS prompt from the toggle itself. Consent is asked once, in
+            // plain words, when the user leaves this screen.
+            await setArkBackgroundRefreshEnabled(next, { requestNotificationPermission: false });
         } catch (err: any) {
             console.warn("[Ark vault created] bg-refresh toggle failed:", err);
             SimpleToast.show(
@@ -84,7 +86,7 @@ export default function CheckingAccountCreated() {
         }
     };
 
-    const nextClickHandler = () => {
+    const goHome = () => {
         console.log('next click');
         if (isArk) {
             setFirstTimeArk(false);
@@ -100,6 +102,45 @@ export default function CheckingAccountCreated() {
                 isComplete: true
             });
         }
+    }
+
+    /**
+     * Notification consent, asked in context.
+     *
+     * The OS permission dialog used to fire during create, before this screen
+     * mounted, so the user answered it with no idea what it was for. Create no
+     * longer prompts (ArkSeedPhraseScreen now passes
+     * requestNotificationPermission: false). Instead, if the user leaves this
+     * screen with the reminders toggle still on, we explain what the reminders
+     * do and request the OS permission only on a yes.
+     *
+     * Wired to BOTH exits (the Home button and the close X). Asking on only
+     * one would leave a path where reminders read as ON while the OS
+     * permission was never requested, which on Android 13+ means every
+     * reminder is silently dropped.
+     */
+    const nextClickHandler = async () => {
+        if (isArk && arkBgRefreshEnabled) {
+            const wantsReminders = await new Promise<boolean>(resolve => {
+                Alert.alert(
+                    'Enable bark notifications to get VTXO capsule refresh reminders?',
+                    'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, recovery is not guaranteed once a capsule expires.',
+                    [
+                        { text: 'No', style: 'cancel', onPress: () => resolve(false) },
+                        { text: 'Yes', onPress: () => resolve(true) },
+                    ],
+                    { cancelable: false },
+                );
+            });
+            if (wantsReminders) {
+                try {
+                    await ensureBgNotificationPermission();
+                } catch (err) {
+                    console.warn('[Ark vault created] notification permission threw:', err);
+                }
+            }
+        }
+        goHome();
     }
 
     const nextClickInitiate = () => {
@@ -197,9 +238,6 @@ export default function CheckingAccountCreated() {
                                     • Your encrypted backup file (.cbark). Periodically check on it via Bark Vault → Settings. Both the seed AND the backup file are required to recover funds.
                                 </Text>
 
-                                <Text h4 style={[styles.descption, { fontSize: 13, marginTop: 18, color: accentColor }]}>
-                                    ⚠ Experimental, use as novel hot wallet software.
-                                </Text>
                             </ScrollView>
                         </>
                     ) : (
