@@ -1,6 +1,10 @@
 
 const colors = {
-  primary: '#1E1E1E',
+  // EXPERIMENT: standard dark. Was '#1E1E1E' (grayish dark). Revert to that
+  // one value to undo. This token is the app background (ScreenLayout) and
+  // drives ~94 backgroundColor sites; the ~16 non-background uses treat it as
+  // a dark foreground where the shift to pure black is imperceptible.
+  primary: '#000000',
 
   pink: {
     default: 'rgba(214, 23, 161, 0.9)',
