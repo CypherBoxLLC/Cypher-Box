@@ -21,6 +21,7 @@ import {
     lookupArkBackupOnDrive,
     ArkRestoreApplyError,
     restoreArkBackupBlob,
+    saveArkSeedToKeychain,
     setArkBackgroundRefreshEnabled,
 } from "@Cypher/services/ark";
 import type { ChannelLookupResult } from "@Cypher/services/ark";
@@ -32,12 +33,15 @@ import { colors } from "@Cypher/style-guide";
 import styles from "./styles";
 
 /**
- * Keychain convention — MUST match ArkSeedPhraseScreen / recover.ts / reset.ts.
+ * Keychain convention: MUST match seedKeychain.ts / recover.ts / reset.ts.
  * If these drift, the next session can't unlock the seed and the on-chain
  * sidecar (`ensureArkOnchainHandle`) will fail with "seed not in Keychain".
+ *
+ * Only the service name is needed here now, for the read paths. The WRITE
+ * lives in src/services/ark/seedKeychain.ts so the biometric-gate check
+ * cannot be forgotten at one call site and applied at another.
  */
 const KEYCHAIN_SERVICE = "ark-seed-phrase";
-const KEYCHAIN_ACCOUNT = "ark";
 
 const inputs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
@@ -111,7 +115,16 @@ export default function RecoverArkScreen() {
                 setKeychainHasSeed(
                     Array.isArray(services) && services.includes(KEYCHAIN_SERVICE),
                 );
-            } catch {
+            } catch (probeErr: any) {
+                // Do NOT swallow this silently. If the metadata probe throws,
+                // the biometric fast path vanishes and the user is dropped into
+                // the 12-word grid with no explanation, which is
+                // indistinguishable from "no seed is stored". Log it so the
+                // two cases can be told apart on a real device.
+                console.warn(
+                    '[Ark recover] keychain service probe failed:',
+                    probeErr?.message ?? probeErr,
+                );
                 setKeychainHasSeed(false);
             }
         })();
@@ -255,29 +268,43 @@ export default function RecoverArkScreen() {
             });
             if (!proceed) {
                 // Skip the keychain write. Wallet stays open this session;
-                // user types seed next time. Not an error.
-                return;
+                // user types seed next time. Not an error, but the seed is
+                // NOT on this device, and the caller must record that.
+                return false;
             }
         }
 
-        try {
-            await Keychain.setGenericPassword(KEYCHAIN_ACCOUNT, mnemonic, {
-                service: KEYCHAIN_SERVICE,
-                accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
-                accessible: Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
-            });
-        } catch (err) {
-            // Wallet's already restored & open — non-fatal warning.
-            console.warn(`[Ark restore] Keychain save failed (${label}):`, err);
+        const saved = await saveArkSeedToKeychain(mnemonic);
+        if (!saved.ok) {
+            // Wallet is already restored and open, so this is non-fatal. The
+            // user can operate this session and type the seed next time.
+            if (saved.kind === 'no-biometric-gate') {
+                console.warn(
+                    `[Ark restore] seed NOT saved (${label}): no biometric gate, storage=`,
+                    saved.storage,
+                );
+                Alert.alert(
+                    "Seed not saved on this device",
+                    "This device has no fingerprint set up, so the seed was not stored behind one and nothing was saved. Keep your 12 words safe, you will need them next time.",
+                );
+            } else {
+                console.warn(`[Ark restore] Keychain save failed (${label}):`, saved.reason);
+            }
         }
+        return saved.ok;
     };
 
-    const finalizeWallet = async (mnemonic: string, restoredFrom?: string) => {
+    const finalizeWallet = async (mnemonic: string, restoredFrom?: string, keychainSaved: boolean = true) => {
         const wallet = {
             id: `ark-${Date.now()}`,
             createdAt: new Date().toISOString(),
             useHotVaultSeed: false,
-            keychainSaved: true,
+            // Must reflect what ACTUALLY happened. This flag is the consent
+            // signal gating the non-biometric background seed mirror in
+            // backgroundKeychain.ts, so hardcoding `true` after a save that
+            // was skipped, refused, or downgraded would reopen the very hole
+            // that gate exists to close.
+            keychainSaved,
             restored: true,
             restoredFrom: restoredFrom ?? null,
             backupDestination: null,
@@ -392,9 +419,9 @@ export default function RecoverArkScreen() {
             if (__DEV__) console.log('[Ark restore] legacy v1 try-decrypt failed:', err?.message ?? err);
             return false;
         }
-        await persistSeedToKeychain(mnemonic, keychainLabel);
+        const seedStored = await persistSeedToKeychain(mnemonic, keychainLabel);
         setRestoring(false);
-        await finalizeWallet(mnemonic, finalizeChannel);
+        await finalizeWallet(mnemonic, finalizeChannel, seedStored);
         return true;
     };
 
@@ -709,19 +736,29 @@ export default function RecoverArkScreen() {
             }
         }
 
-        try {
-            await Keychain.setGenericPassword(KEYCHAIN_ACCOUNT, mnemonic, {
-                service: KEYCHAIN_SERVICE,
-                accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
-                accessible: Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
-            });
-        } catch (err: any) {
-            console.warn("[Ark recover] Keychain save failed:", err);
-            setSubmitting(false);
-            setErrorMsg(
-                `Couldn't save the seed to Keychain: ${err?.message ?? "unknown error"}. Recovery aborted to keep state consistent.`,
-            );
-            return;
+        const savedSeed = await saveArkSeedToKeychain(mnemonic);
+        if (!savedSeed.ok) {
+            if (savedSeed.kind === 'no-biometric-gate') {
+                // Do NOT abort here. The user can still recover and use the
+                // wallet; they just do not get the biometric fast path next
+                // time. Blocking recovery over a missing fingerprint would be
+                // a worse outcome than recovering without the saved seed.
+                console.warn(
+                    '[Ark recover] seed not saved: no biometric gate, storage=',
+                    savedSeed.storage,
+                );
+                Alert.alert(
+                    "Seed not saved on this device",
+                    "This device has no fingerprint set up, so the seed was not stored behind one. Recovery continues. Keep your 12 words safe, you will need them next time.",
+                );
+            } else {
+                console.warn("[Ark recover] Keychain save failed:", savedSeed.reason);
+                setSubmitting(false);
+                setErrorMsg(
+                    `Couldn't save the seed to Keychain: ${savedSeed.reason}. Recovery aborted to keep state consistent.`,
+                );
+                return;
+            }
         }
 
         try {
@@ -739,7 +776,10 @@ export default function RecoverArkScreen() {
         }
 
         setSubmitting(false);
-        await finalizeWallet(mnemonic);
+        // savedSeed.ok is false when the biometric gate could not be applied
+        // (we continued the recovery deliberately), so the wallet record must
+        // not claim the seed is on this device.
+        await finalizeWallet(mnemonic, undefined, savedSeed.ok);
     };
 
     const cloudLabel = Platform.OS === 'ios' ? 'iCloud Drive' : 'Google Drive';

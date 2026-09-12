@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { ActivityIndicator, Alert, Image, Platform, ScrollView, Switch, TouchableOpacity, View } from "react-native";
 import { BlurView } from "@react-native-community/blur";
 import { useRoute } from "@react-navigation/native";
-import * as Keychain from "react-native-keychain";
 import Share from "react-native-share";
 import SimpleToast from "react-native-simple-toast";
 
@@ -22,6 +21,7 @@ import {
     messageForSafError,
     pickSafBackupFolder,
     resetArkWalletState,
+    saveArkSeedToKeychain,
     setArkBackgroundRefreshEnabled,
     writeAndVerifyArkBackup,
     writeArkBackupToTempFile,
@@ -65,8 +65,9 @@ import styles from "./styles";
  * `accessGroup`. Brings cross-device auto-restore but extends trust to Apple's
  * E2E. Surface as a separate, off-by-default toggle.
  */
-const KEYCHAIN_SERVICE = "ark-seed-phrase";
-const KEYCHAIN_ACCOUNT = "ark";
+// The keychain service/account constants and the write itself now live in
+// src/services/ark/seedKeychain.ts, which also verifies that the biometric
+// gate was actually applied before reporting success.
 
 /**
  * Wallet DB backup destinations.
@@ -553,19 +554,27 @@ export default function ArkSeedPhraseScreen() {
             }
         }
 
-        try {
-            await Keychain.setGenericPassword(KEYCHAIN_ACCOUNT, mnemonic || "", {
-                service: KEYCHAIN_SERVICE,
-                accessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
-                accessible: Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
-            });
+        // saveArkSeedToKeychain verifies the biometric gate was actually
+        // applied. A plain setGenericPassword can resolve successfully while
+        // silently falling back to a NON auth-bound cipher, which stored an
+        // unprotected seed and reported it as protected.
+        const saved = await saveArkSeedToKeychain(mnemonic || "");
+        if (saved.ok) {
             setKeychainStatus("ok");
             return 'ok';
-        } catch (err) {
-            console.warn("[Ark] Keychain save failed:", err);
+        }
+        if (saved.kind === 'no-biometric-gate') {
+            console.warn('[Ark] seed NOT saved: no biometric gate, storage=', saved.storage);
+            Alert.alert(
+                "Seed not saved on this device",
+                "Your seed was not saved behind a fingerprint, because this device has no strong biometric set up right now. Nothing was stored, so write your 12 words down and keep them safe.",
+            );
             setKeychainStatus("err");
             return 'error';
         }
+        console.warn("[Ark] Keychain save failed:", saved.reason);
+        setKeychainStatus("err");
+        return 'error';
     };
 
     /**
@@ -781,7 +790,11 @@ export default function ArkSeedPhraseScreen() {
         // try/catch so a permission failure doesn't block the create
         // flow. The user can flip the toggle off any time from Settings.
         try {
-            await setArkBackgroundRefreshEnabled(true);
+            // requestNotificationPermission: false — do NOT prompt here. This
+            // runs before CheckingAccountCreated mounts, so the OS dialog used
+            // to land on the user before anything had explained what capsule
+            // reminders are. That screen asks for consent on exit instead.
+            await setArkBackgroundRefreshEnabled(true, { requestNotificationPermission: false });
         } catch (err) {
             console.warn("[Ark create] failed to arm reminders:", err);
         }

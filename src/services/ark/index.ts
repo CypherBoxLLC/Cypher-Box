@@ -200,6 +200,9 @@ export type { ArkRefreshFeeView, ArkRefreshResult, ArkDelegatedRefreshResult } f
 
 export { setArkBackgroundRefreshEnabled } from './backgroundRefresh';
 
+export { saveArkSeedToKeychain } from './seedKeychain';
+export type { SaveArkSeedResult } from './seedKeychain';
+
 export { maybeSweepDueArkVtxos, maybeSweepDustArkVtxos } from './foregroundSweep';
 
 export {
