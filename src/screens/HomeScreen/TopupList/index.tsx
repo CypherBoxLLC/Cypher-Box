@@ -322,7 +322,9 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
     <>
       <LinearGradient
         start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }}
-        colors={[colors.pink.gradient1, colors.pink.gradient2]}
+        // Neutral rim, not pink: `gradientLine`'s paddingTop shows this outer
+        // gradient as a strip on the sheet's top edge only.
+        colors={[colors.black.gradientTop, colors.black.gradientBottom]}
         style={withdrawStyles.gradientLine}
       >
         <LinearGradient

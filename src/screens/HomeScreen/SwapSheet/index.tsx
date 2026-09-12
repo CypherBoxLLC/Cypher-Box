@@ -217,7 +217,10 @@ export default function SwapSheet({
         <LinearGradient
             start={{ x: 0, y: 1 }}
             end={{ x: 1, y: 1 }}
-            colors={[colors.pink.gradient1, colors.pink.gradient2]}
+            // Neutral rim, not pink. `gradientLine` has paddingTop: 3, so
+            // inside a bottom sheet this outer gradient is visible only as a
+            // strip along the top edge, which read as a stray pink outline.
+            colors={[colors.black.gradientTop, colors.black.gradientBottom]}
             style={styles.gradientLine}
         >
             <LinearGradient
