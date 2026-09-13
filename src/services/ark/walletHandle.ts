@@ -9,6 +9,9 @@ import {
     WalletOpenArgs,
     uniffiInitAsync,
 } from '@secondts/bark-react-native';
+// `isolatedModules` is on (tsconfig.json), so these must stay a separate
+// type-only import rather than joining the value import above.
+import type { RecoveryBucket, RecoveryReport } from '@secondts/bark-react-native';
 
 import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
 import { deleteArkDatadir, ensureArkDatadir } from './datadir';
@@ -54,6 +57,20 @@ export function setLastOnchainBalanceSats(confirmedSats: number, pendingSats: nu
 
 export function getLastOnchainBalanceSats(): { confirmedSats: number; pendingSats: number } {
     return { confirmedSats: lastOnchainConfirmedSats, pendingSats: lastOnchainPendingSats };
+}
+
+// Report from the most recent recovery open, so the recovery UI can tell the
+// user what the mailbox scan actually found instead of dropping them on an
+// empty Home with no explanation.
+//
+// The SDK only produces a report on the open that CREATES the wallet locally,
+// and returns undefined both when the scan was SKIPPED and when it FAILED
+// outright (bark logs the failure and lets open succeed). So an absent report
+// is NOT proof that nothing is missing, and the UI must not phrase it that way.
+let lastRecoveryReport: RecoveryReport | undefined;
+
+export function getLastArkRecoveryReport(): RecoveryReport | undefined {
+    return lastRecoveryReport;
 }
 
 // Lazy-require avoids the import cycle with `./movementWatcher`, which itself
@@ -235,6 +252,32 @@ export async function createArkWallet(
                 throw err;
             }
 
+            // Never wipe on a RECOVERY open. `forceRescan` is set only by the
+            // seed-only recovery callers (RecoverArkScreen, recover.ts), where
+            // the user is trying to get funds BACK and the datadir underneath
+            // may be a real wallet: a .cbark restore that decrypted, unlinked,
+            // repopulated the datadir and then failed to open (backup.ts,
+            // ArkRestoreApplyError) leaves exactly that on disk.
+            //
+            // The keychain probe below is also an unsafe premise on this path.
+            // Its reasoning is "no seed means nothing can ever open this datadir
+            // means failed-create residue", but a recovery caller can MUTATE
+            // that slot moments earlier: saveArkSeedToKeychain deletes it with
+            // resetGenericPassword when Android lands the write in storage that
+            // isn't auth-bound, and the recovery screen deliberately continues
+            // past that. So a recovery caller can arrive here with an empty
+            // slot and a populated datadir, and the probe reads that as
+            // disposable residue.
+            //
+            // The escape hatch for a genuinely poisoned datadir is unaffected:
+            // fresh creates (forceRescan=false) keep wipe-and-retry, and
+            // CreateArkScreen auto-cleans orphans, which is where this path's
+            // error copy already sends people.
+            if (forceRescan) {
+                console.warn('[Ark] Wallet.create failed on a recovery open; leaving datadir intact:', detail);
+                throw err;
+            }
+
             const services = await Keychain.getAllGenericPasswordServices().catch(() => null);
             const seedMayExist = services === null || services.includes(KEYCHAIN_SERVICE);
             if (seedMayExist) {
@@ -270,12 +313,39 @@ export async function createArkWallet(
     // undefined report means the scan was skipped OR failed (see the fund-safety
     // note above); a present report buckets every VTXO the scan looked at.
     if (forceRescan && handle) {
+        lastRecoveryReport = undefined;
         try {
-            const report = handle.recoveryReport();
-            console.log(
-                '[Ark recover] recoveryReport:',
-                report ? JSON.stringify(report) : 'none (skipped or scan failed)',
-            );
+            lastRecoveryReport = handle.recoveryReport();
+            const report = lastRecoveryReport;
+            if (!report) {
+                console.log('[Ark recover] recoveryReport: none (scan skipped, or scan failed outright)');
+            } else {
+                // Counts and sats, formatted by hand. Every RecoveryBucket
+                // carries a bigint `totalSats`, and JSON.stringify THROWS a
+                // TypeError on a bigint. The previous version stringified the
+                // raw report inside this try, so the throw was swallowed by the
+                // catch below and mis-logged as "recoveryReport() threw": on a
+                // successful scan the report never printed once.
+                const fmt = (b: RecoveryBucket) => `${b.vtxoIds.length}/${Number(b.totalSats)}sat`;
+                console.log(
+                    `[Ark recover] recoveryReport complete=${report.isComplete}`,
+                    `recovered=${fmt(report.recovered)}`,
+                    `skipped=${fmt(report.skipped)}`,
+                    `foreign=${fmt(report.foreign)}`,
+                    `failed=${fmt(report.failed)}`,
+                    `exited=${fmt(report.exited)}`,
+                );
+                // Raw VTXO ids are privacy-sensitive and unbounded in length,
+                // and this runs a few lines after the mnemonic is cached, so
+                // keep them out of release logs and Bugsnag breadcrumbs.
+                if (__DEV__) {
+                    console.log('[Ark recover] recoveryReport ids:', {
+                        recovered: report.recovered.vtxoIds,
+                        foreign: report.foreign.vtxoIds,
+                        failed: report.failed.vtxoIds,
+                    });
+                }
+            }
         } catch (repErr) {
             console.warn('[Ark recover] recoveryReport() threw:', repErr);
         }
@@ -390,6 +460,10 @@ export async function clearArkWalletHandle(): Promise<void> {
     cachedMnemonic = null;
     lastOnchainConfirmedSats = 0;
     lastOnchainPendingSats = 0;
+    // Only the forceRescan branch of createArkWallet refreshes this, so without
+    // a teardown reset a report could outlive its wallet and be read back after
+    // a later non-recovery open.
+    lastRecoveryReport = undefined;
 }
 
 export function getArkOnchainHandle(): OnchainWalletInterface | null {

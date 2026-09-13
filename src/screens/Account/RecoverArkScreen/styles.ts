@@ -1,4 +1,4 @@
-import { colors, heights } from "@Cypher/style-guide";
+import { colors } from "@Cypher/style-guide";
 import { StyleProp, StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 interface Style {
@@ -16,6 +16,8 @@ interface Style {
     error: TextStyle;
     loadingText: TextStyle;
     loadingContainer: ViewStyle;
+    seedOnlyLink: ViewStyle;
+    seedOnlyLinkText: TextStyle;
 }
 
 /**
@@ -67,12 +69,24 @@ export default StyleSheet.create<Style>({
         borderRadius: 30,
         fontSize: 16,
     },
+    /**
+     * Primary CTA. This used to carry `top: heights * 0.18` with no `position`
+     * key, so the default `relative` made it a PAINT-ONLY offset: the button
+     * was drawn ~144 to 154dp below its flow slot while its siblings stayed
+     * put, which meant the filled white pill was painted straight over the
+     * secondary CTAs rendered after it. Worst case, `colors.ark.light` is
+     * `#FFFFFF`, the same as this background, so an overlapped link was white
+     * on white and invisible rather than merely ugly. The screen sets
+     * `disableScroll`, so there was no scrolling out from under it either.
+     * `marginTop` consumes flow instead of faking it, which is what was
+     * actually wanted. Note this style is shared with ChooseView.
+     */
     button: {
         width: "100%",
         backgroundColor: colors.ark.light,
         borderWidth: 0,
         marginHorizontal: 40,
-        top: heights * 0.18,
+        marginTop: 24,
     },
     btnText: {
         fontFamily: "Archivo-Bold",
@@ -111,5 +125,22 @@ export default StyleSheet.create<Style>({
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
+    },
+    /**
+     * Seed-only CTA in TypeSeedView. Its own tier: ark-coloured like the two
+     * restore CTAs above it (it is a real branch, not a refinement) but a link
+     * rather than a button, so it stays subordinate to the .cbark paths, which
+     * restore more. Not `styles.button`, in keeping with every other secondary
+     * CTA on this screen being a hand-rolled TouchableOpacity.
+     */
+    seedOnlyLink: {
+        alignSelf: "center",
+        marginTop: 14,
+        paddingVertical: 8,
+    },
+    seedOnlyLinkText: {
+        color: colors.ark?.light ?? colors.pink.default,
+        fontSize: 13,
+        textDecorationLine: "underline",
     },
 });

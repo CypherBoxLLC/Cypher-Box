@@ -36,6 +36,7 @@ export {
     getArkOnchainHandle,
     ensureArkOnchainHandle,
     getCachedArkMnemonic,
+    getLastArkRecoveryReport,
 } from './walletHandle';
 
 export { fetchArkBalance, applyExpiredVtxoFilter } from './balance';
