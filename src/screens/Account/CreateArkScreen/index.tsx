@@ -326,9 +326,10 @@ export default function CreateArkScreen() {
                         pre-1.0, so treat it as experimental.
                     </Text>
                     <Text style={styles.warnBody}>
-                        Recovery needs <Text bold>both</Text> your seed phrase and your
-                        backup file (.cbark). Your seed alone is not enough, so always
-                        keep a current backup.
+                        Recovery always needs your seed phrase. Your backup file
+                        (.cbark) is encrypted with that seed, so it can never restore
+                        anything on its own, and it brings back capsule state the
+                        server scan can miss. Keep both, and never lose the seed.
                     </Text>
 
                     <View style={styles.divider} />

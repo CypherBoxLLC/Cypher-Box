@@ -722,8 +722,8 @@ export default function ArkSeedPhraseScreen() {
             Alert.alert(
                 "Save your backup first",
                 isIOS
-                    ? "Your seed phrase alone can't restore Ark funds. The encrypted backup file is required too. Tap 'Save backup file' above and save it somewhere you trust (iCloud Drive recommended)."
-                    : "Your seed phrase alone can't restore Ark funds. The encrypted backup file is required too. Pick at least one: Google Drive (off-device), or a folder on this phone (survives uninstall).",
+                    ? "Your seed phrase can restore the wallet on its own, but the backup file brings back capsule state the server scan can miss. Tap 'Save backup file' above and save it somewhere you trust (iCloud Drive recommended)."
+                    : "Your seed phrase can restore the wallet on its own, but the backup file brings back capsule state the server scan can miss. Pick at least one: Google Drive (off-device), or a folder on this phone (survives uninstall).",
                 [{ text: "OK" }],
                 { cancelable: true },
             );
@@ -926,7 +926,11 @@ export default function ArkSeedPhraseScreen() {
                             That covers app-reinstall / data-corruption recovery.
                             The cloud option below is the opt-in for device-loss
                             protection — without it, losing the phone loses the
-                            local file too, and seed alone can't restore VTXOs. */}
+                            local file too. Since bark 0.6.1 the seed alone DOES
+                            restore VTXOs via the server recovery mailbox, but that
+                            scan is best-effort (it can fail while the open still
+                            succeeds, and VTXOs past the gap limit are unreachable),
+                            so the file is still what covers the remainder. */}
                         <Text style={styles.sectionTitle}>2/2: Bark backup file</Text>
                         <Text style={styles.sectionSub}>
                             Can be stored and auto-updated on this device and on your cloud.
@@ -945,9 +949,9 @@ export default function ArkSeedPhraseScreen() {
                                      for Cypher Box). We can't probe the toggle,
                                      so the copy is honest about the conditional. */}
                         <Text style={[styles.sectionSub, { marginTop: 18 }]}>
-                            Lose the phone, though, and the local file goes with it,
-                            and your seed alone can't restore Ark funds. Add an
-                            optional off-device copy for device-loss protection:
+                            Lose the phone, though, and the local file goes with it.
+                            Your seed can still restore the wallet, but an off-device
+                            copy brings back capsule state the server scan can miss:
                         </Text>
                         <View style={[styles.backupOption, styles.backupOptionSelected]}>
                             <View style={[styles.backupRadioOuter, styles.backupRadioOuterSelected]}>
@@ -1146,11 +1150,12 @@ export default function ArkSeedPhraseScreen() {
                                     ⚠ Save your backup before continuing
                                 </Text>
                                 <Text style={styles.warnPanelBody}>
-                                    Your seed phrase alone can't restore Ark
-                                    funds, because Bark stores per-VTXO state in an
-                                    encrypted backup file we can't re-derive
-                                    from the seed. Pick any one option above
-                                    before creating the wallet.
+                                    Your seed phrase restores the wallet, and the
+                                    server returns the capsules it still tracks for
+                                    it. That scan is not guaranteed to find
+                                    everything, and the backup file is what covers
+                                    the rest. Pick any one option above before
+                                    creating the wallet.
                                 </Text>
                             </View>
                         )}

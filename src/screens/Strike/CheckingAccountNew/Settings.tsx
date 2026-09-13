@@ -1930,7 +1930,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               Write these 12 words on paper and store them somewhere safe. We cannot recover them for you.
             </Text>
             <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 12 }}>
-              You also need the Bark backup file (2/2) below to recover your funds. The seed alone is not enough.
+              Keep the Bark backup file (2/2) below as well. The seed restores the wallet, the file covers capsules the server scan can miss.
             </Text>
             {words ? (
               <>
