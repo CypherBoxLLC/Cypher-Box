@@ -72,10 +72,17 @@ import styles from "./styles";
 /**
  * Wallet DB backup destinations.
  *
- * The seed phrase alone CANNOT recover the Ark wallet on a new device — the
- * Bark SDK stores VTXOs, pre-signed exit txs, and round state in an on-disk
- * datadir. Without that datadir, re-deriving from the seed only gives you an
- * empty wallet (Bark recovery limitation, see Second.tech docs).
+ * The seed phrase DOES recover the Ark wallet on a new device as of bark
+ * 0.6.1: the open that creates the wallet locally scans a server-side recovery
+ * mailbox and re-imports the VTXOs the ASP still tracks for that seed. This
+ * used to say the opposite, and that was true of pre-0.15 bark, which had no
+ * rescan API at all.
+ *
+ * The datadir is still worth backing up. The scan is best-effort: it can fail
+ * while the open still succeeds (so an empty RecoveryReport is not proof that
+ * nothing is missing), VTXOs past the key-derivation gap limit are unreachable
+ * by it, and pre-signed exit txs and in-flight round state are local-only and
+ * not on the mailbox at all.
  *
  * Backup model:
  *   - Local auto-backup is always-on. `writeArkAutoBackup` writes an
@@ -99,9 +106,10 @@ const isIOS = Platform.OS === "ios";
  * generate a fresh Ark mnemonic (i.e. NOT reusing the hot vault seed).
  *
  * Two backup decisions live on this screen — the seed and the wallet DB —
- * because they're a coupled pair: the seed alone is useless for full
- * recovery, the DB alone is useless without the seed. Surfacing both
- * together prevents users from thinking "I wrote down the seed, I'm safe."
+ * but they are NOT symmetric. The seed is mandatory and sufficient for a
+ * best-effort recovery on its own. The DB is optional and covers what the
+ * mailbox scan cannot reach, and it is useless without the seed anyway since
+ * the .cbark is encrypted under a PBKDF2 key derived from that mnemonic.
  *
  * Flow:
  *   1. Display the 12-word mnemonic with tap-to-reveal blur (BIP39).
@@ -833,7 +841,7 @@ export default function ArkSeedPhraseScreen() {
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={styles.content}>
-                        <Text style={styles.sectionTitle}>1/2 · Seed phrase</Text>
+                        <Text style={styles.sectionTitle}>Seed phrase (required)</Text>
                         <Text style={styles.warnTitle}>⚠ Write these 12 words down</Text>
                         <Text style={styles.warnBody}>
                             Keep it safe and secure offline (paper and pen are good enough).
@@ -861,10 +869,11 @@ export default function ArkSeedPhraseScreen() {
                         )}
 
                         <Text style={styles.headerNote}>
-                            Note: even with the seed, full balance recovery on a new device
-                            also requires your{' '}
+                            These 12 words are what recover this wallet, on this device or a
+                            new one. Your{' '}
                             <Text style={{ color: '#FF5A5A' }}>Bark backup file</Text>
-                            . Set the destination below.
+                            {' '}is the safety net for capsules the server scan can miss. Set
+                            its destination below.
                         </Text>
 
                         <View style={styles.gridWrap}>
@@ -931,7 +940,7 @@ export default function ArkSeedPhraseScreen() {
                             scan is best-effort (it can fail while the open still
                             succeeds, and VTXOs past the gap limit are unreachable),
                             so the file is still what covers the remainder. */}
-                        <Text style={styles.sectionTitle}>2/2: Bark backup file</Text>
+                        <Text style={styles.sectionTitle}>Bark backup file (recommended)</Text>
                         <Text style={styles.sectionSub}>
                             Can be stored and auto-updated on this device and on your cloud.
                             Each time you send or receive, an encrypted snapshot updates in{' '}

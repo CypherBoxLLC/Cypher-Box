@@ -110,6 +110,27 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
 }
 
 /**
+ * Whether a `Wallet.open` failure is a transient connectivity fault rather
+ * than a real seed/datadir mismatch.
+ *
+ * Exported because callers OUTSIDE the retry loop have to make the same
+ * distinction, and getting it backwards is destructive. RecoverArkScreen
+ * probe-opens an existing datadir with the typed seed to decide whether that
+ * datadir belongs to this user: a non-transient failure means "different seed,
+ * safe to offer a wipe", while a transient one means "we have no idea, touch
+ * nothing". A copy-pasted regex that drifts from this one would eventually
+ * classify an esplora outage as a wrong seed and invite the user to delete a
+ * wallet that was theirs.
+ *
+ * `detail` is the `${tag} ${message}` string built at the call site.
+ */
+export function isTransientArkOpenError(detail: string): boolean {
+    return /ServerConnection|Connection|timeout|timed out|network|bad response from server|not a blockhash|failed to parse hex|Esplora client/i.test(
+        detail,
+    );
+}
+
+/**
  * Shared open-with-retry loop. Rotates esplora providers across attempts —
  * the dominant failure mode is one provider's CDN refusing bark's client (a
  * bot-block page instead of chain data), so retrying the same blocked
@@ -165,7 +186,7 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
             const kind = classifyEsploraFailure(detail);
             noteEsploraFailure(esploraUrl, detail);
 
-            const transient = /ServerConnection|Connection|timeout|timed out|network|bad response from server|not a blockhash|failed to parse hex|Esplora client/i.test(detail);
+            const transient = isTransientArkOpenError(detail);
             const stopping = !transient || attempt === OPEN_ATTEMPTS;
             // LOG BEFORE DECIDING TO STOP. This used to break out of the loop
             // before logging, so a non-transient failure left NO trace at all:

@@ -10,12 +10,16 @@ import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
     checkArkSeedKeychainConflict,
     classifyPickedBackupBlob,
+    clearArkWalletHandle,
     connectGoogleDrive,
     createArkWallet,
+    deleteArkDatadir,
     deriveBackupFingerprint,
     getArkWalletHandle,
     getLastArkRecoveryReport,
     hasArkDatadir,
+    isTransientArkOpenError,
+    openArkWallet,
     isGoogleDriveConnected,
     lookupArkBackupInLocalDocuments,
     lookupArkBackupInSafFolder,
@@ -784,29 +788,16 @@ export default function RecoverArkScreen() {
 
     const handleRecoverSeedOnly = async () => {
         if (submitting || restoring) return;
-        const mnemonic = secretWords
-            .map((w) => w.trim().toLowerCase())
-            .filter(Boolean)
-            .join(" ");
-
-        if (mnemonic.split(/\s+/).length !== 12) {
-            setErrorMsg("Please fill in all 12 words.");
-            return;
-        }
-        let valid = false;
-        try {
-            valid = validateMnemonic(mnemonic);
-        } catch (err) {
-            console.warn("[Ark recover] validateMnemonic threw:", err);
-            setErrorMsg("Couldn't validate seed phrase. Check the words and try again.");
-            return;
-        }
-        if (!valid) {
-            setErrorMsg(
-                "Invalid seed phrase. Double-check spelling. Each word must be a BIP39 word.",
-            );
-            return;
-        }
+        // Resolve through the shared resolver rather than reading the typed
+        // grid directly. It prefers `unlockedMnemonic`, which is what makes
+        // this handler usable from ChooseView: a user who unlocked the seed
+        // with Face ID has an empty grid, and reading `secretWords` here used
+        // to fail them with "Please fill in all 12 words" for a seed the
+        // device was already holding. It applies the same 12-word and BIP39
+        // checks, so the typed path is unchanged.
+        const resolved = await resolveMnemonicForRestore();
+        if (!resolved) return;
+        const { mnemonic } = resolved;
 
         // `datadirExists` is a mount-time snapshot (the probe effect has an
         // empty dep array). A .cbark restore attempted after mount unlinks,
@@ -815,32 +806,11 @@ export default function RecoverArkScreen() {
         // because everything below branches on it.
         const datadirOnDisk = await hasArkDatadir();
 
-        // Any Ark data on disk sends the user to the setup screen, and this
-        // path deliberately deletes NOTHING.
-        //
-        // The tempting version of this branch treats "no live handle and
-        // !isArkAuth" as proof the datadir is disposable and wipes it, so that
-        // the create below is a real create and bark runs the recovery-mailbox
-        // scan (it only runs on the open that CREATES the wallet locally).
-        // That is a fund-loss bug. `isArkAuth` is not a liveness proof:
-        // useArkRestoreOnBoot clears it whenever restoreArkWalletFromDisk
-        // returns `no-datadir`, and hasArkDatadir() swallows every RNFS error
-        // into `false`, so one transient read clears auth on a device that
-        // does have a funded vault. The authStore's own clearArkAuth comment
-        // records that firing on a real device. A user in that state, typing
-        // their real seed, would be shown a "leftover data" prompt for their
-        // own wallet, and the delete would take exit-tree txs, presigned CPFP
-        // children, Lightning preimages and arkoor refs with it. None of those
-        // are seed-derivable and none are on the recovery mailbox.
-        //
-        // CreateArkScreen already auto-cleans genuine orphans, so the user who
-        // really does have residue still has a route through, it just costs an
-        // extra screen. Costing a tap is the correct trade against wiping a
-        // wallet mid-exit.
-        if (datadirOnDisk) {
+        // A live wallet is left strictly alone.
+        if (datadirOnDisk && (!!getArkWalletHandle() || isArkAuth)) {
             Alert.alert(
-                "An Ark wallet already exists",
-                "There's already Ark wallet data on this device. Open the setup screen and reset it there first, then recover from your seed. Nothing has been changed.",
+                "An Ark wallet is already open",
+                "There's a live Ark wallet on this device. Open the setup screen and reset it there first, then recover from your seed. Nothing has been changed.",
                 [
                     { text: "Cancel", style: "cancel" },
                     { text: "Open setup", onPress: () => dispatchNavigate("CreateArkScreen") },
@@ -851,6 +821,102 @@ export default function RecoverArkScreen() {
 
         setSubmitting(true);
         setErrorMsg(null);
+
+        // Datadir on disk with no live wallet. Ask the datadir who it belongs
+        // to rather than guessing, and never route the user to CreateArkScreen.
+        //
+        // Both of the obvious shortcuts are wrong, and each has drawn blood:
+        //
+        //   Wiping on "no handle and !isArkAuth" looks safe and is not.
+        //   `isArkAuth` is not a liveness proof: useArkRestoreOnBoot clears it
+        //   whenever restoreArkWalletFromDisk returns `no-datadir`, and
+        //   hasArkDatadir() swallows every RNFS error into `false`, so one
+        //   transient read clears auth on a device that does have a funded
+        //   vault. Wiping there takes exit-tree txs, presigned CPFP children,
+        //   LN preimages and arkoor refs, none of them seed-derivable and none
+        //   of them on the recovery mailbox.
+        //
+        //   Sending the user to CreateArkScreen is worse, which is why this
+        //   replaced it. That screen sees the same orphan-looking datadir and
+        //   auto-cleans it SILENTLY with no prompt, then presents its create
+        //   UI, so the user taps through and lands on a brand new generated
+        //   seed instead of the one they just typed. Observed on device.
+        //
+        // openArkWallet is open-only (createIfNotExists: false) and never
+        // deletes, so probing with it is free. A successful open is positive
+        // proof the datadir is this seed's wallet.
+        if (datadirOnDisk) {
+            let probeErr: string | null = null;
+            try {
+                await openArkWallet(mnemonic);
+            } catch (err: any) {
+                probeErr = `${(err as { tag?: string })?.tag ?? ''} ${(err as Error)?.message ?? String(err)}`;
+            }
+
+            if (!probeErr) {
+                // It is this seed's own wallet, already on disk and openable.
+                // Nothing to recover and nothing to destroy: adopt it. The
+                // mailbox scan does not run on an open (only on the create),
+                // but that is the correct trade here. Re-deriving this wallet
+                // from the mailbox would mean deleting local state that the
+                // mailbox cannot give back.
+                const adopted = await persistSeedToKeychain(mnemonic, 'seed-only adopt');
+                setSubmitting(false);
+                await new Promise<void>((resolve) => {
+                    Alert.alert(
+                        "Wallet reopened",
+                        "This device already had this wallet's data, so it was reopened as it was. Nothing was deleted and nothing was re-downloaded.",
+                        [{ text: "Continue", onPress: () => resolve() }],
+                        { cancelable: true, onDismiss: () => resolve() },
+                    );
+                });
+                await finalizeWallet(mnemonic, undefined, adopted);
+                return;
+            }
+
+            if (isTransientArkOpenError(probeErr)) {
+                // We do NOT know whose datadir this is. Saying "wrong seed" here
+                // and offering a wipe would invite the user to delete their own
+                // wallet because esplora happened to be rate-limiting.
+                await clearArkWalletHandle();
+                setSubmitting(false);
+                setErrorMsg(
+                    "Couldn't reach the Ark server to check the wallet data already on this device, so nothing was changed. Check your connection and try again in a moment.",
+                );
+                return;
+            }
+
+            // Non-transient: the datadir does not open with this seed, so it
+            // belongs to a different wallet (or is corrupt). Only now is a
+            // delete defensible, and only with an explicit decision.
+            console.warn('[Ark recover] existing datadir does not open with this seed:', probeErr.trim());
+            await clearArkWalletHandle();
+            const proceed = await new Promise<boolean>((resolve) => {
+                Alert.alert(
+                    "Different wallet data on this device",
+                    "The Ark data on this device belongs to a different seed phrase, so it can't be reopened with the words you typed. Recovering replaces it. If that other wallet still holds funds, make sure its seed phrase is written down before you continue.",
+                    [
+                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                        { text: "Replace it", style: "destructive", onPress: () => resolve(true) },
+                    ],
+                    { cancelable: true, onDismiss: () => resolve(false) },
+                );
+            });
+            if (!proceed) {
+                setSubmitting(false);
+                return;
+            }
+            try {
+                await deleteArkDatadir();
+            } catch (err: any) {
+                console.warn('[Ark recover] datadir delete failed:', err?.message ?? err);
+                setSubmitting(false);
+                setErrorMsg(
+                    "Couldn't clear the other wallet's data on this device. Open the setup screen and tap Reset, then try again.",
+                );
+                return;
+            }
+        }
 
         // Conflict guard: same as the file-restore paths. Seed-only
         // recovery (no .cbark) is a strong signal the user is committed
@@ -1000,6 +1066,7 @@ export default function RecoverArkScreen() {
                         onRestoreFile={() => handleRestoreFromFile(false)}
                         onPickDifferentFile={() => handleRestoreFromFile(true)}
                         onRestoreCloud={cloudHandler}
+                        onRecoverSeedOnly={handleRecoverSeedOnly}
                     />
                 )}
             </View>
@@ -1017,6 +1084,7 @@ interface ChooseViewProps {
     onRestoreFile(): void;
     onPickDifferentFile(): void;
     onRestoreCloud(): void;
+    onRecoverSeedOnly(): void;
 }
 
 // Face ID chooser — only shown when the device's Keychain already has the
@@ -1032,6 +1100,7 @@ function ChooseView({
     onRestoreFile,
     onPickDifferentFile,
     onRestoreCloud,
+    onRecoverSeedOnly,
 }: ChooseViewProps) {
     return (
         <>
@@ -1099,6 +1168,17 @@ function ChooseView({
                     <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 14 }}>
                         Restore from {cloudLabel}
                     </Text>
+                </TouchableOpacity>
+            )}
+
+            {/* Seed-only, same tier and label as in TypeSeedView. This view's
+                whole audience is a same-device return where the seed is in the
+                Keychain, which is exactly the population most likely to have
+                lost the .cbark. Without this they were offered only the two
+                file paths and had no way forward at all. */}
+            {unlockedMnemonic && (
+                <TouchableOpacity onPress={onRecoverSeedOnly} style={styles.seedOnlyLink}>
+                    <Text style={styles.seedOnlyLinkText}>{SEED_ONLY_CTA_LABEL}</Text>
                 </TouchableOpacity>
             )}
 
