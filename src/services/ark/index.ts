@@ -157,6 +157,7 @@ export {
     fetchClaimableExitVtxos,
     fetchHasPendingExits,
     fetchPendingExitsTotalSats,
+    hasActiveArkExitRecords,
     progressArkExits,
     startArkEmergencyExit,
     syncArkExits,
