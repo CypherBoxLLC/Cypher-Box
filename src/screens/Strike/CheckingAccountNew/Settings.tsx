@@ -1499,13 +1499,29 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     // the confirm dialog afterwards are the forced ones, not these.
     const forcePrompt = (bodyPrefix: string) => {
       setExitStarting(false);
+      // Split the cost clause by WHY these capsules are overridable. A
+      // 'fees-dwarf-value' capsule genuinely costs more to exit than it holds; a
+      // 'refresh-before-exiting' one is economically fine and merely close to
+      // expiry, so claiming a loss there would be false.
+      const overridableEntries = plan!.excluded.filter(
+        (e) => e.reason === 'fees-dwarf-value' || e.reason === 'refresh-before-exiting',
+      );
+      const anyLoss = overridableEntries.some((e) => e.reason === 'fees-dwarf-value');
+      const anyStale = overridableEntries.some((e) => e.reason === 'refresh-before-exiting');
+      // COPY: Bam finalizes.
+      const costClause =
+        anyLoss && anyStale
+          ? 'For some, the miner fees cost more than the funds are worth. The rest are close to expiring, where a refresh costs far less than an exit and resets the timer.'
+          : anyLoss
+            ? 'It costs more in miner fees than the funds are worth.'
+            : 'They are close to expiring. A refresh costs far less than an exit and resets the timer, so exiting is the more expensive way to keep them, though it does not lose money against what they hold.';
       Alert.alert(
         'Emergency Exit',
         unverifiedNotice +
           bodyPrefix +
           `\n\nYou can exit ${plan!.overridableCount === 1 ? 'it' : 'them'} anyway. ` +
-          'That is sometimes worth it, for instance to get your funds out of a server you no longer trust, ' +
-          'but it costs more in miner fees than the funds are worth.',
+          'That is sometimes worth it, for instance to get your funds out of a server you no longer trust. ' +
+          costClause,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -1533,7 +1549,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       if (plan.overridableCount === plan.excluded.length) {
         forcePrompt(
           `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} ` +
-            `can be recovered economically right now:\n${list}`,
+            `can be recovered by an emergency exit right now:\n${list}`,
         );
         return;
       }
