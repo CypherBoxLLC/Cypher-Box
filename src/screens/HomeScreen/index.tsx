@@ -33,7 +33,7 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
+import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkPushTokenBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
@@ -171,6 +171,13 @@ export default function HomeScreen({ route }: Props) {
   // with a single mount. No-op once the destination is set or when there
   // is no Hot Vault.
   useArkExitDestinationBackfill();
+  // Ark push-token backfill: mints the expiry-wake push token when the
+  // reminders flag is on but no token exists. `arkBgRefreshEnabled`
+  // defaults to true, and the only other minting call site fires on the
+  // transition to on, so every pre-existing wallet has the flag set and no
+  // token, leaving the unattended refresh permanently dark. Additive and
+  // idempotent: no-op once a token exists.
+  useArkPushTokenBackfill();
   // Arkoor receive prompt: detects new arkoor VTXOs (Lightning receives
   // typically materialise as arkoor with a ~3-day TTL the SDK doesn't
   // surface as expiryHeight) and shows a one-time educational popup +

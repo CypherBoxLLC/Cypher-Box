@@ -4,6 +4,7 @@ export type {UseArkSync} from './useArkSync';
 export {default as useArkRestoreOnBoot} from './useArkRestoreOnBoot';
 export type {ArkRestoreBootStatus} from './useArkRestoreOnBoot';
 export {default as useArkExitDestinationBackfill} from './useArkExitDestinationBackfill';
+export {default as useArkPushTokenBackfill} from './useArkPushTokenBackfill';
 export {default as useArkoorReceivePrompt} from './useArkoorReceivePrompt';
 export {default as useEasedProgress} from './useEasedProgress';
 export {default as useKeyboardLift} from './useKeyboardLift';
