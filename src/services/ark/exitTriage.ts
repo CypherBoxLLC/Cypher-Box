@@ -116,6 +116,36 @@ export const MIN_CONFIRMATION_BUDGET_BLOCKS = 6;
  */
 export const MIN_FRESHNESS_BLOCKS = 4 * 24 * 6;
 
+/**
+ * How far past its OWN `requiredRunwayBlocks` a capsule must sit before the
+ * freshness floor treats it as comfortably clear rather than merely safe, and
+ * so lets it out of the floor without a refresh.
+ *
+ * MIN_FRESHNESS_BLOCKS above is a POPULATION heuristic: capsules that reach
+ * their last few days are disproportionately the deep, expensive ones that got
+ * there by failing to refresh, and for that population a refresh beats an exit.
+ * It is depth-blind, though, and the function already holds each capsule's real
+ * depth (`economic`) and its real safety margin (`requiredRunwayBlocks`). A
+ * shallow round output that is cheap to exit and nowhere near its timelock is
+ * not the population the floor is aimed at, and discarding it by default drops a
+ * capsule the exit would have recovered fine.
+ *
+ * A MULTIPLE of requiredRunwayBlocks, not a flat block margin, because the
+ * runway is itself depth-scaled (confirmation budget grows with depth). A
+ * multiple keeps a deep tree, which takes more sequential confirmations and IS
+ * the population the floor exists for, needing proportionally more slack before
+ * it qualifies, while a shallow one qualifies early. An additive margin would
+ * give a depth-17 tree the same absolute cushion as a depth-2 one and let the
+ * deep capsules the floor is meant to catch slip out too easily.
+ *
+ * 2 is the same volatility posture the file already takes with SPIKE_MULT and
+ * with ASSUMED_EXIT_DELTA_BLOCKS: enough headroom that confirmation slippage
+ * during a fee spike cannot push the exit across expiry. At the mainnet delta
+ * of 144 the tightest a capsule can be selected is its own runway of slack
+ * (>=150 blocks), which stays clear of the 'urgent' fee band by construction.
+ */
+export const FRESHNESS_SAFETY_MULT = 2;
+
 /** CSV delta assumed when `ArkInfo.vtxoExitDelta` was never cached.
  *
  *  The exit path must not call the ASP (spec principle 2), so a missing cache
@@ -918,8 +948,27 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
             blocksUntilExpiry < MIN_FRESHNESS_BLOCKS &&
             policy !== 'recover-everything'
         ) {
-            exclude('refresh-before-exiting');
-            continue;
+            // Depth-aware exemption. The flat floor is a population argument (see
+            // MIN_FRESHNESS_BLOCKS), and it is wrong for the specific capsule
+            // that is cheap to exit and comfortably clear of its own runway. Let
+            // that one through, and keep the floor for everything else.
+            //
+            //   comfortablyClear: a full extra requiredRunwayBlocks of slack on
+            //     top of the runway itself, so confirmation slippage during a fee
+            //     spike cannot push the exit past expiry. Depth-scaled, because
+            //     the runway is, so a deep tree (the population the floor is
+            //     really for) must sit much further out to qualify than a shallow
+            //     round output does.
+            //   profitable only: a marginal or under-water capsule is exactly the
+            //     case where a refresh, about a sat, that resets its depth and
+            //     clock beats spending real reserve to drag it out, so those keep
+            //     the floor and its refresh-first advice.
+            const comfortablyClear = blocksUntilExpiry >= runway * FRESHNESS_SAFETY_MULT;
+            const cheapAndComfortable = comfortablyClear && economic === 'profitable';
+            if (!cheapAndComfortable) {
+                exclude('refresh-before-exiting');
+                continue;
+            }
         }
 
         selected.push({ ...base, included: true, notes });

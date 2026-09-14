@@ -1100,11 +1100,12 @@ describe('freshness floor: refresh a stale capsule, do not exit it', () => {
   const fresh = (id: string, daysLeft: number, over: Partial<ExitTriageVtxo> = {}) =>
     v({ id, sats: 20_000, expiryHeight: TIP + Math.round(daysLeft * 144), ...over });
 
-  it('excludes a capsule with under 4 days left even though it is safe to exit', () => {
-    // 3 days clears the runway easily (156 blocks for depth 2), so the temporal
-    // axis is happy. This is an economic call, not a safety one.
+  it('excludes a profitable capsule that is safe but not comfortably clear of its runway', () => {
+    // 2 days is 288 blocks: past the 156-block runway for depth 2, so the
+    // temporal axis is happy, but short of 2x that runway (312 blocks), so the
+    // freshness floor still says refresh it. Safety is fine, this is economics.
     const r = triageArkExit({
-      vtxos: [fresh('stale', 3)],
+      vtxos: [fresh('stale', 2)],
       feeRateSatPerVb: 1,
       chainTipHeight: TIP,
       vtxoExitDeltaBlocks: EXIT_DELTA,
@@ -1114,10 +1115,66 @@ describe('freshness floor: refresh a stale capsule, do not exit it', () => {
     expect(r.excluded[0].blocksUntilExpiry).toBeGreaterThan(r.excluded[0].requiredRunwayBlocks);
   });
 
+  it('includes a shallow profitable capsule once comfortably clear, even inside the old flat floor', () => {
+    // depth 2, profitable, 3 days out: 432 blocks. Inside the old 576-block flat
+    // floor, so it used to be dropped, but past 2x its 156-block runway, so the
+    // depth-aware floor now exits it instead of dragging it out for a refresh.
+    const r = triageArkExit({
+      vtxos: [fresh('shallow', 3)],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual(['shallow']);
+    expect(r.selected[0].blocksUntilExpiry).toBeLessThan(MIN_FRESHNESS_BLOCKS);
+    expect(r.selected[0].economic).toBe('profitable');
+  });
+
+  it('is depth-aware: a deep capsule needs more runway than a shallow one at the same expiry', () => {
+    // Same blocksUntilExpiry (400, inside the old 576 floor), both profitable at
+    // 20k sats. depth 2 is past 2x its 156 runway (312) and exits; depth 17
+    // needs 2x its 246 runway (492) and does not, so it keeps refresh-first.
+    const at400 = (id: string, depth: number, wu: number) =>
+      v({ id, sats: 20_000, exitDepth: depth, exitTxWeightWu: wu, expiryHeight: TIP + 400 });
+    const r = triageArkExit({
+      vtxos: [at400('shallow', 2, 1325), at400('deep', 17, 12377)],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual(['shallow']);
+    const deep = r.excluded.find((e) => e.id === 'deep')!;
+    expect(deep.reason).toBe('refresh-before-exiting');
+    // Safe (past its runway), just not comfortably so.
+    expect(deep.blocksUntilExpiry).toBeGreaterThan(deep.requiredRunwayBlocks);
+  });
+
+  it('keeps a marginal low-depth capsule on the floor even when comfortably clear', () => {
+    // Profitability, not just comfort, lets a capsule out. A depth-2 capsule at
+    // 500 sats is marginal (its exit-tree cost exceeds what it returns), so a
+    // refresh beats exiting even though 500 blocks is well past 2x its runway.
+    const r = triageArkExit({
+      vtxos: [
+        v({ id: 'marg', sats: 500, exitDepth: 2, exitTxWeightWu: 1325, expiryHeight: TIP + 500 }),
+      ],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(r.selectedIds).toEqual([]);
+    expect(r.excluded[0].economic).toBe('marginal');
+    expect(r.excluded[0].reason).toBe('refresh-before-exiting');
+  });
+
+  // depth 2, 20k profitable: runway 156 (~1.08d), comfortable 2x = 312 (~2.17d),
+  // old flat floor was 576 (4d). Three bands: inside runway (too close), safe
+  // but not comfortable (refresh first), comfortably clear (exits).
   it.each([
-    [0.5, false],
-    [3, false],
-    [3.9, false],
+    [0.5, false], // 72 blocks: inside the runway, too close to exit safely
+    [1, false], //   144 blocks: still inside the ~156 runway
+    [2, false], //   288 blocks: safe, but short of 2x runway, refresh first
+    [2.5, true], //  360 blocks: comfortably clear, now exits
+    [3, true],
     [4, true],
     [10, true],
     [27, true],
@@ -1180,8 +1237,10 @@ describe('freshness floor: refresh a stale capsule, do not exit it', () => {
   });
 
   it('offers the override when freshness is the only thing holding a capsule back', () => {
+    // 2 days (288 blocks) keeps 'stale' in the refresh band: safe, profitable,
+    // but short of 2x its runway, so it is overridable rather than selected.
     const r = triageArkExit({
-      vtxos: [fresh('stale', 3), fresh('healthy', 20)],
+      vtxos: [fresh('stale', 2), fresh('healthy', 20)],
       feeRateSatPerVb: 1,
       chainTipHeight: TIP,
       vtxoExitDeltaBlocks: EXIT_DELTA,
@@ -1220,12 +1279,26 @@ describe('freshness floor: refresh a stale capsule, do not exit it', () => {
 });
 
 describe('how the freshness floor and the fee bands interact', () => {
-  it('makes the urgent bands unreachable by default, which is coherent', () => {
-    // Not a coincidence worth leaving undocumented. The floor keeps anything
-    // under 576 blocks out of the exit set, and the runway is ~156, so a
-    // selected capsule always has 420+ blocks of slack and can never read
-    // 'soon' or 'urgent'. Exit only fresh capsules, and fresh capsules are
-    // never in a hurry, so the exit never bids for speed.
+  it('never lets a selected capsule reach the urgent band, though soon is now reachable', () => {
+    // The depth-aware floor changed this. It used to keep everything under 576
+    // blocks out, so every selected capsule had 420+ blocks of slack and read
+    // moderate or relaxed. Now a shallow profitable capsule can be selected at
+    // 2x its runway (312 blocks for depth 2, so 156 blocks of slack): that reads
+    // 'soon' and bids a little higher, which is correct because it has less
+    // runway. It still cannot read 'urgent': slack at the boundary equals the
+    // runway (>=150 at the mainnet delta), and urgent needs under 144.
+    const boundary = v({ id: 'boundary', sats: 20_000, expiryHeight: TIP + 312 });
+    const rb = triageArkExit({
+      vtxos: [boundary],
+      feeRateSatPerVb: 1,
+      chainTipHeight: TIP,
+      vtxoExitDeltaBlocks: EXIT_DELTA,
+    });
+    expect(rb.selectedIds).toEqual(['boundary']);
+    const ub = exitFeeUrgency(rb.selected);
+    expect(ub.tightestSlackBlocks).toBe(312 - 156);
+    expect(ub.urgency).toBe('soon');
+
     const justFresh = v({ id: 'edge', sats: 200_000, expiryHeight: TIP + MIN_FRESHNESS_BLOCKS });
     const r = triageArkExit({
       vtxos: [justFresh],
