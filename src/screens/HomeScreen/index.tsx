@@ -1032,7 +1032,18 @@ export default function HomeScreen({ route }: Props) {
           :
           (
             <>
-              <View style={{ height: 50 }} />
+              {/* Top spacer, and the only lever that lifts the whole Total Assets
+                  cluster on iPhone. The scroll viewport starts at y=48 and the header
+                  row lands at y=48+50+0-34=64, so there are 16pt of headroom and no
+                  more: past that the title and icons slide under the notch and clip.
+                  Shrinking the spacer reflows the header, the Total Balance box, the
+                  wallet cards and send/receive up together, so every per-combination
+                  translateY below keeps its tuning exactly. translateY on those
+                  wrappers cannot do this: it paints without reflowing, and the header
+                  is already against the top of the viewport.
+                  Ark-only is excluded because its header carries a -20 of its own and
+                  already clips by 4pt as shipped, so lifting it further would bury it. */}
+              <View style={{ height: Platform.OS === 'ios' && !(!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? 36 : 50 }} />
               {/*
                 Header now hosts the "Scan with" picker — left-side scan
                 icon → modal → camera → routes to the chosen wallet's send
