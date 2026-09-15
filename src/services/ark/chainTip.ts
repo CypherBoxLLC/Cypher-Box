@@ -1,5 +1,10 @@
 import { ESPLORA_URLS } from './config';
 import { noteEsploraFailure, noteEsploraSuccess, orderedEsploraUrls } from './esploraHealth';
+import {
+    CHAIN_TIP_CACHE_TTL_MS,
+    shouldServeFromCache,
+    type ChainTipCacheEntry,
+} from './chainTipCache';
 
 /**
  * Fetch the current chain tip height, rotating across the esplora providers.
@@ -28,7 +33,7 @@ import { noteEsploraFailure, noteEsploraSuccess, orderedEsploraUrls } from './es
 // a single-integer GET; a slow provider is dropped and the next one tried.
 const TIP_FETCH_TIMEOUT_MS = 8000;
 
-export async function fetchChainTipHeight(): Promise<number | null> {
+async function fetchChainTipFromNetwork(): Promise<number | null> {
     // Health-ordered, not raw list order. This is the exit's dominant request
     // source once #219 made the tip poll the unit of polling, so starting every
     // one of several hundred polls at a provider that is mid-cooldown spends a
@@ -74,6 +79,68 @@ export async function fetchChainTipHeight(): Promise<number | null> {
         }
     }
     return null;
+}
+
+let tipCache: ChainTipCacheEntry | null = null;
+/** Collapses concurrent callers onto one request. A single sync tick calls
+ *  this from several places at once (the Promise.all in useArkSync, the
+ *  foreground sweep, triage), which without this fires that many identical
+ *  GETs in the same instant. */
+let tipInFlight: Promise<number | null> | null = null;
+
+/**
+ * When the last SUCCESSFUL network read of the tip happened, or null if there
+ * has not been one this session.
+ *
+ * Callers that persist the tip must stamp with this, not with `Date.now()`.
+ * `chainTipFreshness.ts` derives FRESH / DEGRADED / STALE from the stored
+ * timestamp, so stamping a cache hit with the current time would report FRESH
+ * straight through an esplora outage, which is the silent frozen-countdown bug
+ * that module exists to close.
+ */
+export function getChainTipFetchedAt(): number | null {
+    return tipCache?.fetchedAt ?? null;
+}
+
+/** Drop the cached tip. For tests and for any flow that has just changed what
+ *  "current" means. */
+export function invalidateChainTipCache(): void {
+    tipCache = null;
+}
+
+/**
+ * Current chain tip height, served from a short cache.
+ *
+ * Pass `maxAgeMs: 0` to force a network read: the exit drive needs the real
+ * current tip because the tip IS its unit of progress, and so does anything
+ * deciding whether esplora is reachable at all.
+ *
+ * On total network failure this returns null rather than the stale cached
+ * height, exactly as it did before the cache existed. Callers deliberately
+ * leave the previously stored tip in place on null, and its age is what makes
+ * the outage visible; handing back a stale height here would hide it.
+ */
+export async function fetchChainTipHeight(
+    opts?: { maxAgeMs?: number },
+): Promise<number | null> {
+    const maxAgeMs = opts?.maxAgeMs ?? CHAIN_TIP_CACHE_TTL_MS;
+    if (shouldServeFromCache(tipCache, Date.now(), maxAgeMs)) {
+        return (tipCache as ChainTipCacheEntry).height;
+    }
+    if (tipInFlight) return tipInFlight;
+
+    tipInFlight = (async () => {
+        try {
+            const height = await fetchChainTipFromNetwork();
+            if (height != null) {
+                tipCache = { height, fetchedAt: Date.now() };
+            }
+            return height;
+        } finally {
+            tipInFlight = null;
+        }
+    })();
+    return tipInFlight;
 }
 
 /** Signet/mainnet assume 10-min blocks; used to convert "blocks until expiry" → days. */

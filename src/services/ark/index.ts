@@ -58,7 +58,15 @@ export type {
     ArkMovementStatus,
 } from './history';
 
-export { fetchChainTipHeight, blocksToDays, AVG_BLOCK_MINUTES } from './chainTip';
+export {
+    fetchChainTipHeight,
+    getChainTipFetchedAt,
+    invalidateChainTipCache,
+    blocksToDays,
+    AVG_BLOCK_MINUTES,
+} from './chainTip';
+export { CHAIN_TIP_CACHE_TTL_MS, shouldServeFromCache } from './chainTipCache';
+export type { ChainTipCacheEntry } from './chainTipCache';
 export { summariseExitPhase, approxDuration } from './exitPhaseSummary';
 export type { ExitPhase, ExitPhaseInput, ExitPhaseSummary } from './exitPhaseSummary';
 
