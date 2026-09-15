@@ -810,7 +810,18 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         ((allBTCWallets as string[]).includes('COINOS') ? 1 : 0);
     const oneCustodialPlusArk = custodialCount === 1 && hasArkWallet;
     const BUTTONS_TOP_BASE = SHARED_SLIDE_HEIGHT + 20; // 153 — row 20pt below the card
-    const BUTTONS_TOP = oneCustodialPlusArk ? SHARED_SLIDE_HEIGHT + 12 : BUTTONS_TOP_BASE; // combo: row sits ~12pt below the card (some breathing room, less than the 20pt base)
+    // One custodial provider + Ark renders 2 plain boxes, and the row used to be
+    // pulled up to +12 to hug the card bottom. Measured on device that landed the
+    // row 7pt under the card (card 287-420, row 427), tight enough to read as
+    // stuck to the buttons. +23 puts ~18pt between them.
+    // CoinOS + Strike + Ark: the two carousel pages are different heights (the
+    // Strike/Coinos CircularView is 156, the Ark card 133), so one row position
+    // cannot sit the same distance under both. Measured on device with the cluster
+    // lifted: Ark card bottom 417, CircularView labels ~412. +8 over the base puts
+    // ~18pt under the Ark card, matching the one-custodial combo, and a little more
+    // under the taller circular page.
+    const allThreeWallets = custodialCount === 2 && hasArkWallet;
+    const BUTTONS_TOP = oneCustodialPlusArk ? SHARED_SLIDE_HEIGHT + 23 : allThreeWallets ? BUTTONS_TOP_BASE + 8 : BUTTONS_TOP_BASE;
     return (
         <View style={{
             width: screenWidth,

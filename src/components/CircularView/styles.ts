@@ -321,7 +321,11 @@ export default StyleSheet.create<Style>({
     btnView: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginVertical: 10,
+        // Was marginVertical: 10. Split so only the top shrinks, by the same 9
+        // the circles gained above; the bottom margin stays 10 and nothing
+        // below the row shifts.
+        marginTop: 1,
+        marginBottom: 10,
     },
     current: {
         position: 'absolute',
@@ -742,7 +746,13 @@ export default StyleSheet.create<Style>({
         position: 'absolute',
     },
     circularView: {
-        marginTop: 16,
+        // 16 -> 25: the arc is a C open at the bottom, so the 140pt circle box
+        // carries ~23pt of dead space under the visible stroke. That made the
+        // gap under the pair read much wider than the gap above it. Push the
+        // circles down 9 and take the same 9 off btnView's top margin below, so
+        // the pair recentres between the Total Balance box and Receive/Send
+        // without the row itself moving.
+        marginTop: 25,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
