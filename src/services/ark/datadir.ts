@@ -17,6 +17,27 @@ export async function ensureArkDatadir(): Promise<string> {
 }
 
 /**
+ * Is there already a vault on disk?
+ *
+ * Stricter than `hasArkDatadir()` in restore.ts, which answers "does the
+ * directory exist". `ensureArkDatadir()` creates an empty directory before
+ * bark writes anything, and a partial create can leave one behind, so
+ * directory-exists would refuse a legitimate first create after an orphan.
+ * Non-empty is the question that actually means "a wallet lives here".
+ */
+export async function arkDatadirHasWallet(): Promise<boolean> {
+    try {
+        if (!(await RNFS.exists(ARK_DATADIR))) return false;
+        const entries = await RNFS.readDir(ARK_DATADIR);
+        return entries.length > 0;
+    } catch {
+        // Unreadable is not "empty". Report occupied so the create path
+        // refuses rather than writing a second wallet over unknown state.
+        return true;
+    }
+}
+
+/**
  * Delete the Ark datadir (VTXO state, SQLite, exit txs).
  *
  * DESTRUCTIVE: any funds in VTXOs not backed up externally are unrecoverable

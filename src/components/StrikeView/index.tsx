@@ -347,44 +347,13 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                     </GradientView>
                 </View>
             </View>
-            {/* Deposit/Withdraw Fiat Button */}
-            {isShowButtons && (
-                <TouchableOpacity
-                    onPress={() => {
-                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                        if (!showFiatPanel) {
-                            // Fetch bank methods when opening
-                            setBankLoading(true);
-                            getBankPaymentMethods()
-                                .then(res => {
-                                    const methods = Array.isArray(res) ? res : res?.items || [];
-                                    const readyMethods = methods.filter((m: any) => m?.state === 'READY');
-                                    setBankMethods(readyMethods);
-                                    if (readyMethods.length > 0 && !selectedBank) {
-                                        setSelectedBank(readyMethods[0]);
-                                    }
-                                })
-                                .catch(err => console.error('Error loading banks:', err))
-                                .finally(() => setBankLoading(false));
-                        }
-                        setShowFiatPanel(!showFiatPanel);
-                    }}
-                    style={{
-                        marginTop: 16,
-                        paddingVertical: 10,
-                        paddingHorizontal: 20,
-                        borderRadius: 12,
-                        borderWidth: 1.5,
-                        borderColor: showFiatPanel ? '#FF65D4' : '#555',
-                        backgroundColor: showFiatPanel ? 'rgba(255,101,212,0.08)' : 'transparent',
-                        alignSelf: 'center',
-                    }}
-                >
-                    <Text bold style={{ fontSize: 14, color: showFiatPanel ? '#FF65D4' : '#CCC', textAlign: 'center' }}>
-                        {showFiatPanel ? 'Close' : 'Deposit / Withdraw Fiat'}
-                    </Text>
-                </TouchableOpacity>
-            )}
+            {/* The Deposit / Withdraw Fiat button was removed here. It opened the
+                panel below, which is wired to Strike's bank rails (getBankPaymentMethods,
+                initiateDeposit, createPayout / initiatePayout) but only lists methods in
+                state READY, so on an account with no linked bank it opened empty and read
+                as doing nothing. The panel is left in place but is now unreachable,
+                showFiatPanel can no longer become true, so the feature can be finished
+                rather than rebuilt. */}
 
             {/* Fiat Deposit/Withdraw Panel */}
             {showFiatPanel && (

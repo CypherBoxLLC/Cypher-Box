@@ -3,6 +3,7 @@ import { GradientView } from "@Cypher/components";
 import React, { useContext, useMemo, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   useAnimatedStyle,
@@ -45,6 +46,7 @@ interface Props {
 export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, wallet, coldStorageWallet, matchedRate, matchedRateBTC = 0, currency }: Props) {
   const { user, strikeMe, vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
   const { sleep } = useContext(BlueStorageContext);
+  const insets = useSafeAreaInsets();
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [utxoList, setUtxoList] = useState<any[]>([]);
@@ -374,7 +376,12 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
 
           {/* ======= SECOND VIEW: Capsule Submenu ======= */}
           <Animated.View style={[{ position: "absolute", width: '100%', height: '100%' }, view2Style]}>
-            <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 12 }}>
+            {/* The sheet's own bottom edge falls below the screen, so the footer
+                row (balance + Send) landed in and past the home indicator and got
+                cropped. The empty and loading states here are flex:1, so they absorb
+                this padding and pull the footer up by exactly this much. insets.bottom
+                is 0 where there is no home indicator, so no dead space is added. */}
+            <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 12, paddingBottom: insets.bottom + 18 }}>
               {/* Header — centered */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10, position: 'relative' }}>
                 <TouchableOpacity activeOpacity={0.6} onPress={backClickHandler} style={{ position: 'absolute', left: 0, padding: 8 }}>
@@ -437,7 +444,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                     paddingHorizontal: 4,
                     paddingBottom: 6,
                   }}
-                  style={{ maxHeight: Dimensions.get('window').height * 0.30, marginTop: 10 }}
+                  style={{ maxHeight: Dimensions.get('window').height * 0.30 - insets.bottom, marginTop: 10 }}
                 >
                   {utxoList.map((item: any) => renderCapsuleTile(item))}
                 </ScrollView>

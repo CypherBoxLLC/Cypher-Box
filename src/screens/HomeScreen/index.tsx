@@ -33,7 +33,7 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
+import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkPushTokenBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
@@ -171,6 +171,13 @@ export default function HomeScreen({ route }: Props) {
   // with a single mount. No-op once the destination is set or when there
   // is no Hot Vault.
   useArkExitDestinationBackfill();
+  // Ark push-token backfill: mints the expiry-wake push token when the
+  // reminders flag is on but no token exists. `arkBgRefreshEnabled`
+  // defaults to true, and the only other minting call site fires on the
+  // transition to on, so every pre-existing wallet has the flag set and no
+  // token, leaving the unattended refresh permanently dark. Additive and
+  // idempotent: no-op once a token exists.
+  useArkPushTokenBackfill();
   // Arkoor receive prompt: detects new arkoor VTXOs (Lightning receives
   // typically materialise as arkoor with a ~3-day TTL the SDK doesn't
   // surface as expiryHeight) and shows a one-time educational popup +
@@ -1025,7 +1032,18 @@ export default function HomeScreen({ route }: Props) {
           :
           (
             <>
-              <View style={{ height: 50 }} />
+              {/* Top spacer, and the only lever that lifts the whole Total Assets
+                  cluster on iPhone. The scroll viewport starts at y=48 and the header
+                  row lands at y=48+50+0-34=64, so there are 16pt of headroom and no
+                  more: past that the title and icons slide under the notch and clip.
+                  Shrinking the spacer reflows the header, the Total Balance box, the
+                  wallet cards and send/receive up together, so every per-combination
+                  translateY below keeps its tuning exactly. translateY on those
+                  wrappers cannot do this: it paints without reflowing, and the header
+                  is already against the top of the viewport.
+                  Ark-only is excluded because its header carries a -20 of its own and
+                  already clips by 4pt as shipped, so lifting it further would bury it. */}
+              <View style={{ height: Platform.OS === 'ios' && !(!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? 36 : 50 }} />
               {/*
                 Header now hosts the "Scan with" picker — left-side scan
                 icon → modal → camera → routes to the chosen wallet's send
@@ -1064,7 +1082,7 @@ export default function HomeScreen({ route }: Props) {
                   against the header in those configurations. Strike-
                   included cases stay at their existing translateY
                   values — that layout was already tuned correctly. */}
-              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -25 /* lift Total Balance card 25pt up */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? 2 /* no LN wallet: +30 vs prior -28, drop the Total Balance box + Unlock-Lightning card + send/receive so they stop overlapping the "Total Assets" header */ : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? 7 /* Strike+Ark (no Coinos): balance box down 15pt vs prior -33 so the header doesn't crowd the Ark card on this combo */ : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? 7 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? 7 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -8 : (!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? -13 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? 7 /* Coinos+Ark: balance box down a touch toward the card, but keep clear space above the cards (tighten the 2-box cluster modestly) */ : -53 }, { translateY: enterTranslate }] }}>
+              <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -31 /* lift Total Balance card 31pt up. Was -25, raised 6pt. The cards/send-receive base below moves the same 6pt, so the whole cluster rises together and the gap between the card and the wallet cards is unchanged. */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? 8 /* no LN wallet: net stays -23, deliberately UNCHANGED by the 6pt lift in the base above (branch raised 2 -> 8 to cancel it). This layout is correct as-is and must not move. Original note: drop the Total Balance box + Unlock-Lightning card + send/receive so they stop overlapping the "Total Assets" header */ : (!isLoading && isStrikeAuth && isArkAuth && !isAuth) ? 7 /* Strike+Ark (no Coinos): balance box down 15pt vs prior -33 so the header doesn't crowd the Ark card on this combo */ : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? 7 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 7 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? 7 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -8 : (!isLoading && !isAuth && !isStrikeAuth && isArkAuth) ? -13 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? 7 /* Coinos+Ark: balance box down a touch toward the card, but keep clear space above the cards (tighten the 2-box cluster modestly) */ : -53 }, { translateY: enterTranslate }] }}>
                 <BalanceView
                   // balance={`${(btc(1) * (Number(balance) || 0)) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0)} BTC`}
                   // Ark balance is stored in zustand as plain sats (see
@@ -1106,7 +1124,7 @@ export default function HomeScreen({ route }: Props) {
               the prior layout — paired with the BalanceView shift above
               so the gap between them stays the same. Strike-included
               cases stay at their existing translateY values. */}
-          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -24 /* lift wallet cards + circular view + send/receive group 24pt up. Was -30, relaxed by 6pt so every Lightning-wallet combination sits clear of the Total Assets card instead of touching it. Changing the BASE keeps all per-combination tuning below intact and shifts them equally. */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? -4 /* no LN wallet: net stays -28, deliberately unaffected by the 6pt relax above. This case renders the Unlock-Lightning CTA rather than a wallet card, and it was already spaced correctly. */ : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -20 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -13 : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? 0 : (!isLoading && isStrikeAuth && isArkAuth) ? -5 : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? 17 : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? 12 : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -1 : -68 }, { translateY: enterTranslate }] }}>
+          <Animated.View style={{ opacity: enterAnim, transform: [{ translateY: -30 /* lift wallet cards + circular view + send/receive group 30pt up. Raised 6pt to match the Total Assets card base above, so the cluster moves as one and the card-to-wallets gap tuned earlier is preserved. Previously -24, itself relaxed by 6pt so every Lightning-wallet combination sits clear of the Total Assets card instead of touching it. Changing the BASE keeps all per-combination tuning below intact and shifts them equally. */ }, { translateY: (!isAuth && !isLoading && !isStrikeAuth && !isArkAuth) ? 2 /* no LN wallet: net stays -28, deliberately unaffected by the base changes above (branch moved -4 -> 2 to cancel the 6pt lift). This layout is correct as-is and must not move. This case renders the Unlock-Lightning CTA rather than a wallet card, and it was already spaced correctly. */ : (!isLoading && isArkAuth && !isStrikeAuth && !isAuth) ? -20 : (!isLoading && isAuth && !isStrikeAuth && !isArkAuth) ? -26 /* CoinOS alone: measured 25pt under the Total Balance box (box ends 274, card at 299). This is the only single-page carousel, no fiat card means no indicator row, so it reflows unlike every other combo and a shared constant does not transfer. -26 brings it to ~12. */ : (!isLoading && isAuth && isStrikeAuth && isArkAuth) ? -13 /* all-three: both carousel pages sat ~25-28pt below the Total Balance box. Lift the cluster 13pt so the Ark card and the Strike/Coinos circular pair both close up to it. The shared Receive/Send row rides along and this combo's BUTTONS_TOP above puts the space back underneath. */ : (!isLoading && isStrikeAuth && isArkAuth) ? -8 /* Strike+Ark: 7pt up, to close the gap between the Total Balance box and the wallet card. The Receive/Send row rides along, and this combo's BUTTONS_TOP above adds the space back below the card. */ : (!isLoading && isStrikeAuth && !isAuth && !isArkAuth) ? -3 /* Strike alone: was 17, which left the card 32pt under the Total Balance box (box ends 272, card at 304). -3 brings it to ~12, the gap approved for Strike+Ark. Not the same number as that combo (-8) because this one is a two-page carousel where that one is three, which is worth ~5pt of reflow. */ : (!isLoading && isAuth && isStrikeAuth && !isArkAuth) ? -13 /* CoinOS+Strike, no Ark: the circular pair sat 41pt under the Total Balance box (box ends 267, circles start 308). Lift 25pt to bring it to ~16. The Receive/Send pair lives inside CircularView here, not the shared row, so it rides along and the spacing under the circles is unchanged. */ : (!isLoading && isAuth && !isStrikeAuth && isArkAuth) ? -1 : -68 }, { translateY: enterTranslate }] }}>
             {/*
               Carousel-vs-CTA gate. Falls through to CreateLightningAccount only
               when NO Lightning provider (CoinOS / Strike / Ark) is connected.

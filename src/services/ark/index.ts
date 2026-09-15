@@ -23,7 +23,7 @@ export {
 } from './recover';
 export type { ArkRecoveryResult, ArkSeedKeychainConflict } from './recover';
 
-export { restoreArkWalletFromDisk, reopenArkWalletFromCache, ensureArkWalletHandleReady, hasArkDatadir } from './restore';
+export { restoreArkWalletFromDisk, reopenArkWalletFromCache, ensureArkWalletHandleReady, hasArkDatadir, isTransientArkOpenError } from './restore';
 export type { ArkRestoreResult } from './restore';
 
 export { createArkLightningInvoice, getArkAddress, getArkOnchainAddress } from './receive';
@@ -36,6 +36,7 @@ export {
     getArkOnchainHandle,
     ensureArkOnchainHandle,
     getCachedArkMnemonic,
+    getLastArkRecoveryReport,
 } from './walletHandle';
 
 export { fetchArkBalance, applyExpiredVtxoFilter } from './balance';

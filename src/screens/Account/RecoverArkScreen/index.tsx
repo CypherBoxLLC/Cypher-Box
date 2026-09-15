@@ -10,11 +10,16 @@ import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
     checkArkSeedKeychainConflict,
     classifyPickedBackupBlob,
+    clearArkWalletHandle,
     connectGoogleDrive,
     createArkWallet,
+    deleteArkDatadir,
     deriveBackupFingerprint,
     getArkWalletHandle,
+    getLastArkRecoveryReport,
     hasArkDatadir,
+    isTransientArkOpenError,
+    openArkWallet,
     isGoogleDriveConnected,
     lookupArkBackupInLocalDocuments,
     lookupArkBackupInSafFolder,
@@ -49,6 +54,12 @@ type Mode = 'auto' | 'type';
 
 const BIOMETRIC_LABEL = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
 
+// Single source of truth for the seed-only CTA. The "no backup matches this
+// seed" errors quote it verbatim, so the words in the error are the words on
+// the button. Only TypeSeedView renders it, so only TypeSeedView's errors may
+// name it (see noBackupMatchError).
+const SEED_ONLY_CTA_LABEL = "Continue without a backup file";
+
 /**
  * RecoverArkScreen — manual 12-word recovery for an Ark wallet.
  *
@@ -66,12 +77,22 @@ const BIOMETRIC_LABEL = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
  * Recovery paths preserved from the previous implementation:
  *   1. Keychain fast path — Face ID unlock → Restore from backup file/cloud.
  *      Used for same-device reinstall where the seed survived.
- *   2. Typed grid — user types 12 words. Surfaces the existing two CTAs:
- *      "Recover" (seed-only, lands on empty wallet) and
- *      "Restore from backup file" (the only path that actually returns funds).
+ *   2. Typed grid — user types 12 words. Surfaces two CTAs:
+ *      "Restore from backup file" and, for the user who has no .cbark,
+ *      "Continue without a backup file" (seed-only).
  *   3. Backup file / cloud — works with whichever mnemonic is resolved
- *      (keychain-unlocked or typed). VTXOs aren't seed-derivable in Bark,
- *      so this is the *only* path that returns funds.
+ *      (keychain-unlocked or typed). Restores local state verbatim, so it
+ *      returns the most.
+ *
+ * Seed-only is NOT an empty-wallet path any more. bark 0.6.1 scans a
+ * server-side recovery mailbox on the open that creates the wallet locally
+ * (`WalletOpenArgs.skipRecovery = !forceRescan`, see walletHandle.ts) and
+ * re-imports the VTXOs the ASP still tracks for this seed. It is best-effort,
+ * not a guarantee: the scan can fail while the open still succeeds, and VTXOs
+ * keyed past the 50-consecutive-unused-index gap limit land in the report's
+ * `foreign` bucket and are not recoverable by retrying. That is why the .cbark
+ * is still the recommended path, and why the outcome is shown to the user
+ * instead of silently dropping them on Home.
  */
 export default function RecoverArkScreen() {
     const {
@@ -425,6 +446,24 @@ export default function RecoverArkScreen() {
         return true;
     };
 
+    // Show the typed-grid view when the probe says no seed exists (cold
+    // install / new device — typing is the only way in) OR when the user
+    // explicitly opted into typing from the Face ID chooser.
+    const showTypeView = mode === 'type' || keychainHasSeed === false;
+
+    // The seed-only CTA lives in TypeSeedView only. In ChooseView the restore
+    // buttons appear only once `unlockedMnemonic` is set, and "Type seed
+    // manually instead" is hidden in exactly that state, so a ChooseView
+    // no-match has no route to the seed-only path on screen. Naming the button
+    // there would send the user hunting for a control that isn't rendered, so
+    // that branch stays generic.
+    const noBackupMatchError = () =>
+        showTypeView
+            ? "No backup matches this seed phrase. " +
+              `Check the seed, or tap "${SEED_ONLY_CTA_LABEL}" below if you don't have one.`
+            : "No backup matches this seed phrase. " +
+              "Check that you picked the right file, or try your other backup source.";
+
     // forcePicker bypasses the local-first read so the user can restore from
     // some other .cbark — e.g. an older manually-exported snapshot. Wired to
     // the "Pick a different file…" escape hatch in both view variants.
@@ -524,10 +563,7 @@ export default function RecoverArkScreen() {
         if (await tryRestoreFromLookup(picked, mnemonic, undefined, 'file restore')) return;
 
         setRestoring(false);
-        setErrorMsg(
-            "No backup matches this seed phrase. " +
-            "Check the seed, or proceed without a backup if you don't have one.",
-        );
+        setErrorMsg(noBackupMatchError());
     };
 
     const handleRestoreFromGoogleDrive = async () => {
@@ -573,7 +609,8 @@ export default function RecoverArkScreen() {
             setRestoring(false);
             setErrorMsg(
                 "No backup matches this seed phrase in Google Drive. " +
-                "Check that you're signed in with the right Google account, or pick a backup file manually.",
+                "Check that you're signed in with the right Google account, or pick a backup file manually." +
+                (showTypeView ? ` If you don't have one, tap "${SEED_ONLY_CTA_LABEL}" below.` : ""),
             );
         } catch (err: any) {
             console.warn('[Ark restore] Drive flow failed:', err);
@@ -661,42 +698,119 @@ export default function RecoverArkScreen() {
         if (await tryRestoreFromLookup(picked, mnemonic, 'icloud-drive', 'iCloud restore')) return;
 
         setRestoring(false);
-        setErrorMsg(
-            "No backup matches this seed phrase. " +
-            "Check the seed, or proceed without a backup if you don't have one.",
-        );
+        setErrorMsg(noBackupMatchError());
+    };
+
+    /**
+     * Tell the user what the recovery-mailbox scan actually found, before
+     * finalizeWallet dispatchResets to Home and destroys the back stack.
+     *
+     * Without this, a seed-only recovery that found nothing is visually
+     * identical to a brand-new empty wallet, and the user has no way to tell
+     * "this seed genuinely holds nothing" apart from "the scan failed". Those
+     * two are fund-safety-distinct: bark logs a failed scan and lets the open
+     * succeed, so an absent report is NOT proof that nothing is missing.
+     */
+    const reportRecoveryOutcome = async (): Promise<void> => {
+        let report: ReturnType<typeof getLastArkRecoveryReport>;
+        try {
+            report = getLastArkRecoveryReport();
+        } catch (err) {
+            console.warn("[Ark recover] getLastArkRecoveryReport threw:", err);
+            return;
+        }
+
+        const recoveredCount = report ? report.recovered.vtxoIds.length : 0;
+        const recoveredSats = report ? Number(report.recovered.totalSats) : 0;
+        // `isComplete` is the SDK's own "no failed, no foreign" flag. Do not
+        // re-derive it from the buckets.
+        const incomplete = !!report && !report.isComplete;
+
+        // Every id the scan looked at, across all five buckets. Only an
+        // all-empty report justifies "the server had no capsules for this
+        // seed". A zero `recovered` count alone does not, because the ids may
+        // have landed in skipped/exited (nothing left to bring back) or in
+        // failed/foreign (funds may be missing).
+        const bucketsTouched = report
+            ? report.recovered.vtxoIds.length +
+              report.skipped.vtxoIds.length +
+              report.foreign.vtxoIds.length +
+              report.failed.vtxoIds.length +
+              report.exited.vtxoIds.length
+            : 0;
+
+        let title: string;
+        let message: string;
+        if (!report) {
+            title = "Wallet recovered";
+            message =
+                "Your wallet is back, but the capsule scan didn't report a result, so this isn't proof that nothing is missing. Keep your 12 words safe and don't reset this wallet. If you have an ark-backup file, restoring from it is the way to be sure.";
+        } else if (incomplete) {
+            // MUST precede the recovered === 0 test. `isComplete` false means
+            // the scan left ids in `failed` or `foreign`, and the SDK documents
+            // both as "funds may be missing". Telling this user "no capsules
+            // found" states the opposite of the fund state, which is the exact
+            // failure this function exists to prevent.
+            title = "Wallet recovered, some capsules unresolved";
+            message =
+                (recoveredCount === 0
+                    ? "The Ark server listed capsules for this seed, but none of them could be resolved. "
+                    : `Brought back ${recoveredCount} capsule${recoveredCount === 1 ? "" : "s"} worth ${recoveredSats} sats, but the scan couldn't account for everything. `) +
+                "Some funds may still be missing. Keep your 12 words safe and don't reset this wallet. If you have an ark-backup file, restore from it as well.";
+        } else if (bucketsTouched === 0) {
+            title = "Wallet recovered, no capsules found";
+            message =
+                "The Ark server had no capsules linked to this seed. Your wallet is open and usable. If you expected a balance, check that you typed the right seed phrase.";
+        } else if (recoveredCount === 0) {
+            // Complete scan, nothing to bring back: every id was already spent,
+            // exited on-chain, or reported non-spendable. That is a definite
+            // answer, unlike the branches above.
+            title = "Wallet recovered, nothing left to restore";
+            message =
+                "The Ark server's capsules for this seed were already spent or exited on-chain, so there was nothing to bring back. Your wallet is open and usable.";
+        } else {
+            title = "Wallet recovered";
+            message = `Brought back ${recoveredCount} capsule${recoveredCount === 1 ? "" : "s"} worth ${recoveredSats} sats.`;
+        }
+
+        // Resolve on dismiss as well as on the button. This promise gates
+        // finalizeWallet, so an Alert that is swiped away or dismissed by the
+        // Android back button must not leave the user parked on the recover
+        // screen with a wallet that is already open. Dismissing just means
+        // "continue", so there is nothing to lose by treating it as the button.
+        await new Promise<void>((resolve) => {
+            Alert.alert(title, message, [{ text: "Continue", onPress: () => resolve() }], {
+                cancelable: true,
+                onDismiss: () => resolve(),
+            });
+        });
     };
 
     const handleRecoverSeedOnly = async () => {
-        if (submitting) return;
-        const mnemonic = secretWords
-            .map((w) => w.trim().toLowerCase())
-            .filter(Boolean)
-            .join(" ");
+        if (submitting || restoring) return;
+        // Resolve through the shared resolver rather than reading the typed
+        // grid directly. It prefers `unlockedMnemonic`, which is what makes
+        // this handler usable from ChooseView: a user who unlocked the seed
+        // with Face ID has an empty grid, and reading `secretWords` here used
+        // to fail them with "Please fill in all 12 words" for a seed the
+        // device was already holding. It applies the same 12-word and BIP39
+        // checks, so the typed path is unchanged.
+        const resolved = await resolveMnemonicForRestore();
+        if (!resolved) return;
+        const { mnemonic } = resolved;
 
-        if (mnemonic.split(/\s+/).length !== 12) {
-            setErrorMsg("Please fill in all 12 words.");
-            return;
-        }
-        let valid = false;
-        try {
-            valid = validateMnemonic(mnemonic);
-        } catch (err) {
-            console.warn("[Ark recover] validateMnemonic threw:", err);
-            setErrorMsg("Couldn't validate seed phrase. Check the words and try again.");
-            return;
-        }
-        if (!valid) {
-            setErrorMsg(
-                "Invalid seed phrase. Double-check spelling. Each word must be a BIP39 word.",
-            );
-            return;
-        }
+        // `datadirExists` is a mount-time snapshot (the probe effect has an
+        // empty dep array). A .cbark restore attempted after mount unlinks,
+        // recreates and repopulates the datadir before its open throws, so the
+        // snapshot can say "no datadir" while a full one is on disk. Re-probe,
+        // because everything below branches on it.
+        const datadirOnDisk = await hasArkDatadir();
 
-        if (datadirExists) {
+        // A live wallet is left strictly alone.
+        if (datadirOnDisk && (!!getArkWalletHandle() || isArkAuth)) {
             Alert.alert(
-                "An Ark wallet already exists",
-                "There's already an Ark wallet set up on this device. Open it first to reset before restoring from backup. Otherwise the existing wallet stays.",
+                "An Ark wallet is already open",
+                "There's a live Ark wallet on this device. Open the setup screen and reset it there first, then recover from your seed. Nothing has been changed.",
                 [
                     { text: "Cancel", style: "cancel" },
                     { text: "Open setup", onPress: () => dispatchNavigate("CreateArkScreen") },
@@ -707,6 +821,102 @@ export default function RecoverArkScreen() {
 
         setSubmitting(true);
         setErrorMsg(null);
+
+        // Datadir on disk with no live wallet. Ask the datadir who it belongs
+        // to rather than guessing, and never route the user to CreateArkScreen.
+        //
+        // Both of the obvious shortcuts are wrong, and each has drawn blood:
+        //
+        //   Wiping on "no handle and !isArkAuth" looks safe and is not.
+        //   `isArkAuth` is not a liveness proof: useArkRestoreOnBoot clears it
+        //   whenever restoreArkWalletFromDisk returns `no-datadir`, and
+        //   hasArkDatadir() swallows every RNFS error into `false`, so one
+        //   transient read clears auth on a device that does have a funded
+        //   vault. Wiping there takes exit-tree txs, presigned CPFP children,
+        //   LN preimages and arkoor refs, none of them seed-derivable and none
+        //   of them on the recovery mailbox.
+        //
+        //   Sending the user to CreateArkScreen is worse, which is why this
+        //   replaced it. That screen sees the same orphan-looking datadir and
+        //   auto-cleans it SILENTLY with no prompt, then presents its create
+        //   UI, so the user taps through and lands on a brand new generated
+        //   seed instead of the one they just typed. Observed on device.
+        //
+        // openArkWallet is open-only (createIfNotExists: false) and never
+        // deletes, so probing with it is free. A successful open is positive
+        // proof the datadir is this seed's wallet.
+        if (datadirOnDisk) {
+            let probeErr: string | null = null;
+            try {
+                await openArkWallet(mnemonic);
+            } catch (err: any) {
+                probeErr = `${(err as { tag?: string })?.tag ?? ''} ${(err as Error)?.message ?? String(err)}`;
+            }
+
+            if (!probeErr) {
+                // It is this seed's own wallet, already on disk and openable.
+                // Nothing to recover and nothing to destroy: adopt it. The
+                // mailbox scan does not run on an open (only on the create),
+                // but that is the correct trade here. Re-deriving this wallet
+                // from the mailbox would mean deleting local state that the
+                // mailbox cannot give back.
+                const adopted = await persistSeedToKeychain(mnemonic, 'seed-only adopt');
+                setSubmitting(false);
+                await new Promise<void>((resolve) => {
+                    Alert.alert(
+                        "Wallet reopened",
+                        "This device already had this wallet's data, so it was reopened as it was. Nothing was deleted and nothing was re-downloaded.",
+                        [{ text: "Continue", onPress: () => resolve() }],
+                        { cancelable: true, onDismiss: () => resolve() },
+                    );
+                });
+                await finalizeWallet(mnemonic, undefined, adopted);
+                return;
+            }
+
+            if (isTransientArkOpenError(probeErr)) {
+                // We do NOT know whose datadir this is. Saying "wrong seed" here
+                // and offering a wipe would invite the user to delete their own
+                // wallet because esplora happened to be rate-limiting.
+                await clearArkWalletHandle();
+                setSubmitting(false);
+                setErrorMsg(
+                    "Couldn't reach the Ark server to check the wallet data already on this device, so nothing was changed. Check your connection and try again in a moment.",
+                );
+                return;
+            }
+
+            // Non-transient: the datadir does not open with this seed, so it
+            // belongs to a different wallet (or is corrupt). Only now is a
+            // delete defensible, and only with an explicit decision.
+            console.warn('[Ark recover] existing datadir does not open with this seed:', probeErr.trim());
+            await clearArkWalletHandle();
+            const proceed = await new Promise<boolean>((resolve) => {
+                Alert.alert(
+                    "Different wallet data on this device",
+                    "The Ark data on this device belongs to a different seed phrase, so it can't be reopened with the words you typed. Recovering replaces it. If that other wallet still holds funds, make sure its seed phrase is written down before you continue.",
+                    [
+                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                        { text: "Replace it", style: "destructive", onPress: () => resolve(true) },
+                    ],
+                    { cancelable: true, onDismiss: () => resolve(false) },
+                );
+            });
+            if (!proceed) {
+                setSubmitting(false);
+                return;
+            }
+            try {
+                await deleteArkDatadir();
+            } catch (err: any) {
+                console.warn('[Ark recover] datadir delete failed:', err?.message ?? err);
+                setSubmitting(false);
+                setErrorMsg(
+                    "Couldn't clear the other wallet's data on this device. Open the setup screen and tap Reset, then try again.",
+                );
+                return;
+            }
+        }
 
         // Conflict guard: same as the file-restore paths. Seed-only
         // recovery (no .cbark) is a strong signal the user is committed
@@ -736,31 +946,6 @@ export default function RecoverArkScreen() {
             }
         }
 
-        const savedSeed = await saveArkSeedToKeychain(mnemonic);
-        if (!savedSeed.ok) {
-            if (savedSeed.kind === 'no-biometric-gate') {
-                // Do NOT abort here. The user can still recover and use the
-                // wallet; they just do not get the biometric fast path next
-                // time. Blocking recovery over a missing fingerprint would be
-                // a worse outcome than recovering without the saved seed.
-                console.warn(
-                    '[Ark recover] seed not saved: no biometric gate, storage=',
-                    savedSeed.storage,
-                );
-                Alert.alert(
-                    "Seed not saved on this device",
-                    "This device has no fingerprint set up, so the seed was not stored behind one. Recovery continues. Keep your 12 words safe, you will need them next time.",
-                );
-            } else {
-                console.warn("[Ark recover] Keychain save failed:", savedSeed.reason);
-                setSubmitting(false);
-                setErrorMsg(
-                    `Couldn't save the seed to Keychain: ${savedSeed.reason}. Recovery aborted to keep state consistent.`,
-                );
-                return;
-            }
-        }
-
         try {
             await createArkWallet(mnemonic, true);
         } catch (err: any) {
@@ -775,20 +960,59 @@ export default function RecoverArkScreen() {
             return;
         }
 
-        setSubmitting(false);
+        // Seed write AFTER the wallet is open, matching every restore path
+        // (persistSeedToKeychain). The ordering is load-bearing: a write here
+        // that fails must not have already clobbered the previous wallet's
+        // keychain seed for a recovery that never completed. The conflict
+        // prompt above stays BEFORE the create on purpose, because it only
+        // reads, and declining it has to abort before anything is touched.
+        const savedSeed = await saveArkSeedToKeychain(mnemonic);
+        if (!savedSeed.ok) {
+            // Non-fatal in both branches now: the wallet is already open, so
+            // aborting here would strand a recovered wallet rather than
+            // protect anything. The user just types the seed again next time.
+            //
+            // AWAITED, because reportRecoveryOutcome fires its own Alert in the
+            // same tick. Two unawaited Alerts back to back means the second
+            // replaces the first on iOS and queues behind it on Android, so the
+            // "your seed is not on this device" warning is the one the user
+            // never reads.
+            const body =
+                savedSeed.kind === 'no-biometric-gate'
+                    ? "This device has no fingerprint set up, so the seed was not stored behind one. Recovery continues. Keep your 12 words safe, you will need them next time."
+                    : `The seed couldn't be saved to this device (${savedSeed.reason}). Your wallet is recovered and usable. Keep your 12 words safe, you will need them next time.`;
+            if (savedSeed.kind === 'no-biometric-gate') {
+                console.warn(
+                    '[Ark recover] seed not saved: no biometric gate, storage=',
+                    savedSeed.storage,
+                );
+            } else {
+                console.warn("[Ark recover] Keychain save failed:", savedSeed.reason);
+            }
+            await new Promise<void>((resolve) => {
+                Alert.alert("Seed not saved on this device", body, [{ text: "OK", onPress: () => resolve() }], {
+                    cancelable: true,
+                    onDismiss: () => resolve(),
+                });
+            });
+        }
+
+        // `submitting` stays TRUE across both alerts on purpose. Clearing it
+        // re-renders the typed-seed grid behind the modal, putting all 12
+        // plaintext words back on screen in a room the user may no longer be
+        // alone in. finalizeWallet navigates away, so nothing needs the grid
+        // back; the only reset is on the error paths above, which do need it.
+        await reportRecoveryOutcome();
         // savedSeed.ok is false when the biometric gate could not be applied
         // (we continued the recovery deliberately), so the wallet record must
         // not claim the seed is on this device.
         await finalizeWallet(mnemonic, undefined, savedSeed.ok);
+        setSubmitting(false);
     };
 
     const cloudLabel = Platform.OS === 'ios' ? 'iCloud Drive' : 'Google Drive';
     const cloudHandler = Platform.OS === 'ios' ? handleRestoreFromICloud : handleRestoreFromGoogleDrive;
     const probing = keychainHasSeed === null;
-    // Show the typed-grid view when the probe says no seed exists (cold
-    // install / new device — typing is the only way in) OR when the user
-    // explicitly opted into typing from the Face ID chooser.
-    const showTypeView = mode === 'type' || keychainHasSeed === false;
 
     if (submitting || restoring) {
         return (
@@ -842,6 +1066,7 @@ export default function RecoverArkScreen() {
                         onRestoreFile={() => handleRestoreFromFile(false)}
                         onPickDifferentFile={() => handleRestoreFromFile(true)}
                         onRestoreCloud={cloudHandler}
+                        onRecoverSeedOnly={handleRecoverSeedOnly}
                     />
                 )}
             </View>
@@ -859,6 +1084,7 @@ interface ChooseViewProps {
     onRestoreFile(): void;
     onPickDifferentFile(): void;
     onRestoreCloud(): void;
+    onRecoverSeedOnly(): void;
 }
 
 // Face ID chooser — only shown when the device's Keychain already has the
@@ -874,6 +1100,7 @@ function ChooseView({
     onRestoreFile,
     onPickDifferentFile,
     onRestoreCloud,
+    onRecoverSeedOnly,
 }: ChooseViewProps) {
     return (
         <>
@@ -881,7 +1108,7 @@ function ChooseView({
                 Restore your Ark wallet
             </Text>
             <Text style={styles.introBody}>
-                {`Your Ark seed phrase is in this device's Keychain, so you don't need to type it. Tap unlock below to load the seed via ${BIOMETRIC_LABEL} / passcode.\n\nVTXO capsules can't be re-derived from the seed alone, so you'll also need your ark-backup file, from ${cloudLabel} (if you connected it earlier) or a manual export.`}
+                {`Your Ark seed phrase is in this device's Keychain, so you don't need to type it. Tap unlock below to load the seed via ${BIOMETRIC_LABEL} / passcode.\n\nRestoring from your ark-backup file, from ${cloudLabel} (if you connected it earlier) or a manual export, is the most complete option.`}
             </Text>
 
             {!unlockedMnemonic && (
@@ -941,6 +1168,17 @@ function ChooseView({
                     <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 14 }}>
                         Restore from {cloudLabel}
                     </Text>
+                </TouchableOpacity>
+            )}
+
+            {/* Seed-only, same tier and label as in TypeSeedView. This view's
+                whole audience is a same-device return where the seed is in the
+                Keychain, which is exactly the population most likely to have
+                lost the .cbark. Without this they were offered only the two
+                file paths and had no way forward at all. */}
+            {unlockedMnemonic && (
+                <TouchableOpacity onPress={onRecoverSeedOnly} style={styles.seedOnlyLink}>
+                    <Text style={styles.seedOnlyLinkText}>{SEED_ONLY_CTA_LABEL}</Text>
                 </TouchableOpacity>
             )}
 
@@ -1028,7 +1266,7 @@ function TypeSeedView({
             <Text style={styles.introBody}>
                 Enter the words exactly as you wrote them down. Order matters. Tap space or return to jump to the next box.
                 {"\n\n"}
-                Note: VTXO capsules cannot be recovered from the seed alone. To restore your funds, also restore from your ark-backup file (the buttons below).
+                Your ark-backup file restores the most, so use the buttons below if you have one. Without it you can continue with the seed alone. Cypher Box checks the Ark server for capsules linked to your seed and brings back what it finds: all of them, some, or none.
             </Text>
 
             <View style={styles.inputsContainer}>
@@ -1100,6 +1338,19 @@ function TypeSeedView({
                 <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 14 }}>
                     Restore from {cloudLabel}
                 </Text>
+            </TouchableOpacity>
+
+            {/* Seed-only path. Ranked above the gray "pick a different file"
+                link on purpose: for a user with no .cbark this is the only
+                route in, and the no-match errors point at it by name, so the
+                label here and SEED_ONLY_CTA_LABEL must stay the same string.
+                Fires handleRecoverSeedOnly, which calls
+                createArkWallet(mnemonic, true), so bark opens with the
+                recovery-mailbox scan enabled (skipRecovery = !forceRescan).
+                Ark-coloured rather than gray because it is a real branch, not
+                a refinement of the backup-file group above it. */}
+            <TouchableOpacity onPress={onRecover} style={styles.seedOnlyLink}>
+                <Text style={styles.seedOnlyLinkText}>{SEED_ONLY_CTA_LABEL}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
