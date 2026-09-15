@@ -27,8 +27,18 @@ const SECOND_FEES_URL = "https://second.tech/pricing";
  * same URL Second's own ToS incorporates by reference). In the meantime the
  * refresh row here had the rule backwards: it said the fee tracked the
  * capsule's *age* and was free while the capsule was young. It actually tracks
- * time *remaining* before expiry and is free in the last two days. Verified
- * against second.tech/pricing on 2026-08-12.
+ * time *remaining* before expiry and is free in the last two days.
+ *
+ * It bit us a second time. The rows below quoted 0.2/0.4/0.5% at under-2-days,
+ * 2-to-7-days and 7-days-plus, which is every band shifted one step up and the
+ * free tier dropped entirely, contradicting the paragraph directly above. The
+ * live table, read 2026-09-12 straight off the ASP with
+ * `bark dev ark-info https://ark.second.tech`, is base fee 0 plus a
+ * ppm-by-blocks-remaining ladder: 0 ppm under 288 blocks (~2 days), 2000 ppm to
+ * 1008 (~7 days), 4000 ppm to 2016 (~14 days), 5000 ppm above that. A fresh
+ * capsule carries vtxo_expiry_delta 4032 blocks (~28 days), so refreshing one
+ * on sight pays the top 0.5% band. Re-read the table the same way when you bump
+ * the date, rather than trusting the pricing page's prose.
  */
 export default function ArkCapsulesInfoScreen() {
     return (
@@ -164,7 +174,7 @@ export default function ArkCapsulesInfoScreen() {
                     <LinkRow label="second.tech/pricing" url={SECOND_FEES_URL} />
                     <FeeRow
                         title="Receiving from Lightning"
-                        body="0%, free."
+                        body="0%, free. The capsule you receive still has to be refreshed to extend its life by about 28 days, and that costs the refresh fee below."
                     />
                     <FeeRow
                         title="Sending Bark-to-Bark"
@@ -172,7 +182,7 @@ export default function ArkCapsulesInfoScreen() {
                     />
                     <FeeRow
                         title="Refreshing"
-                        body="0.2% with under 2 days left, 0.4% from 2 to 7 days, and 0.5% with more than 7 days left. Refreshing is free while a capsule is inside the short grace window just after expiry. Refreshing early costs the most, so waiting for a reminder is cheaper than refreshing on sight. Reminders fire inside the 0.2% band."
+                        body="Free with under 2 days left, 0.2% from 2 to 7 days, 0.4% from 7 to 14 days, and 0.5% with more than 14 days left. A fresh capsule lasts about 28 days, so refreshing one that still has most of its life left costs the most. Waiting for a reminder is cheaper than refreshing on sight."
                     />
                     <FeeRow
                         title="Sending over Lightning"
@@ -182,6 +192,68 @@ export default function ArkCapsulesInfoScreen() {
                         title="Withdrawing on-chain"
                         body="0.2% to 0.5% of the amount, plus standard Bitcoin network fees for the on-chain transaction."
                     />
+                </Section>
+
+                <Section title="Tip: choosing when to refresh">
+                    <Body>
+                        Refreshing late is cheaper. Refreshing early leaves you more room to
+                        get out on your own. That is the whole trade.
+                    </Body>
+                    <Body>
+                        If the Second.tech server ever becomes unreachable, you can still
+                        recover your sats yourself with an Emergency Exit, straight to the
+                        blockchain, without the server's permission. That exit has to be
+                        started before the capsule expires, and it needs at least a day to
+                        complete.
+                    </Body>
+                    <Body>
+                        So refreshing in the free window, the last 2 days, costs nothing but
+                        leaves very little room if the server goes down right then. Refreshing
+                        with 2 to 7 days left costs 0.2% and keeps several days of exit room in
+                        hand. Refreshing earlier than that costs 0.4% to 0.5% for time the
+                        capsule already had.
+                    </Body>
+                    <Body>
+                        The middle is usually the right call, and it is where the reminders
+                        start.
+                    </Body>
+                </Section>
+
+                <Section title="Example: 1M sats over 10 weeks">
+                    <Body>
+                        Alex adds 100K sats at the end of every week for 10 weeks, then
+                        withdraws the full 1 million sats to cold storage. Using the fees
+                        above:
+                    </Body>
+                    <StatusRow
+                        title="Receiving: free"
+                        body="Free over Lightning or on-chain. An on-chain deposit still pays the normal Bitcoin network fee to arrive."
+                    />
+                    <StatusRow
+                        title="Making each deposit last: about 2,000 sats"
+                        body="A Lightning deposit arrives as a short-lived capsule, good for only a few days. The wallet refreshes it straight away to buy the full 28 days. Because the fee tracks the time left on a capsule, that first refresh is a cheap one: free if the capsule arrives with under 2 days on it, otherwise 0.2%, about 200 sats per 100K deposit. Ten deposits, about 2,000 sats. Refreshing a second time right after pays the 0.5% band, because by then the capsule has its full 28 days again."
+                    />
+                    <StatusRow
+                        title="Keeping them alive: about 1,400 sats"
+                        body="After that, a capsule only needs refreshing once every 24 days, and refreshing at the reminder costs 0.2%, or 200 sats per 100K. Across the 10 weeks that is 7 more refreshes."
+                    />
+                    <StatusRow
+                        title="Withdrawing: 2,000 to 5,000 sats"
+                        body="0.2% to 0.5% of the 1M sats, depending on how much life the capsules have left, plus a few hundred sats of Bitcoin network fee."
+                    />
+                    <StatusRow
+                        title="Total: roughly 5,500 to 8,500 sats"
+                        body="About 0.55% to 0.85% of the 1M sats UTXO going to cold storage."
+                    />
+                    <Body>
+                        That first refresh on each deposit is automatic and unavoidable,
+                        otherwise the capsule expires within days. The later ones are where
+                        Alex has a choice, and two habits keep him at the low end: let the
+                        reminder tell him when to refresh instead of refreshing on sight, and
+                        time the withdrawal for when his capsules are in their last week
+                        rather than just after a refresh. Both still leave him several days to
+                        exit on his own if the Second.tech server goes down.
+                    </Body>
                 </Section>
             </ScrollView>
         </ScreenLayout>
