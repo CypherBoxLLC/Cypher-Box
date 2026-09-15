@@ -21,6 +21,7 @@ import {
     fetchArkRoundIntervalSecs,
     fetchArkVtxos,
     fetchChainTipHeight,
+    getChainTipFetchedAt,
     fetchArkExitVtxos,
     decideExitClaimBatch,
     decideExitDrivePlan,
@@ -528,7 +529,10 @@ export default function useArkSync(): UseArkSync {
                             // what left the VTXO capsule expiry displays stale
                             // and over-optimistic. This is the only place it
                             // advances mid-exit.
-                            setArkChainTipHeight(tip);
+                            // Stamp with the network read, not now: the tip
+                            // may have come from the 2-min cache, and
+                            // chainTipFreshness reads this timestamp.
+                            setArkChainTipHeight(tip, getChainTipFetchedAt());
                         }
                         _stamp(
                             `exit tip poll: ${tip ?? 'unreadable'}` +
@@ -1565,7 +1569,9 @@ export default function useArkSync(): UseArkSync {
             // tip is allowed to be null (esplora offline / network flake) —
             // leave the previous value in place rather than clearing.
             if (tip !== null) {
-                setArkChainTipHeight(tip);
+                // Real network-read time, not now. A cache hit must not look
+                // like fresh contact with esplora.
+                setArkChainTipHeight(tip, getChainTipFetchedAt());
             }
             setArkLastSyncedAt(Date.now());
             // A completed tick is the only thing that clears the streak, so

@@ -359,7 +359,12 @@ export type AuthStateType = {
     setArkExpiryNotifsScheduleVersion: (state: number) => void;
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setVaultDisplayAddress: (walletID: string, address: string | null) => void;
-    setArkChainTipHeight: (state: number | null) => void;
+    /** `at` is when the tip was READ FROM THE NETWORK. Pass
+     *  getChainTipFetchedAt() when the value may have come from the tip cache:
+     *  chainTipFreshness derives FRESH/DEGRADED/STALE from this stamp, so
+     *  defaulting it to now on a cache hit would report FRESH through an
+     *  esplora outage. */
+    setArkChainTipHeight: (state: number | null, at?: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
     setArkRoundIntervalSecs: (state: number | null) => void;
@@ -712,8 +717,11 @@ const createAuthStore = (
             return { vaultDisplayAddress: next };
         }),
     // Stamps the read time with the value, so the two can never drift apart.
-    setArkChainTipHeight: (state: number | null) =>
-        set({ arkChainTipHeight: state, arkChainTipHeightAt: state == null ? null : Date.now() }),
+    setArkChainTipHeight: (state: number | null, at?: number | null) =>
+        set({
+            arkChainTipHeight: state,
+            arkChainTipHeightAt: state == null ? null : (at ?? Date.now()),
+        }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
     setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
