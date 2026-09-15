@@ -1,6 +1,6 @@
 import { Config, Network } from '@secondts/bark-react-native';
 
-import { ESPLORA_FALLBACK_URLS } from './esploraProviders';
+import { ESPLORA_BARK_URLS, ESPLORA_FALLBACK_URLS } from './esploraProviders';
 
 /**
  * Master kill-switch for the Ark feature.
@@ -156,6 +156,15 @@ export const ESPLORA_URL = 'https://blockstream.info/api';
  * and therefore unit-testable; config.ts cannot be imported under jest.
  */
 export const ESPLORA_URLS: string[] = [...ESPLORA_FALLBACK_URLS];
+
+/**
+ * Providers the BARK client opens and syncs against. Deliberately narrower
+ * than ESPLORA_URLS: see the measurement in ./esploraProviders. The JS fetch
+ * path (chain tip, fee estimates) keeps the full list and is genuinely
+ * redundant; bark's path is not, and rotating it through providers that cannot
+ * work costs up to ~8.75 min of uncancellable OS timeout each.
+ */
+export const ESPLORA_URLS_BARK: string[] = [...ESPLORA_BARK_URLS];
 
 export function createArkConfig(overrides?: Partial<Parameters<typeof Config.create>[0]>) {
     return Config.create({

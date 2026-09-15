@@ -13,7 +13,7 @@ import {
 // type-only import rather than joining the value import above.
 import type { RecoveryBucket, RecoveryReport } from '@secondts/bark-react-native';
 
-import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
+import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS_BARK } from './config';
 import { arkDatadirHasWallet, deleteArkDatadir, ensureArkDatadir } from './datadir';
 import { ensureBackgroundArkSeed } from './backgroundKeychain';
 
@@ -224,8 +224,8 @@ export async function createArkWallet(
     // had no fallback, unlike recovery which already rotates. attempt 0 is the
     // same primary the old single-endpoint create used, so the happy path is
     // unchanged; only a network-shaped failure rotates to the next provider.
-    for (let attempt = 0; attempt < ESPLORA_URLS.length; attempt++) {
-        const config = createArkConfig({ esploraAddress: ESPLORA_URLS[attempt] });
+    for (let attempt = 0; attempt < ESPLORA_URLS_BARK.length; attempt++) {
+        const config = createArkConfig({ esploraAddress: ESPLORA_URLS_BARK[attempt] });
         try {
             // bark 0.15.0: create the onchain (BDK) wallet on this same esplora
             // and pin it at open (methods no longer take it per-call). A network
@@ -264,8 +264,8 @@ export async function createArkWallet(
             if (networkShaped) {
                 // The datadir is not the problem, so rotate to the next esplora
                 // and retry. Throw only after every provider has been tried.
-                if (attempt < ESPLORA_URLS.length - 1) {
-                    if (__DEV__) console.warn(`[Ark] create via ${ESPLORA_URLS[attempt]} failed (network-shaped: ${detail.trim()}); rotating esplora`);
+                if (attempt < ESPLORA_URLS_BARK.length - 1) {
+                    if (__DEV__) console.warn(`[Ark] create via ${ESPLORA_URLS_BARK[attempt]} failed (network-shaped: ${detail.trim()}); rotating esplora`);
                     continue;
                 }
                 throw err;
@@ -498,7 +498,7 @@ export function getArkOnchainHandle(): OnchainWalletInterface | null {
  * SQLite FDs before nulling the ref.
  */
 export function rotateArkOnchainEsplora(): void {
-    // Advance to the NEXT provider in ESPLORA_URLS, wrapping at the end.
+    // Advance to the NEXT provider in ESPLORA_URLS_BARK, wrapping at the end.
     //
     // This used to "reset to the reliable primary" instead of rotating, written
     // when the primary was mempool and blockstream was the endpoint worth
@@ -515,10 +515,10 @@ export function rotateArkOnchainEsplora(): void {
     //
     // The wallet-open loop in restore.ts already rotates this way and recovers
     // from the same bot-block, so this brings the on-chain handle in line with it.
-    if (ESPLORA_URLS.length < 2) return;
-    const current = ESPLORA_URLS.indexOf(sessionEsploraUrl);
+    if (ESPLORA_URLS_BARK.length < 2) return;
+    const current = ESPLORA_URLS_BARK.indexOf(sessionEsploraUrl);
     // Unknown current provider (-1) lands on index 0, i.e. the primary.
-    const next = ESPLORA_URLS[(current + 1) % ESPLORA_URLS.length];
+    const next = ESPLORA_URLS_BARK[(current + 1) % ESPLORA_URLS_BARK.length];
     if (next === sessionEsploraUrl) return;
     if (onchainHandle && typeof (onchainHandle as any).uniffiDestroy === 'function') {
         try {
@@ -572,7 +572,7 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
     // bot-blocking us surfaces at spawn or first sync as a network error;
     // trying the alternate keeps board detection alive instead of pinning
     // to a dead endpoint for the whole session.
-    const ordered = [sessionEsploraUrl, ...ESPLORA_URLS.filter((u) => u !== sessionEsploraUrl)];
+    const ordered = [sessionEsploraUrl, ...ESPLORA_URLS_BARK.filter((u) => u !== sessionEsploraUrl)];
     let lastErr: unknown;
     for (const esploraUrl of ordered) {
         try {

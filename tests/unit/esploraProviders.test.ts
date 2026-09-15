@@ -1,4 +1,5 @@
 import {
+    ESPLORA_BARK_URLS,
     ESPLORA_FALLBACK_URLS,
     ESPLORA_OPEN_ATTEMPTS,
     esploraOperator,
@@ -224,4 +225,46 @@ describe('walking the list, for callers that try every provider in turn', () => 
         const healthy = order(h).slice(0, 3);
         expect(healthy).toEqual([URLS[1], URLS[2], URLS[3]]);
     });
+});
+
+/**
+ * The bark list is a different question from the fallback list. Everything
+ * below exists because "verified" on 2026-08-21 meant a sequential curl, and
+ * all three providers it verified turned out to be unable to open a wallet.
+ */
+describe('ESPLORA_BARK_URLS', () => {
+  it('only contains providers a bark open was actually run against', () => {
+    // Measured 2026-09-15 with bark CLI 0.6.1 (matches SDK 0.16.1,
+    // releaseTag v0.16.1+bark-0.6.1). blockstream opened in 7.7s; the other
+    // three timed out on /scripthash/<h>/txs with os error 60.
+    expect([...ESPLORA_BARK_URLS]).toEqual(['https://blockstream.info/api']);
+  });
+
+  it('is a subset of the fallback list', () => {
+    // A provider bark can use must also be reachable on the JS fetch path,
+    // otherwise the tip and fee calls have a hole the open path does not.
+    for (const u of ESPLORA_BARK_URLS) {
+      expect(ESPLORA_FALLBACK_URLS as readonly string[]).toContain(u);
+    }
+  });
+
+  it('is never empty, or the wallet cannot open at all', () => {
+    expect(ESPLORA_BARK_URLS.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('leads with the same provider the session pins by default', () => {
+    expect(ESPLORA_BARK_URLS[0]).toBe(ESPLORA_FALLBACK_URLS[0]);
+  });
+
+  it('keeps the open-attempt count above the bark provider count', () => {
+    // Same invariant as the fallback list: fewer attempts than providers means
+    // the tail is never reached.
+    expect(ESPLORA_OPEN_ATTEMPTS).toBeGreaterThanOrEqual(ESPLORA_BARK_URLS.length);
+  });
+
+  it('does not silently regain redundancy by someone widening the list', () => {
+    // Adding an entry here is a claim that `bark create` was run against it.
+    // If this fails, that claim needs to be in the commit that changed it.
+    expect(ESPLORA_BARK_URLS.length).toBe(1);
+  });
 });
