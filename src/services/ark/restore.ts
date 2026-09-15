@@ -1,7 +1,7 @@
 import RNFS from 'react-native-fs';
 import * as Keychain from 'react-native-keychain';
 
-import { ESPLORA_URLS } from './config';
+import { ESPLORA_URLS_BARK } from './config';
 import {
     chooseEsploraProvider,
     classifyEsploraFailure,
@@ -155,14 +155,14 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
         // for as long as the cause warrants: an hour for a quota, five minutes
         // for an unreachable host.
         const choice = chooseEsploraProvider({
-            urls: ESPLORA_URLS,
+            urls: ESPLORA_URLS_BARK,
             health: getEsploraHealth(),
             now: Date.now(),
         });
         const esploraUrl = choice.url;
         try {
             await openArkWallet(seed, { esploraUrl });
-            if (__DEV__ && (attempt > 1 || esploraUrl !== ESPLORA_URLS[0])) {
+            if (__DEV__ && (attempt > 1 || esploraUrl !== ESPLORA_URLS_BARK[0])) {
                 console.log(
                     `[Ark restore] open succeeded on attempt ${attempt}/${OPEN_ATTEMPTS} via ${esploraUrl}`,
                 );
@@ -176,7 +176,7 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
             // bot-block / error page that bark parses as "bad response from
             // server (not a blockhash)" / "failed to parse hex". This is
             // provider-specific (blockstream refusing bark's client on some
-            // networks), so rotating to the next ESPLORA_URLS entry
+            // networks), so rotating to the next ESPLORA_URLS_BARK entry
             // (mempool.space) is the correct recovery. Treat it as retryable
             // alongside the raw connection errors — otherwise the loop breaks
             // on attempt 1 and never tries the working fallback, and the wallet

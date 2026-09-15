@@ -46,6 +46,51 @@ export const ESPLORA_FALLBACK_URLS = [
 ] as const;
 
 /**
+ * The subset of the list above that bark's own client can actually sync
+ * against. THIS IS NOT THE SAME SET, and assuming it was is what made the
+ * fallback list look like redundancy it never had.
+ *
+ * Measured 2026-09-15 with the bark CLI 0.6.1, which matches the app SDK
+ * exactly (@secondts/bark-react-native 0.16.1, releaseTag v0.16.1+bark-0.6.1).
+ * Fresh datadirs, mainnet, real ASP, `bark create` per provider:
+ *
+ *     blockstream.info            OPEN OK   7.7s
+ *     mempool.space               FAILED   59.1s
+ *     mempool.emzy.de             FAILED   43.9s
+ *     mempool.va1.mempool.space   FAILED   66.7s
+ *
+ * All three failures are `os error 60, TimedOut` on /scripthash/<h>/txs, which
+ * is BDK's wallet-sync query. The hosts are healthy: curl gets 200 on the same
+ * URL in 0.045s, and twelve rapid sequential queries all return 200. What bark
+ * does differently is issue a BURST of parallel connections, one per derived
+ * address, and these operators do not allow that from one IP while blockstream
+ * does. emzy was retested while answering curl in 0.045s and still timed out
+ * bark after 34.7s, so it is the request pattern and not the host or our IP.
+ *
+ * A SEQUENTIAL HEALTH CHECK CANNOT QUALIFY A PROVIDER FOR THIS LIST. That is
+ * the trap: every reasonable probe you would write passes against all four.
+ * The note above this list said "Verified 2026-08-21: each answered
+ * /blocks/tip/hash", and all three of those verified providers cannot open a
+ * wallet. Qualify a new entry by running `bark create` against it, nothing
+ * less.
+ *
+ * Keeping the unusable entries in the OPEN rotation was not free. A hung
+ * `Wallet.open` cannot be cancelled and there is deliberately no watchdog, so
+ * each unusable provider costs up to the full ~8.75 min OS timeout before the
+ * loop rotates past it (config.ts, 2026-07-09). One real entry that fails fast
+ * beats three that fail slowly.
+ *
+ * This list having one entry is a statement of fact, not a target. Blockstream
+ * is a hard single point of failure for wallet-open until an endpoint that
+ * tolerates the sync burst exists, which is what the authenticated/self-hosted
+ * work is for. The JS fetch path above keeps all four and is genuinely
+ * redundant.
+ */
+export const ESPLORA_BARK_URLS = [
+    'https://blockstream.info/api',
+] as const;
+
+/**
  * Attempts the open-with-retry loop makes.
  *
  * MUST be >= the provider count, or the last entries are never reached and
