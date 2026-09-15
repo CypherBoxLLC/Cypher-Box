@@ -152,7 +152,7 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         sats: Number(v.amountSats),
         expiryHeight: v.expiryHeight,
         kind: v.kind,
-        exitDepth: Number((v as any).exitDepth ?? 0) || undefined,
+        exitDepth: Number(v.exitDepth ?? 0) || undefined,
         // bark 0.6.1: `state` is a tagged-enum object; flatten to its variant
         // string so ArkVtxoView.state stays a plain string and every
         // downstream `.toLowerCase()` comparison keeps working.
