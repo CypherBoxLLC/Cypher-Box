@@ -14,7 +14,7 @@ import {
 import type { RecoveryBucket, RecoveryReport } from '@secondts/bark-react-native';
 
 import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS } from './config';
-import { deleteArkDatadir, ensureArkDatadir } from './datadir';
+import { arkDatadirHasWallet, deleteArkDatadir, ensureArkDatadir } from './datadir';
 import { ensureBackgroundArkSeed } from './backgroundKeychain';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
@@ -172,6 +172,25 @@ export async function createArkWallet(
     forceRescan: boolean = false,
 ): Promise<WalletInterface> {
     await ensureUniffi();
+
+    // One vault at a time.
+    //
+    // Nothing else enforces this. The Ark block on CheckingAccountLogin is
+    // hidden by `FEATURE_ARK_ENABLED && !isArkAuth` once a vault exists, and
+    // that hidden button was the ONLY thing between a user and a second wallet
+    // written over the first: `handleArkCreate` mints a fresh mnemonic and this
+    // function opens the datadir with `createIfNotExists`, neither of them
+    // checking. A UI flag is not an invariant, and the datadir holds real funds.
+    //
+    // Fresh-seed creates only. Recovery passes forceRescan true and is the user
+    // deliberately restoring a seed they hold. The check runs BEFORE
+    // `ensureArkDatadir()`, which would otherwise create the very directory it
+    // inspects.
+    if (!forceRescan && (await arkDatadirHasWallet())) {
+        throw new Error(
+            'A Bark Vault already exists on this device. Delete it in Vault settings before creating a new one.',
+        );
+    }
     const datadir = await ensureArkDatadir();
 
     // bark consolidated open-or-create into a single `Wallet.open` with
