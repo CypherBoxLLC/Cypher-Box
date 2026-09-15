@@ -217,6 +217,19 @@ export default function ArkCapsulesInfoScreen() {
                         The middle is usually the right call, and it is where the reminders
                         start.
                     </Body>
+                    <Body>
+                        Cypher Box does this part for you. Whenever the app is open it
+                        refreshes any capsule with between 28 hours and one week of life
+                        left, which is the free and 0.2% part of that table. It never pays
+                        the 0.4% or 0.5% bands on your behalf.
+                    </Body>
+                    <Body>
+                        It stops at 28 hours on purpose. Any closer to expiry and a refresh
+                        that stalls could eat the day you would need to exit on your own, so
+                        the wallet leaves the capsule alone and warns you instead. Capsules
+                        under 500 sats are too small to refresh this way and are handled
+                        separately.
+                    </Body>
                 </Section>
 
                 <Section title="Example: 1M sats over 10 weeks">
