@@ -16,6 +16,7 @@ import {
     fetchArkPendingRoundStates,
     refreshArkVtxosDelegatedAndSync,
 } from './refresh';
+import { refreshFloorBlocks } from './exitTriage';
 import { classifyArkNetworkFault } from './networkFault';
 import { getArkWalletHandle } from './walletHandle';
 import type { ArkVtxoView } from './vtxos';
@@ -314,8 +315,12 @@ export async function maybeSweepDueArkVtxos(
     // A wedged round is owned by the stuck-swap flow; never pile on.
     if (store.arkRefreshStuck) return;
 
-    const floorBlocks = blocksForHours(ARK_EXIT_RUNWAY_HOURS); // 28h
+    // Fallback only. The real floor is per capsule and depth-aware (see below);
+    // this flat 28h stands in when a capsule reports no depth or the wallet has
+    // not learned the server's exit delta yet.
+    const flatFloorBlocks = blocksForHours(ARK_EXIT_RUNWAY_HOURS); // 28h
     const ceilBlocks = blocksForHours(ARK_SWEEP_MAX_RUNWAY_HOURS); // 1 week
+    const exitDeltaBlocks = store.arkVtxoExitDeltaBlocks ?? null;
     const refreshing = new Set(store.arkRefreshingVtxoIds);
 
     // Selection (in-memory, cheap): band + dust + state + not-in-flight.
@@ -328,6 +333,18 @@ export async function maybeSweepDueArkVtxos(
         if (v.expiryHeight <= 0) continue; // unknown expiry (arkoor height 0)
         if (refreshing.has(v.id)) continue; // S1: already mid-refresh
         const blocksLeft = v.expiryHeight - tip;
+        // Exit-runway floor, from THIS capsule's own depth rather than a flat
+        // 28h. The flat value is exitDelta + grace and counts no confirmation
+        // budget, so it was the right number only for depth 0: a deep tree was
+        // being refreshed with far less runway than its own exit needs, and a
+        // stalled refresh there costs the exit too. At the mainnet delta of 144
+        // this is strictly stricter than the flat floor for any depth >= 1.
+        const floorBlocks = refreshFloorBlocks(
+            v.exitDepth,
+            exitDeltaBlocks,
+            flatFloorBlocks,
+            ceilBlocks,
+        );
         if (blocksLeft < floorBlocks) continue; // below exit-runway floor: leave alone
         if (blocksLeft > ceilBlocks) continue; // more than a week out: not yet
         if (v.sats < ARK_REFRESH_MIN_SATS) {

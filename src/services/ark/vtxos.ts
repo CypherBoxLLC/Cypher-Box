@@ -15,6 +15,15 @@ export type ArkVtxoView = {
     expiryHeight: number;
     /** "board" | "round" | "arkoor" — informational, drives future per-kind UI. */
     kind: string;
+    /**
+     * Genesis chain length, the field the exit-runway rules turn on. Carried
+     * here so the refresh floor can be depth-aware without re-reading the SDK:
+     * a deeper tree needs more blocks to confirm before its CSV delta starts,
+     * so it must be left alone earlier. Optional for persist-compat with rows
+     * written before this field, and absent for anything the SDK reports
+     * without one; callers fall back to the flat floor when it is missing.
+     */
+    exitDepth?: number;
     /** "spendable" | "spent" | "locked" — we filter to spendable for the capsule UI. */
     state: string;
     /**
@@ -143,6 +152,7 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         sats: Number(v.amountSats),
         expiryHeight: v.expiryHeight,
         kind: v.kind,
+        exitDepth: Number((v as any).exitDepth ?? 0) || undefined,
         // bark 0.6.1: `state` is a tagged-enum object; flatten to its variant
         // string so ArkVtxoView.state stays a plain string and every
         // downstream `.toLowerCase()` comparison keeps working.
