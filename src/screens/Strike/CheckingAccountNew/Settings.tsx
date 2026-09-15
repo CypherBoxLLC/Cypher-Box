@@ -60,6 +60,7 @@ import {
   getICloudBackupPath,
   getICloudBackupPathForFingerprint,
   getLastLocalBackupNote,
+  hasActiveArkExitRecords,
   isActiveExit,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
@@ -1803,13 +1804,43 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
    */
   const [deleting, setDeleting] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  /** True when an Emergency Exit is mid-flight as the delete dialog opens. */
+  const [exitInFlight, setExitInFlight] = useState(false);
   const [keepSeedOnDevice, setKeepSeedOnDevice] = useState(true);
 
   const biometricLabel = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
 
-  const handleDeleteVault = () => {
+  /**
+   * Probe for an in-flight exit BEFORE the modal opens, so the warning is on
+   * screen the first time the user sees the dialog. A warning that arrives a
+   * moment later is worse than none, because by then they may already have
+   * tapped through it.
+   *
+   * Reads the same three signals `assertNoActiveArkExitAsync` blocks on, so
+   * this dialog warns on exactly the evidence that makes every other
+   * fund-moving action refuse outright. Delete is the only one of them that
+   * proceeds, since a verified backup is forced first and the packed datadir
+   * carries the exit state, so the cost of deleting here is a stalled exit
+   * rather than lost funds.
+   *
+   * A failed read shows NO warning rather than a false one, matching
+   * `hasActiveArkExitRecords`' own posture: a read that throws is not
+   * evidence of an exit.
+   */
+  const handleDeleteVault = async () => {
     if (deleting) return;
     setKeepSeedOnDevice(true);
+    let active = false;
+    try {
+      const s = useAuthStore.getState();
+      active =
+        s.arkExitInProgress === true ||
+        (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting) ||
+        (await hasActiveArkExitRecords());
+    } catch {
+      active = false;
+    }
+    setExitInFlight(active);
     setDeleteModalVisible(true);
   };
 
@@ -2668,7 +2699,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowColor: '#E85C5A', borderRadius: 24, height: 38, width: widths * 0.36, justifyContent: 'center', alignItems: 'center' }}
               bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 1, shadowColor: '#030303', borderRadius: 24, height: 38, width: widths * 0.36, justifyContent: 'center', position: 'absolute' }}
               linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.36, justifyContent: 'center', alignItems: 'center' }}
-              onPress={deleting ? undefined : handleDeleteVault}
+              onPress={deleting ? undefined : () => { void handleDeleteVault(); }}
             >
               <Text h3 bold center style={{ color: colors.redLight }}>
                 {deleting ? 'Deleting…' : 'Delete Ark vault'}
@@ -3189,6 +3220,36 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 still need your{' '}
                 <Text bold style={{ color: '#FFF' }}>ark-backup file</Text>.
               </Text>
+
+              {/* An exit that is mid-flight has transactions on the chain and a
+                  clock running against expiry. Deleting stops the drive that
+                  pushes the remaining levels, so the user has to learn that
+                  before they confirm rather than from the silence afterwards.
+                  Amber, not red: the forced backup means this is a stalled
+                  exit, not lost funds.
+                  COPY: Bam finalizes. */}
+              {exitInFlight && (
+                <View
+                  style={{
+                    marginBottom: 16,
+                    padding: 10,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#FFB020',
+                    backgroundColor: 'rgba(255, 176, 32, 0.08)',
+                  }}
+                >
+                  <Text bold style={{ color: '#FFC65C', fontSize: 12, marginBottom: 4 }}>
+                    ⚠ An Emergency Exit is in progress
+                  </Text>
+                  <Text style={{ color: '#FFD79A', fontSize: 12, lineHeight: 16 }}>
+                    Deleting now stops it. Transactions already on the chain stay
+                    there, but nothing will move the rest along until you restore
+                    from your ark-backup file. Restore soon, because capsules can
+                    expire while an exit is paused.
+                  </Text>
+                </View>
+              )}
 
               <TouchableOpacity
                 onPress={() => setKeepSeedOnDevice(v => !v)}
