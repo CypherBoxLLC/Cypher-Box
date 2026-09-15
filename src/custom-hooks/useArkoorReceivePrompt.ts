@@ -7,6 +7,7 @@ import {
     ARK_ARKOOR_ASSUMED_DAYS,
     ARK_EXIT_RUNWAY_HOURS,
     ARK_REFRESH_MIN_SATS,
+    ARK_SWEEP_MAX_RUNWAY_HOURS,
     ArkRefreshInFlightError,
     AVG_BLOCK_MINUTES,
     buildDustSweepPlan,
@@ -14,6 +15,7 @@ import {
     estimateArkRefreshFee,
     maybeSweepDustArkVtxos,
     refreshArkVtxosDelegatedAndSync,
+    refreshFloorBlocks,
     scheduleVtxoExpiryWarnings,
 } from '@Cypher/services/ark';
 import useAuthStore from '@Cypher/stores/authStore';
@@ -355,23 +357,48 @@ export default function useArkoorReceivePrompt(): void {
                 // refresh. Older arkoors report expiryHeight 0 (unknown, ~3-day
                 // assumed), which is safely above the floor.
                 const tip = useAuthStore.getState().arkChainTipHeight;
-                const runwayBlocks = Math.round((ARK_EXIT_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES);
+                const bandCeilingBlocksForFloor = Math.round(
+                    (ARK_SWEEP_MAX_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES,
+                );
+                // Depth-aware, matching the foreground sweep. The flat
+                // ARK_EXIT_RUNWAY_HOURS is exitDelta + grace with no
+                // confirmation budget, so it under-protects every capsule of
+                // depth >= 1; a received capsule is not exempt from that.
+                // Falls back to the flat value when the capsule reports no
+                // depth or the server delta is not known yet.
+                const flatRunwayBlocks = Math.round(
+                    (ARK_EXIT_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES,
+                );
+                const runwayBlocks = refreshFloorBlocks(
+                    vtxo.exitDepth,
+                    useAuthStore.getState().arkVtxoExitDeltaBlocks ?? null,
+                    flatRunwayBlocks,
+                    bandCeilingBlocksForFloor,
+                );
                 const blocksLeft =
                     vtxo.expiryHeight > 0 && typeof tip === 'number'
                         ? vtxo.expiryHeight - tip
                         : null;
                 const belowExitRunway = blocksLeft != null && blocksLeft < runwayBlocks;
+                // Ceiling, mirroring the foreground sweep's band. Above this a
+                // capsule has plenty of life and refreshing it buys nothing at
+                // the most expensive rate the ASP charges. See the skip branch
+                // below for the numbers.
+                const bandCeilingBlocks = Math.round((ARK_SWEEP_MAX_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES);
+                const aboveRefreshBand = blocksLeft != null && blocksLeft > bandCeilingBlocks;
                 const safeToAutoRefresh =
                     spendsOnlySelf &&
                     outputSats != null &&
                     outputSats >= ARK_REFRESH_MIN_SATS &&
-                    !belowExitRunway;
+                    !belowExitRunway &&
+                    !aboveRefreshBand;
 
                 if (__DEV__) {
                     console.log('[arkoor decision]', JSON.stringify({
                         id: vtxoIdPrefix, sats, feeSats, outputSats,
                         spendsOnlySelf, safeToAutoRefresh, belowFloor,
-                        belowExitRunway, blocksLeft, expiryHeight: vtxo.expiryHeight,
+                        belowExitRunway, aboveRefreshBand, bandCeilingBlocks,
+                        blocksLeft, expiryHeight: vtxo.expiryHeight,
                     }));
                 }
 
@@ -422,6 +449,50 @@ export default function useArkoorReceivePrompt(): void {
                             }
                         })
                         .finally(release);
+                    return;
+                }
+
+                // Plenty of life left: do nothing, silently.
+                //
+                // The ASP's refresh fee is base 0 plus a ppm ladder keyed on
+                // blocks REMAINING, not on age: 0 ppm under 288 blocks (~2
+                // days), 2000 ppm to 1008 (~7 days), 4000 ppm to 2016 (~14
+                // days), 5000 ppm above that. Live table read 2026-09-12 with
+                // `bark dev ark-info https://ark.second.tech`. A capsule that
+                // arrives carrying a full vtxo_expiry_delta (4032 blocks, ~28
+                // days) therefore sits in the TOP band, so refreshing it on
+                // sight pays 0.5% to extend an expiry that was already nearly
+                // full: 500 sats on a 100k deposit, observed live. Without this
+                // guard the hook did exactly that, and the Learn-more screen
+                // tells users the opposite ("waiting for a reminder is cheaper
+                // than refreshing on sight").
+                //
+                // Leave it to the foreground sweep, which owns the 28h-to-1-week
+                // band and picks the capsule up once it drifts in, by which time
+                // the same refresh costs 0.2% or nothing. Marked 'dismissed'
+                // (spendable, protected, expiry warnings armed) rather than
+                // 'refreshed', so the prune keeps the alarms until a real
+                // replacement lands. No toast and no notice: nothing happened
+                // that the user needs to act on, and the notice below would tell
+                // the holder of a 28-day capsule to spend it before it expires.
+                //
+                // Gated on a KNOWN blocksLeft. Legacy arkoors report
+                // expiryHeight 0, and the sweep skips those outright
+                // (`v.expiryHeight <= 0`), so an unknown expiry must keep
+                // auto-refreshing here or nothing ever refreshes it. Dust is
+                // excluded too: a sub-floor capsule still wants the dust sweep
+                // below, however much life it has.
+                if (aboveRefreshBand && !belowFloor) {
+                    recordEvent({ kind: 'arkoor-prompt', outcome: 'no-refresh-needed', vtxoIdPrefix, sats: sats ?? undefined });
+                    const curLong = useAuthStore.getState().arkArkoorPromptState;
+                    const exLong = curLong[firstId];
+                    if (exLong) {
+                        setArkArkoorPromptState({
+                            ...curLong,
+                            [firstId]: { ...exLong, status: 'dismissed', dismissedAt: Date.now() },
+                        });
+                    }
+                    release();
                     return;
                 }
 

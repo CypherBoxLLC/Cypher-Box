@@ -185,6 +185,7 @@ export {
     exitFeeUrgency,
     normaliseExitFeeRates,
     ratesFromEsploraEstimates,
+    refreshFloorBlocks,
     ratesFromMempoolRecommended,
     triageArkExit,
     urgencyFromSlackBlocks,

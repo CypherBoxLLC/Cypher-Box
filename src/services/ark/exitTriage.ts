@@ -553,6 +553,70 @@ export function requiredRunwayBlocks(exitDepth: number, exitDeltaBlocks: number)
     return confirmationBudget + Math.max(0, Math.floor(exitDeltaBlocks));
 }
 
+/** Grace on top of a capsule's own exit runway before the wallet is willing to
+ *  spend a refresh on it. 24 blocks is the 4h that ARK_EXIT_RUNWAY_HOURS (28h)
+ *  already carried on top of its assumed 24h runway; kept so the floor stays
+ *  conservative in the same direction it always was. */
+export const REFRESH_FLOOR_GRACE_BLOCKS = 24;
+
+/**
+ * Blocks of life a capsule must still have before the wallet will auto-refresh
+ * it, rather than leaving it alone so a unilateral exit stays possible.
+ *
+ * The flat ARK_EXIT_RUNWAY_HOURS (28h = 168 blocks) this replaces is
+ * `exitDelta + grace` and counts NO confirmation budget, so it is the right
+ * number only for a capsule of depth 0. Every real capsule needs
+ * `max(6, depth * BLOCKS_PER_EXIT_LEVEL)` blocks on top to get its tree
+ * confirmed before the CSV delta even starts, which is exactly what
+ * `requiredRunwayBlocks` already computes for the exit side. A depth-17 tree
+ * was being refreshed with 102 blocks (17h) less runway than its own exit
+ * needs, and a refresh that stalls there costs the user the exit as well.
+ *
+ * At the mainnet delta of 144 this is strictly greater than the flat floor for
+ * every capsule of depth >= 1, because the flat floor is already delta + grace
+ * with no depth budget, so in practice it only ever makes the wallet more
+ * protective. It is NOT unconditionally >= the flat floor: a server advertising
+ * a smaller delta would correctly lower it, since the capsule genuinely needs
+ * less runway then. Do not turn this into a Math.max against the flat value,
+ * that would reintroduce the depth-blind number this exists to remove.
+ *
+ * Falls back to `fallbackBlocks` when either input is unknown: an arkoor with no
+ * depth, or a wallet that has not yet learned the server's delta. Unknown must
+ * NOT inflate the floor here. On the exit side an unknown delta means "assume
+ * worse and exclude the capsule", which is safe. Here a bigger floor means
+ * "refuse to refresh", and a capsule the wallet refuses to refresh can expire,
+ * so guessing high is the unsafe direction.
+ *
+ * `ceilingBlocks` clamps the result so the sweep band can never close entirely.
+ * It takes depth ~140 to reach that at the current delta, far past the measured
+ * max of 49, but a capsule that deep is not one a user can realistically exit
+ * anyway, so refreshing it beats letting it expire while the floor protects an
+ * exit that was never going to happen.
+ */
+export function refreshFloorBlocks(
+    exitDepth: number | null | undefined,
+    exitDeltaBlocks: number | null | undefined,
+    fallbackBlocks: number,
+    ceilingBlocks?: number,
+): number {
+    const depthOk =
+        typeof exitDepth === 'number' && Number.isFinite(exitDepth) && exitDepth > 0;
+    const deltaOk =
+        typeof exitDeltaBlocks === 'number' &&
+        Number.isFinite(exitDeltaBlocks) &&
+        exitDeltaBlocks > 0;
+    if (!depthOk || !deltaOk) return fallbackBlocks;
+
+    const floor =
+        requiredRunwayBlocks(exitDepth as number, exitDeltaBlocks as number) +
+        REFRESH_FLOOR_GRACE_BLOCKS;
+
+    if (typeof ceilingBlocks === 'number' && Number.isFinite(ceilingBlocks)) {
+        return Math.min(floor, Math.max(0, Math.floor(ceilingBlocks) - 1));
+    }
+    return floor;
+}
+
 /** Bounds on the CLAIM fee rate, which is a different problem from the exit-tree
  *  CPFP rate the reserve is sized at.
  *
