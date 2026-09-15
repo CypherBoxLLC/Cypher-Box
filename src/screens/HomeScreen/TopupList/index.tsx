@@ -3,6 +3,7 @@ import { GradientView } from "@Cypher/components";
 import React, { useContext, useMemo, useState } from "react";
 import { ActivityIndicator, Dimensions, Image, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import Animated, {
   useAnimatedStyle,
@@ -45,6 +46,7 @@ interface Props {
 export default function TopupList({ refRBSheet, wallet, coldStorageWallet, matchedRateBTC = 0, currency }: Props) {
   const { vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
   const { sleep } = useContext(BlueStorageContext);
+  const insets = useSafeAreaInsets();
 
   // Selection state
   const [selectedVault, setSelectedVault] = useState<number | null>(null); // 1=Hot, 2=Cold
@@ -560,7 +562,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                     paddingHorizontal: 4,
                     paddingBottom: 6,
                   }}
-                  style={{ maxHeight: Dimensions.get('window').height * 0.30, marginTop: 10 }}
+                  style={{ maxHeight: Dimensions.get('window').height * 0.30 - insets.bottom, marginTop: 10 }}
                 >
                   {utxoList.map((item: any) => renderCapsuleTile(item))}
                 </ScrollView>
