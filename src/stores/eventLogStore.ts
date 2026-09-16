@@ -92,9 +92,10 @@ export type AppEvent =
      * the user-visible subset that surfaces in the activity dropdown.
      *
      * Recorded only for outcomes the user would want to know about
-     * (success, error, fee_gated, dust_*, no_seed). Boring outcomes
-     * (rate_limited, no_eligible_vtxos, disabled, pending_round_conflict)
-     * are filtered at the call site to keep the dropdown signal-dense.
+     * (success, error, fee_gated, dust_*, no_seed, runway_floor). Boring
+     * outcomes (rate_limited, no_eligible_vtxos, disabled,
+     * pending_round_conflict) are filtered at the call site to keep the
+     * dropdown signal-dense.
      *
      * Type union is inlined here (rather than imported from
      * `@Cypher/services/ark`) to avoid an import cycle:
@@ -114,11 +115,30 @@ export type AppEvent =
             | "dust_stranded"
             | "no_seed"
             | "disabled"
+            // A capsule was in the sweep band but left alone because it has
+            // less runway left than its own unilateral exit would need. This
+            // is the decision the depth-aware floor changed; without it on the
+            // record a floor that never fires looks identical to one working.
+            | "runway_floor"
             | "error";
         elapsedMs: number;
         vtxoCount?: number;
         feeSats?: number;
         errorMsg?: string;
+        /**
+         * runway_floor only. The capsule's own genesis-chain depth, the floor
+         * that applied to it, and how much life it had left, all in blocks.
+         *
+         * `floorDepthAware` is the field worth reading first: false means the
+         * capsule reported no depth or the wallet had not learned the server's
+         * exit delta, so the flat 28h fallback applied and the depth-aware
+         * rule was a no-op for this decision.
+         */
+        vtxoIdPrefix?: string;
+        exitDepth?: number | null;
+        blocksLeft?: number;
+        floorBlocks?: number;
+        floorDepthAware?: boolean;
     })
     /**
      * Arkoor-receive popup lifecycle event.

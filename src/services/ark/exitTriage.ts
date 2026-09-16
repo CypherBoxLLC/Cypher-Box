@@ -560,6 +560,29 @@ export function requiredRunwayBlocks(exitDepth: number, exitDeltaBlocks: number)
 export const REFRESH_FLOOR_GRACE_BLOCKS = 24;
 
 /**
+ * Whether the depth-aware floor can be computed at all, or whether
+ * `refreshFloorBlocks` will fall back to the flat value.
+ *
+ * Exported so telemetry can report WHICH floor a skip used without restating
+ * the predicate. Restating it would let the recorded flag drift away from the
+ * decision it claims to describe, which defeats the point of recording it: the
+ * whole reason this exists is that a floor silently falling back looks exactly
+ * like a floor working.
+ */
+export function isDepthAwareFloorAvailable(
+    exitDepth: number | null | undefined,
+    exitDeltaBlocks: number | null | undefined,
+): boolean {
+    const depthOk =
+        typeof exitDepth === 'number' && Number.isFinite(exitDepth) && exitDepth > 0;
+    const deltaOk =
+        typeof exitDeltaBlocks === 'number' &&
+        Number.isFinite(exitDeltaBlocks) &&
+        exitDeltaBlocks > 0;
+    return depthOk && deltaOk;
+}
+
+/**
  * Blocks of life a capsule must still have before the wallet will auto-refresh
  * it, rather than leaving it alone so a unilateral exit stays possible.
  *
@@ -599,13 +622,7 @@ export function refreshFloorBlocks(
     fallbackBlocks: number,
     ceilingBlocks?: number,
 ): number {
-    const depthOk =
-        typeof exitDepth === 'number' && Number.isFinite(exitDepth) && exitDepth > 0;
-    const deltaOk =
-        typeof exitDeltaBlocks === 'number' &&
-        Number.isFinite(exitDeltaBlocks) &&
-        exitDeltaBlocks > 0;
-    if (!depthOk || !deltaOk) return fallbackBlocks;
+    if (!isDepthAwareFloorAvailable(exitDepth, exitDeltaBlocks)) return fallbackBlocks;
 
     const floor =
         requiredRunwayBlocks(exitDepth as number, exitDeltaBlocks as number) +

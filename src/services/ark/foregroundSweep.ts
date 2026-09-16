@@ -17,6 +17,7 @@ import {
     refreshArkVtxosDelegatedAndSync,
 } from './refresh';
 import { refreshFloorBlocks } from './exitTriage';
+import { planFloorSkipEvents, type FloorSkip } from './floorSkipLog';
 import { classifyArkNetworkFault } from './networkFault';
 import { getArkWalletHandle } from './walletHandle';
 import type { ArkVtxoView } from './vtxos';
@@ -64,6 +65,9 @@ let consecutiveFailures = 0;
 // time per wallet, whichever kind it is.
 let lastDustSweepAt = 0;
 let dustFailures = 0;
+// Dedupe state for the `runway_floor` event: vtxo id -> decision signature.
+// Owned here, decided in floorSkipLog.ts (which explains why it is needed).
+let floorSkipRecorded = new Map<string, string>();
 /**
  * Wall clock before which NEITHER sweep may submit, set when the chain source
  * refuses us on quota. Shared for the same reason `sweepInFlight` is: the quota
@@ -299,6 +303,52 @@ export async function maybeSweepDustArkVtxos(
 }
 
 /**
+ * Put the sweep's exit-runway-floor skips on the record, deduped.
+ *
+ * Every other sweep outcome already leaves a trace; this one left none, and it
+ * is the decision the depth-aware floor (#277) actually changes. Without a
+ * record, a floor that quietly falls back to the flat 28h for every capsule
+ * produces exactly the same observable behaviour as one applying depth
+ * correctly, so there was no way to tell from a running wallet which of the two
+ * was happening.
+ *
+ * `floorDepthAware` is the field that answers it. `exitDepth` and `floorBlocks`
+ * say what the rule computed; `blocksLeft` against a flat floor of 168 says
+ * whether the depth-aware rule is what held the capsule back.
+ */
+function recordFloorSkips(
+    skips: FloorSkip[],
+    spendable: ArkVtxoView[],
+    exitDeltaBlocks: number | null,
+): void {
+    const plan = planFloorSkipEvents({
+        skips,
+        liveIds: spendable.map((v) => v.id),
+        recorded: floorSkipRecorded,
+        exitDeltaBlocks,
+    });
+    floorSkipRecorded = plan.nextRecorded;
+
+    for (const ev of plan.events) {
+        console.log(
+            '[Ark sweep] runway floor held', ev.vtxoIdPrefix,
+            '· depth', ev.exitDepth ?? 'unknown',
+            '· blocksLeft', ev.blocksLeft,
+            '· floor', ev.floorBlocks,
+            ev.floorDepthAware ? '(depth-aware)' : '(flat fallback)',
+        );
+        recordEvent({
+            kind: 'ark-bg-refresh',
+            trigger: 'foreground',
+            outcome: 'runway_floor',
+            elapsedMs: 0,
+            vtxoCount: 1,
+            ...ev,
+        });
+    }
+}
+
+/**
  * Consider firing the sweep. Cheap and idempotent: safe to call every sync tick.
  * `spendable` is useArkSync's fresh spendable VTXO list; `tip` the chain tip.
  * Fire-and-forget from the caller (it manages its own in-flight + pacing).
@@ -326,6 +376,9 @@ export async function maybeSweepDueArkVtxos(
     // Selection (in-memory, cheap): band + dust + state + not-in-flight.
     const refreshable: ArkVtxoView[] = [];
     let strandedDust = 0;
+    // Capsules left alone by the exit-runway floor this tick, recorded after
+    // the loop so the hot path stays free of store writes.
+    const floorSkips: FloorSkip[] = [];
     for (const v of spendable) {
         // Only clean Spendable capsules. `spendable` can still carry Locked /
         // mid-exit / HTLC states; those are not refreshable.
@@ -345,7 +398,15 @@ export async function maybeSweepDueArkVtxos(
             flatFloorBlocks,
             ceilBlocks,
         );
-        if (blocksLeft < floorBlocks) continue; // below exit-runway floor: leave alone
+        if (blocksLeft < floorBlocks) {
+            // Below the exit-runway floor: leave alone. This is the one sweep
+            // decision that produced no record of any kind, which mattered
+            // because it is also the decision the depth-aware floor changed:
+            // a floor that silently falls back to the flat 28h is
+            // indistinguishable from one applying depth correctly.
+            floorSkips.push({ id: v.id, exitDepth: v.exitDepth, blocksLeft, floorBlocks });
+            continue;
+        }
         if (blocksLeft > ceilBlocks) continue; // more than a week out: not yet
         if (v.sats < ARK_REFRESH_MIN_SATS) {
             strandedDust += 1; // in-band but sub-floor: cannot refresh on its own
@@ -353,6 +414,8 @@ export async function maybeSweepDueArkVtxos(
         }
         refreshable.push(v);
     }
+
+    recordFloorSkips(floorSkips, spendable, exitDeltaBlocks);
 
     if (refreshable.length === 0) {
         // Nothing in band. Dust is not simply "stranded" any more: a dust ONLY

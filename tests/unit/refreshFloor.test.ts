@@ -2,6 +2,7 @@ import {
   BLOCKS_PER_EXIT_LEVEL,
   MIN_CONFIRMATION_BUDGET_BLOCKS,
   REFRESH_FLOOR_GRACE_BLOCKS,
+  isDepthAwareFloorAvailable,
   refreshFloorBlocks,
   requiredRunwayBlocks,
 } from '../../src/services/ark/exitTriage';
@@ -132,5 +133,29 @@ describe('refreshFloorBlocks', () => {
         expect(refreshFloorBlocks(depth, delta, FLAT_FLOOR_BLOCKS)).toBeGreaterThan(delta);
       }
     }
+  });
+});
+
+describe('isDepthAwareFloorAvailable', () => {
+  // Exported so telemetry can say WHICH floor a skip used. Its only job is to
+  // stay the same predicate refreshFloorBlocks branches on: if the two drift,
+  // the wallet reports a depth-aware floor while applying the flat one, which
+  // is worse than reporting nothing.
+  it('is exactly the condition under which the floor is NOT the fallback', () => {
+    const depths = [undefined, null, NaN, -1, 0, 1, 2, 17, 49];
+    const deltas = [undefined, null, NaN, -1, 0, 72, 144];
+    for (const depth of depths) {
+      for (const delta of deltas) {
+        const available = isDepthAwareFloorAvailable(depth, delta);
+        // A sentinel fallback no real computation can return, so "took the
+        // fallback" is unambiguous even where the two would coincide.
+        const SENTINEL = -12345;
+        expect(refreshFloorBlocks(depth, delta, SENTINEL) !== SENTINEL).toBe(available);
+      }
+    }
+  });
+
+  it('rejects depth 0, which is a capsule with no exit tree to confirm', () => {
+    expect(isDepthAwareFloorAvailable(0, MAINNET_DELTA)).toBe(false);
   });
 });

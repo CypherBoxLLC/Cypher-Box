@@ -150,14 +150,28 @@ const describe = (ev: AppEvent): RowMeta => {
                     icon = "key-outline";
                     line1 = "Auto-refresh blocked · seed not available";
                     break;
+                case "runway_floor":
+                    icon = "time-outline";
+                    line1 = "Auto-refresh skipped · capsule too close to expiry, spend it";
+                    break;
                 default:
                     icon = "refresh-outline";
                     line1 = `Auto-refresh: ${ev.outcome}`;
             }
+            // Which floor held the capsule back, on the detail line. This is
+            // the one token that distinguishes the depth-aware rule from the
+            // flat fallback, and putting it here makes that checkable from the
+            // phone rather than only over a debugger.
+            const floorTag =
+                ev.outcome !== "runway_floor"
+                    ? ""
+                    : ev.floorDepthAware
+                    ? ` · depth ${ev.exitDepth ?? "?"}`
+                    : " · flat floor";
             return {
                 icon,
                 line1,
-                walletLabel: `${WALLET_LABEL["ark"]} · ${triggerLabel}`,
+                walletLabel: `${WALLET_LABEL["ark"]} · ${triggerLabel}${floorTag}`,
             };
         }
         case "arkoor-prompt": {
