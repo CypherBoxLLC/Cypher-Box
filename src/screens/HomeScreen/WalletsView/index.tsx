@@ -821,7 +821,12 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // ~18pt under the Ark card, matching the one-custodial combo, and a little more
     // under the taller circular page.
     const allThreeWallets = custodialCount === 2 && hasArkWallet;
-    const BUTTONS_TOP = oneCustodialPlusArk ? SHARED_SLIDE_HEIGHT + 23 : allThreeWallets ? BUTTONS_TOP_BASE + 8 : BUTTONS_TOP_BASE;
+    // iOS values were measured on an iPhone; Android composes the carousel at a
+    // different height, so it keeps exactly the expression it shipped with in
+    // 0.1.10. Do not collapse these without measuring on an Android device.
+    const BUTTONS_TOP = Platform.OS === 'ios'
+        ? (oneCustodialPlusArk ? SHARED_SLIDE_HEIGHT + 23 : allThreeWallets ? BUTTONS_TOP_BASE + 8 : BUTTONS_TOP_BASE)
+        : (oneCustodialPlusArk ? SHARED_SLIDE_HEIGHT + 12 : BUTTONS_TOP_BASE);
     return (
         <View style={{
             width: screenWidth,

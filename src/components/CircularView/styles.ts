@@ -1,5 +1,5 @@
 import { colors, heights, shadow, widths } from "@Cypher/style-guide";
-import { ImageStyle, StyleSheet, TextStyle, ViewStyle } from "react-native";
+import { ImageStyle, Platform, StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 interface Style {
     container: ViewStyle;
@@ -324,7 +324,7 @@ export default StyleSheet.create<Style>({
         // Was marginVertical: 10. Split so only the top shrinks, by the same 9
         // the circles gained above; the bottom margin stays 10 and nothing
         // below the row shifts.
-        marginTop: 1,
+        marginTop: Platform.OS === 'ios' ? 1 : 10,
         marginBottom: 10,
     },
     current: {
@@ -752,7 +752,7 @@ export default StyleSheet.create<Style>({
         // circles down 9 and take the same 9 off btnView's top margin below, so
         // the pair recentres between the Total Balance box and Receive/Send
         // without the row itself moving.
-        marginTop: 25,
+        marginTop: Platform.OS === 'ios' ? 25 : 16,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
