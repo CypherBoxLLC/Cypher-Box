@@ -9,8 +9,11 @@
  * import line here.
  */
 
-import './providers/sideshift';
+// Flashnet first: it is the venue we are integrating. SideShift stays
+// registered as a fallback, and its backend routes answer 503 until the
+// account settings are set, so it is inert unless we turn it on.
 import './providers/flashnet';
+import './providers/sideshift';
 
 export {
     list as listChainSwapProviders,
