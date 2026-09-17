@@ -10,6 +10,7 @@
  */
 
 import './providers/sideshift';
+import './providers/flashnet';
 
 export {
     list as listChainSwapProviders,

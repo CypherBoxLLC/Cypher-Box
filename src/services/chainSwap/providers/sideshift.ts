@@ -34,8 +34,8 @@ const sideshiftProvider: ChainSwapProvider = {
         return getSideShiftPermission();
     },
 
-    getPair(deposit, settle) {
-        return getSideShiftPair(deposit, settle);
+    getPair(deposit, settle, depositAmount) {
+        return getSideShiftPair(deposit, settle, depositAmount);
     },
 
     requestQuote(deposit, settle, depositAmount) {

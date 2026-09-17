@@ -28,7 +28,7 @@
  */
 
 /** Stable, lower-case registry key. Add new venues here. */
-export type ChainSwapProviderId = 'sideshift';
+export type ChainSwapProviderId = 'sideshift' | 'flashnet';
 
 /**
  * An asset on a specific chain. Both halves matter and conflating them is
@@ -90,6 +90,24 @@ export type ChainSwapQuote = {
     readonly settleAmount: string;
     /** Wall-clock expiry. */
     readonly expiresAt: Date;
+    /**
+     * Whether `settleAmount` is committed or only expected. Absent means
+     * committed, which is SideShift's behaviour.
+     *
+     * Some venues price the settlement at execution rather than at quote
+     * time, so the user can receive less than quoted. Where that is the case
+     * the UI must show the amount as approximate, and `minSettleAmount` is
+     * the floor to warn against.
+     */
+    readonly settleAmountIsFirm?: boolean;
+    /** Floor on the settle amount, when the venue commits to one. */
+    readonly minSettleAmount?: string | null;
+    /**
+     * Deposit instructions, when the venue binds them at quote time rather
+     * than at creation. See ChainSwapProvider.quoteNeedsAddresses.
+     */
+    readonly depositAddress?: string | null;
+    readonly depositMemo?: string;
     /**
      * All-in cost as a fraction of notional (0.0185 = 1.85%), derived by
      * comparing settleAmount against an independent spot reference.
@@ -289,6 +307,16 @@ export interface ChainSwapProvider {
     readonly id: ChainSwapProviderId;
     readonly displayName: string;
 
+    /**
+     * Whether a quote must know where the funds will settle and refund.
+     *
+     * Some venues allocate the deposit address at quote time, which means
+     * the settle and refund addresses are needed before a quote exists and
+     * the quote expires whether or not the user commits. The UI therefore has
+     * to collect addresses before quoting, and re-quote on expiry.
+     */
+    readonly quoteNeedsAddresses?: boolean;
+
     /** Whether the rail is wired up at all (config present, etc). */
     isAvailable(): boolean;
 
@@ -300,8 +328,14 @@ export interface ChainSwapProvider {
      */
     checkPermission(): Promise<ChainSwapPermission>;
 
-    /** Indicative limits + rate. Unauthenticated and cheap; safe to poll. */
-    getPair(deposit: ChainAsset, settle: ChainAsset): Promise<ChainSwapPair>;
+    /**
+     * Indicative limits + rate. Unauthenticated and cheap; safe to poll.
+     *
+     * Pass the user's amount when there is one. Fixed network costs make a
+     * venue's rate depend heavily on size, so a rate quoted at the route
+     * minimum is not the rate at $500 and must not be shown as though it were.
+     */
+    getPair(deposit: ChainAsset, settle: ChainAsset, depositAmount?: string): Promise<ChainSwapPair>;
 
     /**
      * Bookable quote for an exact deposit amount. Costs a venue-side,
@@ -312,6 +346,8 @@ export interface ChainSwapProvider {
         deposit: ChainAsset,
         settle: ChainAsset,
         depositAmount: string,
+        /** Required when `quoteNeedsAddresses` is set, ignored otherwise. */
+        addresses?: { settleAddress: string; refundAddress: string },
     ): Promise<ChainSwapQuote>;
 
     /**
