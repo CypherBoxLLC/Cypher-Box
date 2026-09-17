@@ -122,3 +122,34 @@ describe('pollShift returns a verdict with the order', () => {
         expect(stall).toBe('none');
     });
 });
+
+describe('exact-out capability', () => {
+    it('declares it, so the UI can offer "I want this many sats"', () => {
+        expect(flashnet().supportsExactOut).toBe(true);
+    });
+
+    it('passes the mode through to the quote', async () => {
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                quoteId: 'q_out',
+                depositAddress: 'T-placeholder-deposit',
+                expiresAt: new Date(Date.now() + 2 * MIN).toISOString(),
+                amountMode: 'exact_out',
+                targetAmountOut: '100000',
+                requiredAmountIn: '77991861',
+                maxAcceptedAmountIn: '77991861',
+            }),
+        });
+        const quote = await flashnet().requestQuote(
+            USDT_TRON,
+            BTC,
+            '0.001',
+            { settleAddress: 'lnbc1-placeholder-invoice', refundAddress: 'T-placeholder-refund' },
+            'exact_out',
+        );
+        expect(JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body).amountMode).toBe('exact_out');
+        expect(quote.settleAmount).toBe('0.001');
+    });
+});

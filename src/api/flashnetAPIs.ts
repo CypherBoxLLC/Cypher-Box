@@ -30,6 +30,7 @@ import {
 } from '../services/chainSwap/providers/flashnetMapping';
 import type {
     ChainAsset,
+    ChainSwapAmountMode,
     ChainSwapError as ChainSwapErrorType,
     ChainSwapOrder,
     ChainSwapPair,
@@ -248,7 +249,7 @@ export function mapFlashnetBackendError(
 async function postBackend<T>(
     path: '/quote',
     payload: Record<string, string>,
-    depositAmount: string,
+    depositAmount: string | undefined,
     opts: FlashnetRequestOptions = {},
 ): Promise<T> {
     return request<T>(
@@ -276,12 +277,17 @@ async function postBackend<T>(
 export async function requestFlashnetQuote(
     deposit: ChainAsset,
     settle: ChainAsset,
-    depositAmount: string,
+    /** The amount the user fixed: a deposit amount, or a settle amount on exact_out. */
+    amount: string,
     addresses: { settleAddress: string; refundAddress: string },
+    mode: ChainSwapAmountMode = 'exact_in',
     opts?: FlashnetRequestOptions,
 ): Promise<ChainSwapQuote> {
     const from = toFlashnetRoute(deposit);
     const to = toFlashnetRoute(settle);
+    const exactOut = mode === 'exact_out';
+    // On exact_out the amount is what arrives, so it is scaled in settle units.
+    const amountAsset = exactOut ? settle : deposit;
     const raw = await postBackend<FlashnetQuoteRaw>(
         '/quote',
         {
@@ -289,16 +295,20 @@ export async function requestFlashnetQuote(
             sourceAsset: from.asset,
             destinationChain: to.chain,
             destinationAsset: to.asset,
-            amount: toSmallestUnits(depositAmount, decimalsFor(deposit)),
+            amount: toSmallestUnits(amount, decimalsFor(amountAsset)),
             recipientAddress: addresses.settleAddress,
             refundAddress: addresses.refundAddress,
+            ...(exactOut ? { amountMode: 'exact_out' } : {}),
         },
-        depositAmount,
+        exactOut ? undefined : amount,
         opts,
     );
     const quote = mapFlashnetQuote(raw, deposit, settle);
+    // Check the side the user fixed: on exact_out the deposit is derived and
+    // will not equal what they typed, but the settle amount must.
+    const fixedSide = exactOut ? quote.settleAmount : quote.depositAmount;
     if (
-        !new BigNumber(quote.depositAmount).isEqualTo(depositAmount) ||
+        !new BigNumber(fixedSide).isEqualTo(amount) ||
         quote.depositAsset.coin !== deposit.coin.toLowerCase() ||
         quote.settleAsset.coin !== settle.coin.toLowerCase() ||
         !quote.depositAddress

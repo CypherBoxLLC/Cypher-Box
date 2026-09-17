@@ -288,12 +288,18 @@ export type FlashnetQuoteRaw = {
     quoteId: string;
     depositAddress: string;
     depositMemo?: string | null;
-    amountIn: string;
-    estimatedOut: string;
+    amountIn?: string;
+    estimatedOut?: string;
     expiresAt: string;
     feeBps?: number;
     deliveryMode?: string | null;
     lockedMinAmountOut?: string | null;
+    // Exact-out quotes carry these instead: the deposit is derived from the
+    // target, and the accepted window around it is narrow.
+    amountMode?: string | null;
+    targetAmountOut?: string | null;
+    requiredAmountIn?: string | null;
+    maxAcceptedAmountIn?: string | null;
 };
 
 /** GET /v1/orchestration/status order snapshot, fields we rely on. */
@@ -338,14 +344,31 @@ export function mapFlashnetQuote(
 ): ChainSwapQuote {
     const depositDecimals = decimalsFor(deposit, overrides);
     const settleDecimals = decimalsFor(settle, overrides);
+    const exactOut = raw.amountMode === 'exact_out';
+
+    // Exact-out names the fields differently, because the roles swap: the
+    // target is what the user asked for and the deposit is what Flashnet
+    // worked back to.
+    const inAmount = exactOut ? raw.requiredAmountIn : raw.amountIn;
+    const outAmount = exactOut ? raw.targetAmountOut : raw.estimatedOut;
+    if (!inAmount || !outAmount) {
+        throw new ChainSwapError('Flashnet returned a quote with no amounts');
+    }
+
     return {
         id: raw.quoteId,
         depositAsset: asset(deposit.coin, deposit.network),
         settleAsset: asset(settle.coin, settle.network),
-        depositAmount: fromSmallestUnits(raw.amountIn, depositDecimals),
-        settleAmount: fromSmallestUnits(raw.estimatedOut, settleDecimals),
+        depositAmount: fromSmallestUnits(inAmount, depositDecimals),
+        settleAmount: fromSmallestUnits(outAmount, settleDecimals),
         expiresAt: parseDate(raw.expiresAt, 'expiresAt'),
-        settleAmountIsFirm: raw.deliveryMode === 'fixed',
+        ...(exactOut ? { amountMode: 'exact_out' as const } : {}),
+        ...(exactOut && raw.maxAcceptedAmountIn
+            ? { maxDepositAmount: fromSmallestUnits(raw.maxAcceptedAmountIn, depositDecimals) }
+            : {}),
+        // Exact-out either delivers the target or fails and refunds, so the
+        // settle amount is committed in a way an exact-in estimate is not.
+        settleAmountIsFirm: exactOut || raw.deliveryMode === 'fixed',
         minSettleAmount: raw.lockedMinAmountOut
             ? fromSmallestUnits(raw.lockedMinAmountOut, settleDecimals)
             : null,

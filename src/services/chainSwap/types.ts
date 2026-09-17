@@ -53,6 +53,17 @@ export const asset = (coin: string, network: string): ChainAsset => ({
 });
 
 /**
+ * Which side of the swap the user fixed.
+ *
+ * `exact_in` is the default: the user says what they will send. `exact_out` is
+ * the reverse, and it exists for destinations that cannot accept an open
+ * amount: a Lightning invoice carries its amount, so to pay one the venue has
+ * to work backwards to the deposit. There the deposit is what varies, and it
+ * has to be sent exactly.
+ */
+export type ChainSwapAmountMode = 'exact_in' | 'exact_out';
+
+/**
  * Indicative pair limits and rate, from an unauthenticated endpoint.
  *
  * Cheap enough to call on every keystroke, and it is what the amount
@@ -100,6 +111,15 @@ export type ChainSwapQuote = {
      * the floor to warn against.
      */
     readonly settleAmountIsFirm?: boolean;
+    /** Which side the user fixed. Absent means exact_in. */
+    readonly amountMode?: ChainSwapAmountMode;
+    /**
+     * Ceiling on the deposit, for exact_out quotes where the venue works
+     * backwards from the settle amount. Send more than this and the venue can
+     * refuse or hold the deposit, so the send path must treat `depositAmount`
+     * as exact rather than approximate.
+     */
+    readonly maxDepositAmount?: string;
     /** Floor on the settle amount, when the venue commits to one. */
     readonly minSettleAmount?: string | null;
     /**
@@ -317,6 +337,13 @@ export interface ChainSwapProvider {
      */
     readonly quoteNeedsAddresses?: boolean;
 
+    /**
+     * Whether the venue can price backwards from the settle amount. Needed to
+     * pay a Lightning invoice, which carries its own amount. Absent means no,
+     * and requestQuote rejects `exact_out`.
+     */
+    readonly supportsExactOut?: boolean;
+
     /** Whether the rail is wired up at all (config present, etc). */
     isAvailable(): boolean;
 
@@ -348,6 +375,12 @@ export interface ChainSwapProvider {
         depositAmount: string,
         /** Required when `quoteNeedsAddresses` is set, ignored otherwise. */
         addresses?: { settleAddress: string; refundAddress: string },
+        /**
+         * Which side `depositAmount` refers to. With `exact_out` it is the
+         * settle amount instead, in settle units. Only for providers that
+         * declare `supportsExactOut`.
+         */
+        mode?: ChainSwapAmountMode,
     ): Promise<ChainSwapQuote>;
 
     /**

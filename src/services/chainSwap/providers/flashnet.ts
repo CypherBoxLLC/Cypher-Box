@@ -29,6 +29,8 @@ const flashnetProvider: ChainSwapProvider = {
     supportUrl: 'https://cypherbox.io/',
 
     quoteNeedsAddresses: true,
+    // Needed to pay a Lightning invoice, which carries its own amount.
+    supportsExactOut: true,
 
     // Nothing to configure on the device. The partner key lives on the
     // backend, which answers with a config error until it is set.
@@ -53,11 +55,11 @@ const flashnetProvider: ChainSwapProvider = {
 
     // async so a missing address rejects rather than throwing synchronously:
     // the contract promises a promise, and callers only wrap .catch.
-    async requestQuote(deposit, settle, depositAmount, addresses) {
+    async requestQuote(deposit, settle, depositAmount, addresses, mode) {
         if (!addresses?.settleAddress || !addresses?.refundAddress) {
             throw new ChainSwapError('Flashnet needs the settle and refund addresses before it can quote');
         }
-        return requestFlashnetQuote(deposit, settle, depositAmount, addresses);
+        return requestFlashnetQuote(deposit, settle, depositAmount, addresses, mode);
     },
 
     /**

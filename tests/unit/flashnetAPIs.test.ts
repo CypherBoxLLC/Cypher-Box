@@ -247,3 +247,42 @@ describe('getFlashnetOrder', () => {
         expect(next.refundAddress).toBe('T-placeholder-refund');
     });
 });
+
+describe('requestFlashnetQuote, exact-out', () => {
+    const rawOut = {
+        quoteId: 'q_out',
+        depositAddress: 'T-placeholder-deposit',
+        expiresAt: '2026-09-18T12:02:00.000Z',
+        amountMode: 'exact_out',
+        targetAmountOut: '100000',
+        requiredAmountIn: '77991861',
+        maxAcceptedAmountIn: '77991861',
+    };
+    const addresses = { settleAddress: 'lnbc1-placeholder-invoice', refundAddress: 'T-placeholder-refund' };
+
+    it('scales the amount in settle units and asks for exact_out', async () => {
+        fetchMock.mockResolvedValue(ok(rawOut));
+        const quote = await requestFlashnetQuote(USDT_TRON, BTC, '0.001', addresses, 'exact_out');
+        const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+        // 0.001 BTC is the target, so it scales by the settle asset's decimals.
+        expect(body.amount).toBe('100000');
+        expect(body.amountMode).toBe('exact_out');
+        expect(quote.depositAmount).toBe('77.991861');
+        expect(quote.maxDepositAmount).toBe('77.991861');
+    });
+
+    it('checks the side the user fixed, not the derived one', async () => {
+        fetchMock.mockResolvedValue(ok({ ...rawOut, targetAmountOut: '90000' }));
+        await expect(
+            requestFlashnetQuote(USDT_TRON, BTC, '0.001', addresses, 'exact_out'),
+        ).rejects.toThrow('does not match');
+    });
+
+    it('still sends no amountMode on an ordinary exact-in quote', async () => {
+        fetchMock.mockResolvedValue(
+            ok({ quoteId: 'q_in', depositAddress: 'T-d', amountIn: '100000000', estimatedOut: '129534', expiresAt: '2026-09-18T12:02:00.000Z' }),
+        );
+        await requestFlashnetQuote(USDT_TRON, BTC, '100', addresses);
+        expect(JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body).amountMode).toBeUndefined();
+    });
+});

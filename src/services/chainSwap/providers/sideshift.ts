@@ -16,7 +16,7 @@ import {
 } from '../../../api/sideshiftAPIs';
 import { register } from '../registry';
 import type { ChainSwapProvider } from '../types';
-import { evaluateStall } from '../types';
+import { ChainSwapError, evaluateStall } from '../types';
 
 const sideshiftProvider: ChainSwapProvider = {
     id: 'sideshift',
@@ -38,7 +38,12 @@ const sideshiftProvider: ChainSwapProvider = {
         return getSideShiftPair(deposit, settle, depositAmount);
     },
 
-    requestQuote(deposit, settle, depositAmount) {
+    async requestQuote(deposit, settle, depositAmount, _addresses, mode) {
+        // SideShift prices forwards only: a fixed shift is created from a
+        // deposit amount, so there is no way to work back from a target.
+        if (mode === 'exact_out') {
+            throw new ChainSwapError('SideShift can only price from the deposit amount');
+        }
         return requestSideShiftQuote(deposit, settle, depositAmount);
     },
 

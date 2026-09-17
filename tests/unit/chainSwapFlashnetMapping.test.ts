@@ -338,3 +338,35 @@ describe('order', () => {
         ).toThrow(ChainSwapError);
     });
 });
+
+describe('exact-out quotes, which is how a Lightning invoice gets paid', () => {
+    // The roles swap: the target is what the user asked for, and the deposit is
+    // what Flashnet worked back to, under different field names.
+    const rawOut = {
+        quoteId: 'q_out',
+        depositAddress: 'T-placeholder-deposit',
+        expiresAt: '2026-09-18T12:02:00.000Z',
+        amountMode: 'exact_out',
+        targetAmountOut: '100000',
+        requiredAmountIn: '77991861',
+        maxAcceptedAmountIn: '77991861',
+        feeBps: 60,
+    };
+
+    it('reads the derived deposit and the requested target', () => {
+        const q = mapFlashnetQuote(rawOut, USDT_TRON, BTC);
+        expect(q.amountMode).toBe('exact_out');
+        expect(q.depositAmount).toBe('77.991861');
+        expect(q.settleAmount).toBe('0.001');
+        expect(q.maxDepositAmount).toBe('77.991861');
+    });
+
+    it('treats the settle amount as committed, because it either lands or refunds', () => {
+        expect(mapFlashnetQuote(rawOut, USDT_TRON, BTC).settleAmountIsFirm).toBe(true);
+    });
+
+    it('refuses a quote with no amounts on either naming', () => {
+        const { requiredAmountIn, ...noInput } = rawOut;
+        expect(() => mapFlashnetQuote(noInput, USDT_TRON, BTC)).toThrow(/no amounts/);
+    });
+});

@@ -90,3 +90,22 @@ describe('checkPermission', () => {
         expect(verdict.allowed).toBe(false);
     });
 });
+
+describe('a mode SideShift cannot serve', () => {
+    it('rejects exact_out rather than quoting something else', async () => {
+        await expect(
+            getChainSwapProvider('sideshift').requestQuote(
+                { coin: 'usdt', network: 'tron' },
+                { coin: 'btc', network: 'bitcoin' },
+                '0.001',
+                undefined,
+                'exact_out',
+            ),
+        ).rejects.toThrow(/deposit amount/);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('does not advertise the capability', () => {
+        expect(getChainSwapProvider('sideshift').supportsExactOut).toBeUndefined();
+    });
+});
