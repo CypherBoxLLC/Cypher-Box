@@ -294,3 +294,15 @@ describe('error classes survive the toolchain', () => {
         expect(e).toBeInstanceOf(Error);
     });
 });
+
+describe('a used quote asks for a fresh one', () => {
+    // SideShift refuses a quote that has already created a shift. That happens
+    // when a create call timed out after succeeding and was retried, and the
+    // remedy is the same as for an expired quote.
+    it('maps "Quote has already been accepted" to QuoteExpiredError', () => {
+        const e = mapSideShiftError(400, {
+            error: { code: 'BAD_USER_INPUT', message: 'Quote has already been accepted. Request a new quote.' },
+        });
+        expect(e).toBeInstanceOf(QuoteExpiredError);
+    });
+});

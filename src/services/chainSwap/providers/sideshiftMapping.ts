@@ -11,7 +11,14 @@
  * When SideShift changes a table, the matching test should fail first.
  */
 
-import type { ChainAsset, ChainSwapProviderId, ChainSwapStatus } from '../types';
+import type {
+    ChainAsset,
+    ChainSwapOrder,
+    ChainSwapPair,
+    ChainSwapProviderId,
+    ChainSwapQuote,
+    ChainSwapStatus,
+} from '../types';
 import {
     AmountOutOfRangeError,
     ChainSwapError,
@@ -20,6 +27,7 @@ import {
     QuoteExpiredError,
     VenueConfigError,
     VenueUnavailableError,
+    asset,
 } from '../types';
 
 const ID: ChainSwapProviderId = 'sideshift';
@@ -195,7 +203,10 @@ export function mapSideShiftError(
         return new AmountOutOfRangeError(depositAmount, min, max);
     }
 
-    if (lower.includes('quote has already expired')) {
+    // An expired quote and an already-used quote have the same remedy: ask
+    // for a fresh one. Reuse happens when a create call timed out after
+    // SideShift had already made the shift, and the caller tried again.
+    if (lower.includes('quote has already expired') || lower.includes('quote has already been accepted')) {
         return new QuoteExpiredError();
     }
 
@@ -227,4 +238,158 @@ export function mapSideShiftError(
     // unsupported method, a memo where none is allowed, invalid parameters.
     // Not retryable as sent.
     return new ChainSwapError(message, body);
+}
+
+/* ------------------------------------------------------------------ */
+/* Objects                                                             */
+/* ------------------------------------------------------------------ */
+
+/** GET /v2/pair response. */
+export type SideShiftPairRaw = {
+    min: string;
+    max: string;
+    rate: string;
+    depositCoin: string;
+    settleCoin: string;
+    depositNetwork: string;
+    settleNetwork: string;
+};
+
+/** POST /v2/quotes response. */
+export type SideShiftQuoteRaw = {
+    id: string;
+    createdAt: string;
+    depositCoin: string;
+    settleCoin: string;
+    depositNetwork: string;
+    settleNetwork: string;
+    expiresAt: string;
+    depositAmount: string;
+    settleAmount: string;
+    rate: string;
+    affiliateId?: string;
+};
+
+/**
+ * Shift object, as returned by POST /v2/shifts/fixed and GET /v2/shifts/{id}.
+ * Several fields are documented as present only in some states, so they are
+ * optional here and the mapper decides what their absence means.
+ */
+export type SideShiftShiftRaw = {
+    id: string;
+    createdAt: string;
+    depositCoin: string;
+    settleCoin: string;
+    depositNetwork: string;
+    settleNetwork: string;
+    depositAddress?: string | null;
+    depositMemo?: string;
+    settleAddress: string;
+    refundAddress?: string;
+    depositAmount?: string;
+    settleAmount?: string;
+    expiresAt: string;
+    status: string;
+    updatedAt?: string;
+    depositHash?: string;
+    settleHash?: string;
+    issue?: string;
+};
+
+/**
+ * Strict date parse. A malformed timestamp from the venue becomes an error,
+ * never a silent Invalid Date that later breaks a countdown or stall timer.
+ */
+function parseDate(value: string | undefined, field: string): Date {
+    const d = new Date(value ?? NaN);
+    if (Number.isNaN(d.getTime())) {
+        throw new ChainSwapError(`SideShift returned an invalid ${field}`);
+    }
+    return d;
+}
+
+export function mapSideShiftPair(raw: SideShiftPairRaw): ChainSwapPair {
+    return {
+        depositAsset: asset(raw.depositCoin, raw.depositNetwork),
+        settleAsset: asset(raw.settleCoin, raw.settleNetwork),
+        min: raw.min,
+        max: raw.max,
+        rate: raw.rate,
+    };
+}
+
+export function mapSideShiftQuote(raw: SideShiftQuoteRaw): ChainSwapQuote {
+    return {
+        id: raw.id,
+        depositAsset: asset(raw.depositCoin, raw.depositNetwork),
+        settleAsset: asset(raw.settleCoin, raw.settleNetwork),
+        depositAmount: raw.depositAmount,
+        settleAmount: raw.settleAmount,
+        expiresAt: parseDate(raw.expiresAt, 'expiresAt'),
+        // No independent spot reference is wired in yet, so by contract we
+        // show nothing rather than a fabricated percentage.
+        allInCostFraction: null,
+    };
+}
+
+/**
+ * Build a ChainSwapOrder from a SideShift shift object.
+ *
+ * `previous` is the last order held for this shift, if any. Several things
+ * depend on it:
+ *   - statusChangedAt advances to `now` only on real progress: a change in
+ *     the normalised status, or in SideShift's own status. SideShift only
+ *     guarantees updatedAt once an order settles or refunds, so updatedAt
+ *     cannot drive stall inference while the order is in flight.
+ *   - depositAddress falls back to the previous value when SideShift returns
+ *     null, which it does once an address passes its retention period. The
+ *     address the user was shown must not silently disappear.
+ *   - amounts and transaction ids fall back to previous values, since some
+ *     are documented as present only in certain states.
+ */
+export function mapSideShiftShift(
+    raw: SideShiftShiftRaw,
+    now: Date,
+    previous?: ChainSwapOrder,
+): ChainSwapOrder {
+    if (previous && previous.id !== raw.id) {
+        throw new ChainSwapError('SideShift returned a different shift than was requested');
+    }
+    const { status, issue } = mapSideShiftStatus(raw.status, raw.issue);
+
+    const depositAmount = raw.depositAmount ?? previous?.depositAmount;
+    if (depositAmount === undefined) {
+        throw new ChainSwapError('SideShift returned a shift without a deposit amount');
+    }
+
+    // Compare venue status only when there is one to compare against. An
+    // order built without it must still keep its clock on an unchanged
+    // status, or a stuck order would reset on every poll and never escalate.
+    const venueMoved =
+        !!previous && previous.venueStatus !== undefined && previous.venueStatus !== raw.status;
+    const progressed = !previous || previous.status !== status || venueMoved;
+    const statusChangedAt = previous && !progressed ? previous.statusChangedAt : now;
+
+    const depositTxId = raw.depositHash ?? previous?.depositTxId;
+    const settleTxId = raw.settleHash ?? previous?.settleTxId;
+
+    return {
+        id: raw.id,
+        status,
+        venueStatus: raw.status,
+        depositAddress: raw.depositAddress ?? previous?.depositAddress ?? null,
+        ...(raw.depositMemo ? { depositMemo: raw.depositMemo } : {}),
+        depositAsset: asset(raw.depositCoin, raw.depositNetwork),
+        settleAsset: asset(raw.settleCoin, raw.settleNetwork),
+        depositAmount,
+        settleAmount: raw.settleAmount ?? previous?.settleAmount ?? null,
+        settleAddress: raw.settleAddress,
+        refundAddress: raw.refundAddress ?? previous?.refundAddress ?? null,
+        ...(depositTxId ? { depositTxId } : {}),
+        ...(settleTxId ? { settleTxId } : {}),
+        ...(issue ? { issue } : {}),
+        createdAt: parseDate(raw.createdAt, 'createdAt'),
+        expiresAt: parseDate(raw.expiresAt, 'expiresAt'),
+        statusChangedAt,
+    };
 }

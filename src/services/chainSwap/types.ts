@@ -174,6 +174,13 @@ export type ChainSwapOrder = {
     readonly id: string;
     readonly status: ChainSwapStatus;
     /**
+     * The venue's own status string, kept only to detect progress between
+     * polls. Two venue states can normalise to the same status, for example a
+     * queued refund and a refund in progress, and moving between them is real
+     * progress that must reset the stall clock.
+     */
+    readonly venueStatus?: string;
+    /**
      * Where the user must send funds. Nullable: venues can unassign a
      * deposit address after a retention period and reuse it for other
      * orders. Persist it when the order is created, and never send to an
@@ -200,9 +207,9 @@ export type ChainSwapOrder = {
     /** Deadline for the deposit to arrive. */
     readonly expiresAt: Date;
     /**
-     * When we last observed a CHANGE in status. Client-tracked, not taken
-     * from the venue: venues do not reliably report an update time while an
-     * order is in flight. Drives stall inference.
+     * When we last observed a CHANGE in status or venue status. Client-tracked,
+     * not taken from the venue: venues do not reliably report an update time
+     * while an order is in flight. Drives stall inference.
      */
     readonly statusChangedAt: Date;
 };
@@ -329,9 +336,9 @@ export interface ChainSwapProvider {
      * Poll an order. Takes the last known order rather than just its id,
      * because stall inference needs the last observed status change and the
      * venue does not reliably report one while an order is in flight. Returns
-     * the refreshed order with `statusChangedAt` advanced only when the
-     * status actually changed. Must be a pure read; the UI calls it on a
-     * timer.
+     * the refreshed order with `statusChangedAt` advanced only on real
+     * progress, a change in status or venue status. Must be a pure read; the
+     * UI calls it on a timer.
      */
     pollShift(previous: ChainSwapOrder): Promise<ChainSwapPollResult>;
 
