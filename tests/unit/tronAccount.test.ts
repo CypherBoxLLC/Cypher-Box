@@ -11,7 +11,9 @@ import { deriveTronAccount } from '../../src/services/tron/keys';
 import {
     deriveTronAccountFromWallet,
     resolveHotVaultTronAccount,
+    tronTransferSignerForWallet,
 } from '../../src/services/tron/account';
+import { recoverTronSigner } from '../../src/services/tron/transaction';
 
 const MNEMONIC =
     'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -83,5 +85,45 @@ describe('resolveHotVaultTronAccount', () => {
 
     it('returns null when the Hot Vault id points at a watch-only wallet', () => {
         expect(resolveHotVaultTronAccount(wallets, 'cold-1')).toBeNull();
+    });
+});
+
+describe('tronTransferSignerForWallet', () => {
+    const request = (from: string) => ({
+        from,
+        to: 'TEERhoTJ3Rn6bKrWDYqdnuPaZ8kZf31YAS',
+        amountUnits: '1000000',
+        referenceBlock: {
+            number: 86344053,
+            id: '000000000525817508010f219354e9e406f715ba528e60226ecb4223a807067c',
+            timestamp: 1789704360000,
+        },
+        createdAtMs: 1789704415000,
+    });
+
+    it('signs as the account the wallet derives, passphrase included', () => {
+        const wallet = hotVault({ getPassphrase: () => 'grandma' });
+        const account = deriveTronAccountFromWallet(wallet);
+        const signed = tronTransferSignerForWallet(wallet)?.(request(account!.address));
+        expect(recoverTronSigner(signed!.txID, signed!.signature)).toBe(account!.address);
+    });
+
+    it('cannot sign for the address the phrase gives without its passphrase', () => {
+        const wallet = hotVault({ getPassphrase: () => 'grandma' });
+        const withoutPassphrase = deriveTronAccount(MNEMONIC).address;
+        expect(() => tronTransferSignerForWallet(wallet)?.(request(withoutPassphrase))).toThrow(/cannot sign/);
+    });
+
+    it('returns null for a wallet that holds no phrase', () => {
+        expect(tronTransferSignerForWallet(null)).toBeNull();
+        expect(tronTransferSignerForWallet({})).toBeNull();
+        expect(tronTransferSignerForWallet(hotVault({ getSecret: () => 'zpub6rFR7y4Q2AijBE' }))).toBeNull();
+    });
+
+    it('reads the phrase when it signs, and keeps no copy of it', () => {
+        let secret = MNEMONIC;
+        const signer = tronTransferSignerForWallet(hotVault({ getSecret: () => secret }));
+        secret = '';
+        expect(() => signer?.(request(deriveTronAccount(MNEMONIC).address))).toThrow(/no longer holds/);
     });
 });

@@ -108,6 +108,13 @@ export type SignedUsdtTransfer = UnsignedUsdtTransfer & {
     readonly transactionHex: string;
 };
 
+/**
+ * Signs one transfer request for one account. The send flow takes this rather
+ * than a phrase, so it can sign again when asked without holding seed
+ * material itself. See tronTransferSignerForWallet in ./account.
+ */
+export type UsdtTransferSigner = (request: UsdtTransferRequest) => SignedUsdtTransfer;
+
 function sha256(bytes: Buffer): Buffer {
     const digest = CryptoJS.SHA256(CryptoJS.enc.Hex.parse(bytes.toString('hex')));
     return Buffer.from(digest.toString(CryptoJS.enc.Hex), 'hex');

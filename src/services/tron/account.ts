@@ -16,6 +16,7 @@
  */
 
 import { type TronAccount, deriveTronAccount } from './keys';
+import { type UsdtTransferSigner, signUsdtTransfer } from './transaction';
 
 /** The slice of a BlueWallet HD wallet this needs. */
 export type SeedBearingWallet = {
@@ -23,6 +24,24 @@ export type SeedBearingWallet = {
     getSecret?: () => string;
     getPassphrase?: () => string | undefined;
 };
+
+/** The wallet's phrase and passphrase, or null when it holds no phrase. */
+function walletPhrase(
+    wallet: SeedBearingWallet | null | undefined,
+): { mnemonic: string; passphrase: string | undefined } | null {
+    const secret = typeof wallet?.getSecret === 'function' ? wallet.getSecret() : null;
+    if (typeof secret !== 'string' || secret.trim().length === 0) {
+        return null;
+    }
+    // A single-word or hex secret is a WIF or xpub wallet, not a mnemonic one.
+    const mnemonic = secret.trim().replace(/\s+/g, ' ');
+    if (!mnemonic.includes(' ')) {
+        return null;
+    }
+    const passphrase =
+        typeof wallet?.getPassphrase === 'function' ? wallet.getPassphrase() || undefined : undefined;
+    return { mnemonic, passphrase };
+}
 
 /**
  * Derive the Tron account for one wallet.
@@ -35,18 +54,31 @@ export type SeedBearingWallet = {
 export function deriveTronAccountFromWallet(
     wallet: SeedBearingWallet | null | undefined,
 ): TronAccount | null {
-    const secret = typeof wallet?.getSecret === 'function' ? wallet.getSecret() : null;
-    if (typeof secret !== 'string' || secret.trim().length === 0) {
+    const phrase = walletPhrase(wallet);
+    return phrase ? deriveTronAccount(phrase.mnemonic, 0, 0, phrase.passphrase) : null;
+}
+
+/**
+ * A transfer signer for this wallet's Tron account, for the send flow.
+ *
+ * Reads the phrase and passphrase from the wallet each time it signs instead
+ * of keeping a copy, and signs only through signUsdtTransfer, which builds the
+ * bytes itself and checks the signature recovers to the sender. Returns null
+ * for a wallet with no phrase, as deriveTronAccountFromWallet does.
+ */
+export function tronTransferSignerForWallet(
+    wallet: SeedBearingWallet | null | undefined,
+): UsdtTransferSigner | null {
+    if (!wallet || !walletPhrase(wallet)) {
         return null;
     }
-    // A single-word or hex secret is a WIF or xpub wallet, not a mnemonic one.
-    const phrase = secret.trim().replace(/\s+/g, ' ');
-    if (!phrase.includes(' ')) {
-        return null;
-    }
-    const passphrase =
-        typeof wallet?.getPassphrase === 'function' ? wallet.getPassphrase() || undefined : undefined;
-    return deriveTronAccount(phrase, 0, 0, passphrase);
+    return request => {
+        const phrase = walletPhrase(wallet);
+        if (!phrase) {
+            throw new Error('This wallet no longer holds its recovery phrase, so it cannot sign');
+        }
+        return signUsdtTransfer(request, phrase.mnemonic, phrase.passphrase);
+    };
 }
 
 /**
