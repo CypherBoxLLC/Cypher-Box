@@ -1,14 +1,18 @@
 /**
- * tronAPIs: the read-only Tron calls the USDT balance and receive flow need.
+ * tronAPIs: the Tron calls the USDT balance, receive and send flows need.
  *
- * Straight to a public Tron node, since none of this needs a credential. What
- * it does need is care in two places:
+ * Reads go straight to a public Tron node, since none of them needs a
+ * credential. What they do need is care in two places:
  *   - Balances are decimal strings end to end. A TRC20 balance does not fit a
  *     JS number, and a rounded balance is how a UI offers to send more than
  *     exists.
  *   - An address that has never been used does not exist on chain. That is an
  *     ordinary state for a fresh wallet, not an error, and it also costs more
  *     to send to, which the send flow has to know.
+ *
+ * A send goes through our backend instead (postTronSend). Our users hold no
+ * TRX to pay a transfer's network fee, so the backend rents the energy it
+ * needs and broadcasts it. The phone still builds and signs every transfer.
  *
  * Nothing here logs. A Tron address is a lasting identifier for one user, and
  * putting it in device logs is the kind of privacy leak that never gets found.
@@ -250,4 +254,185 @@ export async function getTronTransactionOutcome(
     const reason =
         (typeof receipt.result === 'string' && receipt.result) || decodeNodeMessage(info.resMessage) || 'FAILED';
     return { status: 'failed', blockNumber, reason, energyUsed, trxBurnedSun };
+}
+
+/* ------------------------------------------------------------------ */
+/* Through our backend                                                 */
+/* ------------------------------------------------------------------ */
+
+const BACKEND_URL = 'https://cypherbox-backend.onrender.com/tron';
+// Longer than a node call: the route rents energy and waits for it to land,
+// which takes up to about 30 seconds, and an idle instance on its host can
+// take most of a minute to wake.
+const BACKEND_TIMEOUT_MS = 60_000;
+
+/**
+ * Refusals that leave the transfer off the network: the backend gives these
+ * before it broadcasts, or when the node refused the broadcast. The last two
+ * are ours, for refusals that arrive with no code: the rate limiter and the
+ * request validator, and a backend without the route at all.
+ */
+export type TronSendRefusalCode =
+    | 'INVALID_TRANSACTION'
+    | 'INVALID_SIGNATURE'
+    | 'NOT_SPONSORED'
+    | 'BELOW_MINIMUM'
+    | 'RESIGN_REQUIRED'
+    | 'INSUFFICIENT_USDT'
+    | 'BANDWIDTH_UNAVAILABLE'
+    | 'TRANSFER_REJECTED'
+    | 'DAILY_LIMIT'
+    | 'ENERGY_UNAVAILABLE'
+    | 'ENERGY_NOT_DELIVERED'
+    | 'TRON_NOT_CONFIGURED'
+    | 'BUDGET_EXHAUSTED'
+    | 'ENERGY_PROVIDER_UNFUNDED'
+    | 'RATE_LIMITED'
+    | 'INVALID_REQUEST';
+
+const REFUSAL_CODES: ReadonlySet<string> = new Set<TronSendRefusalCode>([
+    'INVALID_TRANSACTION',
+    'INVALID_SIGNATURE',
+    'NOT_SPONSORED',
+    'BELOW_MINIMUM',
+    'RESIGN_REQUIRED',
+    'INSUFFICIENT_USDT',
+    'BANDWIDTH_UNAVAILABLE',
+    'TRANSFER_REJECTED',
+    'DAILY_LIMIT',
+    'ENERGY_UNAVAILABLE',
+    'ENERGY_NOT_DELIVERED',
+    'TRON_NOT_CONFIGURED',
+    'BUDGET_EXHAUSTED',
+    'ENERGY_PROVIDER_UNFUNDED',
+]);
+
+export type TronSendAnswer =
+    /** Broadcast, and the node took it. Not in a block yet. */
+    | {
+          readonly outcome: 'sent';
+          readonly txID: string;
+          readonly energyRented: number;
+          readonly activated: boolean;
+      }
+    /** Refused, and this request did not put the transfer on the network. */
+    | { readonly outcome: 'refused'; readonly code: TronSendRefusalCode; readonly retryAfterSeconds?: number }
+    /**
+     * No answer that settles it. The transfer may or may not have gone out, so
+     * this must never be read as a failure. `reason` is for tests and support.
+     */
+    | { readonly outcome: 'unknown'; readonly reason: string };
+
+const asSeconds = (value: unknown): number | undefined => {
+    const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+    return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.ceil(n) : undefined;
+};
+
+/**
+ * Read the backend's answer. Only a code that certifies the transfer stayed
+ * off the network becomes a refusal. TRON_UNAVAILABLE and BROADCAST_FAILED can
+ * follow a broadcast the node took, an unexpected failure can happen anywhere,
+ * and a code this build does not know proves nothing, so all of those, and any
+ * answer without a code outside the 4xx range, are unknown.
+ */
+function readSendAnswer(status: number, body: unknown, retryAfterHeader: string | null): TronSendAnswer {
+    const json = body !== null && typeof body === 'object' ? (body as Json) : null;
+    if (status === 200) {
+        const { txid, energyRented, activated } = json ?? ({} as Json);
+        if (
+            typeof txid === 'string' &&
+            HEX_64.test(txid) &&
+            typeof energyRented === 'number' &&
+            Number.isSafeInteger(energyRented) &&
+            energyRented >= 0 &&
+            typeof activated === 'boolean'
+        ) {
+            return { outcome: 'sent', txID: txid.toLowerCase(), energyRented, activated };
+        }
+        return { outcome: 'unknown', reason: 'unreadable answer' };
+    }
+
+    const code = typeof json?.code === 'string' ? json.code : null;
+    if (code !== null) {
+        if (!REFUSAL_CODES.has(code)) {
+            return { outcome: 'unknown', reason: code };
+        }
+        const retryAfterSeconds = asSeconds(json?.retryAfterSeconds);
+        return {
+            outcome: 'refused',
+            code: code as TronSendRefusalCode,
+            ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+        };
+    }
+
+    // No code: turned away before the route ran, which a 4xx says.
+    if (status === 429) {
+        const retryAfterSeconds = asSeconds(retryAfterHeader);
+        return { outcome: 'refused', code: 'RATE_LIMITED', ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}) };
+    }
+    if (status === 404) {
+        // A backend that does not have the route cannot send.
+        return { outcome: 'refused', code: 'TRON_NOT_CONFIGURED' };
+    }
+    if (status >= 400 && status < 500) {
+        return { outcome: 'refused', code: 'INVALID_REQUEST' };
+    }
+    return { outcome: 'unknown', reason: `HTTP ${status}` };
+}
+
+/**
+ * Hand a signed USDT transfer to our backend, which rents the energy it needs
+ * and broadcasts it. Can take about 30 seconds.
+ *
+ * Returns rather than throws for everything the backend or the connection can
+ * do, because the one distinction the caller cannot do without is "refused"
+ * against "unknown". A refusal means this request left the transfer off the
+ * network. A dropped connection or a timeout means it may be on it. Posting
+ * the same bytes again is safe either way: the backend handles a repeat as
+ * the same transfer and pays for its energy once.
+ *
+ * `publicKey` is the sender's uncompressed key. A node cannot confirm who
+ * signed for an address that has never been used, so the backend checks a
+ * first send against it.
+ */
+export async function postTronSend(
+    transactionHex: string,
+    publicKey: string,
+    opts: TronRequestOptions = {},
+): Promise<TronSendAnswer> {
+    if (!/^[0-9a-fA-F]+$/.test(transactionHex) || transactionHex.length % 2 !== 0 || transactionHex.length > 2000) {
+        throw new TronApiError('Not a signed transaction', false);
+    }
+    if (!/^04[0-9a-fA-F]{128}$/.test(publicKey)) {
+        throw new TronApiError('Not an uncompressed public key', false);
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? BACKEND_TIMEOUT_MS);
+    try {
+        let response: Response;
+        try {
+            response = await fetch(`${BACKEND_URL}/send`, {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transaction: transactionHex, publicKey }),
+                signal: controller.signal,
+            });
+        } catch {
+            // The request may have reached the backend before the line went.
+            return { outcome: 'unknown', reason: controller.signal.aborted ? 'timed out' : 'unreachable' };
+        }
+
+        let body: unknown = null;
+        try {
+            body = await response.json();
+        } catch {
+            body = null;
+        }
+        const headers = response.headers as { get?: (name: string) => string | null } | undefined;
+        const retryAfter = typeof headers?.get === 'function' ? headers.get('Retry-After') : null;
+        return readSendAnswer(response.status, body, retryAfter);
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
