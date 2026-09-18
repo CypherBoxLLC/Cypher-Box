@@ -24,6 +24,7 @@ import {
 } from '../services/tron/contract';
 import { TRX_DECIMALS, USDT_DECIMALS, USDT_TRC20_CONTRACT } from '../services/tron/constants';
 import { tronAddressToHex } from '../services/tron/address';
+import type { TronReferenceBlock } from '../services/tron/transaction';
 
 const TRONGRID_URL = 'https://api.trongrid.io';
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -123,6 +124,13 @@ export type TronAccountState = {
     readonly energyAvailable: number;
     /** Free plus staked bandwidth available now. */
     readonly bandwidthAvailable: number;
+    /**
+     * The two bandwidth sources separately. A transaction draws its whole size
+     * from one of them or burns TRX for all of it, so 200 free plus 200 staked
+     * does not cover a 345 byte transfer.
+     */
+    readonly freeBandwidth: number;
+    readonly stakedBandwidth: number;
 };
 
 const asNumber = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
@@ -158,5 +166,88 @@ export async function getTronAccountState(
         trxBalance: unitsToDecimal(String(sun), TRX_DECIMALS),
         energyAvailable: Math.max(0, energy),
         bandwidthAvailable: Math.max(0, freeNet) + Math.max(0, stakedNet),
+        freeBandwidth: Math.max(0, freeNet),
+        stakedBandwidth: Math.max(0, stakedNet),
     };
+}
+
+const HEX_64 = /^[0-9a-fA-F]{64}$/;
+
+/**
+ * A recent block to anchor a transaction to.
+ *
+ * Asks for the header only: the full block carries every transaction in it
+ * and runs to hundreds of kilobytes. The builder checks the id against the
+ * height, since a Tron block id begins with it.
+ */
+export async function getTronReferenceBlock(opts: TronRequestOptions = {}): Promise<TronReferenceBlock> {
+    const body = await post('/wallet/getblock', { detail: false }, opts);
+    const header = (body.block_header as { raw_data?: { number?: unknown; timestamp?: unknown } } | undefined)
+        ?.raw_data;
+    const id = body.blockID;
+    const number = header?.number;
+    const timestamp = header?.timestamp;
+    if (
+        typeof id !== 'string' ||
+        !HEX_64.test(id) ||
+        typeof number !== 'number' ||
+        !Number.isSafeInteger(number) ||
+        number <= 0 ||
+        typeof timestamp !== 'number' ||
+        !Number.isSafeInteger(timestamp) ||
+        timestamp <= 0
+    ) {
+        throw new TronApiError('The Tron network did not return a usable block, try again shortly');
+    }
+    return { number, id, timestamp };
+}
+
+export type TronTransactionOutcome =
+    /** Not in a block yet, or never broadcast. Keep asking until it expires. */
+    | { readonly status: 'unknown' }
+    /** In a block with the transfer done. Irreversible about a minute later. */
+    | {
+          readonly status: 'succeeded';
+          readonly blockNumber: number;
+          readonly energyUsed: number;
+          readonly trxBurnedSun: number;
+      }
+    /** In a block, but the call failed: the fee is spent and no USDT moved. */
+    | {
+          readonly status: 'failed';
+          readonly blockNumber: number;
+          readonly reason: string;
+          readonly energyUsed: number;
+          readonly trxBurnedSun: number;
+      };
+
+/**
+ * What became of a transaction the app broadcast.
+ *
+ * A failed contract call still lands in a block and still costs its fee, so
+ * "in a block" is not "done": the receipt's result says whether the transfer
+ * happened. OUT_OF_ENERGY is the one to expect here, when rented energy did
+ * not arrive in time or fell short.
+ */
+export async function getTronTransactionOutcome(
+    txID: string,
+    opts: TronRequestOptions = {},
+): Promise<TronTransactionOutcome> {
+    if (!HEX_64.test(txID)) {
+        throw new TronApiError('Not a Tron transaction id', false);
+    }
+    const info = await post('/wallet/gettransactioninfobyid', { value: txID }, opts);
+    const blockNumber = info.blockNumber;
+    if (typeof blockNumber !== 'number') {
+        return { status: 'unknown' };
+    }
+    const receipt = (info.receipt ?? {}) as { result?: unknown; energy_usage_total?: unknown };
+    const energyUsed = asNumber(receipt.energy_usage_total);
+    const trxBurnedSun = asNumber(info.fee);
+    if (receipt.result === 'SUCCESS') {
+        return { status: 'succeeded', blockNumber, energyUsed, trxBurnedSun };
+    }
+    const reason =
+        (typeof receipt.result === 'string' && receipt.result) || decodeNodeMessage(info.resMessage) || 'FAILED';
+    return { status: 'failed', blockNumber, reason, energyUsed, trxBurnedSun };
 }

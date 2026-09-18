@@ -14,7 +14,13 @@
  *     use it.
  */
 
-import { TronApiError, getTronAccountState, getTronUsdtBalance } from '../../src/api/tronAPIs';
+import {
+    TronApiError,
+    getTronAccountState,
+    getTronReferenceBlock,
+    getTronTransactionOutcome,
+    getTronUsdtBalance,
+} from '../../src/api/tronAPIs';
 import { tronAddressToHex } from '../../src/services/tron/address';
 import { USDT_TRC20_CONTRACT } from '../../src/services/tron/constants';
 import { deriveTronAccount } from '../../src/services/tron/keys';
@@ -117,6 +123,9 @@ describe('getTronAccountState', () => {
         expect(state.trxBalance).toBe('5');
         expect(state.energyAvailable).toBe(1000);
         expect(state.bandwidthAvailable).toBe(650);
+        // Kept apart, since one transaction cannot draw on both.
+        expect(state.freeBandwidth).toBe(500);
+        expect(state.stakedBandwidth).toBe(150);
     });
 
     it('reports a never-used address as not activated, not as a failure', async () => {
@@ -154,5 +163,83 @@ describe('getTronAccountState', () => {
         expect(sent(1).url).toBe('https://api.trongrid.io/wallet/getaccountresource');
         expect(sent(0).body.address).toBe(ADDRESS_HEX);
         expect(sent(1).body.address).toBe(ADDRESS_HEX);
+    });
+});
+
+describe('getTronReferenceBlock', () => {
+    const header = {
+        blockID: '0000000005258181a96415362cb6d639039846e1934aa868b0fbe91ab2b5781e',
+        block_header: { raw_data: { number: 86344065, timestamp: 1789704396000 } },
+    };
+
+    it('asks for the header only and returns height, id and network time', async () => {
+        fetchMock.mockResolvedValue(ok(header));
+        const block = await getTronReferenceBlock();
+        expect(sent().url).toBe('https://api.trongrid.io/wallet/getblock');
+        expect(sent().body).toEqual({ detail: false });
+        expect(block).toEqual({ number: 86344065, id: header.blockID, timestamp: 1789704396000 });
+    });
+
+    it('refuses an answer that is not a usable block', async () => {
+        for (const body of [
+            {},
+            { ...header, blockID: 'abc' },
+            { ...header, block_header: { raw_data: { number: 86344065 } } },
+            { ...header, block_header: { raw_data: { number: -1, timestamp: 1789704396000 } } },
+        ]) {
+            fetchMock.mockResolvedValueOnce(ok(body));
+            await expect(getTronReferenceBlock()).rejects.toBeInstanceOf(TronApiError);
+        }
+    });
+});
+
+describe('getTronTransactionOutcome', () => {
+    const TX = 'c3a9767f89d31a2e213305d0045ad87c8e31daa90a463af407fe1cc83816abd7';
+
+    it('reports unknown while the transaction is not in a block', async () => {
+        fetchMock.mockResolvedValue(ok({}));
+        expect(await getTronTransactionOutcome(TX)).toEqual({ status: 'unknown' });
+        expect(sent().url).toBe('https://api.trongrid.io/wallet/gettransactioninfobyid');
+        expect(sent().body).toEqual({ value: TX });
+    });
+
+    it('reports success only when the receipt says the call succeeded', async () => {
+        fetchMock.mockResolvedValue(
+            ok({ blockNumber: 86344100, receipt: { energy_usage_total: 64285, result: 'SUCCESS' } }),
+        );
+        expect(await getTronTransactionOutcome(TX)).toEqual({
+            status: 'succeeded',
+            blockNumber: 86344100,
+            energyUsed: 64285,
+            trxBurnedSun: 0,
+        });
+    });
+
+    it('reports a failed call, which still lands in a block and still costs its fee', async () => {
+        fetchMock.mockResolvedValue(
+            ok({
+                blockNumber: 86344100,
+                fee: 345000,
+                result: 'FAILED',
+                receipt: { energy_usage_total: 20000, net_fee: 345000, result: 'OUT_OF_ENERGY' },
+            }),
+        );
+        expect(await getTronTransactionOutcome(TX)).toEqual({
+            status: 'failed',
+            blockNumber: 86344100,
+            reason: 'OUT_OF_ENERGY',
+            energyUsed: 20000,
+            trxBurnedSun: 345000,
+        });
+    });
+
+    it('never calls a receipt without a result a success', async () => {
+        fetchMock.mockResolvedValue(ok({ blockNumber: 86344100, receipt: {} }));
+        expect((await getTronTransactionOutcome(TX)).status).toBe('failed');
+    });
+
+    it('refuses something that is not a transaction id before calling out', async () => {
+        await expect(getTronTransactionOutcome('not-a-txid')).rejects.toBeInstanceOf(TronApiError);
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });
