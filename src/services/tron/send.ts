@@ -31,10 +31,12 @@
  * Nothing here logs. Everything in scope identifies the user.
  */
 
+import BigNumber from 'bignumber.js';
 import { Buffer } from 'buffer';
 
 import {
     TronApiError,
+    type TronAccountState,
     type TronSendAnswer,
     type TronSendRefusalCode,
     type TronTransactionOutcome,
@@ -49,7 +51,7 @@ import { tronAddressFromPublicKey, tronAddressToHex } from './address';
 import { USDT_DECIMALS } from './constants';
 import { decimalToUnits } from './contract';
 import type { TronAccount } from './keys';
-import { usdtSendNeeds } from './sendNeeds';
+import { hasTransferBandwidth, secondsUntilTransferBandwidth, usdtSendNeeds } from './sendNeeds';
 import type { SignedUsdtTransfer, TronReferenceBlock, UsdtTransferSigner } from './transaction';
 
 /** Signatures one send may make, the first included. */
@@ -306,6 +308,55 @@ const outcomeUnknown = (txID: string, expirationMs: number) =>
         'Could not confirm whether this transfer went out. Check your USDT balance before sending again.',
         { txID, expirationMs },
     );
+
+/* ------------------------------------------------------------------ */
+/* Before committing                                                   */
+/* ------------------------------------------------------------------ */
+
+export type UsdtSendReadiness =
+    | { readonly ready: true }
+    | { readonly ready: false; readonly code: 'INSUFFICIENT_USDT' }
+    /** `retryAfterSeconds` is absent only if the allowance could never cover a transfer. */
+    | { readonly ready: false; readonly code: 'BANDWIDTH_UNAVAILABLE'; readonly retryAfterSeconds?: number };
+
+/**
+ * Whether this wallet can send `amountUnits` now, read before anything is
+ * committed. For a conversion that means before the quote is booked: a quote
+ * holds for two minutes, and a wallet that has used its free bandwidth can
+ * have hours to wait. The backend checks both again when the transfer arrives.
+ *
+ * A shortfall of USDT is reported first, since waiting does not fix it.
+ * Throws TRON_UNREACHABLE when the chain cannot be read.
+ */
+export async function checkUsdtSendReadiness(
+    address: string,
+    amountUnits: string,
+    clock: TronSendClock = systemClock,
+): Promise<UsdtSendReadiness> {
+    tronAddressToHex(address);
+    if (!/^[1-9][0-9]*$/.test(amountUnits)) {
+        throw new Error('Amount must be a whole number of units above zero');
+    }
+    let balance: string;
+    let sender: TronAccountState;
+    try {
+        [balance, sender] = await Promise.all([getTronUsdtBalance(address), getTronAccountState(address)]);
+    } catch {
+        throw tronUnreachable();
+    }
+    if (new BigNumber(decimalToUnits(balance, USDT_DECIMALS)).isLessThan(amountUnits)) {
+        return { ready: false, code: 'INSUFFICIENT_USDT' };
+    }
+    if (!hasTransferBandwidth(sender)) {
+        const retryAfterSeconds = secondsUntilTransferBandwidth(sender, clock.now());
+        return {
+            ready: false,
+            code: 'BANDWIDTH_UNAVAILABLE',
+            ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+        };
+    }
+    return { ready: true };
+}
 
 /* ------------------------------------------------------------------ */
 /* The outcome of one transfer                                         */

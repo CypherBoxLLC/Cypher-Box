@@ -35,6 +35,7 @@ import {
     TronSendError,
     type TronSendRemedy,
     awaitUsdtTransferOutcome,
+    checkUsdtSendReadiness,
     sendUsdt,
     sendUsdtConversionDeposit,
 } from '../../src/services/tron/send';
@@ -98,6 +99,9 @@ const state = (over: Partial<TronAccountState> = {}): TronAccountState => ({
     bandwidthAvailable: 600,
     freeBandwidth: 600,
     stakedBandwidth: 0,
+    freeBandwidthUsed: 0,
+    freeBandwidthLimit: 600,
+    lastFreeBandwidthUseMs: 0,
     ...over,
 });
 
@@ -547,6 +551,61 @@ describe('sendUsdtConversionDeposit', () => {
         await expect(deposit(over)).rejects.toThrow();
         expect(getBlock).not.toHaveBeenCalled();
         expect(post).not.toHaveBeenCalled();
+    });
+});
+
+describe('checkUsdtSendReadiness', () => {
+    const ready = () => checkUsdtSendReadiness(FROM.address, '25000000', clock);
+
+    it('is ready when the balance covers the amount and one bandwidth source covers the transfer', async () => {
+        usdtBalance.mockResolvedValue('25');
+        accountState.mockResolvedValue(state());
+
+        expect(await ready()).toEqual({ ready: true });
+        expect(usdtBalance).toHaveBeenCalledWith(FROM.address);
+        expect(accountState).toHaveBeenCalledWith(FROM.address);
+        // A read, nothing more.
+        expect(post).not.toHaveBeenCalled();
+        expect(getBlock).not.toHaveBeenCalled();
+    });
+
+    it('reports a USDT shortfall first, since waiting does not fix it', async () => {
+        usdtBalance.mockResolvedValue('24.999999');
+        accountState.mockResolvedValue(state({ freeBandwidth: 0, freeBandwidthUsed: 600 }));
+
+        expect(await ready()).toEqual({ ready: false, code: 'INSUFFICIENT_USDT' });
+    });
+
+    it('says how long until free bandwidth covers a transfer again', async () => {
+        usdtBalance.mockResolvedValue('100');
+        // One transfer just used 345 of the 600.
+        accountState.mockResolvedValue(
+            state({ freeBandwidth: 255, freeBandwidthUsed: 345, lastFreeBandwidthUseMs: BASE_TIME }),
+        );
+
+        expect(await ready()).toEqual({ ready: false, code: 'BANDWIDTH_UNAVAILABLE', retryAfterSeconds: 22543 });
+    });
+
+    it('counts a wallet that has only received USDT as ready, since activation brings the allowance', async () => {
+        usdtBalance.mockResolvedValue('25');
+        accountState.mockResolvedValue(state({ activated: false, freeBandwidth: 0, freeBandwidthLimit: 0 }));
+
+        expect(await ready()).toEqual({ ready: true });
+    });
+
+    it('says nothing was sent when the chain cannot be read', async () => {
+        usdtBalance.mockRejectedValue(new TronApiError('Could not reach the Tron network, check your connection'));
+        accountState.mockResolvedValue(state());
+
+        const error = await failure(ready());
+
+        expect(error).toMatchObject({ code: 'TRON_UNREACHABLE', remedy: 'retry' });
+    });
+
+    it('refuses a bad address or amount before calling out', async () => {
+        await expect(checkUsdtSendReadiness('TNotAnAddress', '1', clock)).rejects.toThrow();
+        await expect(checkUsdtSendReadiness(FROM.address, '0', clock)).rejects.toThrow(/above zero/);
+        expect(usdtBalance).not.toHaveBeenCalled();
     });
 });
 

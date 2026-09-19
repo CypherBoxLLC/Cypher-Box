@@ -116,7 +116,7 @@ describe('getTronAccountState', () => {
 
     it('reports an existing account with its TRX and resources', async () => {
         fetchMock
-            .mockResolvedValueOnce(ok({ address: ADDRESS_HEX, balance: 5_000_000 }))
+            .mockResolvedValueOnce(ok({ address: ADDRESS_HEX, balance: 5_000_000, latest_consume_free_time: 1789687896000 }))
             .mockResolvedValueOnce(ok(resource));
         const state = await getTronAccountState(ADDRESS);
         expect(state.activated).toBe(true);
@@ -126,6 +126,10 @@ describe('getTronAccountState', () => {
         // Kept apart, since one transaction cannot draw on both.
         expect(state.freeBandwidth).toBe(500);
         expect(state.stakedBandwidth).toBe(150);
+        // What decides when free bandwidth covers a transfer again.
+        expect(state.freeBandwidthUsed).toBe(100);
+        expect(state.freeBandwidthLimit).toBe(600);
+        expect(state.lastFreeBandwidthUseMs).toBe(1789687896000);
     });
 
     it('reports a never-used address as not activated, not as a failure', async () => {
@@ -135,6 +139,7 @@ describe('getTronAccountState', () => {
         expect(state.trxBalance).toBe('0');
         expect(state.energyAvailable).toBe(0);
         expect(state.bandwidthAvailable).toBe(0);
+        expect(state.lastFreeBandwidthUseMs).toBe(0);
     });
 
     it('treats omitted counters as zero, which is how the node reports them', async () => {

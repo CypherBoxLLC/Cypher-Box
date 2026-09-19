@@ -135,6 +135,14 @@ export type TronAccountState = {
      */
     readonly freeBandwidth: number;
     readonly stakedBandwidth: number;
+    /**
+     * What decides when free bandwidth covers a transfer again: usage as the
+     * node reports it, already decayed to now, the daily allowance, and when
+     * the account last used any, in ms (zero when never).
+     */
+    readonly freeBandwidthUsed: number;
+    readonly freeBandwidthLimit: number;
+    readonly lastFreeBandwidthUseMs: number;
 };
 
 const asNumber = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
@@ -172,6 +180,9 @@ export async function getTronAccountState(
         bandwidthAvailable: Math.max(0, freeNet) + Math.max(0, stakedNet),
         freeBandwidth: Math.max(0, freeNet),
         stakedBandwidth: Math.max(0, stakedNet),
+        freeBandwidthUsed: asNumber(resource.freeNetUsed),
+        freeBandwidthLimit: asNumber(resource.freeNetLimit),
+        lastFreeBandwidthUseMs: asNumber(account.latest_consume_free_time),
     };
 }
 
