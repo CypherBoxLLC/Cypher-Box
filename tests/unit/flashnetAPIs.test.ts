@@ -15,7 +15,12 @@
 
 import BigNumber from 'bignumber.js';
 
-import { getFlashnetOrder, getFlashnetPair, requestFlashnetQuote } from '../../src/api/flashnetAPIs';
+import {
+    forgetTronDepositCharge,
+    getFlashnetOrder,
+    getFlashnetPair,
+    requestFlashnetQuote,
+} from '../../src/api/flashnetAPIs';
 import {
     AmountOutOfRangeError,
     ChainSwapError,
@@ -109,10 +114,27 @@ describe('getFlashnetPair', () => {
         expect(max.decimalPlaces()).toBeLessThanOrEqual(8);
     });
 
+    // A Tron pair also asks our backend for its deposit charge, alongside
+    // /limits, so these answer by URL rather than in call order.
+    const byUrl = (answers: { charge?: unknown; limits: unknown; estimate: unknown }) =>
+        fetchMock.mockImplementation(async (url: string) => {
+            if (url.includes('/flashnet/tron-deposit-charge')) {
+                return answers.charge ?? fail(503, { error: 'Service unavailable', code: 'CHARGE_UNAVAILABLE' });
+            }
+            if (url.includes('/limits?')) return answers.limits;
+            if (url.includes('/estimate?')) return answers.estimate;
+            throw new Error(`unexpected request to ${url}`);
+        });
+    const estimateUrl = () => urls().find(u => u.includes('/estimate?')) ?? '';
+    const chargeRequests = () => urls().filter(u => u.includes('/tron-deposit-charge')).length;
+    const measured = ok({ chargeUsdt: '2.47', measuredAt: '2026-09-19T12:00:00.000Z' });
+
+    beforeEach(() => {
+        forgetTronDepositCharge();
+    });
+
     it('uses the dollar cap directly when the deposit asset is a dollar', async () => {
-        fetchMock
-            .mockResolvedValueOnce(ok(limitsBody({ minAmountSmallest: '800000' })))
-            .mockResolvedValueOnce(ok({ estimatedOut: '1050' }));
+        byUrl({ limits: ok(limitsBody({ minAmountSmallest: '800000' })), estimate: ok({ estimatedOut: '1050' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC, '100');
         expect(pair.max).toBe('87400');
     });
@@ -139,27 +161,52 @@ describe('getFlashnetPair', () => {
     });
 
     it('reads a dollar-only minimum on a dollar deposit, which is all Flashnet gives for Tron', async () => {
-        fetchMock.mockResolvedValueOnce(ok(tronLimitsBody())).mockResolvedValueOnce(ok({ estimatedOut: '61000' }));
+        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '61000' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC, '50');
-        expect(urls()[1]).toContain('amount=50000000');
+        expect(estimateUrl()).toContain('amount=50000000');
         expect(pair.max).toBe('168400');
         expect(pair.rate).toBe('0.0000122');
     });
 
-    it('carries the Tron deposit charge the estimate leaves out, and lifts the minimum by it', async () => {
-        fetchMock.mockResolvedValueOnce(ok(tronLimitsBody())).mockResolvedValueOnce(ok({ estimatedOut: '3700' }));
+    it('carries the Tron deposit charge our backend measures, and lifts the minimum by it', async () => {
+        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '3700' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC);
-        expect(pair.fixedCost).toBe('2.5');
+        expect(urls()).toContain('https://cypherbox-backend.onrender.com/flashnet/tron-deposit-charge');
+        expect(pair.fixedCost).toBe('2.47');
         // Flashnet's 0.80 plus the charge, since the rest must still clear 0.80.
-        expect(pair.min).toBe('3.3');
-        expect(urls()[1]).toContain('amount=3300000');
+        expect(pair.min).toBe('3.27');
+        expect(estimateUrl()).toContain('amount=3270000');
     });
 
-    it('adds no fixed charge to a bitcoin deposit', async () => {
+    it('falls back to its own figure when the backend cannot say', async () => {
+        byUrl({ limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '3700' }) });
+        const pair = await getFlashnetPair(USDT_TRON, BTC);
+        expect(pair.fixedCost).toBe('2.5');
+        expect(pair.min).toBe('3.3');
+    });
+
+    it('does not believe a charge no one should report', async () => {
+        byUrl({ charge: ok({ chargeUsdt: '250' }), limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '3700' }) });
+        expect((await getFlashnetPair(USDT_TRON, BTC)).fixedCost).toBe('2.5');
+        forgetTronDepositCharge();
+        byUrl({ charge: ok({ chargeUsdt: 'two' }), limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '3700' }) });
+        expect((await getFlashnetPair(USDT_TRON, BTC)).fixedCost).toBe('2.5');
+    });
+
+    it('asks the backend once, then reuses the charge while the user types', async () => {
+        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '61000' }) });
+        await getFlashnetPair(USDT_TRON, BTC, '50');
+        const again = await getFlashnetPair(USDT_TRON, BTC, '60');
+        expect(again.fixedCost).toBe('2.47');
+        expect(chargeRequests()).toBe(1);
+    });
+
+    it('adds no fixed charge to a bitcoin deposit, and asks the backend nothing', async () => {
         fetchMock.mockResolvedValueOnce(ok(limitsBody())).mockResolvedValueOnce(ok({ estimatedOut: '99870000' }));
         const pair = await getFlashnetPair(BTC, USDT_TRON, '0.0013');
         expect(pair.fixedCost).toBeUndefined();
         expect(pair.min).toBe('0.00006188');
+        expect(chargeRequests()).toBe(0);
     });
 
     it('still refuses a route whose minimum it cannot read', async () => {

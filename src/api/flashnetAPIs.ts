@@ -53,22 +53,30 @@ const BACKEND_TIMEOUT_MS = 60_000;
 const DOLLAR_COINS = new Set(['usdt', 'usdc', 'usdb']);
 
 /**
- * Relay's charge on a tron:USDT deposit, in USDT. Flashnet reaches Tron
- * through Relay, which sweeps every single-use deposit address itself: it
- * creates the account, then sends an approve and a depository call, about
- * 192k energy. A quote includes the cost with no fee field for it and
- * /estimate leaves it out, so the rate alone overstates what arrives by this
- * much at any size. Measured between 2.08 and 2.46 USDT on 2026-09-19 (the
- * top matches Relay's own deposit-address surcharge). It follows TRX and
- * energy prices, so it is set at the top of that range; the quote the user
- * confirms stays the price.
+ * Relay's charge on a tron:USDT deposit, in USDT, for when our backend cannot
+ * say. Flashnet reaches Tron through Relay, which sweeps every single-use
+ * deposit address itself: it creates the account, then sends an approve and a
+ * depository call, about 192k energy. A quote includes the cost with no fee
+ * field for it and /estimate leaves it out, so the rate alone overstates what
+ * arrives by this much at any size. It follows TRX and energy prices, so the
+ * backend measures it live; this is the top of what was measured on
+ * 2026-09-19 (2.08 to 2.46 USDT).
  */
 const TRON_DEPOSIT_CHARGE_USDT = '2.5';
 
-/** Flat charges on a deposit that Flashnet's rate does not show, by chain:ASSET. */
-const FIXED_DEPOSIT_COSTS: Readonly<Record<string, string>> = {
-    'tron:USDT': TRON_DEPOSIT_CHARGE_USDT,
-};
+/** A measured charge is reused this long, and waited for at most this long. */
+const CHARGE_REUSE_MS = 10 * 60_000;
+const CHARGE_TIMEOUT_MS = 8_000;
+
+/** No charge above this is believed, whoever reports it. */
+const CHARGE_MAX_USDT = 20;
+
+let measuredCharge: { usdt: string; atMs: number } | null = null;
+
+/** Forget the measured Tron deposit charge, so the next pair reads it again. */
+export function forgetTronDepositCharge(): void {
+    measuredCharge = null;
+}
 
 export type FlashnetRequestOptions = { timeoutMs?: number };
 
@@ -188,6 +196,40 @@ function maxDepositAmount(
 }
 
 /**
+ * The flat charge a deposit of this asset carries before Flashnet's rate
+ * applies, or undefined when it carries none we know of. For tron:USDT it is
+ * our backend's live measurement, reused for 10 minutes, and
+ * TRON_DEPOSIT_CHARGE_USDT when the backend cannot answer in time: the amount
+ * screen must not wait on a waking server, and the quote the user confirms is
+ * the price either way. Never throws.
+ */
+async function fixedDepositCost(deposit: ChainAsset): Promise<string | undefined> {
+    if (deposit.network.toLowerCase() !== 'tron' || deposit.coin.toLowerCase() !== 'usdt') {
+        return undefined;
+    }
+    const now = Date.now();
+    if (measuredCharge && now - measuredCharge.atMs < CHARGE_REUSE_MS) {
+        return measuredCharge.usdt;
+    }
+    try {
+        const body = await request<{ chargeUsdt?: unknown }>(
+            `${BACKEND_URL}/tron-deposit-charge`,
+            { method: 'GET', headers: { Accept: 'application/json' } },
+            CHARGE_TIMEOUT_MS,
+            () => new VenueUnavailableError('flashnet', true, 'The Tron deposit charge is unavailable'),
+        );
+        const charge = new BigNumber(typeof body.chargeUsdt === 'string' ? body.chargeUsdt : NaN);
+        if (charge.isFinite() && charge.isGreaterThanOrEqualTo(0) && charge.isLessThanOrEqualTo(CHARGE_MAX_USDT)) {
+            measuredCharge = { usdt: charge.toFixed(), atMs: now };
+            return measuredCharge.usdt;
+        }
+    } catch {
+        // The fallback below is the answer.
+    }
+    return TRON_DEPOSIT_CHARGE_USDT;
+}
+
+/**
  * Bounds and an indicative rate for a pair.
  *
  * Two calls, because Flashnet splits them: /limits carries the amount bounds
@@ -210,6 +252,8 @@ export async function getFlashnetPair(
     const onError = (status: number, body: unknown) =>
         mapFlashnetError(status, body as FlashnetErrorBody | null, depositAmount);
 
+    // Alongside /limits, so a slow answer costs no extra wait.
+    const charge = fixedDepositCost(deposit);
     const limits = await request<{ routes?: LimitsRoute[] }>(
         `${BASE_URL}/limits?${query}`,
         { method: 'GET', headers: { Accept: 'application/json' } },
@@ -235,7 +279,7 @@ export async function getFlashnetPair(
     const depositDecimals = decimalsFor(deposit, known);
     const settleDecimals = decimalsFor(settle, known);
 
-    const fixedCost = FIXED_DEPOSIT_COSTS[`${deposit.network.toLowerCase()}:${deposit.coin.toUpperCase()}`];
+    const fixedCost = await charge;
     const venueMin = minDepositAmount(bounds, depositDecimals, deposit);
     const min = fixedCost ? new BigNumber(venueMin).plus(fixedCost).toFixed() : venueMin;
     const probe = depositAmount && new BigNumber(depositAmount).isGreaterThan(min) ? depositAmount : min;
