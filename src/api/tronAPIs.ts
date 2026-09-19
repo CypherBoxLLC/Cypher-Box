@@ -45,29 +45,51 @@ export class TronApiError extends Error {
 
 type Json = Record<string, unknown>;
 
-async function post(path: string, body: Json, opts: TronRequestOptions): Promise<Json> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    try {
-        const response = await fetch(`${TRONGRID_URL}${path}`, {
-            method: 'POST',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: controller.signal,
-        }).catch(() => {
-            throw new TronApiError('Could not reach the Tron network, check your connection');
-        });
+/**
+ * TronGrid without a key answers 429 past 3 requests a second from one IP and
+ * refuses that IP for the next 3 seconds (its own error text, 2026-09-19). A
+ * phone can hit that without doing anything wrong, behind a mobile IP it
+ * shares, so a 429 is waited out and asked again within the request's
+ * timeout rather than reported as the network being unreachable.
+ */
+const RATE_LIMITED_WAIT_MS = 3_200;
+const RATE_LIMITED_RETRIES = 2;
 
-        let parsed: unknown = null;
-        try {
-            parsed = await response.json();
-        } catch {
-            parsed = null;
+async function post(path: string, body: Json, opts: TronRequestOptions): Promise<Json> {
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        for (let retries = 0; ; retries += 1) {
+            const response = await fetch(`${TRONGRID_URL}${path}`, {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            }).catch(() => {
+                throw new TronApiError('Could not reach the Tron network, check your connection');
+            });
+
+            if (response.status === 429) {
+                if (retries < RATE_LIMITED_RETRIES && deadline - Date.now() > RATE_LIMITED_WAIT_MS) {
+                    await new Promise(resolve => setTimeout(resolve, RATE_LIMITED_WAIT_MS));
+                    continue;
+                }
+                throw new TronApiError('The Tron network is busy, try again in a few seconds');
+            }
+
+            let parsed: unknown = null;
+            try {
+                parsed = await response.json();
+            } catch {
+                parsed = null;
+            }
+            if (!response.ok || parsed === null || typeof parsed !== 'object') {
+                throw new TronApiError('The Tron network did not answer, try again shortly');
+            }
+            return parsed as Json;
         }
-        if (!response.ok || parsed === null || typeof parsed !== 'object') {
-            throw new TronApiError('The Tron network did not answer, try again shortly');
-        }
-        return parsed as Json;
     } finally {
         clearTimeout(timeoutId);
     }

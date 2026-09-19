@@ -248,3 +248,40 @@ describe('getTronTransactionOutcome', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 });
+
+describe('a node that rate-limits the caller', () => {
+    // TronGrid past 3 requests a second without a key: 429, then 3 s refused.
+    const TX = 'c3a9767f89d31a2e213305d0045ad87c8e31daa90a463af407fe1cc83816abd7';
+    const limited = () => ({ ok: false, status: 429, json: async () => ({ Error: 'suspended for 3 s' }) });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it('waits out the suspension and asks again, rather than calling the network unreachable', async () => {
+        jest.useFakeTimers();
+        fetchMock.mockResolvedValueOnce(limited()).mockResolvedValueOnce(ok({}));
+        const outcome = getTronTransactionOutcome(TX);
+        await jest.advanceTimersByTimeAsync(3_200);
+        await expect(outcome).resolves.toEqual({ status: 'unknown' });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('gives up as busy after two waits, and says so', async () => {
+        jest.useFakeTimers();
+        fetchMock.mockResolvedValue(limited());
+        const outcome = getTronTransactionOutcome(TX).catch((e: unknown) => e);
+        await jest.advanceTimersByTimeAsync(2 * 3_200);
+        const error = (await outcome) as TronApiError;
+        expect(error).toBeInstanceOf(TronApiError);
+        expect(error.message).toMatch(/busy/);
+        expect(error.retryable).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('never waits past its own timeout', async () => {
+        fetchMock.mockResolvedValueOnce(limited());
+        await expect(getTronTransactionOutcome(TX, { timeoutMs: 3_000 })).rejects.toThrow(/busy/);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+});
