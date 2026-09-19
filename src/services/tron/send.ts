@@ -423,29 +423,6 @@ async function waitForRentedEnergy(from: string, to: string, clock: TronSendCloc
     }
 }
 
-async function runSend(request: SendRequest, purpose: Purpose, clock: TronSendClock): Promise<UsdtSendReceipt> {
-    const { from, to, amountUnits } = request;
-    // Mistakes that no retry fixes, caught before anything reaches the network.
-    if (tronAddressFromPublicKey(Buffer.from(from.publicKey, 'hex')) !== from.address) {
-        throw new Error('The public key does not belong to the sending address');
-    }
-    tronAddressToHex(to);
-    if (!/^[1-9][0-9]*$/.test(amountUnits)) {
-        throw new Error('Amount must be a whole number of units above zero');
-    }
-
-    const sender = tronAddressToHex(from.address);
-    if (sendsInFlight.has(sender)) {
-        throw sendInProgress();
-    }
-    sendsInFlight.add(sender);
-    try {
-        return await signAndSubmit(request, purpose, clock);
-    } finally {
-        sendsInFlight.delete(sender);
-    }
-}
-
 async function signAndSubmit(request: SendRequest, purpose: Purpose, clock: TronSendClock): Promise<UsdtSendReceipt> {
     const { from, to, amountUnits, sign } = request;
     for (let signatures = 1; ; signatures += 1) {
@@ -492,6 +469,29 @@ async function signAndSubmit(request: SendRequest, purpose: Purpose, clock: Tron
             continue;
         }
         throw refusalError(answer.code, answer.retryAfterSeconds, purpose);
+    }
+}
+
+async function runSend(request: SendRequest, purpose: Purpose, clock: TronSendClock): Promise<UsdtSendReceipt> {
+    const { from, to, amountUnits } = request;
+    // Mistakes that no retry fixes, caught before anything reaches the network.
+    if (tronAddressFromPublicKey(Buffer.from(from.publicKey, 'hex')) !== from.address) {
+        throw new Error('The public key does not belong to the sending address');
+    }
+    tronAddressToHex(to);
+    if (!/^[1-9][0-9]*$/.test(amountUnits)) {
+        throw new Error('Amount must be a whole number of units above zero');
+    }
+
+    const sender = tronAddressToHex(from.address);
+    if (sendsInFlight.has(sender)) {
+        throw sendInProgress();
+    }
+    sendsInFlight.add(sender);
+    try {
+        return await signAndSubmit(request, purpose, clock);
+    } finally {
+        sendsInFlight.delete(sender);
     }
 }
 
