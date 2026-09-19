@@ -89,12 +89,17 @@ const MAX_OUTCOME_WAIT_MS = 180_000;
 /**
  * No new signature for a conversion deposit this close to its quote's expiry.
  *
- * A Flashnet quote holds its price for two minutes, and a deposit that lands
- * later is repriced at the live rate rather than refunded. A send takes up to
- * about 35 seconds from signing to a block, so this leaves room for that and
- * for the deposit to be detected.
+ * Flashnet honours a quote's price only for a deposit detected before the quote
+ * expires. A later one is repriced, and on an exact-out quote, which a
+ * Lightning payout is, the new price can miss the target and the deposit is
+ * refunded less the bridge's fees. The slowest ordinary send takes about 35
+ * seconds from signing to a block, the backend waiting up to 25 of them for
+ * rented energy, and Relay, which carries Flashnet's Tron deposits, swept 90% of
+ * them within 21 seconds of their block (60 sampled on mainnet, 2026-09-19); a
+ * sweep comes after detection. The backend also refuses a deposit with under 25
+ * seconds left on its quote (QUOTE_EXPIRING), which covers delays after signing.
  */
-export const CONVERSION_SEND_MARGIN_MS = 45_000;
+export const CONVERSION_SEND_MARGIN_MS = 60_000;
 
 const RESIGN_CODES: ReadonlySet<TronSendRefusalCode> = new Set<TronSendRefusalCode>([
     'RESIGN_REQUIRED',
@@ -149,7 +154,7 @@ export type TronSendRemedy =
 
 export type TronSendErrorCode =
     | TronSendRefusalCode
-    /** The quote is too close to expiry to start a deposit. */
+    /** The quote is too close to expiry to pay into, by our check or the backend's. */
     | 'QUOTE_EXPIRING'
     /** Could not read the Tron network to prepare the transfer. */
     | 'TRON_UNREACHABLE'
@@ -209,6 +214,8 @@ type Purpose = 'conversion' | 'plain';
 
 const NOTHING_SENT = 'Nothing was sent.';
 
+const QUOTE_EXPIRING_MESSAGE = `This quote expires too soon to pay into. ${NOTHING_SENT} Get a new quote to continue.`;
+
 function refusalError(
     code: TronSendRefusalCode,
     retryAfterSeconds: number | undefined,
@@ -223,6 +230,8 @@ function refusalError(
             return purpose === 'conversion'
                 ? error('requote', `This quote is no longer on record. ${NOTHING_SENT} Get a new quote to continue.`)
                 : error('none', `Sending USDT is not available yet. ${NOTHING_SENT}`);
+        case 'QUOTE_EXPIRING':
+            return error('requote', QUOTE_EXPIRING_MESSAGE);
         case 'BELOW_MINIMUM':
             return error('none', `This amount is below the minimum send. ${NOTHING_SENT}`);
         case 'INSUFFICIENT_USDT':
@@ -256,12 +265,7 @@ function refusalError(
     }
 }
 
-const quoteExpiring = () =>
-    new TronSendError(
-        'QUOTE_EXPIRING',
-        'requote',
-        `This quote expires too soon to pay into. ${NOTHING_SENT} Get a new quote to continue.`,
-    );
+const quoteExpiring = () => new TronSendError('QUOTE_EXPIRING', 'requote', QUOTE_EXPIRING_MESSAGE);
 
 const tronUnreachable = () =>
     new TronSendError(

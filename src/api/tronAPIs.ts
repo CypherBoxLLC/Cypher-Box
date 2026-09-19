@@ -289,6 +289,7 @@ export type TronSendRefusalCode =
     | 'NOT_SPONSORED'
     | 'BELOW_MINIMUM'
     | 'RESIGN_REQUIRED'
+    | 'QUOTE_EXPIRING'
     | 'INSUFFICIENT_USDT'
     | 'BANDWIDTH_UNAVAILABLE'
     | 'TRANSFER_REJECTED'
@@ -307,6 +308,7 @@ const REFUSAL_CODES: ReadonlySet<string> = new Set<TronSendRefusalCode>([
     'NOT_SPONSORED',
     'BELOW_MINIMUM',
     'RESIGN_REQUIRED',
+    'QUOTE_EXPIRING',
     'INSUFFICIENT_USDT',
     'BANDWIDTH_UNAVAILABLE',
     'TRANSFER_REJECTED',

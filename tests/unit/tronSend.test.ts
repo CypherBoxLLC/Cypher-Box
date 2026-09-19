@@ -394,6 +394,7 @@ describe('sendUsdt', () => {
         ['INVALID_REQUEST', 'none', undefined],
         ['NOT_SPONSORED', 'none', undefined],
         ['BELOW_MINIMUM', 'none', undefined],
+        ['QUOTE_EXPIRING', 'requote', undefined],
     ])('passes %s on with remedy %s, without signing again', async (code, remedy, retryAfterSeconds) => {
         getBlock.mockResolvedValueOnce(block(0));
         post.mockResolvedValueOnce(refused(code, retryAfterSeconds));
@@ -509,14 +510,34 @@ describe('sendUsdtConversionDeposit', () => {
     });
 
     it('starts no deposit once the network clock is inside the margin before the quote expires', async () => {
-        // Block 26 is 78 seconds in; the quote expires at 120, so the last start is at 75.
-        expect(CONVERSION_SEND_MARGIN_MS).toBe(45_000);
-        getBlock.mockResolvedValueOnce(block(26));
+        // Block 21 is 63 seconds in; the quote expires at 120, so the last start is at 60.
+        expect(CONVERSION_SEND_MARGIN_MS).toBe(60_000);
+        getBlock.mockResolvedValueOnce(block(21));
 
         const error = await failure(deposit());
 
         expect(error).toMatchObject({ code: 'QUOTE_EXPIRING', remedy: 'requote' });
         expect(sign).not.toHaveBeenCalled();
+    });
+
+    it('still starts a deposit with exactly the margin left', async () => {
+        getBlock.mockResolvedValueOnce(block(20));
+        answerSent();
+
+        await deposit();
+
+        expect(sign).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks for a new quote when the backend finds the quote too close to expiry, without signing again', async () => {
+        getBlock.mockResolvedValueOnce(block(0));
+        post.mockResolvedValueOnce(refused('QUOTE_EXPIRING'));
+
+        const error = await failure(deposit());
+
+        expect(error).toMatchObject({ code: 'QUOTE_EXPIRING', remedy: 'requote', indeterminate: false });
+        expect(error.message).toMatch(/Nothing was sent/);
+        expect(sign).toHaveBeenCalledTimes(1);
     });
 
     it('stops signing again once the quote gets too close to expiry', async () => {

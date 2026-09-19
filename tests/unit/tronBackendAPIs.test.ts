@@ -104,6 +104,7 @@ describe('postTronSend', () => {
         [403, 'NOT_SPONSORED'],
         [403, 'BELOW_MINIMUM'],
         [409, 'RESIGN_REQUIRED'],
+        [409, 'QUOTE_EXPIRING'],
         [409, 'INSUFFICIENT_USDT'],
         [409, 'TRANSFER_REJECTED'],
         [429, 'DAILY_LIMIT'],
