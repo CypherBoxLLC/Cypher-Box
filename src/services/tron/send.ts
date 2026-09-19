@@ -158,7 +158,10 @@ export type TronSendErrorCode =
     | 'QUOTE_EXPIRING'
     /** Could not read the Tron network to prepare the transfer. */
     | 'TRON_UNREACHABLE'
-    /** The backend never answered clearly, and the chain shows the transfer did not go out. */
+    /**
+     * The transfer did not go out and now cannot: the backend never answered
+     * clearly, or a node took it but no block did before it expired.
+     */
     | 'NOT_SENT'
     /** The transfer reached a block, but the transfer call in it failed. */
     | 'FAILED_ON_CHAIN'
@@ -201,7 +204,8 @@ export type TronSendClock = {
     readonly sleep: (ms: number) => Promise<void>;
 };
 
-const systemClock: TronSendClock = {
+/** The real clock, the default wherever a TronSendClock is taken. */
+export const systemClock: TronSendClock = {
     now: () => Date.now(),
     sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
 };
@@ -329,16 +333,18 @@ export type UsdtSendReadiness =
  * holds for two minutes, and a wallet that has used its free bandwidth can
  * have hours to wait. The backend checks both again when the transfer arrives.
  *
- * A shortfall of USDT is reported first, since waiting does not fix it.
- * Throws TRON_UNREACHABLE when the chain cannot be read.
+ * Without `amountUnits` only the bandwidth is checked, for when the amount is
+ * not known until a quote gives it. A shortfall of USDT is reported first,
+ * since waiting does not fix it. Throws TRON_UNREACHABLE when the chain cannot
+ * be read.
  */
 export async function checkUsdtSendReadiness(
     address: string,
-    amountUnits: string,
+    amountUnits?: string,
     clock: TronSendClock = systemClock,
 ): Promise<UsdtSendReadiness> {
     tronAddressToHex(address);
-    if (!/^[1-9][0-9]*$/.test(amountUnits)) {
+    if (amountUnits !== undefined && !/^[1-9][0-9]*$/.test(amountUnits)) {
         throw new Error('Amount must be a whole number of units above zero');
     }
     let balance: string;
@@ -348,7 +354,7 @@ export async function checkUsdtSendReadiness(
     } catch {
         throw tronUnreachable();
     }
-    if (new BigNumber(decimalToUnits(balance, USDT_DECIMALS)).isLessThan(amountUnits)) {
+    if (amountUnits !== undefined && new BigNumber(decimalToUnits(balance, USDT_DECIMALS)).isLessThan(amountUnits)) {
         return { ready: false, code: 'INSUFFICIENT_USDT' };
     }
     if (!hasTransferBandwidth(sender)) {
@@ -411,6 +417,31 @@ export async function awaitUsdtTransferOutcome(
         }
         await clock.sleep(POLL_INTERVAL_MS);
     }
+}
+
+/**
+ * Wait for a sent transfer to land, and make anything short of that an error:
+ * FAILED_ON_CHAIN when it landed but the transfer call failed, NOT_SENT when
+ * it was dropped (past its expiry in no block, so it cannot land now), and
+ * the indeterminate OUTCOME_UNKNOWN when the chain cannot be read.
+ */
+export async function confirmUsdtTransfer(
+    transfer: SubmittedTransfer,
+    clock: TronSendClock = systemClock,
+): Promise<Extract<UsdtTransferFate, { status: 'succeeded' }>> {
+    const fate = await awaitUsdtTransferOutcome(transfer.txID, transfer.expirationMs, clock);
+    if (fate.status === 'succeeded') {
+        return fate;
+    }
+    if (fate.status === 'failed') {
+        throw failedOnChain(transfer.txID, fate.reason);
+    }
+    throw new TronSendError(
+        'NOT_SENT',
+        'retry',
+        'The transfer never made it into a block, and now it cannot, so no USDT moved. Try again.',
+        { txID: transfer.txID, reason: 'dropped' },
+    );
 }
 
 /* ------------------------------------------------------------------ */

@@ -36,6 +36,7 @@ import {
     type TronSendRemedy,
     awaitUsdtTransferOutcome,
     checkUsdtSendReadiness,
+    confirmUsdtTransfer,
     sendUsdt,
     sendUsdtConversionDeposit,
 } from '../../src/services/tron/send';
@@ -627,6 +628,40 @@ describe('checkUsdtSendReadiness', () => {
         await expect(checkUsdtSendReadiness('TNotAnAddress', '1', clock)).rejects.toThrow();
         await expect(checkUsdtSendReadiness(FROM.address, '0', clock)).rejects.toThrow(/above zero/);
         expect(usdtBalance).not.toHaveBeenCalled();
+    });
+
+    it('checks only the bandwidth when there is no amount yet', async () => {
+        usdtBalance.mockResolvedValue('0');
+        accountState.mockResolvedValue(state());
+        expect(await checkUsdtSendReadiness(FROM.address, undefined, clock)).toEqual({ ready: true });
+
+        accountState.mockResolvedValue(
+            state({ freeBandwidth: 255, freeBandwidthUsed: 345, lastFreeBandwidthUseMs: BASE_TIME }),
+        );
+        expect(await checkUsdtSendReadiness(FROM.address, undefined, clock)).toMatchObject({
+            ready: false,
+            code: 'BANDWIDTH_UNAVAILABLE',
+        });
+    });
+});
+
+describe('confirmUsdtTransfer', () => {
+    const SENT = { txID: 'c3a9767f89d31a2e213305d0045ad87c8e31daa90a463af407fe1cc83816abd7', expirationMs: EXPIRY };
+
+    it('returns once the transfer is in a block', async () => {
+        outcome.mockResolvedValueOnce(SUCCEEDED);
+        expect(await confirmUsdtTransfer(SENT, clock)).toEqual(SUCCEEDED);
+    });
+
+    it('turns a failed or dropped transfer into an error that says no USDT moved', async () => {
+        outcome.mockResolvedValueOnce({ status: 'failed', blockNumber: BASE_HEIGHT + 2, reason: 'REVERT', energyUsed: 1, trxBurnedSun: 0 });
+        await expect(confirmUsdtTransfer(SENT, clock)).rejects.toMatchObject({ code: 'FAILED_ON_CHAIN', remedy: 'none' });
+
+        outcome.mockResolvedValue(NOT_IN_A_BLOCK);
+        getBlock.mockResolvedValueOnce(block(24)).mockResolvedValueOnce(block(25));
+        const dropped = await failure(confirmUsdtTransfer(SENT, clock));
+        expect(dropped).toMatchObject({ code: 'NOT_SENT', remedy: 'retry', detail: { txID: SENT.txID, reason: 'dropped' } });
+        expect(dropped.message).toMatch(/no USDT moved/);
     });
 });
 

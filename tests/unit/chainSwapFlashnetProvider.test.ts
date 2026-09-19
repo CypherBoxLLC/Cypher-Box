@@ -4,9 +4,8 @@
  * returning an escalation verdict with every poll.
  */
 
-import { getChainSwapProvider, listChainSwapProviders } from '../../src/services/chainSwap';
+import { asset, getChainSwapProvider, listChainSwapProviders } from '../../src/services/chainSwap';
 import type { ChainSwapOrder, ChainSwapQuote } from '../../src/services/chainSwap';
-import { asset } from '../../src/services/chainSwap';
 
 const MIN = 60 * 1000;
 const BTC = asset('btc', 'bitcoin');
@@ -120,6 +119,22 @@ describe('pollShift returns a verdict with the order', () => {
         const { order, stall } = await flashnet().pollShift(orderAt(new Date(), 'processing', 'swapping'));
         expect(order.status).toBe('settling');
         expect(stall).toBe('none');
+    });
+
+    it('escalates a deposit we know is on chain that Flashnet has not picked up', async () => {
+        // No order yet: the backend answers with the quote only.
+        fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ order: null, quote: { id: 'q_test' } }) });
+        const paid = (minutesAgo: number) => ({
+            ...orderAt(new Date(Date.now() - minutesAgo * MIN), 'awaiting_deposit'),
+            depositTxId: 'ab'.repeat(32),
+        });
+
+        expect((await flashnet().pollShift(paid(1))).stall).toBe('none');
+        expect((await flashnet().pollShift(paid(20))).stall).toBe('slow');
+        expect((await flashnet().pollShift(paid(50))).stall).toBe('stalled');
+        // Without our own deposit it is the user who has not paid, which is not a stall.
+        const unpaid = orderAt(new Date(Date.now() - 50 * MIN), 'awaiting_deposit');
+        expect((await flashnet().pollShift(unpaid)).stall).toBe('none');
     });
 });
 

@@ -96,7 +96,12 @@ const flashnetProvider: ChainSwapProvider = {
         // straddle a threshold between the two.
         const now = new Date();
         const order = await getFlashnetOrder(previous, now);
-        return { order, stall: evaluateStall(order.status, order.statusChangedAt, now) };
+        // Flashnet shows no order until it detects the deposit, so an order we
+        // paid ourselves still reads as awaiting one, which never escalates.
+        // Once our deposit is on chain it is in flight like any other, and a
+        // deposit Flashnet never picks up has to surface as a stall.
+        const inFlight = order.status === 'awaiting_deposit' && order.depositTxId !== undefined;
+        return { order, stall: evaluateStall(inFlight ? 'confirming' : order.status, order.statusChangedAt, now) };
     },
 };
 

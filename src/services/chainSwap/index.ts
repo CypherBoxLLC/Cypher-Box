@@ -23,6 +23,7 @@ export {
 } from './registry';
 export type {
     ChainAsset,
+    ChainSwapAmountMode,
     ChainSwapOrder,
     ChainSwapPair,
     ChainSwapPermission,
