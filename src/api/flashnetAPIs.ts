@@ -52,6 +52,24 @@ const BACKEND_TIMEOUT_MS = 60_000;
 /** Assets whose unit is a dollar, used only to read USD-denominated bounds. */
 const DOLLAR_COINS = new Set(['usdt', 'usdc', 'usdb']);
 
+/**
+ * Relay's charge on a tron:USDT deposit, in USDT. Flashnet reaches Tron
+ * through Relay, which sweeps every single-use deposit address itself: it
+ * creates the account, then sends an approve and a depository call, about
+ * 192k energy. A quote includes the cost with no fee field for it and
+ * /estimate leaves it out, so the rate alone overstates what arrives by this
+ * much at any size. Measured between 2.08 and 2.46 USDT on 2026-09-19 (the
+ * top matches Relay's own deposit-address surcharge). It follows TRX and
+ * energy prices, so it is set at the top of that range; the quote the user
+ * confirms stays the price.
+ */
+const TRON_DEPOSIT_CHARGE_USDT = '2.5';
+
+/** Flat charges on a deposit that Flashnet's rate does not show, by chain:ASSET. */
+const FIXED_DEPOSIT_COSTS: Readonly<Record<string, string>> = {
+    'tron:USDT': TRON_DEPOSIT_CHARGE_USDT,
+};
+
 export type FlashnetRequestOptions = { timeoutMs?: number };
 
 type Json = Record<string, unknown>;
@@ -110,6 +128,7 @@ type LimitsRoute = {
             requestAmount?: {
                 minAmountSmallest?: string | null;
                 maxAmountSmallest?: string | null;
+                minUsdCents?: string | null;
                 maxUsdCents?: string | null;
             } | null;
         };
@@ -117,72 +136,24 @@ type LimitsRoute = {
 };
 
 /**
- * Bounds and an indicative rate for a pair.
- *
- * Two calls, because Flashnet splits them: /limits carries the amount bounds
- * and the authoritative decimals, /estimate carries the price. Pass the
- * user's amount when there is one: the rate at the route minimum is far worse
- * than the rate at a real size, since the network cost is fixed.
+ * The deposit floor, in deposit units. Flashnet gives it in smallest units on
+ * bitcoin routes but only as a dollar notional on Tron ones (minUsdCents, with
+ * minAmountSmallest null, read 2026-09-19), which a dollar deposit reads
+ * directly. A route with neither is not one we can serve.
  */
-export async function getFlashnetPair(
+function minDepositAmount(
+    bounds: { minAmountSmallest?: string | null; minUsdCents?: string | null },
+    depositDecimals: number,
     deposit: ChainAsset,
-    settle: ChainAsset,
-    depositAmount?: string,
-    opts: FlashnetRequestOptions = {},
-): Promise<ChainSwapPair> {
-    const timeout = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const query = routeQuery(deposit, settle);
-    const onError = (status: number, body: unknown) =>
-        mapFlashnetError(status, body as FlashnetErrorBody | null, depositAmount);
-
-    const limits = await request<{ routes?: LimitsRoute[] }>(
-        `${BASE_URL}/limits?${query}`,
-        { method: 'GET', headers: { Accept: 'application/json' } },
-        timeout,
-        onError,
-    );
-    const route = limits.routes?.[0];
-    const exactIn = route?.limits?.exactIn;
-    const bounds = exactIn?.requestAmount;
-    if (!route || exactIn?.supported !== true || !bounds?.minAmountSmallest) {
-        throw new VenueUnavailableError('flashnet', true, 'Flashnet is not serving this pair right now');
+): string {
+    if (bounds.minAmountSmallest) {
+        return fromSmallestUnits(bounds.minAmountSmallest, depositDecimals);
     }
-
-    // Prefer the decimals Flashnet reports for this route over our own table.
-    const overrides = {
-        [`${deposit.network}:${deposit.coin.toUpperCase()}`]: route.source?.decimals,
-        [`${settle.network}:${settle.coin.toUpperCase()}`]: route.destination?.decimals,
-    };
-    const known: Record<string, number> = {};
-    for (const [k, v] of Object.entries(overrides)) {
-        if (typeof v === 'number') known[k] = v;
+    const usd = bounds.minUsdCents ? new BigNumber(bounds.minUsdCents).dividedBy(100) : null;
+    if (usd?.isFinite() && usd.isGreaterThan(0) && DOLLAR_COINS.has(deposit.coin.toLowerCase())) {
+        return usd.decimalPlaces(depositDecimals, BigNumber.ROUND_UP).toFixed();
     }
-    const depositDecimals = decimalsFor(deposit, known);
-    const settleDecimals = decimalsFor(settle, known);
-
-    const min = fromSmallestUnits(bounds.minAmountSmallest, depositDecimals);
-    const probe = depositAmount && new BigNumber(depositAmount).isGreaterThan(min) ? depositAmount : min;
-
-    const estimate = await request<Json>(
-        `${BASE_URL}/estimate?${query}&amount=${encodeURIComponent(toSmallestUnits(probe, depositDecimals))}`,
-        { method: 'GET', headers: { Accept: 'application/json' } },
-        timeout,
-        onError,
-    );
-    const estimatedOut = estimate.estimatedOut;
-    if (typeof estimatedOut !== 'string') {
-        throw new VenueUnavailableError('flashnet', true, 'Flashnet did not price this pair');
-    }
-    const out = new BigNumber(fromSmallestUnits(estimatedOut, settleDecimals));
-    const rate = out.dividedBy(probe);
-
-    return {
-        depositAsset: { coin: deposit.coin.toLowerCase(), network: deposit.network.toLowerCase() },
-        settleAsset: { coin: settle.coin.toLowerCase(), network: settle.network.toLowerCase() },
-        min,
-        max: maxDepositAmount(bounds, depositDecimals, deposit, settle, rate),
-        rate: rate.toFixed(),
-    };
+    throw new VenueUnavailableError('flashnet', true, 'Flashnet is not serving this pair right now');
 }
 
 /**
@@ -214,6 +185,82 @@ function maxDepositAmount(
         }
     }
     throw new VenueUnavailableError('flashnet', true, 'Flashnet did not report a maximum for this pair');
+}
+
+/**
+ * Bounds and an indicative rate for a pair.
+ *
+ * Two calls, because Flashnet splits them: /limits carries the amount bounds
+ * and the authoritative decimals, /estimate carries the price. Pass the
+ * user's amount when there is one: the rate at the route minimum is far worse
+ * than the rate at a real size, since the network cost is fixed.
+ *
+ * A deposit that carries a flat charge the estimate leaves out (a Tron one)
+ * gets it as `fixedCost`, and its minimum is raised by it, since what is left
+ * after the charge must still clear Flashnet's own minimum.
+ */
+export async function getFlashnetPair(
+    deposit: ChainAsset,
+    settle: ChainAsset,
+    depositAmount?: string,
+    opts: FlashnetRequestOptions = {},
+): Promise<ChainSwapPair> {
+    const timeout = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const query = routeQuery(deposit, settle);
+    const onError = (status: number, body: unknown) =>
+        mapFlashnetError(status, body as FlashnetErrorBody | null, depositAmount);
+
+    const limits = await request<{ routes?: LimitsRoute[] }>(
+        `${BASE_URL}/limits?${query}`,
+        { method: 'GET', headers: { Accept: 'application/json' } },
+        timeout,
+        onError,
+    );
+    const route = limits.routes?.[0];
+    const exactIn = route?.limits?.exactIn;
+    const bounds = exactIn?.requestAmount;
+    if (!route || exactIn?.supported !== true || !bounds) {
+        throw new VenueUnavailableError('flashnet', true, 'Flashnet is not serving this pair right now');
+    }
+
+    // Prefer the decimals Flashnet reports for this route over our own table.
+    const overrides = {
+        [`${deposit.network}:${deposit.coin.toUpperCase()}`]: route.source?.decimals,
+        [`${settle.network}:${settle.coin.toUpperCase()}`]: route.destination?.decimals,
+    };
+    const known: Record<string, number> = {};
+    for (const [k, v] of Object.entries(overrides)) {
+        if (typeof v === 'number') known[k] = v;
+    }
+    const depositDecimals = decimalsFor(deposit, known);
+    const settleDecimals = decimalsFor(settle, known);
+
+    const fixedCost = FIXED_DEPOSIT_COSTS[`${deposit.network.toLowerCase()}:${deposit.coin.toUpperCase()}`];
+    const venueMin = minDepositAmount(bounds, depositDecimals, deposit);
+    const min = fixedCost ? new BigNumber(venueMin).plus(fixedCost).toFixed() : venueMin;
+    const probe = depositAmount && new BigNumber(depositAmount).isGreaterThan(min) ? depositAmount : min;
+
+    const estimate = await request<Json>(
+        `${BASE_URL}/estimate?${query}&amount=${encodeURIComponent(toSmallestUnits(probe, depositDecimals))}`,
+        { method: 'GET', headers: { Accept: 'application/json' } },
+        timeout,
+        onError,
+    );
+    const estimatedOut = estimate.estimatedOut;
+    if (typeof estimatedOut !== 'string') {
+        throw new VenueUnavailableError('flashnet', true, 'Flashnet did not price this pair');
+    }
+    const out = new BigNumber(fromSmallestUnits(estimatedOut, settleDecimals));
+    const rate = out.dividedBy(probe);
+
+    return {
+        depositAsset: { coin: deposit.coin.toLowerCase(), network: deposit.network.toLowerCase() },
+        settleAsset: { coin: settle.coin.toLowerCase(), network: settle.network.toLowerCase() },
+        min,
+        max: maxDepositAmount(bounds, depositDecimals, deposit, settle, rate),
+        rate: rate.toFixed(),
+        ...(fixedCost ? { fixedCost } : {}),
+    };
 }
 
 /* ------------------------------------------------------------------ */

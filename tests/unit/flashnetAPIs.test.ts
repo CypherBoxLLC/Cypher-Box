@@ -117,6 +117,56 @@ describe('getFlashnetPair', () => {
         expect(pair.max).toBe('87400');
     });
 
+    // The shape /limits gives for tron:USDT, read 2026-09-19: dollar bounds only.
+    const tronLimitsBody = () => ({
+        routes: [
+            {
+                source: { decimals: 6 },
+                destination: { decimals: 8 },
+                limits: {
+                    exactIn: {
+                        supported: true,
+                        requestAmount: {
+                            minAmountSmallest: null,
+                            maxAmountSmallest: null,
+                            minUsdCents: '80',
+                            maxUsdCents: '16840000',
+                        },
+                    },
+                },
+            },
+        ],
+    });
+
+    it('reads a dollar-only minimum on a dollar deposit, which is all Flashnet gives for Tron', async () => {
+        fetchMock.mockResolvedValueOnce(ok(tronLimitsBody())).mockResolvedValueOnce(ok({ estimatedOut: '61000' }));
+        const pair = await getFlashnetPair(USDT_TRON, BTC, '50');
+        expect(urls()[1]).toContain('amount=50000000');
+        expect(pair.max).toBe('168400');
+        expect(pair.rate).toBe('0.0000122');
+    });
+
+    it('carries the Tron deposit charge the estimate leaves out, and lifts the minimum by it', async () => {
+        fetchMock.mockResolvedValueOnce(ok(tronLimitsBody())).mockResolvedValueOnce(ok({ estimatedOut: '3700' }));
+        const pair = await getFlashnetPair(USDT_TRON, BTC);
+        expect(pair.fixedCost).toBe('2.5');
+        // Flashnet's 0.80 plus the charge, since the rest must still clear 0.80.
+        expect(pair.min).toBe('3.3');
+        expect(urls()[1]).toContain('amount=3300000');
+    });
+
+    it('adds no fixed charge to a bitcoin deposit', async () => {
+        fetchMock.mockResolvedValueOnce(ok(limitsBody())).mockResolvedValueOnce(ok({ estimatedOut: '99870000' }));
+        const pair = await getFlashnetPair(BTC, USDT_TRON, '0.0013');
+        expect(pair.fixedCost).toBeUndefined();
+        expect(pair.min).toBe('0.00006188');
+    });
+
+    it('still refuses a route whose minimum it cannot read', async () => {
+        fetchMock.mockResolvedValueOnce(ok(limitsBody({ minAmountSmallest: null })));
+        await expect(getFlashnetPair(BTC, USDT_TRON)).rejects.toBeInstanceOf(VenueUnavailableError);
+    });
+
     it('treats a pair Flashnet is not serving as unavailable', async () => {
         fetchMock.mockResolvedValueOnce(
             ok({ routes: [{ limits: { exactIn: { supported: false, requestAmount: null } } }] }),

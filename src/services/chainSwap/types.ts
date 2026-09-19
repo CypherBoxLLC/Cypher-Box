@@ -84,6 +84,12 @@ export type ChainSwapPair = {
     readonly max: string;
     /** Indicative settle-per-deposit rate, decimal string. */
     readonly rate: string;
+    /**
+     * A flat charge the venue takes from each deposit, in deposit units, that
+     * `rate` does not show. What arrives is about (deposit - fixedCost) * rate.
+     * Absent when the venue has none we know of.
+     */
+    readonly fixedCost?: string;
 };
 
 /**
