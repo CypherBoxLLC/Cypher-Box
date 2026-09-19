@@ -3,10 +3,12 @@
  * contract and Flashnet's Orchestra API.
  *
  * No network and no React Native imports, so every rule here is unit-tested
- * in isolation. Sources, all read 2026-09-17:
- *   statuses and the order snapshot: docs.flashnet.xyz/orchestra/status
- *   quote fields:                    docs.flashnet.xyz/orchestra/quotes
- *   error codes:                     docs.flashnet.xyz/api/errors
+ * in isolation. Sources, read 2026-09-17 unless noted:
+ *   statuses:     docs.flashnet.xyz/orchestra/status
+ *   order fields: OperationRecord, docs.flashnet.xyz/api-reference/orchestration/get-order-status
+ *                 (2026-09-19, checked against a live mainnet order)
+ *   quote fields: docs.flashnet.xyz/orchestra/quotes
+ *   error codes:  docs.flashnet.xyz/api/errors
  *
  * Two things differ from SideShift and drive most of this file:
  *   - Amounts are integer strings in an asset's smallest units, so every
@@ -302,21 +304,36 @@ export type FlashnetQuoteRaw = {
     maxAcceptedAmountIn?: string | null;
 };
 
-/** GET /v1/orchestration/status order snapshot, fields we rely on. */
+/**
+ * The order record, fields we rely on: OperationRecord in the API reference
+ * (docs.flashnet.xyz/api-reference/orchestration/get-order-status). It is flat,
+ * and both GET /order?quoteId and GET /status answer with it, as the first
+ * mainnet conversion showed (2026-09-19).
+ */
 export type FlashnetOrderRaw = {
     id: string;
     status: string;
     quoteId?: string | null;
     amountIn: string;
     amountOut?: string | null;
-    source: { chain: string; asset: string; address?: string | null; txHash?: string | null };
-    destination: { chain: string; asset: string; address?: string | null; txHash?: string | null };
+    sourceChain: string;
+    sourceAsset: string;
+    sourceAddress?: string | null;
+    sourceTxHash?: string | null;
+    destinationChain: string;
+    destinationAsset: string;
+    destinationAddress?: string | null;
+    destinationTxHash?: string | null;
     depositAddress?: string | null;
     recipientAddress?: string | null;
-    refund?: { asset?: string | null; amount?: string | null; txHash?: string | null };
-    error?: { code?: string | null; message?: string | null } | null;
+    refundAsset?: string | null;
+    refundAmount?: string | null;
+    refundTxHash?: string | null;
+    errorCode?: string | null;
+    errorMessage?: string | null;
     createdAt: string;
     updatedAt?: string | null;
+    completedAt?: string | null;
 };
 
 /** A malformed timestamp becomes an error, never a silent Invalid Date. */
@@ -400,22 +417,24 @@ export function mapFlashnetOrder(
     if (!sameOrder) {
         throw new ChainSwapError('Flashnet returned a different order than was requested');
     }
-    const depositAsset = asset(raw.source.asset, raw.source.chain);
-    const settleAsset = asset(raw.destination.asset, raw.destination.chain);
-    const { status, issue } = mapFlashnetStatus(raw.status, previous, raw.error?.code);
+    const depositAsset = asset(raw.sourceAsset, raw.sourceChain);
+    const settleAsset = asset(raw.destinationAsset, raw.destinationChain);
+    const { status, issue } = mapFlashnetStatus(raw.status, previous, raw.errorCode);
 
     const venueMoved =
         !!previous && previous.venueStatus !== undefined && previous.venueStatus !== raw.status;
     const progressed = !previous || previous.status !== status || venueMoved;
     const statusChangedAt = previous && !progressed ? previous.statusChangedAt : now;
 
-    const settleAddress = raw.destination.address ?? raw.recipientAddress ?? previous?.settleAddress;
+    // What we asked for comes first: Flashnet reports a Lightning address as
+    // the invoice it resolved it to, which is not what the user entered.
+    const settleAddress = previous?.settleAddress ?? raw.destinationAddress ?? raw.recipientAddress;
     if (!settleAddress) {
         throw new ChainSwapError('Flashnet returned an order with no destination address');
     }
 
-    const depositTxId = raw.source.txHash ?? previous?.depositTxId;
-    const settleTxId = raw.destination.txHash ?? raw.refund?.txHash ?? previous?.settleTxId;
+    const depositTxId = raw.sourceTxHash ?? previous?.depositTxId;
+    const settleTxId = raw.destinationTxHash ?? raw.refundTxHash ?? previous?.settleTxId;
 
     return {
         id: raw.id,

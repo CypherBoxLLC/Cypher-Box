@@ -258,12 +258,21 @@ describe('order', () => {
         status: 'confirming',
         quoteId: 'q_test',
         amountIn: '100000000',
-        source: { chain: 'tron', asset: 'USDT', address: 'T-sender', txHash: 'tron-tx' },
-        destination: { chain: 'bitcoin', asset: 'BTC', address: 'bc1q-placeholder-settle', txHash: null },
+        sourceChain: 'tron',
+        sourceAsset: 'USDT',
+        sourceAddress: 'T-sender',
+        sourceTxHash: 'tron-tx',
+        destinationChain: 'bitcoin',
+        destinationAsset: 'BTC',
+        destinationAddress: 'bc1q-placeholder-settle',
+        destinationTxHash: null,
         depositAddress: 'T-placeholder-deposit',
         recipientAddress: 'bc1q-placeholder-settle',
-        refund: { asset: null, amount: null, txHash: null },
-        error: null,
+        refundAsset: null,
+        refundAmount: null,
+        refundTxHash: null,
+        errorCode: null,
+        errorMessage: null,
         createdAt: '2026-09-17T11:59:00.000Z',
         ...over,
     });
@@ -317,7 +326,7 @@ describe('order', () => {
 
     it('records the refund transaction so a returned payment has a receipt', () => {
         const o = mapFlashnetOrder(
-            raw({ status: 'refunded', refund: { asset: 'USDT', amount: '99000000', txHash: 'refund-tx' } }),
+            raw({ status: 'refunded', refundAsset: 'USDT', refundAmount: '99000000', refundTxHash: 'refund-tx' }),
             T0,
             previous,
         );
@@ -332,10 +341,62 @@ describe('order', () => {
     it('refuses a snapshot with no destination address', () => {
         expect(() =>
             mapFlashnetOrder(
-                raw({ destination: { chain: 'bitcoin', asset: 'BTC' }, recipientAddress: null }),
+                raw({ destinationAddress: null, recipientAddress: null }),
                 T0,
             ),
         ).toThrow(ChainSwapError);
+    });
+
+    it('reads the flat record Flashnet sent for the first mainnet conversion', () => {
+        // The shape of the live answer to GET /order?quoteId on 2026-09-19,
+        // addresses and hashes replaced, extra fields kept to show they pass.
+        const live = {
+            id: 'ord_live',
+            type: 'order',
+            quoteId: 'q_live',
+            status: 'completed',
+            sourceChain: 'tron',
+            sourceAsset: 'USDT',
+            sourceAddress: 'T-placeholder-sender',
+            sourceTxHash: 'tron-deposit-tx',
+            sweepTxHash: null,
+            destinationChain: 'lightning',
+            destinationAsset: 'BTC',
+            destinationAddress: null,
+            destinationTxHash: 'spark-transfer-id',
+            depositAddress: 'T-placeholder-deposit',
+            recipientAddress: 'lnbc10440n1-placeholder-resolved-invoice',
+            amountIn: '3000000',
+            amountOut: '1044',
+            feeBps: 60,
+            refundAsset: null,
+            refundAmount: null,
+            refundTxHash: null,
+            errorCode: null,
+            errorMessage: null,
+            createdAt: '2026-09-19T10:02:58.899Z',
+            updatedAt: '2026-09-19T10:03:10.909Z',
+            completedAt: '2026-09-19T10:03:10.909Z',
+        };
+        const paid: ChainSwapOrder = {
+            ...previous,
+            id: 'q_live',
+            settleAsset: asset('btc', 'lightning'),
+            depositAmount: '3',
+            settleAddress: 'someone@example.com',
+            depositTxId: 'tron-deposit-tx',
+        };
+        const o = mapFlashnetOrder(live, T0, paid);
+        expect(o.id).toBe('ord_live');
+        expect(o.status).toBe('settled');
+        expect(o.depositAmount).toBe('3');
+        expect(o.settleAmount).toBe('0.00001044');
+        expect(o.depositTxId).toBe('tron-deposit-tx');
+        expect(o.settleTxId).toBe('spark-transfer-id');
+        expect(o.createdAt).toEqual(new Date('2026-09-19T10:02:58.899Z'));
+        // Flashnet reports the invoice it resolved the Lightning address to;
+        // the user entered the address, so that is what stays.
+        expect(o.settleAddress).toBe('someone@example.com');
     });
 });
 
