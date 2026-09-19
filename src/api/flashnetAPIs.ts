@@ -37,6 +37,7 @@ import type {
     ChainSwapQuote,
 } from '../services/chainSwap/types';
 import {
+    AmountOutOfRangeError,
     ChainSwapError,
     VenueConfigError,
     VenueUnavailableError,
@@ -53,29 +54,51 @@ const BACKEND_TIMEOUT_MS = 60_000;
 const DOLLAR_COINS = new Set(['usdt', 'usdc', 'usdb']);
 
 /**
- * Relay's charge on a tron:USDT deposit, in USDT, for when our backend cannot
- * say. Flashnet reaches Tron through Relay, which sweeps every single-use
- * deposit address itself: it creates the account, then sends an approve and a
- * depository call, about 192k energy. A quote includes the cost with no fee
- * field for it and /estimate leaves it out, so the rate alone overstates what
- * arrives by this much at any size. It follows TRX and energy prices, so the
- * backend measures it live; this is the top of what was measured on
- * 2026-09-19 (2.08 to 2.46 USDT).
+ * What a conversion from USDT on Tron costs before Flashnet's rate applies.
+ *
+ * Two things the public estimate never shows. Relay's charge on the deposit:
+ * Flashnet reaches Tron through Relay, which sweeps every single-use deposit
+ * address itself (an account creation, an approve and a depository call, about
+ * 192k energy), and a quote carries that cost with no fee field for it. And
+ * our own fee, which the quote applies as an affiliate rate: a flat part that
+ * recovers the deposit's energy, and a share of the amount.
+ *
+ * Our backend measures the charge live and publishes the fee terms, since both
+ * move. These are the fallbacks for when it cannot answer in time: the top of
+ * what the charge measured on 2026-09-19 (2.08 to 2.46 USDT) and the pricing
+ * set the same day (1% margin, $1.10 of energy, Flashnet keeping 20%). They
+ * err towards showing less than the quote will deliver.
  */
-const TRON_DEPOSIT_CHARGE_USDT = '2.5';
+export type TronConversionTerms = {
+    /** Relay's charge on the deposit, in USDT. */
+    readonly charge: string;
+    /** The flat part of our fee, in USDT. */
+    readonly flatFee: string;
+    /** The proportional part of our fee, as a fraction of the amount. */
+    readonly rateFee: string;
+    /** The smallest conversion the backend will quote, in USDT. */
+    readonly minimum: string;
+};
 
-/** A measured charge is reused this long, and waited for at most this long. */
-const CHARGE_REUSE_MS = 10 * 60_000;
-const CHARGE_TIMEOUT_MS = 8_000;
+const TRON_FALLBACK_TERMS: TronConversionTerms = {
+    charge: '2.5',
+    flatFee: '1.375',
+    rateFee: '0.0125',
+    minimum: '100',
+};
+
+/** Terms are reused this long, and waited for at most this long. */
+const TERMS_REUSE_MS = 10 * 60_000;
+const TERMS_TIMEOUT_MS = 8_000;
 
 /** No charge above this is believed, whoever reports it. */
 const CHARGE_MAX_USDT = 20;
 
-let measuredCharge: { usdt: string; atMs: number } | null = null;
+let measuredTerms: { terms: TronConversionTerms; atMs: number } | null = null;
 
-/** Forget the measured Tron deposit charge, so the next pair reads it again. */
+/** Forget the measured terms, so the next pair reads them again. */
 export function forgetTronDepositCharge(): void {
-    measuredCharge = null;
+    measuredTerms = null;
 }
 
 export type FlashnetRequestOptions = { timeoutMs?: number };
@@ -195,38 +218,78 @@ function maxDepositAmount(
     throw new VenueUnavailableError('flashnet', true, 'Flashnet did not report a maximum for this pair');
 }
 
-/**
- * The flat charge a deposit of this asset carries before Flashnet's rate
- * applies, or undefined when it carries none we know of. For tron:USDT it is
- * our backend's live measurement, reused for 10 minutes, and
- * TRON_DEPOSIT_CHARGE_USDT when the backend cannot answer in time: the amount
- * screen must not wait on a waking server, and the quote the user confirms is
- * the price either way. Never throws.
- */
-async function fixedDepositCost(deposit: ChainAsset): Promise<string | undefined> {
-    if (deposit.network.toLowerCase() !== 'tron' || deposit.coin.toLowerCase() !== 'usdt') {
-        return undefined;
+type TronTermsBody = {
+    chargeUsdt?: unknown;
+    fee?: { marginBps?: unknown; recoveryUsd?: unknown; partnerCutBps?: unknown; minUsdt?: unknown };
+};
+
+const finite = (value: unknown): BigNumber | null => {
+    const n = new BigNumber(typeof value === 'number' || typeof value === 'string' ? value : NaN);
+    return n.isFinite() && n.isGreaterThanOrEqualTo(0) ? n : null;
+};
+
+/** The backend's answer as terms, or null when any part of it reads wrong. */
+function readTronTerms(body: TronTermsBody): TronConversionTerms | null {
+    const charge = finite(body.chargeUsdt);
+    // A backend too old to publish terms is also too old to charge a fee.
+    if (charge && body.fee === undefined) {
+        return charge.isGreaterThan(CHARGE_MAX_USDT)
+            ? null
+            : { charge: charge.toFixed(), flatFee: '0', rateFee: '0', minimum: TRON_FALLBACK_TERMS.minimum };
     }
+    const margin = finite(body.fee?.marginBps);
+    const recovery = finite(body.fee?.recoveryUsd);
+    const cut = finite(body.fee?.partnerCutBps);
+    const minimum = finite(body.fee?.minUsdt);
+    if (!charge || !margin || !recovery || !cut || !minimum) {
+        return null;
+    }
+    if (charge.isGreaterThan(CHARGE_MAX_USDT) || cut.isGreaterThanOrEqualTo(10_000)) {
+        return null;
+    }
+    // Flashnet keeps a share of the fee, so what reaches us is grossed up.
+    const share = new BigNumber(10_000).minus(cut).dividedBy(10_000);
+    return {
+        charge: charge.toFixed(),
+        flatFee: recovery.dividedBy(share).decimalPlaces(6, BigNumber.ROUND_UP).toFixed(),
+        rateFee: margin.dividedBy(10_000).dividedBy(share).decimalPlaces(8, BigNumber.ROUND_UP).toFixed(),
+        minimum: minimum.toFixed(),
+    };
+}
+
+/**
+ * What a tron:USDT conversion costs beyond Flashnet's rate, from our backend,
+ * reused for 10 minutes. Falls back to TRON_FALLBACK_TERMS when the backend
+ * cannot answer in time: the amount screen must not wait on a waking server,
+ * and the quote the user confirms is the price either way. Never throws.
+ */
+export async function getTronConversionTerms(): Promise<TronConversionTerms> {
     const now = Date.now();
-    if (measuredCharge && now - measuredCharge.atMs < CHARGE_REUSE_MS) {
-        return measuredCharge.usdt;
+    if (measuredTerms && now - measuredTerms.atMs < TERMS_REUSE_MS) {
+        return measuredTerms.terms;
     }
     try {
-        const body = await request<{ chargeUsdt?: unknown }>(
+        const body = await request<TronTermsBody>(
             `${BACKEND_URL}/tron-deposit-charge`,
             { method: 'GET', headers: { Accept: 'application/json' } },
-            CHARGE_TIMEOUT_MS,
-            () => new VenueUnavailableError('flashnet', true, 'The Tron deposit charge is unavailable'),
+            TERMS_TIMEOUT_MS,
+            () => new VenueUnavailableError('flashnet', true, 'The Tron conversion terms are unavailable'),
         );
-        const charge = new BigNumber(typeof body.chargeUsdt === 'string' ? body.chargeUsdt : NaN);
-        if (charge.isFinite() && charge.isGreaterThanOrEqualTo(0) && charge.isLessThanOrEqualTo(CHARGE_MAX_USDT)) {
-            measuredCharge = { usdt: charge.toFixed(), atMs: now };
-            return measuredCharge.usdt;
+        const terms = readTronTerms(body);
+        if (terms) {
+            measuredTerms = { terms, atMs: now };
+            return terms;
         }
     } catch {
         // The fallback below is the answer.
     }
-    return TRON_DEPOSIT_CHARGE_USDT;
+    return TRON_FALLBACK_TERMS;
+}
+
+/** The terms for this deposit asset, or undefined where we know of none. */
+async function depositTerms(deposit: ChainAsset): Promise<TronConversionTerms | undefined> {
+    const tronUsdt = deposit.network.toLowerCase() === 'tron' && deposit.coin.toLowerCase() === 'usdt';
+    return tronUsdt ? getTronConversionTerms() : undefined;
 }
 
 /**
@@ -253,7 +316,7 @@ export async function getFlashnetPair(
         mapFlashnetError(status, body as FlashnetErrorBody | null, depositAmount);
 
     // Alongside /limits, so a slow answer costs no extra wait.
-    const charge = fixedDepositCost(deposit);
+    const terms = depositTerms(deposit);
     const limits = await request<{ routes?: LimitsRoute[] }>(
         `${BASE_URL}/limits?${query}`,
         { method: 'GET', headers: { Accept: 'application/json' } },
@@ -279,9 +342,15 @@ export async function getFlashnetPair(
     const depositDecimals = decimalsFor(deposit, known);
     const settleDecimals = decimalsFor(settle, known);
 
-    const fixedCost = await charge;
+    // What the deposit loses before the rate applies: Relay's charge and the
+    // flat part of our fee. The rest of our fee comes off the rate below.
+    const conversion = await terms;
+    const fixedCost = conversion
+        ? new BigNumber(conversion.charge).plus(conversion.flatFee).decimalPlaces(depositDecimals, BigNumber.ROUND_UP).toFixed()
+        : undefined;
     const venueMin = minDepositAmount(bounds, depositDecimals, deposit);
-    const min = fixedCost ? new BigNumber(venueMin).plus(fixedCost).toFixed() : venueMin;
+    const floor = fixedCost ? new BigNumber(venueMin).plus(fixedCost) : new BigNumber(venueMin);
+    const min = conversion ? BigNumber.max(floor, conversion.minimum).toFixed() : floor.toFixed();
     const probe = depositAmount && new BigNumber(depositAmount).isGreaterThan(min) ? depositAmount : min;
 
     const estimate = await request<Json>(
@@ -295,7 +364,9 @@ export async function getFlashnetPair(
         throw new VenueUnavailableError('flashnet', true, 'Flashnet did not price this pair');
     }
     const out = new BigNumber(fromSmallestUnits(estimatedOut, settleDecimals));
-    const rate = out.dividedBy(probe);
+    // Our fee is taken from the conversion, so the rate a user should expect is
+    // the venue's less our share of it.
+    const rate = out.dividedBy(probe).multipliedBy(new BigNumber(1).minus(conversion?.rateFee ?? 0));
 
     return {
         depositAsset: { coin: deposit.coin.toLowerCase(), network: deposit.network.toLowerCase() },
@@ -330,6 +401,15 @@ export function mapFlashnetBackendError(
     const code = typeof flat.code === 'string' ? flat.code : '';
     if (code === 'FLASHNET_NOT_CONFIGURED' || code === 'CLIENT_IP_UNAVAILABLE') {
         return new VenueConfigError('flashnet', code);
+    }
+    // The backend refuses a conversion too small to be worth its charges. It
+    // knows the minimum; the terms we hold say what to show for it.
+    if (code === 'BELOW_MINIMUM') {
+        return new AmountOutOfRangeError(
+            depositAmount,
+            (measuredTerms?.terms ?? TRON_FALLBACK_TERMS).minimum,
+            undefined,
+        );
     }
     if (httpStatus === 429 || httpStatus >= 500) {
         return new VenueUnavailableError('flashnet', true, 'Flashnet is not responding, try again shortly');

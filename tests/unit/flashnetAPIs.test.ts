@@ -127,14 +127,19 @@ describe('getFlashnetPair', () => {
         });
     const estimateUrl = () => urls().find(u => u.includes('/estimate?')) ?? '';
     const chargeRequests = () => urls().filter(u => u.includes('/tron-deposit-charge')).length;
-    const measured = ok({ chargeUsdt: '2.47', measuredAt: '2026-09-19T12:00:00.000Z' });
+    // What the backend publishes: the measured charge and the terms of our fee.
+    const measured = ok({
+        chargeUsdt: '2.47',
+        measuredAt: '2026-09-19T12:00:00.000Z',
+        fee: { marginBps: 100, recoveryUsd: 1.1, partnerCutBps: 2000, minUsdt: 100 },
+    });
 
     beforeEach(() => {
         forgetTronDepositCharge();
     });
 
     it('uses the dollar cap directly when the deposit asset is a dollar', async () => {
-        byUrl({ limits: ok(limitsBody({ minAmountSmallest: '800000' })), estimate: ok({ estimatedOut: '1050' }) });
+        byUrl({ charge: measured, limits: ok(limitsBody({ minAmountSmallest: '800000' })), estimate: ok({ estimatedOut: '1050' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC, '100');
         expect(pair.max).toBe('87400');
     });
@@ -161,43 +166,58 @@ describe('getFlashnetPair', () => {
     });
 
     it('reads a dollar-only minimum on a dollar deposit, which is all Flashnet gives for Tron', async () => {
-        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '61000' }) });
-        const pair = await getFlashnetPair(USDT_TRON, BTC, '50');
-        expect(estimateUrl()).toContain('amount=50000000');
+        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '305000' }) });
+        const pair = await getFlashnetPair(USDT_TRON, BTC, '250');
+        expect(estimateUrl()).toContain('amount=250000000');
         expect(pair.max).toBe('168400');
-        expect(pair.rate).toBe('0.0000122');
     });
 
-    it('carries the Tron deposit charge our backend measures, and lifts the minimum by it', async () => {
-        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '3700' }) });
+    it('carries the deposit charge and the flat part of our fee, and takes the rest off the rate', async () => {
+        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
+        const pair = await getFlashnetPair(USDT_TRON, BTC, '100');
+        // Relay's 2.47 plus 1.10 of energy grossed up for Flashnet's 20% share.
+        expect(pair.fixedCost).toBe('3.845');
+        // Our 1% margin, grossed up the same way, comes off the venue's rate.
+        const venueRate = new BigNumber('0.00122').dividedBy('100');
+        expect(new BigNumber(pair.rate).toFixed(12)).toBe(venueRate.multipliedBy('0.9875').toFixed(12));
+    });
+
+    it('lifts the minimum to the smallest conversion the backend will quote', async () => {
+        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC);
-        expect(urls()).toContain('https://cypherbox-backend.onrender.com/flashnet/tron-deposit-charge');
-        expect(pair.fixedCost).toBe('2.47');
-        // Flashnet's 0.80 plus the charge, since the rest must still clear 0.80.
-        expect(pair.min).toBe('3.27');
-        expect(estimateUrl()).toContain('amount=3270000');
+        expect(pair.min).toBe('100');
+        // Priced at that minimum when the user has typed nothing yet.
+        expect(estimateUrl()).toContain('amount=100000000');
     });
 
-    it('falls back to its own figure when the backend cannot say', async () => {
-        byUrl({ limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '3700' }) });
+    it('falls back to its own terms when the backend cannot say', async () => {
+        byUrl({ limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC);
-        expect(pair.fixedCost).toBe('2.5');
-        expect(pair.min).toBe('3.3');
+        expect(pair.fixedCost).toBe('3.875');
+        expect(pair.min).toBe('100');
     });
 
-    it('does not believe a charge no one should report', async () => {
-        byUrl({ charge: ok({ chargeUsdt: '250' }), limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '3700' }) });
-        expect((await getFlashnetPair(USDT_TRON, BTC)).fixedCost).toBe('2.5');
+    it('does not believe terms no one should report', async () => {
+        byUrl({ charge: ok({ chargeUsdt: '250', fee: { marginBps: 100, recoveryUsd: 1.1, partnerCutBps: 2000, minUsdt: 100 } }), limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
+        expect((await getFlashnetPair(USDT_TRON, BTC)).fixedCost).toBe('3.875');
         forgetTronDepositCharge();
-        byUrl({ charge: ok({ chargeUsdt: 'two' }), limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '3700' }) });
-        expect((await getFlashnetPair(USDT_TRON, BTC)).fixedCost).toBe('2.5');
+        byUrl({ charge: ok({ chargeUsdt: '2.47', fee: { marginBps: 'many' } }), limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
+        expect((await getFlashnetPair(USDT_TRON, BTC)).fixedCost).toBe('3.875');
     });
 
-    it('asks the backend once, then reuses the charge while the user types', async () => {
-        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '61000' }) });
-        await getFlashnetPair(USDT_TRON, BTC, '50');
-        const again = await getFlashnetPair(USDT_TRON, BTC, '60');
-        expect(again.fixedCost).toBe('2.47');
+    it('charges no fee against a backend too old to publish its terms', async () => {
+        byUrl({ charge: ok({ chargeUsdt: '2.47' }), limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
+        const pair = await getFlashnetPair(USDT_TRON, BTC, '100');
+        expect(pair.fixedCost).toBe('2.47');
+        expect(new BigNumber(pair.rate).toFixed(12)).toBe(new BigNumber('0.00122').dividedBy('100').toFixed(12));
+        expect(pair.min).toBe('100');
+    });
+
+    it('asks the backend once, then reuses the terms while the user types', async () => {
+        byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
+        await getFlashnetPair(USDT_TRON, BTC, '100');
+        const again = await getFlashnetPair(USDT_TRON, BTC, '120');
+        expect(again.fixedCost).toBe('3.845');
         expect(chargeRequests()).toBe(1);
     });
 

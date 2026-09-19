@@ -18,6 +18,9 @@
  * Nothing here logs.
  */
 
+import BigNumber from 'bignumber.js';
+
+import { getTronConversionTerms } from '../../api/flashnetAPIs';
 import type { ChainAsset, ChainSwapAmountMode, ChainSwapOrder, ChainSwapPollResult, ChainSwapQuote } from '../chainSwap';
 import {
     ChainSwapError,
@@ -67,6 +70,12 @@ export type UsdtConversionRequest = {
 
 export type PreparedUsdtConversion =
     | {
+          /** Under the smallest conversion we quote. `minAmount` is in USDT. */
+          readonly ready: false;
+          readonly code: 'BELOW_MINIMUM';
+          readonly minAmount: string;
+      }
+    | {
           readonly ready: true;
           readonly quote: ChainSwapQuote;
           /** The order to pay into: hand it to payUsdtConversion. */
@@ -91,6 +100,11 @@ export type PreparedUsdtConversion =
  *
  * Venue errors pass through as the chainSwap errors, TRON_UNREACHABLE as a
  * TronSendError.
+ *
+ * A conversion under the minimum is refused here on exact_in, where the user
+ * fixed the deposit. On exact_out the deposit is only known once Flashnet
+ * works it out, so the backend refuses that one and it arrives as an
+ * AmountOutOfRangeError.
  */
 export async function prepareUsdtConversion(
     request: UsdtConversionRequest,
@@ -99,6 +113,12 @@ export async function prepareUsdtConversion(
     const { account, settle, settleAddress, amount } = request;
     const mode = request.mode ?? 'exact_in';
     const exactIn = mode === 'exact_in';
+
+    // Cheap and cached, and it decides whether reading the chain is worth it.
+    const terms = await getTronConversionTerms();
+    if (exactIn && new BigNumber(amount).isLessThan(terms.minimum)) {
+        return { ready: false, code: 'BELOW_MINIMUM', minAmount: terms.minimum };
+    }
 
     const before = await checkUsdtSendReadiness(
         account.address,

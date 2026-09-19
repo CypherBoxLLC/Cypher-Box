@@ -58,7 +58,12 @@ jest.mock('../../src/api/tronAPIs', () => {
 });
 jest.mock('../../src/api/flashnetAPIs', () => {
     const actual = jest.requireActual('../../src/api/flashnetAPIs');
-    return { ...actual, requestFlashnetQuote: jest.fn(), getFlashnetOrder: jest.fn() };
+    return {
+        ...actual,
+        requestFlashnetQuote: jest.fn(),
+        getFlashnetOrder: jest.fn(),
+        getTronConversionTerms: jest.fn(),
+    };
 });
 
 const getBlock = tronAPIs.getTronReferenceBlock as jest.MockedFunction<typeof tronAPIs.getTronReferenceBlock>;
@@ -68,6 +73,7 @@ const accountState = tronAPIs.getTronAccountState as jest.MockedFunction<typeof 
 const usdtBalance = tronAPIs.getTronUsdtBalance as jest.MockedFunction<typeof tronAPIs.getTronUsdtBalance>;
 const requestQuote = flashnetAPIs.requestFlashnetQuote as jest.MockedFunction<typeof flashnetAPIs.requestFlashnetQuote>;
 const getOrder = flashnetAPIs.getFlashnetOrder as jest.MockedFunction<typeof flashnetAPIs.getFlashnetOrder>;
+const terms = flashnetAPIs.getTronConversionTerms as jest.MockedFunction<typeof flashnetAPIs.getTronConversionTerms>;
 
 const MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 const FROM = deriveTronAccount(MNEMONIC);
@@ -135,6 +141,8 @@ beforeEach(() => {
     clock = makeClock();
     sign = jest.fn((request: UsdtTransferRequest) => signUsdtTransfer(request, MNEMONIC));
     logSpies = (['log', 'warn', 'error'] as const).map(k => jest.spyOn(console, k).mockImplementation(() => undefined));
+    // A minimum below every other fixture here, since it has its own tests.
+    terms.mockResolvedValue({ charge: '2.5', flatFee: '1.375', rateFee: '0.0125', minimum: '10' });
 });
 
 afterEach(() => {
@@ -153,6 +161,30 @@ const request = (over: Partial<Parameters<typeof prepareUsdtConversion>[0]> = {}
 });
 
 describe('prepareUsdtConversion', () => {
+    it('refuses a conversion under the smallest we quote, before reading anything', async () => {
+        terms.mockResolvedValue({ charge: '2.5', flatFee: '1.375', rateFee: '0.0125', minimum: '100' });
+        expect(await prepareUsdtConversion(request(), clock)).toEqual({
+            ready: false,
+            code: 'BELOW_MINIMUM',
+            minAmount: '100',
+        });
+        expect(usdtBalance).not.toHaveBeenCalled();
+        expect(requestQuote).not.toHaveBeenCalled();
+    });
+
+    it('leaves an exact-out conversion to the backend, whose deposit only the quote knows', async () => {
+        terms.mockResolvedValue({ charge: '2.5', flatFee: '1.375', rateFee: '0.0125', minimum: '100' });
+        accountState.mockResolvedValue(state());
+        usdtBalance.mockResolvedValue('1000');
+        requestQuote.mockResolvedValue(quoteFor({ depositAmount: '250', amountMode: 'exact_out' }));
+        const prepared = await prepareUsdtConversion(
+            { ...request(), settle: LIGHTNING, settleAddress: 'lnbc-placeholder', amount: '0.00032', mode: 'exact_out' },
+            clock,
+        );
+        expect(prepared.ready).toBe(true);
+        expect(requestQuote).toHaveBeenCalled();
+    });
+
     it('books a quote that refunds to the paying account, and says when to confirm by', async () => {
         usdtBalance.mockResolvedValue('100');
         accountState.mockResolvedValue(state());
