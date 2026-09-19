@@ -9,7 +9,7 @@
 // block time.
 //
 // Usage, from the repo root:
-//   node scripts/usdt/mainnet-conversion.cjs address
+//   node scripts/usdt/mainnet-conversion.cjs address [tron-address]
 //   node scripts/usdt/mainnet-conversion.cjs convert --to <target> [--usdt <amount> | --sats <amount>]
 //   node scripts/usdt/mainnet-conversion.cjs follow <run-file>
 //
@@ -58,6 +58,7 @@ const BigNumber = require('bignumber.js');
 const { getTronAccountState, getTronUsdtBalance } = require('../../src/api/tronAPIs');
 const { asset } = require('../../src/services/chainSwap');
 const { deriveTronAccountFromWallet, tronTransferSignerForWallet } = require('../../src/services/tron/account');
+const { isValidTronAddress } = require('../../src/services/tron/address');
 const { followUsdtConversion, payUsdtConversion, prepareUsdtConversion } = require('../../src/services/tron/conversion');
 const { TronSendError, awaitUsdtTransferOutcome } = require('../../src/services/tron/send');
 const { hasTransferBandwidth, secondsUntilTransferBandwidth } = require('../../src/services/tron/sendNeeds');
@@ -92,8 +93,9 @@ const BITCOIN = asset('btc', 'bitcoin');
 const INVOICE_UNITS = { '': 0, m: -3, u: -6, n: -9, p: -12 };
 
 const USAGE = `Usage, from the repo root:
-  ${SCRIPT} address
-      Show the Tron account for a recovery phrase: address, USDT, activation, bandwidth.
+  ${SCRIPT} address [tron-address]
+      Show a Tron account: address, USDT, activation, bandwidth. With an address it
+      asks for nothing, so balances can be rechecked without the recovery phrase.
   ${SCRIPT} convert --to <target> [--usdt <amount> | --sats <amount>] [--max-usdt <n>] [--runs-dir <dir>]
       Book a Flashnet quote, show it, and pay only after you type "pay". Then follow the order.
       <target>: a Lightning address, a mainnet BOLT11 invoice, or a bitcoin address.
@@ -667,7 +669,11 @@ async function main() {
     const { command, flags, positional } = parseArgs(process.argv.slice(2));
     switch (command) {
         case 'address': {
-            const { account } = await unlockWallet();
+            const watched = positional[0];
+            if (watched !== undefined && !isValidTronAddress(watched)) {
+                throw new Refusal('That is not a Tron address.');
+            }
+            const account = watched ? { address: watched, path: 'read only' } : (await unlockWallet()).account;
             await describeAccount(account);
             return 0;
         }
