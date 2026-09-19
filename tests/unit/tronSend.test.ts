@@ -213,47 +213,18 @@ describe('sendUsdt', () => {
         expect(outcome).not.toHaveBeenCalled();
     });
 
-    it('after ENERGY_NOT_DELIVERED, waits for the late energy before signing again', async () => {
+    it('after ENERGY_NOT_DELIVERED signs again straight away, since the backend waits on the rental it ordered', async () => {
         getBlock.mockResolvedValueOnce(block(0)).mockResolvedValueOnce(block(12));
         post.mockResolvedValueOnce(refused('ENERGY_NOT_DELIVERED'));
         answerSent();
-        // The recipient holds no USDT, so the transfer needs 130,285 energy.
-        usdtBalance.mockResolvedValue('0');
-        accountState.mockResolvedValueOnce(state({ energyAvailable: 0 })).mockResolvedValueOnce(state({ energyAvailable: 130285 }));
-
-        await sendUsdt(params(), clock);
-
-        expect(accountState).toHaveBeenCalledTimes(2);
-        expect(accountState).toHaveBeenCalledWith(FROM.address);
-        expect(usdtBalance).toHaveBeenCalledWith(TO);
-        expect(accountState.mock.invocationCallOrder[1]).toBeLessThan(sign.mock.invocationCallOrder[1]);
-        expect(sign).toHaveBeenCalledTimes(2);
-    });
-
-    it('signs again after a bounded wait when the late energy never shows', async () => {
-        getBlock.mockResolvedValueOnce(block(0)).mockResolvedValueOnce(block(12));
-        post.mockResolvedValueOnce(refused('ENERGY_NOT_DELIVERED'));
-        answerSent();
-        usdtBalance.mockResolvedValue('0');
-        accountState.mockResolvedValue(state({ energyAvailable: 0 }));
 
         await sendUsdt(params(), clock);
 
         expect(sign).toHaveBeenCalledTimes(2);
-        // One read a block for at most 15 seconds.
-        expect(accountState.mock.calls.length).toBeLessThanOrEqual(6);
-    });
-
-    it('signs again without the wait when the energy cannot be read', async () => {
-        getBlock.mockResolvedValueOnce(block(0)).mockResolvedValueOnce(block(12));
-        post.mockResolvedValueOnce(refused('ENERGY_NOT_DELIVERED'));
-        answerSent();
-        usdtBalance.mockRejectedValue(new TronApiError('The Tron network did not answer, try again shortly'));
-
-        await sendUsdt(params(), clock);
-
-        expect(sign).toHaveBeenCalledTimes(2);
+        // No waiting and no chain reads of our own: nothing to spend time on.
         expect(clock.sleep).not.toHaveBeenCalled();
+        expect(accountState).not.toHaveBeenCalled();
+        expect(usdtBalance).not.toHaveBeenCalled();
     });
 
     it('stops after three signatures and says to try again', async () => {

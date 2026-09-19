@@ -51,7 +51,7 @@ import { tronAddressFromPublicKey, tronAddressToHex } from './address';
 import { USDT_DECIMALS } from './constants';
 import { decimalToUnits } from './contract';
 import type { TronAccount } from './keys';
-import { hasTransferBandwidth, secondsUntilTransferBandwidth, usdtSendNeeds } from './sendNeeds';
+import { hasTransferBandwidth, secondsUntilTransferBandwidth } from './sendNeeds';
 import type { SignedUsdtTransfer, TronReferenceBlock, UsdtTransferSigner } from './transaction';
 
 /** Signatures one send may make, the first included. */
@@ -65,13 +65,6 @@ const REPOST_DELAY_MS = 2_000;
 
 /** One Tron block, the pace of every poll here. */
 const POLL_INTERVAL_MS = 3_000;
-
-/**
- * How long to wait for energy the backend rented but saw arrive too late,
- * before signing again. The backend rents per transfer, so a new signature
- * pays for energy again unless the first rental has landed by then.
- */
-const ENERGY_GRACE_MS = 15_000;
 
 /**
  * A node checks a transfer's expiry against the block before the one it is
@@ -486,29 +479,6 @@ async function submit(
     }
 }
 
-/**
- * After ENERGY_NOT_DELIVERED, give the rented energy a little longer to land
- * before signing again, so the next attempt finds it instead of renting more.
- * Only an optimisation: on any read failure it stops and the backend decides.
- */
-async function waitForRentedEnergy(from: string, to: string, clock: TronSendClock): Promise<void> {
-    const until = clock.now() + ENERGY_GRACE_MS;
-    try {
-        const recipientBalance = await getTronUsdtBalance(to);
-        for (;;) {
-            if (usdtSendNeeds(await getTronAccountState(from), recipientBalance).energyToSupply === 0) {
-                return;
-            }
-            if (clock.now() + POLL_INTERVAL_MS > until) {
-                return;
-            }
-            await clock.sleep(POLL_INTERVAL_MS);
-        }
-    } catch {
-        // Sign again without it.
-    }
-}
-
 async function signAndSubmit(request: SendRequest, purpose: Purpose, clock: TronSendClock): Promise<UsdtSendReceipt> {
     const { from, to, amountUnits, sign } = request;
     for (let signatures = 1; ; signatures += 1) {
@@ -548,10 +518,9 @@ async function signAndSubmit(request: SendRequest, purpose: Purpose, clock: Tron
         if (answer.outcome === 'unknown') {
             throw notSent(answer.reason);
         }
+        // Sign again straight away. After ENERGY_NOT_DELIVERED the backend waits
+        // for the rental it already ordered rather than ordering another.
         if (RESIGN_CODES.has(answer.code) && signatures < MAX_SIGNATURES) {
-            if (answer.code === 'ENERGY_NOT_DELIVERED') {
-                await waitForRentedEnergy(from.address, to, clock);
-            }
             continue;
         }
         throw refusalError(answer.code, answer.retryAfterSeconds, purpose);
