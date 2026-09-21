@@ -4,7 +4,6 @@ import { Refresh } from "@Cypher/assets/images";
 import { ARK_REFRESH_MIN_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { FEATURE_USDT_ENABLED } from "@Cypher/services/tron/config";
-import { walletCanHoldUsdt } from "@Cypher/services/tron/account";
 import { deriveVaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
@@ -452,11 +451,11 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             (allBTCWallets as WalletName[]).includes('ARK') &&
             isArkAuth;
 
-        // The USDT slide needs a Hot Vault that still holds its phrase, since
-        // the Tron address is derived from it. walletCanHoldUsdt is the cheap
-        // half of that check: it reads the phrase without running the
-        // derivation, which has no place on a render path.
-        const hasUsdt = FEATURE_USDT_ENABLED && walletCanHoldUsdt(wallet);
+        // The USDT slide shows whenever the carousel does. Its locked card is
+        // the entry point and needs no Hot Vault; the card decides for itself
+        // when it can show a balance instead. Gating the slide on a vault hid
+        // the feature from Ark-only and custodial-only users altogether.
+        const hasUsdt = FEATURE_USDT_ENABLED;
 
         const tabs: any = [];
         // Default-landing slide. When Strike is connected its fiat balance
@@ -522,10 +521,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // the other thing that spans these slides, and it is faded out on
         // this one below (see rowStops).
         //
-        // Gated on the Hot Vault holding a phrase, because the address is
-        // derived from it: without one the card has nothing to show and would
-        // leave an empty slide and a dead dot. kindFromTab gives it its own
-        // kind, so the default-landing search below can never choose it.
+        // kindFromTab gives it its own kind, so the default-landing search
+        // below can never choose it.
         const usdtTab = hasUsdt ? { key: 'usdt', component: () => <UsdtWallet /> } : null;
         const hasLightningSlide = tabs.some((t: any) => kindFromTab(t) === 'lightning');
         if (usdtTab && hasLightningSlide) {
@@ -581,11 +578,6 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // isArkAuth flips true. Without it here the recovered card only appears
         // after a manual swipe / navigate-away-and-back forces a fresh build.
         isArkAuth,
-        // wallet gates the USDT slide (see `hasUsdt` above): it arrives null on
-        // the first render and is filled in once BlueApp finishes loading, so
-        // without it here the slide never appears until something else forces
-        // a rebuild.
-        wallet,
     ]);
 
     // Maps a tab's `key` to the wallet "kind" used to color the page-indicator

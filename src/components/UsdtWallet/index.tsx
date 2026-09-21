@@ -16,15 +16,17 @@ import styles from "./styles";
 /**
  * The USDT slide on Home.
  *
- * Locked until the user has been through the introduction, which is the whole
- * point of the locked state: the account already exists, derived from the Hot
- * Vault seed, so there is nothing to create. What the user has not done is
- * read who the providers are and what the risks are, and this card is what
- * sends them to do it.
+ * Locked until the user has been through the introduction. The Tron account is
+ * derived from the Hot Vault seed, so there is nothing to create here: what
+ * the user has not done is read who the providers are and what the risks are,
+ * and the locked card is the door to that.
  *
- * Renders nothing at all when there is no Hot Vault. Without a seed of our own
- * there is no Tron address to show, and a card offering USDT to a
- * Strike-only user would lead to a dead end rather than a flow.
+ * The locked card shows whether or not a Hot Vault exists. It is the entry
+ * point, and hiding it from a user without a vault hid the feature entirely,
+ * which is what happened on an Ark-only phone. The vault is required further
+ * in instead: the address screen sends a user without one to create or
+ * recover it. The balance card needs a real address, so it only replaces the
+ * locked card once the user is through the flow AND a vault holds a phrase.
  *
  * Nothing here logs. The balance is not secret, but the address it is read for
  * is derived from seed material and the surrounding code keeps that habit.
@@ -35,10 +37,11 @@ export default function UsdtWallet() {
 
     // Memoised because the derivation behind it runs BIP39's PBKDF2 over 2048
     // rounds. Unmemoised it ran on every carousel scroll frame and every
-    // balance tick, which is seconds of work on a slow phone.
+    // balance tick, which is seconds of work on a slow phone. Skipped entirely
+    // while locked, since the locked card needs no address.
     const account = useMemo(
-        () => resolveHotVaultTronAccount(wallets, walletID),
-        [wallets, walletID],
+        () => (isUsdtSwapsUnlocked ? resolveHotVaultTronAccount(wallets, walletID) : null),
+        [isUsdtSwapsUnlocked, wallets, walletID],
     );
     const address = account?.address ?? null;
 
@@ -77,11 +80,9 @@ export default function UsdtWallet() {
         }
     }, [isUsdtSwapsUnlocked, address, readBalance]);
 
-    if (!address) {
-        return null;
-    }
-
-    if (!isUsdtSwapsUnlocked) {
+    // Locked, or unlocked on a device whose vault has since gone: either way
+    // there is no address to show a balance for, so the door is what shows.
+    if (!isUsdtSwapsUnlocked || !address) {
         return (
             <View>
                 <TouchableOpacity

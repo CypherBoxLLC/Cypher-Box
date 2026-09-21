@@ -6,7 +6,6 @@ import SimpleToast from "react-native-simple-toast";
 
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { dispatchReset } from "@Cypher/helpers/navigation";
 import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -56,9 +55,12 @@ export default function UsdtSwapsAddress() {
         dispatchNavigate('UsdtSwapsCreated');
     };
 
-    // A user with no Hot Vault has no seed of ours and so no address. The
-    // card on Home does not render in that state, so this is only reachable
-    // if a vault is deleted mid-flow.
+    // No Hot Vault, so no seed of ours and no address. This is the ordinary
+    // path for a user who only has Strike, Coinos or Ark, because the locked
+    // card on Home shows for them too. The two ways out are the same ones the
+    // Hot Vault card on Home offers, worded the same, so they are recognisable:
+    // create a vault, or recover one. Both return to Home, where the locked
+    // card is waiting, and the vault they come back with is what backs USDT.
     if (!account) {
         return (
             <ScreenLayout showToolbar>
@@ -66,13 +68,22 @@ export default function UsdtSwapsAddress() {
                     <View style={styles.innerView}>
                         <Text bold subHeader style={styles.title}>Your USDT address</Text>
                         <Text bold style={styles.description}>
-                            This needs a Hot Vault, because your USDT address is derived from its recovery
-                            phrase. Create a Hot Vault first, then come back.
+                            Your USDT address comes from a Hot Vault recovery phrase, and this phone does
+                            not have a Hot Vault yet. Set one up, or recover one you already have, then
+                            come back to this card on Home.
                         </Text>
+                        <Text bold style={styles.description}>
+                            The same phrase will then back up your bitcoin and your dollars together.
+                        </Text>
+                        <TouchableOpacity onPress={() => dispatchNavigate('RecoverSavingVault')}>
+                            <Text bold style={styles.link}>
+                                Already have a vault? Recover
+                            </Text>
+                        </TouchableOpacity>
                     </View>
                     <Button
-                        text="Home"
-                        onPress={() => dispatchReset('HomeScreen')}
+                        text="Unlock Hot Vault"
+                        onPress={() => dispatchNavigate('SavingVaultIntro')}
                         style={styles.button}
                         textStyle={styles.btnText}
                     />
