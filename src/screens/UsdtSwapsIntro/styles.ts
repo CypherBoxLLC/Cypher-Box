@@ -7,7 +7,6 @@ interface Style {
     title: TextStyle;
     description: TextStyle;
     sectionTitle: TextStyle;
-    caution: TextStyle;
     button: ViewStyle;
     btnText: TextStyle;
     linearGradient: ViewStyle;
@@ -40,9 +39,6 @@ export default StyleSheet.create<Style>({
         marginTop: 22,
         color: colors.usdt.light,
         fontSize: 15,
-    },
-    caution: {
-        color: '#FFC92C',
     },
     button: {
         backgroundColor: colors.usdt.main,

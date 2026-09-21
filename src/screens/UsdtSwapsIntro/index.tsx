@@ -1,5 +1,5 @@
 import React from "react";
-import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
+import { ScrollView, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
@@ -35,12 +35,6 @@ export default function UsdtSwapsIntro() {
                     <Text bold subHeader style={styles.title}>Bitcoin and USDT</Text>
 
                     <ScrollView showsVerticalScrollIndicator={false}>
-                        <Text bold style={styles.description}>
-                            <Text bold style={StyleSheet.flatten([styles.description, styles.caution])}>Careful: </Text>
-                            this feature moves your money through other companies and across another
-                            blockchain. Read this before you turn it on.
-                        </Text>
-
                         <Text bold style={styles.sectionTitle}>What it does</Text>
                         <Text bold style={styles.description}>
                             It gives you a Tron address that holds USDT, a dollar token issued by Tether.
@@ -66,14 +60,6 @@ export default function UsdtSwapsIntro() {
                             well as your bitcoin, in this app or in any other wallet that supports Tron.
                             The reverse is also true. If you lose that phrase you lose both, and nobody,
                             including us, can recover either.
-                        </Text>
-
-                        <Text bold style={styles.sectionTitle}>What it costs and what can go wrong</Text>
-                        <Text bold style={styles.description}>
-                            Every swap pays a fixed network cost regardless of size, so small swaps lose a
-                            large share of themselves. There is a minimum for that reason, shown on the next
-                            screens. A swap is not instant and cannot be reversed once it starts. If one
-                            fails, Flashnet refunds the USDT to the address it came from, which is yours.
                         </Text>
                     </ScrollView>
                 </View>
