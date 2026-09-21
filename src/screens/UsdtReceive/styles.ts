@@ -10,11 +10,7 @@ interface Style {
     address: TextStyle;
     copyHint: TextStyle;
     label: TextStyle;
-    path: TextStyle;
     description: TextStyle;
-    link: TextStyle;
-    button: ViewStyle;
-    btnText: TextStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -63,29 +59,10 @@ export default StyleSheet.create<Style>({
         color: colors.usdt.light,
         fontSize: 15,
     },
-    path: {
-        color: colors.gray.light,
-        fontSize: 13,
-        marginTop: 4,
-    },
     description: {
         marginTop: 8,
         color: colors.white,
         lineHeight: 22,
         fontSize: 14,
-    },
-    link: {
-        marginTop: 12,
-        color: colors.usdt.light,
-        fontSize: 14,
-    },
-    button: {
-        backgroundColor: colors.usdt.main,
-        borderWidth: 0,
-    },
-    btnText: {
-        fontFamily: 'Archivo-Bold',
-        color: colors.white,
-        fontSize: 16,
     },
 })

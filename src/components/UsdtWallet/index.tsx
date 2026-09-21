@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Image, TouchableOpacity, View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 
 import { Text } from "@Cypher/component-library";
@@ -14,34 +14,31 @@ import LinearBorderView from "../StrikeView/LinearBorderView";
 import styles from "./styles";
 
 /**
- * The USDT slide on Home.
+ * The USDT balance card, on Home and at the end of Hot Vault creation.
  *
- * Locked until the user has been through the introduction. The Tron account is
- * derived from the Hot Vault seed, so there is nothing to create here: what
- * the user has not done is read who the providers are and what the risks are,
- * and the locked card is the door to that.
+ * USDT comes with the Hot Vault: the Tron account is derived from the vault's
+ * phrase, so a user who has a vault already has an address and there is
+ * nothing to unlock. The card renders nothing without one, and Home only adds
+ * the slide when the vault holds a phrase, so that case is a vault deleted
+ * while the card is on screen.
  *
- * The locked card shows whether or not a Hot Vault exists. It is the entry
- * point, and hiding it from a user without a vault hid the feature entirely,
- * which is what happened on an Ark-only phone. The vault is required further
- * in instead: the address screen sends a user without one to create or
- * recover it. The balance card needs a real address, so it only replaces the
- * locked card once the user is through the flow AND a vault holds a phrase.
+ * The "?" beside the label opens the guide: what this is, who is involved,
+ * where the key comes from. That material used to be two onboarding screens;
+ * now that onboarding is the Hot Vault's own, it lives here for reference.
  *
  * Nothing here logs. The balance is not secret, but the address it is read for
  * is derived from seed material and the surrounding code keeps that habit.
  */
 export default function UsdtWallet() {
-    const { isUsdtSwapsUnlocked, walletID } = useAuthStore();
+    const { walletID } = useAuthStore();
     const { wallets } = useContext(BlueStorageContext);
 
     // Memoised because the derivation behind it runs BIP39's PBKDF2 over 2048
     // rounds. Unmemoised it ran on every carousel scroll frame and every
-    // balance tick, which is seconds of work on a slow phone. Skipped entirely
-    // while locked, since the locked card needs no address.
+    // balance tick, which is seconds of work on a slow phone.
     const account = useMemo(
-        () => (isUsdtSwapsUnlocked ? resolveHotVaultTronAccount(wallets, walletID) : null),
-        [isUsdtSwapsUnlocked, wallets, walletID],
+        () => resolveHotVaultTronAccount(wallets, walletID),
+        [wallets, walletID],
     );
     const address = account?.address ?? null;
 
@@ -75,48 +72,21 @@ export default function UsdtWallet() {
     }, [address]);
 
     useEffect(() => {
-        if (isUsdtSwapsUnlocked && address) {
+        if (address) {
             void readBalance();
         }
-    }, [isUsdtSwapsUnlocked, address, readBalance]);
+    }, [address, readBalance]);
 
-    // Locked, or unlocked on a device whose vault has since gone: either way
-    // there is no address to show a balance for, so the door is what shows.
-    if (!isUsdtSwapsUnlocked || !address) {
-        return (
-            <View>
-                <TouchableOpacity
-                    style={styles.lockedCard}
-                    onPress={() => dispatchNavigate('UsdtSwapsIntro')}
-                    activeOpacity={0.8}
-                >
-                    <View style={styles.lockedMiddle}>
-                        <Image
-                            style={styles.lockedArrow}
-                            resizeMode="contain"
-                            source={require("../../../img/arrow-right.png")}
-                        />
-                        <Text h2 style={styles.lockedTitle} center>
-                            Unlock Bitcoin-USDT swaps
-                        </Text>
-                    </View>
-                </TouchableOpacity>
-                <View style={styles.lockedFooter}>
-                    <Text bold style={styles.lockedSubtitle}>
-                        Hold dollars on Tron, swap them for bitcoin
-                    </Text>
-                    <TouchableOpacity onPress={() => dispatchNavigate('UsdtSwapsIntro')}>
-                        <Text bold style={styles.lockedHint}>
-                            Tap to learn how it works
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        );
+    if (!address) {
+        return null;
     }
 
+    const guideClickHandler = () => {
+        dispatchNavigate('UsdtSwapsGuide');
+    };
+
     const receiveClickHandler = () => {
-        dispatchNavigate('UsdtSwapsAddress', { fromHome: true });
+        dispatchNavigate('UsdtReceive');
     };
 
     const sendClickHandler = () => {
@@ -134,7 +104,18 @@ export default function UsdtWallet() {
                     <View style={styles.usdtRow}>
                         <View style={styles.sideContainer}>
                             <View style={styles.balanceBox}>
-                                <Text h2 bold style={styles.balanceLabel}>USDT</Text>
+                                <View style={styles.labelRow}>
+                                    <Text h2 bold style={styles.balanceLabel}>USDT</Text>
+                                    <TouchableOpacity
+                                        onPress={guideClickHandler}
+                                        style={styles.helpButton}
+                                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="How Bitcoin-USDT swaps work"
+                                    >
+                                        <Text bold style={styles.helpText}>?</Text>
+                                    </TouchableOpacity>
+                                </View>
                                 <Text h2 bold style={styles.balanceAmount}>
                                     {balance === null ? '...' : `$${balance}`}
                                 </Text>

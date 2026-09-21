@@ -13,6 +13,7 @@ import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
 import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
+import { FEATURE_USDT_ENABLED } from "@Cypher/services/tron/config";
 import TabBar from "../TabBar";
 // createInvoiceStrike moved to TopupList
 
@@ -343,6 +344,11 @@ export default function BottomBar({
                                     <Text h2 style={[styles.createVaultText, shadow.text25]}>
                                         Unlock Hot Vault
                                     </Text>
+                                    {FEATURE_USDT_ENABLED && (
+                                        <Text bold style={styles.newUsdtText}>
+                                            + New: Bitcoin - USDT swaps!
+                                        </Text>
+                                    )}
                                 </View>
                             </LinearGradient>
                         </TouchableOpacity>

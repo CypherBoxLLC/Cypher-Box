@@ -7,6 +7,7 @@ import { colors } from "@Cypher/style-guide";
 import { PrivateKeyGenerater, SavingVault } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchReset } from "@Cypher/helpers/navigation";
+import { FEATURE_USDT_ENABLED } from "@Cypher/services/tron/config";
 
 export default function SavingVaultCreated() {
     const [isValidate, setIsValidate] = useState(false);
@@ -16,6 +17,13 @@ export default function SavingVaultCreated() {
         console.log('next click');
         if(vaultTab){
             dispatchReset('HomeScreen');
+        } else if (FEATURE_USDT_ENABLED) {
+            // USDT comes with the Hot Vault: its Tron address is derived from
+            // the phrase just created. Show what the user got before Home.
+            // UsdtSwapsCreated sends isComplete on from there, so Home's
+            // post-creation state is unchanged. Cold vaults are watch-only,
+            // hold no phrase, and never take this branch.
+            dispatchNavigate('UsdtSwapsCreated');
         } else {
             dispatchReset('HomeScreen', {
                 isComplete: true

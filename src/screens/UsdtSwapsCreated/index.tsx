@@ -5,7 +5,6 @@ import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { UsdtWallet } from "@Cypher/components";
 import { dispatchReset } from "@Cypher/helpers/navigation";
 import { getTronConversionTerms, type TronConversionTerms } from "@Cypher/api/flashnetAPIs";
-import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 
 import styles from "./styles";
@@ -25,12 +24,16 @@ function asDollars(amount: string): string {
 }
 
 /**
- * The end of the introduction, and the first place the live card appears.
+ * The last step of Hot Vault creation, shown after "Hot Vault Created!".
  *
- * Unlocking happens here rather than on the intro screen so a user who backs
- * out mid-flow keeps the locked card and can read the risks again. Once this
- * screen is reached the card above is the real one, which is the point: the
- * user sees what they just turned on before they are sent back to Home.
+ * USDT comes with the Hot Vault: the Tron account is derived from the phrase
+ * the user just wrote down. So this is not a separate sign-up, it is the point
+ * in the vault flow where the user first sees what they got, with the card
+ * above and what a swap costs below.
+ *
+ * Home is reached from here with isComplete, the flag SavingVaultCreated used
+ * to send directly. Dropping it would silently lose Home's post-creation state
+ * now that this screen sits between the two.
  *
  * The figures come from the backend, through the same call the amount screen
  * will price a real conversion with, so this screen cannot drift from what a
@@ -39,12 +42,7 @@ function asDollars(amount: string): string {
  * exactly that reason.
  */
 export default function UsdtSwapsCreated() {
-    const { setUsdtSwapsUnlocked } = useAuthStore();
     const [terms, setTerms] = useState<TronConversionTerms | null>(null);
-
-    useEffect(() => {
-        setUsdtSwapsUnlocked(true);
-    }, [setUsdtSwapsUnlocked]);
 
     useEffect(() => {
         let alive = true;
@@ -59,7 +57,7 @@ export default function UsdtSwapsCreated() {
     }, []);
 
     const homeClickHandler = () => {
-        dispatchReset('HomeScreen');
+        dispatchReset('HomeScreen', { isComplete: true });
     };
 
     return (

@@ -4,6 +4,7 @@ import { Refresh } from "@Cypher/assets/images";
 import { ARK_REFRESH_MIN_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { FEATURE_USDT_ENABLED } from "@Cypher/services/tron/config";
+import { walletCanHoldUsdt } from "@Cypher/services/tron/account";
 import { deriveVaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
@@ -451,11 +452,12 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             (allBTCWallets as WalletName[]).includes('ARK') &&
             isArkAuth;
 
-        // The USDT slide shows whenever the carousel does. Its locked card is
-        // the entry point and needs no Hot Vault; the card decides for itself
-        // when it can show a balance instead. Gating the slide on a vault hid
-        // the feature from Ark-only and custodial-only users altogether.
-        const hasUsdt = FEATURE_USDT_ENABLED;
+        // USDT comes with the Hot Vault, so the slide shows when the vault
+        // holds a phrase to derive the Tron address from. walletCanHoldUsdt is
+        // the cheap half of that check: it reads the phrase without running
+        // the derivation, which has no place on a render path. Without a vault
+        // there is nothing to show here; the Hot Vault card advertises USDT.
+        const hasUsdt = FEATURE_USDT_ENABLED && walletCanHoldUsdt(wallet);
 
         const tabs: any = [];
         // Default-landing slide. When Strike is connected its fiat balance
@@ -578,6 +580,11 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // isArkAuth flips true. Without it here the recovered card only appears
         // after a manual swipe / navigate-away-and-back forces a fresh build.
         isArkAuth,
+        // wallet gates the USDT slide (see `hasUsdt` above): it arrives null on
+        // the first render and is filled in once BlueApp finishes loading, so
+        // without it here the slide would not appear until something else
+        // forced a rebuild.
+        wallet,
     ]);
 
     // Maps a tab's `key` to the wallet "kind" used to color the page-indicator

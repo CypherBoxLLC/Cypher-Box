@@ -92,6 +92,7 @@ interface Style {
     bottomBtn: ViewStyle;
     createVault: ViewStyle;
     createVaultText: TextStyle;
+    newUsdtText: TextStyle;
     advancedText: TextStyle;
     createVaultContainer: ViewStyle;
     addView: ViewStyle;
@@ -736,6 +737,14 @@ export default StyleSheet.create<Style>({
     },
     createVaultText: {
         textAlign: 'center'
+    },
+    // "+ New: Bitcoin - USDT swaps!" under "Unlock Hot Vault". USDT comes with
+    // the Hot Vault, so the vault card is where it is advertised.
+    newUsdtText: {
+        textAlign: 'center',
+        marginTop: 6,
+        fontSize: 14,
+        color: colors.usdt.light,
     },
     advancedText: {
         margin: 10

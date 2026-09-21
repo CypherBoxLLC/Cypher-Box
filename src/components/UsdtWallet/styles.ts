@@ -1,17 +1,11 @@
-import { colors, shadow, widths } from "@Cypher/style-guide";
+import { colors } from "@Cypher/style-guide";
 import { StyleSheet } from "react-native";
 
 /**
- * Two cards in one sheet.
- *
- * The unlocked balance card borrows StrikeView's geometry so the USDT slide
- * sits at the same height as the fiat slide in the carousel: same 121pt
- * columns, same 33pt buttons, same 25pt radii. Changing those here resizes the
- * carousel slot around this slide.
- *
- * The locked card borrows ArkWallet's create-state instead: an outline-only
- * box on a transparent body, which is the app's existing visual language for
- * something the user has yet to turn on, rather than for a balance.
+ * The balance card borrows StrikeView's geometry so the USDT slide sits at the
+ * same height as the fiat slide in the carousel: same 121pt columns, same 33pt
+ * buttons, same 25pt radii. Changing those here resizes the carousel slot
+ * around this slide.
  */
 const styles = StyleSheet.create({
     container: {
@@ -39,9 +33,31 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         transform: [{ translateY: -10 }],
     },
+    labelRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
     balanceLabel: {
         fontSize: 17,
         color: colors.usdt.light,
+    },
+    // A drawn question mark: the app ships no question-mark asset, and its
+    // info glyphs are an "i", which is not what this opens.
+    helpButton: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        borderWidth: 1.5,
+        borderColor: colors.usdt.light,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: 6,
+    },
+    helpText: {
+        fontSize: 11,
+        lineHeight: 13,
+        color: colors.usdt.light,
+        textAlign: 'center',
     },
     balanceAmount: {
         fontSize: 17,
@@ -103,58 +119,6 @@ const styles = StyleSheet.create({
         height: 33,
         width: 121,
         justifyContent: 'center',
-    },
-
-    // Locked state, mirroring ArkWallet's createView.
-    lockedCard: {
-        marginTop: 20,
-        borderRadius: 25,
-        width: widths - 40,
-        height: 128,
-        backgroundColor: colors.primary,
-        padding: 15,
-        paddingStart: 20,
-        paddingEnd: 10,
-        borderWidth: 1.5,
-        borderColor: colors.usdt.light,
-        alignSelf: "center",
-        justifyContent: "center",
-        shadowColor: colors.usdt.shadowTopNew,
-        shadowOffset: { width: 0, height: 0 },
-        shadowRadius: 4,
-        shadowOpacity: 0.4,
-    },
-    lockedMiddle: {
-        flexDirection: "row",
-        alignItems: "center",
-        flex: 1,
-    },
-    lockedArrow: {
-        width: 50,
-        height: 50,
-        left: -5,
-        top: 10,
-        tintColor: colors.usdt.light,
-    },
-    lockedTitle: {
-        ...shadow.text25,
-        color: colors.usdt.light,
-    },
-    lockedFooter: {
-        flexDirection: "column",
-        marginTop: 10,
-        alignSelf: "center",
-    },
-    lockedSubtitle: {
-        fontSize: 16,
-        textAlign: "center",
-        color: colors.whiteText,
-    },
-    lockedHint: {
-        fontSize: 14,
-        color: colors.usdt.light,
-        textAlign: "center",
-        marginTop: 4,
     },
 });
 

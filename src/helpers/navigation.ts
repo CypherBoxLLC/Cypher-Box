@@ -21,6 +21,8 @@ const NESTED_ROUTE_PARENT: Record<string, string> = {
   SavingVaultIntro: 'HotVaultFlow',
   SavingVault: 'HotVaultFlow',
   SavingVaultCreated: 'HotVaultFlow',
+  // The last step of Hot Vault creation, since USDT comes with the vault.
+  UsdtSwapsCreated: 'HotVaultFlow',
 };
 
 export default function dispatchNavigate(routeName: string, params?: any) {

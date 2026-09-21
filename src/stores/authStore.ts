@@ -101,20 +101,6 @@ export type AuthStateType = {
     hotVaultKeychainBackups: Record<string, boolean>;
     setHotVaultKeychainBackup: (walletID: string, backedUp: boolean) => void;
 
-    /**
-     * Whether this user has been through the Bitcoin to USDT introduction.
-     *
-     * The USDT account is derived from the Hot Vault seed, so there is nothing
-     * to create and nothing to authenticate: this flag only records that the
-     * user has read the risks and the provider list once, so Home can stop
-     * showing the locked card. Gated in the build by FEATURE_USDT_ENABLED.
-     *
-     * Persisted, and deliberately not cleared by any of the logout paths
-     * below: it describes something the user read, not a session.
-     */
-    isUsdtSwapsUnlocked: boolean;
-    setUsdtSwapsUnlocked: (state: boolean) => void;
-
     // Ark (experimental — Second.tech)
     // Non-custodial; no token/credential. We persist a lightweight descriptor:
     //   arkWallet: { id, createdAt, useHotVaultSeed }  — actual secret lives in native/Keychain
@@ -623,9 +609,6 @@ const createAuthStore = (
     hasSeenCustodialWarning: false,
     hotVaultKeychainBackups: {},
 
-    // USDT swaps: locked until the user finishes the introduction.
-    isUsdtSwapsUnlocked: false,
-
     // Ark (experimental) defaults
     isArkAuth: false,
     arkWallet: null,
@@ -712,8 +695,6 @@ const createAuthStore = (
             }
             return { hotVaultKeychainBackups: next };
         }),
-    setUsdtSwapsUnlocked: (state: boolean) => set({ isUsdtSwapsUnlocked: state }),
-
     // Ark setters
     setArkAuth: (state: boolean) => set({ isArkAuth: state }),
     setArkWallet: (state: any) => set({ arkWallet: state }),
