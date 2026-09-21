@@ -44,6 +44,19 @@ function walletPhrase(
 }
 
 /**
+ * Whether this wallet could hold USDT, without deriving anything.
+ *
+ * deriveTronAccountFromWallet runs BIP39's PBKDF2 over 2048 rounds, which is
+ * far too expensive for a render path that only needs to know whether to show
+ * a card at all. This reads the same phrase check and stops there, so Home can
+ * decide on the slide cheaply and leave the derivation to the screen that
+ * actually shows an address.
+ */
+export function walletCanHoldUsdt(wallet: SeedBearingWallet | null | undefined): boolean {
+    return walletPhrase(wallet) !== null;
+}
+
+/**
  * Derive the Tron account for one wallet.
  *
  * Returns null when the wallet cannot supply a phrase at all: a watch-only or

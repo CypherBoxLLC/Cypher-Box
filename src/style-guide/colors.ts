@@ -76,6 +76,25 @@ const colors = {
     progress: '#FFFFFF',
     stop: '#F2F2F2',
   },
+  // USDT on Tron (Bitcoin to USDT swaps via Flashnet).
+  // Tether's brand green is #26A17B, which sits very close to colors.green
+  // (#23C47F, the Hot Vault) and would read as the same wallet at a glance.
+  // The palette is pulled toward teal so the USDT card is distinguishable
+  // from both the Hot Vault green and the Cold Vault blue (#21C7FB).
+  usdt: {
+    default: 'rgba(38, 161, 123, 0.92)',
+    light: '#3FD9B4',
+    extralight: '#6FF0D2',
+    main: '#26A17B',
+    shadowBottom: '#0C4F3C',
+    shadowTop: '#3FD9B4',
+    dark: '#1E8A68',
+    shadowTopNew: '#4FE8C4',
+    gradient1: '#3FD9B4',
+    gradient2: '#1E8A68',
+    progress: '#3FD9B4',
+    stop: '#BFF5E7',
+  },
   white: '#FFFFFF',
   whiteText: '#F1F1F1',
   black: {

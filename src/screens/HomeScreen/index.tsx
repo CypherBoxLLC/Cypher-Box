@@ -203,7 +203,7 @@ export default function HomeScreen({ route }: Props) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [carouselPage, setCarouselPage] = useState(0);
   const [carouselTotal, setCarouselTotal] = useState(0);
-  const [carouselKinds, setCarouselKinds] = useState<Array<'fiat' | 'lightning' | 'ark'>>([]);
+  const [carouselKinds, setCarouselKinds] = useState<Array<'fiat' | 'lightning' | 'ark' | 'usdt'>>([]);
   const walletsViewRef = useRef<WalletsViewHandle>(null);
   // Smooth entrance animation — fires every time HomeScreen gains focus,
   // not just on first mount. Without this, navigating back from another

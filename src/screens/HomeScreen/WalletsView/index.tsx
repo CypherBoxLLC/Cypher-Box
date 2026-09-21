@@ -1,8 +1,10 @@
-import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
+import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet, UsdtWallet } from "@Cypher/components";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
 import { ARK_REFRESH_MIN_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
+import { FEATURE_USDT_ENABLED } from "@Cypher/services/tron/config";
+import { walletCanHoldUsdt } from "@Cypher/services/tron/account";
 import { deriveVaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
@@ -31,7 +33,7 @@ interface Props {
     currencyStrike?: string;
     homeMessage?: string | null;
     /** Fires when the active carousel page changes. Used by BalanceView to render the page indicator (dots colored per wallet kind). */
-    onPageChange?: (index: number, total: number, kinds: Array<'fiat' | 'lightning' | 'ark'>) => void;
+    onPageChange?: (index: number, total: number, kinds: Array<'fiat' | 'lightning' | 'ark' | 'usdt'>) => void;
 }
 
 // ark.second.tech server board minimum. Confirmed on-chain deposits below
@@ -450,6 +452,12 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             (allBTCWallets as WalletName[]).includes('ARK') &&
             isArkAuth;
 
+        // The USDT slide needs a Hot Vault that still holds its phrase, since
+        // the Tron address is derived from it. walletCanHoldUsdt is the cheap
+        // half of that check: it reads the phrase without running the
+        // derivation, which has no place on a render path.
+        const hasUsdt = FEATURE_USDT_ENABLED && walletCanHoldUsdt(wallet);
+
         const tabs: any = [];
         // Default-landing slide. When Strike is connected its fiat balance
         // card sits at index 0, but the carousel should open on the actual
@@ -511,6 +519,16 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             tabs.push(walletTabsMap.ARK);
         }
 
+        // USDT sits last. It is a dollar balance on another chain rather than
+        // a bitcoin wallet, so it should never be what Home opens on, and
+        // kindFromTab gives it its own kind so the default-landing search
+        // below cannot pick it. Gated on the Hot Vault holding a phrase,
+        // because the address is derived from it: without one the card has
+        // nothing to show and would leave an empty slide and a dead dot.
+        if (hasUsdt) {
+            tabs.push({ key: 'usdt', component: () => <UsdtWallet /> });
+        }
+
         // Land on the first BTC/Lightning slide (Strike BTC card or the
         // Strike↔Coinos CircularView), skipping the Strike fiat card when it
         // exists. Falls back to 0 when there's no lightning slide.
@@ -524,7 +542,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // the visible slide and blanked the scroll-opacity-driven shared
         // Send/Receive row until the user manually swiped. (The row reappearing
         // after a swipe was the tell: a real onScroll rewrote scrollX.)
-        const compositionKey = `${custodialLightning.join(',')}|ark:${hasArk}`;
+        const compositionKey = `${custodialLightning.join(',')}|ark:${hasArk}|usdt:${hasUsdt}`;
         setWTabs(tabs);
         if (compositionKey !== prevCompositionRef.current) {
             prevCompositionRef.current = compositionKey;
@@ -549,15 +567,24 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // isArkAuth flips true. Without it here the recovered card only appears
         // after a manual swipe / navigate-away-and-back forces a fresh build.
         isArkAuth,
+        // wallet gates the USDT slide (see `hasUsdt` above): it arrives null on
+        // the first render and is filled in once BlueApp finishes loading, so
+        // without it here the slide never appears until something else forces
+        // a rebuild.
+        wallet,
     ]);
 
     // Maps a tab's `key` to the wallet "kind" used to color the page-indicator
     // line in BalanceView. Centralized here so the carousel and the indicator
     // can never disagree on what each slide represents.
-    const kindFromTab = (tab: { key?: string }): 'fiat' | 'lightning' | 'ark' => {
+    const kindFromTab = (tab: { key?: string }): 'fiat' | 'lightning' | 'ark' | 'usdt' => {
         switch (tab?.key) {
             case 'strike-dollar': return 'fiat';
             case 'ark': return 'ark';
+            // Explicit, because the default below is 'lightning'. Without this
+            // case the USDT slide would be counted as a Lightning one and
+            // could become the carousel's default landing page.
+            case 'usdt': return 'usdt';
             // 'strike', 'coinos', 'lightning-circular' all read as a single
             // Lightning Account from the user's POV (custodial L2).
             default: return 'lightning';

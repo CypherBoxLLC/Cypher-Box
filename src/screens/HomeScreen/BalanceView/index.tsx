@@ -8,7 +8,7 @@ import { Icon } from "react-native-elements";
 import styles from "../styles";
 import { GradientView } from "@Cypher/components";
 
-type CarouselKind = 'fiat' | 'lightning' | 'ark';
+type CarouselKind = 'fiat' | 'lightning' | 'ark' | 'usdt';
 
 interface Props {
     balance: any
@@ -29,6 +29,7 @@ const DOT_COLOR: Record<CarouselKind, string> = {
     fiat: colors.green,
     lightning: colors.pink.light,
     ark: colors.ark.light,
+    usdt: colors.usdt.light,
 };
 
 export default React.memo(function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount, carouselPage = 0, carouselTotal = 0, carouselKinds = [], onDotPress }: Props) {
