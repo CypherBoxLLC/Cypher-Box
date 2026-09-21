@@ -514,19 +514,33 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             tabs.push(walletTabsMap[w]);
         }
 
+        // USDT sits directly right of the Lightning slide, so one swipe left
+        // from Lightning reaches it, and left of Ark. Being left of Ark is
+        // also what keeps the Ark banners off it: they fade in across the
+        // slide before Ark and are clamped visible past it, so a USDT slide
+        // right of Ark would have worn them. The shared Send/Receive row is
+        // the other thing that spans these slides, and it is faded out on
+        // this one below (see rowStops).
+        //
+        // Gated on the Hot Vault holding a phrase, because the address is
+        // derived from it: without one the card has nothing to show and would
+        // leave an empty slide and a dead dot. kindFromTab gives it its own
+        // kind, so the default-landing search below can never choose it.
+        const usdtTab = hasUsdt ? { key: 'usdt', component: () => <UsdtWallet /> } : null;
+        const hasLightningSlide = tabs.some((t: any) => kindFromTab(t) === 'lightning');
+        if (usdtTab && hasLightningSlide) {
+            tabs.push(usdtTab);
+        }
+
         // Ark is structurally separate — always its own page if present.
         if (hasArk) {
             tabs.push(walletTabsMap.ARK);
         }
 
-        // USDT sits last. It is a dollar balance on another chain rather than
-        // a bitcoin wallet, so it should never be what Home opens on, and
-        // kindFromTab gives it its own kind so the default-landing search
-        // below cannot pick it. Gated on the Hot Vault holding a phrase,
-        // because the address is derived from it: without one the card has
-        // nothing to show and would leave an empty slide and a dead dot.
-        if (hasUsdt) {
-            tabs.push({ key: 'usdt', component: () => <UsdtWallet /> });
+        // Ark-only: nothing to sit beside, and at index 0 USDT would become the
+        // page Home opens on, so it goes after Ark instead.
+        if (usdtTab && !hasLightningSlide) {
+            tabs.push(usdtTab);
         }
 
         // Land on the first BTC/Lightning slide (Strike BTC card or the
@@ -773,20 +787,63 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     const fiatOffset = hasFiatTransition ? fiatIdx * screenWidth : 0;
     const lightningOffset = hasFiatTransition ? lightningIdx * screenWidth : screenWidth;
 
+    // The row belongs to Lightning and Ark. A USDT slide between them has its
+    // own Receive/Send inside the card, so the row fades out across it and
+    // back in for Ark, staying put horizontally the way it already does for
+    // Lightning to Ark. Built as stops so the no-USDT layouts produce exactly
+    // the two-point ranges they always had.
+    const usdtIdxForRow = wTabs.findIndex((t: any) => kindFromTab(t) === 'usdt');
+    const rowStops: Array<{ at: number; opacity: number; x: number }> = hasFiatTransition
+        ? [
+            { at: fiatOffset, opacity: 0, x: screenWidth },
+            { at: lightningOffset, opacity: 1, x: 0 },
+        ]
+        : [
+            { at: fiatOffset, opacity: 1, x: 0 },
+            { at: lightningOffset, opacity: 1, x: 0 },
+        ];
+    if (lightningIdx >= 0 && usdtIdxForRow > lightningIdx) {
+        rowStops.push({ at: usdtIdxForRow * screenWidth, opacity: 0, x: 0 });
+        if (usdtIdxForRow + 1 < wTabs.length) {
+            rowStops.push({ at: (usdtIdxForRow + 1) * screenWidth, opacity: 1, x: 0 });
+        }
+    }
+    // interpolate needs a strictly increasing inputRange. The degenerate
+    // no-fiat case starts at 0 and screenWidth, so a USDT stop can only
+    // collide with the second one when USDT sits at index 1 with no fiat
+    // slide; drop the earlier duplicate so the USDT stop wins.
+    const rowInput: number[] = [];
+    const rowOpacity: number[] = [];
+    const rowX: number[] = [];
+    for (const stop of rowStops) {
+        if (rowInput.length > 0 && stop.at <= rowInput[rowInput.length - 1]) {
+            rowInput.pop();
+            rowOpacity.pop();
+            rowX.pop();
+        }
+        rowInput.push(stop.at);
+        rowOpacity.push(stop.opacity);
+        rowX.push(stop.x);
+    }
+    if (rowInput.length < 2) {
+        rowInput.push(rowInput[0] + 1);
+        rowOpacity.push(rowOpacity[0]);
+        rowX.push(rowX[0]);
+    }
     const buttonsTranslateX = scrollX.interpolate({
-        inputRange: [fiatOffset, lightningOffset],
+        inputRange: rowInput,
         // When fiat is centered (scrollX = fiatOffset): row sits at
         // +screenWidth, off the right edge — same place the lightning
         // card sits at that moment. As scrollX grows toward
         // lightningOffset, both card and row glide leftward to 0 in
         // lockstep. Past lightning (toward ark), `extrapolate:'clamp'`
         // pins the row at 0.
-        outputRange: hasFiatTransition ? [screenWidth, 0] : [0, 0],
+        outputRange: rowX,
         extrapolate: 'clamp',
     });
     const buttonsOpacity = scrollX.interpolate({
-        inputRange: [fiatOffset, lightningOffset],
-        outputRange: hasFiatTransition ? [0, 1] : [1, 1],
+        inputRange: rowInput,
+        outputRange: rowOpacity,
         extrapolate: 'clamp',
     });
 
@@ -961,7 +1018,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     // `onBeforeSnapToItem` (release moment), which is the
                     // earliest a tap could land anyway, so this stays in
                     // sync with what's visually tappable.
-                    pointerEvents={kindFromTab(wTabs[indexStrike]) === 'fiat' ? 'none' : 'auto'}
+                    pointerEvents={['fiat', 'usdt'].includes(kindFromTab(wTabs[indexStrike])) ? 'none' : 'auto'}
                     style={{
                         // Absolute positioning so the row sits at the
                         // lightning/ark card bottom (y = 143) regardless of
