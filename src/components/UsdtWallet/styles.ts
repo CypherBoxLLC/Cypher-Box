@@ -2,10 +2,15 @@ import { colors } from "@Cypher/style-guide";
 import { StyleSheet } from "react-native";
 
 /**
- * The balance card borrows StrikeView's geometry so the USDT slide sits at the
- * same height as the fiat slide in the carousel: same 121pt columns, same 33pt
- * buttons, same 25pt radii. Changing those here resizes the carousel slot
- * around this slide.
+ * The card sits in LinearBorderView's fixed frame (180pt tall inside), the
+ * same one StrikeView uses, so the USDT slide matches the fiat slide's height
+ * in the carousel. Two columns: the balance with Receive under it, and Swap
+ * stacked on Send. Both columns are bottom-aligned, which puts Receive and
+ * Send on the card's bottom edge. The pill buttons keep StrikeView's 121 by
+ * 33pt geometry.
+ *
+ * Every text style sets its own lineHeight: the shared Text's base style is
+ * 18pt, which clips the tops of anything set larger.
  */
 const styles = StyleSheet.create({
     container: {
@@ -15,23 +20,23 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         marginTop: 5,
     },
-    usdtRow: {
+    card: {
+        flex: 1,
         flexDirection: 'row',
-        flex: 1,
+        paddingHorizontal: 6,
+        paddingTop: 14,
+        paddingBottom: 14,
     },
-    sideContainer: {
+    column: {
         flex: 1,
+        justifyContent: 'flex-end',
+        alignItems: 'center',
     },
-    balanceBox: {
-        width: 121,
-        height: 94,
-        margin: 20,
-        marginBottom: 10,
-        marginTop: 30,
-        alignSelf: 'center',
+    balanceBlock: {
+        flex: 1,
+        alignSelf: 'stretch',
         alignItems: 'center',
         justifyContent: 'center',
-        transform: [{ translateY: -10 }],
     },
     labelRow: {
         flexDirection: 'row',
@@ -39,7 +44,17 @@ const styles = StyleSheet.create({
     },
     balanceLabel: {
         fontSize: 17,
+        lineHeight: 22,
         color: colors.usdt.light,
+    },
+    balanceAmount: {
+        fontSize: 17,
+        lineHeight: 22,
+        marginTop: 4,
+        textAlign: 'center',
+    },
+    balanceSpinner: {
+        marginTop: 6,
     },
     // A drawn question mark: the app ships no question-mark asset, and its
     // info glyphs are an "i", which is not what this opens.
@@ -59,14 +74,6 @@ const styles = StyleSheet.create({
         color: colors.usdt.light,
         textAlign: 'center',
     },
-    balanceAmount: {
-        fontSize: 17,
-    },
-    balanceSub: {
-        fontSize: 12,
-        color: colors.gray.light,
-        marginTop: 2,
-    },
     actionButton: {
         shadowColor: '#040404',
         shadowOffset: { width: 8, height: 8 },
@@ -75,6 +82,10 @@ const styles = StyleSheet.create({
         elevation: 8,
         alignSelf: 'center',
         width: 121,
+    },
+    // Swap sits directly on Send, one gap apart.
+    actionButtonSpaced: {
+        marginBottom: 10,
     },
     actionGradient: {
         shadowColor: '#27272C',
@@ -104,15 +115,6 @@ const styles = StyleSheet.create({
         width: 121,
         justifyContent: 'center',
         position: 'absolute',
-    },
-    // The two action buttons differ only in their vertical offset: Receive
-    // aligns with the balance box, Send sits a button-gap below it. Held here
-    // rather than inline so the lint rule that bans inline styles stays clean.
-    receiveButton: {
-        marginTop: 30,
-    },
-    sendButton: {
-        marginTop: 10,
     },
     actionGradientMain: {
         borderRadius: 25,

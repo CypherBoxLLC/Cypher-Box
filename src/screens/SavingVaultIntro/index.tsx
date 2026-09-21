@@ -15,6 +15,7 @@ import triggerHapticFeedback, {
   } from "../../../blue_modules/hapticFeedback";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import useAuthStore from "@Cypher/stores/authStore";
+import { HOT_VAULT_FLOW_STEPS } from "@Cypher/services/tron/config";
 
 export default function SavingVaultIntro() {
     const [isLoading, setIsLoading] = useState(false)
@@ -234,7 +235,7 @@ export default function SavingVaultIntro() {
     };
   
     return (
-        <ScreenLayout showToolbar progress={0} color={[colors.green, colors.green]}>
+        <ScreenLayout showToolbar progress={0} progressSteps={HOT_VAULT_FLOW_STEPS} color={[colors.green, colors.green]}>
             <Animated.View style={[styles.container, { transform: [{ translateY: contentLift }] }]}>
                 <View style={styles.innerView}>
                     <Text style={styles.title}>Hot Savings Vault</Text>

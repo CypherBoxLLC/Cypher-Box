@@ -13,3 +13,10 @@
 
 /** Whether the USDT surface is built into this app at all. */
 export const FEATURE_USDT_ENABLED = true;
+
+/**
+ * Steps in the Hot Vault creation progress bar. The USDT screen after "Hot
+ * Vault created!" makes it four; every screen of that flow reads this, so the
+ * bar stays consistent from the first screen to the last.
+ */
+export const HOT_VAULT_FLOW_STEPS = FEATURE_USDT_ENABLED ? 4 : 3;

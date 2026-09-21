@@ -79,6 +79,8 @@ export interface Props {
   isHeader?: boolean;
   isTitleCenter?: any;
   progress?: number;
+  /** Steps in the progress bar; three unless the flow has more. */
+  progressSteps?: number;
   color?: string[];
   isClose?: boolean;
 }
@@ -104,6 +106,7 @@ function ScreenLayout({
   isHeader = false,
   isTitleCenter,
   progress = -1,
+  progressSteps,
   color,
   isClose = false,
 }: Props) {
@@ -117,7 +120,7 @@ function ScreenLayout({
     return (
       <>
         {progress > -1 &&
-          <Progress key={progress} current={progress} color={color} />
+          <Progress key={progress} current={progress} color={color} steps={progressSteps} />
         }
         {isClose &&
           <TouchableOpacity style={styles.closeView} onPress={handledBackPress}>

@@ -7,17 +7,20 @@ import { colors } from "@Cypher/style-guide";
 import { PrivateKeyGenerater, SavingVault } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { FEATURE_USDT_ENABLED } from "@Cypher/services/tron/config";
+import { FEATURE_USDT_ENABLED, HOT_VAULT_FLOW_STEPS } from "@Cypher/services/tron/config";
 
 export default function SavingVaultCreated() {
     const [isValidate, setIsValidate] = useState(false);
     const { vaultTab } = useAuthStore();
+    // A new Hot Vault continues to the USDT screen, since USDT comes with it;
+    // a cold vault ends here and goes Home.
+    const continuesToUsdt = !vaultTab && FEATURE_USDT_ENABLED;
 
     const nextClickHandler = () => {
         console.log('next click');
         if(vaultTab){
             dispatchReset('HomeScreen');
-        } else if (FEATURE_USDT_ENABLED) {
+        } else if (continuesToUsdt) {
             // USDT comes with the Hot Vault: its Tron address is derived from
             // the phrase just created. Show what the user got before Home.
             // UsdtSwapsCreated sends isComplete on from there, so Home's
@@ -36,9 +39,9 @@ export default function SavingVaultCreated() {
     }
 
     return (
-        <ScreenLayout disableScroll showToolbar progress={2} color={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
+        <ScreenLayout disableScroll showToolbar progress={2} progressSteps={vaultTab ? 3 : HOT_VAULT_FLOW_STEPS} color={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
             <View style={styles.container}>
-                <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : "Savings Vault Created!"}</Text>
+                <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : "Hot Vault created!"}</Text>
                 <View style={styles.inner}>
                     <SavingVault title={vaultTab ? "Cold Vault" : "Hot Vault"} />
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
@@ -61,7 +64,7 @@ export default function SavingVaultCreated() {
                     </ScrollView>
                 </View>
             </View>
-            <Button text="Home"
+            <Button text={continuesToUsdt ? "Next" : "Home"}
                 onPress={nextClickHandler}
                 style={{...styles.button, ...{ backgroundColor: vaultTab ? colors.coldGreen : colors.green, marginTop: vaultTab ? 30 : 0 } }}
                 textStyle={styles.btnText}

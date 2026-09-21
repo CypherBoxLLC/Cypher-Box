@@ -11,6 +11,7 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { backupHotVaultSeedWithMeta } from "@Cypher/services/hotVaultKeychain";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
+import { HOT_VAULT_FLOW_STEPS } from "@Cypher/services/tron/config";
 
 /**
  * SavingVault — the second screen of the hot-vault creation flow.
@@ -125,6 +126,7 @@ export default function SavingVault() {
         <ScreenLayout
             showToolbar
             progress={1}
+            progressSteps={HOT_VAULT_FLOW_STEPS}
             color={[colors.green, colors.green]}
             isBackButton={false}
             isClose
