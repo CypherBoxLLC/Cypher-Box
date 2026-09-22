@@ -8,6 +8,7 @@ import { getTronUsdtBalance } from "@Cypher/api/tronAPIs";
 import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
 import { formatUsdtAmount } from "@Cypher/services/tron/format";
 import useAuthStore from "@Cypher/stores/authStore";
+import useUsdtSwapStore, { whenUsdtSwapStoreReady } from "@Cypher/stores/usdtSwapStore";
 import { colors } from "@Cypher/style-guide";
 
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -97,12 +98,18 @@ export default function UsdtWallet({ preview = false }: Props) {
     // Undefined in preview: the buttons render as shapes that do nothing.
     const onGuide = preview ? undefined : () => dispatchNavigate('UsdtSwapsGuide');
     const onReceive = preview ? undefined : () => dispatchNavigate('UsdtReceive');
-    // Swap and Send each need their own screen stack (amount, destination, the
-    // quote's fee confirmation), not built yet. The buttons are here because
-    // the card is designed around all three; swap these for navigates then.
+    // A swap under way, or one that ended but has not been dismissed, is
+    // shown again rather than a new one started: while its deposit could
+    // still land, starting another could pay twice. Waits for the stored swap
+    // to be read back, since that decides which it is.
     const onSwap = preview
         ? undefined
-        : () => SimpleToast.show("Swapping USDT is not available yet", SimpleToast.SHORT);
+        : () => {
+              void whenUsdtSwapStoreReady().then(() =>
+                  dispatchNavigate(useUsdtSwapStore.getState().record ? 'UsdtSwapProgress' : 'UsdtSwapAmount'),
+              );
+          };
+    // Send needs its own stack (amount, destination, confirm), not built yet.
     const onSend = preview
         ? undefined
         : () => SimpleToast.show("Sending USDT is not available yet", SimpleToast.SHORT);
