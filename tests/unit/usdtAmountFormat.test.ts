@@ -1,4 +1,18 @@
-import { formatUsdtAmount } from '../../src/services/tron/format';
+import { formatUsdtAmount, formatUsdtExact } from '../../src/services/tron/format';
+
+describe('formatUsdtExact', () => {
+    it('keeps every decimal of an amount to be sent, so it never understates it', () => {
+        expect(formatUsdtExact('107.234567')).toBe('107.234567');
+        expect(formatUsdtExact('1234.5')).toBe('1,234.50');
+    });
+
+    it('drops trailing zeros and whole-amount decimals', () => {
+        expect(formatUsdtExact('150')).toBe('150');
+        expect(formatUsdtExact('150.000000')).toBe('150');
+        expect(formatUsdtExact('100.100000')).toBe('100.10');
+        expect(formatUsdtExact('0.000001')).toBe('0.000001');
+    });
+});
 
 describe('formatUsdtAmount', () => {
     it('groups thousands and drops decimals on whole amounts', () => {
