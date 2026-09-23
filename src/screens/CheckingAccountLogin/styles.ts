@@ -84,6 +84,17 @@ export default StyleSheet.create({
     marginBottom: 6,
     paddingHorizontal: 4,
   },
+  // Stands in for the CoinOS tile in EEA storefronts. Slightly dimmer
+  // than sectionSubtitle so it reads as a status note rather than an
+  // instruction, with the row's vertical rhythm preserved.
+  regionNotice: {
+    color: '#888',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
 });
 
 // import { colors } from "@Cypher/style-guide";

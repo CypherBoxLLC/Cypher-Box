@@ -34,12 +34,15 @@ const TermsOfService = () => {
                 <View style={styles.section}>
                     <Text style={styles.subHeader}>1. Third-Party Lightning Account(s)</Text>
                     <Text style={styles.paragraph}>
-                        Cypher Box lets you connect through API(s) (create account and/or login) to one or more Bitcoin custodians that (if benevolent) allow you to request sending and receiving payments quickly and cheaply in Bitcoin (BTC) through their Lightning Network infrastructure. Currently integrated custodians include:
+                        Cypher Box lets you connect through API(s) (login only, using an account you have already opened directly with the custodian on its own website) to one or more Bitcoin custodians that (if benevolent) allow you to request sending and receiving payments quickly and cheaply in Bitcoin (BTC) through their Lightning Network infrastructure. Currently integrated custodians include:
                     </Text>
                     <View style={styles.listContainer}>
                         <Text style={styles.listItem}>• CoinOS: A Lightning Network service provider accessible via username and password authentication.</Text>
                         <Text style={styles.listItem}>• Strike: A regulated cryptocurrency exchange accessible via OAuth 2.0 authentication.</Text>
                     </View>
+                    <Text style={styles.paragraph}>
+                        Availability differs by region. CoinOS is not available in the European Economic Area and its features are hidden in those regions. If you connected a CoinOS account before this restriction took effect, your balance remains with CoinOS and is unaffected by it, and you can continue to access that account directly at coinos.io. The self-custodial features of Cypher Box, including the hot and cold storage Vaults and the Bark Vault, are not affected.
+                    </Text>
                     <Text style={styles.paragraph}>
                         A custodian is an entity that allows you to transact and accumulate bitcoin (up to a certain subjective threshold) quickly and cheaply depending on your jurisdiction. The funds stored on your custodian Lightning Account(s) are technically under the full control of the custodian, NOT OURS, NOT YOURS. The balance shown on your Lightning Account(s) may or may not be real Bitcoin.
                     </Text>
