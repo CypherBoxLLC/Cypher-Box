@@ -152,6 +152,7 @@ export {
     refreshArkVtxosAndSync,
     refreshArkVtxosDelegated,
     refreshArkVtxosDelegatedAndSync,
+    sweepStaleArkRefreshingVtxos,
 } from './refresh';
 
 export {

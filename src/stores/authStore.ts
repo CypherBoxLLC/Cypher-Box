@@ -124,6 +124,19 @@ export type AuthStateType = {
      */
     arkRefreshingVtxoIds: string[];
     /**
+     * When each id in `arkRefreshingVtxoIds` was first marked as refreshing,
+     * epoch ms. Maintained by `setArkRefreshingVtxoIds`, which stamps ids it
+     * has not seen before and drops stamps for ids that leave the list.
+     *
+     * Exists so the "Refreshing" animation can be bounded in pure JS. The only
+     * thing that clears an id is a prune deep inside the sync tick, and when
+     * that tick cannot complete (wedged native call, unreachable ASP) the
+     * animation used to run until the process was killed. An id with no stamp
+     * is treated as ancient, so anyone upgrading into this build while stuck
+     * in that state is cleared on first sweep.
+     */
+    arkRefreshingVtxoSince: Record<string, number>;
+    /**
      * Set when at least one ongoing round has been pending for longer than
      * `2 × roundIntervalSecs` (time-based detection). Drives the "Recover
      * stuck refresh" banner in ArkWallet. `null` means no stuck round
@@ -616,6 +629,7 @@ const createAuthStore = (
     arkBalanceDetail: null,
     arkVtxos: [],
     arkRefreshingVtxoIds: [],
+    arkRefreshingVtxoSince: {},
     arkRefreshStuck: null,
     arkPendingRoundFirstSeen: {},
     arkScheduledExpiryNotifs: {},
@@ -701,7 +715,17 @@ const createAuthStore = (
     setArkBalance: (state: number) => set({ arkBalance: state }),
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
-    setArkRefreshingVtxoIds: (ids: string[]) => set({ arkRefreshingVtxoIds: ids }),
+    setArkRefreshingVtxoIds: (ids: string[]) =>
+        set((s) => {
+            // Stamp ids we have not seen, keep existing stamps (so a re-set of
+            // the same id does not restart its clock), drop stamps for ids that
+            // are no longer tracked.
+            const now = Date.now();
+            const prev = s.arkRefreshingVtxoSince ?? {};
+            const next: Record<string, number> = {};
+            for (const id of ids) next[id] = prev[id] ?? now;
+            return { arkRefreshingVtxoIds: ids, arkRefreshingVtxoSince: next };
+        }),
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => set({ arkRefreshStuck: state }),
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => set({ arkPendingRoundFirstSeen: state }),
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => set({ arkScheduledExpiryNotifs: state }),
@@ -770,6 +794,7 @@ const createAuthStore = (
             arkBalanceDetail: null,
             arkVtxos: [],
             arkRefreshingVtxoIds: [],
+            arkRefreshingVtxoSince: {},
             arkRefreshStuck: null,
             arkPendingRoundFirstSeen: {},
             arkScheduledExpiryNotifs: {},
