@@ -511,6 +511,51 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   /** What the control should SAY, which is whether reminders can arrive. */
   const remindersEffectivelyOn = arkBgRefreshEnabled && osNotifPermission !== false;
 
+  const arkAutoRefreshEnabled = useAuthStore((s) => s.arkAutoRefreshEnabled);
+  const setArkAutoRefreshEnabled = useAuthStore((s) => s.setArkAutoRefreshEnabled);
+
+  /**
+   * Turning automatic refresh OFF is confirmed; turning it back ON is not.
+   *
+   * Off is the direction that can cost the user their funds, and the deadline
+   * it hands them is not the one they will assume. Expiry is not the last safe
+   * moment: an emergency exit has to CONFIRM on chain before the capsule
+   * expires, which is why the sweep itself refuses to act inside the last 28
+   * hours. So the copy names a day of margin rather than saying "before it
+   * expires".
+   *
+   * If reminders are off too, that is called out explicitly. Both off means
+   * nothing in the app will tell them to act, and that combination should not
+   * be reachable without being told.
+   */
+  const handleToggleAutoRefresh = (next: boolean) => {
+    if (next) {
+      setArkAutoRefreshEnabled(true);
+      return;
+    }
+    const remindersAlsoOff = !remindersEffectivelyOn;
+    Alert.alert(
+      "Turn off automatic refresh?",
+      "Cypher Box will stop refreshing your capsules for you, so you will need "
+      + "to open the app and refresh them yourself. Leave at least a day before "
+      + "a capsule expires. An emergency exit has to confirm on the Bitcoin "
+      + "network before expiry, so acting in the final hours can leave you with "
+      + "no way out."
+      + (remindersAlsoOff
+        ? " Reminders are off as well, so nothing will warn you."
+        : " Reminders stay on and will still warn you at 2 days, 24 hours, 12 hours and 6 hours."),
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Turn off",
+          style: "destructive",
+          onPress: () => setArkAutoRefreshEnabled(false),
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
   const handleToggleBgRefresh = async (next: boolean) => {
     if (togglingBgRefresh) return;
     setTogglingBgRefresh(true);
@@ -2335,6 +2380,58 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
             </Text>
 
+          </View>
+
+          {/* Automatic refresh. Separate card from reminders on purpose: one
+              of these spends money and the other does not, and a single
+              switch covering both would make "stop spending" and "stop
+              warning me" the same action. COPY: Bam finalizes. */}
+          <View
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              borderRadius: 12,
+              backgroundColor: '#1a1a1a',
+              marginTop: 12,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <RNText
+                style={{
+                  fontSize: 14,
+                  fontWeight: '700',
+                  color: colors.white,
+                  flex: 1,
+                  marginRight: 12,
+                }}
+              >
+                Refresh capsules automatically
+              </RNText>
+              <Switch
+                value={arkAutoRefreshEnabled}
+                onValueChange={handleToggleAutoRefresh}
+                trackColor={{ false: '#3a3a3a', true: colors.green }}
+                thumbColor={colors.white}
+              />
+            </View>
+            <Text
+              style={{
+                fontSize: 12,
+                color: arkAutoRefreshEnabled ? '#888' : colors.redLight,
+                marginTop: 6,
+                lineHeight: 16,
+              }}
+            >
+              {arkAutoRefreshEnabled
+                ? 'While Cypher Box is open, capsules nearing expiry are refreshed for you. The Ark server charges a percentage of the amount refreshed, and it charges less the closer a capsule is to expiring.'
+                : '⚠ Automatic refresh is OFF. Refresh your capsules yourself, and leave at least a day before expiry. An emergency exit has to confirm on the Bitcoin network before a capsule expires.'}
+            </Text>
           </View>
         </View>
 

@@ -390,6 +390,23 @@ export type AuthStateType = {
     // scheduled expiry warnings and the sync-tick urgency sweep — see
     // src/services/ark/backgroundRefresh.ts for the policy.
     arkBgRefreshEnabled: boolean;
+    /**
+     * Whether the app may refresh capsules by itself while it is open.
+     *
+     * ON (default) is the behaviour that shipped before this flag existed: the
+     * foreground sweep refreshes any capsule whose remaining life is inside the
+     * band in foregroundSweep.ts, without asking, because letting a refreshable
+     * capsule expire is worse than spending the fee.
+     *
+     * OFF stops that one spend. It does NOT stop reminders, which are free and
+     * are the only thing left telling the user to act, and it does NOT stop the
+     * dust consolidation sweep, whose fee is a couple of sats and whose job is
+     * preventing permanent stranding rather than extending life.
+     *
+     * A user preference, so it survives a wallet being deleted and recreated,
+     * matching arkArkoorPromptEnabled and the threshold settings.
+     */
+    arkAutoRefreshEnabled: boolean;
     /** Timestamp (ms) of the last successful background round. Drives 12h rate limit + UI status copy. */
     arkBgRefreshLastSuccessAt: number | null;
     /** Outcome of the most recent attempt (success OR otherwise). UI surfaces failures only. */
@@ -546,6 +563,7 @@ export type AuthStateType = {
      */
     arkIosBackupReminderActive: boolean;
     setArkBgRefreshEnabled: (state: boolean) => void;
+    setArkAutoRefreshEnabled: (state: boolean) => void;
     setArkBgRefreshLastSuccessAt: (state: number | null) => void;
     setArkBgRefreshLastAttempt: (
         state: {
@@ -651,6 +669,7 @@ const createAuthStore = (
     // before this default flipped retain whatever value persisted to
     // disk under their previous preference.
     arkBgRefreshEnabled: true,
+    arkAutoRefreshEnabled: true,
     arkBgRefreshLastSuccessAt: null,
     arkBgRefreshLastAttempt: null,
     arkBgRefreshConsecutiveFailures: 0,
@@ -745,6 +764,7 @@ const createAuthStore = (
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
     setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),
     setArkBgRefreshEnabled: (state: boolean) => set({ arkBgRefreshEnabled: state }),
+    setArkAutoRefreshEnabled: (state: boolean) => set({ arkAutoRefreshEnabled: state }),
     setArkBgRefreshLastSuccessAt: (state: number | null) => set({ arkBgRefreshLastSuccessAt: state }),
     setArkBgRefreshLastAttempt: (state) => set({ arkBgRefreshLastAttempt: state }),
     setArkBgRefreshConsecutiveFailures: (state: number) => set({ arkBgRefreshConsecutiveFailures: state }),

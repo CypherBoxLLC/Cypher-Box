@@ -307,6 +307,19 @@ export async function maybeSweepDueArkVtxos(
     spendable: ArkVtxoView[],
     tip: number | null,
 ): Promise<void> {
+    // User preference gate, checked HERE rather than at the call site so a
+    // future caller cannot reintroduce an ungated automatic spend. This is the
+    // only path in the app that spends the user's money with no user action at
+    // all, so it is the one that needed an off switch.
+    //
+    // Deliberately does NOT gate maybeSweepDustArkVtxos below. That sweep costs
+    // a couple of sats on a sub-500-sat capsule and exists to stop dust being
+    // permanently stranded, so switching it off would add a loss path to save
+    // nothing. Reminders are not gated here either; they are free and they are
+    // what is left telling the user to act once this is off.
+    if (!useAuthStore.getState().arkAutoRefreshEnabled) {
+        return;
+    }
     if (sweepInFlight) return;
     if (getArkWalletHandle() == null) return;
     if (typeof tip !== 'number') return;
