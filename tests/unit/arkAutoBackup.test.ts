@@ -200,7 +200,13 @@ describe('writeArkAutoBackup when at least one destination succeeds', () => {
     it('resolves when only the local write succeeds', async () => {
         localWriteSucceeds();
         await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(
-            expect.objectContaining({ path: expect.stringContaining('ark-backup-17424cf4.cbark') }),
+            // Per-wallet AND per-device: the fingerprint keeps two wallets on
+            // one device apart, the instance suffix keeps one wallet on two
+            // devices apart. The instance is '11111111' because the mocked
+            // randomKey above returns repeating '11'.
+            expect.objectContaining({
+                path: expect.stringMatching(/ark-backup-17424cf4-[0-9a-f]{8}\.cbark$/),
+            }),
         );
     });
 

@@ -1,5 +1,11 @@
 import { Platform } from 'react-native';
 
+import { buildArkBackupFilename } from './backupInstance';
+import {
+    pickBestBackupCandidate,
+    type BackupCandidate,
+} from './backupCandidates';
+
 import { peekBackupHeader } from './backup';
 
 /**
@@ -76,8 +82,11 @@ const LEGACY_V0_DRIVE_FILE_NAME = 'cypher-box-ark-backup.cbark';
  * filename — used only by the back-compat lookup path that finds
  * pre-multi-wallet backups still living under the old shared name.
  */
-function getDriveBackupName(fingerprint: string | null): string {
-    return fingerprint ? `ark-backup-${fingerprint}.cbark` : LEGACY_V1_DRIVE_FILE_NAME;
+function getDriveBackupName(
+    fingerprint: string | null,
+    instance?: string | null,
+): string {
+    return buildArkBackupFilename(fingerprint, instance);
 }
 
 /** OAuth scopes — minimal: app-scoped Drive folder only. */
@@ -455,13 +464,23 @@ export async function getDriveBackupInfo(
 export async function uploadArkBackupToDrive(
     blob: string,
     fingerprint: string,
+    instance?: string | null,
 ): Promise<string> {
     const token = await getAccessToken();
-    const filename = getDriveBackupName(fingerprint);
-    // Look up by exact per-wallet name so wallet B's upload never PATCHes
-    // wallet A's existing entry. The check is lookup-by-exact-name only —
-    // legacy `ark-backup.cbark` files belonging to other wallets stay
-    // untouched until their owning seed migrates them.
+    const filename = getDriveBackupName(fingerprint, instance);
+    // Look up by exact per-wallet, per-device name so this upload can only
+    // ever PATCH a file this device wrote.
+    //
+    // The per-wallet half stops wallet B PATCHing wallet A. The per-device
+    // half is what was missing: two Android phones holding the SAME wallet
+    // derive the same fingerprint, resolved the same filename, found each
+    // other's file here, and PATCHed it. On a shared Google account that made
+    // the second phone's upload silently replace the first phone's backup on
+    // every sync tick. With the instance in the name the lookup cannot find
+    // another device's file, so the upload falls through to a POST and the
+    // two coexist.
+    //
+    // Legacy `ark-backup.cbark` entries are still never touched.
     const existingId = await findDriveBackupIdByName(filename);
 
     // Drive multipart upload boundary. The body is:
@@ -559,6 +578,13 @@ export async function findDriveBackupByFingerprint(
         throw err;
     }
 
+    // Collect every match and rank, rather than returning the first one the
+    // listing happened to yield. Two Android devices on one Google account
+    // each upload their own `ark-backup-<fp>-<instance>.cbark`, so more than
+    // one entry can legitimately match a seed. Listing order is Drive's, not
+    // a preference. See ./backupCandidates, which also documents why size and
+    // recency are not evidence of a more complete backup.
+    const candidates: BackupCandidate<string>[] = [];
     for (const f of files) {
         let blob: string;
         try {
@@ -573,8 +599,18 @@ export async function findDriveBackupByFingerprint(
             continue;
         }
         if (header.fingerprint && header.fingerprint === fingerprint) {
-            return blob;
+            candidates.push({ name: f.name, header, payload: blob });
         }
+    }
+    const best = pickBestBackupCandidate(candidates);
+    if (best) {
+        if (__DEV__ && candidates.length > 1) {
+            console.log(
+                `[Ark/Drive] ${candidates.length} backups match this seed; using`,
+                best.name,
+            );
+        }
+        return best.payload;
     }
     return null;
 }

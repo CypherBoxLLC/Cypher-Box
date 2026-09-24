@@ -3,6 +3,12 @@ import { NativeModules, Platform } from 'react-native';
 import RNFS from 'react-native-fs';
 import Aes from 'react-native-aes-crypto';
 
+import {
+    buildArkBackupFilename,
+    loadArkBackupInstanceId,
+    parseArkBackupFilename,
+} from './backupInstance';
+
 /**
  * Atomic-ish file write: stage to `${path}.tmp`, unlink target, rename.
  *
@@ -214,15 +220,33 @@ import { openArkWalletWithRotation } from './restore';
  *
  *   v1: { v:1, kdf, iv, ct }                               — legacy, single-wallet era
  *   v2: { v:2, fingerprint, kdf, iv, ct }                  — multi-wallet, lookup-keyed
+ *   v3: { v:3, fingerprint, instance, backupCreatedAt, ... }  per-device writer
  *
- * Writers always emit v2. Readers accept v1 OR v2 — v1 files in the wild
+ * v3 adds two plaintext fields beside `fingerprint`. `instance` identifies
+ * the DEVICE that wrote the file, which is what lets a reader tell one
+ * wallet on two phones apart, and a writer recognise a file it must not
+ * touch, without decrypting anything. `backupCreatedAt` lets recovery rank
+ * several files for one seed without trusting a filesystem mtime that cloud
+ * sync rewrites. Neither is secret: the instance is already in the filename
+ * and the fingerprint was always in the envelope.
+ *
+ * Writers always emit v3. Readers accept v1, v2 OR v3. v1 files in the wild
  * (devices that backed up before this change) must keep decrypting
  * indefinitely; we don't get to migrate them eagerly because the user has to
  * type their seed first to do the rewrite. See `decryptBackupBlob` for the
  * version-permissive read path.
  */
 const FORMAT_VERSION_LEGACY = 1;
-const FORMAT_VERSION = 2;
+const FORMAT_VERSION_V2 = 2;
+const FORMAT_VERSION = 3;
+/**
+ * Version of the INNER manifest, which is a different thing from the envelope
+ * version above and used to share its constant by accident. The archive layout
+ * ({ version, createdAt, files }) has not changed, so this stays at 2 while
+ * the envelope moves to 3. Nothing validates it today; it is written so a
+ * future reader can.
+ */
+const MANIFEST_VERSION = 2;
 const PBKDF2_SALT = 'cypher-box-ark-datadir-v1';
 const PBKDF2_ITERATIONS = 100_000;
 const AES_KEY_BITS = 256; // AES-256-CBC
@@ -243,11 +267,11 @@ const AUTO_BACKUP_FILENAME_LEGACY_V1 = 'ark-backup.cbark';
  * every destination (Documents, Drive's appDataFolder, the SAF folder),
  * so creating wallet B no longer overwrites wallet A's backup.
  */
-export function getAutoBackupPath(fingerprint: string | null): string {
-    const filename = fingerprint
-        ? `ark-backup-${fingerprint}.cbark`
-        : AUTO_BACKUP_FILENAME_LEGACY_V1;
-    return `${RNFS.DocumentDirectoryPath}/${filename}`;
+export function getAutoBackupPath(
+    fingerprint: string | null,
+    instance?: string | null,
+): string {
+    return `${RNFS.DocumentDirectoryPath}/${buildArkBackupFilename(fingerprint, instance)}`;
 }
 
 /**
@@ -331,15 +355,13 @@ export async function getICloudBackupPath(): Promise<string | null> {
  */
 export async function getICloudBackupPathForFingerprint(
     fingerprint: string | null,
+    instance?: string | null,
 ): Promise<string | null> {
     if (Platform.OS !== 'ios') return null;
     try {
         const docsPath = await CypherCloudStorage?.getICloudDocumentsPath?.();
         if (!docsPath) return null;
-        const filename = fingerprint
-            ? `ark-backup-${fingerprint}.cbark`
-            : AUTO_BACKUP_FILENAME_LEGACY_V1;
-        return `${docsPath}/${filename}`;
+        return `${docsPath}/${buildArkBackupFilename(fingerprint, instance)}`;
     } catch (err: any) {
         if (__DEV__) console.log('[Ark backup] iCloud fp-aware probe failed:', err?.message ?? err);
         return null;
@@ -377,12 +399,13 @@ export async function isICloudBackupAvailable(): Promise<boolean> {
  */
 async function getActiveAutoBackupPath(
     fingerprint: string | null = null,
+    instance: string | null = null,
 ): Promise<string> {
-    if (Platform.OS !== 'ios') return getAutoBackupPath(fingerprint);
+    if (Platform.OS !== 'ios') return getAutoBackupPath(fingerprint, instance);
     const iCloudPath = fingerprint
-        ? await getICloudBackupPathForFingerprint(fingerprint)
+        ? await getICloudBackupPathForFingerprint(fingerprint, instance)
         : await getICloudBackupPath();
-    if (!iCloudPath) return getAutoBackupPath(fingerprint);
+    if (!iCloudPath) return getAutoBackupPath(fingerprint, instance);
     // One-time per-wallet migration: if the local sandbox has a backup for
     // this fingerprint but iCloud doesn't yet, copy it across so the
     // upgrade-in-place user doesn't lose their existing backup. After the
@@ -392,7 +415,7 @@ async function getActiveAutoBackupPath(
     try {
         const iCloudExists = await RNFS.exists(iCloudPath);
         if (!iCloudExists) {
-            const localPath = getAutoBackupPath(fingerprint);
+            const localPath = getAutoBackupPath(fingerprint, instance);
             const localExists = await RNFS.exists(localPath);
             if (localExists) {
                 await RNFS.copyFile(localPath, iCloudPath);
@@ -618,7 +641,13 @@ function isLockArtifact(relPath: string): boolean {
 
 async function _packDatadirIntoBlob(
     mnemonic: string,
-): Promise<{ blob: string; createdAt: number; fileCount: number; fingerprint: string }> {
+): Promise<{
+    blob: string;
+    createdAt: number;
+    fileCount: number;
+    fingerprint: string;
+    instance: string;
+}> {
     const datadir = await ensureArkDatadir();
 
     const relPaths = await listFilesRelative(datadir);
@@ -643,7 +672,7 @@ async function _packDatadirIntoBlob(
     }
 
     const createdAt = Date.now();
-    const manifest: BackupManifest = { version: FORMAT_VERSION, createdAt, files };
+    const manifest: BackupManifest = { version: MANIFEST_VERSION, createdAt, files };
     const plaintext = JSON.stringify(manifest);
 
     // Cached key + fingerprint — PBKDF2 (both SHA-256 for AES key and
@@ -655,6 +684,11 @@ async function _packDatadirIntoBlob(
     // the AES pass doesn't freeze the UI on slow Android phones.
     const ctBase64 = await Aes.encrypt(plaintext, keyHex, ivHex, 'aes-256-cbc');
 
+    // Identifies THIS device as the writer. Resolved here rather than passed
+    // in so every producer of a blob (auto-backup tick, verified create, temp
+    // file for manual share) stamps it without having to remember to.
+    const instance = await loadArkBackupInstanceId();
+
     const envelope = {
         v: FORMAT_VERSION,
         // Lookup hint, not security: the cryptographic seed↔file binding is
@@ -664,11 +698,28 @@ async function _packDatadirIntoBlob(
         // "decryption failed" when they have multiple wallets and pick
         // the wrong seed).
         fingerprint,
+        // Which DEVICE wrote this file. The fingerprint says which seed the
+        // file belongs to, which is not the same question and was the reason
+        // one wallet on two phones overwrote itself. Plaintext on purpose: a
+        // writer has to be able to recognise a file it must leave alone
+        // without holding the seed, and a reader has to be able to rank
+        // several files for one seed without decrypting each one.
+        instance,
+        // Written by the producer rather than read from the filesystem,
+        // because cloud sync rewrites mtimes on download and a ranked
+        // recovery list cannot trust them.
+        backupCreatedAt: createdAt,
         kdf: { algo: 'pbkdf2-sha256', salt: PBKDF2_SALT, iter: PBKDF2_ITERATIONS },
         iv: ivHex,
         ct: ctBase64,
     };
-    return { blob: JSON.stringify(envelope), createdAt, fileCount: files.length, fingerprint };
+    return {
+        blob: JSON.stringify(envelope),
+        createdAt,
+        fileCount: files.length,
+        fingerprint,
+        instance,
+    };
 }
 
 /**
@@ -737,110 +788,24 @@ export async function deleteArkBackupForWallet(fingerprint: string): Promise<voi
 }
 
 /**
- * Auto-migration sweep: at every destination, check whether a legacy
- * `ark-backup.cbark` (v1) or `cypher-box-ark-backup.cbark` (v0) is
- * actually THIS wallet's snapshot, and if so, delete it.
+ * The legacy-file migration sweep that lived here has been removed.
  *
- * Match policy (criterion 4 — "no lost data"):
- *   1. If the legacy file's header has a fingerprint and it MATCHES
- *      the active wallet's → delete (this is our file at the old name).
- *   2. If the legacy file has no fingerprint header (v1 / v0 era) →
- *      try-decrypt with the active mnemonic. On success → delete (this
- *      is our file). On failure → leave it (foreign wallet's file —
- *      preserved so its owning seed can recover it later).
- *   3. If the legacy file has a DIFFERENT fingerprint → leave it.
- *      Some other wallet wrote a v2 to the legacy filename (unlikely
- *      but possible on a multi-device setup); not ours to clean up.
+ * It deleted `ark-backup.cbark` (v1) and `cypher-box-ark-backup.cbark` (v0)
+ * once it decided they belonged to the active wallet, judging ownership by a
+ * header fingerprint match or by decrypting the file with the active seed.
+ * Both tests establish which SEED a file holds. Neither establishes which
+ * DEVICE wrote it, and on a wallet running on two devices every device
+ * answered yes. So the sweep could delete another phone's only snapshot, for
+ * the same reason the write path could overwrite it: seed ownership was being
+ * used as writer ownership.
  *
- * Idempotent: once cleanup has run, subsequent calls find nothing to
- * delete and resolve fast. Best-effort — errors logged but never
- * thrown, so the auto-backup tick that calls us never breaks.
- *
- * Runs after a successful per-wallet write so we know there's a
- * current v2 snapshot in place before we delete the legacy file
- * (no transient state where neither file exists).
+ * Nothing replaces it. Legacy files stay where they are, stay readable at
+ * restore, and are never deleted automatically. See `isOwnBackupFilename` in
+ * ./backupInstance for the rule that governs deletion now: a device may only
+ * remove a file whose instance id is its own, which a legacy file by
+ * definition does not have.
  */
-async function migrateLegacyBackupsForActiveWallet(mnemonic: string): Promise<void> {
-    const fingerprint = await getActiveBackupFingerprint(mnemonic);
 
-    // --- Local Documents -----------------------------------------------
-    for (const legacyPath of [AUTO_BACKUP_PATH, LEGACY_AUTO_BACKUP_PATH]) {
-        try {
-            if (!(await RNFS.exists(legacyPath))) continue;
-            const legacyBlob = await RNFS.readFile(legacyPath, 'utf8');
-            const header = peekBackupHeader(legacyBlob);
-            if (header?.fingerprint && header.fingerprint !== fingerprint) {
-                continue; // foreign wallet's file — leave it
-            }
-            if (!header?.fingerprint) {
-                // v0 / v1 file, no fingerprint — try-decrypt to verify ownership.
-                try {
-                    await decryptBackupBlob(legacyBlob, mnemonic);
-                } catch {
-                    continue; // not ours
-                }
-            }
-            await RNFS.unlink(legacyPath);
-            if (__DEV__) console.log(`[Ark migrate] removed legacy local file ${legacyPath}`);
-        } catch (err: any) {
-            if (__DEV__) console.log(`[Ark migrate] local "${legacyPath}" check failed:`, err?.message ?? err);
-        }
-    }
-
-    // --- Drive (Android) -----------------------------------------------
-    if (Platform.OS === 'android') {
-        try {
-            const legacyDrive = await downloadArkBackupFromDrive();
-            if (legacyDrive) {
-                const header = peekBackupHeader(legacyDrive);
-                let isOurs = false;
-                if (header?.fingerprint && header.fingerprint === fingerprint) {
-                    isOurs = true;
-                } else if (!header?.fingerprint) {
-                    try {
-                        await decryptBackupBlob(legacyDrive, mnemonic);
-                        isOurs = true;
-                    } catch {
-                        // not ours
-                    }
-                }
-                if (isOurs) {
-                    await deleteLegacyDriveBackup();
-                    if (__DEV__) console.log('[Ark migrate] removed legacy Drive file');
-                }
-            }
-        } catch (err: any) {
-            if (__DEV__) console.log('[Ark migrate] Drive check failed:', err?.message ?? err);
-        }
-    }
-
-    // --- SAF (Android) -------------------------------------------------
-    if (Platform.OS === 'android') {
-        try {
-            const legacySaf = await readArkBackupFromSaf();
-            if (legacySaf) {
-                const header = peekBackupHeader(legacySaf);
-                let isOurs = false;
-                if (header?.fingerprint && header.fingerprint === fingerprint) {
-                    isOurs = true;
-                } else if (!header?.fingerprint) {
-                    try {
-                        await decryptBackupBlob(legacySaf, mnemonic);
-                        isOurs = true;
-                    } catch {
-                        // not ours
-                    }
-                }
-                if (isOurs) {
-                    await deleteLegacySafBackup();
-                    if (__DEV__) console.log('[Ark migrate] removed legacy SAF file');
-                }
-            }
-        } catch (err: any) {
-            if (__DEV__) console.log('[Ark migrate] SAF check failed:', err?.message ?? err);
-        }
-    }
-}
 
 /**
  * Read ONLY the unencrypted envelope of a backup blob. Used by the recovery
@@ -858,7 +823,7 @@ async function migrateLegacyBackupsForActiveWallet(mnemonic: string): Promise<vo
  */
 export function peekBackupHeader(
     blob: string,
-): { v: number; fingerprint?: string } | null {
+): { v: number; fingerprint?: string; instance?: string; backupCreatedAt?: number } | null {
     let envelope: any;
     try {
         envelope = JSON.parse(blob);
@@ -867,10 +832,29 @@ export function peekBackupHeader(
     }
     if (typeof envelope !== 'object' || envelope === null) return null;
     if (typeof envelope.v !== 'number') return null;
-    if (envelope.v !== FORMAT_VERSION_LEGACY && envelope.v !== FORMAT_VERSION) return null;
-    const out: { v: number; fingerprint?: string } = { v: envelope.v };
+    if (
+        envelope.v !== FORMAT_VERSION_LEGACY &&
+        envelope.v !== FORMAT_VERSION_V2 &&
+        envelope.v !== FORMAT_VERSION
+    ) {
+        return null;
+    }
+    const out: {
+        v: number;
+        fingerprint?: string;
+        instance?: string;
+        backupCreatedAt?: number;
+    } = { v: envelope.v };
     if (typeof envelope.fingerprint === 'string') {
         out.fingerprint = envelope.fingerprint;
+    }
+    // v3 only. Absent on v1/v2, which is how a reader knows the file has no
+    // identified writer and must never be replaced or deleted by this device.
+    if (typeof envelope.instance === 'string') {
+        out.instance = envelope.instance;
+    }
+    if (typeof envelope.backupCreatedAt === 'number') {
+        out.backupCreatedAt = envelope.backupCreatedAt;
     }
     return out;
 }
@@ -917,9 +901,13 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
     // Accept v1 (legacy single-wallet, no fingerprint header) and v2
     // (multi-wallet, fingerprint-keyed). v1 files in the wild stay readable
     // for back-compat; we never write v1 from this code path again.
-    if (envelope.v !== FORMAT_VERSION && envelope.v !== FORMAT_VERSION_LEGACY) {
+    if (
+        envelope.v !== FORMAT_VERSION &&
+        envelope.v !== FORMAT_VERSION_V2 &&
+        envelope.v !== FORMAT_VERSION_LEGACY
+    ) {
         throw new Error(
-            `Unsupported backup version ${envelope.v}; this build understands v${FORMAT_VERSION_LEGACY}–v${FORMAT_VERSION}`,
+            `Unsupported backup version ${envelope.v}; this build understands v${FORMAT_VERSION_LEGACY}-v${FORMAT_VERSION}`,
         );
     }
     if (typeof envelope.iv !== 'string' || typeof envelope.ct !== 'string') {
@@ -1112,10 +1100,12 @@ export async function restoreArkBackupBlob(
  * one — the previous auto-backup still exists on disk as the overwritten
  * previous write.
  *
- * FIXED FILENAME:
- * Overwrites the previous auto-backup unconditionally. This keeps exactly
- * one copy on disk — the most recent state. Unlike the timestamped manual
- * export, there is no accumulation; Documents storage stays bounded.
+ * FIXED FILENAME, PER DEVICE:
+ * Overwrites the previous auto-backup written by THIS device unconditionally,
+ * and never touches a file written by another device or by an older build.
+ * This keeps exactly one copy per device on disk, the most recent state.
+ * Unlike the timestamped manual export there is no accumulation per device,
+ * so storage stays bounded at one file per device sharing the destination.
  *
  * Returns { path, sizeBytes, createdAt } on success.
  * Throws if the datadir is empty — caller should swallow and log.
@@ -1123,11 +1113,17 @@ export async function restoreArkBackupBlob(
 export async function writeArkAutoBackup(
     mnemonic: string,
 ): Promise<{ path: string; iCloudPath: string | null; sizeBytes: number; createdAt: number }> {
-    const { blob, createdAt, fingerprint } = await _packDatadirIntoBlob(mnemonic);
+    const { blob, createdAt, fingerprint, instance } = await _packDatadirIntoBlob(mnemonic);
 
-    // Per-wallet path. Multiple wallets on the same device write to distinct
-    // filenames (`ark-backup-{fp}.cbark`), so creating a second wallet no
-    // longer overwrites the first wallet's local backup.
+    // Per-wallet AND per-device path: `ark-backup-{fp}-{instance}.cbark`.
+    //
+    // The fingerprint keeps two different wallets on one device apart, which
+    // is what it was added for. The instance keeps one wallet on two devices
+    // apart, which the fingerprint cannot do because both devices derive it
+    // from the same seed. Without the instance, every device holding this
+    // wallet wrote this exact filename into the same shared storage on every
+    // sync tick, so the last writer replaced the others, and a device holding
+    // less state replaced a file that held more.
     //
     // Belt-and-suspenders: the local sandbox copy is ALWAYS written so
     // recovery has a fallback when iCloud Drive is off / unreachable /
@@ -1138,7 +1134,7 @@ export async function writeArkAutoBackup(
     //
     // Same blob is written to both locations in the same tick — no drift
     // risk because each tick is an atomic re-pack-and-write.
-    const localPath = getAutoBackupPath(fingerprint);
+    const localPath = getAutoBackupPath(fingerprint, instance);
     // Best-effort, MUST NOT throw: a local-write failure used to abort this
     // whole tick before the Drive/SAF mirrors ran (the one unguarded await in
     // the pipeline). The resilient writer falls back to a direct write when the
@@ -1170,7 +1166,7 @@ export async function writeArkAutoBackup(
     let iCloudPath: string | null = null;
     if (Platform.OS === 'ios') {
         try {
-            iCloudPath = await getICloudBackupPathForFingerprint(fingerprint);
+            iCloudPath = await getICloudBackupPathForFingerprint(fingerprint, instance);
             if (iCloudPath) {
                 await atomicWriteFile(iCloudPath, blob, 'utf8');
                 wroteICloud = true;
@@ -1200,7 +1196,7 @@ export async function writeArkAutoBackup(
     // verified off-device copy (loss-event 2026-05-05).
     try {
         if (await isGoogleDriveConnected()) {
-            await uploadArkBackupToDrive(blob, fingerprint);
+            await uploadArkBackupToDrive(blob, fingerprint, instance);
             wroteDrive = true;
             if (__DEV__) console.log('[Ark auto-backup] Drive upload OK');
         }
@@ -1221,7 +1217,7 @@ export async function writeArkAutoBackup(
     try {
         const saved = await getSavedSafBackupFolder();
         if (saved) {
-            await writeArkBackupToSaf(blob, fingerprint);
+            await writeArkBackupToSaf(blob, fingerprint, instance);
             wroteSaf = true;
             if (__DEV__) console.log('[Ark auto-backup] SAF folder write OK');
         }
@@ -1263,13 +1259,18 @@ export async function writeArkAutoBackup(
         );
     }
 
-    try {
-        await migrateLegacyBackupsForActiveWallet(mnemonic);
-    } catch (err: any) {
-        if (__DEV__) {
-            console.log('[Ark auto-backup] legacy migration failed (non-fatal):', err?.message ?? err);
-        }
-    }
+    // The legacy-file cleanup that used to run here has been removed, not
+    // disabled temporarily. It decided a legacy file was "ours" by matching the
+    // header fingerprint or by decrypting it with the active seed, and both
+    // tests answer which SEED wrote the file, never which DEVICE. On a wallet
+    // running on two devices, every device answered yes, so the cleanup could
+    // delete another phone's only snapshot for the same reason the write path
+    // could overwrite it.
+    //
+    // Legacy files are therefore left in place indefinitely and stay readable
+    // at restore. At roughly half a megabyte each that costs nothing, and a
+    // stale file offered as one candidate among several is a far smaller harm
+    // than deleting a copy that turns out to be the last one.
 
     return { path: localPath, iCloudPath, sizeBytes: blob.length, createdAt };
 }
@@ -1333,7 +1334,7 @@ export type VerifiedBackupResult = {
 export async function writeAndVerifyArkBackup(
     mnemonic: string,
 ): Promise<VerifiedBackupResult> {
-    const { blob, createdAt, fingerprint } = await _packDatadirIntoBlob(mnemonic);
+    const { blob, createdAt, fingerprint, instance } = await _packDatadirIntoBlob(mnemonic);
     const sizeBytes = blob.length;
 
     // Primary write — local sandbox if iCloud Drive is off, iCloud
@@ -1344,7 +1345,7 @@ export async function writeAndVerifyArkBackup(
     // (and on iOS with iCloud on, Apple still writes to the local cache of
     // the iCloud container immediately, then uploads asynchronously — so
     // even an offline iOS device gets a usable local copy from this write).
-    const activePath = await getActiveAutoBackupPath(fingerprint);
+    const activePath = await getActiveAutoBackupPath(fingerprint, instance);
     // Resilient local write (atomic, falling back to direct overwrite when
     // moveFile breaks under the New Architecture RNFS interop). Same policy as
     // the auto-backup tick so the create flow's on-device copy survives the
@@ -1379,7 +1380,7 @@ export async function writeAndVerifyArkBackup(
     // SAF folder mirror (Android only). We compute the SAF outcome here
     // independently of Drive — they're sibling channels, neither one
     // depends on the other. Both run; both surface their own outcome.
-    const saf = await runSafVerify(blob, mnemonic, fingerprint);
+    const saf = await runSafVerify(blob, mnemonic, fingerprint, instance);
 
     if (!connected) {
         return {
@@ -1394,7 +1395,7 @@ export async function writeAndVerifyArkBackup(
 
     let fileId: string;
     try {
-        fileId = await uploadArkBackupToDrive(blob, fingerprint);
+        fileId = await uploadArkBackupToDrive(blob, fingerprint, instance);
     } catch (err: any) {
         return {
             blob,
@@ -1489,13 +1490,14 @@ async function runSafVerify(
     blob: string,
     mnemonic: string,
     fingerprint: string,
+    instance?: string | null,
 ): Promise<SafBackupOutcome> {
     if (Platform.OS !== 'android') return { kind: 'skipped-platform' };
 
     const saved = await getSavedSafBackupFolder();
     if (!saved) return { kind: 'skipped-not-configured' };
 
-    const result = await writeAndReadbackSafBackup(blob, fingerprint);
+    const result = await writeAndReadbackSafBackup(blob, fingerprint, instance);
     if (!result.written.ok) {
         return {
             kind: 'write-failed',

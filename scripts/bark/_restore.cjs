@@ -26,7 +26,7 @@ const crypto = require('node:crypto');
 const PBKDF2_SALT = 'cypher-box-ark-datadir-v1';
 const PBKDF2_ITERATIONS = 100_000;
 const AES_KEY_BYTES = 32; // AES-256
-const SUPPORTED_VERSIONS = new Set([1, 2]);
+const SUPPORTED_VERSIONS = new Set([1, 2, 3]);
 
 function die(msg, code = 1) {
     process.stderr.write(`error: ${msg}\n`);
@@ -64,7 +64,7 @@ try {
 }
 if (!envelope || typeof envelope !== 'object') die('cbark envelope is malformed');
 if (!SUPPORTED_VERSIONS.has(envelope.v)) {
-    die(`unsupported envelope version ${envelope.v} (expected 1 or 2)`);
+    die(`unsupported envelope version ${envelope.v} (expected 1, 2 or 3)`);
 }
 if (typeof envelope.iv !== 'string' || typeof envelope.ct !== 'string') {
     die('envelope missing iv/ct');
@@ -130,5 +130,9 @@ process.stdout.write(
     `restored ${manifest.files.length} file(s) from ${args.cbark}\n` +
         `  envelope.v=${envelope.v}` +
         (envelope.fingerprint ? `  fingerprint=${envelope.fingerprint}` : '') +
+        (envelope.instance ? `  instance=${envelope.instance}` : '') +
+        (envelope.backupCreatedAt
+            ? `  backupCreatedAt=${new Date(envelope.backupCreatedAt).toISOString()}`
+            : '') +
         `\n  manifest.createdAt=${ts}\n  → ${args.datadir}\n`,
 );
