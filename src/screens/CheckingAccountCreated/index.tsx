@@ -124,7 +124,7 @@ export default function CheckingAccountCreated() {
             const wantsReminders = await new Promise<boolean>(resolve => {
                 Alert.alert(
                     'Enable bark notifications to get VTXO capsule refresh reminders?',
-                    'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, recovery is not guaranteed once a capsule expires.',
+                    'Cypher Box sends 4 reminders before any capsule expires (2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box, see what the refresh costs, and confirm it. Without a refresh, recovery is not guaranteed once a capsule expires.',
                     [
                         { text: 'No', style: 'cancel', onPress: () => resolve(false) },
                         { text: 'Yes', onPress: () => resolve(true) },
@@ -222,7 +222,7 @@ export default function CheckingAccountCreated() {
                                     </View>
                                     <Text style={{ fontSize: 12, color: arkBgRefreshEnabled ? '#888' : colors.redLight, marginTop: 6, lineHeight: 16 }}>
                                         {arkBgRefreshEnabled
-                                            ? 'Recommended. Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box and refresh automatically. Without a refresh, recovery is not guaranteed once a capsule expires.'
+                                            ? 'Recommended. Cypher Box sends 4 reminders before any capsule expires (2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box, see what the refresh costs, and confirm it. Without a refresh, recovery is not guaranteed once a capsule expires.'
                                             : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
                                     </Text>
                                 </View>

@@ -138,7 +138,7 @@ const TermsOfService = () => {
                         Funds in a Bark Vault are organized as VTXOs, each with an expiry timestamp set by the ASP when the VTXO is created. Before a VTXO expires, you must either refresh it into a new VTXO (which extends its expiry) or perform an on-chain exit. To assist you, Cypher Box:
                     </Text>
                     <View style={styles.listContainer}>
-                        <Text style={styles.listItem}>• Schedules local device notifications to alert you approximately four (4) days, two (2) days, twenty-four (24) hours, twelve (12) hours, and six (6) hours before any of your VTXOs are due to expire;</Text>
+                        <Text style={styles.listItem}>• Schedules local device notifications to alert you approximately two (2) days, twenty-four (24) hours, twelve (12) hours, and six (6) hours before any of your VTXOs are due to expire;</Text>
                         <Text style={styles.listItem}>• Offers an optional auto-refresh function that attempts to refresh VTXOs in the background, subject to your device's operating-system constraints including battery optimization, background-task scheduling, network availability, and similar limitations outside our control;</Text>
                         <Text style={styles.listItem}>• Provides a manual refresh action accessible from the Bark Vault interface.</Text>
                     </View>

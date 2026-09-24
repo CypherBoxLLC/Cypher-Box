@@ -1589,9 +1589,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     //      handover note).
     //   2. Imminent capsules total below the round minimum even with
     //      every filler → dust-stranded toast that names the shortfall.
-    //   3. Otherwise → fire the batch with skipConfirm so the refresh
-    //      starts immediately. Selection + fee preview don't add safety
-    //      here: the user already opted in by tapping the warning.
+    //   3. Otherwise → build the batch and let refreshIds show its fee
+    //      confirmation.
+    //
+    //      This used to pass skipConfirm, on the reasoning that "the user
+    //      already opted in by tapping the warning". That was wrong. The
+    //      notification says a capsule is about to expire; it does not
+    //      mention a fee and does not ask for one. Tapping it is how a user
+    //      opens the app to look, and money left without ever being shown.
+    //      A refresh is the only spend in the app with no confirmation step,
+    //      and this was the path that made it reachable by accident.
+    //
+    //      The dialog is also the only place the ACTUAL fee appears. The
+    //      reminders are OS alarms on wall-clock time, while the ASP prices
+    //      by block distance to expiry, so a reminder that nominally fires
+    //      inside the cheap tier can land outside it when blocks run slow.
+    //      Nobody can predict the rate from the reminder they tapped; they
+    //      can only be shown it.
     /**
      * Follow-through for the dust top-up.
      *
@@ -1697,7 +1711,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             );
         }
 
-        void refreshIds(batch.ids, { skipConfirm: true });
+        void refreshIds(batch.ids);
         // refreshIds + handleStuckRoundOnTap are defined later in
         // component scope and stable for the lifetime of the screen.
         // The eslint rule is disabled per-line rather than at the file
@@ -1742,7 +1756,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
      * Refresh a specific set of VTXO ids. Reused by the bottom Refresh
      * button (passes selectedIds), the per-row icon (passes a single
      * vtxo.id), and the auto-refresh-on-tap effect above
-     * (passes the imminent set + `skipConfirm: true`). Same fee
+     * (passes the imminent set; it no longer suppresses the fee dialog). Same fee
      * preview + watchdog + selection-clear semantics either way; only
      * the confirmation dialog is conditional.
      */
@@ -1898,21 +1912,44 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 return;
             }
             const fee = await estimateArkRefreshFee(ids);
-            // Present fee preview + confirmation before committing. The
-            // delegation costs a round fee, so the user should opt in
-            // explicitly rather than have it happen silently. The
-            // notification-tap path skips this dialog: the user already
-            // signalled intent by tapping the warning and the deep-link
-            // would be pointless if we then asked them to tap Refresh
-            // again. They still see the "Refreshing…" UI immediately.
+
+            // Fee preview and confirmation before committing. A refresh is a
+            // spend, and this dialog is the ONLY place in the app where its
+            // cost is shown before it leaves.
+            //
+            // `skipConfirm` is now used by one caller only: the dust top-up
+            // follow-through, where the user has just chosen to top up in
+            // order to run this exact sweep. Every notification-tap path used
+            // to pass it too, on the reasoning that tapping the warning was
+            // consent. It is not. The notification says a capsule is about to
+            // expire and never mentions a fee, so tapping it is how a user
+            // opens the app to look.
+            //
+            // The percentage is shown as well as the sats because the rate is
+            // what users are actually deciding about: the ASP charges by how
+            // close the capsule is to expiring, and the same refresh can cost
+            // double depending on when it runs.
+            //
+            // Recompute the displayed total from the post-resync `ids` rather
+            // than reusing `totalIn`, which was measured before stale entries
+            // were dropped above and can overstate what is being refreshed.
+            const displayTotal = rows
+                .filter((r) => ids.includes(r.id))
+                .reduce((acc, r) => acc + r.sats, 0);
+            const feePct = displayTotal > 0
+                ? (fee.feeSats / displayTotal) * 100
+                : null;
             const confirmed = opts.skipConfirm
                 ? true
                 : await new Promise<boolean>((resolve) => {
                     Alert.alert(
                         "Refresh capsules?",
-                        `Re-board ${ids.length} capsule(s) into a new Ark round for ~${fee.feeSats} sats. ` +
-                        `This extends their expiry by another full lifetime. It finishes in the background ` +
-                        `within the hour, so you can close the app once it's submitted.`,
+                        `Re-boarding ${ids.length} capsule${ids.length === 1 ? '' : 's'} ` +
+                        `(${displayTotal.toLocaleString()} sats) into a new Ark round costs about ` +
+                        `${fee.feeSats.toLocaleString()} sats` +
+                        (feePct !== null ? `, which is ${feePct.toFixed(2)}% of the amount` : '') +
+                        `. That extends their expiry by another full lifetime. It finishes in the ` +
+                        `background within the hour, so you can close the app once it is submitted.`,
                         [
                             { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
                             { text: "Refresh", onPress: () => resolve(true) },
@@ -2047,7 +2084,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // Next sync will flip Locked → Spendable. Try the batch we
             // have; if empty, tell the user to come back in a minute.
             if (batch.ids.length > 0) {
-                void refreshIds(batch.ids, { skipConfirm: true });
+                void refreshIds(batch.ids);
             } else {
                 SimpleToast.show(
                     'Your imminent capsules are still settling from a recent refresh. They should be spendable again within a minute.',
@@ -2080,7 +2117,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 SimpleToast.LONG,
             );
             if (batch.ids.length > 0) {
-                void refreshIds(batch.ids, { skipConfirm: true });
+                void refreshIds(batch.ids);
             }
             return;
         }
