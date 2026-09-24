@@ -189,14 +189,20 @@ export function notifyExpiryWarning6h(satsAmount?: number): void {
     );
 }
 
-type WarnKind = 'warn96h' | 'warn48h' | 'warn24h' | 'warn12h' | 'warn6h';
+// Kinds we currently SEND. Retired kinds (warn2h, warn96h) are not members:
+// they are cancelled by name via RETIRED_WARN_KINDS, not scheduled.
+type WarnKind = 'warn48h' | 'warn24h' | 'warn12h' | 'warn6h';
 
 /**
  * Source IDs that identify a scheduled Ark VTXO expiry warning. Both the
  * scheduler that emits them and the tap handler in `scheduler.ts` reference
- * this list, so adding a new warning is a single edit. The legacy `warn2h`
- * entry is retained so a pre-upgrade alarm that survives the migration
- * cancel still drives the same deep-link path if it ever fires.
+ * this list, so adding a new warning is a single edit.
+ *
+ * Retired entries (`warn2h`, `warn96h`) stay in this list on purpose. An alarm
+ * queued by an earlier build can outlive the upgrade that retired it, and if
+ * it fires we still want the tap to deep-link correctly rather than be
+ * dropped as an unknown source. RETIRED_WARN_KINDS cancels them; this list
+ * handles the ones that slip through.
  */
 export const ARK_EXPIRY_WARNING_SOURCES = [
     'ark-vtxo-expiry-warn96h',
@@ -263,7 +269,7 @@ export function isArkCapsuleTapSource(s: unknown): boolean {
  * warnings tell the user that tapping kicks off a round that needs
  * time to settle.
  */
-const WARN_SCHEDULE: ReadonlyArray<{
+export const WARN_SCHEDULE: ReadonlyArray<{
     kind: WarnKind;
     source: ArkExpiryWarningSource;
     offsetMs: number;
@@ -271,14 +277,9 @@ const WARN_SCHEDULE: ReadonlyArray<{
     suffix: string;
     urgent: boolean;
 }> = [
-    {
-        kind: 'warn96h',
-        source: 'ark-vtxo-expiry-warn96h',
-        offsetMs: 96 * 60 * 60 * 1000,
-        label: '4 days',
-        suffix: '',
-        urgent: false,
-    },
+    // The 4-day reminder (`warn96h`) was retired deliberately, see
+    // RETIRED_WARN_KINDS below. Every remaining reminder sits inside the ASP's
+    // cheapest live refresh tier; the 4-day one did not.
     {
         kind: 'warn48h',
         source: 'ark-vtxo-expiry-warn48h',
@@ -412,19 +413,46 @@ function notificationIdFor(vtxoId: string, kind: WarnKind | StuckSwapKind): stri
     return fnv1aNotificationId(`${kind}:${vtxoId}`);
 }
 
-// Migration: prior to the 2h -> 6h rollout the second warning was tagged
-// `warn2h`, which produces a different hash. We need to cancel those legacy
-// IDs explicitly during the first sync after the upgrade so the old alarms
-// don't fire phantom "expires in 2 hours" notifications. Safe to keep around
-// indefinitely: a no-op once every device has migrated through one sync tick.
-function legacyWarn2hNotificationId(vtxoId: string): string {
+/**
+ * Warning kinds that were in WARN_SCHEDULE in an earlier build and are not any
+ * more.
+ *
+ * Removing an entry from WARN_SCHEDULE stops us QUEUEING it. It does nothing
+ * about alarms already sitting in the OS scheduler from before the upgrade,
+ * and since the notification id is a hash of the kind, the current schedule's
+ * cancel loop cannot reach them either. They have to be cancelled by name.
+ *
+ *   warn2h  - the second warning before the 2h -> 6h rollout.
+ *   warn96h - the 4-day reminder. Retired because it was the only reminder
+ *             that landed outside the ASP's cheapest live refresh tier, so a
+ *             user who acted on it paid roughly double a user who waited for
+ *             the next one.
+ *
+ * Safe to keep indefinitely: a no-op once a device has been through one sync
+ * tick after the upgrade.
+ */
+export const RETIRED_WARN_KINDS = ['warn2h', 'warn96h'] as const;
+
+function retiredNotificationId(kind: string, vtxoId: string): string {
     let h = 2166136261;
-    const tagged = `warn2h:${vtxoId}`;
+    const tagged = `${kind}:${vtxoId}`;
     for (let i = 0; i < tagged.length; i++) {
         h ^= tagged.charCodeAt(i);
         h = Math.imul(h, 16777619);
     }
     return String(h & 0x7fffffff);
+}
+
+/** Drop any alarm queued by an earlier build for a kind we no longer send. */
+function cancelRetiredWarnings(vtxoId: string): void {
+    for (const kind of RETIRED_WARN_KINDS) {
+        try {
+            PushNotification.cancelLocalNotification(retiredNotificationId(kind, vtxoId));
+        } catch {
+            // Cancellation never throws meaningfully; the library has been
+            // known to no-op-warn on stale ids. Ignore.
+        }
+    }
 }
 
 export function scheduleVtxoExpiryWarnings(
@@ -446,14 +474,9 @@ export function scheduleVtxoExpiryWarnings(
     ensureInit();
     const now = Date.now();
 
-    // Migration: drop any pre-upgrade `warn2h` alarm for this VTXO so it
-    // doesn't fire alongside the new schedule.
-    try {
-        PushNotification.cancelLocalNotification(legacyWarn2hNotificationId(vtxoId));
-    } catch {
-        // never throws meaningfully; library has been known to no-op-warn on
-        // stale ids. Ignore.
-    }
+    // Migration: drop alarms from any retired kind so they don't fire
+    // alongside the current schedule.
+    cancelRetiredWarnings(vtxoId);
 
     const subject = fmtSatsSubject(satsAmount);
     const satsKnown = satsAmount != null && Number.isFinite(satsAmount) && satsAmount > 0;
@@ -481,8 +504,8 @@ export function cancelVtxoExpiryWarnings(vtxoId: string): void {
         for (const w of WARN_SCHEDULE) {
             PushNotification.cancelLocalNotification(notificationIdFor(vtxoId, w.kind));
         }
-        // Migration: also clear the pre-upgrade 2h alarm if still queued.
-        PushNotification.cancelLocalNotification(legacyWarn2hNotificationId(vtxoId));
+        // Migration: also clear anything queued for a retired kind.
+        cancelRetiredWarnings(vtxoId);
     } catch (err) {
         // Cancellation should never throw, but the library has been
         // observed to no-throw-but-warn on stale ids. Swallow.

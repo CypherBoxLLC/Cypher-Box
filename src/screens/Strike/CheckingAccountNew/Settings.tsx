@@ -2331,7 +2331,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               {remindersBlockedByOs
                 ? '⚠ Reminders are blocked. You turned them on, but notifications are not allowed for Cypher Box in system settings, so none will arrive. Tap the switch to fix this.'
                 : remindersEffectivelyOn
-                  ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
+                  ? 'Cypher Box sends 4 reminders before any capsule expires (2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
                   : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
             </Text>
 
