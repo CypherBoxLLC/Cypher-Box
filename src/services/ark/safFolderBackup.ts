@@ -1,5 +1,7 @@
 import { NativeModules, Platform } from 'react-native';
 
+import { buildArkBackupFilename } from './backupInstance';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DocumentPicker from 'react-native-document-picker';
 
@@ -274,8 +276,11 @@ export async function probeSafBackupFolder(): Promise<SafFolderStatus> {
  * filename. Two wallets sharing the same SAF folder write to distinct
  * files — neither overwrites the other.
  */
-export function getSafBackupFilename(fingerprint: string | null): string {
-    return fingerprint ? `ark-backup-${fingerprint}.cbark` : 'ark-backup.cbark';
+export function getSafBackupFilename(
+    fingerprint: string | null,
+    instance?: string | null,
+): string {
+    return buildArkBackupFilename(fingerprint, instance);
 }
 
 /**
@@ -289,7 +294,11 @@ export function getSafBackupFilename(fingerprint: string | null): string {
  *
  * Returns the file URI on success.
  */
-export async function writeArkBackupToSaf(blob: string, fingerprint: string): Promise<string> {
+export async function writeArkBackupToSaf(
+    blob: string,
+    fingerprint: string,
+    instance?: string | null,
+): Promise<string> {
     if (Platform.OS !== 'android') {
         throw Object.assign(new Error('SAF backup only on Android'), { code: 'NATIVE_NOT_LOADED' });
     }
@@ -301,7 +310,10 @@ export async function writeArkBackupToSaf(blob: string, fingerprint: string): Pr
     if (!saved) {
         throw Object.assign(new Error('No SAF folder configured'), { code: 'NOT_CONFIGURED' });
     }
-    const filename = getSafBackupFilename(fingerprint);
+    // Per-wallet AND per-device. A SAF folder can be a synced folder shared
+    // by two devices holding the same wallet, in which case both resolved the
+    // same filename and the later write replaced the earlier device's file.
+    const filename = getSafBackupFilename(fingerprint, instance);
     return native.writeBackupNamed(saved, filename, blob);
 }
 
@@ -479,13 +491,17 @@ export async function findSafBackupByFingerprint(fingerprint: string): Promise<s
  * Caller is responsible for the decrypt/sanity-check step on the
  * returned blob — that needs the mnemonic which lives one level up.
  */
-export async function writeAndReadbackSafBackup(blob: string, fingerprint: string): Promise<{
+export async function writeAndReadbackSafBackup(
+    blob: string,
+    fingerprint: string,
+    instance?: string | null,
+): Promise<{
     written: { ok: true; uri: string } | { ok: false; classification: SafErrorClass; error: string };
     readback: string | null;
 }> {
     let writtenUri: string;
     try {
-        writtenUri = await writeArkBackupToSaf(blob, fingerprint);
+        writtenUri = await writeArkBackupToSaf(blob, fingerprint, instance);
     } catch (err: any) {
         return {
             written: {

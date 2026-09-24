@@ -1,5 +1,10 @@
 import { Platform } from 'react-native';
 
+import {
+    pickBestBackupCandidate,
+    type BackupCandidate,
+} from './backupCandidates';
+
 import RNFS from 'react-native-fs';
 
 import {
@@ -111,9 +116,18 @@ export async function lookupArkBackupInLocalDocuments(
         if (__DEV__) console.log('[Ark/find-local] fast-path read failed:', err);
     }
 
-    // Step 2: scan every `.cbark` in Documents, peek headers.
+    // Step 2: scan every `.cbark` in Documents, peek headers, collect ALL
+    // matches and rank them.
+    //
+    // This used to return the first fingerprint match it found. That was
+    // correct while one seed had at most one file per destination. Now that
+    // each device writes its own `ark-backup-<fp>-<instance>.cbark`, one seed
+    // can legitimately have several here, and enumeration order is not a
+    // preference. See ./backupCandidates for the ranking and, importantly,
+    // for which signals do NOT indicate a more complete backup.
     try {
         const entries = await RNFS.readDir(RNFS.DocumentDirectoryPath);
+        const candidates: BackupCandidate<string>[] = [];
         for (const e of entries) {
             if (!e.isFile() || !e.name.toLowerCase().endsWith('.cbark')) continue;
             // Skip the legacy v1 path here — handled below as a typed candidate.
@@ -133,8 +147,18 @@ export async function lookupArkBackupInLocalDocuments(
                 continue;
             }
             if (header.fingerprint === fingerprint) {
-                return { kind: 'matched', blob };
+                candidates.push({ name: e.name, header, payload: blob });
             }
+        }
+        const best = pickBestBackupCandidate(candidates);
+        if (best) {
+            if (__DEV__ && candidates.length > 1) {
+                console.log(
+                    `[Ark/find-local] ${candidates.length} backups match this seed;`,
+                    'using', best.name,
+                );
+            }
+            return { kind: 'matched', blob: best.payload };
         }
     } catch (err) {
         if (__DEV__) console.log('[Ark/find-local] readDir failed:', err);
@@ -214,6 +238,7 @@ async function scanICloudContainerForBackup(
     // or copied in from another device via iCloud Drive.
     try {
         const entries = await RNFS.readDir(containerDir);
+        const candidates: BackupCandidate<string>[] = [];
         for (const e of entries) {
             if (!e.isFile() || !e.name.toLowerCase().endsWith('.cbark')) continue;
             if (e.name === 'ark-backup.cbark' || e.name === 'cypher-box-ark-backup.cbark') {
@@ -229,8 +254,21 @@ async function scanICloudContainerForBackup(
             const header = peekBackupHeader(blob);
             if (!header) continue;
             if (header.fingerprint === fingerprint) {
-                return { kind: 'matched', blob };
+                candidates.push({ name: e.name, header, payload: blob });
             }
+        }
+        // The iCloud container is where two iPhones on one Apple ID actually
+        // meet, so this is the scan most likely to see more than one file for
+        // a seed once per-device names are in the wild.
+        const best = pickBestBackupCandidate(candidates);
+        if (best) {
+            if (__DEV__ && candidates.length > 1) {
+                console.log(
+                    `[Ark/find-icloud] ${candidates.length} backups match this seed;`,
+                    'using', best.name,
+                );
+            }
+            return { kind: 'matched', blob: best.payload };
         }
     } catch (err) {
         if (__DEV__) console.log('[Ark/find-icloud] readDir failed:', err);
