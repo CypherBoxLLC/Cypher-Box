@@ -86,14 +86,14 @@ export default function CopyInvoice({ route }: Props) {
                            COPY: Bam finalizes. */
                         <View style={styles.arkoorBanner}>
                             <Text bold style={styles.arkoorBannerTitle}>
-                                Stay in the app until this arrives
+                                Custodial until refreshed
                             </Text>
                             <Text style={styles.arkoorBannerBody}>
-                                A payment received here lands as a capsule that the Ark server
-                                has not put into a round yet, and until it does, the payment
-                                depends on that server. Cypher Box refreshes it into a round as
-                                soon as it arrives, which can take up to about an hour. Keep
-                                Cypher Box open until that finishes.
+                                A Lightning payment into your Bark vault should become
+                                spendable when it arrives, but it has no unilateral exit to
+                                Bitcoin until it finishes refreshing, which takes about 60
+                                minutes. Until then the Ark server could sweep it. Keep the
+                                app open.
                             </Text>
                         </View>
                     )}
