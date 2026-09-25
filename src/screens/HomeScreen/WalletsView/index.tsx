@@ -1,4 +1,5 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
+import RefreshWaitBanner from "@Cypher/components/RefreshWaitBanner";
 import { Text } from "@Cypher/component-library";
 import { Refresh } from "@Cypher/assets/images";
 import { ARK_REFRESH_MIN_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
@@ -81,6 +82,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         arkIosBackupReminderActive,
         arkBalanceDetail,
         arkRefreshStuck,
+        arkPendingRoundFirstSeen,
         setArkPendingOnchainRecoverOpen,
         arkExitFeeReserveSats,
         setArkExitFeeReserveSats,
@@ -577,6 +579,19 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // logic as if Ark were live, breaking the layout.
     const hasArkWallet = FEATURE_ARK_ENABLED && (allBTCWallets as string[]).includes('ARK') && isArkAuth;
     const useSharedButtons = hasLightningWallet && hasArkWallet;
+
+    // Refresh-round-in-flight signal for the wait banner below.
+    //
+    // A round takes up to an hour and needs the app open for the completion
+    // sync to land, so this is exactly the wrong thing to show only inside the
+    // Capsules tab. Same inputs the Capsules tab uses: pendingInRoundSats for
+    // the round itself, and the per-round first-seen map for the countdowns.
+    const arkPendingInRoundSats = Number(arkBalanceDetail?.pendingInRoundSats ?? 0);
+    // Subscribed, not a getState() snapshot: a round starting or finishing has
+    // to re-render this, or the banner's line count goes stale until some
+    // unrelated state change happens to re-render the screen.
+    const arkRoundStarts = Object.values(arkPendingRoundFirstSeen ?? {}) as number[];
+    const arkRefreshInFlight = arkPendingInRoundSats > 0;
     // Strike + CoinOS + Ark all connected. The CircularView slide already
     // exposes a Strike↔CoinOS swap between its two circles, and hopping
     // between Lightning and Ark from the Ark slide is what the swap
@@ -1064,6 +1079,36 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 </Animated.View>
             )}
 
+            {/* Refresh-in-flight wait banner, the same component the Capsules
+                tab shows. Sits below the stuck banner in precedence because
+                stuck is the escalation of this very condition, so the two must
+                never appear together. Cancel is not wired here: the recovery
+                actions live on the Capsules tab, so the banner's stuck state
+                routes there rather than duplicating the cancel path. */}
+            {useSharedButtons && !arkRefreshStuck && arkRefreshInFlight && (
+                <Animated.View
+                    pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
+                    style={{
+                        position: 'absolute',
+                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
+                        left: 0,
+                        right: 40,
+                        opacity: buttonsOpacity,
+                        transform: [{ translateX: buttonsTranslateX }],
+                    }}
+                >
+                    <RefreshWaitBanner
+                        roundStarts={arkRoundStarts}
+                        cancelling={false}
+                        onCancel={() => dispatchNavigate('CheckingAccountNew', {
+                            wallet: arkWallet,
+                            matchedRate,
+                            initialTab: 'capsules',
+                        })}
+                    />
+                </Animated.View>
+            )}
+
             {/* iOS backup-snapshot reminder — funds-safety nudge for users
                 who satisfied the create-flow gate via manual share+confirm
                 without iCloud Drive verified. Takes the same absolute slot
@@ -1071,7 +1116,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 user can lose funds if they uninstall before re-exporting,
                 whereas the bg-refresh status is informational. Tap → Ark
                 settings tab, where the dismiss + re-export actions live. */}
-            {useSharedButtons && !arkRefreshStuck && iosBackupReminderVisible && (
+            {useSharedButtons && !arkRefreshStuck && !arkRefreshInFlight && iosBackupReminderVisible && (
                 <Animated.View
                     pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
                     style={{
@@ -1116,7 +1161,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     slot (priority: funds-safety nudge over info text)
                 Tap → opens the Ark Capsules screen so the user can drill
                 into the bg-refresh settings or manually retry. */}
-            {useSharedButtons && !arkRefreshStuck && !iosBackupReminderVisible && bgRefreshStatus && (() => {
+            {useSharedButtons && !arkRefreshStuck && !arkRefreshInFlight && !iosBackupReminderVisible && bgRefreshStatus && (() => {
                 const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
                 const linkText = (bgRefreshStatus as any).linkText as string | undefined;
                 const tapTab = (bgRefreshStatus as any).tapTab as number | undefined;

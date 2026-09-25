@@ -20,6 +20,8 @@ import { colors } from "@Cypher/style-guide";
 import SimpleToast from "react-native-simple-toast";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Image, Platform, TouchableOpacity, View } from "react-native";
+
+import RefreshWaitBanner from "@Cypher/components/RefreshWaitBanner";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import styles from "./styles";
 
@@ -74,6 +76,7 @@ export default function ArkWallet({
         arkLastSyncedAt,
         arkSyncFailStreak,
         arkRefreshingVtxoIds,
+        arkPendingRoundFirstSeen,
         arkBgRefreshEnabled,
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
@@ -352,6 +355,10 @@ export default function ArkWallet({
     const pendingRoundSats = refreshingIds.size > 0
         ? arkVtxos.reduce((sum, v) => (refreshingIds.has(v.id) ? sum + v.sats : sum), 0)
         : (arkBalanceDetail?.pendingInRoundSats ?? 0);
+
+    // Per-round first-seen timestamps, for the wait banner's countdowns. Same
+    // source the Capsules tab and WalletsView use, so all three agree.
+    const arkRoundStarts = Object.values(arkPendingRoundFirstSeen ?? {}) as number[];
 
     // Count of capsules mid-round, for "Refreshing N capsules · X sats". Falls
     // back to 1 when sats are in a round but no tracked id matches.
@@ -689,6 +696,27 @@ export default function ArkWallet({
                         shared-mode — Bam can surface them elsewhere later. */}
                     {!hideActionButtons && (
                         <View style={{ minHeight: 40, justifyContent: "center" }}>
+                            {/* Refresh-in-flight wait banner, for the Bark
+                                Vault ALONE layout.
+                                WalletsView renders the same component for the
+                                shared-button layouts (Ark with Strike, Ark with
+                                CoinOS), where the row is absolutely positioned
+                                and the banner has to be placed against that
+                                geometry. Here the card owns its own buttons, so
+                                the banner sits in the normal flow beneath them.
+                                Two call sites, one component; the alternative
+                                was one call site that is correctly positioned in
+                                only one of the three combinations.
+                                Below the stuck banner in priority for the same
+                                reason as on WalletsView: stuck is the
+                                escalation of this condition, never a peer. */}
+                            {!isLoading && !arkRefreshStuck && pendingRoundCount > 0 && (
+                                <RefreshWaitBanner
+                                    roundStarts={arkRoundStarts}
+                                    cancelling={false}
+                                    onCancel={handleStuckRecovery}
+                                />
+                            )}
                             {!isLoading && homeMessage && (
                                 <Text h4 style={styles.alert}>
                                     {homeMessage}

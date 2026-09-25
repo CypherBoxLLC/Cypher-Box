@@ -1,7 +1,7 @@
 import { CoinOS, CoinOSSmall, CoinOs, Electricity, Second, Strike2, StrikeFull } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
-import { formatNumber, formatSats, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
+import { formatCapsuleAmount, formatNumber, formatSats, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 import MaskedView from "@react-native-masked-view/masked-view";
 import React, { useContext, useEffect, useRef } from "react";
@@ -131,8 +131,11 @@ export default function Card({ onPress,
     // below the balance — users can already see how many shapes are
     // pulsing. Just show the sats being refreshed. "+" prefix reads as
     // "incoming/about-to-be-spendable" alongside the balance line.
+    // Compact, via the same formatter the balance above it uses. The long form
+    // ("+ Refreshing 120,000 sats") overflowed the card on a 95k-plus round,
+    // which is exactly the size where a user most wants to see this line.
     const refreshingText = refreshingInfo
-        ? `+ Refreshing ${refreshingInfo.sats.toLocaleString()} sats`
+        ? `+ Refreshing ${formatCapsuleAmount(refreshingInfo.sats)}`
         : null;
     const showRefreshingInsteadOfBalance =
         refreshingInfo !== null && (Number(balance) || 0) === 0;
