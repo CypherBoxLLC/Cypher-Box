@@ -311,12 +311,15 @@ export async function refreshArkVtxosDelegated(
             '[Ark refresh] refreshVtxosDelegated() accepted in',
             Math.round((Date.now() - t0) / 1000), 's',
         );
-        // "finished" here = the ASP accepted the delegation, NOT that the VTXO
-        // is refreshed. Actual completion is observed on the next sync.
+        // The ASP accepted the delegation. The VTXO is NOT refreshed yet, and
+        // real completion is observed on a later sync when the old capsule
+        // leaves the wallet. This used to record result: 'success', which the
+        // activity log rendered as "Refresh complete" while the capsules were
+        // still visibly refreshing.
         recordEvent({
             kind: 'ark-refresh-finished',
             correlationId,
-            result: 'success',
+            result: 'accepted',
             durationMs: Date.now() - t0,
         });
         // bark 0.6.0: the submitted VTXOs stay `Spendable` (no longer marked
