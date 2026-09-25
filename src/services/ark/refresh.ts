@@ -1,4 +1,5 @@
 import { getArkWalletHandle, getCachedArkMnemonic } from './walletHandle';
+import { computeRefreshingSweep } from './refreshingStaleness';
 import { ensureArkWalletHandleReady } from './restore';
 import { assertNoActiveArkExitAsync } from './exit';
 import { fetchArkBalance } from './balance';
@@ -310,12 +311,15 @@ export async function refreshArkVtxosDelegated(
             '[Ark refresh] refreshVtxosDelegated() accepted in',
             Math.round((Date.now() - t0) / 1000), 's',
         );
-        // "finished" here = the ASP accepted the delegation, NOT that the VTXO
-        // is refreshed. Actual completion is observed on the next sync.
+        // The ASP accepted the delegation. The VTXO is NOT refreshed yet, and
+        // real completion is observed on a later sync when the old capsule
+        // leaves the wallet. This used to record result: 'success', which the
+        // activity log rendered as "Refresh complete" while the capsules were
+        // still visibly refreshing.
         recordEvent({
             kind: 'ark-refresh-finished',
             correlationId,
-            result: 'success',
+            result: 'accepted',
             durationMs: Date.now() - t0,
         });
         // bark 0.6.0: the submitted VTXOs stay `Spendable` (no longer marked
@@ -612,4 +616,41 @@ export async function cancelArkPendingRound(roundId: number): Promise<void> {
         );
         throw err;
     }
+}
+
+// --- Refreshing-animation staleness net -------------------------------------
+
+/**
+ * Drop ids that have been marked refreshing for implausibly long.
+ *
+ * The decision lives in `refreshingStaleness` and is pure; this is the store
+ * read/write around it. Touches no native call and no network, which is the
+ * point: every other path that clears `arkRefreshingVtxoIds` runs inside the
+ * sync tick, behind a handle check and a chain of UniFFI awaits, so all of
+ * them are unavailable in exactly the situation this is here to survive.
+ *
+ * Returns the number of ids dropped. A non-zero return means the sync loop
+ * failed to reconcile for hours and is itself the fault worth chasing.
+ */
+export function sweepStaleArkRefreshingVtxos(): number {
+    const store = useAuthStore.getState();
+    const tracked = store.arkRefreshingVtxoIds ?? [];
+    if (tracked.length === 0) return 0;
+
+    const { kept, dropped, maxAgeMs } = computeRefreshingSweep({
+        tracked,
+        since: store.arkRefreshingVtxoSince ?? {},
+        roundIntervalSecs: store.arkRoundIntervalSecs,
+        now: Date.now(),
+    });
+
+    if (dropped > 0) {
+        console.warn(
+            '[Ark refresh] dropping', dropped, 'VTXO id(s) marked refreshing for over',
+            Math.round(maxAgeMs / 3_600_000), 'h. The sync loop has not reconciled them,',
+            'which is the actual fault. Capsule state is now whatever the wallet reports.',
+        );
+        store.setArkRefreshingVtxoIds(kept);
+    }
+    return dropped;
 }

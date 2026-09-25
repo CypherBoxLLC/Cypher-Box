@@ -511,6 +511,51 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   /** What the control should SAY, which is whether reminders can arrive. */
   const remindersEffectivelyOn = arkBgRefreshEnabled && osNotifPermission !== false;
 
+  const arkAutoRefreshEnabled = useAuthStore((s) => s.arkAutoRefreshEnabled);
+  const setArkAutoRefreshEnabled = useAuthStore((s) => s.setArkAutoRefreshEnabled);
+
+  /**
+   * Turning automatic refresh OFF is confirmed; turning it back ON is not.
+   *
+   * Off is the direction that can cost the user their funds, and the deadline
+   * it hands them is not the one they will assume. Expiry is not the last safe
+   * moment: an emergency exit has to CONFIRM on chain before the capsule
+   * expires, which is why the sweep itself refuses to act inside the last 28
+   * hours. So the copy names a day of margin rather than saying "before it
+   * expires".
+   *
+   * If reminders are off too, that is called out explicitly. Both off means
+   * nothing in the app will tell them to act, and that combination should not
+   * be reachable without being told.
+   */
+  const handleToggleAutoRefresh = (next: boolean) => {
+    if (next) {
+      setArkAutoRefreshEnabled(true);
+      return;
+    }
+    const remindersAlsoOff = !remindersEffectivelyOn;
+    Alert.alert(
+      "Turn off automatic refresh?",
+      "Cypher Box will stop refreshing your capsules for you, so you will need "
+      + "to open the app and refresh them yourself. Leave at least two days "
+      + "before a capsule expires. An emergency exit has to confirm on the "
+      + "Bitcoin network before expiry, so acting in the final hours can leave "
+      + "you with no way out."
+      + (remindersAlsoOff
+        ? " Reminders are off as well, so nothing will warn you."
+        : " Reminders stay on and will still warn you at 2 days, 24 hours, 12 hours and 6 hours."),
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Turn off",
+          style: "destructive",
+          onPress: () => setArkAutoRefreshEnabled(false),
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
   const handleToggleBgRefresh = async (next: boolean) => {
     if (togglingBgRefresh) return;
     setTogglingBgRefresh(true);
@@ -992,8 +1037,22 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // (arkBalanceDetail.onchainBoardingSats, refreshed each sync tick) meets it.
   // `null` while the first computation is in flight.
   const [recommendedReserveSats, setRecommendedReserveSats] = useState<number | null>(null);
+  // Why the recommendation came out the way it did. `recommendedSats` alone
+  // cannot distinguish "nothing is worth exiting at current fee rates" from
+  // "your capsules could not be read", and those need opposite copy: the first
+  // is a normal state for a small wallet, the second is a fault.
+  const [reserveDetail, setReserveDetail] = useState<{
+    vtxoCount: number;
+    excludedCount: number;
+    excludedSats: number;
+    feeRateSatPerVb: number;
+  } | null>(null);
   const [exitFundingOpen, setExitFundingOpen] = useState(false);
-  const [fundingTab, setFundingTab] = useState<'receive' | 'wallet' | 'convert'>('receive');
+  // Opens on Convert, the path a user can complete with what they already
+  // hold. Falls back to Receive when Convert is unavailable, see the guard
+  // effect below; that is the ASP-independent path, so it is the right landing
+  // place whenever the server is the problem.
+  const [fundingTab, setFundingTab] = useState<'receive' | 'wallet' | 'convert'>('convert');
   const [onchainFundAddr, setOnchainFundAddr] = useState<string | null>(null);
   // ASP reachability for the CONVERT (cooperative-offboard) tab. null = probing.
   const [aspReachable, setAspReachable] = useState<boolean | null>(null);
@@ -1018,6 +1077,23 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     recommendedSats: recommendedReserveSats,
   });
   const exitFeeGated = reserveTargetSats > 0 && onchainReserveSats < reserveTargetSats;
+  /**
+   * Triage priced every capsule out of an exit: each one would cost more in
+   * miner fees than it holds, so the plan selects nothing and the reserve comes
+   * back 0.
+   *
+   * This is a real state for a small wallet, not a fault, and Emergency Exit
+   * must be DISABLED in it. Leaving it tappable offered a trustless escape that
+   * would spend the reserve and return less than it cost, and the only honest
+   * answer is that the cooperative paths are the ones still open.
+   *
+   * Distinguished from "nothing to exit at all" by there being exclusions: a
+   * wallet with no capsules has nothing to say.
+   */
+  const exitNotWorthFees =
+    recommendedReserveSats !== null &&
+    reserveTargetSats <= 0 &&
+    (reserveDetail?.excludedCount ?? 0) > 0;
   const exitFeeShortfallSats = Math.max(0, reserveTargetSats - onchainReserveSats);
   // The user armed a target below the recommended safe amount (warn them).
   const reserveBelowRecommended =
@@ -1150,6 +1226,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         const r = await computeExitFeeReserveSats();
         if (!cancelled) {
           setRecommendedReserveSats(r.recommendedSats);
+          setReserveDetail({
+            vtxoCount: r.vtxoCount,
+            excludedCount: r.excludedCount,
+            excludedSats: r.excludedSats,
+            feeRateSatPerVb: r.feeRateSatPerVb,
+          });
           // Persist it: auto-board runs in the sync loop with no access to this
           // screen, and without the estimate it would hold only the armed
           // reserve and board the rest away.
@@ -1190,12 +1272,20 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     };
   }, [exitFundingOpen]);
 
-  // Convert is unavailable mid-exit (cooperative offboard, ASP-gated), and its
-  // tab button disappears. If that was the selected tab the sheet would render
-  // nothing at all, so fall back to the path that always works.
+  // Convert is the default tab, and there are two ways it can be unusable:
+  // mid-exit its button is removed entirely (so the sheet would render
+  // nothing), and with the ASP unreachable its action is disabled (so the
+  // sheet would render a dead form). Both fall back to Receive, which needs
+  // no server.
+  //
+  // `aspReachable === null` means the probe is still running, and that
+  // deliberately does NOT fall back: the common case is that it comes back
+  // reachable, and flipping the tab away and then back would be worse than a
+  // moment on the tab the user asked to land on.
   useEffect(() => {
-    if (arkExitInProgress && fundingTab === 'convert') setFundingTab('receive');
-  }, [arkExitInProgress, fundingTab]);
+    if (fundingTab !== 'convert') return;
+    if (arkExitInProgress || aspReachable === false) setFundingTab('receive');
+  }, [arkExitInProgress, aspReachable, fundingTab]);
 
   // Debounced fee estimate for the CONVERT tab. Skipped when the ASP is known
   // unreachable (the offboard would fail) or the amount is empty/invalid.
@@ -1233,7 +1323,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     const current = (arkExitFeeReserveSats ?? 0) > 0 ? arkExitFeeReserveSats : (recommendedReserveSats ?? 0);
     if (current > 0) setArkExitFeeReserveSats(current);
     setReserveTargetInput(current > 0 ? String(current) : '');
-    setFundingTab('receive');
+    // Open on Convert. `openExitFunding` resets the tab on every open, so the
+    // useState initial value alone would only apply to the very first one.
+    // Mid-exit it is not offered at all, so land on Receive directly rather
+    // than showing Convert for a frame and letting the guard bounce it.
+    setFundingTab(arkExitInProgress ? 'receive' : 'convert');
     setConvertAmount(String(Math.max(0, current - onchainReserveSats)));
     setConvertEst(null);
     setAspReachable(null);
@@ -1912,6 +2006,120 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     <ScrollView style={styles.flex} contentContainerStyle={{ paddingBottom: 40 }}>
       <RNAnimated.View style={[styles.main, { paddingHorizontal: 24 }]}>
       {view === 'backup' && (<>
+        {/* Background VTXO refresh toggle + Emergency Exit + Delete Vault.
+            Moved here from the Settings tab so day-to-day wallet operations
+            sit next to the balance card. The Settings tab now only holds
+            Seed Phrase + Ark backup file, true one-time setup. */}
+        <View style={{ marginTop: 24 }}>
+          <View
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              borderRadius: 12,
+              backgroundColor: '#1a1a1a',
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <RNText
+                style={{
+                  fontSize: 14,
+                  fontWeight: '700',
+                  color: colors.white,
+                  flex: 1,
+                  marginRight: 12,
+                }}
+              >
+                Notify me before capsules expire
+              </RNText>
+              <Switch
+                // The EFFECTIVE state, not the stored preference. A green
+                // switch has to mean "a reminder will reach you".
+                value={remindersEffectivelyOn}
+                onValueChange={handleToggleBgRefresh}
+                disabled={togglingBgRefresh}
+                trackColor={{ false: '#3a3a3a', true: colors.green }}
+                thumbColor={colors.white}
+              />
+            </View>
+            <Text
+              style={{
+                fontSize: 12,
+                color: remindersEffectivelyOn ? '#888' : colors.redLight,
+                marginTop: 6,
+                lineHeight: 16,
+              }}
+            >
+              {/* Three states, because "the user wants reminders" and
+                  "reminders can arrive" are different facts and only the
+                  second one protects anybody. COPY: Bam finalizes. */}
+              {remindersBlockedByOs
+                ? '⚠ Reminders are blocked. You turned them on, but notifications are not allowed for Cypher Box in system settings, so none will arrive. Tap the switch to fix this.'
+                : remindersEffectivelyOn
+                  ? 'Cypher Box sends 6 reminders before any capsule expires (7 days, 4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
+                  : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
+            </Text>
+
+          </View>
+
+          {/* Automatic refresh. Separate card from reminders on purpose: one
+              of these spends money and the other does not, and a single
+              switch covering both would make "stop spending" and "stop
+              warning me" the same action. COPY: Bam finalizes. */}
+          <View
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              borderRadius: 12,
+              backgroundColor: '#1a1a1a',
+              marginTop: 12,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <RNText
+                style={{
+                  fontSize: 14,
+                  fontWeight: '700',
+                  color: colors.white,
+                  flex: 1,
+                  marginRight: 12,
+                }}
+              >
+                Refresh VTXOs when app is open
+              </RNText>
+              <Switch
+                value={arkAutoRefreshEnabled}
+                onValueChange={handleToggleAutoRefresh}
+                trackColor={{ false: '#3a3a3a', true: colors.green }}
+                thumbColor={colors.white}
+              />
+            </View>
+            <Text
+              style={{
+                fontSize: 12,
+                color: arkAutoRefreshEnabled ? '#888' : colors.redLight,
+                marginTop: 6,
+                lineHeight: 16,
+              }}
+            >
+              {arkAutoRefreshEnabled
+                ? 'While Cypher Box is open, capsules nearing expiry (7 days or below) are refreshed for you and cost 0.2% in fees. Refreshing is free in the last two days, but waiting that long risks losing the exit window if the ASP goes offline.'
+                : '⚠ Automatic refresh is OFF. Refresh your capsules yourself, and leave at least two days before expiry. An emergency exit has to confirm on the Bitcoin network before a capsule expires.'}
+            </Text>
+          </View>
+        </View>
+
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
             Seed Phrase (1/2)
@@ -2276,68 +2484,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
       </>)}
       {view === 'actions' && (<>
-        {/* Background VTXO refresh toggle + Emergency Exit + Delete Vault.
-            Moved here from the Settings tab so day-to-day wallet operations
-            sit next to the balance card. The Settings tab now only holds
-            Seed Phrase + Ark backup file — true one-time setup. */}
-        <View style={{ marginTop: 24 }}>
-          <View
-            style={{
-              paddingVertical: 10,
-              paddingHorizontal: 14,
-              borderRadius: 12,
-              backgroundColor: '#1a1a1a',
-            }}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <RNText
-                style={{
-                  fontSize: 14,
-                  fontWeight: '700',
-                  color: colors.white,
-                  flex: 1,
-                  marginRight: 12,
-                }}
-              >
-                Notify me before capsules expire
-              </RNText>
-              <Switch
-                // The EFFECTIVE state, not the stored preference. A green
-                // switch has to mean "a reminder will reach you".
-                value={remindersEffectivelyOn}
-                onValueChange={handleToggleBgRefresh}
-                disabled={togglingBgRefresh}
-                trackColor={{ false: '#3a3a3a', true: colors.green }}
-                thumbColor={colors.white}
-              />
-            </View>
-            <Text
-              style={{
-                fontSize: 12,
-                color: remindersEffectivelyOn ? '#888' : colors.redLight,
-                marginTop: 6,
-                lineHeight: 16,
-              }}
-            >
-              {/* Three states, because "the user wants reminders" and
-                  "reminders can arrive" are different facts and only the
-                  second one protects anybody. COPY: Bam finalizes. */}
-              {remindersBlockedByOs
-                ? '⚠ Reminders are blocked. You turned them on, but notifications are not allowed for Cypher Box in system settings, so none will arrive. Tap the switch to fix this.'
-                : remindersEffectivelyOn
-                  ? 'Cypher Box sends 5 reminders before any capsule expires (4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
-                  : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
-            </Text>
-
-          </View>
-        </View>
-
+        {/* Emergency Exit + Delete Vault. The two notification toggles that
+            used to sit here moved to the Settings tab: they are configuration
+            a user sets once, not a day-to-day operation, and putting them
+            beside Emergency Exit invited mis-taps on the one control that
+            cannot be undone. */}
         {/* Exit-in-progress status panel replaces both action buttons.
             Shows a single source of truth for what's happening + the
             destination the user picked. Auto-claim runs from useArkSync,
@@ -2511,12 +2662,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 (exitFeeGated). When gated, the amber block below explains why
                 and offers "Fund exit fees" + a "Start exit anyway" break-glass. */}
             <GradientView
-              style={{ marginTop: 30, alignSelf: 'center', height: 38, width: widths * 0.5, shadowColor: '#040404', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.8, shadowRadius: 16, elevation: 8, opacity: (exitStarting || recommendedReserveSats === null || exitFeeGated) ? 0.45 : 1 }}
+              style={{ marginTop: 30, alignSelf: 'center', height: 38, width: widths * 0.5, shadowColor: '#040404', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.8, shadowRadius: 16, elevation: 8, opacity: (exitStarting || recommendedReserveSats === null || exitFeeGated || exitNotWorthFees) ? 0.45 : 1 }}
               linearGradientStyle={{ shadowColor: '#27272C', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
               topShadowStyle={{ shadowOffset: { width: 2, height: 2 }, shadowRadius: 2, shadowColor: colors.ark?.shadowTopNew ?? '#E85C5A', borderRadius: 24, height: 38, width: widths * 0.5, justifyContent: 'center', alignItems: 'center' }}
               bottomShadowStyle={{ shadowOffset: { width: -2, height: -2 }, shadowRadius: 2, shadowOpacity: 1, shadowColor: '#030303', borderRadius: 24, height: 38, width: widths * 0.5, justifyContent: 'center', position: 'absolute' }}
               linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.5, justifyContent: 'center', alignItems: 'center' }}
-              onPress={(exitStarting || recommendedReserveSats === null || exitFeeGated) ? undefined : () => setExitPickerOpen(true)}
+              onPress={(exitStarting || recommendedReserveSats === null || exitFeeGated || exitNotWorthFees) ? undefined : () => setExitPickerOpen(true)}
             >
               <Text h3 bold center style={{ color: colors.ark?.light ?? colors.pink.default }}>
                 {exitStarting
@@ -2526,6 +2677,46 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     : 'Emergency Exit'}
               </Text>
             </GradientView>
+
+            {/* Reserve status, ALWAYS shown.
+                Everything below this is conditional on `exitFeeGated`, so a
+                wallet whose reserve is funded, or whose reserve could not be
+                sized at all, showed a bare Emergency Exit button and said
+                nothing about fees or about the separate on-chain wallet they
+                come out of. That wallet is invisible everywhere else in the
+                app, so "nothing shown" read as "nothing needed".
+                COPY: Bam finalizes. */}
+            <View style={{ marginTop: 12, marginHorizontal: 24, padding: 10, borderRadius: 10, backgroundColor: exitNotWorthFees ? 'rgba(255, 200, 80, 0.06)' : '#131313', borderWidth: 1, borderColor: exitNotWorthFees ? 'rgba(255, 200, 80, 0.30)' : '#2A2A2A' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ fontSize: 12, color: '#888' }}>Exit fee wallet (on-chain)</Text>
+                <Text bold style={{ fontSize: 12, color: colors.white }}>
+                  {onchainReserveSats.toLocaleString()} sats
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12, color: '#888' }}>Reserve needed</Text>
+                <Text bold style={{ fontSize: 12, color: (exitFeeGated || exitNotWorthFees) ? '#FFD54F' : colors.green }}>
+                  {recommendedReserveSats === null
+                    ? 'checking…'
+                    : reserveTargetSats > 0
+                      ? `${reserveTargetSats.toLocaleString()} sats`
+                      : exitNotWorthFees
+                        ? 'more than the balance'
+                        : 'none needed'}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: '#777', marginTop: 6, lineHeight: 16 }}>
+                {recommendedReserveSats === null
+                  ? 'Sizing the reserve from your capsules. Emergency Exit unlocks when this finishes.'
+                  : reserveTargetSats <= 0
+                    ? (exitNotWorthFees && reserveDetail
+                        ? `Your balance is too small to exit on chain. ${reserveDetail.excludedCount === 1 ? 'Your capsule holds' : `Your ${reserveDetail.excludedCount} capsules hold`} ${reserveDetail.excludedSats.toLocaleString()} sats, which is less than the Bitcoin miner fees an exit would cost${reserveDetail.feeRateSatPerVb > 0 ? ` at ${reserveDetail.feeRateSatPerVb} sat/vB` : ''}. Emergency Exit is turned off because it would cost you more than it recovers. Only the cooperative paths are open: spend over Lightning, or Withdraw on chain while the Ark server is reachable.`
+                        : 'There are no capsules to exit, so no reserve is needed.')
+                    : exitFeeGated
+                      ? `Short by ${exitFeeShortfallSats.toLocaleString()} sats. An exit pays Bitcoin miner fees from this separate wallet, not from your Ark balance.`
+                      : 'Funded. An exit pays Bitcoin miner fees from this separate wallet, not from your Ark balance.'}
+              </Text>
+            </View>
 
             {/* Fee-funding gate: on-chain fee wallet is short. Explain, offer
                 "Fund exit fees", and a low-emphasis break-glass to start anyway
@@ -3008,13 +3199,23 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         </Modal>
 
         {/* Fund-exit-fees modal. Tops up the on-chain (BDK) wallet that pays
-            the unilateral-exit CPFP fees. Two paths:
-              Receive Bitcoin (primary, ASP-independent): deposit external BTC
-                to the on-chain address; the armed reserve keeps it on-chain
+            the unilateral-exit CPFP fees. Three paths, in tab order:
+              Convert from balance: cooperative offboard from Ark. Listed
+                first because it is the one a user can do with what they
+                already hold, rather than having to source outside sats. It
+                needs the ASP, so it is disabled when unreachable and absent
+                entirely while an exit is in flight, and it is best done ahead
+                of time rather than as an at-outage rescue.
+              Receive Bitcoin: deposit external BTC to the on-chain address.
+                ASP-independent, so this is the one that still works when the
+                server is gone. The armed reserve keeps the deposit on-chain
                 (sync.ts won't board it away) and the gate unlocks on confirm.
-              Convert from balance (secondary, precautionary): cooperative
-                offboard from Ark. Needs the ASP, so disabled when unreachable;
-                do it ahead of time, not as an at-outage rescue. */}
+              From a wallet: same as above, sourced from another Cypher Box
+                wallet.
+            NOTE: the default selected tab is still 'receive'. Tab order is a
+            discoverability choice; the default is a safety one, and opening on
+            a tab that is disabled whenever the ASP is unreachable would be
+            worse than opening on the path that always works. */}
         <Modal
           visible={exitFundingOpen}
           transparent
@@ -3052,7 +3253,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               <View style={{ flexDirection: 'row', marginBottom: 14, borderRadius: 10, backgroundColor: '#222', padding: 3 }}>
                 {((arkExitInProgress
                   ? (['receive', 'wallet'] as const)
-                  : (['receive', 'wallet', 'convert'] as const)) as readonly ('receive' | 'wallet' | 'convert')[]).map((tab) => {
+                  : (['convert', 'receive', 'wallet'] as const)) as readonly ('receive' | 'wallet' | 'convert')[]).map((tab) => {
                   const active = fundingTab === tab;
                   return (
                     <TouchableOpacity
@@ -3060,12 +3261,17 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       onPress={() => setFundingTab(tab)}
                       style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: active ? (colors.ark?.light ?? colors.pink.default) : 'transparent' }}
                     >
-                      <Text bold style={{ fontSize: 12, color: active ? '#1C1C1C' : '#AAA' }}>
+                      <Text bold style={{ fontSize: 12, color: active ? '#1C1C1C' : '#AAA', textAlign: 'center' }}>
+                        {/* Kept short enough not to wrap. "Convert from
+                            balance" took two lines in a third of the modal,
+                            which made the whole strip double height and the
+                            active pill read as oversized next to the others.
+                            The tab body below carries the full explanation. */}
                         {tab === 'receive'
                           ? 'Receive Bitcoin'
                           : tab === 'wallet'
                             ? 'From a wallet'
-                            : 'Convert from balance'}
+                            : 'Convert'}
                       </Text>
                     </TouchableOpacity>
                   );

@@ -124,6 +124,19 @@ export type AuthStateType = {
      */
     arkRefreshingVtxoIds: string[];
     /**
+     * When each id in `arkRefreshingVtxoIds` was first marked as refreshing,
+     * epoch ms. Maintained by `setArkRefreshingVtxoIds`, which stamps ids it
+     * has not seen before and drops stamps for ids that leave the list.
+     *
+     * Exists so the "Refreshing" animation can be bounded in pure JS. The only
+     * thing that clears an id is a prune deep inside the sync tick, and when
+     * that tick cannot complete (wedged native call, unreachable ASP) the
+     * animation used to run until the process was killed. An id with no stamp
+     * is treated as ancient, so anyone upgrading into this build while stuck
+     * in that state is cleared on first sweep.
+     */
+    arkRefreshingVtxoSince: Record<string, number>;
+    /**
      * Set when at least one ongoing round has been pending for longer than
      * `2 × roundIntervalSecs` (time-based detection). Drives the "Recover
      * stuck refresh" banner in ArkWallet. `null` means no stuck round
@@ -390,6 +403,23 @@ export type AuthStateType = {
     // scheduled expiry warnings and the sync-tick urgency sweep — see
     // src/services/ark/backgroundRefresh.ts for the policy.
     arkBgRefreshEnabled: boolean;
+    /**
+     * Whether the app may refresh capsules by itself while it is open.
+     *
+     * ON (default) is the behaviour that shipped before this flag existed: the
+     * foreground sweep refreshes any capsule whose remaining life is inside the
+     * band in foregroundSweep.ts, without asking, because letting a refreshable
+     * capsule expire is worse than spending the fee.
+     *
+     * OFF stops that one spend. It does NOT stop reminders, which are free and
+     * are the only thing left telling the user to act, and it does NOT stop the
+     * dust consolidation sweep, whose fee is a couple of sats and whose job is
+     * preventing permanent stranding rather than extending life.
+     *
+     * A user preference, so it survives a wallet being deleted and recreated,
+     * matching arkArkoorPromptEnabled and the threshold settings.
+     */
+    arkAutoRefreshEnabled: boolean;
     /** Timestamp (ms) of the last successful background round. Drives 12h rate limit + UI status copy. */
     arkBgRefreshLastSuccessAt: number | null;
     /** Outcome of the most recent attempt (success OR otherwise). UI surfaces failures only. */
@@ -546,6 +576,7 @@ export type AuthStateType = {
      */
     arkIosBackupReminderActive: boolean;
     setArkBgRefreshEnabled: (state: boolean) => void;
+    setArkAutoRefreshEnabled: (state: boolean) => void;
     setArkBgRefreshLastSuccessAt: (state: number | null) => void;
     setArkBgRefreshLastAttempt: (
         state: {
@@ -616,6 +647,7 @@ const createAuthStore = (
     arkBalanceDetail: null,
     arkVtxos: [],
     arkRefreshingVtxoIds: [],
+    arkRefreshingVtxoSince: {},
     arkRefreshStuck: null,
     arkPendingRoundFirstSeen: {},
     arkScheduledExpiryNotifs: {},
@@ -651,6 +683,7 @@ const createAuthStore = (
     // before this default flipped retain whatever value persisted to
     // disk under their previous preference.
     arkBgRefreshEnabled: true,
+    arkAutoRefreshEnabled: true,
     arkBgRefreshLastSuccessAt: null,
     arkBgRefreshLastAttempt: null,
     arkBgRefreshConsecutiveFailures: 0,
@@ -701,7 +734,17 @@ const createAuthStore = (
     setArkBalance: (state: number) => set({ arkBalance: state }),
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
-    setArkRefreshingVtxoIds: (ids: string[]) => set({ arkRefreshingVtxoIds: ids }),
+    setArkRefreshingVtxoIds: (ids: string[]) =>
+        set((s) => {
+            // Stamp ids we have not seen, keep existing stamps (so a re-set of
+            // the same id does not restart its clock), drop stamps for ids that
+            // are no longer tracked.
+            const now = Date.now();
+            const prev = s.arkRefreshingVtxoSince ?? {};
+            const next: Record<string, number> = {};
+            for (const id of ids) next[id] = prev[id] ?? now;
+            return { arkRefreshingVtxoIds: ids, arkRefreshingVtxoSince: next };
+        }),
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => set({ arkRefreshStuck: state }),
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => set({ arkPendingRoundFirstSeen: state }),
     setArkScheduledExpiryNotifs: (state: Record<string, number>) => set({ arkScheduledExpiryNotifs: state }),
@@ -745,6 +788,7 @@ const createAuthStore = (
     setWithdrawArkThreshold: (state: any) => set({ withdrawArkThreshold: state }),
     setReserveArkAmount: (state: number) => set({ reserveArkAmount: state }),
     setArkBgRefreshEnabled: (state: boolean) => set({ arkBgRefreshEnabled: state }),
+    setArkAutoRefreshEnabled: (state: boolean) => set({ arkAutoRefreshEnabled: state }),
     setArkBgRefreshLastSuccessAt: (state: number | null) => set({ arkBgRefreshLastSuccessAt: state }),
     setArkBgRefreshLastAttempt: (state) => set({ arkBgRefreshLastAttempt: state }),
     setArkBgRefreshConsecutiveFailures: (state: number) => set({ arkBgRefreshConsecutiveFailures: state }),
@@ -770,6 +814,7 @@ const createAuthStore = (
             arkBalanceDetail: null,
             arkVtxos: [],
             arkRefreshingVtxoIds: [],
+            arkRefreshingVtxoSince: {},
             arkRefreshStuck: null,
             arkPendingRoundFirstSeen: {},
             arkScheduledExpiryNotifs: {},

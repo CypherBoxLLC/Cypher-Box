@@ -87,9 +87,20 @@ const describe = (ev: AppEvent): RowMeta => {
                 walletLabel: WALLET_LABEL["ark"],
             };
         case "ark-refresh-finished":
+            // Three outcomes, not two. "accepted" is the ASP taking the
+            // delegation, which happens up to an hour before the round
+            // finalises; calling it complete was the whole bug.
             return {
-                icon: ev.result === "success" ? "checkmark-circle-outline" : "alert-circle-outline",
-                line1: ev.result === "success" ? "Refresh complete" : "Refresh failed",
+                icon: ev.result === "success"
+                    ? "checkmark-circle-outline"
+                    : ev.result === "accepted"
+                        ? "time-outline"
+                        : "alert-circle-outline",
+                line1: ev.result === "success"
+                    ? `Refresh complete${ev.vtxoCount ? ` (${ev.vtxoCount} capsule${ev.vtxoCount === 1 ? '' : 's'})` : ''}`
+                    : ev.result === "accepted"
+                        ? "Refresh submitted, finishing in the background"
+                        : "Refresh failed",
                 walletLabel: WALLET_LABEL["ark"],
             };
         case "auto-backup":

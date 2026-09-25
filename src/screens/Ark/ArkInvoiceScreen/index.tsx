@@ -104,6 +104,11 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
                 hash: invoice,
                 receiveType: false,
                 theme: 'ark',
+                // A Lightning payment resolves to an out-of-round capsule, so
+                // the receive screen warns and tells the user to stay in the
+                // app until the refresh lands. Not set on the on-chain
+                // boarding path, which has no such step.
+                arkoorNotice: true,
             });
         } catch (err) {
             console.error("Ark invoice creation failed:", err);

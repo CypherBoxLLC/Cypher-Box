@@ -53,6 +53,7 @@ import {
 import { buildRefreshBatch } from "@Cypher/services/ark/refreshBatch";
 import { buildDeferredVtxoIds } from "@Cypher/services/ark/refreshDeferral";
 import useAuthStore from "@Cypher/stores/authStore";
+import RefreshWaitBanner from '@Cypher/components/RefreshWaitBanner';
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
 import rowStyles from "../../HotStorageVault/ListView/styles";
@@ -991,7 +992,6 @@ const TAP_REFRESH_IMMINENT_DAYS = 14;
 // within the hour, so each in-flight round gets a 1h timer counting down from
 // when it started (its first-seen timestamp); past it the round is treated as
 // stuck and the banner offers Cancel.
-const REFRESH_WAIT_WINDOW_MS = 60 * 60 * 1000;
 // A stuck refresh becomes worth bailing on (swap the capsule to another
 // wallet, retry later) well before the 12h `nearExpiry` gate, a failing
 // round shouldn't be allowed to burn down a multi-day runway. The Capsules
@@ -1001,139 +1001,6 @@ const STUCK_SWAP_BANNER_DAYS = 3;
 // Cap the stacked per-round countdown lines so spam-tapping (which queues
 // duplicate rounds) can't grow the banner unbounded; the rest collapse to
 // a "+N more" line.
-const MAX_EXTRA_REFRESH_LINES = 3;
-
-// Format a remaining-ms value as H:MM:SS (e.g. 2:59:59). Clamped at 0.
-function formatCountdown(ms: number): string {
-    const total = Math.max(0, Math.floor(ms / 1000));
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const s = total % 60;
-    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-/**
- * Green pulsing reminder shown while a refresh round is in flight. A round can
- * take up to a few hours to finalise (or time out) server-side, and the user
- * must be back in the app for the completion sync to land, so we nudge them to
- * return, with a live countdown per in-flight round.
- *
- * `roundStarts` is the set of round first-seen timestamps (ms) from
- * `arkPendingRoundFirstSeen`, one per in-flight round. Each gets a 3h
- * countdown; the soonest-to-elapse (oldest round) is shown inline in the
- * headline and the rest stack below as "Refresh 2 / 3 / ...". A line drops
- * when its round completes (pruned from the map upstream). If a round is still
- * present after its 3h window is up it hasn't completed, so the banner switches
- * to a "stuck" state with a Cancel action; cancelling clears the round, which
- * unmounts the banner via the caller's in-flight gate. Self-contained pulse +
- * 1s tick so only this component re-renders each second, not the capsule list.
- */
-function RefreshWaitBanner({
-    roundStarts,
-    cancelling,
-    onCancel,
-}: {
-    roundStarts: number[];
-    cancelling: boolean;
-    onCancel: () => void;
-}) {
-    const pulse = useRef(new Animated.Value(0.6)).current;
-    const [now, setNow] = useState(Date.now());
-    useEffect(() => {
-        const loop = Animated.loop(
-            Animated.sequence([
-                Animated.timing(pulse, {
-                    toValue: 1,
-                    duration: 900,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                }),
-                Animated.timing(pulse, {
-                    toValue: 0.6,
-                    duration: 900,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                }),
-            ]),
-        );
-        loop.start();
-        const tick = setInterval(() => setNow(Date.now()), 1000);
-        return () => {
-            loop.stop();
-            clearInterval(tick);
-        };
-    }, [pulse]);
-
-    // A round still tracked after its 3h window has elapsed hasn't completed:
-    // treat it as stuck. Otherwise render the per-round countdowns, soonest-to-
-    // elapse first (the oldest round is the headline timer; the rest stack).
-    const isStuck = roundStarts.some((start) => now - start >= REFRESH_WAIT_WINDOW_MS);
-    const counting = roundStarts
-        .map((start) => ({ start, remaining: start + REFRESH_WAIT_WINDOW_MS - now }))
-        .filter((x) => x.remaining > 0)
-        .sort((a, b) => a.remaining - b.remaining);
-    const primary = counting[0];
-    const extras = counting.slice(1);
-
-    // Always amber: this is a "come back and check" warning whether the round
-    // is still counting down or already stuck.
-    const accent = '#FFD54F';
-    const tint = 'rgba(255, 213, 79, 0.10)';
-
-    return (
-        <Animated.View
-            style={{
-                // Steady (no pulse) once stuck so the amber warning reads as a
-                // fixed alert and the Cancel button stays easy to tap.
-                opacity: isStuck ? 1 : pulse,
-                marginHorizontal: 24,
-                marginBottom: 12,
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                backgroundColor: tint,
-                borderWidth: 1,
-                borderColor: accent,
-            }}
-        >
-            {isStuck ? (
-                <>
-                    <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
-                        This refresh is stuck. You can cancel the refresh and try again later.
-                    </Text>
-                    <TouchableOpacity
-                        onPress={cancelling ? undefined : onCancel}
-                        style={{ marginTop: 10, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: accent }}
-                    >
-                        <Text bold style={{ fontSize: 12, color: accent }}>
-                            {cancelling ? 'Cancelling…' : 'Cancel refresh'}
-                        </Text>
-                    </TouchableOpacity>
-                </>
-            ) : (
-                <>
-                    <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
-                        {`PLEASE COME BACK IN 1 HOUR TO MAKE SURE THE REFRESH HAS COMPLETED${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
-                    </Text>
-                    {extras.slice(0, MAX_EXTRA_REFRESH_LINES).map((x, i) => (
-                        <Text
-                            key={x.start}
-                            center
-                            style={{ fontSize: 11, color: accent, marginTop: 4 }}
-                        >
-                            {`- Refresh ${i + 2}: ${formatCountdown(x.remaining)}`}
-                        </Text>
-                    ))}
-                    {extras.length > MAX_EXTRA_REFRESH_LINES && (
-                        <Text center style={{ fontSize: 11, color: accent, marginTop: 4 }}>
-                            {`+${extras.length - MAX_EXTRA_REFRESH_LINES} more`}
-                        </Text>
-                    )}
-                </>
-            )}
-        </Animated.View>
-    );
-}
 
 /**
  * Vault connectivity traffic light.
@@ -1589,9 +1456,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     //      handover note).
     //   2. Imminent capsules total below the round minimum even with
     //      every filler → dust-stranded toast that names the shortfall.
-    //   3. Otherwise → fire the batch with skipConfirm so the refresh
-    //      starts immediately. Selection + fee preview don't add safety
-    //      here: the user already opted in by tapping the warning.
+    //   3. Otherwise → build the batch and let refreshIds show its fee
+    //      confirmation.
+    //
+    //      This used to pass skipConfirm, on the reasoning that "the user
+    //      already opted in by tapping the warning". That was wrong. The
+    //      notification says a capsule is about to expire; it does not
+    //      mention a fee and does not ask for one. Tapping it is how a user
+    //      opens the app to look, and money left without ever being shown.
+    //      A refresh is the only spend in the app with no confirmation step,
+    //      and this was the path that made it reachable by accident.
+    //
+    //      The dialog is also the only place the ACTUAL fee appears. The
+    //      reminders are OS alarms on wall-clock time, while the ASP prices
+    //      by block distance to expiry, so a reminder that nominally fires
+    //      inside the cheap tier can land outside it when blocks run slow.
+    //      Nobody can predict the rate from the reminder they tapped; they
+    //      can only be shown it.
     /**
      * Follow-through for the dust top-up.
      *
@@ -1697,7 +1578,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             );
         }
 
-        void refreshIds(batch.ids, { skipConfirm: true });
+        void refreshIds(batch.ids);
         // refreshIds + handleStuckRoundOnTap are defined later in
         // component scope and stable for the lifetime of the screen.
         // The eslint rule is disabled per-line rather than at the file
@@ -1742,7 +1623,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
      * Refresh a specific set of VTXO ids. Reused by the bottom Refresh
      * button (passes selectedIds), the per-row icon (passes a single
      * vtxo.id), and the auto-refresh-on-tap effect above
-     * (passes the imminent set + `skipConfirm: true`). Same fee
+     * (passes the imminent set; it no longer suppresses the fee dialog). Same fee
      * preview + watchdog + selection-clear semantics either way; only
      * the confirmation dialog is conditional.
      */
@@ -1898,21 +1779,44 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 return;
             }
             const fee = await estimateArkRefreshFee(ids);
-            // Present fee preview + confirmation before committing. The
-            // delegation costs a round fee, so the user should opt in
-            // explicitly rather than have it happen silently. The
-            // notification-tap path skips this dialog: the user already
-            // signalled intent by tapping the warning and the deep-link
-            // would be pointless if we then asked them to tap Refresh
-            // again. They still see the "Refreshing…" UI immediately.
+
+            // Fee preview and confirmation before committing. A refresh is a
+            // spend, and this dialog is the ONLY place in the app where its
+            // cost is shown before it leaves.
+            //
+            // `skipConfirm` is now used by one caller only: the dust top-up
+            // follow-through, where the user has just chosen to top up in
+            // order to run this exact sweep. Every notification-tap path used
+            // to pass it too, on the reasoning that tapping the warning was
+            // consent. It is not. The notification says a capsule is about to
+            // expire and never mentions a fee, so tapping it is how a user
+            // opens the app to look.
+            //
+            // The percentage is shown as well as the sats because the rate is
+            // what users are actually deciding about: the ASP charges by how
+            // close the capsule is to expiring, and the same refresh can cost
+            // double depending on when it runs.
+            //
+            // Recompute the displayed total from the post-resync `ids` rather
+            // than reusing `totalIn`, which was measured before stale entries
+            // were dropped above and can overstate what is being refreshed.
+            const displayTotal = rows
+                .filter((r) => ids.includes(r.id))
+                .reduce((acc, r) => acc + r.sats, 0);
+            const feePct = displayTotal > 0
+                ? (fee.feeSats / displayTotal) * 100
+                : null;
             const confirmed = opts.skipConfirm
                 ? true
                 : await new Promise<boolean>((resolve) => {
                     Alert.alert(
                         "Refresh capsules?",
-                        `Re-board ${ids.length} capsule(s) into a new Ark round for ~${fee.feeSats} sats. ` +
-                        `This extends their expiry by another full lifetime. It finishes in the background ` +
-                        `within the hour, so you can close the app once it's submitted.`,
+                        `Re-boarding ${ids.length} capsule${ids.length === 1 ? '' : 's'} ` +
+                        `(${displayTotal.toLocaleString()} sats) into a new Ark round costs about ` +
+                        `${fee.feeSats.toLocaleString()} sats` +
+                        (feePct !== null ? `, which is ${feePct.toFixed(2)}% of the amount` : '') +
+                        `. That extends their expiry by another full lifetime. It finishes in the ` +
+                        `background within the hour, so you can close the app once it is submitted.`,
                         [
                             { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
                             { text: "Refresh", onPress: () => resolve(true) },
@@ -2047,7 +1951,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // Next sync will flip Locked → Spendable. Try the batch we
             // have; if empty, tell the user to come back in a minute.
             if (batch.ids.length > 0) {
-                void refreshIds(batch.ids, { skipConfirm: true });
+                void refreshIds(batch.ids);
             } else {
                 SimpleToast.show(
                     'Your imminent capsules are still settling from a recent refresh. They should be spendable again within a minute.',
@@ -2080,7 +1984,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 SimpleToast.LONG,
             );
             if (batch.ids.length > 0) {
-                void refreshIds(batch.ids, { skipConfirm: true });
+                void refreshIds(batch.ids);
             }
             return;
         }
