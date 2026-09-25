@@ -1048,7 +1048,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     feeRateSatPerVb: number;
   } | null>(null);
   const [exitFundingOpen, setExitFundingOpen] = useState(false);
-  const [fundingTab, setFundingTab] = useState<'receive' | 'wallet' | 'convert'>('receive');
+  // Opens on Convert, the path a user can complete with what they already
+  // hold. Falls back to Receive when Convert is unavailable, see the guard
+  // effect below; that is the ASP-independent path, so it is the right landing
+  // place whenever the server is the problem.
+  const [fundingTab, setFundingTab] = useState<'receive' | 'wallet' | 'convert'>('convert');
   const [onchainFundAddr, setOnchainFundAddr] = useState<string | null>(null);
   // ASP reachability for the CONVERT (cooperative-offboard) tab. null = probing.
   const [aspReachable, setAspReachable] = useState<boolean | null>(null);
@@ -1268,12 +1272,20 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     };
   }, [exitFundingOpen]);
 
-  // Convert is unavailable mid-exit (cooperative offboard, ASP-gated), and its
-  // tab button disappears. If that was the selected tab the sheet would render
-  // nothing at all, so fall back to the path that always works.
+  // Convert is the default tab, and there are two ways it can be unusable:
+  // mid-exit its button is removed entirely (so the sheet would render
+  // nothing), and with the ASP unreachable its action is disabled (so the
+  // sheet would render a dead form). Both fall back to Receive, which needs
+  // no server.
+  //
+  // `aspReachable === null` means the probe is still running, and that
+  // deliberately does NOT fall back: the common case is that it comes back
+  // reachable, and flipping the tab away and then back would be worse than a
+  // moment on the tab the user asked to land on.
   useEffect(() => {
-    if (arkExitInProgress && fundingTab === 'convert') setFundingTab('receive');
-  }, [arkExitInProgress, fundingTab]);
+    if (fundingTab !== 'convert') return;
+    if (arkExitInProgress || aspReachable === false) setFundingTab('receive');
+  }, [arkExitInProgress, aspReachable, fundingTab]);
 
   // Debounced fee estimate for the CONVERT tab. Skipped when the ASP is known
   // unreachable (the offboard would fail) or the amount is empty/invalid.
@@ -1311,7 +1323,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     const current = (arkExitFeeReserveSats ?? 0) > 0 ? arkExitFeeReserveSats : (recommendedReserveSats ?? 0);
     if (current > 0) setArkExitFeeReserveSats(current);
     setReserveTargetInput(current > 0 ? String(current) : '');
-    setFundingTab('receive');
+    // Open on Convert. `openExitFunding` resets the tab on every open, so the
+    // useState initial value alone would only apply to the very first one.
+    // Mid-exit it is not offered at all, so land on Receive directly rather
+    // than showing Convert for a frame and letting the guard bounce it.
+    setFundingTab(arkExitInProgress ? 'receive' : 'convert');
     setConvertAmount(String(Math.max(0, current - onchainReserveSats)));
     setConvertEst(null);
     setAspReachable(null);
@@ -3183,13 +3199,23 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         </Modal>
 
         {/* Fund-exit-fees modal. Tops up the on-chain (BDK) wallet that pays
-            the unilateral-exit CPFP fees. Two paths:
-              Receive Bitcoin (primary, ASP-independent): deposit external BTC
-                to the on-chain address; the armed reserve keeps it on-chain
+            the unilateral-exit CPFP fees. Three paths, in tab order:
+              Convert from balance: cooperative offboard from Ark. Listed
+                first because it is the one a user can do with what they
+                already hold, rather than having to source outside sats. It
+                needs the ASP, so it is disabled when unreachable and absent
+                entirely while an exit is in flight, and it is best done ahead
+                of time rather than as an at-outage rescue.
+              Receive Bitcoin: deposit external BTC to the on-chain address.
+                ASP-independent, so this is the one that still works when the
+                server is gone. The armed reserve keeps the deposit on-chain
                 (sync.ts won't board it away) and the gate unlocks on confirm.
-              Convert from balance (secondary, precautionary): cooperative
-                offboard from Ark. Needs the ASP, so disabled when unreachable;
-                do it ahead of time, not as an at-outage rescue. */}
+              From a wallet: same as above, sourced from another Cypher Box
+                wallet.
+            NOTE: the default selected tab is still 'receive'. Tab order is a
+            discoverability choice; the default is a safety one, and opening on
+            a tab that is disabled whenever the ASP is unreachable would be
+            worse than opening on the path that always works. */}
         <Modal
           visible={exitFundingOpen}
           transparent
@@ -3227,7 +3253,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               <View style={{ flexDirection: 'row', marginBottom: 14, borderRadius: 10, backgroundColor: '#222', padding: 3 }}>
                 {((arkExitInProgress
                   ? (['receive', 'wallet'] as const)
-                  : (['receive', 'wallet', 'convert'] as const)) as readonly ('receive' | 'wallet' | 'convert')[]).map((tab) => {
+                  : (['convert', 'receive', 'wallet'] as const)) as readonly ('receive' | 'wallet' | 'convert')[]).map((tab) => {
                   const active = fundingTab === tab;
                   return (
                     <TouchableOpacity
@@ -3235,12 +3261,17 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       onPress={() => setFundingTab(tab)}
                       style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: active ? (colors.ark?.light ?? colors.pink.default) : 'transparent' }}
                     >
-                      <Text bold style={{ fontSize: 12, color: active ? '#1C1C1C' : '#AAA' }}>
+                      <Text bold style={{ fontSize: 12, color: active ? '#1C1C1C' : '#AAA', textAlign: 'center' }}>
+                        {/* Kept short enough not to wrap. "Convert from
+                            balance" took two lines in a third of the modal,
+                            which made the whole strip double height and the
+                            active pill read as oversized next to the others.
+                            The tab body below carries the full explanation. */}
                         {tab === 'receive'
                           ? 'Receive Bitcoin'
                           : tab === 'wallet'
                             ? 'From a wallet'
-                            : 'Convert from balance'}
+                            : 'Convert'}
                       </Text>
                     </TouchableOpacity>
                   );
