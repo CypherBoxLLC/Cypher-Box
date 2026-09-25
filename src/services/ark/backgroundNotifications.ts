@@ -191,20 +191,21 @@ export function notifyExpiryWarning6h(satsAmount?: number): void {
 
 // Kinds we currently SEND. Retired kinds (warn2h, warn96h) are not members:
 // they are cancelled by name via RETIRED_WARN_KINDS, not scheduled.
-type WarnKind = 'warn48h' | 'warn24h' | 'warn12h' | 'warn6h';
+type WarnKind = 'warn168h' | 'warn96h' | 'warn48h' | 'warn24h' | 'warn12h' | 'warn6h';
 
 /**
  * Source IDs that identify a scheduled Ark VTXO expiry warning. Both the
  * scheduler that emits them and the tap handler in `scheduler.ts` reference
  * this list, so adding a new warning is a single edit.
  *
- * Retired entries (`warn2h`, `warn96h`) stay in this list on purpose. An alarm
+ * Retired entries (`warn2h`) stay in this list on purpose. An alarm
  * queued by an earlier build can outlive the upgrade that retired it, and if
  * it fires we still want the tap to deep-link correctly rather than be
  * dropped as an unknown source. RETIRED_WARN_KINDS cancels them; this list
  * handles the ones that slip through.
  */
 export const ARK_EXPIRY_WARNING_SOURCES = [
+    'ark-vtxo-expiry-warn168h',
     'ark-vtxo-expiry-warn96h',
     'ark-vtxo-expiry-warn48h',
     'ark-vtxo-expiry-warn24h',
@@ -277,9 +278,35 @@ export const WARN_SCHEDULE: ReadonlyArray<{
     suffix: string;
     urgent: boolean;
 }> = [
-    // The 4-day reminder (`warn96h`) was retired deliberately, see
-    // RETIRED_WARN_KINDS below. Every remaining reminder sits inside the ASP's
-    // cheapest live refresh tier; the 4-day one did not.
+    // The two early reminders exist for EXIT RUNWAY, not for refreshing.
+    //
+    // A unilateral exit needs its pre-signed transactions to confirm before the
+    // capsule expires, and the sweep refuses to auto-refresh inside the last 28
+    // hours for that reason. So a user who first hears about a capsule at 2 days
+    // has very little room if the ASP has gone away: their only remaining move
+    // is an exit, and an exit is an early tool.
+    //
+    // These were briefly removed on the grounds that acting on them cost more,
+    // since the server charges by distance from expiry. That reasoning applied
+    // when tapping a reminder SPENT immediately. It no longer does: the tap now
+    // shows the fee and asks. A reminder itself is free, so warning early costs
+    // the user nothing and buys them the runway to exit.
+    {
+        kind: 'warn168h',
+        source: 'ark-vtxo-expiry-warn168h',
+        offsetMs: 168 * 60 * 60 * 1000,
+        label: '7 days',
+        suffix: '',
+        urgent: false,
+    },
+    {
+        kind: 'warn96h',
+        source: 'ark-vtxo-expiry-warn96h',
+        offsetMs: 96 * 60 * 60 * 1000,
+        label: '4 days',
+        suffix: '',
+        urgent: false,
+    },
     {
         kind: 'warn48h',
         source: 'ark-vtxo-expiry-warn48h',
@@ -423,15 +450,11 @@ function notificationIdFor(vtxoId: string, kind: WarnKind | StuckSwapKind): stri
  * cancel loop cannot reach them either. They have to be cancelled by name.
  *
  *   warn2h  - the second warning before the 2h -> 6h rollout.
- *   warn96h - the 4-day reminder. Retired because it was the only reminder
- *             that landed outside the ASP's cheapest live refresh tier, so a
- *             user who acted on it paid roughly double a user who waited for
- *             the next one.
  *
  * Safe to keep indefinitely: a no-op once a device has been through one sync
  * tick after the upgrade.
  */
-export const RETIRED_WARN_KINDS = ['warn2h', 'warn96h'] as const;
+export const RETIRED_WARN_KINDS = ['warn2h'] as const;
 
 function retiredNotificationId(kind: string, vtxoId: string): string {
     let h = 2166136261;

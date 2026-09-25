@@ -254,17 +254,19 @@ async function maybeSelfHealArkHandle(): Promise<void> {
  * warning schedule changes.
  *
  *   v1: 24h+6h widened to 4d/2d/24h/12h/6h.
- *   v2: the 4-day reminder retired, leaving 2d/24h/12h/6h. It was the only
- *       reminder outside the ASP's cheapest live refresh tier, so acting on it
- *       cost roughly double acting on the next one. Retired alarms are
- *       cancelled by name, see RETIRED_WARN_KINDS.
+ *   v2: the 4-day reminder retired, leaving 2d/24h/12h/6h.
+ *   v3: 7d and 4d reminders (re)added, giving 7d/4d/2d/24h/12h/6h. v2 removed
+ *       the 4-day one because acting on it cost more, which was true only while
+ *       tapping a reminder spent immediately. The tap now shows the fee and
+ *       asks, so a reminder is free again, and the early ones are what give a
+ *       user enough runway to EXIT if the ASP has gone away.
  * The sync loop reads the persisted authStore value; if behind AND the
  * reminders toggle is on, it force-calls scheduleVtxoExpiryWarnings on
  * every spendable VTXO so existing alarms catch up with the new schedule,
  * then sets the persisted version. Idempotent: the OS replaces alarms
  * with the same id, and new alarms get added.
  */
-const CURRENT_EXPIRY_NOTIFS_SCHEDULE_VERSION = 2;
+const CURRENT_EXPIRY_NOTIFS_SCHEDULE_VERSION = 3;
 
 export type UseArkSync = {
     isSyncing: boolean;

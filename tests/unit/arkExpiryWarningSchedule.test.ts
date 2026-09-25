@@ -32,13 +32,19 @@ import {
 } from '../../src/services/ark/backgroundNotifications';
 
 describe('expiry warning schedule', () => {
-    it('sends four reminders, all within two days of expiry', () => {
+    it('sends six reminders, from a week out down to six hours', () => {
         const hours = WARN_SCHEDULE.map((w) => w.offsetMs / 3_600_000);
-        expect(hours).toEqual([48, 24, 12, 6]);
+        expect(hours).toEqual([168, 96, 48, 24, 12, 6]);
     });
 
-    it('no longer schedules the 4-day reminder', () => {
-        expect(WARN_SCHEDULE.map((w) => w.kind)).not.toContain('warn96h');
+    it('keeps two reminders outside the exit-runway floor', () => {
+        // The floor for auto-refresh is 28h, and an exit needs its pre-signed
+        // transactions to confirm before expiry. A user first told at 2 days
+        // has very little room if the ASP has gone away, so the 7-day and
+        // 4-day reminders exist to buy runway to EXIT, not to refresh.
+        const early = WARN_SCHEDULE.filter((w) => w.offsetMs / 3_600_000 >= 96);
+        expect(early.map((w) => w.kind)).toEqual(['warn168h', 'warn96h']);
+        expect(early.every((w) => w.urgent === false)).toBe(true);
     });
 
     it('escalates: every offset is closer to expiry than the one before', () => {
@@ -48,8 +54,10 @@ describe('expiry warning schedule', () => {
         }
     });
 
-    it('marks the reminders under a day as urgent and the 2-day one as not', () => {
+    it('marks only the reminders under a day as urgent', () => {
         const byKind = Object.fromEntries(WARN_SCHEDULE.map((w) => [w.kind, w.urgent]));
+        expect(byKind.warn168h).toBe(false);
+        expect(byKind.warn96h).toBe(false);
         expect(byKind.warn48h).toBe(false);
         expect(byKind.warn24h).toBe(true);
         expect(byKind.warn12h).toBe(true);
@@ -59,8 +67,10 @@ describe('expiry warning schedule', () => {
 
 describe('retired reminder kinds', () => {
     it('records every kind that has ever been scheduled and is not now', () => {
+        // warn96h was retired for one build and then restored, so it must NOT
+        // be here any more: leaving it would cancel the alarm we now schedule.
         expect(RETIRED_WARN_KINDS).toContain('warn2h');
-        expect(RETIRED_WARN_KINDS).toContain('warn96h');
+        expect(RETIRED_WARN_KINDS).not.toContain('warn96h');
     });
 
     it('never lists a kind as both scheduled and retired', () => {
