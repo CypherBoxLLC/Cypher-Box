@@ -358,7 +358,31 @@ export async function maybeSweepDueArkVtxos(
             flatFloorBlocks,
             ceilBlocks,
         );
-        if (blocksLeft < floorBlocks) continue; // below exit-runway floor: leave alone
+        // The floor is a veto ONLY for a capsule that actually has a unilateral
+        // exit to protect, which means a round output.
+        //
+        // The floor's whole argument is "leave it alone so a slow refresh does
+        // not cost the exit". An arkoor has no exit until it is refreshed into
+        // a round, so for one of those the floor protects nothing and enforcing
+        // it just leaves the funds in the server's custody until they expire.
+        // Refusing to refresh is the risk there, not refreshing.
+        //
+        // Matched positively on `round` rather than by listing the kinds to
+        // exclude, because the SDK's `kind` does not return the values its own
+        // docstring claims: it yields Pubkey / ServerHtlcRecv / ServerHtlcSend
+        // where the docs say board / round / arkoor. An unrecognised kind
+        // therefore falls through to being refreshed, which is the safe
+        // direction: the cost of refreshing early is a fee, the cost of not
+        // refreshing is the capsule.
+        const hasOwnExitTree = /round/i.test(v.kind ?? '');
+        if (hasOwnExitTree && blocksLeft < floorBlocks) continue; // below exit-runway floor: leave alone
+        if (!hasOwnExitTree && blocksLeft < floorBlocks && __DEV__) {
+            console.log(
+                '[Ark sweep] refreshing', v.id.slice(0, 8), 'below the',
+                floorBlocks, 'block floor anyway: kind=', v.kind,
+                'has no exit tree to protect, blocksLeft=', blocksLeft,
+            );
+        }
         if (blocksLeft > ceilBlocks) continue; // more than a week out: not yet
         if (v.sats < ARK_REFRESH_MIN_SATS) {
             strandedDust += 1; // in-band but sub-floor: cannot refresh on its own
