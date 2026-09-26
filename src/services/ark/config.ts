@@ -83,11 +83,54 @@ export const ARK_ARKOOR_ASSUMED_DAYS = 3;
 export const ARK_EXIT_RUNWAY_HOURS = 28;
 
 /**
- * Upper bound of the maintenance-sweep refresh band. No reason to spend the
- * refresh fee earlier than ~a week before expiry; the sweep only acts on a VTXO
- * whose time-to-expiry sits between ARK_EXIT_RUNWAY_HOURS and this. Hours.
+ * Upper bound of the maintenance-sweep refresh band, in HOURS.
+ *
+ * DEPRECATED for the sweep itself, which now uses ARK_SWEEP_MAX_RUNWAY_BLOCKS.
+ * Still read by useArkoorReceivePrompt, whose decision is about a freshly
+ * received capsule rather than about a fee band.
  */
 export const ARK_SWEEP_MAX_RUNWAY_HOURS = 7 * 24;
+
+/**
+ * The ASP's refresh fee bands, as REMAINING-EXPIRY DISTANCE IN BLOCKS.
+ *
+ * Read live from ark.second.tech on 2026-09-26 with `bark ark-info` (CLI 0.6.1,
+ * the same Rust core the SDK embeds):
+ *
+ *     >=    0 blocks  ->     0 ppm   free
+ *     >=  288 blocks  ->  2000 ppm   0.2%
+ *     >= 1008 blocks  ->  4000 ppm   0.4%
+ *     >= 2016 blocks  ->  5000 ppm   0.5%
+ *
+ * An entry applies when the capsule's remaining distance is at or above its
+ * threshold and below the next one, so the rate FALLS as expiry approaches.
+ * Confirmed against two live measurements: 0.5% at ~28d (4032 blocks) and 0.2%
+ * at ~2.5d (~360 blocks). An earlier internal note read the same table the
+ * other way round, one band too expensive; it was wrong and has been corrected.
+ *
+ * BLOCKS, not hours. The server prices in blocks, and any wall-clock conversion
+ * lands on the wrong side of a boundary as soon as block times drift. Days are
+ * for UI copy only, never for a decision.
+ */
+export const ARK_REFRESH_FREE_BAND_MAX_BLOCKS = 288;
+export const ARK_REFRESH_CHEAP_BAND_MAX_BLOCKS = 1008;
+
+/**
+ * Upper bound of the maintenance-sweep refresh band, in BLOCKS.
+ *
+ * One block below the 0.4% boundary, so an automatic refresh is priced at 0.2%
+ * or less and never at 0.4%.
+ *
+ * The old value was `blocksForHours(ARK_SWEEP_MAX_RUNWAY_HOURS)`, which is
+ * exactly 1008: precisely the first block of the 0.4% tier. The sweep fires on
+ * `blocksLeft <= ceiling`, so its first eligible moment was also its most
+ * expensive one, and the toggle copy told the user it cost 0.2%. Shipped that
+ * way in 0.1.12.
+ *
+ * Costs almost nothing in window width: the 0.2% band runs 288..1007, about
+ * five days.
+ */
+export const ARK_SWEEP_MAX_RUNWAY_BLOCKS = ARK_REFRESH_CHEAP_BAND_MAX_BLOCKS - 1;
 
 export const ARK_NETWORK: Network = Network.Bitcoin;
 
