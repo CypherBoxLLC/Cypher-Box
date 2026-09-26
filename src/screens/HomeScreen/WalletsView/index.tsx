@@ -86,6 +86,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         setArkPendingOnchainRecoverOpen,
         arkExitFeeReserveSats,
         setArkExitFeeReserveSats,
+        arkExitRecommendedReserveSats,
         // Behind the offline warning below. All three are written only on a
         // SUCCESSFUL read, which is what makes their age the signal.
         arkChainTipHeightAt,
@@ -379,6 +380,22 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             };
         }
 
+        // Capsules worth exiting, but the exit fee wallet is empty. Mirrors
+        // ArkWallet's branch deliberately: the two layouts render different
+        // status rows, and this file's own header notes that the exit-fee
+        // reserve nudge once lived in ArkWallet alone and nobody in the
+        // default layout ever saw it. Same condition, same copy, same tab.
+        if ((arkExitRecommendedReserveSats ?? 0) > 0
+            && (arkBalanceDetail?.onchainBoardingSats ?? 0) <= 0) {
+            return {
+                // COPY: Bam finalizes. Kept identical to ArkWallet on purpose.
+                text: 'Emergency Exit has no fees reserved. Fund it in the Vault tab so you can exit without the server.',
+                linkText: 'Vault tab',
+                tapTab: 1, // Vault tab: where the exit fee reserve card lives
+                error: true,
+            };
+        }
+
         if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
             return {
                 text: 'Backup not synced. Enable iCloud Drive in iOS Settings',
@@ -388,6 +405,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
 
         return null;
     }, [
+        arkExitRecommendedReserveSats,
         expiryWarning,
         dustCapsules,
         notificationsEnabled,
