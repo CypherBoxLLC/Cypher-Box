@@ -234,10 +234,6 @@ export default function CheckingAccountCreated() {
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 6 }]}>
                                     • Your 12-word seed phrase. Write it down somewhere only you can access.
                                 </Text>
-                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 6 }]}>
-                                    • Your encrypted backup file (.cbark). Periodically check on it via Bark Vault → Settings. Both the seed AND the backup file are required to recover funds.
-                                </Text>
-
                             </ScrollView>
                         </>
                     ) : (
