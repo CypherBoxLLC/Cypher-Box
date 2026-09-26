@@ -18,7 +18,7 @@ Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built 
 | Rail | Custody | Network | Best for |
 |---|---|---|---|
 | ⚡ **Lightning Accounts** | Custodial (Strike / Coinos) | Lightning | First sats, everyday spending |
-| ⛵ **Bark Vault** | **Self-custodial** | Ark protocol (L2) | Lightning speed, your keys, experimental |
+| ⛵ **Bark Vault** | Escapable Lightning | Ark protocol (L2) | Lightning speed, your keys, experimental |
 | 🔥 **Hot Vault** | Self-custodial | Bitcoin on-chain | Savings on your device |
 | 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Offline Hardware-signed savings |
 
@@ -34,7 +34,7 @@ Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, wit
 * Real-time payment notifications via a self-hosted relay
 * Swap between accounts, withdraw to vaults, top-up from vaults
 
-## ⛵ Bark Vault — non-custodial Lightning (Ark protocol)
+## ⛵ Bark Vault - Escapable Lightning Ark 
 
 * Read full user guide: https://cypherbox.io/how-to-use-your-bark-vault/
 
