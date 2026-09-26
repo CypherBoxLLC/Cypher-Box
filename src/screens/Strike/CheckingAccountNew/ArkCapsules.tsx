@@ -2477,7 +2477,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             }
         } catch (err: any) {
             console.warn('[Ark] fetch pending rounds for cancel failed:', err?.message ?? err);
-            SimpleToast.show('Cancel failed — try again in a moment', SimpleToast.LONG);
+            SimpleToast.show('Cancel failed. Try again in a moment.', SimpleToast.LONG);
             // Outer-catch (the fetch itself failed, not the per-round
             // cancels). No round was ever attempted; clear the UI gate
             // immediately so the X icon comes back and the user can

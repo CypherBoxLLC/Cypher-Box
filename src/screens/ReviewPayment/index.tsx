@@ -917,7 +917,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 buyStepFinish('failed',
                     `Failed to swap to ${dest === 'coinos' ? 'CoinOS' : 'Bark Vault'}. Your sats are safe in Strike.`);
                 console.error(`[BUY → ${dest}] swap failed:`, error);
-                let message = 'Swap failed. Your purchase succeeded — try again from Home → Swap.';
+                let message = 'Swap failed. Your purchase succeeded. Try again from Home → Swap.';
                 if (error instanceof InvoiceCreationFailedError) {
                     message = `${dest === 'coinos' ? 'CoinOS' : 'Ark'} couldn't create an invoice: ${(error.cause as Error)?.message ?? error.message}`;
                 } else if (error instanceof PaymentFailedError) {
