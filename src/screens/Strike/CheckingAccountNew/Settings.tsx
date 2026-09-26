@@ -2130,7 +2130,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             >
               {arkAutoRefreshEnabled
                 ? 'While Cypher Box is open, capsules nearing expiry (7 days or below) are refreshed for you and cost 0.2% in fees. Refreshing is free in the last two days, but waiting that long risks losing the exit window if the ASP goes offline.'
-                : '⚠ Automatic refresh is OFF. Refresh your capsules yourself, and leave at least two days before expiry. An emergency exit has to confirm on the Bitcoin network before a capsule expires.'}
+                : '⚠ Automatic refresh is OFF. Capsules are now only refreshed inside their last two days, where the server charges no fee. That leaves less room to react if a refresh fails, so refresh earlier yourself if you want more exit runway.'}
             </Text>
           </View>
         </View>

@@ -5,7 +5,8 @@ import { AVG_BLOCK_MINUTES } from './chainTip';
 import {
     ARK_EXIT_RUNWAY_HOURS,
     ARK_REFRESH_MIN_SATS,
-    ARK_SWEEP_MAX_RUNWAY_HOURS,
+    ARK_SWEEP_MAX_RUNWAY_BLOCKS,
+    ARK_REFRESH_FREE_BAND_MAX_BLOCKS,
     ARK_SERVER_URL,
     ESPLORA_URLS,
 } from './config';
@@ -30,10 +31,14 @@ import type { ArkVtxoView } from './vtxos';
  *  - Runs from the useArkSync tick (no separate timer), foreground only.
  *  - Refresh-eligibility BAND (the exit-runway rule): only a VTXO whose
  *    time-to-expiry is between ARK_EXIT_RUNWAY_HOURS (28h = 24h unilateral-exit
- *    runway + 4h grace) and ARK_SWEEP_MAX_RUNWAY_HOURS (1 week). Below the floor
- *    we must NOT refresh — a delegated round that hangs would eat the exit
- *    window; the user should spend/exit instead (expiry warnings + escalation
- *    own that zone). Above a week there is no reason to spend the fee yet.
+ *    runway + 4h grace) and ARK_SWEEP_MAX_RUNWAY_BLOCKS (1007, the top of the
+ *    ASP's 0.2% fee tier). Below the floor we must NOT refresh — a delegated
+ *    round that hangs would eat the exit window; the user should spend/exit
+ *    instead (expiry warnings + escalation own that zone). Above the ceiling the
+ *    server charges 0.4%, i.e. double, for the identical refresh.
+ *    When the user has turned auto-refresh OFF the ceiling narrows to the free
+ *    tier (below ARK_REFRESH_FREE_BAND_MAX_BLOCKS) instead of disabling the
+ *    sweep: a 0 ppm refresh has no fee to ask consent for.
  *  - Dust: sub-ARK_REFRESH_MIN_SATS inputs never ride along in this batch (one
  *    sub-floor input makes bark reject the whole round). They are handled by
  *    maybeSweepDustArkVtxos below, which folds them into ONE capsule in a dust
@@ -90,8 +95,8 @@ const FG_SWEEP_MAX_GAP_MS = 60 * 60 * 1000;
  * Anything shorter is a guess that spends quota to discover it was too short.
  *
  * Safe against the deadline this sweep exists to meet: it fires on capsules
- * inside ARK_SWEEP_MAX_RUNWAY_HOURS (a week) of expiry, so an hour of silence
- * costs at most one attempt out of dozens still available.
+ * inside ARK_SWEEP_MAX_RUNWAY_BLOCKS (1007, about a week) of expiry, so an hour
+ * of silence costs at most one attempt out of dozens still available.
  */
 const FG_SWEEP_RATE_LIMIT_BACKOFF_MS = 60 * 60 * 1000;
 
@@ -317,9 +322,12 @@ export async function maybeSweepDueArkVtxos(
     // permanently stranded, so switching it off would add a loss path to save
     // nothing. Reminders are not gated here either; they are free and they are
     // what is left telling the user to act once this is off.
-    if (!useAuthStore.getState().arkAutoRefreshEnabled) {
-        return;
-    }
+    // Auto-refresh OFF does not mean "never refresh". It means "never spend a
+    // refresh fee without being asked". Inside the ASP's free band the refresh
+    // costs 0 ppm, so there is no fee to consent to and nothing to gain by
+    // letting the capsule expire instead. Off therefore narrows the band to the
+    // free tier rather than disabling the sweep.
+    const autoRefreshOn = useAuthStore.getState().arkAutoRefreshEnabled;
     if (sweepInFlight) return;
     if (getArkWalletHandle() == null) return;
     if (typeof tip !== 'number') return;
@@ -332,7 +340,18 @@ export async function maybeSweepDueArkVtxos(
     // this flat 28h stands in when a capsule reports no depth or the wallet has
     // not learned the server's exit delta yet.
     const flatFloorBlocks = blocksForHours(ARK_EXIT_RUNWAY_HOURS); // 28h
-    const ceilBlocks = blocksForHours(ARK_SWEEP_MAX_RUNWAY_HOURS); // 1 week
+    // Band ceiling, in blocks, straight off the ASP's fee table. With the
+    // toggle on this is the top of the 0.2% tier; with it off, the top of the
+    // free tier. Never derived from hours: see ARK_SWEEP_MAX_RUNWAY_BLOCKS.
+    const ceilBlocks = autoRefreshOn
+        ? ARK_SWEEP_MAX_RUNWAY_BLOCKS
+        : ARK_REFRESH_FREE_BAND_MAX_BLOCKS - 1;
+    // The exit-runway floor is a SAFETY bound, not a pricing one, so it is
+    // always computed against the full sweep ceiling. Passing the narrowed
+    // free-band ceiling here would clamp the floor down with it (see
+    // refreshFloorBlocks) and let a deep capsule refresh with less runway than
+    // its own exit needs, which is the one thing the floor exists to prevent.
+    const floorCeilingBlocks = ARK_SWEEP_MAX_RUNWAY_BLOCKS;
     const exitDeltaBlocks = store.arkVtxoExitDeltaBlocks ?? null;
     const refreshing = new Set(store.arkRefreshingVtxoIds);
 
@@ -356,7 +375,7 @@ export async function maybeSweepDueArkVtxos(
             v.exitDepth,
             exitDeltaBlocks,
             flatFloorBlocks,
-            ceilBlocks,
+            floorCeilingBlocks,
         );
         // The floor is a veto ONLY for a capsule that actually has a unilateral
         // exit to protect, which means a round output.
@@ -383,7 +402,7 @@ export async function maybeSweepDueArkVtxos(
                 'has no exit tree to protect, blocksLeft=', blocksLeft,
             );
         }
-        if (blocksLeft > ceilBlocks) continue; // more than a week out: not yet
+        if (blocksLeft > ceilBlocks) continue; // above the target fee band: not yet
         if (v.sats < ARK_REFRESH_MIN_SATS) {
             strandedDust += 1; // in-band but sub-floor: cannot refresh on its own
             continue;
