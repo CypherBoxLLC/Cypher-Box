@@ -1095,11 +1095,26 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     reserveTargetSats <= 0 &&
     (reserveDetail?.excludedCount ?? 0) > 0;
   const exitFeeShortfallSats = Math.max(0, reserveTargetSats - onchainReserveSats);
-  // The user armed a target below the recommended safe amount (warn them).
+  /**
+   * What is actually held on-chain is below the recommendation (warn them).
+   *
+   * Deliberately NOT `arkExitFeeReserveSats`. That is the target the user armed
+   * in the funding modal, a snapshot of one decision, and it does not move when
+   * they later fund past it or when the estimate changes underneath it.
+   * Comparing it here made the card contradict itself: measured on device
+   * 2026-09-26 with armed 5,000, recommendation 7,596 and 20,000 actually
+   * on-chain, it rendered "20 000 sats are reserved on-chain to pay Emergency
+   * Exit fees" directly above "You reserved less than the recommended 7 596
+   * sats", while the user held 2.6x the recommendation.
+   *
+   * `onchainReserveSats` is what an exit actually spends, and it is already the
+   * figure `exitFeeGated` measures, so the warning and the gate now agree.
+   * A stale low armed value is harmless on its own: auto-board holds back
+   * `max(armed, recommended)` (see decideAutoBoard), so it cannot strand fees.
+   */
   const reserveBelowRecommended =
-    (arkExitFeeReserveSats ?? 0) > 0 &&
     (recommendedReserveSats ?? 0) > 0 &&
-    arkExitFeeReserveSats < (recommendedReserveSats ?? 0);
+    onchainReserveSats < (recommendedReserveSats ?? 0);
 
   // Reset transient picker state whenever the modal closes so the next open
   // starts from category step with no stale selection / checkbox carry-over.
@@ -2705,6 +2720,26 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                         : 'none needed'}
                 </Text>
               </View>
+              {/* Fee rate the reserve was priced at.
+                  Without it the figure above cannot be interpreted. It is
+                  max(RESERVE_FLOOR_SATS, totalExitVb * rate * SPIKE_MULT), so it
+                  sits flat on the 5,000 floor at low rates and only starts
+                  tracking the market once the real cost clears it. Measured on
+                  device 2026-09-26: one capsule, 1,266 vB, read 5,000 at
+                  1 sat/vB and 7,596 at 3 sat/vB. With no rate shown that reads
+                  as the app changing its mind, and a user who funded the 5,000
+                  it asked for is then told they are short.
+                  The rate is already in reserveDetail and already rendered in
+                  the exitNotWorthFees copy below, so this only surfaces it.
+                  COPY: Bam finalizes. */}
+              {(reserveDetail?.feeRateSatPerVb ?? 0) > 0 && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
+                  <Text style={{ fontSize: 11, color: '#777' }}>Priced at</Text>
+                  <Text style={{ fontSize: 11, color: '#777' }}>
+                    {reserveDetail?.feeRateSatPerVb} sat/vB
+                  </Text>
+                </View>
+              )}
               <Text style={{ fontSize: 11, color: '#777', marginTop: 6, lineHeight: 16 }}>
                 {recommendedReserveSats === null
                   ? 'Sizing the reserve from your capsules. Emergency Exit unlocks when this finishes.'
