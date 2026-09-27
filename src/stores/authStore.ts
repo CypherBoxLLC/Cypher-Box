@@ -124,6 +124,26 @@ export type AuthStateType = {
      */
     arkRefreshingVtxoIds: string[];
     /**
+     * VTXO ids the ARK SERVER has told us are spent, learned from a failed
+     * spend ("vtxo <id> is not spendable (state: spent)").
+     *
+     * Persisted, and it has to be. bark decides spendability from its local
+     * DB, `sync()` never revalidates that against the server (bark 0.6.1,
+     * lib.rs:1751, all ten branches), and the SDK exposes no way to drop or
+     * mark a VTXO: only `importVtxo`, which adds. So a VTXO spent by another
+     * holder of the same seed, or resurrected by restoring a stale `.cbark`,
+     * stays `Spendable` in the local DB forever and reappears on every fetch.
+     * Pruning the store alone would be undone by the next sync.
+     *
+     * This is the client-side record of "the server said no", applied in
+     * fetchArkVtxos so the phantom leaves the balance and stays gone.
+     *
+     * Only ever populated from state `spent`, which is permanent. The other
+     * not-spendable states (unregistered, unclaimed, htlc_recv_unclaimed) are
+     * transient and must never land here or a live capsule would vanish.
+     */
+    arkServerSpentVtxoIds: string[];
+    /**
      * When each id in `arkRefreshingVtxoIds` was first marked as refreshing,
      * epoch ms. Maintained by `setArkRefreshingVtxoIds`, which stamps ids it
      * has not seen before and drops stamps for ids that leave the list.
@@ -364,6 +384,8 @@ export type AuthStateType = {
     setArkBalance: (state: number) => void;
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => void;
     setArkVtxos: (state: ArkVtxoView[]) => void;
+    /** Merge server-confirmed-spent ids in. Never removes; spent is permanent. */
+    addArkServerSpentVtxoIds: (ids: string[]) => void;
     setArkRefreshingVtxoIds: (ids: string[]) => void;
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => void;
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => void;
@@ -647,6 +669,7 @@ const createAuthStore = (
     arkBalanceDetail: null,
     arkVtxos: [],
     arkRefreshingVtxoIds: [],
+    arkServerSpentVtxoIds: [],
     arkRefreshingVtxoSince: {},
     arkRefreshStuck: null,
     arkPendingRoundFirstSeen: {},
@@ -734,6 +757,16 @@ const createAuthStore = (
     setArkBalance: (state: number) => set({ arkBalance: state }),
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
+    addArkServerSpentVtxoIds: (ids: string[]) =>
+        set((s) => {
+            const merged = new Set(s.arkServerSpentVtxoIds);
+            for (const id of ids) if (id) merged.add(id.toLowerCase());
+            // Bounded so a long-lived wallet cannot grow this without limit in
+            // persisted storage. Oldest entries fall off first; a VTXO that old
+            // is long gone from the local DB anyway.
+            const capped = Array.from(merged).slice(-500);
+            return { arkServerSpentVtxoIds: capped };
+        }),
     setArkRefreshingVtxoIds: (ids: string[]) =>
         set((s) => {
             // Stamp ids we have not seen, keep existing stamps (so a re-set of

@@ -25,6 +25,8 @@ import {
 // imports ArkCapsules already uses for constants the barrel has in-flight
 // edits around. Same value either way; this just avoids the churn.
 import { ARK_REFRESH_MIN_SATS } from "@Cypher/services/ark/config";
+import { recordServerSpentFromError } from "@Cypher/services/ark/vtxos";
+import { notSpendableMessage } from "@Cypher/services/ark/vtxoSpendState";
 import { getFiatRate } from "../../../models/fiatUnit";
 
 // Warning-yellow gradient for the small-amount "Swap anyways" CTA + dust note.
@@ -317,23 +319,18 @@ export default function SwapAmount() {
             if (error instanceof InvoiceCreationFailedError) {
                 message = `${toProvider?.displayName ?? sendTo} couldn't create an invoice: ${(error.cause as Error)?.message ?? error.message}`;
             } else if (error instanceof PaymentFailedError) {
-                // A VTXO the Ark server reports as "unregistered" is a stuck
-                // capsule that blocks EVERY Ark send until it's cleared. The raw
-                // error is the opaque tag "BarkError.Internal"; the real reason
-                // lives in cause.inner.errorMessage. Detect it and show a clear,
-                // blocking message instead of a useless 2s toast.
-                // (Recovery action is TBD pending whether a batch-refresh can
-                // evict such a VTXO; if it can't, this needs an SDK-level
-                // vtxo-drop from Second.tech.)
-                const cause: any = error.cause;
-                const inner: string = cause?.inner?.errorMessage ?? cause?.message ?? '';
-                if (/not spendable.*unregistered|state:\s*unregistered/i.test(inner)) {
-                    Alert.alert(
-                        'A capsule is stuck',
-                        "One of your lightning capsules is in a state the Bark server won't spend, so payments from Bark keep failing. Try sending from a different wallet for now.",
-                        [{ text: 'OK', style: 'default' }],
-                        { cancelable: true },
-                    );
+                // The Ark server is the only authority on whether a VTXO is
+                // still spendable, and it only tells us when a spend fails, so
+                // this catch is the one moment the correction is available.
+                //
+                // This used to match "unregistered" alone. A VTXO the server
+                // reports as `spent` fell straight through and the raw gRPC
+                // string was rendered to the user, while the phantom balance
+                // survived every subsequent sync. See services/ark/vtxoSpendState.
+                const notSpendable = await recordServerSpentFromError(error);
+                if (notSpendable) {
+                    const { title, body } = notSpendableMessage(notSpendable);
+                    Alert.alert(title, body, [{ text: 'OK', style: 'default' }], { cancelable: true });
                     setLoading(false);
                     return;
                 }

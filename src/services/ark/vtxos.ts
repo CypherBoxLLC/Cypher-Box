@@ -1,5 +1,12 @@
 import { getArkWalletHandle } from './walletHandle';
 import { barkStateTag, isActiveExit } from './barkState';
+import useAuthStore from '@Cypher/stores/authStore';
+import { fetchArkBalance } from './balance';
+import {
+    isPermanentlyGone,
+    parseNotSpendableError,
+    type NotSpendableVtxo,
+} from './vtxoSpendState';
 
 /**
  * Plain-JS view of one VTXO, suitable for the UI.
@@ -165,7 +172,25 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
     // VTXOs are actually landing in. Cheap log, keep on until the capsule
     // flow is solid.
     //
-    const spendable = all.filter((v) => !HIDDEN_STATES.has(v.state.toLowerCase()));
+    // Drop anything the SERVER has already told us is spent.
+    //
+    // bark decides spendability from its local DB and `sync()` never
+    // revalidates that against the server, so a VTXO spent by another holder
+    // of the same seed (or resurrected by restoring a stale `.cbark`) stays
+    // `Spendable` here forever. The SDK offers no way to drop it: only
+    // `importVtxo`, which adds. This denylist is the only place that
+    // correction can stick, and it is applied at the single chokepoint every
+    // consumer reads through, so balance, capsules, the sweep and the swap
+    // preflight all agree.
+    //
+    // Populated only from a failed spend reporting state `spent`. See
+    // ./vtxoSpendState.ts for why the other not-spendable states are excluded.
+    const serverSpent = new Set(
+        (useAuthStore.getState().arkServerSpentVtxoIds ?? []).map((id) => id.toLowerCase()),
+    );
+    const spendable = all.filter(
+        (v) => !HIDDEN_STATES.has(v.state.toLowerCase()) && !serverSpent.has(v.id.toLowerCase()),
+    );
     if (__DEV__) {
         // Dev-only, and only for ACTIVE (non-spent) VTXOs. Dumping every VTXO
         // (178+ on a busy wallet, almost all spent history) on every fetch
@@ -188,4 +213,47 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         all,
         spendable,
     };
+}
+
+/**
+ * Record a server-confirmed-spent VTXO and correct the wallet's view of itself.
+ *
+ * Call this from EVERY path that can spend or refresh a VTXO. The server is the
+ * only authority on spentness and it only tells us when we try to use one, so a
+ * failed spend is the single moment this correction is available. Dropping it
+ * on the floor is how a phantom balance survives for days.
+ *
+ * Returns the parsed classification so the caller can show the right message,
+ * or null when the error was something else entirely.
+ *
+ * Only state `spent` is recorded. The transient states must not be, or a live
+ * capsule would be deleted from the balance. See ./vtxoSpendState.ts.
+ */
+export async function recordServerSpentFromError(
+    err: unknown,
+): Promise<NotSpendableVtxo | null> {
+    const parsed = parseNotSpendableError(err);
+    if (!parsed) return null;
+
+    if (!isPermanentlyGone(parsed) || !parsed.vtxoId) return parsed;
+
+    console.warn(
+        '[Ark vtxos] server reports vtxo spent, pruning from spendable set:',
+        parsed.vtxoId,
+    );
+    useAuthStore.getState().addArkServerSpentVtxoIds([parsed.vtxoId]);
+
+    // Re-derive the list and balance now, so the phantom leaves the UI with the
+    // failure that revealed it rather than lingering until the next tick.
+    // Best-effort: the denylist is already persisted, so a failure here only
+    // delays the correction to the next fetch, it does not lose it.
+    try {
+        const list = await fetchArkVtxos();
+        if (list) useAuthStore.getState().setArkVtxos(list.spendable);
+        await fetchArkBalance();
+    } catch (e: any) {
+        console.warn('[Ark vtxos] post-prune refresh failed:', e?.message ?? e);
+    }
+
+    return parsed;
 }
