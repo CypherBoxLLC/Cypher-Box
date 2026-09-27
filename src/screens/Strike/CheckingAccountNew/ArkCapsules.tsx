@@ -36,6 +36,8 @@ import {
     syncArkWallet,
     useArkCancelling,
 } from "@Cypher/services/ark";
+import { recordServerSpentFromError } from "@Cypher/services/ark/vtxos";
+import { notSpendableMessage } from "@Cypher/services/ark/vtxoSpendState";
 // Imported from the file path directly rather than the @Cypher/services/ark
 // barrel to keep this change self-contained — the barrel has in-flight edits
 // in a separate branch state and re-exporting through it would conflict.
@@ -1858,6 +1860,21 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 );
                 return;
             }
+            // The server only reveals a spent VTXO when one is submitted, so
+            // record it here. That prunes it from the spendable set, which is
+            // also what makes the pre-submit liveness check above start
+            // working: it tests "still in the store", and until the denylist
+            // existed a VTXO spent by another holder of the same seed never
+            // left the store, so the guard passed it through every time.
+            //
+            // Must precede the dust translation below, or a spent VTXO gets
+            // reported to the user as a size problem.
+            const serverSpent = await recordServerSpentFromError(err);
+            if (serverSpent) {
+                const { title, body } = notSpendableMessage(serverSpent);
+                Alert.alert(title, body, [{ text: 'OK', style: 'default' }], { cancelable: true });
+                return;
+            }
             // BarkError.Internal is the SDK's opaque catch-all when the ASP
             // rejects the round submission. The most common cause we've
             // observed is a VTXO below the ASP's (undocumented, server-side)
@@ -2319,10 +2336,19 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         '[Ark dust-refresh] failed tag=', err?.tag,
                         'inner=', err?.inner?.errorMessage ?? err?.message ?? String(err),
                     );
-                    SimpleToast.show(
-                        'Dust sweep failed. Your funds are safe, nothing was spent.',
-                        SimpleToast.LONG,
-                    );
+                    // Same correction as the main batch path: a spent input is
+                    // a permanent fact the server just handed us, not a failed
+                    // sweep to retry.
+                    const dustSpent = await recordServerSpentFromError(err);
+                    if (dustSpent) {
+                        const { title, body } = notSpendableMessage(dustSpent);
+                        Alert.alert(title, body, [{ text: 'OK', style: 'default' }], { cancelable: true });
+                    } else {
+                        SimpleToast.show(
+                            'Dust sweep failed. Your funds are safe, nothing was spent.',
+                            SimpleToast.LONG,
+                        );
+                    }
                 }
             } finally {
                 setRefreshing(false);

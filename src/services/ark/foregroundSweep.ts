@@ -21,6 +21,7 @@ import { refreshFloorBlocks } from './exitTriage';
 import { classifyArkNetworkFault } from './networkFault';
 import { getArkWalletHandle } from './walletHandle';
 import type { ArkVtxoView } from './vtxos';
+import { recordServerSpentFromError } from './vtxos';
 
 /**
  * Foreground maintenance sweep — the always-on safety net that refreshes VTXOs
@@ -271,7 +272,19 @@ export async function maybeSweepDustArkVtxos(
                 vtxoCount: plan.ids.length,
             });
         } catch (err: any) {
-            if (err instanceof ArkRefreshInFlightError) {
+            // The server only reveals a spent VTXO when we try to use one, so
+            // this catch is the sweep's ONLY chance to stop resubmitting it.
+            // Left unrecorded, a VTXO spent by another holder of the same seed
+            // stays Spendable in bark's local DB forever, gets replanned every
+            // tick, rejected by the ASP every time, and inflates the failure
+            // streak with no user-visible cause. Recording it prunes it from
+            // the spendable set so the next plan is built without it, and this
+            // is a correction rather than a transient fault, so it must not
+            // touch the backoff.
+            const serverSpent = await recordServerSpentFromError(err);
+            if (serverSpent?.state === 'spent') {
+                console.warn('[Ark dust sweep] dropped a server-spent vtxo from the plan:', serverSpent.vtxoId);
+            } else if (err instanceof ArkRefreshInFlightError) {
                 console.log('[Ark dust sweep] skipped: refresh already in flight');
             } else if (
                 classifyArkNetworkFault(err, { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }) ===
@@ -483,7 +496,19 @@ export async function maybeSweepDueArkVtxos(
             });
         }
     } catch (err: any) {
-        if (err instanceof ArkRefreshInFlightError) {
+        // The server only reveals a spent VTXO when we try to use one, so
+        // this catch is the sweep's ONLY chance to stop resubmitting it.
+        // Left unrecorded, a VTXO spent by another holder of the same seed
+        // stays Spendable in bark's local DB forever, gets replanned every
+        // tick, rejected by the ASP every time, and inflates the failure
+        // streak with no user-visible cause. Recording it prunes it from
+        // the spendable set so the next plan is built without it, and this
+        // is a correction rather than a transient fault, so it must not
+        // touch the backoff.
+        const serverSpent = await recordServerSpentFromError(err);
+        if (serverSpent?.state === 'spent') {
+            console.warn('[Ark sweep] dropped a server-spent vtxo from the plan:', serverSpent.vtxoId);
+        } else if (err instanceof ArkRefreshInFlightError) {
             // A round started between our check and the submit. Not a failure;
             // don't inflate the backoff. Next eligible tick retries.
             console.log('[Ark sweep] skipped: refresh already in flight');
