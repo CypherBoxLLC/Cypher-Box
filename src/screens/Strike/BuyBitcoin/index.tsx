@@ -403,6 +403,13 @@ export default function BuyBitcoin({ navigation, route }: any) {
                             currency={info?.currency}
                             colors_={['#EBEDF0', '#EBEDF0']}
                             isGradient={false}
+                            // This screen has its own working "Max:" button
+                            // directly above the keypad. The keypad's built-in
+                            // MAX key was never wired to a `maxBalance` here,
+                            // so it rendered as a second, dead Max control.
+                            // Hide it rather than wire it: two Max affordances
+                            // doing the same thing is its own bug.
+                            hideMax
                         />
                     </ScreenLayout >
                 )

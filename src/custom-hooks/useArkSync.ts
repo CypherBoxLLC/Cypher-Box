@@ -39,6 +39,7 @@ import {
     maybeSweepDueArkVtxos,
     progressArkExits,
     progressArkPendingRounds,
+    sweepStaleArkRefreshingVtxos,
     reopenArkWalletFromCache,
     scheduleVtxoExpiryWarnings,
     scheduleVtxoStuckSwapWarnings,
@@ -103,6 +104,13 @@ const INTERVAL_MS = Platform.OS === 'android' ? INTERVAL_MS_ANDROID : INTERVAL_M
 // nothing to refresh). Skip the slow `syncArkWallet` call on those ticks
 // and just refresh balance/vtxos/tip — saving ~2s per cycle.
 const IDLE_SKIP_AFTER_EMPTY_TICKS = 3;
+
+// How long a sync tick may hold the re-entrancy latch before a later tick is
+// allowed to take it. A healthy tick is 2-5s; the slowest observed path
+// (progressPendingRounds against a slow ASP on a Galaxy A14) is well under a
+// minute. Three minutes is far enough out that this only fires on a genuinely
+// wedged native call, never on a slow one.
+const STALE_TICK_MS = 180_000;
 
 // Urgency threshold for the refresh-failure escalation: a spendable VTXO
 // this close to expiry, together with a run of failed manual refreshes,
@@ -243,14 +251,22 @@ async function maybeSelfHealArkHandle(): Promise<void> {
 
 /**
  * Schedule version of the OS-level expiry-warning queue. Bumped when the
- * warning schedule changes (e.g. moving from 24h+6h to 4d/2d/24h/12h/6h).
+ * warning schedule changes.
+ *
+ *   v1: 24h+6h widened to 4d/2d/24h/12h/6h.
+ *   v2: the 4-day reminder retired, leaving 2d/24h/12h/6h.
+ *   v3: 7d and 4d reminders (re)added, giving 7d/4d/2d/24h/12h/6h. v2 removed
+ *       the 4-day one because acting on it cost more, which was true only while
+ *       tapping a reminder spent immediately. The tap now shows the fee and
+ *       asks, so a reminder is free again, and the early ones are what give a
+ *       user enough runway to EXIT if the ASP has gone away.
  * The sync loop reads the persisted authStore value; if behind AND the
  * reminders toggle is on, it force-calls scheduleVtxoExpiryWarnings on
  * every spendable VTXO so existing alarms catch up with the new schedule,
  * then sets the persisted version. Idempotent: the OS replaces alarms
  * with the same id, and new alarms get added.
  */
-const CURRENT_EXPIRY_NOTIFS_SCHEDULE_VERSION = 1;
+const CURRENT_EXPIRY_NOTIFS_SCHEDULE_VERSION = 3;
 
 export type UseArkSync = {
     isSyncing: boolean;
@@ -293,6 +309,10 @@ export default function useArkSync(): UseArkSync {
     // in-flight when the interval fires, skip the new one. This also means
     // a slow esplora round-trip doesn't stack up calls behind it.
     const inFlight = useRef(false);
+    // When the current tick started, and which tick owns the latch. See the
+    // watchdog in `sync()`.
+    const inFlightSince = useRef(0);
+    const syncGeneration = useRef(0);
     // Last wall-clock ms the exit machinery (progressExits/syncExits) ran.
     // Drives the ~2 min exit-drive throttle — see the exit block below.
     const exitDriveLastRunMsRef = useRef(0);
@@ -322,7 +342,32 @@ export default function useArkSync(): UseArkSync {
     const lastGcArkExpiryRef = useRef(0);
 
     const sync = useCallback(async () => {
-        if (inFlight.current) return;
+        // Re-entrancy latch, with a watchdog.
+        //
+        // Every UniFFI await below is unbounded: there is no timeout anywhere
+        // in services/ark. If the native side is torn down or wedged while the
+        // app is backgrounded, the promise a tick is sitting on may never
+        // settle, `finally` never runs, and this latch stays true for the life
+        // of the process. Every later tick, including the AppState 'active'
+        // kick, then returns here and the wallet silently stops syncing until
+        // the user force-quits. That is consistent with the reported symptom:
+        // a refresh that completed server-side is never ingested, the capsule
+        // animates for an hour, and a cold start fixes it instantly.
+        //
+        // A healthy tick is 2-5s. Past STALE_TICK_MS we take the latch anyway.
+        // The wedged promise cannot be cancelled, so it may still resolve later
+        // and run its own `finally`; the generation counter keeps it from
+        // clearing a newer tick's latch.
+        if (inFlight.current) {
+            const age = Date.now() - inFlightSince.current;
+            if (age < STALE_TICK_MS) return;
+            console.warn(
+                '[Ark sync] previous tick has been in flight for',
+                Math.round(age / 1000),
+                's (native call wedged?) - taking the latch and starting a new one',
+            );
+        }
+        const generation = ++syncGeneration.current;
 
         // Hard gate on handle readiness. On cold boot, `restoreArkWalletFromDisk`
         // takes 3-5s on a Galaxy A14 to reopen the Bark wallet. If the sync
@@ -344,6 +389,7 @@ export default function useArkSync(): UseArkSync {
         }
 
         inFlight.current = true;
+        inFlightSince.current = Date.now();
         setIsSyncing(true);
         // Defer the heavy work until the JS thread is genuinely idle.
         // RN's InteractionManager queues callbacks behind any in-flight
@@ -917,16 +963,39 @@ export default function useArkSync(): UseArkSync {
 
             // Drive forward any pending Lightning receives BEFORE reading
             // VTXOs. (See original comment.)
-            await tryClaimArkLightningReceives();
-            _stamp('tryClaimArkLightningReceives done');
+            // Each of the four drive calls below is wrapped individually.
+            //
+            // They used to be bare awaits, so a single throw aborted the whole
+            // tick before the balance/VTXO fetch and, critically, before the
+            // arkRefreshingVtxoIds prune further down. That prune is the ONLY
+            // thing that stops a capsule's "Refreshing" animation, so one
+            // failing ASP call left the animation running until the process
+            // was killed. `syncArkWallet` below already had exactly this
+            // treatment ("continuing with cached state"); these four did not.
+            //
+            // Failing one drive step does not invalidate the read that follows
+            // it: the fetch reads local SQLite, so it returns the last ingested
+            // state rather than nothing.
+            try {
+                await tryClaimArkLightningReceives();
+                _stamp('tryClaimArkLightningReceives done');
+            } catch (err) {
+                console.warn('[Ark sync] tryClaimArkLightningReceives failed, continuing:', err);
+                _stamp('tryClaimArkLightningReceives FAILED');
+            }
 
             // Drive forward any pending OUTGOING Lightning sends too. The
             // 0.11.3 crash-safe send model needs someone polling
             // checkLightningPayment or an abandoned send locks its sats in
             // pendingLnSend until HTLC block expiry (hours). No-op when
             // nothing is pending.
-            await driveArkPendingLightningSends();
-            _stamp('driveArkPendingLightningSends done');
+            try {
+                await driveArkPendingLightningSends();
+                _stamp('driveArkPendingLightningSends done');
+            } catch (err) {
+                console.warn('[Ark sync] driveArkPendingLightningSends failed, continuing:', err);
+                _stamp('driveArkPendingLightningSends FAILED');
+            }
 
             // Drive forward any pending refresh / send rounds. This is the
             // recovery path for VTXOs left Locked after an interrupted
@@ -937,8 +1006,13 @@ export default function useArkSync(): UseArkSync {
             // sits Locked in our SQLite forever even though the round
             // succeeded (or failed) server-side. See
             // `progressArkPendingRounds` for full rationale.
-            await progressArkPendingRounds();
-            _stamp('progressArkPendingRounds done');
+            try {
+                await progressArkPendingRounds();
+                _stamp('progressArkPendingRounds done');
+            } catch (err) {
+                console.warn('[Ark sync] progressArkPendingRounds failed, continuing:', err);
+                _stamp('progressArkPendingRounds FAILED');
+            }
 
             // Observability: how many pending rounds is the SDK tracking?
             // ongoing=true → ASP / SDK still working it; wait.
@@ -950,7 +1024,12 @@ export default function useArkSync(): UseArkSync {
             // Fetch pending rounds outside the __DEV__ guard so the result
             // is available for the stuck-refresh detection below. The dev-
             // only console.log stays gated.
-            const rounds = await fetchArkPendingRoundStates();
+            let rounds: Awaited<ReturnType<typeof fetchArkPendingRoundStates>> = [];
+            try {
+                rounds = await fetchArkPendingRoundStates();
+            } catch (err) {
+                console.warn('[Ark sync] fetchArkPendingRoundStates failed, continuing:', err);
+            }
             if (__DEV__ && rounds.length > 0) {
                 console.log(
                     '[Ark sync] pending rounds:',
@@ -1717,8 +1796,12 @@ export default function useArkSync(): UseArkSync {
             setArkSyncFailStreak(useAuthStore.getState().arkSyncFailStreak + 1);
             setLastError(err instanceof Error ? err : new Error(String(err)));
         } finally {
-            inFlight.current = false;
-            setIsSyncing(false);
+            // Only the newest tick owns the latch. A wedged predecessor that
+            // resolves late must not unlock a tick that is still running.
+            if (generation === syncGeneration.current) {
+                inFlight.current = false;
+                setIsSyncing(false);
+            }
         }
     }, [
         setArkBalance,
@@ -1809,7 +1892,14 @@ export default function useArkSync(): UseArkSync {
     useEffect(() => {
         if (!isArkAuth) return;
         const onChange = (status: AppStateStatus) => {
-            if (status === 'active') void sync();
+            if (status !== 'active') return;
+            // Pure-JS first, native second. The sweep needs no handle and no
+            // network, so it still runs in the one situation it exists for:
+            // `sync()` returning early at the handle gate, or its first await
+            // never settling. Doing it the other way round would put the net
+            // behind the thing it is meant to catch.
+            sweepStaleArkRefreshingVtxos();
+            void sync();
         };
         const sub = AppState.addEventListener('change', onChange);
         return () => sub.remove();

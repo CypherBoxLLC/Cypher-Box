@@ -4,6 +4,7 @@ import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-n
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -75,45 +76,18 @@ export default function CheckingAccountLogin() {
   const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
 
   useEffect(() => {
-    // Geo-gate temporarily disabled per Bam's intermediate phase: ship
-    // archive builds with CoinOS visible everywhere so the full
-    // custodial / non-custodial Lightning matrix is testable end-to-end.
-    // The IP round-trip + EU/GB/IN/CN block is kept below as the
-    // canonical reference for re-enabling alongside `isCoinosAllowed()`
-    // in services/featureFlags.ts when the production gate goes back on.
-    setPageLoading(false);
-    return;
-
-    // --- Original IP-based gate (preserved for re-enable) -----------
-    // Dev bypass + EU/GB/IN/CN block via ipapi.co. Pair with
-    // `isCoinosAllowed()` (locale-based) in featureFlags.ts when wiring
-    // CoinOS visibility back to a production gate.
+    // CoinOS is hidden in the EEA: no MiCA authorisation, and the
+    // transitional period ended 1 July 2026. See services/featureFlags.
     //
-    // if (__DEV__) {
-    //   setPageLoading(false);
-    //   return;
-    // }
-    async function fetchIPInfo() {
-      try {
-        setPageLoading(true);
-        const res = await fetch('https://ipapi.co/json/');
-        const data = await res.json();
-
-        const isBlocked =
-          data.continent_code === 'EU' ||
-          ['GB', 'IN', 'CN'].includes(data.country_code);
-
-        if (isBlocked) {
-          setCoinosException(true);
-        }
-      } catch (error) {
-        console.log('IP fetch failed', error);
-      } finally {
-        setPageLoading(false);
-      }
-    }
-
-    fetchIPInfo();
+    // This replaces an ipapi.co round-trip that used to run here. The
+    // device region is a better signal than the IP anyway (it follows
+    // the user's account region rather than where they happen to be
+    // standing), it cannot fail offline, and it does not leak an app
+    // launch to a third-party IP service.
+    //
+    // Strike is deliberately NOT gated here.
+    setCoinosException(!isCoinosAllowed());
+    setPageLoading(false);
   }, []);
 
   const createCheckingAccountClickHandler = () => {
@@ -269,7 +243,7 @@ export default function CheckingAccountLogin() {
                 <View style={[styles.sectionDivider, styles.sectionDividerArk]} />
               </View>
               <Text style={styles.sectionSubtitle}>
-                Create a self-custodial wallet — keys under your full control.
+                Create a self-custodial wallet. Keys under your full control.
               </Text>
 
               {/* Ark (Second.tech) — gated behind FEATURE_ARK_ENABLED until
@@ -367,6 +341,17 @@ export default function CheckingAccountLogin() {
                   />
                   <CreateButton onPress={createCheckingAccountClickHandler} />
                 </View>
+              )}
+              {CoinosException && (
+                /* Shown instead of the CoinOS tile in EEA storefronts.
+                   Rendering a reason beats hiding the row silently: the
+                   previous gate just dropped it, which reads as a bug and
+                   generates support mail. */
+                <Text style={styles.regionNotice}>
+                  CoinOS is not available in your region. You can use it
+                  directly at coinos.io, and pay to or from Cypher Box with a
+                  Lightning invoice or a bitcoin address.
+                </Text>
               )}
             </>
           )}

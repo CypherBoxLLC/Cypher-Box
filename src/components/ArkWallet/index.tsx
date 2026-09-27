@@ -7,6 +7,7 @@ import {
     areBgNotificationsEnabled,
     blocksToDays,
     cancelArkPendingRound,
+    computeExitFeeReserveSats,
     estimateArkOnchainRecover,
     fetchArkMinBoardSats,
     isVtxoMidRound,
@@ -20,8 +21,19 @@ import { colors } from "@Cypher/style-guide";
 import SimpleToast from "react-native-simple-toast";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Image, Platform, TouchableOpacity, View } from "react-native";
+
+import RefreshWaitBanner from "@Cypher/components/RefreshWaitBanner";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import styles from "./styles";
+
+/**
+ * Minimum gap between exit-cost estimates kicked off from the home screen.
+ *
+ * Module scope, not component state, so a remount (tab switch, carousel
+ * recycle) cannot reset it and turn this into a request per render.
+ */
+const EXIT_ESTIMATE_MIN_INTERVAL_MS = 30 * 60 * 1000;
+let lastExitEstimateAt = 0;
 
 interface Props {
     isLoading: boolean;
@@ -74,6 +86,7 @@ export default function ArkWallet({
         arkLastSyncedAt,
         arkSyncFailStreak,
         arkRefreshingVtxoIds,
+        arkPendingRoundFirstSeen,
         arkBgRefreshEnabled,
         arkBgRefreshLastSuccessAt,
         arkBgRefreshLastAttempt,
@@ -83,6 +96,8 @@ export default function ArkWallet({
         arkBalanceDetail,
         arkExitFeeReserveSats,
         setArkExitFeeReserveSats,
+        arkExitRecommendedReserveSats,
+        setArkExitRecommendedReserveSats,
         walletID,
     } = useAuthStore();
 
@@ -353,6 +368,10 @@ export default function ArkWallet({
         ? arkVtxos.reduce((sum, v) => (refreshingIds.has(v.id) ? sum + v.sats : sum), 0)
         : (arkBalanceDetail?.pendingInRoundSats ?? 0);
 
+    // Per-round first-seen timestamps, for the wait banner's countdowns. Same
+    // source the Capsules tab and WalletsView use, so all three agree.
+    const arkRoundStarts = Object.values(arkPendingRoundFirstSeen ?? {}) as number[];
+
     // Count of capsules mid-round, for "Refreshing N capsules · X sats". Falls
     // back to 1 when sats are in a round but no tracked id matches.
     const pendingRoundCount = refreshingIds.size > 0
@@ -477,6 +496,46 @@ export default function ArkWallet({
      * priority 4 separately; that block is now removed since this hook
      * subsumes it.
      */
+    /**
+     * Keep the exit-cost estimate fresh enough for the home screen to warn on.
+     *
+     * `arkExitRecommendedReserveSats` used to be written ONLY by the exit
+     * settings screen, so a user who had never opened the Vault tab had it
+     * null forever. That is exactly the user who needs to be told their
+     * Emergency Exit has no fees, so the warning below could never reach them.
+     *
+     * The sync loop cannot take this over: computeExitFeeReserveSats prices
+     * against fetchExitFeeRates, which is uncached and hits mempool.space, so
+     * a per-tick call would be a network request per tick. Hence the throttle
+     * and the foreground trigger rather than a timer.
+     *
+     * Also freshens the figure auto-board reads, since decideAutoBoard holds
+     * back max(armed, recommended) and that value previously only moved when
+     * the user happened to visit the exit screen.
+     */
+    useEffect(() => {
+        if (!isArkAuth) return;
+        let cancelled = false;
+        const run = () => {
+            if (Date.now() - lastExitEstimateAt < EXIT_ESTIMATE_MIN_INTERVAL_MS) return;
+            lastExitEstimateAt = Date.now();
+            computeExitFeeReserveSats()
+                .then((r) => {
+                    if (!cancelled) setArkExitRecommendedReserveSats(r.recommendedSats);
+                })
+                .catch(() => {
+                    // Let the next foreground retry rather than holding the
+                    // throttle open on a failure that cost us nothing.
+                    lastExitEstimateAt = 0;
+                });
+        };
+        run();
+        const sub = AppState.addEventListener('change', (next) => {
+            if (next === 'active') run();
+        });
+        return () => { cancelled = true; sub.remove(); };
+    }, [isArkAuth, setArkExitRecommendedReserveSats]);
+
     const bgRefreshStatus = useMemo(() => {
         // 0. OFFLINE, ahead of everything below.
         //
@@ -553,7 +612,30 @@ export default function ArkWallet({
             };
         }
 
-        // 5. iOS backup not synced (iCloud Drive off for Cypher Box, or
+        // 5. Capsules are worth exiting but the exit fee wallet is empty.
+        //    Emergency Exit pays miner fees from a SEPARATE on-chain wallet,
+        //    not from the Ark balance, so at zero it cannot broadcast at all.
+        //    That makes the trustless escape hatch unavailable at exactly the
+        //    moment it is needed, which is when the server is the thing that
+        //    failed, and nothing else on the home screen says so.
+        //
+        //    `arkExitRecommendedReserveSats > 0` is triage's own answer to
+        //    "is anything worth exiting": computeExitFeeReserveSats returns 0
+        //    when every capsule is priced out of an exit, so this never nags a
+        //    wallet that could not usefully exit anyway. Null means the
+        //    estimate has not run yet, which reads as 0 and stays quiet.
+        if ((arkExitRecommendedReserveSats ?? 0) > 0
+            && (arkBalanceDetail?.onchainBoardingSats ?? 0) <= 0) {
+            return {
+                // COPY: Bam finalizes.
+                text: 'Emergency Exit has no fees reserved. Fund it in the Vault tab so you can exit without the server.',
+                linkText: 'Vault tab',
+                tapTab: 1, // Vault tab: where the exit fee reserve card lives
+                error: true,
+            };
+        }
+
+        // 6. iOS backup not synced (iCloud Drive off for Cypher Box, or
         //    user created via the manual share+confirm path without yet
         //    enabling iCloud Drive). Android never sets this flag.
         if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
@@ -563,7 +645,7 @@ export default function ArkWallet({
             };
         }
 
-        // 6. All clear — no pill. Bam's call: the homescreen stays quiet
+        // 7. All clear — no pill. Bam's call: the homescreen stays quiet
         //    when there's nothing the user needs to act on. The Card's
         //    own balance line + the in-card refreshing animation (when
         //    a round is in flight) are signal enough.
@@ -573,6 +655,8 @@ export default function ArkWallet({
         dustCapsuleCount,
         notificationsEnabled,
         arkIosBackupReminderActive,
+        arkExitRecommendedReserveSats,
+        arkBalanceDetail,
         pendingRoundCount,
         pendingRoundSats,
         // Or the offline branch never re-evaluates and the pill keeps showing
@@ -689,6 +773,27 @@ export default function ArkWallet({
                         shared-mode — Bam can surface them elsewhere later. */}
                     {!hideActionButtons && (
                         <View style={{ minHeight: 40, justifyContent: "center" }}>
+                            {/* Refresh-in-flight wait banner, for the Bark
+                                Vault ALONE layout.
+                                WalletsView renders the same component for the
+                                shared-button layouts (Ark with Strike, Ark with
+                                CoinOS), where the row is absolutely positioned
+                                and the banner has to be placed against that
+                                geometry. Here the card owns its own buttons, so
+                                the banner sits in the normal flow beneath them.
+                                Two call sites, one component; the alternative
+                                was one call site that is correctly positioned in
+                                only one of the three combinations.
+                                Below the stuck banner in priority for the same
+                                reason as on WalletsView: stuck is the
+                                escalation of this condition, never a peer. */}
+                            {!isLoading && !arkRefreshStuck && pendingRoundCount > 0 && (
+                                <RefreshWaitBanner
+                                    roundStarts={arkRoundStarts}
+                                    cancelling={false}
+                                    onCancel={handleStuckRecovery}
+                                />
+                            )}
                             {!isLoading && homeMessage && (
                                 <Text h4 style={styles.alert}>
                                     {homeMessage}

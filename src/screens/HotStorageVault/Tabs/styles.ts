@@ -21,8 +21,12 @@ export default StyleSheet.create<Style>({
         alignItems: 'center',
     },
     inner: {
-        borderWidth: 1,
-        borderColor: colors.green,
+        // No static outline. The unselected tabs used to carry a 1px green
+        // border, which is the "ugly outline" this removes; selection is
+        // carried by the fill alone, matching components/Tabs (the Bark vault
+        // menu), where the same border was removed. The selected tab sets its
+        // own border inline, in its own fill colour, so it never reads as a
+        // separate edge. borderRadius stays: the rounded shape is the fill's.
         borderRadius: 10,
         width: widths / 4 - 35,
         height: widths / 4 - 45,

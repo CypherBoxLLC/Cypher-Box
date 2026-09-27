@@ -26,6 +26,38 @@ Why this is in big text at the top: most of this document's pre-May history is w
 | `ARK_VTXO_DUST_SATS` | `330` (mirrors Bitcoin standard dust) |
 | `ARK_REFRESH_MIN_SATS` | `500` (empirical ASP minimum for round participation) |
 
+### ASP refresh fee schedule (settled 2026-09-26)
+
+Read live from `ark.second.tech` with `bark ark-info` (CLI 0.6.1, the same Rust core the SDK embeds).
+The server prices refreshes on **remaining expiry distance in blocks**, and the rate FALLS as expiry
+approaches. An entry applies from its threshold up to the next one.
+
+| Remaining life | Blocks | ppm | Rate |
+|---|---|---|---|
+| under 2 days | `0 .. 287` | 0 | **free** |
+| 2 to 7 days | `288 .. 1007` | 2000 | 0.2% |
+| 7 to 14 days | `1008 .. 2015` | 4000 | 0.4% |
+| 14 days and up | `2016+` | 5000 | 0.5% |
+
+`refresh.base_fee_sat` is 0. Other live values: `vtxo_expiry_delta` 4032 (28 days), `vtxo_exit_delta`
+144, `min_board_amount_sat` 50000, `max_vtxo_amount` 10,000,000, round interval 1h,
+`offboard_feerate_sat_per_kvb` 2116.
+
+Two independent measurements confirm the direction: 0.5% at ~28 days (4032 blocks) and 0.2% at
+~2.5 days (~360 blocks). An earlier internal note read the same table the other way round, one band
+too expensive, and that reading is retracted.
+
+**Decisions use blocks. Days are for UI copy only.** A wall-clock conversion lands on the wrong side
+of a boundary as soon as block times drift, which is exactly how the 0.1.12 sweep bug happened: the
+sweep ceiling was `7 * 24` hours, which converts to exactly 1008 blocks, the first block of the 0.4%
+tier. The constants now live in [config.ts](src/services/ark/config.ts) as
+`ARK_REFRESH_FREE_BAND_MAX_BLOCKS`, `ARK_REFRESH_CHEAP_BAND_MAX_BLOCKS` and
+`ARK_SWEEP_MAX_RUNWAY_BLOCKS`.
+
+Nothing yet reads the table from the ASP at runtime; the constants are measured values with a
+comment recording the source. Caching `arkInfo().feeSchedule.refresh.ppmExpiryTable` (already
+fetched by `fetchArkExitParams`, currently discarded) is the durable fix.
+
 ### Do not
 - Add a `signet` branch to `ARK_NETWORK` selection logic.
 - Reintroduce `ark.signet.2nd.dev` or `esplora.signet.2nd.dev` as URLs anywhere in the codebase.
@@ -453,3 +485,21 @@ _(refreshed 2026-05-27. Was 7 items; 4 of those landed in the May push — keep 
    - Items 3 (backup CI) and 5 (drop crypto-js) should land before broad release.
    - Documented incident response: what happens if `ark.second.tech` goes down? Today the UI shows a stale balance and refresh retries — surface this state explicitly.
    - In-app surfacing of the "back up your seed AND your VTXO state" warning for non-tester users (called out in the [config.ts](src/services/ark/config.ts) preamble — still relies on Phase 2 backup flows actually being completed by the user).
+
+- **2026-09-26** — Refresh fee bands settled, and an auto-refresh pricing bug fixed.
+  - Read the ASP's `refresh.ppm_expiry_table` live via the `bark` CLI and resolved a long-standing
+    contradiction between two internal readings of it. The rate falls as expiry approaches: free
+    below 288 blocks, 0.2% to 1007, 0.4% to 2015, 0.5% above. Recorded in full under the status
+    banner above. The info-screen copy was right all along; the internal note was wrong.
+  - **Bug, shipped in 0.1.12 (vc41):** the foreground sweep's ceiling was
+    `ARK_SWEEP_MAX_RUNWAY_HOURS = 7 * 24`, which converts to exactly 1008 blocks, the first block of
+    the 0.4% tier. The test is `blocksLeft > ceilBlocks`, so the sweep's first eligible moment was
+    also its most expensive, at double the rate, while the toggle copy told the user it cost 0.2%.
+  - Ceiling is now `ARK_SWEEP_MAX_RUNWAY_BLOCKS` = 1007, expressed in blocks rather than converted
+    from hours. Costs one block of window: the 0.2% tier is about five days wide.
+  - Auto-refresh OFF no longer disables the sweep outright. It narrows the band to the free tier
+    (below 288 blocks), where the server charges 0 ppm. The toggle exists so a fee is never spent
+    without consent, and a zero-fee refresh has no fee to consent to, so switching it off no longer
+    means letting capsules expire.
+  - The exit-runway floor is unchanged and is still computed against the full sweep ceiling, since it
+    is a safety bound rather than a pricing one.

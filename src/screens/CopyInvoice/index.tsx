@@ -7,7 +7,7 @@ import QRCode from 'react-native-qrcode-svg';
 import Share from 'react-native-share';
 
 import styles from "./styles";
-import { Copy, QrCode, Share2 } from "@Cypher/assets/images";
+import { Copy, QrCode, Second, Share2 } from "@Cypher/assets/images";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton, ImageTextVertical } from "@Cypher/components";
 import { dispatchReset } from "@Cypher/helpers/navigation";
@@ -23,6 +23,20 @@ export default function CopyInvoice({ route }: Props) {
     // text); everything else (Strike, CoinOS) keeps GradientButton's
     // default pink. Same split ArkSendSuccessScreen uses for its Home.
     const isArk = route?.params?.theme === 'ark';
+    /**
+     * Whether what this screen is handing out will be paid into an
+     * out-of-round capsule.
+     *
+     * An explicit param rather than something inferred from `theme`, because
+     * three Ark paths land here and they do not share this property. A
+     * Lightning invoice and a Bark address both resolve to a capsule the Ark
+     * server has not yet put in a round; the on-chain boarding address does
+     * not, so showing this notice there would be simply wrong. Inferring from
+     * `isArk` would have got that third case backwards.
+     *
+     * Defaults to false, so a caller has to opt in.
+     */
+    const showArkoorNotice = route?.params?.arkoorNotice === true;
     const qrCode = useRef();
     const base64QrCodeRef = useRef('');
 
@@ -64,6 +78,25 @@ export default function CopyInvoice({ route }: Props) {
         <ScreenLayout showToolbar title='Copy Invoice'>
             <View style={styles.container}>
                 <View style={styles.innerView}>
+                    {showArkoorNotice && (
+                        /* Above the amount and the QR on purpose. The advice is
+                           "keep the app open", which is only actionable before
+                           the sender is paid, so it has to be read before the
+                           QR is shared rather than found afterwards.
+                           COPY: Bam finalizes. */
+                        <View style={styles.arkoorBanner}>
+                            <Text bold style={styles.arkoorBannerTitle}>
+                                Custodial until refreshed
+                            </Text>
+                            <Text style={styles.arkoorBannerBody}>
+                                A Lightning payment into your Bark vault should become
+                                spendable when it arrives, but it has no unilateral exit to
+                                Bitcoin until it finishes refreshing, which takes about 60
+                                minutes. Until then the Ark server could sweep it. Keep the
+                                app open.
+                            </Text>
+                        </View>
+                    )}
                     <Text bold h1 adjustsFontSizeToFit numberOfLines={1}>{route?.params?.value}</Text>
                     <Text bold style={styles.usd}>{route?.params?.converted}</Text>
                     {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
@@ -93,6 +126,22 @@ export default function CopyInvoice({ route }: Props) {
                             }
                             : {})}
                     />
+                    {isArk && (
+                        /* Attribution for the third party that coordinates every
+                           Bark capsule. Shown on all three Ark receive surfaces,
+                           unlike the notice above, because the ASP is involved in
+                           all of them. */
+                        <View style={styles.aspAttribution}>
+                            <Text style={styles.aspAttributionText}>
+                                Ark capsules coordinated by
+                            </Text>
+                            <Image
+                                source={Second}
+                                style={styles.aspLogo}
+                                resizeMode="contain"
+                            />
+                        </View>
+                    )}
                 </View>
             </View>
         </ScreenLayout>

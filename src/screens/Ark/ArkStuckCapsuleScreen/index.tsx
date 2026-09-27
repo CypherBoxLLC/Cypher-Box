@@ -1,4 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
+import { recordServerSpentFromError } from "@Cypher/services/ark/vtxos";
+import { notSpendableMessage } from "@Cypher/services/ark/vtxoSpendState";
 import { ActivityIndicator, ScrollView, TextInput, TouchableOpacity, View } from "react-native";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
@@ -219,8 +221,20 @@ export default function ArkStuckCapsuleScreen() {
                 // Non-fatal.
             }
         } catch (e: any) {
-            const inner = e?.inner?.errorMessage ?? e?.message ?? "The move failed.";
-            setResult({ ok: false, msg: `${inner} Your funds are unchanged, try another wallet.` });
+            // Never render the raw server string. This screen is where users
+            // are SENT when a capsule looks stuck, so an unparsed gRPC error
+            // here is the worst possible answer. Classify first; a `spent`
+            // verdict also prunes the phantom from the balance.
+            const notSpendable = await recordServerSpentFromError(e);
+            if (notSpendable) {
+                const { body } = notSpendableMessage(notSpendable);
+                setResult({ ok: false, msg: body });
+            } else {
+                setResult({
+                    ok: false,
+                    msg: "The move failed. Your funds are unchanged, try another wallet.",
+                });
+            }
         } finally {
             setExiting(false);
         }

@@ -14,7 +14,7 @@ const TermsOfService = () => {
     return (
         <ScreenLayout showToolbar disableScroll>
             <GradientText style={styles.title} center>Terms of Service & Privacy Policy</GradientText>
-            <Text style={styles.lastUpdated} center>Last Updated: August 2026</Text>
+            <Text style={styles.lastUpdated} center>Last Updated: September 2026</Text>
             <View style={styles.divider} />
             <ScrollView style={styles.container} showsVerticalScrollIndicator={true}
                 indicatorStyle='white'
@@ -34,12 +34,15 @@ const TermsOfService = () => {
                 <View style={styles.section}>
                     <Text style={styles.subHeader}>1. Third-Party Lightning Account(s)</Text>
                     <Text style={styles.paragraph}>
-                        Cypher Box lets you connect through API(s) (create account and/or login) to one or more Bitcoin custodians that (if benevolent) allow you to request sending and receiving payments quickly and cheaply in Bitcoin (BTC) through their Lightning Network infrastructure. Currently integrated custodians include:
+                        Cypher Box lets you connect through API(s) (login only, using an account you have already opened directly with the custodian on its own website) to one or more Bitcoin custodians that (if benevolent) allow you to request sending and receiving payments quickly and cheaply in Bitcoin (BTC) through their Lightning Network infrastructure. Currently integrated custodians include:
                     </Text>
                     <View style={styles.listContainer}>
                         <Text style={styles.listItem}>• CoinOS: A Lightning Network service provider accessible via username and password authentication.</Text>
                         <Text style={styles.listItem}>• Strike: A regulated cryptocurrency exchange accessible via OAuth 2.0 authentication.</Text>
                     </View>
+                    <Text style={styles.paragraph}>
+                        Availability differs by region. CoinOS is not available in the European Economic Area and its features are hidden in those regions. If you connected a CoinOS account before this restriction took effect, your balance remains with CoinOS and is unaffected by it, and you can continue to access that account directly at coinos.io. The self-custodial features of Cypher Box, including the hot and cold storage Vaults and the Bark Vault, are not affected.
+                    </Text>
                     <Text style={styles.paragraph}>
                         A custodian is an entity that allows you to transact and accumulate bitcoin (up to a certain subjective threshold) quickly and cheaply depending on your jurisdiction. The funds stored on your custodian Lightning Account(s) are technically under the full control of the custodian, NOT OURS, NOT YOURS. The balance shown on your Lightning Account(s) may or may not be real Bitcoin.
                     </Text>
@@ -116,6 +119,18 @@ const TermsOfService = () => {
                     <Text style={styles.paragraph}>
                         When you create a Bark Vault, the application generates a 12-word backup seedphrase locally on your device. The seedphrase is stored in encrypted local storage. You may optionally enable an additional encrypted backup file to be stored in your device's cloud storage service (iCloud on iOS, Google Drive on Android), at your configuration. The backup file is encrypted on your device before upload. Cypher Box LLC does not have access to your seedphrase, your encrypted backup file, or the encryption key. The ASP does not have access either. If you lose access to your seedphrase and all backup copies, your Bark Vault funds will be irrecoverable.
                     </Text>
+                    <Text style={styles.paragraph}>
+                        Your 12-word seedphrase alone is sufficient to recover the funds in a Bark Vault. The encrypted backup file is recommended because it makes recovery faster and carries your local Vault state, but it is not required in order to recover your money. Recovering from the seedphrase alone does not restore your transaction history, which is held in local Vault state rather than derived from the seedphrase.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        The backup file is identified by a fingerprint derived from your seedphrase. If you restore the same Bark Vault on a second device and cloud backup is enabled there, that device writes to the same backup file and replaces the copy written by the first device. If you need the backup or the history from a particular device, retrieve it from that device before restoring the same Vault elsewhere.
+                    </Text>
+                    <Text style={[styles.paragraph, styles.bold]}>
+                        Minimum amounts.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        The ASP sets a minimum amount for converting on-chain bitcoin into Bark Vault balance, and it may change that minimum at any time without notice to us or to you. A deposit below the minimum in force at the time will confirm on the Bitcoin Network but will not become spendable Bark Vault balance until the amount held reaches the minimum. Those funds are not lost and remain recoverable, but they cannot be spent through the Bark Vault in the meantime. The ASP also sets minimum amounts below which it will decline to process a payment or a refresh.
+                    </Text>
                     <Text style={[styles.paragraph, styles.bold]}>
                         VTXO expiry and refresh.
                     </Text>
@@ -123,10 +138,13 @@ const TermsOfService = () => {
                         Funds in a Bark Vault are organized as VTXOs, each with an expiry timestamp set by the ASP when the VTXO is created. Before a VTXO expires, you must either refresh it into a new VTXO (which extends its expiry) or perform an on-chain exit. To assist you, Cypher Box:
                     </Text>
                     <View style={styles.listContainer}>
-                        <Text style={styles.listItem}>• Schedules local device notifications to alert you approximately twenty-four (24) hours and six (6) hours before any of your VTXOs are due to expire;</Text>
+                        <Text style={styles.listItem}>• Schedules local device notifications to alert you approximately seven (7) days, four (4) days, two (2) days, twenty-four (24) hours, twelve (12) hours, and six (6) hours before any of your VTXOs are due to expire;</Text>
                         <Text style={styles.listItem}>• Offers an optional auto-refresh function that attempts to refresh VTXOs in the background, subject to your device's operating-system constraints including battery optimization, background-task scheduling, network availability, and similar limitations outside our control;</Text>
                         <Text style={styles.listItem}>• Provides a manual refresh action accessible from the Bark Vault interface.</Text>
                     </View>
+                    <Text style={styles.paragraph}>
+                        A refresh is carried out by the ASP running a signing round on your behalf, which is what allows a refresh to proceed without your device staying online for the whole round. This does not change who controls your funds. The new VTXO is still produced by a signature only you can make, and your ability to perform an on-chain exit without the ASP's cooperation is unaffected. A refresh is not instant. A round can take up to approximately one hour to finalise, and the funds being refreshed cannot be spent until it does.
+                    </Text>
                     <Text style={styles.paragraph}>
                         You are responsible for periodically opening the application and acting on expiry notifications. If you do not refresh a VTXO before its expiry and do not perform an on-chain exit, the Ark protocol permits the ASP to sweep the bitcoin that VTXO represents. Under the ASP's own terms, the ASP has no obligation to return swept funds to you, although it may choose to do so at its sole discretion. Cypher Box LLC has no responsibility and will not be liable for any loss arising from a missed refresh, an unacknowledged notification, a disabled notification, or any other failure on your part to act on an expiry warning.
                     </Text>
@@ -150,6 +168,12 @@ const TermsOfService = () => {
                     </Text>
                     <Text style={styles.paragraph}>
                         Although the ASP cannot take custody of your funds, the ASP's availability is necessary for ordinary Bark Vault operations including receives, sends, refreshes, and Lightning routing. If the ASP becomes unavailable, unreliable, or chooses to discontinue service, you may temporarily lose the ability to transact through the Bark Vault and may need to perform an on-chain exit to retain access to your funds. Cypher Box LLC is not liable for any loss, inability to transact, or any inconvenience arising from the ASP's operational decisions, downtime, fees, or discontinuation of service.
+                    </Text>
+                    <Text style={[styles.paragraph, styles.bold]}>
+                        Dependency on a third-party block explorer.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        In addition to the ASP, the Bark Vault reads the state of the Bitcoin Network through a third-party block explorer service in order to open the Vault, determine the current block height, and construct and monitor transactions. We currently use a publicly available service operated by Blockstream, and may use alternative providers. These are free, unauthenticated public endpoints that we do not operate and do not pay for. If the provider in use is unreachable, rate-limits your device, or blocks it, the Bark Vault may fail to open or fail to transact even though the ASP is available and your funds are unaffected. Cypher Box LLC does not control these services and will not be liable for any loss or inability to transact arising from their unavailability.
                     </Text>
                     <Text style={[styles.paragraph, styles.bold]}>
                         The ASP's own terms.
@@ -399,6 +423,18 @@ const TermsOfService = () => {
                     <Text style={styles.paragraph}>
                         This data is used solely to deliver push notifications to your device. Push notifications are optional and can be disabled at any time. We do not use this data for any other purpose.
                     </Text>
+                    <Text style={[styles.paragraph, styles.bold]}>
+                        On-chain transaction notifications.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        If on-chain transaction notifications are enabled, the app sends the Bitcoin addresses, address script hashes, and transaction identifiers it needs to watch to the same notification relay server, so that the server can tell your device when one of them is paid. This is how a notification for an incoming on-chain payment is possible at all: the server has to know what to watch for. It means the relay server, which Cypher Box LLC operates, receives Bitcoin addresses associated with your Vaults. This upload is governed by its own preference and can be turned off, in which case no addresses are sent and on-chain payment notifications stop working.
+                    </Text>
+                    <Text style={[styles.paragraph, styles.bold]}>
+                        Bark Vault expiry reminders.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        If Bark Vault reminders are enabled, the app sends the relay server your device push token and a single timestamp, being the earliest expiry among your VTXOs, so the server can wake your device in time to refresh. No addresses, balances, amounts, VTXO identifiers, or other wallet-identifying data are sent with it. This is governed by its own preference, separate from the on-chain notifications described above.
+                    </Text>
                     <Text style={styles.paragraph}>
                         If you choose to log in to Strike, Cypher Box operates an OAuth 2.0 authentication server that temporarily processes your Strike OAuth session data during the authentication handshake. This data is used solely to complete the authentication process. We do not persistently store your Strike credentials or session data on our servers.
                     </Text>
@@ -442,6 +478,9 @@ const TermsOfService = () => {
                     <Text style={styles.subHeader}>5. Data Collected via the Bitcoin Network</Text>
                     <Text style={styles.paragraph}>
                         Due to the transparent nature of the Bitcoin blockchain, when you use the "Withdraw" or "Top-up" functions, your Vault addresses and the balances they contain may become visible to your custodian(s) and to any party that monitors the Bitcoin Network. Neither Cypher Box nor its third-party custodians can have access to your 12-word seedphrase(s) that protect your Vault(s).
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        Reading the Bitcoin Network also requires querying it. To display balances and construct transactions, your device queries public block explorer services that Cypher Box LLC does not operate, currently a service operated by Blockstream. Those queries reveal to the provider, and to anyone able to observe the connection, that a device at your IP address is interested in specific Bitcoin addresses and transactions. The same is true of the Bark Vault, which queries a block explorer on every open and on a recurring basis while the app is in use. We do not control what those providers log or how long they retain it. Using a VPN or Tor changes what your IP address reveals but does not change which addresses are queried.
                     </Text>
                 </View>
 

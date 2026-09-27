@@ -14,6 +14,7 @@ import {
     sendLightningPayment as coinosSendLightning,
 } from '@Cypher/api/coinOSApis';
 import useAuthStore from '@Cypher/stores/authStore';
+import { isCoinosAllowed } from '@Cypher/services/featureFlags';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 import type {
@@ -58,8 +59,15 @@ const coinosProvider: LightningSwapProvider = {
         // `isAuth` is the historical Coinos-auth flag in this codebase
         // (predates Strike/Ark). Reading it via `getState()` rather than
         // a hook so the provider stays a plain object usable from
-        // anywhere — including outside React.
-        return Boolean(useAuthStore.getState().isAuth);
+        // anywhere, including outside React.
+        //
+        // The region gate is applied HERE rather than at each call site
+        // because every swap consumer goes through the registry:
+        // SwapSheet renders `getAvailable()`, and the engine calls
+        // `registry.require()`, which throws ProviderUnavailableError
+        // for an unavailable rail. One check therefore covers the tile,
+        // the picker fallback and any programmatic swap.
+        return Boolean(useAuthStore.getState().isAuth) && isCoinosAllowed();
     },
 
     async createInvoice(amountSats, memo) {

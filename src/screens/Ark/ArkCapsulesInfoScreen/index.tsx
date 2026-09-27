@@ -69,14 +69,18 @@ export default function ArkCapsulesInfoScreen() {
 
                 <Section title="How reminders keep your capsules safe">
                     <Body>
-                        Cypher Box sends up to 5 reminder notifications before any lightning
-                        capsule expires. The schedule is fixed: 4 days, 2 days, 24 hours, 12
-                        hours, and 6 hours before expiry. Each one escalates in urgency.
+                        Cypher Box sends up to 6 reminder notifications before any lightning
+                        capsule expires. The schedule is fixed: 7 days, 4 days, 2 days, 24
+                        hours, 12 hours, and 6 hours before expiry. Each one escalates in
+                        urgency. The two earliest exist so you still have time to exit on
+                        chain if you need to, which takes longer than a refresh.
                     </Body>
                     <Body>
-                        Tap any reminder and Cypher Box opens directly on the Capsules tab
-                        with the refresh already running. You do not need to find a button,
-                        confirm an amount, or unlock anything beyond your usual biometric.
+                        Tap any reminder and Cypher Box opens directly on the Capsules tab,
+                        works out which capsules need refreshing, and shows you the fee
+                        before anything is spent. You do not need to find a button or pick
+                        capsules yourself. Tap Refresh on that summary to go ahead, or
+                        Cancel to leave the capsules as they are.
                     </Body>
                     <Body>
                         The Reminders toggle lives in two places: at the bottom of the Bark

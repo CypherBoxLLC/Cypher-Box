@@ -38,7 +38,24 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Pro
             {tabs.map(tab => (
                 <View key={tab.id} style={styles.container}>
                     <TouchableOpacity
-                        style={[styles.inner, { backgroundColor: getTabStyle(tab.id).backgroundColor }, vaultTab && { borderColor: colors.coldGreen}]}
+                        style={[
+                            styles.inner,
+                            {
+                                backgroundColor: getTabStyle(tab.id).backgroundColor,
+                                // Selected only, and in the fill's own colour.
+                                // The old rule painted a border on EVERY tab
+                                // (green, or coldGreen via a vaultTab
+                                // override), so unselected tabs showed an
+                                // outline around a dark square. On the hot
+                                // vault that border was colors.green while the
+                                // selected fill is colors.greenNew, so the
+                                // selected tab also showed a mismatched edge.
+                                // primaryColor already encodes hot vs cold, so
+                                // the vaultTab override is no longer needed.
+                                borderWidth: selectedTab === tab.id ? 1 : 0,
+                                borderColor: primaryColor,
+                            },
+                        ]}
                         onPress={() => tabClickListener(tab.id)}
                         activeOpacity={1}
                     >

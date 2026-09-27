@@ -72,9 +72,26 @@ export type AppEvent =
     })
     | (EventBase & {
         kind: "ark-refresh-finished";
-        correlationId: string;
-        result: "success" | "failure";
-        durationMs: number;
+        /**
+         * "accepted" is NOT "success". On the delegated path the SDK returns as
+         * soon as the ASP takes the delegation, which is minutes to an hour
+         * before the round finalises. That acceptance used to be logged as
+         * success, so the activity log told users "Refresh complete" while the
+         * capsules were visibly still refreshing.
+         *
+         * success  = the round finalised and the old capsules left the wallet,
+         *            observed by the sync loop's prune.
+         * accepted = the ASP took the delegation. Nothing has finished.
+         * failure  = the submission was rejected.
+         */
+        result: "success" | "accepted" | "failure";
+        /** Absent on a completion detected by the sync loop, which has no
+         *  submission context to correlate against. */
+        correlationId?: string;
+        /** Absent for the same reason. */
+        durationMs?: number;
+        /** Capsules that finished, on a sync-observed completion. */
+        vtxoCount?: number;
     })
     | (EventBase & {
         kind: "auto-backup";

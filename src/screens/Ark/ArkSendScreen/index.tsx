@@ -17,6 +17,7 @@ import { GradientInput, CustomKeyboard } from '@Cypher/components';
 import { dispatchNavigate } from '@Cypher/helpers';
 import {
     classifyArkDestination,
+    estimateArkSendFee,
     labelForDestinationKind,
     type ArkDestination,
 } from '@Cypher/services/ark';
@@ -210,6 +211,66 @@ export default function ArkSendScreen({ route }: Props) {
     const amountWithinBalance = satsNumber <= spendableSats;
     const canProceed = destinationValid && amountValid && amountWithinBalance;
 
+    // --- MAX reserve ----------------------------------------------------
+    //
+    // The keypad's MAX key fills the amount field, and the review screen then
+    // refuses to send unless `amount + fee <= spendable`. Filling MAX with the
+    // raw spendable balance therefore walks the user into a dead end: the fee
+    // estimate resolves, and the Send button is disabled with no way forward
+    // short of retyping a smaller number. MAX has to hand back the balance
+    // MINUS a fee reserve.
+    //
+    // Same shape as SwapAmount's MAX reserve, including its seeding holdback.
+    // Seeding the reserve at 0 there let MAX momentarily equal the full
+    // balance while the estimate was still in flight, which failed the same
+    // preflight. Seed at a safe holdback that only ever decreases to the real
+    // reserve.
+    //
+    // Estimating at the FULL spendable balance is deliberate and conservative:
+    // the Ark fee does not decrease with a larger amount, so the reserve taken
+    // here is at least the fee that the slightly smaller MAX amount will
+    // actually incur. Erring high leaves a few sats behind, erring low bounces
+    // the send.
+    const MAX_RESERVE_SEEDING_HOLDBACK = 500;
+    const [maxFeeReserve, setMaxFeeReserve] = useState<number>(MAX_RESERVE_SEEDING_HOLDBACK);
+
+    useEffect(() => {
+        // No destination means no rail to quote against: Lightning, arkoor and
+        // on-chain have different costs. Hold the seeded reserve until the
+        // user gives us something to price.
+        if (!destinationValid || spendableSats <= 0) {
+            setMaxFeeReserve(MAX_RESERVE_SEEDING_HOLDBACK);
+            return;
+        }
+        let cancelled = false;
+        // Debounce: a pasted destination classifies in one go, but a typed one
+        // can flip to valid on several successive keystrokes, and each estimate
+        // is an ASP round trip.
+        const timer = setTimeout(() => {
+            (async () => {
+                try {
+                    const est = await estimateArkSendFee(destination, spendableSats);
+                    if (!cancelled) {
+                        setMaxFeeReserve(Math.max(0, Number(est?.feeSats || 0)));
+                    }
+                } catch {
+                    // Best-effort. An unreachable ASP, a rate-limited esplora or
+                    // an active exit all land here. Fall back to the holdback,
+                    // never to 0, so a failed estimate cannot let MAX overshoot.
+                    if (!cancelled) setMaxFeeReserve(MAX_RESERVE_SEEDING_HOLDBACK);
+                }
+            })();
+        }, 350);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [destination, destinationValid, spendableSats]);
+
+    // What MAX actually fills. Never negative: a balance below the reserve
+    // means there is nothing sendable, and `handleMax` no-ops at 0.
+    const maxSendableSats = Math.max(0, spendableSats - maxFeeReserve);
+
     /**
      * "Estimate fee" — hands off to the dedicated Review Payment screen,
      * which constructs the transaction (fee estimate), shows the full
@@ -342,6 +403,10 @@ export default function ArkSendScreen({ route }: Props) {
                 prevSats={sats}
                 colors_={[colors.ark.extralight, colors.ark.main]}
                 titleColor={canProceed ? colors.black.default : colors.whiteText}
+                maxBalance={maxSendableSats}
+                // Nothing to fill means a dead key, which is the whole
+                // complaint. Drop it and keep the grid slot empty.
+                hideMax={maxSendableSats <= 0}
             />
         </ScreenLayout>
     );

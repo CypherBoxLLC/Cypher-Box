@@ -386,12 +386,34 @@ export default function useArkoorReceivePrompt(): void {
                 // below for the numbers.
                 const bandCeilingBlocks = Math.round((ARK_SWEEP_MAX_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES);
                 const aboveRefreshBand = blocksLeft != null && blocksLeft > bandCeilingBlocks;
+                /**
+                 * A received capsule refreshes on sight. The only conditions
+                 * left are the two that decide whether the refresh CAN work.
+                 *
+                 * `belowExitRunway` and `aboveRefreshBand` are NOT conditions
+                 * here, and both used to be. They are the foreground sweep's
+                 * rules, and the sweep is reasoning about a capsule the user
+                 * already holds self-custodially: there, declining to refresh
+                 * preserves a unilateral exit that a slow round could cost
+                 * them, and waiting gets a cheaper rate.
+                 *
+                 * Neither applies to an arkoor. Until it is refreshed into a
+                 * round it has no unilateral exit to preserve, so the runway
+                 * floor protects nothing and the ASP can sweep it. Holding off
+                 * is the risk, not the refresh. And the band ceiling is about
+                 * paying the top rate for life the capsule does not need,
+                 * which is irrelevant when the reason to refresh is custody
+                 * rather than expiry.
+                 *
+                 * It is also deliberately NOT gated on arkAutoRefreshEnabled.
+                 * That preference is about routine maintenance spending, and
+                 * this is the one refresh that converts someone else's custody
+                 * into the user's own.
+                 */
                 const safeToAutoRefresh =
                     spendsOnlySelf &&
                     outputSats != null &&
-                    outputSats >= ARK_REFRESH_MIN_SATS &&
-                    !belowExitRunway &&
-                    !aboveRefreshBand;
+                    outputSats >= ARK_REFRESH_MIN_SATS;
 
                 if (__DEV__) {
                     console.log('[arkoor decision]', JSON.stringify({
@@ -410,7 +432,7 @@ export default function useArkoorReceivePrompt(): void {
                     const ex = cur[firstId];
                     if (ex) setArkArkoorPromptState({ ...cur, [firstId]: { ...ex, status: 'refreshed' } });
                     if (sats != null) {
-                        SimpleToast.show(`Received ${sats.toLocaleString()} sats. Refreshing to keep them longer.`, SimpleToast.SHORT);
+                        SimpleToast.show(`Received ${sats.toLocaleString()} sats. Refreshing now so they are yours to exit, not the server's.`, SimpleToast.LONG);
                     }
                     // Fire-and-forget. Expiry warnings stay armed until the
                     // refreshed replacement lands and the prune (step 1b)
@@ -482,6 +504,17 @@ export default function useArkoorReceivePrompt(): void {
                 // auto-refreshing here or nothing ever refreshes it. Dust is
                 // excluded too: a sub-floor capsule still wants the dust sweep
                 // below, however much life it has.
+                //
+                // NARROWED: `safeToAutoRefresh` above no longer excludes a
+                // capsule for having plenty of life, because the reason to
+                // refresh an arkoor is custody rather than expiry. So this is
+                // now reached only when the refresh estimate says the round
+                // would pull OTHER capsules in as well, on a capsule that is
+                // also long-lived. It stays a silent skip: dragging unrelated
+                // capsules into a round is a worse outcome than leaving this
+                // one for the foreground sweep to pick up, and a 28-day capsule
+                // must not be handed the notice below telling the user to spend
+                // it before it expires.
                 if (aboveRefreshBand && !belowFloor) {
                     recordEvent({ kind: 'arkoor-prompt', outcome: 'no-refresh-needed', vtxoIdPrefix, sats: sats ?? undefined });
                     const curLong = useAuthStore.getState().arkArkoorPromptState;
@@ -570,22 +603,33 @@ export default function useArkoorReceivePrompt(): void {
                     console.warn('[arkoor auto-refresh] notice re-schedule threw:', schedErr);
                 }
                 const timeLeft = formatCapsuleTimeLeft(vtxo.expiryHeight, tip, ex.observedAt);
-                // Reason wording matches why we did NOT auto-refresh: too small
-                // (below the refresh floor), too soon (inside the exit-runway
-                // window), or neutral for the filler / unknown-size fallback so a
-                // large capsule is never mislabelled. COPY: Bam finalizes.
-                const reasonLine = belowFloor
-                    ? 'They are too small to refresh on their own. '
-                    : belowExitRunway
-                        ? 'They are close to expiring. '
-                        : '';
-                Alert.alert(
-                    'New sats in your Bark Vault',
-                    `You received ${amountPhrase}. ${reasonLine}` +
-                        `Spend them in a payment before they expire${timeLeft ? ` (in ${timeLeft})` : ''}.`,
-                    [{ text: 'OK', onPress: release }],
-                    { cancelable: false, onDismiss: release },
+                // NO MODAL. A toast, and the OS alarms scheduled just above.
+                //
+                // Everything that used to justify interrupting the user here is
+                // gone. A received capsule now refreshes on sight, so the only
+                // ways to reach this point are that the capsule is below the
+                // ASP's refresh floor and the dust sweep could not fold it in,
+                // or that the fee estimate says the round would pull unrelated
+                // capsules along. Both are small-value cases, and neither is
+                // something the user can do anything about in the next second.
+                //
+                // Blocking the app on launch to say "spend these 400 sats" was
+                // out of all proportion to the amount at stake, and it was the
+                // only signal in the app that demanded a tap before the user
+                // could see their balance. The expiry reminders above are the
+                // real warning channel: they are OS alarms, they fire whether
+                // or not the app is open, and they now start 7 days out. The
+                // Capsules tab carries the per-capsule state for anyone who
+                // wants to act sooner.
+                const reason = belowFloor
+                    ? 'too small to refresh on its own'
+                    : 'not refreshable on its own right now';
+                SimpleToast.show(
+                    `Received ${amountPhrase}, ${reason}. Spend them in a payment` +
+                        `${timeLeft ? ` within ${timeLeft}` : ' before they expire'}.`,
+                    SimpleToast.LONG,
                 );
+                release();
             } catch (outerErr: any) {
                 console.warn('[arkoor auto-refresh] decision threw:', outerErr?.message ?? outerErr);
                 release();
