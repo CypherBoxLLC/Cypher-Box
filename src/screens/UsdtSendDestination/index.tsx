@@ -20,7 +20,7 @@ import { requestCameraAuthorization } from "../../../helpers/scan-qr";
 import styles from "../UsdtSwapDestination/styles";
 
 interface Props {
-    route: { params?: { amount?: string } };
+    route: { params?: { amount?: string; destination?: string } };
 }
 
 /**
@@ -38,7 +38,10 @@ export default function UsdtSendDestination({ route }: Props) {
     const { walletID } = useAuthStore();
     const { wallets } = useContext(BlueStorageContext);
 
-    const [raw, setRaw] = useState('');
+    // Filled in already when the previous step scanned one. It still goes
+    // through the same classification and the same Continue, so a scanned
+    // address is checked exactly as a typed one is.
+    const [raw, setRaw] = useState(route?.params?.destination ?? '');
 
     // Memoised: the derivation runs BIP39's PBKDF2 over 2048 rounds. Only used
     // to recognise this wallet's own address and refuse it.
