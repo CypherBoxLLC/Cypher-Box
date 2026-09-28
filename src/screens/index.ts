@@ -39,6 +39,8 @@ export { default as UsdtSwapProgress } from './UsdtSwapProgress';
 export { default as UsdtSendAmount } from './UsdtSendAmount';
 export { default as UsdtSendDestination } from './UsdtSendDestination';
 export { default as UsdtSendReview } from './UsdtSendReview';
+// Development only, see the screen's own note. Delete with it.
+export { default as UsdtSuccessPreview } from './UsdtSuccessPreview';
 export { default as HotStorageVault } from './HotStorageVault';
 export { default as CreateVault } from './CreateVault';
 export { default as AdjustHotThreshold } from './AdjustHotThreshold';

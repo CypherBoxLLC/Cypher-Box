@@ -339,7 +339,19 @@ export default function UsdtWallet({ preview = false }: Props) {
                         {/* Section one: what is in the wallet, and the two
                             ways to move it. */}
                         <View style={styles.labelRow}>
-                            <Text bold style={styles.balanceLabel}>{USDT_ASSET_LABEL}</Text>
+                            {/* Long press is the way into the success preview in
+                                development. Delete with that screen. The shared
+                                Text takes no press props, hence the wrapper. */}
+                            <TouchableOpacity
+                                onLongPress={
+                                    __DEV__ && !preview ? () => dispatchNavigate('UsdtSuccessPreview') : undefined
+                                }
+                                delayLongPress={600}
+                                activeOpacity={1}
+                                accessibilityRole="text"
+                            >
+                                <Text bold style={styles.balanceLabel}>{USDT_ASSET_LABEL}</Text>
+                            </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={onGuide}
                                 disabled={!onGuide}
