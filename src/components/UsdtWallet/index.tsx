@@ -175,7 +175,6 @@ function ActionButton({ label, onPress, spaced = false }: { label: string; onPre
             bottomShadowStyle={styles.bottomShadow}
             linearGradientStyleMain={styles.actionGradientMain}
             onPress={onPress}
-            disabled={!onPress}
         >
             <Text h3 bold center>{label}</Text>
         </GradientView>

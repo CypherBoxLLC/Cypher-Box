@@ -45,6 +45,13 @@ export default StyleSheet.create<Style>({
     button: {
         backgroundColor: colors.usdt.main,
         borderWidth: 0,
+        // Match SavingVaultCreated (the screen right before this in the flow):
+        // absolute, lifted off the home indicator, rather than flush at the
+        // safe-area edge.
+        position: 'absolute',
+        width: '85%',
+        alignSelf: 'center',
+        bottom: 55,
     },
     btnText: {
         fontFamily: 'Archivo-Bold',
