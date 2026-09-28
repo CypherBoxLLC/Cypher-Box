@@ -119,6 +119,21 @@ const styles = StyleSheet.create({
         color: colors.usdt.light,
         textAlign: 'center',
     },
+    /** Pushes the history icon to the far end of the label row. */
+    labelSpacer: {
+        flex: 1,
+    },
+    historyButton: {
+        width: 22,
+        height: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    historyIcon: {
+        width: 17,
+        height: 17,
+        tintColor: colors.usdt.light,
+    },
     balanceRow: {
         height: BALANCE_ROW,
         marginTop: BALANCE_MARGIN,

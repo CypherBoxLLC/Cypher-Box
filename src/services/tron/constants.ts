@@ -32,3 +32,17 @@ export const USDT_ASSET_LABEL = 'USDT Tron';
 
 /** The network on its own, for a sentence that already said USDT. */
 export const USDT_NETWORK_LABEL = 'Tron';
+
+/**
+ * The swap size we recommend, in USDT, not the smallest one allowed.
+ *
+ * Small swaps are not refused, they are just poor value: the Tron deposit
+ * carries a flat cost of roughly two and a half dollars however much is sent,
+ * so it is a few percent of a hundred-dollar swap and a third of a ten-dollar
+ * one. That is a reason to advise, not to forbid.
+ *
+ * The floor that actually refuses is the backend's, published as `minimum` by
+ * getTronConversionTerms and reflected in getFlashnetPair's `min`. This
+ * constant never gates anything; it only decides when to mention the tradeoff.
+ */
+export const RECOMMENDED_SWAP_USDT = '100';

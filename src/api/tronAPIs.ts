@@ -471,3 +471,107 @@ export async function postTronSend(
         clearTimeout(timeoutId);
     }
 }
+
+/* ------------------------------------------------------------------ */
+/* TRC-20 transfer history                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * GET against TronGrid's indexed v1 API.
+ *
+ * A different family from the /wallet routes above: those are node calls that
+ * take a POST body, this one is an index TronGrid maintains. Same timeout and
+ * the same wait on a rate limit, since it is the same host and the same
+ * allowance.
+ */
+async function get(path: string, opts: TronRequestOptions): Promise<Json> {
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        for (let retries = 0; ; retries += 1) {
+            const response = await fetch(`${TRONGRID_URL}${path}`, {
+                method: 'GET',
+                headers: { Accept: 'application/json' },
+                signal: controller.signal,
+            }).catch(() => {
+                throw new TronApiError('Could not reach the Tron network, check your connection');
+            });
+
+            if (response.status === 429) {
+                if (retries < RATE_LIMITED_RETRIES && deadline - Date.now() > RATE_LIMITED_WAIT_MS) {
+                    await new Promise(resolve => setTimeout(resolve, RATE_LIMITED_WAIT_MS));
+                    continue;
+                }
+                throw new TronApiError('The Tron network is busy, try again in a few seconds');
+            }
+
+            let parsed: unknown = null;
+            try {
+                parsed = await response.json();
+            } catch {
+                parsed = null;
+            }
+            if (!response.ok || parsed === null || typeof parsed !== 'object') {
+                throw new TronApiError('The Tron network did not answer, try again shortly');
+            }
+            return parsed as Json;
+        }
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+/** One USDT transfer in or out of an address, as TronGrid's index reports it. */
+export type TronUsdtTransfer = {
+    readonly txID: string;
+    readonly from: string;
+    readonly to: string;
+    /** In USDT's smallest unit, as an integer string. */
+    readonly valueUnits: string;
+    readonly atMs: number;
+};
+
+/** How many transfers to ask for. TronGrid caps a page at 200. */
+const TRANSFER_PAGE_SIZE = 50;
+
+/**
+ * USDT transfers in and out of an address, newest first.
+ *
+ * Filtered to the USDT contract at the server, so another token's transfer
+ * cannot appear as USDT. Rows that do not carry the four fields this needs are
+ * dropped rather than shown half-read: an entry with no amount or no
+ * counterparty is worse than one fewer entry.
+ *
+ * A constant call against an index, so it costs nothing and needs no key.
+ */
+export async function getTronUsdtTransfers(
+    address: string,
+    opts: TronRequestOptions & { limit?: number } = {},
+): Promise<TronUsdtTransfer[]> {
+    const limit = Math.min(Math.max(opts.limit ?? TRANSFER_PAGE_SIZE, 1), 200);
+    const body = await get(
+        `/v1/accounts/${encodeURIComponent(address)}/transactions/trc20` +
+            `?limit=${limit}&only_confirmed=true&contract_address=${USDT_TRC20_CONTRACT}`,
+        opts,
+    );
+    const rows = (body as { data?: unknown }).data;
+    if (!Array.isArray(rows)) {
+        return [];
+    }
+    const transfers: TronUsdtTransfer[] = [];
+    for (const row of rows) {
+        if (!row || typeof row !== 'object') continue;
+        const r = row as Record<string, unknown>;
+        const txID = typeof r.transaction_id === 'string' ? r.transaction_id : null;
+        const from = typeof r.from === 'string' ? r.from : null;
+        const to = typeof r.to === 'string' ? r.to : null;
+        const value = typeof r.value === 'string' ? r.value : null;
+        const atMs = typeof r.block_timestamp === 'number' ? r.block_timestamp : null;
+        if (!txID || !from || !to || !value || atMs === null) continue;
+        if (!/^[0-9]+$/.test(value)) continue;
+        transfers.push({ txID, from, to, valueUnits: value, atMs });
+    }
+    return transfers;
+}

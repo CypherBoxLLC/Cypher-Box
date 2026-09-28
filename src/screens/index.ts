@@ -37,6 +37,7 @@ export { default as UsdtSwapDestination } from './UsdtSwapDestination';
 export { default as UsdtSwapConfirm } from './UsdtSwapConfirm';
 export { default as UsdtSwapProgress } from './UsdtSwapProgress';
 export { default as UsdtSend } from './UsdtSend';
+export { default as UsdtHistory } from './UsdtHistory';
 export { default as UsdtSendReview } from './UsdtSendReview';
 // Development only, see the screen's own note. Delete with it.
 export { default as UsdtSuccessPreview } from './UsdtSuccessPreview';

@@ -7,7 +7,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton } from "@Cypher/components";
 import { getTronConversionTerms, type TronConversionTerms } from "@Cypher/api/flashnetAPIs";
 import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
-import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
+import { RECOMMENDED_SWAP_USDT, USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
 import { prepareBitcoinSale } from "@Cypher/services/tron/sellConversion";
 import { formatUsdtAmount, formatUsdtExact } from "@Cypher/services/tron/format";
 import {
@@ -141,6 +141,9 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
     }, [buying, terms, sendAmount]);
 
     const rateLine = formatRateLine(rate, direction);
+    // Allowed, just poor value. Never a reason to block: the floor that
+    // refuses is the backend's, and this only explains the tradeoff.
+    const smallSwap = buying && new BigNumber(sendAmount).isLessThan(RECOMMENDED_SWAP_USDT);
     const pickerTitle = buying ? 'DEPOSIT BITCOIN TO' : 'SELL BITCOIN FROM';
 
     const onContinue = async () => {
@@ -259,6 +262,11 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
                         <FeeRow label="Tron network cost" value={fees.charge} />
                         <FeeRow label={`Cypher Box fee, ${fees.rateFeePercent}% plus a flat part`} value={fees.service} />
                         <FeeRow label="Total, taken from what you send" value={fees.total} />
+                        {smallSwap && (
+                            <Text style={review.rateLine}>
+                                {`The Tron network cost is the same whatever you send, so it is a bigger share of a small swap. From ${formatUsdtExact(RECOMMENDED_SWAP_USDT)} USDT up it barely registers.`}
+                            </Text>
+                        )}
                     </View>
                 ) : (
                     <View style={review.section}>

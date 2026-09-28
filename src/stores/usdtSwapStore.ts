@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { createUsdtSwapRunner, type UsdtSwapRecord } from "../services/tron/swapRun";
+import { recordFinishedSwap } from "./usdtHistoryStore";
 import { zustandStorage } from "./index";
 
 /**
@@ -38,10 +39,46 @@ const useUsdtSwapStore = create<UsdtSwapState>()(
     )
 );
 
+/**
+ * Copy a swap that just ended into history.
+ *
+ * Done here rather than inside the runner because it is a consequence of the
+ * record changing, not a step of running a swap, and the runner is tested
+ * against a plain object that has no history to write to.
+ *
+ * Only a swap that reached the venue is kept. One that never sent anything is
+ * an attempt, not an event.
+ */
+function logIfFinished(previous: UsdtSwapRecord | null, next: UsdtSwapRecord | null): void {
+    if (!next || next.phase !== 'finished') return;
+    // The runner can settle the same swap twice, when a resume re-reads an
+    // order that was already terminal. Re-logging an unchanged one is noise.
+    if (previous && previous.phase === 'finished' && previous.order.status === next.order.status) return;
+    const { order, quote } = next;
+    const status =
+        order.status === 'settled' || order.status === 'refunded' || order.status === 'expired'
+            ? order.status
+            : 'failed';
+    recordFinishedSwap({
+        id: order.id,
+        atMs: next.updatedAtMs,
+        usdtAmount: quote.depositAmount,
+        settleAmount: status === 'settled' ? order.settleAmount ?? quote.settleAmount : null,
+        settleNetwork: order.settleAsset.network === 'bitcoin' ? 'bitcoin' : 'lightning',
+        settleAddress: order.settleAddress,
+        status,
+        ...(order.depositTxId ? { depositTxId: order.depositTxId } : {}),
+    });
+}
+
 /** The app's one runner, writing to this store. */
 export const usdtSwapRunner = createUsdtSwapRunner({
     get: () => useUsdtSwapStore.getState().record,
-    set: (record) => useUsdtSwapStore.setState({ record }),
+    set: (record) => {
+        const previous = useUsdtSwapStore.getState().record;
+        useUsdtSwapStore.setState({ record });
+        logIfFinished(previous, record);
+    },
 });
 
 /**

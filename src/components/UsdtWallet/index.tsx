@@ -1,15 +1,16 @@
 import BigNumber from "bignumber.js";
 import React, { useContext, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Image, TextInput, TouchableOpacity, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { getFlashnetPair } from "@Cypher/api/flashnetAPIs";
 import { getTronUsdtBalance } from "@Cypher/api/tronAPIs";
+import { Time } from "@Cypher/assets/images";
 import { asset } from "@Cypher/services/chainSwap/types";
 import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
-import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
+import { RECOMMENDED_SWAP_USDT, USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
 import { formatUsdtAmount, formatUsdtExact } from "@Cypher/services/tron/format";
 import {
     type SwapDirection,
@@ -268,6 +269,13 @@ export default function UsdtWallet({ preview = false }: Props) {
     const belowMinimum = hasAmount && !!pair && entered.isLessThan(pair.min);
     const overBalance =
         hasAmount && isBuyingBitcoin(direction) && balance !== null && entered.isGreaterThan(balance);
+    // Above the floor but below the size that prices well. Buying only: the
+    // recommendation is about the USDT deposit's flat cost.
+    const smallSwap =
+        hasAmount &&
+        !belowMinimum &&
+        isBuyingBitcoin(direction) &&
+        entered.isLessThan(RECOMMENDED_SWAP_USDT);
 
     let note = formatRateLine(rate, direction) ?? 'Getting the price...';
     let noteIsWarning = false;
@@ -283,6 +291,12 @@ export default function UsdtWallet({ preview = false }: Props) {
     } else if (overBalance && balance !== null) {
         note = `That is more than your ${formatUsdtAmount(balance)} USDT.`;
         noteIsWarning = true;
+    } else if (smallSwap) {
+        // Allowed, just poor value: the Tron deposit's flat cost is a big share
+        // of a small swap. Said instead of the rate, because at this size the
+        // advice is the more useful of the two, and the review screen shows
+        // what the fees actually come to as a percentage.
+        note = `Best rate from ${formatUsdtExact(RECOMMENDED_SWAP_USDT)} USDT up.`;
     }
 
     const canSwap = !preview && hasAmount && converted !== null && !belowMinimum && !overBalance;
@@ -290,6 +304,7 @@ export default function UsdtWallet({ preview = false }: Props) {
     // Undefined in preview: the buttons render as shapes that do nothing.
     const onGuide = preview ? undefined : () => dispatchNavigate('UsdtSwapsGuide');
     const onReceive = preview ? undefined : () => dispatchNavigate('UsdtReceive');
+    const onHistory = preview ? undefined : () => dispatchNavigate('UsdtHistory');
     const onFlip = preview
         ? undefined
         : () => {
@@ -361,6 +376,17 @@ export default function UsdtWallet({ preview = false }: Props) {
                                 accessibilityLabel="How Bitcoin-USDT swaps work"
                             >
                                 <Text bold style={styles.helpText}>?</Text>
+                            </TouchableOpacity>
+                            <View style={styles.labelSpacer} />
+                            <TouchableOpacity
+                                onPress={onHistory}
+                                disabled={!onHistory}
+                                style={styles.historyButton}
+                                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                                accessibilityRole="button"
+                                accessibilityLabel="USDT Tron history"
+                            >
+                                <Image source={Time} style={styles.historyIcon} resizeMode="contain" />
                             </TouchableOpacity>
                         </View>
 
