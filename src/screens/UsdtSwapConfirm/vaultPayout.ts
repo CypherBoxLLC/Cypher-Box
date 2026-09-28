@@ -36,6 +36,16 @@ export type VaultWalletIds = {
  * quote step classifies it, and refuses a testnet or malformed one with the
  * same rule a pasted address gets.
  */
+/** The wallet object for a picked vault, or undefined when this phone has none. */
+export function findVaultWallet(
+    wallet: VaultPayoutWallet,
+    wallets: readonly any[],
+    ids: VaultWalletIds,
+): any | undefined {
+    const id = wallet === 'cold' ? ids.cold : ids.hot;
+    return id ? (wallets || []).find((w: any) => typeof w?.getID === 'function' && w.getID() === id) : undefined;
+}
+
 export async function addressForVaultPayout(
     wallet: VaultPayoutWallet,
     wallets: readonly any[],

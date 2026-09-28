@@ -46,7 +46,7 @@ export const shortenAddress = (address: string) => {
 
 
 export default function ColdStorage({ route, navigation }: Props) {
-    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, toArk = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
+    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, toArk = null, vaultSend, title, type, isBatch, capsuleTotal, exactSats = null} = route?.params;
     const [feePrecalc, setFeePrecalc] = useState({ current: null, slowFee: null, mediumFee: null, fastestFee: null });
     const [usd, setUSD] = useState(inUSD);
     const [sats, setSats] = useState('100K sats  ~$' + usd);
@@ -580,7 +580,14 @@ export default function ColdStorage({ route, navigation }: Props) {
         console.log({ requestedSatPerByte, lutxo: lutxo.length });
 
         const targets = [];
-        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: Number(usd).toFixed(4), amountSats: parseInt(Number(usd) / Number(matchedRate) * 100000000) }]
+        // `exactSats` is set when the amount is not the user's to round: a swap
+        // deposit has to match the quote to the satoshi. Everywhere else the
+        // amount is still derived from the USD figure the user typed, which is
+        // lossy by a few sats and does not matter there.
+        const amountSats = exactSats !== null && exactSats !== undefined
+            ? Number(exactSats)
+            : parseInt(Number(usd) / Number(matchedRate) * 100000000);
+        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: Number(usd).toFixed(4), amountSats }]
         for (const transaction of addresses) {
           if (transaction.amount === BitcoinUnit.MAX) {
             // output with MAX

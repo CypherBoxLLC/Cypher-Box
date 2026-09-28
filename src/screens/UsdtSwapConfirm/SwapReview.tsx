@@ -8,6 +8,7 @@ import { GradientButton } from "@Cypher/components";
 import { getTronConversionTerms, type TronConversionTerms } from "@Cypher/api/flashnetAPIs";
 import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
 import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
+import { prepareBitcoinSale } from "@Cypher/services/tron/sellConversion";
 import { formatUsdtAmount, formatUsdtExact } from "@Cypher/services/tron/format";
 import {
     type SwapDirection,
@@ -23,7 +24,7 @@ import { colors } from "@Cypher/style-guide";
 
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { invoiceForSwapPayout, isLightningPayoutWallet } from "./lightningPayout";
-import { addressForVaultPayout, isVaultPayoutWallet } from "./vaultPayout";
+import { addressForVaultPayout, findVaultWallet, isVaultPayoutWallet } from "./vaultPayout";
 import WalletPicker, { WALLET_LABEL, type SwapWallet, useAvailableSwapWallets } from "./WalletPicker";
 import styles, { review } from "./styles";
 
@@ -145,11 +146,63 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
     const onContinue = async () => {
         if (!wallet || askingRef.current) return;
         if (!buying) {
-            // Selling needs the other direction of conversion.ts, which takes
-            // a Lightning deposit and settles USDT to this wallet's Tron
-            // address. That is not built, so this says so rather than
-            // pretending to start something.
-            setProblem(`Selling bitcoin from ${WALLET_LABEL[wallet]} is not available yet.`);
+            // Only the vaults can sell. A refund goes back to the wallet the
+            // bitcoin left, and the Lightning rails have no durable address to
+            // send one to, so there is nothing to quote with.
+            if (!isVaultPayoutWallet(wallet)) {
+                setProblem(`Selling bitcoin from ${WALLET_LABEL[wallet]} is not available yet.`);
+                return;
+            }
+            if (!account) {
+                setProblem('Your USDT arrives in your Hot Vault, and this phone no longer has one.');
+                return;
+            }
+            askingRef.current = true;
+            setGettingInvoice(true);
+            setProblem(null);
+            try {
+                const vaultIds = { hot: walletID, cold: coldStorageWalletID };
+                const vaultWallet = findVaultWallet(wallet, wallets || [], vaultIds);
+                if (!vaultWallet) {
+                    setProblem(`This phone no longer has a ${WALLET_LABEL[wallet]}.`);
+                    return;
+                }
+                // The refund has to land back in the vault the coins left.
+                const refundAddress = await addressForVaultPayout(wallet, wallets || [], vaultIds);
+                const prepared = await prepareBitcoinSale({
+                    amountBtc: sendAmount,
+                    settleAddress: account.address,
+                    refundAddress,
+                });
+                const depositSats = new BigNumber(prepared.depositAmount)
+                    .shiftedBy(8)
+                    .integerValue(BigNumber.ROUND_CEIL)
+                    .toNumber();
+                // Into the vault's own send, which is the only thing that
+                // spends coins: it takes the capsule selection, prices the
+                // miner fee, routes change and broadcasts. The amount is
+                // carried as exact sats so nothing re-derives it from a rate.
+                navigation.push('HotStorageVault', {
+                    wallet: vaultWallet,
+                    currency: 'USD',
+                    matchedRate: new BigNumber(prepared.settleAmount).dividedBy(prepared.depositAmount).toFixed(2),
+                    sale: {
+                        depositAddress: prepared.depositAddress,
+                        depositSats,
+                        settleUsd: prepared.settleAmount,
+                        usdPerBtc: new BigNumber(prepared.settleAmount).dividedBy(prepared.depositAmount).toFixed(2),
+                    },
+                });
+            } catch (error) {
+                setProblem(
+                    error instanceof Error && error.message
+                        ? error.message
+                        : 'Could not price this sale. Try again.',
+                );
+            } finally {
+                askingRef.current = false;
+                setGettingInvoice(false);
+            }
             return;
         }
         askingRef.current = true;

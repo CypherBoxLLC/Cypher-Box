@@ -14,16 +14,18 @@ import useAuthStore from "@Cypher/stores/authStore";
 
 
 const HotStorageVault = ({ _, route }: any) => {
-    const { wallet, matchedRate, currency, to = null, toStrike = null } = useRoute().params as { wallet: any, matchedRate: string, currency: string, to: null | string, toStrike: null | string };
+    const { wallet, matchedRate, currency, to = null, toStrike = null, sale = null } = useRoute().params as { wallet: any, matchedRate: string, currency: string, to: null | string, toStrike: null | string, sale: any };
     const [selectedTab, setSelectedTab] = useState(0);
     const [utxo, setUtxo] = useState(null);
     const { vaultTab } = useAuthStore();
 
     useEffect(() => {
-        if (to || toStrike) {
+        // A sale lands here to pick the coins that pay it, so it opens on the
+        // capsules tab the same way a pending send does.
+        if (to || toStrike || sale) {
             setSelectedTab(1)
         }
-    }, [to, toStrike])
+    }, [to, toStrike, sale])
 
 
     const onChangeSelectedTab = useCallback((id: number) => {
@@ -36,7 +38,7 @@ const HotStorageVault = ({ _, route }: any) => {
             case 0:
                 return <Vault wallet={wallet} matchedRate={matchedRate} setSelectedTab={setSelectedTab} />;
             case 1:
-                return <Capsules wallet={wallet} currency={currency} matchedRate={matchedRate} to={to} toStrike={toStrike} vaultTab={vaultTab} />;
+                return <Capsules wallet={wallet} currency={currency} matchedRate={matchedRate} to={to} toStrike={toStrike} vaultTab={vaultTab} sale={sale} />;
             case 2:
                 return <History wallet={wallet} matchedRate={matchedRate} vaultTab={vaultTab} />;
             case 3:
@@ -44,7 +46,7 @@ const HotStorageVault = ({ _, route }: any) => {
             default:
                 return <Vault wallet={wallet} matchedRate={matchedRate} setSelectedTab={setSelectedTab} />;
         }
-    }, [selectedTab, vaultTab, wallet, matchedRate, to, toStrike]);
+    }, [selectedTab, vaultTab, wallet, matchedRate, to, toStrike, sale]);
 
     return (
         <ScreenLayout

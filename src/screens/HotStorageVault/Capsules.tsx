@@ -96,7 +96,7 @@ function ResultCapsulePreview({ satsAmount }: { satsAmount: number }) {
 }
 // import { Bitcoin, Transaction, TransactionN } from "@Cypher/assets/svg";
 
-export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, toStrike }: any) {
+export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, toStrike, sale = null }: any) {
     const { colors: themeColors } = useTheme();
     const [ids, setIds] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -353,6 +353,29 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                 });
             });
             const capsuleTotal = capsulesData.reduce((acc: number, c: any) => acc + (c.value || 0), 0);
+            // A swap sale skips the amount step: the quote fixed the amount to
+            // the satoshi, and letting it be edited would send something the
+            // quote does not cover. `exactSats` is what ColdStorage spends.
+            if (sale) {
+                if (capsuleTotal < sale.depositSats) {
+                    SimpleToast.show(
+                        `Select at least ${sale.depositSats.toLocaleString()} sats of capsules to cover this sale`,
+                        SimpleToast.SHORT,
+                    );
+                    return;
+                }
+                dispatchNavigate('ColdStorage', {
+                    wallet, currency, utxo, ids, capsulesData, capsuleTotal, vaultTab,
+                    matchedRate: sale.usdPerBtc,
+                    maxUSD: total, isMaxEdit: false,
+                    inUSD: sale.settleUsd, total,
+                    to: sale.depositAddress,
+                    exactSats: sale.depositSats,
+                    vaultSend: true,
+                    title: 'Sell bitcoin for USDT Tron',
+                });
+                return;
+            }
             dispatchNavigate('EditAmount', { isEdit: false, currency, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, to, toStrike, capsulesData, capsuleTotal });
         } else {
             SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
