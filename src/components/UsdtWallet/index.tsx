@@ -31,7 +31,7 @@ import { colors } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import GradientView from "../GradientView";
 import LinearBorderView from "../StrikeView/LinearBorderView";
-import styles, { CARD_HEIGHT } from "./styles";
+import styles, { CARD_HEIGHT, CARD_WIDTH } from "./styles";
 
 /**
  * Bitcoin's brand orange, for the bitcoin side of the converter.
@@ -82,37 +82,49 @@ type Props = {
 /**
  * One of the card's pill buttons. Without onPress it is a shape only.
  *
- * `dimmed` greys the label rather than passing GradientView's own `disabled`,
- * which greys the whole gradient and made the preview card's buttons read as
- * broken (see the fix in 991baa8). The button still takes the tap and does
- * nothing, which is what an amount that cannot be swapped should do.
+ * `small` is Receive and Send, which sit beside the balance; the default is
+ * the full width Swap. `dimmed` greys the label rather than passing
+ * GradientView's own `disabled`, which greys the whole gradient and made the
+ * preview card's buttons read as broken (see the fix in 991baa8). The button
+ * still takes the tap and does nothing, which is what an amount that cannot
+ * be swapped should do.
  */
 function ActionButton({
     label,
     onPress,
-    half = false,
+    small = false,
+    spaced = false,
     dimmed = false,
 }: {
     label: string;
     onPress?: () => void;
-    half?: boolean;
+    small?: boolean;
+    spaced?: boolean;
     dimmed?: boolean;
 }) {
+    const size = small ? (spaced ? [styles.smallSize, styles.smallSpaced] : styles.smallSize) : null;
+    const shape = small ? styles.smallSize : null;
     return (
         <GradientView
-            style={half ? [styles.actionButton, styles.pairButton] : styles.actionButton}
-            linearGradientStyle={half ? [styles.actionGradient, styles.pairShadow] : styles.actionGradient}
-            topShadowStyle={half ? [styles.topShadow, styles.pairShadow] : styles.topShadow}
-            bottomShadowStyle={half ? [styles.bottomShadow, styles.pairShadow] : styles.bottomShadow}
-            linearGradientStyleMain={
-                half ? [styles.actionGradientMain, styles.pairShadow] : styles.actionGradientMain
-            }
+            style={[styles.actionButton, size]}
+            linearGradientStyle={[styles.actionGradient, shape]}
+            topShadowStyle={[styles.topShadow, shape]}
+            bottomShadowStyle={[styles.bottomShadow, shape]}
+            linearGradientStyleMain={[styles.actionGradientMain, shape]}
             onPress={onPress}
         >
             <Text
                 bold
                 center
-                style={dimmed ? [styles.buttonLabel, styles.buttonLabelDisabled] : styles.buttonLabel}
+                style={
+                    small
+                        ? dimmed
+                            ? [styles.smallLabel, styles.buttonLabelDisabled]
+                            : styles.smallLabel
+                        : dimmed
+                          ? [styles.buttonLabel, styles.buttonLabelDisabled]
+                          : styles.buttonLabel
+                }
             >
                 {label}
             </Text>
@@ -152,6 +164,10 @@ export default function UsdtWallet({ preview = false }: Props) {
     const address = account?.address ?? null;
 
     const [balance, setBalance] = useState<string | null>(null);
+    /** Why the last balance read failed, shown in place of the balance. */
+    const [balanceError, setBalanceError] = useState<string | null>(null);
+    /** Bumped by a tap on the failure, to read again now rather than wait. */
+    const [reloadKey, setReloadKey] = useState(0);
     const [direction, setDirection] = useState<SwapDirection>('usdt_to_btc');
     const [typed, setTyped] = useState('');
     /** The amount Flashnet was last asked to price, behind the debounce. */
@@ -159,23 +175,29 @@ export default function UsdtWallet({ preview = false }: Props) {
     const [pair, setPair] = useState<{ rate: string; min: string } | null>(null);
     const [priceFailed, setPriceFailed] = useState(false);
 
-    // Read the balance, then keep it fresh. A failed read (an unreachable node,
-    // a rate limit) keeps whatever is on screen and tries again shortly; until
-    // the first success the card shows a spinner rather than a guessed zero.
+    // Read the balance, then keep it fresh. A failed read keeps whatever is on
+    // screen and tries again shortly, but it says so: swallowing the reason
+    // left the card spinning forever with nothing to tell the user or us which
+    // of TronGrid, the network or the address was at fault.
     useEffect(() => {
         if (preview || !address) return undefined;
         let alive = true;
         let timer: ReturnType<typeof setTimeout> | undefined;
         setBalance(null);
+        setBalanceError(null);
         const read = async () => {
             let wait = RETRY_AFTER_FAILURE_MS;
             try {
                 const value = await getTronUsdtBalance(address);
                 if (!alive) return;
                 setBalance(value);
+                setBalanceError(null);
                 wait = REFRESH_AFTER_SUCCESS_MS;
-            } catch {
-                // Kept quiet on purpose: the next read is the recovery.
+            } catch (error) {
+                if (alive) {
+                    const why = error instanceof Error && error.message ? error.message : 'Could not read your balance';
+                    setBalanceError(why);
+                }
             }
             if (alive) timer = setTimeout(read, wait);
         };
@@ -184,7 +206,7 @@ export default function UsdtWallet({ preview = false }: Props) {
             alive = false;
             if (timer) clearTimeout(timer);
         };
-    }, [preview, address]);
+    }, [preview, address, reloadKey]);
 
     // Hold the amount still before pricing it.
     useEffect(() => {
@@ -314,8 +336,10 @@ export default function UsdtWallet({ preview = false }: Props) {
     return (
         <View style={styles.container} pointerEvents={preview ? 'none' : 'auto'}>
             <View style={styles.rowContainer}>
-                <LinearBorderView height={CARD_HEIGHT}>
+                <LinearBorderView height={CARD_HEIGHT} width={CARD_WIDTH} style={styles.frame}>
                     <View style={styles.card}>
+                        {/* Section one: what is in the wallet, and the two
+                            ways to move it. */}
                         <View style={styles.labelRow}>
                             <Text bold style={styles.balanceLabel}>USDT</Text>
                             <TouchableOpacity
@@ -330,14 +354,36 @@ export default function UsdtWallet({ preview = false }: Props) {
                             </TouchableOpacity>
                         </View>
 
-                        {balanceText === null ? (
-                            <ActivityIndicator size="small" color={colors.usdt.light} style={styles.balanceSpinner} />
-                        ) : (
-                            <Text bold style={styles.balanceAmount} numberOfLines={1} adjustsFontSizeToFit>
-                                {`${balanceText} USDT`}
-                            </Text>
-                        )}
+                        <View style={styles.balanceRow}>
+                            <View style={styles.balanceBlock}>
+                                {balanceText !== null ? (
+                                    <Text bold style={styles.balanceAmount} numberOfLines={1} adjustsFontSizeToFit>
+                                        {`${balanceText} USDT`}
+                                    </Text>
+                                ) : balanceError ? (
+                                    <TouchableOpacity
+                                        onPress={() => setReloadKey((k) => k + 1)}
+                                        accessibilityRole="button"
+                                        accessibilityLabel={`${balanceError}. Tap to try again.`}
+                                    >
+                                        <Text style={styles.balanceProblem} numberOfLines={2}>
+                                            {`${balanceError}. Tap to retry.`}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ) : (
+                                    <ActivityIndicator size="small" color={colors.usdt.light} />
+                                )}
+                            </View>
+                            <View style={styles.smallButtons}>
+                                <ActionButton label="Receive" onPress={onReceive} small />
+                                <ActionButton label="Send" onPress={onSend} small spaced />
+                            </View>
+                        </View>
 
+                        <View style={styles.rule} />
+
+                        {/* Section two: the converter and the one button that
+                            leaves the card with it. */}
                         <View style={styles.fields}>
                             <View style={[styles.field, styles.fieldActive]}>
                                 <TextInput
@@ -391,10 +437,6 @@ export default function UsdtWallet({ preview = false }: Props) {
 
                         <View style={styles.swapRow}>
                             <ActionButton label="Swap" onPress={onSwap} dimmed={!canSwap && !preview} />
-                        </View>
-                        <View style={styles.pairRow}>
-                            <ActionButton label="Receive" onPress={onReceive} half />
-                            <ActionButton label="Send" onPress={onSend} half />
                         </View>
                     </View>
                 </LinearBorderView>

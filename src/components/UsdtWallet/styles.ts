@@ -1,64 +1,80 @@
 import { colors, widths } from "@Cypher/style-guide";
 import { StyleSheet } from "react-native";
 
+import { INNER_INSET } from "../StrikeView/LinearBorderView/styles";
+
 /**
- * The USDT card is a converter, so it is taller than the other wallet cards.
+ * The USDT card: a balance with its own Receive and Send, a rule, then the
+ * converter and its Swap button.
  *
- * Every other card fits LinearBorderView's shared 184pt frame. This one holds
- * a balance, two amount fields with a flip button between them, a price line
- * and three buttons, which does not. It passes its own height to
- * LinearBorderView instead of the shared one, and the constants below add up
- * to exactly that height so the content cannot outgrow the frame unnoticed:
- * change a height here and change CARD_HEIGHT by the same amount.
+ * Two things differ from every other wallet card, and both are passed to
+ * LinearBorderView rather than changed in it, so the other cards keep the
+ * frame they had:
  *
- * The carousel auto-sizes to its tallest slide, so this height is also what
- * the USDT slide adds to Home. The shared Send/Receive row that spans the
- * other slides is faded out on this one (see WalletsView), which is why
- * Receive and Send live inside the card rather than under it.
+ *   - Width. The cards sit at widths - 114 inside a carousel slide that is
+ *     screenWidth * 0.905 wide, which left this one visibly narrow beside the
+ *     Total Assets card above it. It now fills the slide.
+ *   - Height. A balance, two amount fields, a price and three buttons do not
+ *     fit the shared 184pt.
+ *
+ * The constants below add up to CONTENT_HEIGHT, and the frame is that plus
+ * INNER_INSET, because the children live inside LinearBorderView's inner
+ * gradient which is INNER_INSET shorter than the frame. Sizing the frame to
+ * the content instead is what clipped Receive and Send off the bottom.
+ * Change a height here and CONTENT_HEIGHT follows on its own.
  *
  * Every text style sets its own lineHeight: the shared Text's base is 18pt,
  * which clips the tops of anything set larger.
  */
 
-/** The frame's inner width, from LinearBorderView's gradientBackground. */
-const CARD_INNER_WIDTH = widths - 118;
+/** Fills the carousel slide, matching the Total Assets card above. */
+export const CARD_WIDTH = widths - 40;
 
 const PADDING_H = 14;
-const PADDING_V = 10;
+const PADDING_V = 12;
 
-/** The width the card's rows have to work with. */
-const CONTENT_WIDTH = CARD_INNER_WIDTH - PADDING_H * 2;
+/** The width the card's rows have to work with, inside the inner gradient. */
+const CONTENT_WIDTH = CARD_WIDTH - INNER_INSET - PADDING_H * 2;
 
-/** Receive and Send sit side by side with this between them. */
-const PAIR_GAP = 12;
-const PAIR_WIDTH = Math.floor((CONTENT_WIDTH - PAIR_GAP) / 2);
+const LABEL_ROW = 18;
+const BALANCE_ROW = 34;
+const BALANCE_MARGIN = 2;
 
-const LABEL_ROW_HEIGHT = 20;
-const BALANCE_HEIGHT = 24;
-const FIELD_HEIGHT = 42;
+const RULE_MARGIN = 10;
+const RULE = 1;
+
+const FIELD = 44;
 /** The gap the flip button straddles. */
-const FIELD_GAP = 10;
-const NOTE_HEIGHT = 16;
-const NOTE_MARGIN = 4;
-const BUTTON_HEIGHT = 33;
-const SWAP_MARGIN = 8;
-const PAIR_MARGIN = 8;
+const FIELD_GAP = 8;
+const FIELDS = FIELD * 2 + FIELD_GAP;
+const FLIP = 30;
 
-const FIELDS_HEIGHT = FIELD_HEIGHT * 2 + FIELD_GAP;
-const FLIP_SIZE = 30;
+const RATE = 16;
+const RATE_MARGIN = 6;
 
-/** What the card asks LinearBorderView for. The sum of everything above. */
-export const CARD_HEIGHT =
+const SWAP_BUTTON = 36;
+const SWAP_MARGIN = 10;
+
+/** Receive and Send, side by side at the end of the balance row. */
+const SMALL_BUTTON = 30;
+const SMALL_GAP = 8;
+const SMALL_WIDTH = 78;
+
+const CONTENT_HEIGHT =
     PADDING_V * 2 +
-    LABEL_ROW_HEIGHT +
-    BALANCE_HEIGHT +
-    FIELDS_HEIGHT +
-    NOTE_MARGIN +
-    NOTE_HEIGHT +
+    LABEL_ROW +
+    BALANCE_MARGIN +
+    BALANCE_ROW +
+    RULE_MARGIN * 2 +
+    RULE +
+    FIELDS +
+    RATE_MARGIN +
+    RATE +
     SWAP_MARGIN +
-    BUTTON_HEIGHT +
-    PAIR_MARGIN +
-    BUTTON_HEIGHT;
+    SWAP_BUTTON;
+
+/** What the card asks LinearBorderView for. */
+export const CARD_HEIGHT = CONTENT_HEIGHT + INNER_INSET;
 
 const styles = StyleSheet.create({
     container: {
@@ -68,29 +84,22 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         marginTop: 5,
     },
+    // LinearBorderView's own trailing margin would push the wider card past
+    // the slide, so it is cancelled here.
+    frame: {
+        marginEnd: 0,
+    },
     card: {
         flex: 1,
         paddingHorizontal: PADDING_H,
         paddingVertical: PADDING_V,
     },
+
+    /* Section one: the balance, with Receive and Send beside it. */
     labelRow: {
-        height: LABEL_ROW_HEIGHT,
+        height: LABEL_ROW,
         flexDirection: 'row',
         alignItems: 'center',
-    },
-    balanceLabel: {
-        fontSize: 15,
-        lineHeight: 20,
-        color: colors.usdt.light,
-    },
-    balanceAmount: {
-        height: BALANCE_HEIGHT,
-        fontSize: 18,
-        lineHeight: 24,
-    },
-    balanceSpinner: {
-        height: BALANCE_HEIGHT,
-        alignSelf: 'flex-start',
     },
     // A drawn question mark: the app ships no question-mark asset, and its
     // info glyphs are an "i", which is not what this opens.
@@ -110,14 +119,49 @@ const styles = StyleSheet.create({
         color: colors.usdt.light,
         textAlign: 'center',
     },
+    balanceRow: {
+        height: BALANCE_ROW,
+        marginTop: BALANCE_MARGIN,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    balanceBlock: {
+        flex: 1,
+        paddingRight: 10,
+        justifyContent: 'center',
+    },
+    balanceLabel: {
+        fontSize: 15,
+        lineHeight: 18,
+        color: colors.usdt.light,
+    },
+    balanceAmount: {
+        fontSize: 19,
+        lineHeight: 25,
+    },
+    // Shown instead of the balance when the read failed. Tapping retries.
+    balanceProblem: {
+        fontSize: 13,
+        lineHeight: 17,
+        color: colors.redLight,
+    },
+    smallButtons: {
+        flexDirection: 'row',
+    },
+    rule: {
+        height: RULE,
+        marginVertical: RULE_MARGIN,
+        backgroundColor: '#3A3A4A',
+    },
 
-    /* The two amount fields, and the flip button between them. */
+    /* Section two: the converter. */
     fields: {
-        height: FIELDS_HEIGHT,
+        height: FIELDS,
         justifyContent: 'space-between',
     },
     field: {
-        height: FIELD_HEIGHT,
+        height: FIELD,
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 12,
@@ -156,10 +200,10 @@ const styles = StyleSheet.create({
     flipButton: {
         position: 'absolute',
         alignSelf: 'center',
-        top: (FIELDS_HEIGHT - FLIP_SIZE) / 2,
-        width: FLIP_SIZE,
-        height: FLIP_SIZE,
-        borderRadius: FLIP_SIZE / 2,
+        top: (FIELDS - FLIP) / 2,
+        width: FLIP,
+        height: FLIP,
+        borderRadius: FLIP / 2,
         borderWidth: 1,
         borderColor: colors.usdt.light,
         backgroundColor: colors.black.bg,
@@ -169,8 +213,8 @@ const styles = StyleSheet.create({
 
     /* The line under the fields: the price, or what is wrong with the amount. */
     note: {
-        height: NOTE_HEIGHT,
-        marginTop: NOTE_MARGIN,
+        height: RATE,
+        marginTop: RATE_MARGIN,
         fontSize: 12,
         lineHeight: 16,
         color: colors.gray.light,
@@ -179,15 +223,11 @@ const styles = StyleSheet.create({
         color: colors.redLight,
     },
 
-    /* Buttons. Swap spans the card; Receive and Send share the row below. */
     swapRow: {
         marginTop: SWAP_MARGIN,
     },
-    pairRow: {
-        marginTop: PAIR_MARGIN,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
+
+    /* Button geometry. Swap spans the card; Receive and Send are the pair. */
     actionButton: {
         shadowColor: '#040404',
         shadowOffset: { width: 8, height: 8 },
@@ -209,8 +249,8 @@ const styles = StyleSheet.create({
         shadowRadius: 2,
         shadowOpacity: 0.6,
         shadowColor: '#000000',
-        borderRadius: 25,
-        height: BUTTON_HEIGHT,
+        borderRadius: 18,
+        height: SWAP_BUTTON,
         width: CONTENT_WIDTH,
         justifyContent: 'center',
     },
@@ -219,28 +259,34 @@ const styles = StyleSheet.create({
         shadowRadius: 2,
         shadowOpacity: 1,
         shadowColor: '#030303',
-        borderRadius: 25,
-        height: BUTTON_HEIGHT,
+        borderRadius: 18,
+        height: SWAP_BUTTON,
         width: CONTENT_WIDTH,
         justifyContent: 'center',
         position: 'absolute',
     },
     actionGradientMain: {
-        borderRadius: 25,
-        height: BUTTON_HEIGHT,
+        borderRadius: 18,
+        height: SWAP_BUTTON,
         width: CONTENT_WIDTH,
         justifyContent: 'center',
     },
-    // The narrow pair. Same geometry, half the width.
-    pairButton: {
-        width: PAIR_WIDTH,
+    // The pair. Same shape, smaller, and the second one spaced off the first.
+    smallSize: {
+        width: SMALL_WIDTH,
+        height: SMALL_BUTTON,
+        borderRadius: 15,
     },
-    pairShadow: {
-        width: PAIR_WIDTH,
+    smallSpaced: {
+        marginLeft: SMALL_GAP,
     },
     buttonLabel: {
         fontSize: 15,
         lineHeight: 20,
+    },
+    smallLabel: {
+        fontSize: 13,
+        lineHeight: 17,
     },
     buttonLabelDisabled: {
         color: colors.gray.light,
