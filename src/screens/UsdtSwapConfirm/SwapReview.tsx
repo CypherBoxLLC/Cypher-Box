@@ -1,7 +1,7 @@
 import BigNumber from "bignumber.js";
-import React, { useContext, useEffect, useMemo, useState } from "react";
-import { ScrollView, View } from "react-native";
-import SimpleToast from "react-native-simple-toast";
+import { useNavigation } from "@react-navigation/native";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, ScrollView, View } from "react-native";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton } from "@Cypher/components";
@@ -22,6 +22,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
+import { invoiceForSwapPayout, isLightningPayoutWallet } from "./lightningPayout";
 import WalletPicker, { WALLET_LABEL, type SwapWallet, useAvailableSwapWallets } from "./WalletPicker";
 import styles, { review } from "./styles";
 
@@ -78,8 +79,13 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
     const { wallets } = useContext(BlueStorageContext);
     const available = useAvailableSwapWallets();
 
+    const navigation = useNavigation<any>();
     const [wallet, setWallet] = useState<SwapWallet | null>(null);
     const [terms, setTerms] = useState<TronConversionTerms | null>(null);
+    /** Asking the chosen wallet for an invoice. A latch, so one tap asks once. */
+    const [gettingInvoice, setGettingInvoice] = useState(false);
+    const [problem, setProblem] = useState<string | null>(null);
+    const askingRef = useRef(false);
 
     // Memoised: the derivation runs BIP39's PBKDF2 over 2048 rounds.
     const account = useMemo(() => resolveHotVaultTronAccount(wallets, walletID), [wallets, walletID]);
@@ -109,26 +115,67 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
     // apply and the rate is all this screen can honestly attribute.
     const fees = useMemo(() => {
         if (!buying || !terms) return null;
-        const proportional = new BigNumber(sendAmount).multipliedBy(terms.rateFee);
+        const sent = new BigNumber(sendAmount);
+        const proportional = sent.multipliedBy(terms.rateFee);
         const service = new BigNumber(terms.flatFee).plus(proportional);
         const total = new BigNumber(terms.charge).plus(service);
+        // Each fee as a share of what is being sent. The Tron cost is flat, so
+        // its percentage is the figure that actually moves with the amount:
+        // it is most of the cost on a small swap and nearly none on a large
+        // one, and only a percentage shows that.
+        const share = (part: BigNumber) =>
+            sent.isGreaterThan(0) ? `${part.dividedBy(sent).multipliedBy(100).toFixed(2)}%` : null;
+        const money = (part: BigNumber) => `${part.decimalPlaces(2, BigNumber.ROUND_UP).toFixed(2)} USDT`;
+        const line = (part: BigNumber) => {
+            const pct = share(part);
+            return pct ? `${pct}, ${money(part)}` : money(part);
+        };
         return {
-            charge: terms.charge,
-            service: service.decimalPlaces(2, BigNumber.ROUND_UP).toFixed(2),
+            charge: line(new BigNumber(terms.charge)),
+            service: line(service),
+            total: line(total),
             rateFeePercent: new BigNumber(terms.rateFee).multipliedBy(100).decimalPlaces(2).toFixed(),
-            total: total.decimalPlaces(2, BigNumber.ROUND_UP).toFixed(2),
         };
     }, [buying, terms, sendAmount]);
 
     const rateLine = formatRateLine(rate, direction);
     const pickerTitle = buying ? 'DEPOSIT BITCOIN TO' : 'SELL BITCOIN FROM';
 
-    const onContinue = () => {
-        if (!wallet) return;
-        SimpleToast.show(
-            `Swapping ${buying ? 'to' : 'from'} ${WALLET_LABEL[wallet]} is not available yet`,
-            SimpleToast.SHORT,
-        );
+    const onContinue = async () => {
+        if (!wallet || askingRef.current) return;
+        if (!buying) {
+            // Selling needs the other direction of conversion.ts, which takes
+            // a Lightning deposit and settles USDT to this wallet's Tron
+            // address. That is not built, so this says so rather than
+            // pretending to start something.
+            setProblem(`Selling bitcoin from ${WALLET_LABEL[wallet]} is not available yet.`);
+            return;
+        }
+        if (!isLightningPayoutWallet(wallet)) {
+            setProblem(`Sending the bitcoin to your ${WALLET_LABEL[wallet]} is not available yet.`);
+            return;
+        }
+        askingRef.current = true;
+        setGettingInvoice(true);
+        setProblem(null);
+        try {
+            const sats = new BigNumber(receiveAmount).shiftedBy(8).integerValue(BigNumber.ROUND_DOWN).toNumber();
+            const invoice = await invoiceForSwapPayout(wallet, sats);
+            // The quote step takes it from here: it classifies the invoice,
+            // prices the swap backwards from its amount, and is the only path
+            // that books and pays. Pushed rather than navigated, so this
+            // screen's own params are not rewritten underneath it.
+            navigation.push('UsdtSwapConfirm', { amount: sendAmount, destination: invoice });
+        } catch (error) {
+            setProblem(
+                error instanceof Error && error.message
+                    ? error.message
+                    : `Could not get an invoice from your ${WALLET_LABEL[wallet]}.`,
+            );
+        } finally {
+            askingRef.current = false;
+            setGettingInvoice(false);
+        }
     };
 
     return (
@@ -144,9 +191,9 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
                 {fees ? (
                     <View style={review.section}>
                         <Text style={review.sectionTitle}>FEES</Text>
-                        <FeeRow label="Tron network cost" value={`${formatUsdtExact(fees.charge)} USDT`} />
-                        <FeeRow label={`Cypher Box fee, ${fees.rateFeePercent}% plus a flat part`} value={`${fees.service} USDT`} />
-                        <FeeRow label="Total, taken from what you send" value={`${fees.total} USDT`} />
+                        <FeeRow label="Tron network cost" value={fees.charge} />
+                        <FeeRow label={`Cypher Box fee, ${fees.rateFeePercent}% plus a flat part`} value={fees.service} />
+                        <FeeRow label="Total, taken from what you send" value={fees.total} />
                     </View>
                 ) : (
                     <View style={review.section}>
@@ -186,16 +233,24 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
             </ScrollView>
 
             <View style={styles.footer}>
-                <Text style={styles.caution}>
-                    These figures are indicative. You see the exact amounts in the quote before anything is sent.
-                </Text>
-                <GradientButton
-                    style={styles.button}
-                    title="Continue"
-                    disabled={!wallet}
-                    onPress={onContinue}
-                    colors_={[colors.usdt.gradient1, colors.usdt.gradient2]}
-                />
+                {problem ? (
+                    <Text style={[styles.caution, review.problem]}>{problem}</Text>
+                ) : (
+                    <Text style={styles.caution}>
+                        These figures are indicative. You see the exact amounts in the quote before anything is sent.
+                    </Text>
+                )}
+                {gettingInvoice ? (
+                    <ActivityIndicator size="small" color={colors.usdt.light} />
+                ) : (
+                    <GradientButton
+                        style={styles.button}
+                        title="Continue"
+                        disabled={!wallet}
+                        onPress={() => void onContinue()}
+                        colors_={[colors.usdt.gradient1, colors.usdt.gradient2]}
+                    />
+                )}
             </View>
         </ScreenLayout>
     );

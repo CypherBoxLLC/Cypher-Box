@@ -278,4 +278,8 @@ export const review = StyleSheet.create({
         fontFamily: 'monospace',
         color: colors.white,
     },
+    /** The footer line when the chosen wallet could not be used. */
+    problem: {
+        color: colors.redLight,
+    },
 });
