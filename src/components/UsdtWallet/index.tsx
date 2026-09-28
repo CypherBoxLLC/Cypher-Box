@@ -34,15 +34,6 @@ import GradientView from "../GradientView";
 import LinearBorderView from "../StrikeView/LinearBorderView";
 import styles, { CARD_HEIGHT, CARD_WIDTH } from "./styles";
 
-/**
- * Bitcoin's brand orange, for the bitcoin side of the converter.
- *
- * Local rather than in the palette: the palette carries the colours of things
- * the app has a screen for, and this is the one place bitcoin itself is
- * labelled beside another asset. USDT keeps Tether's green (colors.usdt).
- */
-const BTC_ORANGE = '#F7931A';
-
 /** The illustrative figures on the preview card. Not the user's. */
 const PREVIEW = { balance: '1000', amount: '250', rate: '0.00000899' } as const;
 
@@ -259,8 +250,8 @@ export default function UsdtWallet({ preview = false }: Props) {
 
     const sendAsset = sendAssetOf(direction);
     const receiveAsset = receiveAssetOf(direction);
-    const sendColor = sendAsset === 'USDT' ? colors.usdt.light : BTC_ORANGE;
-    const receiveColor = receiveAsset === 'USDT' ? colors.usdt.light : BTC_ORANGE;
+    const sendColor = sendAsset === 'USDT' ? colors.usdt.light : colors.bitcoin;
+    const receiveColor = receiveAsset === 'USDT' ? colors.usdt.light : colors.bitcoin;
 
     const receiveText =
         converted === null

@@ -5,10 +5,17 @@ import { ActivityIndicator, Alert, AppState, ScrollView, TouchableOpacity, View 
 import SimpleToast from "react-native-simple-toast";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
-import { GradientButton } from "@Cypher/components";
+import { GradientButton, UsdtSuccess } from "@Cypher/components";
+import { Bitcoin, Electricity } from "@Cypher/assets/images";
 import { dispatchReset, resetAndNavigate } from "@Cypher/helpers/navigation";
 import { getChainSwapProvider } from "@Cypher/services/chainSwap";
-import { describeUsdtSwap, type SwapStep } from "@Cypher/services/tron/swapMessages";
+import {
+    ONCHAIN_CONFIRM_NOTE,
+    describeUsdtSwap,
+    settleSats,
+    shortDestination,
+    type SwapStep,
+} from "@Cypher/services/tron/swapMessages";
 import useUsdtSwapStore, { usdtSwapRunner, whenUsdtSwapStoreReady } from "@Cypher/stores/usdtSwapStore";
 import { colors } from "@Cypher/style-guide";
 
@@ -133,6 +140,36 @@ export default function UsdtSwapProgress() {
     const support = getChainSwapProvider('flashnet').supportUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const titleColor =
         view.tone === 'success' ? colors.usdt.light : view.tone === 'problem' ? colors.redLight : colors.white;
+
+    // A settled swap is the one outcome worth celebrating, and the only place
+    // in this feature where "settled" does not always mean "finished". Over
+    // Lightning the bitcoin has arrived. On chain it has been broadcast and
+    // still needs confirmations, so the same view carries that as a note
+    // rather than implying it is done.
+    if (view.tone === 'success') {
+        const onchain = record.order.settleAsset.network === 'bitcoin';
+        return (
+            <ScreenLayout disableScroll showToolbar isBackButton title="USDT swap">
+                <UsdtSuccess
+                    title={view.title}
+                    amount={`${settleSats(record)} sats`}
+                    glyph={onchain ? Bitcoin : Electricity}
+                    accent={onchain ? colors.bitcoin : colors.usdt.light}
+                    detail={
+                        <>
+                            <Text style={styles.referenceLabel}>{onchain ? 'Sent to' : 'Paid to'}</Text>
+                            <Text style={styles.referenceValue}>
+                                {shortDestination(record.order.settleAddress)}
+                            </Text>
+                        </>
+                    }
+                    networkLabel={onchain ? 'Bitcoin network' : 'Lightning Network'}
+                    {...(onchain ? { note: ONCHAIN_CONFIRM_NOTE } : {})}
+                    onHome={onDone}
+                />
+            </ScreenLayout>
+        );
+    }
 
     return (
         <ScreenLayout disableScroll showToolbar isBackButton title="USDT swap">

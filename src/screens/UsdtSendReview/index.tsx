@@ -3,7 +3,8 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { ActivityIndicator, AppState, ScrollView, View } from "react-native";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
-import { GradientButton } from "@Cypher/components";
+import { GradientButton, UsdtSuccess } from "@Cypher/components";
+import { Check } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { dispatchReset } from "@Cypher/helpers/navigation";
 import { resolveHotVaultTronAccount, tronTransferSignerForWallet } from "@Cypher/services/tron/account";
@@ -199,6 +200,28 @@ export default function UsdtSendReview({ route }: Props) {
     const usdtColors = [colors.usdt.gradient1, colors.usdt.gradient2];
     const to = destination.kind === 'tron' ? destination.value : destinationRaw;
     const view = record ? describeUsdtSend(record) : null;
+
+    // A landed Tron transfer is final: sendRun only reaches 'sent' once it is
+    // in a block. So this one celebrates with no caveat under it.
+    if (record && record.phase === 'sent') {
+        return (
+            <ScreenLayout disableScroll showToolbar isBackButton title={`Send ${USDT_ASSET_LABEL}`}>
+                <UsdtSuccess
+                    title="Sent"
+                    amount={`${formatUsdtExact(record.request.amount)} USDT`}
+                    glyph={Check}
+                    detail={
+                        <>
+                            <Text style={styles.destinationLabel}>To</Text>
+                            <Text style={styles.destinationValue}>{record.request.destination}</Text>
+                        </>
+                    }
+                    networkLabel="Tron network, TRC-20"
+                    onHome={goHome}
+                />
+            </ScreenLayout>
+        );
+    }
 
     return (
         <ScreenLayout disableScroll showToolbar isBackButton title={`Send ${USDT_ASSET_LABEL}`}>

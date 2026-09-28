@@ -95,6 +95,11 @@ const colors = {
     progress: '#3FD9B4',
     stop: '#BFF5E7',
   },
+  // Bitcoin's brand orange, for the places USDT and bitcoin are labelled side
+  // by side: the converter's two fields and the swap success view. Not a
+  // wallet colour, which is why it sits on its own rather than inside one of
+  // the blocks above.
+  bitcoin: '#F7931A',
   white: '#FFFFFF',
   whiteText: '#F1F1F1',
   black: {

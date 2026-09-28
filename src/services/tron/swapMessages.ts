@@ -162,8 +162,18 @@ export function shortDestination(value: string): string {
 
 const SUPPORT_LINE = 'contact Cypher Box support with the reference below';
 
+/**
+ * What a settled on-chain payout still owes the user.
+ *
+ * Exported because the success screen says it too, under its own heading
+ * rather than inside this sentence, and the two must not drift. A settled
+ * swap over Lightning is finished; one on chain is broadcast, and this is the
+ * difference.
+ */
+export const ONCHAIN_CONFIRM_NOTE = 'On-chain bitcoin can take an hour or more to confirm.';
+
 /** The sats a swap delivers: Flashnet's figure once it has one, the quote's until then. */
-function settleSats(record: UsdtSwapRecord): string {
+export function settleSats(record: UsdtSwapRecord): string {
     const btc = record.order.settleAmount ?? record.quote.settleAmount;
     return formatSats(new BigNumber(btc).shiftedBy(8).toFixed(0, BigNumber.ROUND_DOWN));
 }
@@ -183,7 +193,7 @@ function finished(record: UsdtSwapRecord, onchain: boolean): UsdtSwapView {
             return {
                 title: 'Swap complete',
                 detail: onchain
-                    ? `${settleSats(record)} sats sent to ${to}. On-chain bitcoin can take an hour or more to confirm.`
+                    ? `${settleSats(record)} sats sent to ${to}. ${ONCHAIN_CONFIRM_NOTE}`
                     : `${settleSats(record)} sats paid to ${to}.`,
                 tone: 'success',
                 steps: steps(STEP_LABELS.length),
