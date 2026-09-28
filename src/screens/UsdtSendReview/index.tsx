@@ -194,7 +194,7 @@ export default function UsdtSendReview({ route }: Props) {
     };
     const sendAgain = () => {
         if (!usdtSendRunner.dismiss()) return;
-        dispatchNavigate('UsdtSendAmount');
+        dispatchNavigate('UsdtSend');
     };
 
     const usdtColors = [colors.usdt.gradient1, colors.usdt.gradient2];

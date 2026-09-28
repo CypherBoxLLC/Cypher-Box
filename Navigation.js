@@ -87,7 +87,7 @@ import PaymentCode from './screen/wallets/paymentCode';
 import PaymentCodesList from './screen/wallets/paymentCodesList';
 import loc from './loc';
 import { useTheme } from './components/themes';
-import { AccountStatus, AdjustHotThreshold, CheckAccount, CheckingAccount, ColdStorage, ConfirmTransction, CopyInvoice, CreateCoinOSScreen, CreateInvoice, CreateVault, DownloadBlink, EditAmount, FeeRate, GetAddressScreen, HomeScreen, HotStorageVault, InfoBlink, LoginBlink, LoginBlinkPhone, LoginCoinOSScreen, PurchaseVault, QrScreen, ReceivedMethodScreen, ReviewPayment, SavingVault, SavingVaultCreated, SavingVaultIntro, SavingVaultIntroNew, SendReceiveOnChain, SendReceiveSuccessScreen, SendScreen, SplashScreen, ThresholdAdjust, Transaction, TransactionBroadCast, TransactionBroadCastNew, VerifyPhone, WelcomeScreen, WithdrawThreshold, WithdrawToSavingsVault, ReviewWithdrawal, RecoverSavingVault, GetStartedScreen, TermOfService, ConnectColdStorage, CheckingAccountNew, BuyBitcoin, InvoiceNew, PaymentSuccess, SwapAmount, CapsuleCatalog, EnableTwoFA, DisableTwoFA, UsdtSwapsCreated, UsdtSwapsGuide, UsdtReceive, UsdtSwapAmount, UsdtSwapDestination, UsdtSwapConfirm, UsdtSwapProgress, UsdtSendAmount, UsdtSendDestination, UsdtSendReview, UsdtSuccessPreview } from './src/screens';
+import { AccountStatus, AdjustHotThreshold, CheckAccount, CheckingAccount, ColdStorage, ConfirmTransction, CopyInvoice, CreateCoinOSScreen, CreateInvoice, CreateVault, DownloadBlink, EditAmount, FeeRate, GetAddressScreen, HomeScreen, HotStorageVault, InfoBlink, LoginBlink, LoginBlinkPhone, LoginCoinOSScreen, PurchaseVault, QrScreen, ReceivedMethodScreen, ReviewPayment, SavingVault, SavingVaultCreated, SavingVaultIntro, SavingVaultIntroNew, SendReceiveOnChain, SendReceiveSuccessScreen, SendScreen, SplashScreen, ThresholdAdjust, Transaction, TransactionBroadCast, TransactionBroadCastNew, VerifyPhone, WelcomeScreen, WithdrawThreshold, WithdrawToSavingsVault, ReviewWithdrawal, RecoverSavingVault, GetStartedScreen, TermOfService, ConnectColdStorage, CheckingAccountNew, BuyBitcoin, InvoiceNew, PaymentSuccess, SwapAmount, CapsuleCatalog, EnableTwoFA, DisableTwoFA, UsdtSwapsCreated, UsdtSwapsGuide, UsdtReceive, UsdtSwapAmount, UsdtSwapDestination, UsdtSwapConfirm, UsdtSwapProgress, UsdtSend, UsdtSendReview, UsdtSuccessPreview } from './src/screens';
 import { CardStyleInterpolators, createStackNavigator } from '@react-navigation/stack';
 import Invoice from '@Cypher/screens/Invoice';
 import ChangeUsername from '@Cypher/screens/Account/ChangeUsername';
@@ -309,8 +309,7 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="UsdtSwapDestination" component={UsdtSwapDestination} options={{ headerShown: false }} />
       <WalletsStack.Screen name="UsdtSwapConfirm" component={UsdtSwapConfirm} options={{ headerShown: false }} />
       <WalletsStack.Screen name="UsdtSwapProgress" component={UsdtSwapProgress} options={{ headerShown: false }} />
-      <WalletsStack.Screen name="UsdtSendAmount" component={UsdtSendAmount} options={{ headerShown: false }} />
-      <WalletsStack.Screen name="UsdtSendDestination" component={UsdtSendDestination} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="UsdtSend" component={UsdtSend} options={{ headerShown: false }} />
       <WalletsStack.Screen name="UsdtSendReview" component={UsdtSendReview} options={{ headerShown: false }} />
       {/* Development only: the success views, reachable by a long press on the
           USDT card's label. Delete with the screen. */}

@@ -327,7 +327,7 @@ export default function UsdtWallet({ preview = false }: Props) {
         ? undefined
         : () => {
               void whenUsdtSendStoreReady().then(() =>
-                  dispatchNavigate(useUsdtSendStore.getState().record ? 'UsdtSendReview' : 'UsdtSendAmount'),
+                  dispatchNavigate(useUsdtSendStore.getState().record ? 'UsdtSendReview' : 'UsdtSend'),
               );
           };
 
