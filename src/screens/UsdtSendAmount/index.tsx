@@ -14,8 +14,8 @@ import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
 import { formatUsdtAmount } from "@Cypher/services/tron/format";
 import {
     checkSendAmount,
-    classifyTronSendDestination,
     describeSendDestinationProblem,
+    parseTronPaymentRequest,
 } from "@Cypher/services/tron/sendForm";
 import { applySwapAmountKey, normalizeSwapAmount, type SwapAmountKey } from "@Cypher/services/tron/swapAmount";
 import { shortDestination } from "@Cypher/services/tron/swapMessages";
@@ -100,12 +100,16 @@ export default function UsdtSendAmount() {
                                 SimpleToast.show('No data in QR code', SimpleToast.SHORT);
                                 return;
                             }
-                            const destination = classifyTronSendDestination(value, address);
+                            const { destination, amount: asked } = parseTronPaymentRequest(value, address);
                             if (destination.kind !== 'tron') {
                                 SimpleToast.show(describeSendDestinationProblem(destination.problem), SimpleToast.LONG);
                                 return;
                             }
                             setScanned(destination.value);
+                            // A code that asked for an amount fills it in, since
+                            // this is the screen that takes one. Still editable:
+                            // it is a request, not an instruction.
+                            if (asked) setAmount(asked);
                         },
                     },
                 });

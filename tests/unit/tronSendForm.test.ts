@@ -17,10 +17,18 @@ import {
     classifyTronSendDestination,
     describeSendDestinationProblem,
     isSendableDestination,
+    parseTronPaymentRequest,
 } from '../../src/services/tron/sendForm';
 
-/** The USDT contract on Tron, a real mainnet address with a valid checksum. */
-const VALID_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+/**
+ * A real mainnet address with a valid checksum.
+ *
+ * Deliberately NOT the USDT contract, which this file used to use. That is a
+ * valid address and it now has its own refusal, so using it here tested the
+ * wrong thing: every "a good address is accepted" case would have been
+ * asserting against a destination that destroys money.
+ */
+const VALID_TRON = 'TKHuVq1oKVruCGLvqVexFs6dawKv6fQgFs';
 
 const problemOf = (raw: string, own?: string) => {
     const d = classifyTronSendDestination(raw, own);
@@ -111,5 +119,82 @@ describe('checkSendAmount', () => {
 
     it('lets an amount through when the balance could not be read', () => {
         expect(checkSendAmount('1000000', { balance: null })).toEqual({ ok: true });
+    });
+});
+
+/**
+ * Scanned payment codes.
+ *
+ * Tron has no single payment-URI standard, so what a QR contains varies. Two
+ * of these shapes are dangerous rather than merely unsupported, and both were
+ * found by scanning a real payout code:
+ *
+ *   - the EIP-681 form puts the TOKEN CONTRACT in the address slot and the
+ *     recipient in a parameter, so reading the path alone sends USDT to the
+ *     USDT contract, where it is destroyed;
+ *   - any code naming two addresses makes the recipient a guess.
+ *
+ * Both are refused. The amount is a convenience on top of that, never a
+ * reason to accept an address we are unsure of.
+ */
+describe('scanned payment codes', () => {
+    const RECIPIENT = 'TKHuVq1oKVruCGLvqVexFs6dawKv6fQgFs';
+    const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+
+    it('reads the amount a code asks for', () => {
+        const r = parseTronPaymentRequest(`tron:${RECIPIENT}?amount=5.323`);
+        expect(r.destination.kind).toBe('tron');
+        expect(r.amount).toBe('5.323');
+    });
+
+    it('reads it whatever the case and alongside other parameters', () => {
+        expect(parseTronPaymentRequest(`TRON:${RECIPIENT}?amount=5.323&token=USDT`).amount).toBe('5.323');
+    });
+
+    it('has no amount when the code did not ask for one', () => {
+        expect(parseTronPaymentRequest(RECIPIENT).amount).toBeNull();
+        expect(parseTronPaymentRequest(`tron:${RECIPIENT}`).amount).toBeNull();
+    });
+
+    it('drops an amount it cannot trust rather than filling the field with it', () => {
+        for (const bad of ['0', '-1', 'abc', '1.1234567']) {
+            const r = parseTronPaymentRequest(`tron:${RECIPIENT}?amount=${bad}`);
+            expect(r.destination.kind).toBe('tron');
+            expect(r.amount).toBeNull();
+        }
+    });
+
+    it('ignores an EIP-681 uint256, whose scale is the contract\'s not ours', () => {
+        // 5323000 would be 5.323 at six decimals, but nothing in the code says
+        // six, so guessing would be a guess about somebody's money.
+        const r = parseTronPaymentRequest(`tron:${RECIPIENT}?uint256=5323000`);
+        expect(r.amount).toBeNull();
+    });
+
+    it('refuses the token contract, which the EIP-681 shape puts in the address slot', () => {
+        const d = classifyTronSendDestination(USDT_CONTRACT);
+        expect(d.kind).toBe('invalid');
+        expect(d.kind === 'invalid' && d.problem).toBe('token_contract');
+        expect(describeSendDestinationProblem('token_contract')).toMatch(/destroyed/);
+    });
+
+    it('refuses a code naming two addresses rather than picking one', () => {
+        const d = classifyTronSendDestination(`tron:${USDT_CONTRACT}?address=${RECIPIENT}&amount=5.323`);
+        expect(d.kind === 'invalid' && d.problem).toBe('ambiguous_request');
+        // The same shape with a path, which is what EIP-681 actually writes.
+        const withPath = classifyTronSendDestination(
+            `tron:${USDT_CONTRACT}/transfer?address=${RECIPIENT}&uint256=5323000`,
+        );
+        expect(withPath.kind).toBe('invalid');
+    });
+
+    it('accepts a code whose parameter agrees with its address', () => {
+        const d = classifyTronSendDestination(`tron:${RECIPIENT}?address=${RECIPIENT}&amount=1`);
+        expect(d.kind).toBe('tron');
+    });
+
+    it('still refuses this wallet sending to itself, however the code is shaped', () => {
+        const d = classifyTronSendDestination(`tron:${RECIPIENT}?amount=5`, RECIPIENT);
+        expect(d.kind === 'invalid' && d.problem).toBe('own_address');
     });
 });
