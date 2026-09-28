@@ -23,6 +23,7 @@ import { colors } from "@Cypher/style-guide";
 
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { invoiceForSwapPayout, isLightningPayoutWallet } from "./lightningPayout";
+import { addressForVaultPayout, isVaultPayoutWallet } from "./vaultPayout";
 import WalletPicker, { WALLET_LABEL, type SwapWallet, useAvailableSwapWallets } from "./WalletPicker";
 import styles, { review } from "./styles";
 
@@ -75,7 +76,7 @@ function Amount({ label, value, unit, sub }: { label: string; value: string; uni
  * rather than pretending to start a swap.
  */
 export default function SwapReview({ direction, sendAmount, receiveAmount, rate }: Props) {
-    const { walletID } = useAuthStore();
+    const { walletID, coldStorageWalletID } = useAuthStore();
     const { wallets } = useContext(BlueStorageContext);
     const available = useAvailableSwapWallets();
 
@@ -151,26 +152,37 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
             setProblem(`Selling bitcoin from ${WALLET_LABEL[wallet]} is not available yet.`);
             return;
         }
-        if (!isLightningPayoutWallet(wallet)) {
-            setProblem(`Sending the bitcoin to your ${WALLET_LABEL[wallet]} is not available yet.`);
-            return;
-        }
         askingRef.current = true;
         setGettingInvoice(true);
         setProblem(null);
         try {
-            const sats = new BigNumber(receiveAmount).shiftedBy(8).integerValue(BigNumber.ROUND_DOWN).toNumber();
-            const invoice = await invoiceForSwapPayout(wallet, sats);
-            // The quote step takes it from here: it classifies the invoice,
-            // prices the swap backwards from its amount, and is the only path
-            // that books and pays. Pushed rather than navigated, so this
-            // screen's own params are not rewritten underneath it.
-            navigation.push('UsdtSwapConfirm', { amount: sendAmount, destination: invoice });
+            // Each wallet answers with the one thing a swap needs to pay it.
+            // Lightning gives an invoice for a named amount, so that swap is
+            // priced backwards from it. A vault gives a receive address and no
+            // amount, so the user's USDT stays the amount, priced exact_in.
+            let destination: string;
+            if (isLightningPayoutWallet(wallet)) {
+                const sats = new BigNumber(receiveAmount).shiftedBy(8).integerValue(BigNumber.ROUND_DOWN).toNumber();
+                destination = await invoiceForSwapPayout(wallet, sats);
+            } else if (isVaultPayoutWallet(wallet)) {
+                destination = await addressForVaultPayout(wallet, wallets || [], {
+                    hot: walletID,
+                    cold: coldStorageWalletID,
+                });
+            } else {
+                setProblem(`Sending the bitcoin to your ${WALLET_LABEL[wallet]} is not available yet.`);
+                return;
+            }
+            // The quote step takes it from here: it classifies the destination,
+            // prices the swap and is the only path that books and pays. Pushed
+            // rather than navigated, so this screen's own params are not
+            // rewritten underneath it.
+            navigation.push('UsdtSwapConfirm', { amount: sendAmount, destination });
         } catch (error) {
             setProblem(
                 error instanceof Error && error.message
                     ? error.message
-                    : `Could not get an invoice from your ${WALLET_LABEL[wallet]}.`,
+                    : `Could not get a destination from your ${WALLET_LABEL[wallet]}.`,
             );
         } finally {
             askingRef.current = false;
