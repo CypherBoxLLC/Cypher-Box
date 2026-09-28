@@ -18,3 +18,17 @@ export const SUN_PER_TRX = 1_000_000;
 
 /** Which is six decimals, stated as one rather than derived from the other. */
 export const TRX_DECIMALS = 6;
+
+/**
+ * What to call this asset in front of a user.
+ *
+ * Always the network with the ticker. USDT exists on Ethereum, Solana, BNB
+ * Chain and others, the balances are not interchangeable, and USDT sent to a
+ * Tron address over any other network is gone. "USDT" alone in a wallet that
+ * holds exactly one of them is the kind of shorthand that costs somebody their
+ * money, so the screens say this instead.
+ */
+export const USDT_ASSET_LABEL = 'USDT Tron';
+
+/** The network on its own, for a sentence that already said USDT. */
+export const USDT_NETWORK_LABEL = 'Tron';

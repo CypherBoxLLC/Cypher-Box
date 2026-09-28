@@ -41,7 +41,7 @@ export default function UsdtReceive() {
         <ScreenLayout showToolbar>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text bold subHeader style={styles.title}>Receive USDT</Text>
+                    <Text bold subHeader style={styles.title}>Receive USDT Tron</Text>
 
                     {account ? (
                         <ScrollView showsVerticalScrollIndicator={false}>
@@ -59,7 +59,7 @@ export default function UsdtReceive() {
                                 <Text style={styles.copyHint}>Tap to copy</Text>
                             </TouchableOpacity>
 
-                            <Text bold style={styles.label}>Send only USDT on Tron here</Text>
+                            <Text bold style={styles.label}>Send only USDT on the Tron network (TRC-20) here</Text>
                             <Text bold style={styles.description}>
                                 This address lives on the Tron network. Anything else sent to it, on Tron or on
                                 another chain, is lost and cannot be recovered.

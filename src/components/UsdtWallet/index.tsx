@@ -2,7 +2,6 @@ import BigNumber from "bignumber.js";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, TextInput, TouchableOpacity, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
-import SimpleToast from "react-native-simple-toast";
 
 import { Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -10,6 +9,7 @@ import { getFlashnetPair } from "@Cypher/api/flashnetAPIs";
 import { getTronUsdtBalance } from "@Cypher/api/tronAPIs";
 import { asset } from "@Cypher/services/chainSwap/types";
 import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
+import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
 import { formatUsdtAmount, formatUsdtExact } from "@Cypher/services/tron/format";
 import {
     type SwapDirection,
@@ -328,10 +328,7 @@ export default function UsdtWallet({ preview = false }: Props) {
                   });
               });
           };
-    // Send needs its own stack (amount, destination, confirm), not built yet.
-    const onSend = preview
-        ? undefined
-        : () => SimpleToast.show("Sending USDT is not available yet", SimpleToast.SHORT);
+    const onSend = preview ? undefined : () => dispatchNavigate('UsdtSendAmount');
 
     return (
         <View style={styles.container} pointerEvents={preview ? 'none' : 'auto'}>
@@ -341,7 +338,7 @@ export default function UsdtWallet({ preview = false }: Props) {
                         {/* Section one: what is in the wallet, and the two
                             ways to move it. */}
                         <View style={styles.labelRow}>
-                            <Text bold style={styles.balanceLabel}>USDT</Text>
+                            <Text bold style={styles.balanceLabel}>{USDT_ASSET_LABEL}</Text>
                             <TouchableOpacity
                                 onPress={onGuide}
                                 disabled={!onGuide}

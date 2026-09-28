@@ -7,6 +7,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton } from "@Cypher/components";
 import { getTronConversionTerms, type TronConversionTerms } from "@Cypher/api/flashnetAPIs";
 import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
+import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
 import { formatUsdtAmount, formatUsdtExact } from "@Cypher/services/tron/format";
 import {
     type SwapDirection,
@@ -134,9 +135,9 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
         <ScreenLayout disableScroll showToolbar isBackButton title="Review swap">
             <ScrollView style={styles.main} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={review.amounts}>
-                    <Amount label="YOU SEND" value={sendText} unit={sendAsset} sub={sendSub} />
+                    <Amount label="YOU SEND" value={sendText} unit={sendAsset === 'USDT' ? USDT_ASSET_LABEL : sendAsset} sub={sendSub} />
                     <Text style={review.arrow}>{buying ? 'Buying bitcoin' : 'Selling bitcoin'}</Text>
-                    <Amount label="YOU RECEIVE" value={receiveText} unit={receiveAsset} sub={receiveSub} />
+                    <Amount label="YOU RECEIVE" value={receiveText} unit={receiveAsset === 'USDT' ? USDT_ASSET_LABEL : receiveAsset} sub={receiveSub} />
                     {!!rateLine && <Text style={review.rateLine}>{rateLine}</Text>}
                 </View>
 
@@ -174,7 +175,7 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
 
                 {!buying && (
                     <View style={review.section}>
-                        <Text style={review.sectionTitle}>TO YOUR USDT ADDRESS</Text>
+                        <Text style={review.sectionTitle}>TO YOUR USDT TRON ADDRESS</Text>
                         <View style={review.addressBox}>
                             <Text style={review.addressValue}>
                                 {account?.address ?? 'No Tron address on this phone.'}
