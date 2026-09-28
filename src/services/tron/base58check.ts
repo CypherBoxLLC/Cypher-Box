@@ -10,19 +10,22 @@
  * Hashes come from crypto-js, already a direct dependency.
  */
 
+import { Buffer } from 'buffer';
 import CryptoJS from 'crypto-js';
+
+import { bytesEqual, sliceBytes, toHex } from './bytes';
 
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
-const toWordArray = (bytes: Buffer) => CryptoJS.enc.Hex.parse(bytes.toString('hex'));
+const toWordArray = (bytes: Uint8Array) => CryptoJS.enc.Hex.parse(toHex(bytes));
 type WordArray = ReturnType<typeof CryptoJS.SHA256>;
 const fromWordArray = (w: WordArray) => Buffer.from(w.toString(CryptoJS.enc.Hex), 'hex');
 
 /** Tron's checksum: the first four bytes of a double SHA256. */
-function checksum(payload: Buffer): Buffer {
+function checksum(payload: Uint8Array): Buffer {
     const once = CryptoJS.SHA256(toWordArray(payload));
     const twice = CryptoJS.SHA256(once);
-    return fromWordArray(twice).subarray(0, 4);
+    return sliceBytes(fromWordArray(twice), 0, 4);
 }
 
 /**
@@ -32,7 +35,7 @@ function checksum(payload: Buffer): Buffer {
  * and excluded from the number conversion. Doing it the other way round emits
  * one '1' too many when every byte is zero, since the value 0 still has a digit.
  */
-export function base58Encode(bytes: Buffer): string {
+export function base58Encode(bytes: Uint8Array): string {
     let zeros = 0;
     while (zeros < bytes.length && bytes[zeros] === 0) zeros++;
     const prefix = ALPHABET[0].repeat(zeros);
@@ -91,7 +94,7 @@ export function base58Decode(text: string): Buffer {
 }
 
 /** Append the checksum and encode. */
-export function base58checkEncode(payload: Buffer): string {
+export function base58checkEncode(payload: Uint8Array): string {
     return base58Encode(Buffer.concat([payload, checksum(payload)]));
 }
 
@@ -106,9 +109,11 @@ export function base58checkDecode(text: string): Buffer {
     if (raw.length < 5) {
         throw new Error('Address is too short to carry a checksum');
     }
-    const payload = raw.subarray(0, raw.length - 4);
-    const given = raw.subarray(raw.length - 4);
-    if (!checksum(payload).equals(given)) {
+    const payload = sliceBytes(raw, 0, raw.length - 4);
+    const given = sliceBytes(raw, raw.length - 4);
+    // Never Buffer's own .equals: `given` is only a Buffer because sliceBytes
+    // made it one, and on the shim that started this it would not have been.
+    if (!bytesEqual(checksum(payload), given)) {
         throw new Error('Address checksum does not match');
     }
     return payload;

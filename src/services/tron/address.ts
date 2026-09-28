@@ -14,15 +14,17 @@
  * FIPS SHA3 would derive addresses nobody can spend from.
  */
 
+import { Buffer } from 'buffer';
 import CryptoJS from 'crypto-js';
 
 import { base58checkDecode, base58checkEncode } from './base58check';
+import { sliceBytes, toHex } from './bytes';
 
 /** Tron mainnet address prefix. */
 export const TRON_ADDRESS_PREFIX = 0x41;
 
-export function keccak256(bytes: Buffer): Buffer {
-    const digest = CryptoJS.SHA3(CryptoJS.enc.Hex.parse(bytes.toString('hex')), { outputLength: 256 });
+export function keccak256(bytes: Uint8Array): Buffer {
+    const digest = CryptoJS.SHA3(CryptoJS.enc.Hex.parse(toHex(bytes)), { outputLength: 256 });
     return Buffer.from(digest.toString(CryptoJS.enc.Hex), 'hex');
 }
 
@@ -32,16 +34,16 @@ export function keccak256(bytes: Buffer): Buffer {
  * Refuses a compressed key rather than hashing it: the result would be a
  * well-formed address that the matching private key cannot spend from.
  */
-export function tronAddressBytesFromPublicKey(publicKey: Buffer): Buffer {
+export function tronAddressBytesFromPublicKey(publicKey: Uint8Array): Buffer {
     if (publicKey.length !== 65 || publicKey[0] !== 0x04) {
         throw new Error('Tron needs the uncompressed public key, 65 bytes starting with 0x04');
     }
-    const hash = keccak256(publicKey.subarray(1));
-    return Buffer.concat([Buffer.from([TRON_ADDRESS_PREFIX]), hash.subarray(hash.length - 20)]);
+    const hash = keccak256(sliceBytes(publicKey, 1));
+    return Buffer.concat([Buffer.from([TRON_ADDRESS_PREFIX]), sliceBytes(hash, hash.length - 20)]);
 }
 
 /** The base58 form a user sees, from an uncompressed public key. */
-export function tronAddressFromPublicKey(publicKey: Buffer): string {
+export function tronAddressFromPublicKey(publicKey: Uint8Array): string {
     return base58checkEncode(tronAddressBytesFromPublicKey(publicKey));
 }
 
@@ -51,7 +53,7 @@ export function tronAddressToHex(address: string): string {
     if (bytes.length !== 21 || bytes[0] !== TRON_ADDRESS_PREFIX) {
         throw new Error('Not a Tron mainnet address');
     }
-    return bytes.toString('hex');
+    return toHex(bytes);
 }
 
 /** The API's hex form back to base58. Accepts an optional 0x prefix. */

@@ -55,12 +55,19 @@ export function typedDecimalsFor(direction: SwapDirection): number {
  *
  * A text field can receive anything a keyboard or a paste offers, including
  * several points and a pasted "1,234.00". Rather than refuse a keystroke, the
- * text is reduced to the closest well formed amount: separators go, the first
- * point is kept, and the excess decimals and whole digits are cut. A lone
- * point becomes "0." so the field can be typed into from empty.
+ * text is reduced to the closest well formed amount: the first point is kept,
+ * and the excess decimals and whole digits are cut. A lone point becomes "0."
+ * so the field can be typed into from empty.
+ *
+ * A comma is the decimal point on most of the world's keyboards, and a
+ * decimal-pad shows whichever one the phone's locale uses. Dropping it as
+ * punctuation meant the key did nothing and no decimal could be entered at
+ * all. So a comma is read as the decimal point, unless a point is already
+ * there, in which case it is grouping, as in a pasted "1,234.50".
  */
 export function sanitizeTypedAmount(text: string, decimals: number): string {
-    const cleaned = text.replace(/[^0-9.]/g, '');
+    const separated = text.includes('.') ? text.replace(/,/g, '') : text.replace(/,/g, '.');
+    const cleaned = separated.replace(/[^0-9.]/g, '');
     if (cleaned === '') return '';
 
     const firstPoint = cleaned.indexOf('.');

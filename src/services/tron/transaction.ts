@@ -26,6 +26,7 @@ import CryptoJS from 'crypto-js';
 // Installs the synchronous HMAC that secp.signSync needs.
 import '../../../blue_modules/noble_ecc';
 import { keccak256, tronAddressBytesFromPublicKey, tronAddressFromHex, tronAddressToHex } from './address';
+import { sliceBytes, toHex } from './bytes';
 import { USDT_TRC20_CONTRACT } from './constants';
 import { TRANSFER_SELECTOR, encodeTransferParameter } from './contract';
 import { withTronPrivateKey } from './keys';
@@ -36,7 +37,7 @@ const TRIGGER_SMART_CONTRACT = 31;
 const TRIGGER_SMART_CONTRACT_TYPE_URL = 'type.googleapis.com/protocol.TriggerSmartContract';
 
 /** First four bytes of keccak256("transfer(address,uint256)"): a9059cbb. */
-export const TRANSFER_METHOD_ID = keccak256(Buffer.from(TRANSFER_SELECTOR, 'utf8')).subarray(0, 4).toString('hex');
+export const TRANSFER_METHOD_ID = toHex(sliceBytes(keccak256(Buffer.from(TRANSFER_SELECTOR, 'utf8')), 0, 4));
 
 /**
  * Cap on the TRX the network may burn for energy, in sun: 100 TRX.
@@ -116,7 +117,7 @@ export type SignedUsdtTransfer = UnsignedUsdtTransfer & {
 export type UsdtTransferSigner = (request: UsdtTransferRequest) => SignedUsdtTransfer;
 
 function sha256(bytes: Buffer): Buffer {
-    const digest = CryptoJS.SHA256(CryptoJS.enc.Hex.parse(bytes.toString('hex')));
+    const digest = CryptoJS.SHA256(CryptoJS.enc.Hex.parse(toHex(bytes)));
     return Buffer.from(digest.toString(CryptoJS.enc.Hex), 'hex');
 }
 

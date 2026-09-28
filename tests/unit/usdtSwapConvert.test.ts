@@ -63,10 +63,22 @@ describe('sanitizeTypedAmount', () => {
         expect(sanitizeTypedAmount('250.75', 2)).toBe('250.75');
     });
 
-    it('drops anything that is not a digit or a point, including a pasted separator', () => {
-        expect(sanitizeTypedAmount('1,234.50', 2)).toBe('1234.50');
+    it('drops anything that is not a digit or a separator', () => {
         expect(sanitizeTypedAmount('250 USDT', 2)).toBe('250');
         expect(sanitizeTypedAmount('abc', 2)).toBe('');
+    });
+
+    it('reads a comma as the decimal point, which most keyboards send', () => {
+        // The phone showed a comma on its decimal-pad and the key did nothing,
+        // so no fraction could be typed at all.
+        expect(sanitizeTypedAmount('0,', 8)).toBe('0.');
+        expect(sanitizeTypedAmount('0,001', 8)).toBe('0.001');
+        expect(sanitizeTypedAmount('1,5', 2)).toBe('1.5');
+    });
+
+    it('reads a comma as grouping when a point is already there', () => {
+        expect(sanitizeTypedAmount('1,234.50', 2)).toBe('1234.50');
+        expect(sanitizeTypedAmount('1,234,567.89', 2)).toBe('1234567.89');
     });
 
     it('keeps only the first point', () => {
