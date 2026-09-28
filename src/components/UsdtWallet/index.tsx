@@ -25,6 +25,7 @@ import {
     typedDecimalsFor,
 } from "@Cypher/services/tron/swapConvert";
 import useAuthStore from "@Cypher/stores/authStore";
+import useUsdtSendStore, { whenUsdtSendStoreReady } from "@Cypher/stores/usdtSendStore";
 import useUsdtSwapStore, { whenUsdtSwapStoreReady } from "@Cypher/stores/usdtSwapStore";
 import { colors } from "@Cypher/style-guide";
 
@@ -328,7 +329,16 @@ export default function UsdtWallet({ preview = false }: Props) {
                   });
               });
           };
-    const onSend = preview ? undefined : () => dispatchNavigate('UsdtSendAmount');
+    // A send under way, or one that ended but has not been dismissed, is shown
+    // again rather than a new one started: while its transfer could still
+    // land, starting another could pay twice.
+    const onSend = preview
+        ? undefined
+        : () => {
+              void whenUsdtSendStoreReady().then(() =>
+                  dispatchNavigate(useUsdtSendStore.getState().record ? 'UsdtSendReview' : 'UsdtSendAmount'),
+              );
+          };
 
     return (
         <View style={styles.container} pointerEvents={preview ? 'none' : 'auto'}>
