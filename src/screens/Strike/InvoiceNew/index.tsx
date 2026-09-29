@@ -63,10 +63,6 @@ export default function InvoiceNew({ route }: Props) {
         Linking.openURL(url).catch(err => console.error('An error occurred', err));
     }
 
-    const amountSent = (Number(satsAmount) + ((0.1 / 100) * Number(satsAmount)));
-    const totalFee = (Number(((Number(satsAmount) + ((0.1 / 100) * Number(satsAmount))) * (0.1 / 100))) + Number((historyDetail?.fee + (historyDetail?.ourfee || 0))))
-    const percentageFee = ((totalFee / amountSent) * 100).toFixed(2)
-
     const buyClickHandler = () => {
         dispatchNavigate('PaymentSuccess');
     }

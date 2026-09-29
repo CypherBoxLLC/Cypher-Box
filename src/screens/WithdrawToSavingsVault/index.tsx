@@ -101,7 +101,6 @@ export default function WithdrawToSavingsVault({ route }: Props) {
     };
 
     const nextClickHandler = () => {
-        const feeForBamskki = (0.1 / 100) * Number(0);
         dispatchNavigate('ReviewWithdrawal', {
             value: withdrawThreshold,
             // converted: sats,
@@ -110,7 +109,6 @@ export default function WithdrawToSavingsVault({ route }: Props) {
             fees: 100,
             currency: 'usd',
             type: 'bitcoin',
-            feeForBamskki,
             recommendedFee: 10,
         });
     };

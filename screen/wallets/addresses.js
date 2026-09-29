@@ -245,7 +245,6 @@ const WalletAddresses = () => {
         to: item.address,
         fees: 0,
         type: type,
-        feeForBamskki: 0,
         recommendedFee,
         wallet,
         isWithdrawal: isWithdrawal

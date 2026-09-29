@@ -74,7 +74,6 @@ export default function ReviewWithdrawal({ route }: Props) {
     );
     const [estimatedFee, setEstimatedFee] = useState<number>(0);
     const [networkFee, setNetworkFee] = useState<number>(0);
-    const [bamskiiFee, setBamskiiFee] = useState<number>(0);
     const [feeLoading, setFeeLoading] = useState<boolean>(false);
     const [isSendLoading, setIsSendLoading] = useState<boolean>(false);
     const [isModalVisible, setModalVisible] = useState(false);
@@ -142,11 +141,8 @@ export default function ReviewWithdrawal({ route }: Props) {
         const amount = isSats ? value : converted;
         if (to.startsWith('bc')) {
             // bitcoin onchain
-            const feeForBamskki = (0.1 / 100) * Number(amount);
-            const remainingAmount = Number(amount) - feeForBamskki;
-            console.log('feeForBamskki: ', feeForBamskki);
-            console.log('remainingAmount: ', remainingAmount);
-            if (remainingAmount <= 0) {
+            const sendAmount = Number(amount);
+            if (sendAmount <= 0) {
                 SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
                 setFeeLoading(false);
                 return;
@@ -154,7 +150,7 @@ export default function ReviewWithdrawal({ route }: Props) {
 
             console.log('recommendedFee[fee]: ', recommendedFee[fee]);
             try {
-                const estimatedFee = await bitcoinSendFee(remainingAmount, to, recommendedFee[fee] < 9 ? 10 : Number(recommendedFee[fee]));
+                const estimatedFee = await bitcoinSendFee(sendAmount, to, recommendedFee[fee] < 9 ? 10 : Number(recommendedFee[fee]));
                 let jsonObject = null;
                 if (estimatedFee?.startsWith('{')) {
                     // as estimatedFee is a string so this condition is helpful
@@ -162,7 +158,6 @@ export default function ReviewWithdrawal({ route }: Props) {
                     console.log(jsonObject, jsonObject.fee);
                     setEstimatedFee(Number(jsonObject.fee));
                     jsonObject?.ourfee && setNetworkFee(Number(jsonObject?.ourfee));
-                    setBamskiiFee(Number(feeForBamskki));
                     setSelectedFee(recommendedFee[fee] < 9 ? 10 : Number(recommendedFee[fee]));
                     setSelectedFeeName(feeNames[fee as Fee]);
                 } else {
@@ -184,18 +179,15 @@ export default function ReviewWithdrawal({ route }: Props) {
                 setFeeLoading(false);
                 return;
             }
-            const feeForBamskki = (0.1 / 100) * Number(amount);
-            const remainingAmount = Number(amount) - feeForBamskki;
-            console.log('feeForBamskki: ', feeForBamskki);
-            console.log('remainingAmount: ', remainingAmount);
-            if (remainingAmount <= 0) {
+            const sendAmount = Number(amount);
+            if (sendAmount <= 0) {
                 SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
                 setFeeLoading(false);
                 return;
             }
 
             try {
-                const estimatedFee = await bitcoinSendFee(remainingAmount, to, recommendedFee[fee] < 9 ? 10 : Number(recommendedFee[fee]));
+                const estimatedFee = await bitcoinSendFee(sendAmount, to, recommendedFee[fee] < 9 ? 10 : Number(recommendedFee[fee]));
                 let jsonObject = null;
                 if (estimatedFee?.startsWith('{')) {
                     // as estimatedFee is a string so this condition is helpful
@@ -203,7 +195,6 @@ export default function ReviewWithdrawal({ route }: Props) {
                     console.log('jsonObject: ', jsonObject, jsonObject.fee);
                     setEstimatedFee(Number(jsonObject.fee));
                     jsonObject?.ourfee && setNetworkFee(Number(jsonObject?.ourfee));
-                    setBamskiiFee(Number(feeForBamskki));
                     setSelectedFee(recommendedFee[fee] < 9 ? 10 : Number(recommendedFee[fee]));
                     setSelectedFeeName(feeNames[fee as Fee]);
                 } else {
@@ -272,11 +263,8 @@ export default function ReviewWithdrawal({ route }: Props) {
                 setIsSendLoading(false);
                 return;
             }
-            const feeForBamskki = (0.1 / 100) * Number(amount);
-            const remainingAmount = Number(amount) - feeForBamskki;
-            console.log('feeForBamskki: ', feeForBamskki);
-            console.log('remainingAmount: ', remainingAmount);
-            if (remainingAmount <= 0) {
+            const sendAmount = Number(amount);
+            if (sendAmount <= 0) {
                 SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
@@ -297,7 +285,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     const recent = await getTransactionHistory(0, 20);
                     const dupe = findRecentMatchingWithdrawal(recent?.payments, {
                         address: to,
-                        amountSats: remainingAmount,
+                        amountSats: sendAmount,
                         now: Date.now(),
                     });
                     if (dupe) {
@@ -314,7 +302,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                 }
 
                 const sendResponse = await sendBitcoinPayment(
-                    remainingAmount,
+                    sendAmount,
                     to,
                     selectedFee,
                     note,
@@ -328,9 +316,6 @@ export default function ReviewWithdrawal({ route }: Props) {
                     jsonSend = JSON.parse(sendResponse);
 
                     console.log('jsonSend: ', jsonSend);
-                    // send 0.1% fee to bamskii
-                    const response = await sendCoinsViaUsername('bamskki@coinos.io', feeForBamskki, '');
-                    console.log('response username: ', response, typeof response);
                     dispatchNavigate('TransactionBroadCast', { matchedRate, type, value, converted, isSats, to, item: jsonSend });
                 } else {
                     SimpleToast.show(sendResponse, SimpleToast.SHORT);
@@ -387,18 +372,15 @@ export default function ReviewWithdrawal({ route }: Props) {
                 setIsSendLoading(false);
                 return;
             }
-            const feeForBamskki = (0.1 / 100) * Number(amount);
-            const remainingAmount = Number(amount) - feeForBamskki;
-            console.log('feeForBamskki: ', feeForBamskki);
-            console.log('remainingAmount: ', remainingAmount);
-            if (remainingAmount <= 0) {
+            const sendAmount = Number(amount);
+            if (sendAmount <= 0) {
                 SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
 
             try {
-                const sendResponse: any = await sendBitcoinPayment(remainingAmount, to, selectedFee, note);
+                const sendResponse: any = await sendBitcoinPayment(sendAmount, to, selectedFee, note);
 
                 let jsonSend = null;
                 console.log('sendResponse: ', sendResponse);
@@ -406,9 +388,6 @@ export default function ReviewWithdrawal({ route }: Props) {
                     // as estimatedFee is a string so this condition is helpful
                     jsonSend = JSON.parse(sendResponse);
 
-                    // send 0.1% fee to bamskii
-                    const response = await sendCoinsViaUsername('bamskki@coinos.io', feeForBamskki, '');
-                    console.log('response username: ', response);
                     dispatchNavigate('TransactionBroadCast', { matchedRate, type, value, converted, isSats, to, item: jsonSend });
                 } else {
                     SimpleToast.show(sendResponse, SimpleToast.SHORT);

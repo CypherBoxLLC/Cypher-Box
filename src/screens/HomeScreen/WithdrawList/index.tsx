@@ -382,7 +382,6 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
           matchedRate: selectedItem === 2 ? matchedRate : matchedRateStrike,
           currency: selectedItem === 2 ? currency : currencyStrike,
           type: 'bitcoin',
-          feeForBamskki: 0,
           recommendedFee,
           vaultTab: selectedWallet === 4 ? true : false,
           receiveType: selectedItem === 2 ? true : false,

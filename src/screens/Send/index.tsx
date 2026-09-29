@@ -348,11 +348,7 @@ export default function SendScreen({ navigation, route }: any) {
                 return;
             }
 
-            const feeForBamskki = info?.receiveType ? (0.1 / 100) * Number(amount) : 0;
-            const remainingAmount = Number(amount) - feeForBamskki;
-            console.log('feeForBamskki: ', feeForBamskki)
-            console.log('remainingAmount: ', remainingAmount)
-            if (remainingAmount <= 0) {
+            if (Number(amount) <= 0) {
                 SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
                 setIsLoading(false);
                 return;
@@ -373,7 +369,6 @@ export default function SendScreen({ navigation, route }: any) {
                     matchedRate: info?.matchedRate,
                     currency: info?.currency,
                     type: 'bitcoin',
-                    feeForBamskki,
                     recommendedFee,
                     receiveType: info?.receiveType
                 });
@@ -416,11 +411,7 @@ export default function SendScreen({ navigation, route }: any) {
                 setIsLoading(false);
                 return;
             }
-            const feeForBamskki = (0.1 / 100) * Number(amount);
-            const remainingAmount = Number(amount) - feeForBamskki;
-            console.log('feeForBamskki: ', feeForBamskki)
-            console.log('remainingAmount: ', remainingAmount)
-            if (remainingAmount <= 0) {
+            if (Number(amount) <= 0) {
                 SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
                 setIsLoading(false);
                 return;
@@ -437,7 +428,6 @@ export default function SendScreen({ navigation, route }: any) {
                     matchedRate: info?.matchedRate,
                     currency: info?.currency,
                     type: 'liquid',
-                    feeForBamskki,
                     recommendedFee,
                     receiveType: info?.receiveType
                 });
@@ -482,11 +472,7 @@ export default function SendScreen({ navigation, route }: any) {
     const maxSendClickHandler = () => {
         info?.editAmount && info?.editAmount();
         const amount = info?.receiveType ? isSats ? usd : sats : isSats ? sats : usd;
-        const feeForBamskki = info?.receiveType ? (0.1 / 100) * Number(amount) : 0;
-        const remainingAmount = Number(amount) - feeForBamskki;
-        console.log('feeForBamskki: ', feeForBamskki)
-        console.log('remainingAmount: ', remainingAmount)
-        if (remainingAmount <= 0) {
+        if (Number(amount) <= 0) {
             SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
             setIsLoading(false);
             return;
@@ -508,7 +494,6 @@ export default function SendScreen({ navigation, route }: any) {
                 matchedRate: info?.matchedRate,
                 currency: info?.currency,
                 type: 'bitcoin',
-                feeForBamskki,
                 recommendedFee,
                 receiveType: info?.receiveType
             });
