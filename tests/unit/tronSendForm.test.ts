@@ -197,4 +197,55 @@ describe('scanned payment codes', () => {
         const d = classifyTronSendDestination(`tron:${RECIPIENT}?amount=5`, RECIPIENT);
         expect(d.kind === 'invalid' && d.problem).toBe('own_address');
     });
+
+    it('decodes parameters the way a browser would, and keeps a malformed one rather than dropping it', () => {
+        expect(parseTronPaymentRequest(`tron:${RECIPIENT}?amount=%35.323`).amount).toBe('5.323');
+        // A malformed escape must not make the second address disappear.
+        const d = classifyTronSendDestination(`tron:${USDT_CONTRACT}?address=${RECIPIENT}%zz`);
+        expect(d.kind === 'invalid' && d.problem).toBe('ambiguous_request');
+    });
+});
+
+/**
+ * The same checks with React Native's URLSearchParams in place.
+ *
+ * What this protects, and why it exists: React Native ships its own
+ * URLSearchParams, which ignores a string handed to its constructor and throws
+ * "not implemented" from get(). Every test above passed on Node while every
+ * destination check on the phone threw, and the send review screen failed on
+ * device. Had get() merely returned nothing, the refusal of a code naming a
+ * second address would have been silently off on the phone. So these run with
+ * the phone's version installed and assert the answers are unchanged.
+ */
+describe("scanned payment codes, with React Native's URLSearchParams", () => {
+    const RECIPIENT = 'TKHuVq1oKVruCGLvqVexFs6dawKv6fQgFs';
+    const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+    const runtime = globalThis as unknown as { URLSearchParams: unknown };
+    const NodeURLSearchParams = runtime.URLSearchParams;
+
+    /** Like React Native's: whatever the constructor is given is ignored. */
+    class PhoneURLSearchParams {
+        get(): never {
+            throw new Error('URLSearchParams.get is not implemented');
+        }
+    }
+
+    beforeAll(() => {
+        runtime.URLSearchParams = PhoneURLSearchParams;
+    });
+    afterAll(() => {
+        runtime.URLSearchParams = NodeURLSearchParams;
+    });
+
+    it('accepts a plain address and reads the amount a code asks for', () => {
+        expect(classifyTronSendDestination(RECIPIENT).kind).toBe('tron');
+        const r = parseTronPaymentRequest(`tron:${RECIPIENT}?amount=5.323`);
+        expect(r.destination.kind).toBe('tron');
+        expect(r.amount).toBe('5.323');
+    });
+
+    it('still refuses a code naming a second address', () => {
+        const d = classifyTronSendDestination(`tron:${USDT_CONTRACT}?address=${RECIPIENT}&amount=5.323`);
+        expect(d.kind === 'invalid' && d.problem).toBe('ambiguous_request');
+    });
 });

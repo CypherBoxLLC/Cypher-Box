@@ -58,25 +58,62 @@ const invalid = (value: string, problem: SendDestinationProblem): SendDestinatio
  * last one is why the query cannot simply be thrown away: reading only the
  * path would send USDT to the USDT contract.
  */
-type ParsedRequest = { readonly path: string; readonly params: URLSearchParams };
+type ParsedRequest = { readonly path: string; readonly params: RequestParams };
+
+/** A request's query parameters, first value per name. */
+type RequestParams = ReadonlyMap<string, string>;
+
+/**
+ * Form decoding: `+` is a space. A malformed escape is kept as written rather
+ * than dropping the parameter, because a parameter that silently vanished
+ * could not be refused.
+ */
+function decodeQueryPart(part: string): string {
+    const spaced = part.replace(/\+/g, ' ');
+    try {
+        return decodeURIComponent(spaced);
+    } catch {
+        return spaced;
+    }
+}
+
+/**
+ * Read a query string the way URLSearchParams.get would, first value per name.
+ *
+ * Not URLSearchParams itself. React Native ships its own, which ignores a
+ * string handed to its constructor and throws "not implemented" from get().
+ * Jest runs on Node, whose URLSearchParams is complete, so every test passed
+ * while every destination check on the phone threw. Had get() merely come back
+ * empty, the refusal of a code naming a second address would have been off on
+ * the phone without a sound, and that is the check keeping USDT away from the
+ * USDT contract.
+ */
+function parseQuery(query: string): RequestParams {
+    const params = new Map<string, string>();
+    for (const pair of query.split('&')) {
+        if (!pair) {
+            continue;
+        }
+        const eq = pair.indexOf('=');
+        const key = decodeQueryPart(eq === -1 ? pair : pair.slice(0, eq));
+        if (!params.has(key)) {
+            params.set(key, decodeQueryPart(eq === -1 ? '' : pair.slice(eq + 1)));
+        }
+    }
+    return params;
+}
 
 function parseRequest(value: string): ParsedRequest {
     const withoutScheme = /^tron:/i.test(value) ? value.slice('tron:'.length).trim() : value;
     const cut = withoutScheme.indexOf('?');
     if (cut === -1) {
-        return { path: withoutScheme, params: new URLSearchParams() };
+        return { path: withoutScheme, params: new Map() };
     }
-    let params: URLSearchParams;
-    try {
-        params = new URLSearchParams(withoutScheme.slice(cut + 1));
-    } catch {
-        params = new URLSearchParams();
-    }
-    return { path: withoutScheme.slice(0, cut).trim(), params };
+    return { path: withoutScheme.slice(0, cut).trim(), params: parseQuery(withoutScheme.slice(cut + 1)) };
 }
 
 /** The address a request's parameters name, when they name one. */
-function recipientParam(params: URLSearchParams): string | null {
+function recipientParam(params: RequestParams): string | null {
     for (const key of ['address', 'to', 'recipient']) {
         const value = params.get(key)?.trim();
         if (value) return value;
