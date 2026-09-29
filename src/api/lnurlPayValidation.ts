@@ -13,20 +13,54 @@ import bolt11 from 'bolt11';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const createHash = require('create-hash');
 
+/** scheme://authority, where the authority runs to the first /, ? or #. */
+const SCHEME_AND_AUTHORITY = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)/i;
+
+/** host[:port], the host being dot-separated letters, digits and hyphens, or a bracketed IPv6 literal. */
+const HOST_AND_PORT = /^(\[[0-9a-f]*:[0-9a-f:.]*\]|[a-z0-9-]+(?:\.[a-z0-9-]+)*)(?::([0-9]{1,5}))?$/i;
+
+/**
+ * Scheme and host of a callback URL, both lowercased, or null when it is not a
+ * plain scheme://host[:port] URL, optionally followed by a path, query or fragment.
+ *
+ * Read by hand, not with the URL class. React Native ships its own URL, whose
+ * hostname and protocol getters throw "not implemented". Jest runs on Node,
+ * where URL is complete, so the tests passed while every callback check on the
+ * phone threw.
+ *
+ * Stricter than a browser on purpose. This decides whether a request may go
+ * out in cleartext, and URL parsers disagree at the edges (credentials,
+ * backslashes, escaped hosts, stray whitespace), so the host read here could
+ * differ from the one the request reaches. None of those are allowed.
+ */
+function readSchemeAndHost(callback: string): { scheme: string; host: string } | null {
+  for (let i = 0; i < callback.length; i++) {
+    const code = callback.charCodeAt(i);
+    // Control characters, spaces and backslashes. A browser drops tabs,
+    // newlines and surrounding spaces and reads a backslash as a slash, so
+    // any of them could move the host it sees.
+    if (code <= 0x20 || code === 0x7f || code === 0x5c) return null;
+  }
+  const url = SCHEME_AND_AUTHORITY.exec(callback);
+  if (!url) return null;
+  const authority = HOST_AND_PORT.exec(url[2]);
+  if (!authority) return null;
+  const port = authority[2];
+  if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) return null;
+  return { scheme: url[1].toLowerCase(), host: authority[1].toLowerCase() };
+}
+
 /** LNURL-pay callbacks must be HTTPS (or HTTP only for .onion, per LUD-16). */
 export function assertLnurlPayCallbackUrl(callback: unknown): asserts callback is string {
   if (typeof callback !== 'string' || callback.length === 0) {
     throw new Error('LNURL-pay response has no callback URL');
   }
-  let parsed: URL;
-  try {
-    parsed = new URL(callback);
-  } catch (_) {
+  const target = readSchemeAndHost(callback);
+  if (!target) {
     throw new Error('LNURL-pay callback is not a valid URL');
   }
-  const isOnion = parsed.hostname.endsWith('.onion');
-  if (parsed.protocol === 'https:') return;
-  if (parsed.protocol === 'http:' && isOnion) return;
+  if (target.scheme === 'https') return;
+  if (target.scheme === 'http' && target.host.endsWith('.onion')) return;
   throw new Error('LNURL-pay callback must be https (http only allowed for .onion)');
 }
 
