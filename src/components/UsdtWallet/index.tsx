@@ -364,7 +364,6 @@ export default function UsdtWallet({ preview = false }: Props) {
                             >
                                 <Text bold style={styles.helpText}>?</Text>
                             </TouchableOpacity>
-                            <View style={styles.labelSpacer} />
                             <TouchableOpacity
                                 onPress={onHistory}
                                 disabled={!onHistory}

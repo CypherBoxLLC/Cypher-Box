@@ -45,6 +45,14 @@ import {
 
 const BASE_URL = 'https://orchestration.flashnet.xyz/v1/orchestration';
 const BACKEND_URL = 'https://cypherbox-backend.onrender.com/flashnet';
+/**
+ * Multiples of the route's declared floor to try when it will not price.
+ *
+ * Asset agnostic on purpose: the deposit is USDT one way round and bitcoin the
+ * other, so a fixed ladder of amounts would be wrong in one of them.
+ */
+const PROBE_SCALES = [1, 4, 20] as const;
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 // Longer for the backend: an idle instance on its host can take most of a
 // minute to wake, and a quote cut short leaves the user with no address.
@@ -354,15 +362,47 @@ export async function getFlashnetPair(
     // raised to our published minimum: that is the size we recommend, not the
     // size we allow, and conflating the two meant the app refused amounts the
     // venue would happily quote.
-    const min = (fixedCost ? new BigNumber(venueMin).plus(fixedCost) : new BigNumber(venueMin)).toFixed();
-    const probe = depositAmount && new BigNumber(depositAmount).isGreaterThan(min) ? depositAmount : min;
+    const declaredMin = (fixedCost ? new BigNumber(venueMin).plus(fixedCost) : new BigNumber(venueMin)).toFixed();
 
-    const estimate = await request<Json>(
-        `${BASE_URL}/estimate?${query}&amount=${encodeURIComponent(toSmallestUnits(probe, depositDecimals))}`,
-        { method: 'GET', headers: { Accept: 'application/json' } },
-        timeout,
-        onError,
-    );
+    // What /limits declares is not the whole floor. Flashnet also refuses a
+    // swap whose PAYOUT is too small, and that constraint is on the settle
+    // side, so no bound on the deposit side expresses it: at the time of
+    // writing the declared floor is about 4.65 USDT and the real one is
+    // whatever delivers 8,530 sats, around 11.
+    //
+    // Rather than guess it or read it out of an error message, the estimate is
+    // asked for at increasing sizes until one prices. The first that does is
+    // the true floor, and it is what `min` reports, so the screens refuse
+    // exactly what the venue would.
+    let probe = depositAmount && new BigNumber(depositAmount).isGreaterThan(declaredMin) ? depositAmount : declaredMin;
+    let min = declaredMin;
+    let estimate: Json | undefined;
+    for (const scale of PROBE_SCALES) {
+        const attempt =
+            scale === 1
+                ? probe
+                : new BigNumber(declaredMin).multipliedBy(scale).decimalPlaces(depositDecimals, BigNumber.ROUND_UP).toFixed();
+        // Never step DOWN from an amount the user actually asked for.
+        if (scale !== 1 && new BigNumber(attempt).isLessThanOrEqualTo(probe)) continue;
+        try {
+            estimate = await request<Json>(
+                `${BASE_URL}/estimate?${query}&amount=${encodeURIComponent(toSmallestUnits(attempt, depositDecimals))}`,
+                { method: 'GET', headers: { Accept: 'application/json' } },
+                timeout,
+                onError,
+            );
+            probe = attempt;
+            if (scale !== 1) min = attempt;
+            break;
+        } catch (error) {
+            // Only a size refusal is worth stepping up from. Anything else is
+            // the venue's answer and belongs to the caller.
+            if (!(error instanceof AmountOutOfRangeError)) throw error;
+        }
+    }
+    if (!estimate) {
+        throw new AmountOutOfRangeError(depositAmount, undefined, undefined);
+    }
     const estimatedOut = estimate.estimatedOut;
     if (typeof estimatedOut !== 'string') {
         throw new VenueUnavailableError('flashnet', true, 'Flashnet did not price this pair');

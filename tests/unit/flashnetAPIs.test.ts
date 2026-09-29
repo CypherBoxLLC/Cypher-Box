@@ -193,6 +193,55 @@ describe('getFlashnetPair', () => {
         expect(estimateUrl()).toContain('amount=4645000');
     });
 
+    it('steps the probe up when the declared floor will not price, and reports what did', async () => {
+        // The declared floor is the deposit-side bound, and Flashnet also
+        // refuses a swap whose PAYOUT is too small. That second floor is not
+        // expressed on the deposit side at all, so asking at the declared one
+        // returns amount_too_small and the whole read used to fail, which is
+        // what put "Could not get a price" on the card.
+        let estimateCalls = 0;
+        fetchMock.mockImplementation(async (url: string) => {
+            if (url.includes('/flashnet/tron-deposit-charge')) return measured;
+            if (url.includes('/limits?')) return ok(tronLimitsBody());
+            if (url.includes('/estimate?')) {
+                estimateCalls += 1;
+                if (estimateCalls === 1) {
+                    return fail(400, {
+                        error: {
+                            code: 'amount_too_small',
+                            message: 'Bitcoin recipient output (3897 sats) is below the delivery minimum (8530 sats)',
+                        },
+                    });
+                }
+                return ok({ estimatedOut: '20435' });
+            }
+            throw new Error(`unexpected request to ${url}`);
+        });
+
+        const pair = await getFlashnetPair(USDT_TRON, BTC);
+        expect(estimateCalls).toBe(2);
+        // Four times the declared floor, and it is reported as the minimum,
+        // because it is the smallest size the venue would actually price.
+        expect(pair.min).toBe('18.58');
+        expect(new BigNumber(pair.rate).isGreaterThan(0)).toBe(true);
+    });
+
+    it('lets an error that is not about size through rather than stepping up', async () => {
+        let estimateCalls = 0;
+        fetchMock.mockImplementation(async (url: string) => {
+            if (url.includes('/flashnet/tron-deposit-charge')) return measured;
+            if (url.includes('/limits?')) return ok(tronLimitsBody());
+            if (url.includes('/estimate?')) {
+                estimateCalls += 1;
+                return fail(400, { error: { code: 'invalid_address', message: 'bad settle address' } });
+            }
+            throw new Error(`unexpected request to ${url}`);
+        });
+        await expect(getFlashnetPair(USDT_TRON, BTC)).rejects.toThrow();
+        // Asked once. Stepping the size up would not fix an address.
+        expect(estimateCalls).toBe(1);
+    });
+
     it('falls back to its own terms when the backend cannot say', async () => {
         byUrl({ limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC);

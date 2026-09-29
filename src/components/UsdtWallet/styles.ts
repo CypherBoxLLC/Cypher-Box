@@ -119,13 +119,11 @@ const styles = StyleSheet.create({
         color: colors.usdt.light,
         textAlign: 'center',
     },
-    /** Pushes the history icon to the far end of the label row. */
-    labelSpacer: {
-        flex: 1,
-    },
+    /** Sits immediately after the help glyph, as its pair. */
     historyButton: {
         width: 22,
         height: 22,
+        marginLeft: 6,
         alignItems: 'center',
         justifyContent: 'center',
     },
