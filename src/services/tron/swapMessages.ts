@@ -43,11 +43,6 @@ export function describeNotReady(
     exactOut: boolean,
 ): QuoteRefusal {
     switch (notReady.code) {
-        case 'BELOW_MINIMUM':
-            return {
-                message: `The smallest swap is ${formatUsdtExact(notReady.minAmount)} USDT. Enter a larger amount.`,
-                action: 'change_amount',
-            };
         case 'INSUFFICIENT_USDT':
             return exactOut
                 ? {

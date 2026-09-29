@@ -10,7 +10,7 @@ import { getTronUsdtBalance } from "@Cypher/api/tronAPIs";
 import { Time } from "@Cypher/assets/images";
 import { asset } from "@Cypher/services/chainSwap/types";
 import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
-import { RECOMMENDED_SWAP_USDT, USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
+import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
 import { formatUsdtAmount, formatUsdtExact } from "@Cypher/services/tron/format";
 import {
     type SwapDirection,
@@ -269,13 +269,6 @@ export default function UsdtWallet({ preview = false }: Props) {
     const belowMinimum = hasAmount && !!pair && entered.isLessThan(pair.min);
     const overBalance =
         hasAmount && isBuyingBitcoin(direction) && balance !== null && entered.isGreaterThan(balance);
-    // Above the floor but below the size that prices well. Buying only: the
-    // recommendation is about the USDT deposit's flat cost.
-    const smallSwap =
-        hasAmount &&
-        !belowMinimum &&
-        isBuyingBitcoin(direction) &&
-        entered.isLessThan(RECOMMENDED_SWAP_USDT);
 
     let note = formatRateLine(rate, direction) ?? 'Getting the price...';
     let noteIsWarning = false;
@@ -291,12 +284,6 @@ export default function UsdtWallet({ preview = false }: Props) {
     } else if (overBalance && balance !== null) {
         note = `That is more than your ${formatUsdtAmount(balance)} USDT.`;
         noteIsWarning = true;
-    } else if (smallSwap) {
-        // Allowed, just poor value: the Tron deposit's flat cost is a big share
-        // of a small swap. Said instead of the rate, because at this size the
-        // advice is the more useful of the two, and the review screen shows
-        // what the fees actually come to as a percentage.
-        note = `Best rate from ${formatUsdtExact(RECOMMENDED_SWAP_USDT)} USDT up.`;
     }
 
     const canSwap = !preview && hasAmount && converted !== null && !belowMinimum && !overBalance;

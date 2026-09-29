@@ -182,19 +182,22 @@ describe('getFlashnetPair', () => {
         expect(new BigNumber(pair.rate).toFixed(12)).toBe(venueRate.multipliedBy('0.9875').toFixed(12));
     });
 
-    it('lifts the minimum to the smallest conversion the backend will quote', async () => {
+    it('sets the minimum to what the route takes, not to the size we recommend', async () => {
         byUrl({ charge: measured, limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC);
-        expect(pair.min).toBe('100');
-        // Priced at that minimum when the user has typed nothing yet.
-        expect(estimateUrl()).toContain('amount=100000000');
+        // The venue's own floor plus what the deposit is charged before the
+        // rate applies. Our published minimum is advice the screens give, and
+        // raising this to it refused amounts the venue would have quoted.
+        expect(pair.min).toBe('4.645');
+        // Priced at that floor when the user has typed nothing yet.
+        expect(estimateUrl()).toContain('amount=4645000');
     });
 
     it('falls back to its own terms when the backend cannot say', async () => {
         byUrl({ limits: ok(tronLimitsBody()), estimate: ok({ estimatedOut: '122000' }) });
         const pair = await getFlashnetPair(USDT_TRON, BTC);
         expect(pair.fixedCost).toBe('3.875');
-        expect(pair.min).toBe('100');
+        expect(pair.min).toBe('4.675');
     });
 
     it('does not believe terms no one should report', async () => {
@@ -210,7 +213,9 @@ describe('getFlashnetPair', () => {
         const pair = await getFlashnetPair(USDT_TRON, BTC, '100');
         expect(pair.fixedCost).toBe('2.47');
         expect(new BigNumber(pair.rate).toFixed(12)).toBe(new BigNumber('0.00122').dividedBy('100').toFixed(12));
-        expect(pair.min).toBe('100');
+        // An old backend publishes no minimum either, so the floor is the
+        // venue's plus that charge, same as everywhere else.
+        expect(pair.min).toBe('3.27');
     });
 
     it('asks the backend once, then reuses the terms while the user types', async () => {

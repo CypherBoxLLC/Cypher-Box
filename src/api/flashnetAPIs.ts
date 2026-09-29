@@ -349,8 +349,12 @@ export async function getFlashnetPair(
         ? new BigNumber(conversion.charge).plus(conversion.flatFee).decimalPlaces(depositDecimals, BigNumber.ROUND_UP).toFixed()
         : undefined;
     const venueMin = minDepositAmount(bounds, depositDecimals, deposit);
-    const floor = fixedCost ? new BigNumber(venueMin).plus(fixedCost) : new BigNumber(venueMin);
-    const min = conversion ? BigNumber.max(floor, conversion.minimum).toFixed() : floor.toFixed();
+    // The smallest the ROUTE will take, which is Flashnet's own floor plus
+    // whatever the deposit is charged before the rate applies. Deliberately not
+    // raised to our published minimum: that is the size we recommend, not the
+    // size we allow, and conflating the two meant the app refused amounts the
+    // venue would happily quote.
+    const min = (fixedCost ? new BigNumber(venueMin).plus(fixedCost) : new BigNumber(venueMin)).toFixed();
     const probe = depositAmount && new BigNumber(depositAmount).isGreaterThan(min) ? depositAmount : min;
 
     const estimate = await request<Json>(

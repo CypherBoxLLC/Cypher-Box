@@ -263,9 +263,15 @@ export default function SwapReview({ direction, sendAmount, receiveAmount, rate 
                         <FeeRow label={`Cypher Box fee, ${fees.rateFeePercent}% plus a flat part`} value={fees.service} />
                         <FeeRow label="Total, taken from what you send" value={fees.total} />
                         {smallSwap && (
-                            <Text style={review.rateLine}>
-                                {`The Tron network cost is the same whatever you send, so it is a bigger share of a small swap. From ${formatUsdtExact(RECOMMENDED_SWAP_USDT)} USDT up it barely registers.`}
-                            </Text>
+                            <View style={review.advice}>
+                                <Text bold style={review.adviceTitle}>
+                                    {`Better value from ${formatUsdtExact(RECOMMENDED_SWAP_USDT)} USDT up`}
+                                </Text>
+                                <Text style={review.adviceBody}>
+                                    The Tron network cost is the same whatever you send, so on a swap this size
+                                    it is most of what you pay. This one still goes through.
+                                </Text>
+                            </View>
                         )}
                     </View>
                 ) : (

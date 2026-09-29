@@ -282,4 +282,28 @@ export const review = StyleSheet.create({
     problem: {
         color: colors.redLight,
     },
+    /**
+     * Advice, not a warning, so it is bordered in the asset's own colour
+     * rather than red. The swap it appears on is allowed and will go through;
+     * only the value is worth a second thought.
+     */
+    advice: {
+        marginTop: 14,
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.usdt.light,
+        backgroundColor: 'rgba(63, 217, 180, 0.08)',
+    },
+    adviceTitle: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.usdt.light,
+    },
+    adviceBody: {
+        marginTop: 4,
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.gray.light,
+    },
 });

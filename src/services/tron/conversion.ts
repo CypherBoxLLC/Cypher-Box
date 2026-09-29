@@ -18,9 +18,7 @@
  * Nothing here logs.
  */
 
-import BigNumber from 'bignumber.js';
 
-import { getTronConversionTerms } from '../../api/flashnetAPIs';
 import type { ChainAsset, ChainSwapAmountMode, ChainSwapOrder, ChainSwapPollResult, ChainSwapQuote } from '../chainSwap';
 import {
     ChainSwapError,
@@ -70,12 +68,6 @@ export type UsdtConversionRequest = {
 
 export type PreparedUsdtConversion =
     | {
-          /** Under the smallest conversion we quote. `minAmount` is in USDT. */
-          readonly ready: false;
-          readonly code: 'BELOW_MINIMUM';
-          readonly minAmount: string;
-      }
-    | {
           readonly ready: true;
           readonly quote: ChainSwapQuote;
           /** The order to pay into: hand it to payUsdtConversion. */
@@ -101,10 +93,10 @@ export type PreparedUsdtConversion =
  * Venue errors pass through as the chainSwap errors, TRON_UNREACHABLE as a
  * TronSendError.
  *
- * A conversion under the minimum is refused here on exact_in, where the user
- * fixed the deposit. On exact_out the deposit is only known once Flashnet
- * works it out, so the backend refuses that one and it arrives as an
- * AmountOutOfRangeError.
+ * A conversion too small for the route is not refused here, in either mode.
+ * The venue prices the floor and the backend relays its refusal, which arrives
+ * as an AmountOutOfRangeError carrying the real minimum. One place decides it,
+ * and it is the one that knows.
  */
 export async function prepareUsdtConversion(
     request: UsdtConversionRequest,
@@ -114,12 +106,10 @@ export async function prepareUsdtConversion(
     const mode = request.mode ?? 'exact_in';
     const exactIn = mode === 'exact_in';
 
-    // Cheap and cached, and it decides whether reading the chain is worth it.
-    const terms = await getTronConversionTerms();
-    if (exactIn && new BigNumber(amount).isLessThan(terms.minimum)) {
-        return { ready: false, code: 'BELOW_MINIMUM', minAmount: terms.minimum };
-    }
-
+    // No size check here. The venue's floor is the only one that refuses, and
+    // it is enforced where the quote is priced; our published minimum is a
+    // recommendation the screens make, not a gate. Checking it here meant a
+    // small swap was refused before anyone was asked.
     const before = await checkUsdtSendReadiness(
         account.address,
         exactIn ? decimalToUnits(amount, USDT_DECIMALS) : undefined,

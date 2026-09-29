@@ -70,12 +70,6 @@ const noEmDash = (view: UsdtSwapView) => {
 };
 
 describe('describeNotReady', () => {
-    it('sends a below-minimum amount back to the amount, naming the minimum', () => {
-        expect(describeNotReady({ ready: false, code: 'BELOW_MINIMUM', minAmount: '100' }, false)).toEqual({
-            message: 'The smallest swap is 100 USDT. Enter a larger amount.',
-            action: 'change_amount',
-        });
-    });
 
     it('points a short balance at the amount, or at the invoice when the invoice set it', () => {
         expect(describeNotReady({ ready: false, code: 'INSUFFICIENT_USDT' }, false).action).toBe('change_amount');

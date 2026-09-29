@@ -161,15 +161,24 @@ const request = (over: Partial<Parameters<typeof prepareUsdtConversion>[0]> = {}
 });
 
 describe('prepareUsdtConversion', () => {
-    it('refuses a conversion under the smallest we quote, before reading anything', async () => {
-        terms.mockResolvedValue({ charge: '2.5', flatFee: '1.375', rateFee: '0.0125', minimum: '100' });
-        expect(await prepareUsdtConversion(request(), clock)).toEqual({
-            ready: false,
-            code: 'BELOW_MINIMUM',
-            minAmount: '100',
+    it('leaves the size to the venue, and reads the chain for a small one too', async () => {
+        // It used to refuse anything under our published minimum before
+        // reading anything. That number is the size we recommend, not the size
+        // the route takes, so a small conversion is now prepared like any
+        // other and the venue's own floor is what refuses it.
+        usdtBalance.mockResolvedValue('50');
+        accountState.mockResolvedValue(state());
+        requestQuote.mockResolvedValue(quoteFor({ depositAmount: '5', settleAmount: '0.00005' }));
+
+        const prepared = await prepareUsdtConversion({
+            account: FROM,
+            settle: BTC,
+            settleAddress: SETTLE_ADDRESS,
+            amount: '5',
         });
-        expect(usdtBalance).not.toHaveBeenCalled();
-        expect(requestQuote).not.toHaveBeenCalled();
+
+        expect(prepared.ready).toBe(true);
+        expect(usdtBalance).toHaveBeenCalled();
     });
 
     it('leaves an exact-out conversion to the backend, whose deposit only the quote knows', async () => {
