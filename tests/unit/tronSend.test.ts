@@ -60,6 +60,21 @@ jest.mock('../../src/api/tronAPIs', () => {
     };
 });
 
+// The Hot Vault signer does its seed step with the phone's native PBKDF2.
+// Node's computes it for real here, so what gets posted is still exactly what
+// the phrase signs. A plain function, not jest.fn, so resetAllMocks below
+// leaves it working.
+jest.mock('react-native-aes-crypto', () => {
+    const { pbkdf2Sync } = jest.requireActual<typeof import('crypto')>('crypto');
+    return {
+        __esModule: true,
+        default: {
+            pbkdf2: async (password: string, salt: string, cost: number, bits: number, hash: string) =>
+                pbkdf2Sync(Buffer.from(password, 'utf8'), Buffer.from(salt, 'utf8'), cost, bits / 8, hash).toString('hex'),
+        },
+    };
+});
+
 const getBlock = tronAPIs.getTronReferenceBlock as jest.MockedFunction<typeof tronAPIs.getTronReferenceBlock>;
 const post = tronAPIs.postTronSend as jest.MockedFunction<typeof tronAPIs.postTronSend>;
 const outcome = tronAPIs.getTronTransactionOutcome as jest.MockedFunction<typeof tronAPIs.getTronTransactionOutcome>;
@@ -190,7 +205,8 @@ describe('sendUsdt', () => {
         const wallet = { getID: () => 'hot', getSecret: () => MNEMONIC, getPassphrase: () => undefined };
         const walletSigner = jest.fn(tronTransferSignerForWallet(wallet)!);
         getBlock.mockResolvedValueOnce(block(0));
-        post.mockImplementationOnce(async () => sentFor(walletSigner.mock.results[0].value.txID));
+        // The wallet's signer answers with a promise: its seed step is native.
+        post.mockImplementationOnce(async () => sentFor((await walletSigner.mock.results[0].value).txID));
 
         await sendUsdt(params({ sign: walletSigner }), clock);
 

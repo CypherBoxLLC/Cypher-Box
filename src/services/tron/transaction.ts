@@ -29,7 +29,7 @@ import { keccak256, tronAddressBytesFromPublicKey, tronAddressFromHex, tronAddre
 import { sliceBytes, toHex } from './bytes';
 import { USDT_TRC20_CONTRACT } from './constants';
 import { TRANSFER_SELECTOR, encodeTransferParameter } from './contract';
-import { withTronPrivateKey } from './keys';
+import { withTronPrivateKey, withTronPrivateKeyNative } from './keys';
 import { bytesField, varintField } from './protobuf';
 
 /** Protocol enum for a smart contract call, and the Any type it travels in. */
@@ -113,8 +113,11 @@ export type SignedUsdtTransfer = UnsignedUsdtTransfer & {
  * Signs one transfer request for one account. The send flow takes this rather
  * than a phrase, so it can sign again when asked without holding seed
  * material itself. See tronTransferSignerForWallet in ./account.
+ *
+ * May answer with a promise: the app's signer does its seed step natively,
+ * which is asynchronous. The send flow awaits either.
  */
-export type UsdtTransferSigner = (request: UsdtTransferRequest) => SignedUsdtTransfer;
+export type UsdtTransferSigner = (request: UsdtTransferRequest) => SignedUsdtTransfer | Promise<SignedUsdtTransfer>;
 
 function sha256(bytes: Buffer): Buffer {
     const digest = CryptoJS.SHA256(CryptoJS.enc.Hex.parse(toHex(bytes)));
@@ -240,6 +243,29 @@ export function recoverTronSigner(txID: string, signature: string): string {
     return tronAddressFromHex(tronAddressBytesFromPublicKey(Buffer.from(publicKey)).toString('hex'));
 }
 
+/** 65 bytes, hex: r, s, then v as 27 or 28. */
+function signTxID(txID: string, privateKey: Buffer): string {
+    const [compact, recovery] = secp.signSync(txID, privateKey, {
+        recovered: true,
+        der: false,
+        canonical: true,
+    });
+    return Buffer.concat([Buffer.from(compact), Buffer.from([recovery + 27])]).toString('hex');
+}
+
+/** Check the signature recovers to the sender, then wrap it into the broadcastable transaction. */
+function assembleSigned(request: UsdtTransferRequest, unsigned: UnsignedUsdtTransfer, signature: string): SignedUsdtTransfer {
+    if (tronAddressToHex(recoverTronSigner(unsigned.txID, signature)) !== tronAddressToHex(request.from)) {
+        throw new Error('This wallet cannot sign for the sending address. Check the account and its passphrase');
+    }
+
+    const transaction = Buffer.concat([
+        bytesField(1, Buffer.from(unsigned.rawDataHex, 'hex')),
+        bytesField(2, Buffer.from(signature, 'hex')),
+    ]);
+    return { ...unsigned, signature, transactionHex: transaction.toString('hex') };
+}
+
 /**
  * Build the transfer, sign it with the account the phrase derives, and check
  * the signature recovers to the sender before returning anything.
@@ -253,28 +279,27 @@ export function signUsdtTransfer(
     passphrase?: string,
 ): SignedUsdtTransfer {
     const unsigned = buildUsdtTransfer(request);
-    const signature = withTronPrivateKey(
+    const signature = withTronPrivateKey(mnemonic, privateKey => signTxID(unsigned.txID, privateKey), 0, 0, passphrase);
+    return assembleSigned(request, unsigned, signature);
+}
+
+/**
+ * signUsdtTransfer with the seed step done natively, which is what the app
+ * signs with: the JavaScript seed step froze the app for seconds at the moment
+ * the user confirmed. The same bytes come out, since only the seed step moved.
+ */
+export async function signUsdtTransferNative(
+    request: UsdtTransferRequest,
+    mnemonic: string,
+    passphrase?: string,
+): Promise<SignedUsdtTransfer> {
+    const unsigned = buildUsdtTransfer(request);
+    const signature = await withTronPrivateKeyNative(
         mnemonic,
-        privateKey => {
-            const [compact, recovery] = secp.signSync(unsigned.txID, privateKey, {
-                recovered: true,
-                der: false,
-                canonical: true,
-            });
-            return Buffer.concat([Buffer.from(compact), Buffer.from([recovery + 27])]).toString('hex');
-        },
+        privateKey => signTxID(unsigned.txID, privateKey),
         0,
         0,
         passphrase,
     );
-
-    if (tronAddressToHex(recoverTronSigner(unsigned.txID, signature)) !== tronAddressToHex(request.from)) {
-        throw new Error('This wallet cannot sign for the sending address. Check the account and its passphrase');
-    }
-
-    const transaction = Buffer.concat([
-        bytesField(1, Buffer.from(unsigned.rawDataHex, 'hex')),
-        bytesField(2, Buffer.from(signature, 'hex')),
-    ]);
-    return { ...unsigned, signature, transactionHex: transaction.toString('hex') };
+    return assembleSigned(request, unsigned, signature);
 }

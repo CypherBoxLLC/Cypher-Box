@@ -1,5 +1,5 @@
 import BigNumber from "bignumber.js";
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { ActivityIndicator, Image, TextInput, TouchableOpacity, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
@@ -9,7 +9,7 @@ import { getFlashnetPair } from "@Cypher/api/flashnetAPIs";
 import { getTronUsdtBalance } from "@Cypher/api/tronAPIs";
 import { Time } from "@Cypher/assets/images";
 import { asset } from "@Cypher/services/chainSwap/types";
-import { resolveHotVaultTronAccount } from "@Cypher/services/tron/account";
+import { useHotVaultTronAccount } from "@Cypher/custom-hooks";
 import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
 import { formatUsdtAmount, formatUsdtExact } from "@Cypher/services/tron/format";
 import {
@@ -148,12 +148,11 @@ export default function UsdtWallet({ preview = false }: Props) {
     const { walletID } = useAuthStore();
     const { wallets } = useContext(BlueStorageContext);
 
-    // Memoised because the derivation behind it runs BIP39's PBKDF2 over 2048
-    // rounds. Skipped entirely for the preview, which shows no real address.
-    const account = useMemo(
-        () => (preview ? null : resolveHotVaultTronAccount(wallets, walletID)),
-        [preview, wallets, walletID],
-    );
+    // Derived natively and kept for the session, which is also what makes every
+    // USDT screen open at once: they reuse the account this loads. Derived in
+    // render, the JavaScript seed step froze the app for 5.3 seconds each time.
+    // Skipped for the preview, which shows no real address.
+    const { account, pending } = useHotVaultTronAccount(wallets, walletID, !preview);
     const address = account?.address ?? null;
 
     const [balance, setBalance] = useState<string | null>(null);
@@ -234,7 +233,9 @@ export default function UsdtWallet({ preview = false }: Props) {
         };
     }, [preview, direction, priced]);
 
-    if (!preview && !address) {
+    // No account means no card, but while it is still being derived the card
+    // shows, with its balance loading, rather than appearing a moment later.
+    if (!preview && !address && !pending) {
         return null;
     }
 

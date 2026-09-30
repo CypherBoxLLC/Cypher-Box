@@ -9,3 +9,4 @@ export {default as useArkoorReceivePrompt} from './useArkoorReceivePrompt';
 export {default as useEasedProgress} from './useEasedProgress';
 export {default as useKeyboardLift} from './useKeyboardLift';
 export {CarouselPageVisibilityContext} from './carouselPageVisibility';
+export {default as useHotVaultTronAccount} from './useHotVaultTronAccount';

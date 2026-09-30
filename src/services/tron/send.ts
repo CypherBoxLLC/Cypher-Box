@@ -493,7 +493,7 @@ async function signAndSubmit(request: SendRequest, purpose: Purpose, clock: Tron
         if (request.signBy !== undefined && referenceBlock.timestamp > request.signBy) {
             throw quoteExpiring();
         }
-        const signed = sign({ from: from.address, to, amountUnits, referenceBlock, createdAtMs: clock.now() });
+        const signed = await sign({ from: from.address, to, amountUnits, referenceBlock, createdAtMs: clock.now() });
         request.onSubmit?.({ txID: signed.txID, expirationMs: signed.expirationMs });
 
         const { answer, unanswered } = await submit(signed, from.publicKey, clock);
