@@ -10,7 +10,7 @@ import { getTronUsdtBalance } from "@Cypher/api/tronAPIs";
 import { Time } from "@Cypher/assets/images";
 import { asset } from "@Cypher/services/chainSwap/types";
 import { useHotVaultTronAccount } from "@Cypher/custom-hooks";
-import { USDT_ASSET_LABEL } from "@Cypher/services/tron/constants";
+import { USDT_ASSET_LABEL, USDT_PLAIN_SENDS_ENABLED } from "@Cypher/services/tron/constants";
 import { formatUsdtAmount, formatUsdtExact } from "@Cypher/services/tron/format";
 import {
     type SwapDirection,
@@ -339,8 +339,9 @@ export default function UsdtWallet({ preview = false }: Props) {
             <View style={styles.rowContainer}>
                 <LinearBorderView height={CARD_HEIGHT} width={CARD_WIDTH} style={styles.frame}>
                     <View style={styles.card}>
-                        {/* Section one: what is in the wallet, and the two
-                            ways to move it. */}
+                        {/* Section one: what is in the wallet, and the ways to
+                            move it. Send is off for now: see
+                            USDT_PLAIN_SENDS_ENABLED. */}
                         <View style={styles.labelRow}>
                             {/* Long press is the way into the success preview in
                                 development. Delete with that screen. The shared
@@ -399,7 +400,9 @@ export default function UsdtWallet({ preview = false }: Props) {
                             </View>
                             <View style={styles.smallButtons}>
                                 <ActionButton label="Receive" onPress={onReceive} small />
-                                <ActionButton label="Send" onPress={onSend} small spaced />
+                                {USDT_PLAIN_SENDS_ENABLED ? (
+                                    <ActionButton label="Send" onPress={onSend} small spaced />
+                                ) : null}
                             </View>
                         </View>
 

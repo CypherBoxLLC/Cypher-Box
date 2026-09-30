@@ -46,3 +46,16 @@ export const USDT_NETWORK_LABEL = 'Tron';
  * constant never gates anything; it only decides when to mention the tradeoff.
  */
 export const RECOMMENDED_SWAP_USDT = '100';
+
+/**
+ * Whether the USDT card offers a plain send. Off for now, by the owner's call.
+ *
+ * Every Tron transfer needs energy, which the backend rents from a small
+ * prepaid balance. A swap earns its energy back through its fee; a plain send
+ * earns nothing, so each one would be pure spend from that balance, and the
+ * backend refuses them anyway (NOT_SPONSORED). The send flow stays built. It
+ * comes back once the network fee has a source of its own, most likely the
+ * user paying it in sats over Lightning, and the backend lets plain sends
+ * through.
+ */
+export const USDT_PLAIN_SENDS_ENABLED = false;
