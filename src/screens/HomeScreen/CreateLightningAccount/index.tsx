@@ -4,6 +4,7 @@ import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "../styles";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 
 // Provider-logo sheet — outlined with the same pink gradient ring as
 // the parent card, dark interior. Mirrors the slick "ring + dark fill"
@@ -119,11 +120,13 @@ export default function CreateLightningAccount({ onPress }: Props) {
                                     Unlock Lightning Wallet
                                 </Text>
                             </View>
-                            {/* Provider tiles — pink-bordered pills
-                                matching the parent card's ring. */}
+                            {/* Provider tiles, pink-bordered pills
+                                matching the parent card's ring. Only the
+                                providers offered in this region are shown
+                                (services/featureFlags). */}
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16 }}>
-                                <ProviderTile logo={require("@Cypher/assets/images/strike.png")} />
-                                <ProviderTile logo={require("@Cypher/assets/images/coinos.png")} />
+                                {isStrikeAllowed() && <ProviderTile logo={require("@Cypher/assets/images/strike.png")} />}
+                                {isCoinosAllowed() && <ProviderTile logo={require("@Cypher/assets/images/coinos.png")} />}
                                 <ProviderTile logo={require("@Cypher/assets/images/second.png")} />
                             </View>
                         </View>

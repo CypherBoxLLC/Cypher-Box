@@ -21,7 +21,7 @@ import { AbstractWallet } from "../../../class";
 import useAuthStore from "@Cypher/stores/authStore";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import { getArkOnchainAddress } from "@Cypher/services/ark/receive";
-import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import MaskedView from "@react-native-masked-view/masked-view";
 
 const whiteCapsule = require("@Cypher/assets/images/whitecapsule.png");
@@ -113,7 +113,11 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     const [frozen, setFrozen] = useState(
         utxo.filter(out => wallet.getUTXOMetadata(out.txid, out.vout).frozen).map(({ txid, vout }) => `${txid}:${vout}`),
     );
-    const { walletID, coldStorageWalletID, isAuth, isStrikeAuth, isArkAuth, strikeUser } = useAuthStore();
+    const { walletID, coldStorageWalletID, isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, strikeUser } = useAuthStore();
+    // Region gates (services/featureFlags): a connected rail that is not
+    // offered in this region is treated as unavailable on this surface.
+    const isAuth = isCoinosConnected && isCoinosAllowed();
+    const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
     const { wallets, saveToDisk, sleep, isElectrumDisabled } = useContext(BlueStorageContext);
 
     const debouncedSaveFronen = useRef(

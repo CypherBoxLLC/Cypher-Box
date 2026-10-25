@@ -30,6 +30,7 @@ import {
 import { dispatchNavigate } from "@Cypher/helpers";
 import { FEATURE_ARK_ENABLED, fetchArkMinBoardSats, getArkAddress, getArkOnchainAddress } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { describeArkFailure } from "@Cypher/services/ark/networkFault";
 import { ARK_SERVER_URL, ESPLORA_URLS } from "@Cypher/services/ark";
 import { colors } from "@Cypher/style-guide";
@@ -87,7 +88,11 @@ function AddressFetchFailed({ message, onRetry }: { message: string; onRetry(): 
 }
 
 export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, receiveType, wallet, coldStorageWallet, matchedRate, currency, vaultAddress = '', coldStorageAddress = '', initialVaultType = null }: Props) {
-  const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
+  const { user, strikeMe, strikeUser, vaultTab, setVaultTab, isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, walletID, coldStorageWalletID, allBTCWallets } = useAuthStore();
+  // Region gates (services/featureFlags): a connected rail that is not
+  // offered in this region is treated as unavailable on this surface.
+  const isAuth = isCoinosConnected && isCoinosAllowed();
+  const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
 
   const getInitialSelectedItem = () => {
     if (initialVaultType === 'hot') return 3;

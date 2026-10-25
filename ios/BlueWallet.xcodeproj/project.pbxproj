@@ -23,6 +23,8 @@
 		9460BA93871C46EB9A6A8F32 /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F6F3F7A9DFB74923B662A1B9 /* BootSplash.storyboard */; };
 		9E035EE82FAC2DDF00B11110 /* CypherCloudStorage.m in Sources */ = {isa = PBXBuildFile; fileRef = 9E035EE72FAC2DDF00B11110 /* CypherCloudStorage.m */; };
 		9E035EE92FAC2DDF00B11110 /* CypherCloudStorage.m in Sources */ = {isa = PBXBuildFile; fileRef = 9E035EE72FAC2DDF00B11110 /* CypherCloudStorage.m */; };
+		4E6FDED8E533474088CBEA30 /* CypherStorefront.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E9AE63386134133A8B65ACA /* CypherStorefront.m */; };
+		ABE1541BDD7D4F3C8BA59B79 /* CypherStorefront.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E9AE63386134133A8B65ACA /* CypherStorefront.m */; };
 		A6798FC53EF440C698C534F9 /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 34058D7A36764495B12F2CE0 /* Archivo-SemiBold.ttf */; };
 		A8642ABB2BA2FA8E00805B5E /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F6F3F7A9DFB74923B662A1B9 /* BootSplash.storyboard */; };
 		A8A78FF92BA46C6B007BFB27 /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 34058D7A36764495B12F2CE0 /* Archivo-SemiBold.ttf */; };
@@ -227,6 +229,8 @@
 		9DF4E6C040764E4BA1ACC1EB /* libTcpSockets.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = libTcpSockets.a; sourceTree = "<group>"; };
 		9E035EE62FAC2DDF00B11110 /* CypherCloudStorage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CypherCloudStorage.h; sourceTree = "<group>"; };
 		9E035EE72FAC2DDF00B11110 /* CypherCloudStorage.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CypherCloudStorage.m; sourceTree = "<group>"; };
+		3046610B42C0415CB26D6DDD /* CypherStorefront.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = CypherStorefront.h; path = BlueWallet/CypherStorefront.h; sourceTree = "<group>"; };
+		3E9AE63386134133A8B65ACA /* CypherStorefront.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = CypherStorefront.m; path = BlueWallet/CypherStorefront.m; sourceTree = "<group>"; };
 		9F1F51A83D044F3BB26A35FC /* libRNSVG-tvOS.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = "libRNSVG-tvOS.a"; sourceTree = "<group>"; };
 		A7C4B1FDAD264618BAF8C335 /* libRNCWebView.a */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = archive.ar; path = libRNCWebView.a; sourceTree = "<group>"; };
 		A9166D490AEF4938BD6621CF /* Feather.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = Feather.ttf; path = "../node_modules/react-native-vector-icons/Fonts/Feather.ttf"; sourceTree = "<group>"; };
@@ -349,6 +353,8 @@
 				32F0A2502310B0910095C559 /* BlueWallet.entitlements */,
 				9E035EE62FAC2DDF00B11110 /* CypherCloudStorage.h */,
 				9E035EE72FAC2DDF00B11110 /* CypherCloudStorage.m */,
+				3046610B42C0415CB26D6DDD /* CypherStorefront.h */,
+				3E9AE63386134133A8B65ACA /* CypherStorefront.m */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				B4A29A462B55C990002A67DF /* BlueWallet-NoLDK.plist */,
@@ -1107,6 +1113,7 @@
 				13B07FC11A68108700A75B9A /* main.m in Sources */,
 				B461B852299599F800E431AA /* AppDelegate.mm in Sources */,
 				9E035EE92FAC2DDF00B11110 /* CypherCloudStorage.m in Sources */,
+				4E6FDED8E533474088CBEA30 /* CypherStorefront.m in Sources */,
 				32B5A32A2334450100F8D608 /* Bridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1124,6 +1131,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9E035EE82FAC2DDF00B11110 /* CypherCloudStorage.m in Sources */,
+				ABE1541BDD7D4F3C8BA59B79 /* CypherStorefront.m in Sources */,
 				B4A29A2C2B55C990002A67DF /* EventEmitter.m in Sources */,
 				B4A29A2D2B55C990002A67DF /* main.m in Sources */,
 				B4A29A2E2B55C990002A67DF /* AppDelegate.mm in Sources */,

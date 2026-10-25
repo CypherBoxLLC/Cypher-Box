@@ -1,22 +1,32 @@
 /**
  * featureFlags: single source of truth for region gating.
  *
- * The gate that matters right now is CoinOS in the European Economic
- * Area. MiCA (Regulation (EU) 2023/1114) requires anyone providing
- * crypto-asset services to EEA clients to be authorised as a CASP, and
- * the transitional grandfathering ended 1 July 2026. CoinOS holds no
- * such authorisation, so its surfaces are hidden in EEA storefronts.
+ * Two gates live here.
  *
- * Strike is NOT gated: Strike's European entity is an authorised CASP
- * and the integration is sign-in only against an account the user
- * opened with Strike directly. Ark and the Vaults are not gated either,
- * they are self-custodial and out of CASP scope.
+ * CoinOS is hidden in the European Economic Area and the United Kingdom.
+ * MiCA (Regulation (EU) 2023/1114) requires anyone providing crypto-asset
+ * services to EEA clients to be authorised as a CASP, and the
+ * transitional grandfathering ended 1 July 2026. CoinOS holds no such
+ * authorisation. The UK was added in 0.1.13.
  *
- * --- Platform ---------------------------------------------------------
- * There is deliberately no `Platform.OS` branch here. The previous
- * version of this gate exempted Android because the driver was Apple's
- * DSA-era approval terms. The driver now is MiCA itself, which binds us
- * and CoinOS regardless of which store the install came from.
+ * Strike is shown only in the countries Strike lists as supported, and
+ * never in the EEA or the UK. Strike operates in both; leaving them out
+ * is a product decision. Ark and the Vaults are not gated, they are
+ * self-custodial.
+ *
+ * --- Signals ----------------------------------------------------------
+ * On iOS the App Store storefront country decides: the Apple Account
+ * country that App Store Availability also uses, read through the
+ * CypherStorefront native module. The device region is checked as well,
+ * and an EEA or UK region hides both rails even when the storefront says
+ * otherwise. Android has no storefront to read, so the device region
+ * decides there. The rule is the same on both platforms; only the signal
+ * differs.
+ *
+ * --- Unknown country --------------------------------------------------
+ * Every gate fails CLOSED. Serving a rail where it should not appear is
+ * a regulatory problem; hiding one from a user we cannot place is a
+ * support ticket.
  *
  * --- Dev / test bypass ------------------------------------------------
  * Geo-blocking is bypassed in `__DEV__` builds so testers can verify
@@ -24,34 +34,70 @@
  * builds run the real check.
  */
 
+import { NativeModules, Platform } from 'react-native';
 import * as RNLocalize from 'react-native-localize';
+
+/** ISO 3166-1 alpha-2 (device region) and alpha-3 (App Store storefront). */
+type CountryCodes = readonly [alpha2: string, alpha3: string];
 
 /**
  * EEA = the 27 EU member states plus Iceland, Norway and Liechtenstein.
  *
- * The earlier revision of this list covered the EU proper only, because
- * Apple's geo-block scope at the time followed the EU. MiCA applies
- * across the whole EEA, and App Review's September 2026 finding said
- * "European Economic Area", so the three EFTA states are included.
- *
  * Kept inline rather than pulling a country-list package: the set is
  * stable (any change to it is a political event, not a dependency
- * upgrade) and a 30-entry array is cheaper than another dep.
+ * upgrade) and a short table is cheaper than another dep.
  */
-const EEA_COUNTRIES = new Set<string>([
+const EEA: readonly CountryCodes[] = [
     // EU 27
-    'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
-    'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL',
-    'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
+    ['AT', 'AUT'], ['BE', 'BEL'], ['BG', 'BGR'], ['HR', 'HRV'], ['CY', 'CYP'],
+    ['CZ', 'CZE'], ['DK', 'DNK'], ['EE', 'EST'], ['FI', 'FIN'], ['FR', 'FRA'],
+    ['DE', 'DEU'], ['GR', 'GRC'], ['HU', 'HUN'], ['IE', 'IRL'], ['IT', 'ITA'],
+    ['LV', 'LVA'], ['LT', 'LTU'], ['LU', 'LUX'], ['MT', 'MLT'], ['NL', 'NLD'],
+    ['PL', 'POL'], ['PT', 'PRT'], ['RO', 'ROU'], ['SK', 'SVK'], ['SI', 'SVN'],
+    ['ES', 'ESP'], ['SE', 'SWE'],
     // EFTA members of the EEA
-    'IS', 'NO', 'LI',
-]);
+    ['IS', 'ISL'], ['NO', 'NOR'], ['LI', 'LIE'],
+];
+
+const UK: readonly CountryCodes[] = [['GB', 'GBR']];
+
+/**
+ * Strike's published list of supported countries
+ * (https://strike.me/support/where-is-strike-available/, read 2026-10-18),
+ * minus the EEA and the UK. Puerto Rico is listed by Strike as part of
+ * the United States. Re-read the page when Strike adds or drops a country.
+ */
+export const STRIKE_COUNTRIES: readonly CountryCodes[] = [
+    ['AG', 'ATG'], ['AR', 'ARG'], ['AZ', 'AZE'], ['BH', 'BHR'], ['BB', 'BRB'],
+    ['BZ', 'BLZ'], ['BJ', 'BEN'], ['BT', 'BTN'], ['BA', 'BIH'], ['BR', 'BRA'],
+    ['BN', 'BRN'], ['CL', 'CHL'], ['CO', 'COL'], ['CR', 'CRI'], ['DO', 'DOM'],
+    ['EC', 'ECU'], ['SV', 'SLV'], ['GQ', 'GNQ'], ['FJ', 'FJI'], ['GA', 'GAB'],
+    ['GM', 'GMB'], ['GE', 'GEO'], ['GH', 'GHA'], ['GT', 'GTM'], ['GN', 'GIN'],
+    ['GY', 'GUY'], ['HN', 'HND'], ['IN', 'IND'], ['CI', 'CIV'], ['KZ', 'KAZ'],
+    ['KE', 'KEN'], ['LA', 'LAO'], ['LS', 'LSO'], ['MG', 'MDG'], ['MW', 'MWI'],
+    ['MV', 'MDV'], ['MX', 'MEX'], ['MN', 'MNG'], ['ME', 'MNE'], ['MZ', 'MOZ'],
+    ['NA', 'NAM'], ['NZ', 'NZL'], ['NI', 'NIC'], ['NG', 'NGA'], ['OM', 'OMN'],
+    ['PA', 'PAN'], ['PG', 'PNG'], ['PY', 'PRY'], ['PE', 'PER'], ['PH', 'PHL'],
+    ['RS', 'SRB'], ['SC', 'SYC'], ['SL', 'SLE'], ['ZA', 'ZAF'], ['KR', 'KOR'],
+    ['LK', 'LKA'], ['TW', 'TWN'], ['TL', 'TLS'], ['TG', 'TGO'], ['TT', 'TTO'],
+    ['UG', 'UGA'], ['AE', 'ARE'], ['US', 'USA'], ['PR', 'PRI'], ['UY', 'URY'],
+    ['VU', 'VUT'], ['VN', 'VNM'], ['ZM', 'ZMB'], ['ZW', 'ZWE'],
+];
+
+const alpha2 = (list: readonly CountryCodes[]) => new Set(list.map(([a2]) => a2));
+const alpha3 = (list: readonly CountryCodes[]) => new Set(list.map(([, a3]) => a3));
+
+const EEA_ALPHA2 = alpha2(EEA);
+const EEA_UK_ALPHA2 = alpha2([...EEA, ...UK]);
+const EEA_UK_ALPHA3 = alpha3([...EEA, ...UK]);
+const STRIKE_ALPHA2 = alpha2(STRIKE_COUNTRIES);
+const STRIKE_ALPHA3 = alpha3(STRIKE_COUNTRIES);
 
 /**
  * Flip to `true` to hide CoinOS in every storefront rather than in the
- * EEA only. CoinOS holds no authorisation in any jurisdiction, so this
- * is the switch to reach for if App Review comes back on the non-EEA
- * half of guideline 3.1.5(iii), or if the rail is retired outright.
+ * EEA and the UK only. CoinOS holds no authorisation in any
+ * jurisdiction, so this is the switch to reach for if the rail is
+ * retired outright.
  */
 const COINOS_DISABLED_GLOBALLY = false;
 
@@ -64,8 +110,7 @@ const COINOS_DISABLED_GLOBALLY = false;
  * New York is still a German user, and no network round-trip can be
  * blocked, spoofed by a proxy, or fail offline.
  *
- * Returns null when the region genuinely cannot be determined, which
- * callers must treat as "assume restricted". See isEeaRegion().
+ * Returns null when the region genuinely cannot be determined.
  */
 function getDeviceCountry(): string | null {
     try {
@@ -83,21 +128,60 @@ function getDeviceCountry(): string | null {
     return null;
 }
 
+function normaliseAlpha3(value: unknown): string | null {
+    return typeof value === 'string' && /^[A-Za-z]{3}$/.test(value) ? value.toUpperCase() : null;
+}
+
+/** undefined = not read yet; null = read, but no storefront available. */
+let storefrontCountry: string | null | undefined;
+
+/**
+ * App Store storefront country (alpha-3) on iOS, null elsewhere or when
+ * no storefront is available. The first call reads the native module's
+ * constant so render-time checks stay synchronous;
+ * refreshStorefrontCountry() updates it later.
+ */
+function getStorefrontCountry(): string | null {
+    if (Platform.OS !== 'ios') return null;
+    if (storefrontCountry !== undefined) return storefrontCountry;
+    try {
+        const mod = NativeModules.CypherStorefront;
+        storefrontCountry = normaliseAlpha3(mod?.countryCode ?? mod?.getConstants?.()?.countryCode);
+    } catch {
+        storefrontCountry = null;
+    }
+    return storefrontCountry;
+}
+
+/**
+ * Re-reads the storefront from StoreKit. Call once at startup: the
+ * storefront can be unavailable for a moment after launch, and the
+ * module constant is fixed for the module's lifetime. A failed or empty
+ * read keeps the previous value.
+ */
+export async function refreshStorefrontCountry(): Promise<void> {
+    if (Platform.OS !== 'ios') return;
+    try {
+        const next = normaliseAlpha3(await NativeModules.CypherStorefront?.getCountryCode?.());
+        if (next !== null) storefrontCountry = next;
+    } catch {
+        // Keep whatever we had. The gates fail closed on null.
+    }
+}
+
+function inEeaOrUk(storefront: string | null, region: string | null): boolean {
+    return (storefront !== null && EEA_UK_ALPHA3.has(storefront))
+        || (region !== null && EEA_UK_ALPHA2.has(region));
+}
+
 /**
  * True when the device region is in the EEA, OR when the region cannot
- * be read at all.
- *
- * The unknown case fails CLOSED, which inverts what this file used to
- * do. The old code defaulted to 'US' so a bridge failure would never
- * gate a tester. That default is no longer acceptable: serving an
- * unauthorised CASP to an EEA user is a regulatory problem, while
- * hiding one rail from a user we cannot place is a support ticket.
- * `__DEV__` bypasses the whole check, so testers are unaffected.
+ * be read at all. Kept for callers that only care about the EEA.
  */
 export function isEeaRegion(): boolean {
     const country = getDeviceCountry();
     if (!country) return true;
-    return EEA_COUNTRIES.has(country);
+    return EEA_ALPHA2.has(country);
 }
 
 /**
@@ -106,11 +190,34 @@ export function isEeaRegion(): boolean {
  *
  * Gates VISIBILITY, not auth state. A user who connected CoinOS before
  * this build still has `isAuth === true` in the store; the entry points
- * are hidden and the home card goes read-only. Disconnect stays
- * reachable, and their balance is with CoinOS either way.
+ * are hidden and the home card goes read-only. Their balance is with
+ * CoinOS either way.
  */
 export function isCoinosAllowed(): boolean {
     if (__DEV__) return true;
     if (COINOS_DISABLED_GLOBALLY) return false;
-    return !isEeaRegion();
+    const storefront = getStorefrontCountry();
+    const region = getDeviceCountry();
+    if (storefront === null && region === null) return false;
+    return !inEeaOrUk(storefront, region);
+}
+
+/**
+ * Returns true when Strike surfaces (sign-in and sign-up, home card
+ * actions, buy and sell, send/topup/withdraw/cold-storage tiles, swap
+ * rail, exit funding) should be shown.
+ *
+ * Same visibility-only contract as isCoinosAllowed(): a user who
+ * connected Strike before this build keeps a read-only card with their
+ * balance until the Strike session expires.
+ */
+export function isStrikeAllowed(): boolean {
+    if (__DEV__) return true;
+    const region = getDeviceCountry();
+    if (Platform.OS === 'ios') {
+        const storefront = getStorefrontCountry();
+        if (storefront === null || !STRIKE_ALPHA3.has(storefront)) return false;
+        return !(region !== null && EEA_UK_ALPHA2.has(region));
+    }
+    return region !== null && STRIKE_ALPHA2.has(region);
 }

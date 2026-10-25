@@ -33,6 +33,7 @@ import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkPushTokenBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
@@ -996,8 +997,10 @@ export default function HomeScreen({ route }: Props) {
     const strikeBal = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
     const coinosTotal = Number(withdrawThreshold) + Number(reserveAmount);
     const strikeTotal = Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount);
-    const coinosThresholdMet = isAuth && coinosBalance >= coinosTotal;
-    const strikeThresholdMet = isStrikeAuth && strikeBal >= strikeTotal;
+    // A rail that is not offered in this region (services/featureFlags)
+    // cannot be withdrawn from here, so it does not raise the prompt.
+    const coinosThresholdMet = isAuth && isCoinosAllowed() && coinosBalance >= coinosTotal;
+    const strikeThresholdMet = isStrikeAuth && isStrikeAllowed() && strikeBal >= strikeTotal;
     const anyThresholdMet = coinosThresholdMet || strikeThresholdMet;
     const hasVault = !!(walletID || coldStorageWalletID);
 

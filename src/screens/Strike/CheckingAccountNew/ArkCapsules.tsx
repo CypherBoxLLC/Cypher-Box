@@ -55,6 +55,7 @@ import {
 import { buildRefreshBatch } from "@Cypher/services/ark/refreshBatch";
 import { buildDeferredVtxoIds } from "@Cypher/services/ark/refreshDeferral";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import RefreshWaitBanner from '@Cypher/components/RefreshWaitBanner';
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
@@ -1152,7 +1153,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const setArkPendingDustSweep = useAuthStore((s) => s.setArkPendingDustSweep);
     // Both dust escape hatches are swaps with CoinOS, so neither is offered
     // when it is not connected.
-    const isCoinosConnected = useAuthStore((s) => s.isAuth) === true;
+    const isCoinosConnected = useAuthStore((s) => s.isAuth) === true && isCoinosAllowed();
     const setArkPendingTapRefresh = useAuthStore((s) => s.setArkPendingTapRefresh);
     const arkRefreshStuck = useAuthStore((s) => s.arkRefreshStuck);
     const setArkRefreshStuck = useAuthStore((s) => s.setArkRefreshStuck);

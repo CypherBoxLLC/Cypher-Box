@@ -7,6 +7,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import { Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 
@@ -61,7 +62,11 @@ export default React.memo(function Header({
     const routeName = useRoute().name;
     const { sleep } = React.useContext(BlueStorageContext);
 
-    const { isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID } = useAuthStore();
+    const { isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, walletID, coldStorageWalletID } = useAuthStore();
+    // Region gates (services/featureFlags): a connected rail that is not
+    // offered in this region is treated as unavailable on this surface.
+    const isAuth = isCoinosConnected && isCoinosAllowed();
+    const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
 
     const [pickerVisible, setPickerVisible] = useState(false);
     const [activityDropdownVisible, setActivityDropdownVisible] = useState(false);

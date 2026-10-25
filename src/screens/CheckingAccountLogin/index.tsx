@@ -4,7 +4,7 @@ import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-n
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
-import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -72,21 +72,22 @@ export default function CheckingAccountLogin() {
   } = useAuthStore();
   const [strikeLoading, setStrikeLoading] = React.useState(false);
   const [CoinosException, setCoinosException] = React.useState(false);
+  const [StrikeException, setStrikeException] = React.useState(false);
   const [pageLoading, setPageLoading] = React.useState(true);
   const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
 
   useEffect(() => {
-    // CoinOS is hidden in the EEA: no MiCA authorisation, and the
-    // transitional period ended 1 July 2026. See services/featureFlags.
+    // CoinOS is hidden in the EEA and the UK. Strike is shown only in the
+    // countries Strike supports, and never in the EEA or the UK. See
+    // services/featureFlags.
     //
     // This replaces an ipapi.co round-trip that used to run here. The
     // device region is a better signal than the IP anyway (it follows
     // the user's account region rather than where they happen to be
     // standing), it cannot fail offline, and it does not leak an app
     // launch to a third-party IP service.
-    //
-    // Strike is deliberately NOT gated here.
     setCoinosException(!isCoinosAllowed());
+    setStrikeException(!isStrikeAllowed());
     setPageLoading(false);
   }, []);
 
@@ -95,6 +96,7 @@ export default function CheckingAccountLogin() {
   };
 
   const createStrikeAccountClickHandler = () => {
+    if (!isStrikeAllowed()) return;
     strikeSignupSheetRef.current?.open();
   };
 
@@ -134,6 +136,9 @@ export default function CheckingAccountLogin() {
   };
 
   const handleStrikeLogin = async () => {
+    // The row is hidden where Strike is not offered; this guards any
+    // other route into the same handler.
+    if (!isStrikeAllowed()) return;
     try {
       const result = await authorize(config);
       const reStrikeTokenExchange = await strikeTokenExchange(result.authorizationCode, result.codeVerifier || '');
@@ -218,9 +223,15 @@ export default function CheckingAccountLogin() {
     );
   }
 
-  // Visibility flags for the two category sections — used to suppress
+  // Visibility flags for the two category sections, used to suppress
   // empty headers when every provider in a section is already connected.
-  const showCustodial = !isStrikeAuth || (!isAuth && !CoinosException);
+  // A provider that is not offered in this region shows a notice in place
+  // of its row, so the section still explains itself.
+  const showStrikeRow = !isStrikeAuth && !StrikeException;
+  const showCoinosRow = !isAuth && !CoinosException;
+  const showStrikeNotice = !isStrikeAuth && StrikeException;
+  const showCoinosNotice = !isAuth && CoinosException;
+  const showCustodial = showStrikeRow || showCoinosRow || showStrikeNotice || showCoinosNotice;
   const showArk = FEATURE_ARK_ENABLED && !isArkAuth;
 
   return (
@@ -311,12 +322,14 @@ export default function CheckingAccountLogin() {
                 </TouchableOpacity>
                 <View style={styles.sectionDivider} />
               </View>
-              <Text style={styles.sectionSubtitle}>
-                Sign in to an existing Lightning account. Or create an account
-                on provider's website and come back again to Cypher Box and login!
-              </Text>
+              {(showStrikeRow || showCoinosRow) && (
+                <Text style={styles.sectionSubtitle}>
+                  Sign in to an existing Lightning account. Or create an account
+                  on provider's website and come back again to Cypher Box and login!
+                </Text>
+              )}
 
-              {!isStrikeAuth && (
+              {showStrikeRow && (
                 /* Side-by-side row: [Login to + Strike logo] + [Create].
                    The wider login pill stays on the LEFT; the narrower
                    pink-bordered Create button takes the remaining space
@@ -331,7 +344,15 @@ export default function CheckingAccountLogin() {
                   <CreateButton onPress={createStrikeAccountClickHandler} />
                 </View>
               )}
-              {!isAuth && !CoinosException && (
+              {showStrikeNotice && (
+                <Text style={styles.regionNotice}>
+                  Strike is not available in Cypher Box in your region. If
+                  Strike serves your country, you can use the Strike app
+                  directly, and pay to or from Cypher Box with a Lightning
+                  invoice or a bitcoin address.
+                </Text>
+              )}
+              {showCoinosRow && (
                 <View style={accountStyles.providerRow}>
                   <LoginOption
                     label="Login to"
@@ -342,8 +363,8 @@ export default function CheckingAccountLogin() {
                   <CreateButton onPress={createCheckingAccountClickHandler} />
                 </View>
               )}
-              {CoinosException && (
-                /* Shown instead of the CoinOS tile in EEA storefronts.
+              {showCoinosNotice && (
+                /* Shown instead of the CoinOS tile in the EEA and the UK.
                    Rendering a reason beats hiding the row silently: the
                    previous gate just dropped it, which reads as a bug and
                    generates support mail. */

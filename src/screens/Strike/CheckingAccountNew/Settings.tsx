@@ -5,6 +5,7 @@ import { Copy, StrikeFull } from "@Cypher/assets/images";
 import { GradientSwitch, Text } from "@Cypher/component-library";
 import { ExitFundingSourceList, GradientView } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { colors, widths } from "@Cypher/style-guide";
 import React, { useContext, useEffect, useState } from "react";
 import {
@@ -3360,8 +3361,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   <ExitFundingSourceList
                     shortfallSats={exitFeeShortfallSats}
                     sources={buildExitFundingSources({
-                      coinos: { connected: !!isAuth },
-                      strike: { connected: !!isStrikeAuth },
+                      coinos: { connected: !!isAuth && isCoinosAllowed() },
+                      strike: { connected: !!isStrikeAuth && isStrikeAllowed() },
                       hotVault: { walletID: walletID ?? null },
                       coldVault: { walletID: coldStorageWalletID ?? null },
                       shortfallSats: exitFeeShortfallSats,

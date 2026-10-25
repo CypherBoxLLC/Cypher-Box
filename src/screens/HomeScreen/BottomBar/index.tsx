@@ -5,6 +5,7 @@ import { GradientView, SavingVault } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -68,8 +69,10 @@ export default function BottomBar({
     // LinearGradient children under RN 0.77 Fabric interop — the flicker/twitch
     // on "Hot Vault" / "Bitcoin Network" and the button arrows. Selecting only
     // the fields we use confines re-renders to real changes to them.
-    const isAuth = useAuthStore(s => s.isAuth);
-    const isStrikeAuth = useAuthStore(s => s.isStrikeAuth);
+    // Region gates (services/featureFlags): a connected rail that is not
+    // offered in this region is treated as unavailable on this surface.
+    const isAuth = useAuthStore(s => s.isAuth) && isCoinosAllowed();
+    const isStrikeAuth = useAuthStore(s => s.isStrikeAuth) && isStrikeAllowed();
     const isArkAuth = useAuthStore(s => s.isArkAuth);
     const strikeUser = useAuthStore(s => s.strikeUser);
     const withdrawStrikeThreshold = useAuthStore(s => s.withdrawStrikeThreshold);

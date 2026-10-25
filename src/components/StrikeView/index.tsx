@@ -10,6 +10,7 @@ import styles from './styles'
 import { dispatchNavigate, formatStrikeNumber } from '@Cypher/helpers'
 import { btc, getStrikeCurrency, SATS } from '@Cypher/helpers/coinosHelper'
 import useAuthStore from '@Cypher/stores/authStore'
+import { isStrikeAllowed } from '@Cypher/services/featureFlags'
 import SimpleToast from "react-native-simple-toast";
 import { useNavigation } from '@react-navigation/native'
 import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout, revokeStrikeToken } from '@Cypher/api/strikeAPIs'
@@ -34,6 +35,9 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     // Validate currency is a valid ISO 4217 code, fallback to USD
     const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
     const { strikeUser, clearStrikeAuth } = useAuthStore();
+    // Buy and sell are exchange features: where Strike is not offered
+    // (services/featureFlags) the card keeps its balances and drops them.
+    const strikeAllowed = isStrikeAllowed();
     const [dollarStrikeText, setDollarStrikeText] = useState(1000000);
     const navigation = useNavigation();
     const [showFiatPanel, setShowFiatPanel] = useState(false);
@@ -186,6 +190,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     }
 
     const buyClickHandler = () => {
+      if (!isStrikeAllowed()) return;
       const amt = Number(dollarStrikeText * (Number(matchedRate) || 0) * btc(1))
       console.log('amt: ', amt, strikeUser?.[1]?.available)
       if(strikeUser?.[1]?.available == 0){
@@ -218,6 +223,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     }
 
     const sellClickHandler = () => {
+        if (!isStrikeAllowed()) return;
         const amt = Number(dollarStrikeText * (Number(matchedRate) || 0) * btc(1))
         console.log('strikeUser?.[0]?.available: ', strikeUser?.[0]?.available * SATS, dollarStrikeText)
         if(strikeUser?.[0]?.available == 0){
@@ -286,6 +292,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 marginTop:40) introduced that gap. -20 here =
                                 -15 (the universal upward shift Bam asked for)
                                 + -5 (alignment correction with SELL). */}
+                            {strikeAllowed && (
                             <GradientView
                                 style={[styles.sellBuyButton, { marginTop: -20 }]}
                                 linearGradientStyle={styles.sellBuyGradient}
@@ -296,6 +303,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                             >
                                 <Text h3 bold center>₿UY</Text>
                             </GradientView>
+                            )}
                         </View>
 
                         {/* Right sideContainer: Fiat Balance + SELL. */}
@@ -311,6 +319,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 Balance up 10pt), which dragged SELL up 10pt
                                 with it. -15 + 10 = -5 keeps SELL aligned
                                 with BUY at its previous y-position. */}
+                            {strikeAllowed && (
                             <GradientView
                                 style={[styles.sellBuyButton, { marginTop: -5 }]}
                                 linearGradientStyle={styles.sellBuyGradient}
@@ -321,9 +330,11 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                             >
                                 <Text h3 bold center>SELL</Text>
                             </GradientView>
+                            )}
                         </View>
                     </View>
                 </LinearBorderView>
+                {strikeAllowed && (
                 <View>
                     <GradientView
                         style={styles.sellBuyButton2}
@@ -346,6 +357,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                         <Image source={Minus} resizeMode='contain' />
                     </GradientView>
                 </View>
+                )}
             </View>
             {/* The Deposit / Withdraw Fiat button was removed here. It opened the
                 panel below, which is wired to Strike's bank rails (getBankPaymentMethods,

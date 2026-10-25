@@ -8,6 +8,7 @@ import { CoinOSSmall, Refresh, Strike2 } from "@Cypher/assets/images";
 import CircleTimer from "../CircleTimer";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { SATS, formatSats, getStrikeCurrency, btc } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
@@ -25,6 +26,18 @@ interface Props {
 }
 export default function CircularView({ matchedRateStrike, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeMessage, hideActionButtons = false }: Props) {
     const { strikeUser, withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
+
+    // Region gates (services/featureFlags): a circle whose rail is not
+    // offered here keeps showing its balance but no longer opens the
+    // account screen, and the swap between the two needs both rails.
+    const strikeAllowed = isStrikeAllowed();
+    const coinosAllowed = isCoinosAllowed();
+    const swapAllowed = strikeAllowed && coinosAllowed;
+    const regionNotice = !strikeAllowed && !coinosAllowed
+        ? 'Strike and CoinOS are not available in Cypher Box in your region. Your balances are held by them, not by Cypher Box, and are untouched. Use the Strike app or coinos.io to access them.'
+        : !strikeAllowed
+            ? 'Strike is not available in Cypher Box in your region. Your Strike balance is held by Strike, not by Cypher Box, and is untouched. Use the Strike app to access it.'
+            : 'CoinOS is not available in your region. Your CoinOS balance is held by CoinOS, not by Cypher Box, and is untouched. Sign in at coinos.io to use it.';
 
     const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
     const safeMatchedRate = Number(matchedRateStrike) || 0;
@@ -74,16 +87,21 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
         marginBottom: 20
     }}>
         <View style={styles.circularView}>
-            <TouchableOpacity onPress={() => clickHandler(false)} style={styles.circleContainer}>
+            <TouchableOpacity disabled={!strikeAllowed} onPress={() => clickHandler(false)} style={styles.circleContainer}>
                 <CircleTimer type={"STRIKE"} progress={90} size={135} strokeWidth={7} {...checkingAccount.first} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => refSwapRBSheet?.current?.open()} style={styles.swapIcon}>
+            <TouchableOpacity disabled={!swapAllowed} onPress={() => refSwapRBSheet?.current?.open()} style={[styles.swapIcon, !swapAllowed && styles.swapIconDisabled]}>
                 <Image source={Refresh} style={{ width: 18, height: 29 }} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => clickHandler(true)} style={styles.circleContainer}>
+            <TouchableOpacity disabled={!coinosAllowed} onPress={() => clickHandler(true)} style={styles.circleContainer}>
                 <CircleTimer type={"COINOS"} progress={0} size={135} strokeWidth={7}{...checkingAccount.second} />
             </TouchableOpacity>
         </View>
+        {!swapAllowed && (
+            <Text h4 style={styles.regionNotice}>
+                {regionNotice}
+            </Text>
+        )}
         {!hideActionButtons && (
             <View style={styles.btnView}>
                 <GradientView

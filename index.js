@@ -4,6 +4,7 @@ import { AppRegistry } from 'react-native';
 import App from './App';
 import { BlueStorageProvider } from './blue_modules/storage-context';
 import { registerArkNotificationTapHandler } from './src/services/ark/notificationHandler';
+import { refreshStorefrontCountry } from './src/services/featureFlags';
 
 const A = require('./blue_modules/analytics');
 if (!Error.captureStackTrace) {
@@ -15,6 +16,12 @@ if (!Error.captureStackTrace) {
 // cold-start tap on an Ark expiry warning is routed once the JS bridge
 // is ready.
 registerArkNotificationTapHandler();
+
+// Read the App Store storefront early. The region gates read it
+// synchronously at render time, and it can be unavailable for a moment
+// right after launch. Fire and forget: the gates fail closed until it
+// arrives.
+refreshStorefrontCountry();
 
 const BlueAppComponent = () => {
   useEffect(() => {

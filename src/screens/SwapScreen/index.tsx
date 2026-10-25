@@ -6,13 +6,18 @@ import { Text } from "@Cypher/component-library";
 import { StrikeFull, CoinOs } from "@Cypher/assets/images";
 import { colors } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import styles from "./styles";
 
 type Service = 'strike' | 'coinos' | null;
 
 export default function SwapScreen() {
     const navigation = useNavigation();
-    const { user, strikeMe, isAuth, isStrikeAuth } = useAuthStore();
+    const { user, strikeMe, isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected } = useAuthStore();
+    // Region gates (services/featureFlags): a connected rail that is not
+    // offered in this region is treated as unavailable on this surface.
+    const isAuth = isCoinosConnected && isCoinosAllowed();
+    const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
     const [swapFrom, setSwapFrom] = useState<Service>(null);
     const [sendTo, setSendTo] = useState<Service>(null);
 

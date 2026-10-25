@@ -27,7 +27,7 @@ import {
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import styles from "./styles";
@@ -57,8 +57,8 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
     user,
     strikeMe,
     vaultTab,
-    isAuth,
-    isStrikeAuth,
+    isAuth: isCoinosConnected,
+    isStrikeAuth: isStrikeConnected,
     isArkAuth,
     walletID,
     coldStorageWalletID,
@@ -69,6 +69,10 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
     arkBalance,
     strikeUser,
   } = useAuthStore();
+  // Region gates (services/featureFlags): a connected rail that is not
+  // offered in this region is treated as unavailable on this surface.
+  const isAuth = isCoinosConnected && isCoinosAllowed();
+  const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [selectedWallet, setSelectedWallet] = useState<number | null>(null);
   if (__DEV__) console.log("🚀 ~ WithdrawList ~ selectedItem:", selectedItem);

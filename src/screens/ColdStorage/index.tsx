@@ -10,7 +10,7 @@ import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { selectCapsules } from "@Cypher/helpers/capsuleSelection";
-import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import Clipboard from '@react-native-clipboard/clipboard'
 import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
 import { BitcoinUnit, Chain } from "../../../models/bitcoinUnits";
@@ -88,7 +88,11 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [changeDepositAddress, setChangeDepositAddress] = useState<string | null>(null);
     const [changeFetchLoading, setChangeFetchLoading] = useState(false);
     const { wallets, setSelectedWalletID, sleep, txMetadata, saveToDisk, isElectrumDisabled } = useContext(BlueStorageContext);
-    const { walletID, coldStorageWalletID, isStrikeAuth, isAuth, isArkAuth } = useAuthStore();
+    const { walletID, coldStorageWalletID, isStrikeAuth: isStrikeConnected, isAuth: isCoinosConnected, isArkAuth } = useAuthStore();
+    // Region gates (services/featureFlags): a connected rail that is not
+    // offered in this region is treated as unavailable on this surface.
+    const isAuth = isCoinosConnected && isCoinosAllowed();
+    const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
     const { navigate } = useNavigation();
     console.log('inUSDinUSD: ', usd, inUSD)
 

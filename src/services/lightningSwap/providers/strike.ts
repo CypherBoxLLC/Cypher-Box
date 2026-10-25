@@ -23,6 +23,7 @@ import {
     sendStrikeLightningPayment,
 } from '@Cypher/api/strikeAPIs';
 import useAuthStore from '@Cypher/stores/authStore';
+import { isStrikeAllowed } from '@Cypher/services/featureFlags';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 import type {
@@ -52,7 +53,10 @@ const strikeProvider: LightningSwapProvider = {
     icon: StrikeFull,
 
     isAvailable() {
-        return Boolean(useAuthStore.getState().isStrikeAuth);
+        // Region gate lives here for the same reason as CoinOS's: every
+        // swap consumer goes through the registry, so one check covers
+        // the tile, the picker fallback and any programmatic swap.
+        return Boolean(useAuthStore.getState().isStrikeAuth) && isStrikeAllowed();
     },
 
     async createInvoice(amountSats, _memo, sourceId /* _memo unused: Strike's bolt11 endpoint takes no description field */) {

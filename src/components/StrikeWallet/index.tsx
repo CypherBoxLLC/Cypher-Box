@@ -3,6 +3,7 @@ import { GradientButtonWithShadow, GradientCardWithShadow, StrikeSignupSheet, ty
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
 import { formatNumber, formatSats, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { colors } from "@Cypher/style-guide";
 import React, { useContext, useRef } from "react";
 import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
@@ -51,6 +52,12 @@ export default function StrikeWallet({
 }: Props) {
     const { isStrikeAuth, isArkAuth, isAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, allBTCWallets } = useAuthStore();
     const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
+
+    // Where Strike is not offered (services/featureFlags) the card stays,
+    // with its balance, but goes read-only: no send, no receive, and
+    // tapping it no longer opens the account screen. The balance is held
+    // by Strike either way; removing the card would read as lost funds.
+    const strikeAllowed = isStrikeAllowed();
 
     // Strike + Ark (no CoinOS): the Strike Lightning card sits a bit
     // too high in the carousel slot for this combination. Bump it down
@@ -107,7 +114,7 @@ export default function StrikeWallet({
         <>
             {isStrikeAuth &&
                 <View style={strikeAndArkOnly ? { transform: [{ translateY: 10 }] } : undefined}>
-                    <TouchableOpacity style={styles.shadowView} onPress={() => checkingAccountClickHandler(false)}>
+                    <TouchableOpacity style={styles.shadowView} disabled={!strikeAllowed} onPress={() => checkingAccountClickHandler(false)}>
                         {/* Pink-gradient ring (1.5px) wraps the Strike card —
                             same treatment applied to CoinOS in Card/index.tsx
                             so both custodial Lightning rails share visual
@@ -198,7 +205,17 @@ export default function StrikeWallet({
                             </View>
                         </LinearGradient>
                     </TouchableOpacity>
-                    {!hideActionButtons && (
+                    {!strikeAllowed && (
+                        <View style={styles.regionNotice}>
+                            <Text h4 style={styles.alert}>
+                                Strike is not available in Cypher Box in your
+                                region. Your balance is held by Strike, not by
+                                Cypher Box, and it is untouched. Use the Strike
+                                app to access it.
+                            </Text>
+                        </View>
+                    )}
+                    {!hideActionButtons && strikeAllowed && (
                         <View style={styles.btnView}>
                             <GradientButtonWithShadow
                                 title="Receive"
@@ -230,7 +247,7 @@ export default function StrikeWallet({
                 </View>
             }
 
-            {!isStrikeAuth &&
+            {!isStrikeAuth && strikeAllowed &&
                 <View>
                     <GradientCardWithShadow
                         style={styles.createView}

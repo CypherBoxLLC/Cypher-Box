@@ -21,7 +21,7 @@ import {
   StrikeFull,
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
-import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import withdrawStyles from "../WithdrawList/styles";
@@ -44,7 +44,11 @@ interface Props {
 }
 
 export default function TopupList({ refRBSheet, wallet, coldStorageWallet, matchedRateBTC = 0, currency }: Props) {
-  const { vaultTab, setVaultTab, isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
+  const { vaultTab, setVaultTab, isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
+  // Region gates (services/featureFlags): a connected rail that is not
+  // offered in this region is treated as unavailable on this surface.
+  const isAuth = isCoinosConnected && isCoinosAllowed();
+  const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
   const { sleep } = useContext(BlueStorageContext);
   const insets = useSafeAreaInsets();
 
