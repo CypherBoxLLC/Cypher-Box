@@ -61,6 +61,14 @@ describe('isStrikeAllowed on iOS', () => {
         }
     });
 
+    it('hides Strike in India and South Korea, though Strike lists them', () => {
+        for (const storefront of ['IND', 'KOR']) {
+            expect(loadGate({ os: 'ios', storefront, region: 'US' }).isStrikeAllowed()).toBe(false);
+        }
+        expect(loadGate({ os: 'android', region: 'IN' }).isStrikeAllowed()).toBe(false);
+        expect(loadGate({ os: 'android', region: 'KR' }).isStrikeAllowed()).toBe(false);
+    });
+
     it('hides Strike where Strike does not operate', () => {
         for (const storefront of ['CAN', 'AUS', 'SAU', 'EGY', 'TUR', 'CHE', 'HUN']) {
             expect(loadGate({ os: 'ios', storefront, region: 'US' }).isStrikeAllowed()).toBe(false);
@@ -146,11 +154,11 @@ describe('isCoinosAllowed with a storefront', () => {
 });
 
 describe('STRIKE_COUNTRIES', () => {
-    it('never includes an EEA or UK country', () => {
+    it('never includes an EEA or UK country, India or South Korea', () => {
         const { STRIKE_COUNTRIES } = loadGate({ os: 'ios' });
         const blocked = ['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU',
             'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
-            'IS', 'NO', 'LI', 'GB'];
+            'IS', 'NO', 'LI', 'GB', 'IN', 'KR'];
         for (const [a2] of STRIKE_COUNTRIES) {
             expect(blocked).not.toContain(a2);
         }

@@ -10,9 +10,9 @@
  * authorisation. The UK was added in 0.1.13.
  *
  * Strike is shown only in the countries Strike lists as supported, and
- * never in the EEA or the UK. Strike operates in both; leaving them out
- * is a product decision. Ark and the Vaults are not gated, they are
- * self-custodial.
+ * never in the EEA, the UK, India or South Korea. Strike lists all of
+ * them; leaving them out is a product decision. Ark and the Vaults are
+ * not gated, they are self-custodial.
  *
  * --- Signals ----------------------------------------------------------
  * On iOS the App Store storefront country decides: the Apple Account
@@ -64,8 +64,9 @@ const UK: readonly CountryCodes[] = [['GB', 'GBR']];
 /**
  * Strike's published list of supported countries
  * (https://strike.me/support/where-is-strike-available/, read 2026-10-18),
- * minus the EEA and the UK. Puerto Rico is listed by Strike as part of
- * the United States. Re-read the page when Strike adds or drops a country.
+ * minus the EEA, the UK, India and South Korea. Puerto Rico is listed by
+ * Strike as part of the United States. Re-read the page when Strike adds
+ * or drops a country.
  */
 export const STRIKE_COUNTRIES: readonly CountryCodes[] = [
     ['AG', 'ATG'], ['AR', 'ARG'], ['AZ', 'AZE'], ['BH', 'BHR'], ['BB', 'BRB'],
@@ -73,12 +74,12 @@ export const STRIKE_COUNTRIES: readonly CountryCodes[] = [
     ['BN', 'BRN'], ['CL', 'CHL'], ['CO', 'COL'], ['CR', 'CRI'], ['DO', 'DOM'],
     ['EC', 'ECU'], ['SV', 'SLV'], ['GQ', 'GNQ'], ['FJ', 'FJI'], ['GA', 'GAB'],
     ['GM', 'GMB'], ['GE', 'GEO'], ['GH', 'GHA'], ['GT', 'GTM'], ['GN', 'GIN'],
-    ['GY', 'GUY'], ['HN', 'HND'], ['IN', 'IND'], ['CI', 'CIV'], ['KZ', 'KAZ'],
+    ['GY', 'GUY'], ['HN', 'HND'], ['CI', 'CIV'], ['KZ', 'KAZ'],
     ['KE', 'KEN'], ['LA', 'LAO'], ['LS', 'LSO'], ['MG', 'MDG'], ['MW', 'MWI'],
     ['MV', 'MDV'], ['MX', 'MEX'], ['MN', 'MNG'], ['ME', 'MNE'], ['MZ', 'MOZ'],
     ['NA', 'NAM'], ['NZ', 'NZL'], ['NI', 'NIC'], ['NG', 'NGA'], ['OM', 'OMN'],
     ['PA', 'PAN'], ['PG', 'PNG'], ['PY', 'PRY'], ['PE', 'PER'], ['PH', 'PHL'],
-    ['RS', 'SRB'], ['SC', 'SYC'], ['SL', 'SLE'], ['ZA', 'ZAF'], ['KR', 'KOR'],
+    ['RS', 'SRB'], ['SC', 'SYC'], ['SL', 'SLE'], ['ZA', 'ZAF'],
     ['LK', 'LKA'], ['TW', 'TWN'], ['TL', 'TLS'], ['TG', 'TGO'], ['TT', 'TTO'],
     ['UG', 'UGA'], ['AE', 'ARE'], ['US', 'USA'], ['PR', 'PRI'], ['UY', 'URY'],
     ['VU', 'VUT'], ['VN', 'VNM'], ['ZM', 'ZMB'], ['ZW', 'ZWE'],
