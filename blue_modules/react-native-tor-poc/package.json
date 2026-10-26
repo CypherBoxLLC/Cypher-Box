@@ -1,0 +1,7 @@
+{
+  "name": "react-native-tor-poc",
+  "version": "0.0.1",
+  "description": "Throwaway POC native bridge for embedded Tor (Tor.framework). Tor-for-Vaults spike only.",
+  "private": true,
+  "main": "index.js"
+}

@@ -35,6 +35,10 @@ def configure_target()
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
   pod 'react-native-bw-file-access', :path => '../blue_modules/react-native-bw-file-access'
+
+  # --- Tor-for-Vaults POC (claude/tor-vaults-poc worktree only) ---
+  pod 'Tor', '~> 409'
+  pod 'react-native-tor-poc', :path => '../blue_modules/react-native-tor-poc'
 end
 
 target 'BlueWallet' do

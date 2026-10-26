@@ -4,6 +4,7 @@ import { AppRegistry } from 'react-native';
 import App from './App';
 import { BlueStorageProvider } from './blue_modules/storage-context';
 import { registerArkBackgroundRefreshHandlers } from './src/services/ark/scheduler';
+import { runTorPoc } from './src/services/tor/torPocHarness'; // Tor-for-Vaults POC (worktree only)
 
 const A = require('./blue_modules/analytics');
 if (!Error.captureStackTrace) {
@@ -17,6 +18,10 @@ if (!Error.captureStackTrace) {
 // Cheap if the user never opts into the feature — the orchestrator is
 // lazy-required inside the handlers.
 registerArkBackgroundRefreshHandlers();
+
+// --- Tor-for-Vaults POC (claude/tor-vaults-poc worktree only) ---
+// Kick the spike harness a few seconds after boot; watch Metro for [TorPOC] lines.
+setTimeout(() => { runTorPoc(); }, 3000);
 
 const BlueAppComponent = () => {
   useEffect(() => {

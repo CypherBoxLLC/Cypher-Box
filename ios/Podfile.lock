@@ -1666,6 +1666,9 @@ PODS:
   - react-native-tcp-socket (5.6.2):
     - CocoaAsyncSocket
     - React-Core
+  - react-native-tor-poc (0.0.1):
+    - React-Core
+    - Tor (~> 409)
   - react-native-webview (13.6.4):
     - DoubleConversion
     - glog
@@ -2424,6 +2427,11 @@ PODS:
     - React
   - SocketRocket (0.7.1)
   - Toast (4.1.1)
+  - Tor (409.8.1):
+    - Tor/CTor (= 409.8.1)
+  - Tor/Core (409.8.1)
+  - Tor/CTor (409.8.1):
+    - Tor/Core
   - uniffi-bindgen-react-native (0.31.0-2):
     - React-Core
   - Yoga (0.0.0)
@@ -2494,6 +2502,7 @@ DEPENDENCIES:
   - react-native-secure-key-store (from `../node_modules/react-native-secure-key-store`)
   - react-native-simple-toast (from `../node_modules/react-native-simple-toast`)
   - react-native-tcp-socket (from `../node_modules/react-native-tcp-socket`)
+  - react-native-tor-poc (from `../blue_modules/react-native-tor-poc`)
   - react-native-webview (from `../node_modules/react-native-webview`)
   - react-native-widget-center (from `../node_modules/react-native-widget-center`)
   - React-nativeconfig (from `../node_modules/react-native/ReactCommon`)
@@ -2551,6 +2560,7 @@ DEPENDENCIES:
   - RNSVG (from `../node_modules/react-native-svg`)
   - RNVectorIcons (from `../node_modules/react-native-vector-icons`)
   - RNWatch (from `../node_modules/react-native-watch-connectivity`)
+  - Tor (~> 409)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 SPEC REPOS:
@@ -2564,6 +2574,7 @@ SPEC REPOS:
     - React-Codegen
     - SocketRocket
     - Toast
+    - Tor
     - uniffi-bindgen-react-native
 
 EXTERNAL SOURCES:
@@ -2694,6 +2705,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-simple-toast"
   react-native-tcp-socket:
     :path: "../node_modules/react-native-tcp-socket"
+  react-native-tor-poc:
+    :path: "../blue_modules/react-native-tor-poc"
   react-native-webview:
     :path: "../node_modules/react-native-webview"
   react-native-widget-center:
@@ -2882,6 +2895,7 @@ SPEC CHECKSUMS:
   react-native-secure-key-store: eb45b44bdec3f48e9be5cdfca0f49ddf64892ea6
   react-native-simple-toast: 57b7ee82afeafb176b6e4383e4e9db784aad7751
   react-native-tcp-socket: 0a0455b843f9dfcad875ea6cfafeb05c0abb0a24
+  react-native-tor-poc: 13ac290679c4f51815bdf3117fc5b1536b85dca2
   react-native-webview: 56c15d79575b12a47038598564c0c8f8b2232a4d
   react-native-widget-center: 8fbb8acf088ea956234af0da6fe0149a7e30e875
   React-nativeconfig: 8efdb1ef1e9158c77098a93085438f7e7b463678
@@ -2933,7 +2947,7 @@ SPEC CHECKSUMS:
   RNQuickAction: c2c8f379e614428be0babe4d53a575739667744d
   RNRate: 7641919330e0d6688ad885a985b4bd697ed7d14c
   RNReactNativeHapticFeedback: d5ef1854413fc226e569f77897c5c8e62ee3d61d
-  RNReanimated: 2e5069649cbab2c946652d3b97589b2ae0526220
+  RNReanimated: faa524bbb7ebd5f96b484d5d623fc1faeb277cc8
   RNScreens: 362f4c861dd155f898908d5035d97b07a3f1a9d1
   RNShare: 268bd40f6f3830299d187b05d3c6f7bbbb3e9d85
   RNSVG: 3a1cce2e940268a7d3554e3cf2bbd2195871f4fe
@@ -2941,9 +2955,10 @@ SPEC CHECKSUMS:
   RNWatch: 28fe1f5e0c6410d45fd20925f4796fce05522e3f
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Toast: 1f5ea13423a1e6674c4abdac5be53587ae481c4e
+  Tor: 28fcd44ddfeaa8b5a5934e6294c77e2f0c75d4dc
   uniffi-bindgen-react-native: 205a15613d97a49fe17d5bda57f7fa46a7bbafd0
   Yoga: feb4910aba9742cfedc059e2b2902e22ffe9954a
 
-PODFILE CHECKSUM: 9527cbbf9b0f2de0b182fb2e6a3b5098cba9ecbe
+PODFILE CHECKSUM: ac5e7a36bebb69d5873bc72cb7fd8b40a612b22e
 
 COCOAPODS: 1.16.2
