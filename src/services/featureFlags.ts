@@ -142,8 +142,12 @@ let storefrontCountry: string | null | undefined;
  * constant so render-time checks stay synchronous;
  * refreshStorefrontCountry() updates it later.
  */
+// QA-ONLY 0.1.13 device test. Do not commit. Set to 'GBR', 'DEU', ... to fake the storefront.
+const QA_STOREFRONT_OVERRIDE: string | null | undefined = undefined;
+
 function getStorefrontCountry(): string | null {
     if (Platform.OS !== 'ios') return null;
+    if (QA_STOREFRONT_OVERRIDE !== undefined) return QA_STOREFRONT_OVERRIDE; // QA-ONLY
     if (storefrontCountry !== undefined) return storefrontCountry;
     try {
         const mod = NativeModules.CypherStorefront;
@@ -161,13 +165,22 @@ function getStorefrontCountry(): string | null {
  * read keeps the previous value.
  */
 export async function refreshStorefrontCountry(): Promise<void> {
+    // QA-ONLY 0.1.13 device test. Do not commit.
+    const qaLog = (stage: string) => console.log('[QA region]', stage, JSON.stringify({
+        constant: NativeModules.CypherStorefront?.countryCode ?? null,
+        cached: storefrontCountry, override: QA_STOREFRONT_OVERRIDE,
+        region: getDeviceCountry(), strike: isStrikeAllowed(), coinos: isCoinosAllowed(),
+    }));
+    qaLog('before');
     if (Platform.OS !== 'ios') return;
     try {
         const next = normaliseAlpha3(await NativeModules.CypherStorefront?.getCountryCode?.());
+        console.log('[QA region] getCountryCode ->', next); // QA-ONLY
         if (next !== null) storefrontCountry = next;
     } catch {
         // Keep whatever we had. The gates fail closed on null.
     }
+    qaLog('after'); // QA-ONLY
 }
 
 function inEeaOrUk(storefront: string | null, region: string | null): boolean {
@@ -195,7 +208,7 @@ export function isEeaRegion(): boolean {
  * CoinOS either way.
  */
 export function isCoinosAllowed(): boolean {
-    if (__DEV__) return true;
+    // QA-ONLY: __DEV__ bypass removed for the 0.1.13 device test. Restore before commit.
     if (COINOS_DISABLED_GLOBALLY) return false;
     const storefront = getStorefrontCountry();
     const region = getDeviceCountry();
@@ -213,7 +226,7 @@ export function isCoinosAllowed(): boolean {
  * balance until the Strike session expires.
  */
 export function isStrikeAllowed(): boolean {
-    if (__DEV__) return true;
+    // QA-ONLY: __DEV__ bypass removed for the 0.1.13 device test. Restore before commit.
     const region = getDeviceCountry();
     if (Platform.OS === 'ios') {
         const storefront = getStorefrontCountry();
