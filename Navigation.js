@@ -96,6 +96,8 @@ import TransactionNew from '@Cypher/screens/TransactionNew';
 import ForgetPassword from '@Cypher/screens/Account/ForgetPassword';
 import HardwareWalletTransaction from '@Cypher/screens/HardwareWalletTransaction';
 import HardwareWalletTransactionContinue from '@Cypher/screens/HardwareWalletTransactionContinue';
+import AntiExfilVerify from '@Cypher/screens/AntiExfilVerify';
+import AntiExfilSign from '@Cypher/screens/AntiExfilSign';
 import ConfirmHardwareTransaction from '@Cypher/screens/ConfirmHardwareTransaction';
 import VerifyTransactionGuide from '@Cypher/screens/VerifyTransactionGuide';
 import SigningSafetyGuide from '@Cypher/screens/SigningSafetyGuide';
@@ -310,6 +312,8 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="ConfirmTransction" component={ConfirmTransction} options={{ headerShown: false }} />
       <WalletsStack.Screen name="HardwareWalletTransaction" component={HardwareWalletTransaction} options={{ headerShown: false }} />
       <WalletsStack.Screen name="HardwareWalletTransactionContinue" component={HardwareWalletTransactionContinue} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="AntiExfilVerify" component={AntiExfilVerify} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="AntiExfilSign" component={AntiExfilSign} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ConfirmHardwareTransaction" component={ConfirmHardwareTransaction} options={{ headerShown: false }} />
       <WalletsStack.Screen name="VerifyTransactionGuide" component={VerifyTransactionGuide} options={{ headerShown: false }} />
       <WalletsStack.Screen name="SigningSafetyGuide" component={SigningSafetyGuide} options={{ headerShown: false }} />

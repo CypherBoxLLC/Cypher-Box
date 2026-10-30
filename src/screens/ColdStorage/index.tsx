@@ -24,6 +24,7 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { AbstractHDElectrumWallet } from "../../../class/wallets/abstract-hd-electrum-wallet";
 import BigNumber from "bignumber.js";
 import useAuthStore from "@Cypher/stores/authStore";
+import useAntiExfilStore from "@Cypher/stores/antiExfilStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
@@ -111,6 +112,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [changeFetchLoading, setChangeFetchLoading] = useState(false);
     const { wallets, setSelectedWalletID, sleep, txMetadata, saveToDisk, isElectrumDisabled } = useContext(BlueStorageContext);
     const { walletID, coldStorageWalletID, isStrikeAuth: isStrikeConnected, isAuth: isCoinosConnected, isArkAuth } = useAuthStore();
+    const { verifySigningPhone, setVerifySigningPhone } = useAntiExfilStore();
     // Region gates (services/featureFlags): a connected rail that is not
     // offered in this region is treated as unavailable on this surface.
     const isAuth = isCoinosConnected && isCoinosAllowed();
@@ -591,7 +593,12 @@ export default function ColdStorage({ route, navigation }: Props) {
           // watch-only wallets with enabled HW wallet support have different flow. we have to show PSBT to user as QR code
           // so he can scan it and sign it. then we have to scan it back from user (via camera and QR code), and ask
           // user whether he wants to broadcast it
-          navigation.navigate('HardwareWalletTransaction', {
+          // "Verify my signing phone" (anti-exfil) is an opt-in, default OFF.
+          // When on, route through the verified-signing flow instead of the
+          // plain PSBT exchange. It is an ADDITIONAL layer: the downstream
+          // confirm/broadcast still runs the existing match check.
+          const hardwareRoute = verifySigningPhone ? 'AntiExfilVerify' : 'HardwareWalletTransaction';
+          navigation.navigate(hardwareRoute, {
             memo: transactionMemo,
             fromWallet: wallet,
             psbt,
@@ -956,6 +963,21 @@ export default function ColdStorage({ route, navigation }: Props) {
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
                 <Text style={styles.title} center>{labels.title}</Text>
+                {wallet?.type === WatchOnlyWallet.type && (
+                    <View style={{ marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#333', backgroundColor: '#1a1a1a' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Text bold style={{ fontSize: 14, color: colors.white, flex: 1, marginRight: 12 }}>{loc.cypherbox.anti_exfil.setting_title}</Text>
+                            <Switch
+                                value={verifySigningPhone}
+                                onValueChange={(v: boolean) => setVerifySigningPhone(v)}
+                                ios_backgroundColor="#333333"
+                                thumbColor="#ffffff"
+                                trackColor={{ false: '#666666', true: '#FF65D4' }}
+                            />
+                        </View>
+                        <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16, marginTop: 8 }}>{loc.cypherbox.anti_exfil.setting_explainer}</Text>
+                    </View>
+                )}
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}

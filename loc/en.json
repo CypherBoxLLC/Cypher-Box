@@ -3835,6 +3835,19 @@
       "need_imported": "It's worth it here. You opened a finished transaction, so Cypher Box has no record of what you meant to send and nothing to compare it with. It shows you every amount and address, but only you can tell whether they are right.",
       "need_title": "Do you need this?",
       "title": "Check your transaction yourself"
+    },
+    "anti_exfil": {
+      "setting_title": "Verify my signing phone",
+      "setting_explainer": "When this is on, every spend checks that your signing phone generated the signature honestly, which protects you if that phone is ever tampered with. It adds a couple of extra scan steps each time you sign. Recommended for large, long-term cold storage.",
+      "unsupported_title": "Signature could not be verified",
+      "unsupported_message": "This signature could not be verified. Update Cypher Box on your signing phone to a version that supports verification, or turn verification off in settings.",
+      "tamper_title": "Signature did not pass the safety check",
+      "tamper_message": "This signature did not pass the safety check. Your signing phone may be tampered with. Do not send this transaction. Do not keep using this phone, and do not reuse its recovery phrase for new funds. Move your coins using a signing phone you trust.",
+      "verify_step_commit": "Scan this with your signing phone to begin verified signing.",
+      "verify_step_reveal": "Signing phone committed. Scan this to continue.",
+      "verify_step_scan_open": "Scan the response from your signing phone.",
+      "verify_step_scan_sign": "Scan the signed transaction from your signing phone.",
+      "verified_ok": "Signature verified. Your signing phone generated it honestly."
     }
   }
 }
