@@ -6,7 +6,7 @@ import loc from "../../../loc";
 import LinearGradient from "react-native-linear-gradient";
 import { CustomKeyboard, GradientInput , LightningSendSuccess } from "@Cypher/components";
 import { dispatchNavigate, dispatchReset } from "@Cypher/helpers";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import LockedInRefreshNotice from "@Cypher/components/LockedInRefreshNotice";
 import SimpleToast from "react-native-simple-toast";
@@ -404,7 +404,7 @@ export default function SwapAmount() {
                     detail={
                         <View style={styles.successDirection}>
                             {renderProviderBadge(fromProvider, swapFrom, 'success')}
-                            <Text style={styles.successArrow}>→</Text>
+                            <Text style={[styles.successArrow, rtl.mirror]}>→</Text>
                             {renderProviderBadge(toProvider, sendTo, 'success')}
                         </View>
                     }
@@ -447,7 +447,7 @@ export default function SwapAmount() {
                 )}
                 <View style={styles.directionRow}>
                     {renderProviderBadge(fromProvider, swapFrom, 'inline')}
-                    <Text style={styles.arrow}>→</Text>
+                    <Text style={[styles.arrow, rtl.mirror]}>→</Text>
                     {renderProviderBadge(toProvider, sendTo, 'inline')}
                 </View>
                 {feeSats !== null && feeSats > 0 && (() => {

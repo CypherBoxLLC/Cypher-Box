@@ -1469,7 +1469,7 @@
         "deposit_to": "الإيداع إلى",
         "withdraw_address": "عنوان السحب",
         "resolving_address": "جارٍ تحديد العنوان…",
-        "change_address": "تغيير ›",
+        "change_address": "تغيير ‹",
         "network_fee_heading": "رسوم الشبكة",
         "fetching_fee_options": "جارٍ جلب خيارات الرسوم…",
         "no_fee_options": "لا توجد خيارات رسوم بعد. تأكّد من أن مبلغ الشراء أعلى من الحد الأدنى لدى Strike.",

@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useImperativeHandle } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, I18nManager, StyleSheet, Text, View } from 'react-native';
 
 import LinearGradient from 'react-native-linear-gradient';
 
@@ -29,7 +29,7 @@ import Animated, {
     runOnJS,
 } from 'react-native-reanimated';
 import { useState } from 'react';
-import { widths } from '@Cypher/style-guide';
+import { rtl, widths } from '@Cypher/style-guide';
 import GradientCard from '../GradientCard';
 import loc from '../../../loc';
 
@@ -41,6 +41,9 @@ console.log("🚀 ~ SWIPEABLE_DIMENSIONS:", SWIPEABLE_DIMENSIONS)
 
 const H_WAVE_RANGE = SWIPEABLE_DIMENSIONS + 2 * BUTTON_PADDING;
 const H_SWIPE_RANGE = BUTTON_WIDTH - 2 * BUTTON_PADDING - SWIPEABLE_DIMENSIONS;
+// RTL layout puts the thumb at the right edge, so the swipe runs right-to-left.
+// X stays a positive progress value; only the drag and the on-screen movement flip.
+const SWIPE_DIR = I18nManager.isRTL ? -1 : 1;
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
 const ShimmerText = ({ text, shimmer }: { text: string; shimmer: Animated.SharedValue<number> }) => {
@@ -113,9 +116,9 @@ const SwipeButton = forwardRef(({ onToggle, isLoading, title = loc.cypherbox.com
         onActive: (e, ctx) => {
             let newValue;
             if (ctx.completed) {
-                newValue = H_SWIPE_RANGE + e.translationX;
+                newValue = H_SWIPE_RANGE + e.translationX * SWIPE_DIR;
             } else {
-                newValue = e.translationX;
+                newValue = e.translationX * SWIPE_DIR;
             }
 
             if (newValue >= 0 && newValue <= H_SWIPE_RANGE) {
@@ -152,7 +155,7 @@ const SwipeButton = forwardRef(({ onToggle, isLoading, title = loc.cypherbox.com
                     [0, BUTTON_WIDTH - SWIPEABLE_DIMENSIONS - BUTTON_PADDING],
                     ['#F4F4F4', '#F4F4F4'],
                 ),
-                transform: [{ translateX: X.value }],
+                transform: [{ translateX: X.value * SWIPE_DIR }],
             };
         }),
         swipeText: useAnimatedStyle(() => {
@@ -168,7 +171,7 @@ const SwipeButton = forwardRef(({ onToggle, isLoading, title = loc.cypherbox.com
                         translateX: interpolate(
                             X.value,
                             InterpolateXInput,
-                            [0, BUTTON_WIDTH / 2 - SWIPEABLE_DIMENSIONS],
+                            [0, (BUTTON_WIDTH / 2 - SWIPEABLE_DIMENSIONS) * SWIPE_DIR],
                             Extrapolate.CLAMP,
                         ),
                     },
@@ -189,7 +192,7 @@ const SwipeButton = forwardRef(({ onToggle, isLoading, title = loc.cypherbox.com
             />
             <PanGestureHandler onGestureEvent={animatedGestureHandler}>
                 <Animated.View style={[styles.swipeable, AnimatedStyles.swipeable]}>
-                    <Text style={styles.chevron}>›››</Text>
+                    <Text style={[styles.chevron, rtl.mirror]}>›››</Text>
                 </Animated.View>
             </PanGestureHandler>
             {isLoading ?

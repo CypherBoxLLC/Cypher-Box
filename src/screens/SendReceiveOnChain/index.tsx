@@ -7,7 +7,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import TextView from "./TextView";
 import { btc } from "@Cypher/helpers/coinosHelper";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import RBSheet from "react-native-raw-bottom-sheet";
 import { HDSegwitBech32Wallet, HDSegwitBech32Transaction } from "../../../class";
@@ -344,7 +344,7 @@ export default function SendReceiveOnChain({ route }: Props) {
                                 {loc.formatString(loc.cypherbox.payments.send_receive_on_chain.child_fee_tap_to_view, { sats: cpfpAccelerator.childFeeSats.toLocaleString() })}
                             </Text>
                         </View>
-                        <Text style={{ color: '#FFD54F', opacity: 0.6, fontSize: 16, marginLeft: 8 }}>›</Text>
+                        <Text style={[{ color: '#FFD54F', opacity: 0.6, fontSize: 16, marginLeft: 8 }, rtl.mirror]}>›</Text>
                     </TouchableOpacity>
                 }
                 <TouchableOpacity style={[styles.button, vaultTab && { borderColor: colors.coldGreen}]} onPress={handleViewBtcNetExplorerClickHandler}>
