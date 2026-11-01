@@ -11,6 +11,10 @@ import alert from '../../components/Alert';
 import { useTheme } from '../../components/themes';
 import ListItem from '../../components/ListItem';
 
+// Cypher Box ships English and Arabic; the other BlueWallet languages have no
+// Cypher Box text and would show mostly English.
+const SUPPORTED_LANGUAGES = AvailableLanguages.filter(l => l.value === 'en' || l.value === 'ar');
+
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
@@ -57,7 +61,7 @@ const Language: React.FC = () => {
       style={[styles.flex, stylesHook.flex]}
       contentContainerStyle={stylesHook.content}
       keyExtractor={(_item, index) => `${index}`}
-      data={AvailableLanguages}
+      data={SUPPORTED_LANGUAGES}
       renderItem={renderItem}
       initialNumToRender={25}
       contentInsetAdjustmentBehavior="automatic"

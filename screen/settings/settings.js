@@ -162,7 +162,7 @@ const Settings = ({ navigation }) => {
         {Platform.OS === 'android' ? <BlueHeaderDefaultSub leftText={loc.settings.header} /> : <></>}
         {/* <ListItem title={loc.settings.general} onPress={() => navigate('GeneralSettings')} testID="GeneralSettings" chevron /> */}
         {/* <ListItem title={loc.settings.currency} onPress={() => navigate('Currency')} testID="Currency" chevron /> */}
-        {/* <ListItem title={loc.settings.language} onPress={() => navigate('Language')} testID="Language" chevron /> */}
+        <ListItem title={loc.settings.language} onPress={() => navigate('Language')} testID="Language" chevron />
         {/* <ListItem title={loc.settings.encrypt_title} onPress={() => navigate('EncryptStorage')} testID="SecurityButton" chevron /> */}
         <ListItem 
           chevron 
