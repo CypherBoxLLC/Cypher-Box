@@ -613,5 +613,12 @@
     "who_can_pay_me": "Who can pay me:",
     "purpose": "Reusable and shareable code (BIP47)",
     "not_found": "Payment code not found"
+  },
+  "cypherbox": {
+    "welcome": {
+      "sat_fraction": "A 'sat' is a tiny fraction of a Bitcoin",
+      "sats_per_bitcoin": "100M sats equal 1 Bitcoin",
+      "max_supply": "There will only ever be 21M Bitcoin"
+    }
   }
 }
