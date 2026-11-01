@@ -6,7 +6,7 @@ import { Icon } from 'react-native-elements';
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SavingVault, SwipeButton, VaultCapsules } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { shortenAddress } from "../ColdStorage";
 import PayjoinTransaction from "../../../class/payjoin-transaction";
@@ -205,7 +205,7 @@ export default function ConfirmTransction({ route }: Props) {
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>{isBatch ? loc.cypherbox.payments.confirm_transaction.amount_to_batch : to ? loc.cypherbox.payments.common.top_up_amount : loc.cypherbox.payments.common.recipient_will_get}</Text>
-                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{data?.sats + ' sats ~$'+ data?.inUSD}</Text>
+                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{data?.sats + ' sats ~$'+ data?.inUSD}</Text>
                             <View style={{flexDirection: 'row', marginTop: 8}}>
                                 <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
                                     <VaultCapsules item={data?.sats || 0} />
@@ -224,7 +224,7 @@ export default function ConfirmTransction({ route }: Props) {
                                     <View style={[styles.priceView, {marginTop: 5}]}>
                                         <View>
                                             <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.change}</Text>
-                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats' + (data?.matchedRate ? ' ~$' + (changeSats / 100000000 * Number(data.matchedRate)).toFixed(2) : '')}</Text>
+                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{changeSats.toFixed(0) + ' sats' + (data?.matchedRate ? ' ~$' + (changeSats / 100000000 * Number(data.matchedRate)).toFixed(2) : '')}</Text>
                                             <View style={{flexDirection: 'row', marginTop: 8}}>
                                                 <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
                                                     <VaultCapsules item={changeSats} />
@@ -252,7 +252,7 @@ export default function ConfirmTransction({ route }: Props) {
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.network_fee}</Text>
-                            <Text style={StyleSheet.flatten(styles.fees)}>~ {data?.isCustomFee ? data.networkFees + " sats/vByte" :  data?.networkFees + " sats"}{!data?.isCustomFee && data?.networkFees && data?.matchedRate ? ` (~$${(data.networkFees / 100000000 * Number(data.matchedRate)).toFixed(2)}) (${(data.networkFees / data.sats * 100).toFixed(1)}%)` : ''}</Text>
+                            <Text style={StyleSheet.flatten([styles.fees, rtl.ltrText])}>~ {data?.isCustomFee ? data.networkFees + " sats/vByte" :  data?.networkFees + " sats"}{!data?.isCustomFee && data?.networkFees && data?.matchedRate ? ` (~$${(data.networkFees / 100000000 * Number(data.matchedRate)).toFixed(2)}) (${(data.networkFees / data.sats * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text style={StyleSheet.flatten(styles.fees)}>~ {btcToSatoshi(data?.fee)}</Text> */}
                         </View>
                     </View>
@@ -295,7 +295,7 @@ export default function ConfirmTransction({ route }: Props) {
                         {/* Destination */}
                         <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
                             <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>{loc.cypherbox.payments.common.to_colon}</Text>
-                            <Text style={{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }}>{lightningInvoice}</Text>
+                            <Text style={[{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }, rtl.ltrText]}>{lightningInvoice}</Text>
                         </View>
                         
                         {/* Amount */}
@@ -313,7 +313,7 @@ export default function ConfirmTransction({ route }: Props) {
                                 shadowRadius: 20,
                                 elevation: 10
                             }}>
-                                <Text style={{ fontSize: 24, color: '#fff', fontWeight: 'bold' }}>{data?.sats || '0'} sats</Text>
+                                <Text style={[{ fontSize: 24, color: '#fff', fontWeight: 'bold' }, rtl.ltrText]}>{data?.sats || '0'} sats</Text>
                             </View>
                         </View>
                         

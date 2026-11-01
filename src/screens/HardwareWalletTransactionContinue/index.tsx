@@ -4,7 +4,7 @@ import { StyleSheet, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SwipeButton } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { assertSignedTxMatchesPsbt, isRawTransactionHex } from "@Cypher/helpers";
 import { shortenAddress } from "../ColdStorage";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -185,7 +185,7 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
                     >
                         <Text h4 style={styles.showAgainText}>Need the unsigned transaction again? Show it</Text>
                     </TouchableOpacity>
-                    <Text h4 style={{marginTop: 20}}>{txHex}</Text>
+                    <Text h4 style={[{marginTop: 20}, rtl.ltrText]}>{txHex}</Text>
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} disabled={!txHex} style={[styles.nextBtn , {backgroundColor: txHex ? colors.blueText : colors.gray.default}]}>
                     <Text h3>{loc.cypherbox.payments.common.next}</Text>

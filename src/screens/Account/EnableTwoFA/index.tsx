@@ -4,7 +4,7 @@ import QRCode from "react-native-qrcode-svg";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { GradientButton, GradientCard, GradientText } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchGoBack } from "@Cypher/helpers";
 import { getOTPsecret, enableTwoFA } from "@Cypher/api/coinOSApis";
@@ -128,7 +128,7 @@ export default function EnableTwoFA() {
 
                         <GradientCard style={{ width: '100%' }} colors_={[colors.gray.thin, colors.gray.thin2]}>
                             <Text style={styles.secretLabel}>{loc.cypherbox.account.enable_2fa.enter_manually}</Text>
-                            <Text style={styles.secretText}>{otpSecret}</Text>
+                            <Text style={[styles.secretText, rtl.ltrText]}>{otpSecret}</Text>
                         </GradientCard>
 
                         <View style={styles.extra} />

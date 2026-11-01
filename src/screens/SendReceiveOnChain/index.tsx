@@ -273,8 +273,8 @@ export default function SendReceiveOnChain({ route }: Props) {
         <ScreenLayout showToolbar isBackButton title={loc.cypherbox.payments.send_receive_on_chain.title}>
             <View style={styles.main}>
                 <View style={styles.valueView}>
-                    <Text semibold center style={StyleSheet.flatten([styles.sats, { color: isSent ? '#FD7A68' : '#4FBF67' }])}>{amountSign+BTCAmount}</Text>
-                    <Text bold subHeader>{'$'+dollarAmount.toFixed(2)}</Text>
+                    <Text semibold center style={StyleSheet.flatten([styles.sats, { color: isSent ? '#FD7A68' : '#4FBF67' }, rtl.ltrText])}>{amountSign+BTCAmount}</Text>
+                    <Text bold subHeader style={rtl.ltrText}>{'$'+dollarAmount.toFixed(2)}</Text>
                 </View>
                 <TextView keytext={loc.cypherbox.payments.common.sent_from_label} text={String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.bitcoin_address_value, { address: shortenAddress(transaction?.inputs[0].addresses[0]) }))} />
                 <TextView keytext={loc.cypherbox.payments.send_receive_on_chain.received_to} text={String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.bitcoin_address_value, { address: shortenAddress(transaction?.outputs[0].scriptPubKey.addresses[0]) }))} />
@@ -303,7 +303,7 @@ export default function SendReceiveOnChain({ route }: Props) {
                 
                 <TextView keytext={loc.cypherbox.payments.common.date_label} text={dayjs(tx?.received).format('HH:mm:ss MM/DD/YYYY')} />
                 {/* {!isSent && <TextView keytext="At bitcoin exchange rate: " text={'$'+matchedRate} />} */}
-                <TextView keytext={loc.cypherbox.payments.common.txid_label} text={transaction?.txid} />
+                <TextView keytext={loc.cypherbox.payments.common.txid_label} text={transaction?.txid} textStyle={rtl.ltrText} />
 
                 {transaction.confirmations == 0 && !cpfpAccelerator &&
                     <TouchableOpacity

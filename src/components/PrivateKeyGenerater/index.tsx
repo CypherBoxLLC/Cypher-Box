@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Image, Platform, TouchableOpacity, View } from "react-native"
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
+import { rtl } from "@Cypher/style-guide";
 import { EyeVisible } from "@Cypher/assets/images";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -125,7 +126,7 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                 {secretList.map((secret, index) => (
                     <TouchableOpacity key={index} style={styles.button}>
                         {/* the words showed faintly through the reveal overlay, so they aren't drawn until View */}
-                        <Text h4 style={styles.buttonText}>{`${secret.id}. ${isView ? secret.label : '••••••'}`}</Text>
+                        <Text h4 style={[styles.buttonText, rtl.ltrText]}>{`${secret.id}. ${isView ? secret.label : '••••••'}`}</Text>
                     </TouchableOpacity>
                 ))}
             </View>

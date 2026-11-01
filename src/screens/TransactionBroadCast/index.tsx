@@ -4,7 +4,7 @@ import styles from "./styles";
 import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput, GradientText } from "@Cypher/components";
-import { colors, widths, } from "@Cypher/style-guide";
+import { colors, widths, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { Bitcoin, BitcoinTower, Electrik, Socked, Tower } from "@Cypher/assets/images";
 import * as Progress from 'react-native-progress';
@@ -81,9 +81,9 @@ export default function TransactionBroadCast({navigation, route}: any) {
                         <>
                             <Text h1 bold center style={styles.title}>{strikePending ? loc.cypherbox.payments.transaction_broadcast.withdrawal_submitted : loc.cypherbox.payments.common.transaction_broadcasted}</Text>
                             <Animated.View style={animatedStyle}>
-                                <Text semibold center style={styles.sats}>{amountSat} sats</Text>
+                                <Text semibold center style={[styles.sats, rtl.ltrText]}>{amountSat} sats</Text>
                                 <View style={styles.extra} />
-                                <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
+                                <Text subHeader bold center style={rtl.ltrText}>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                                 <View style={styles.extra} />
                                 <Text h2 bold center>{to}</Text>
                                 <GradientText style={styles.gradientText}>{strikePending ? loc.cypherbox.payments.transaction_broadcast.strike_sending_onchain : loc.cypherbox.payments.transaction_broadcast.estimated_time}</GradientText>

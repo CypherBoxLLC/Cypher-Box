@@ -4,7 +4,7 @@ import * as Keychain from "react-native-keychain";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import SimpleToast from "react-native-simple-toast";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { Card, SavingVault } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchReset } from "@Cypher/helpers/navigation";
@@ -246,12 +246,12 @@ export default function CheckingAccountCreated() {
                                     onPress={() => setPickerVisible(true)}
                                     activeOpacity={0.7}
                                     style={{ backgroundColor: colors.gray.dark, borderRadius: 14, padding: 14, marginTop: 8, marginHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#3A3A3A' }}>
-                                    <Text bold style={{ fontSize: 16 }}>{formatNumber(selectedThreshold)} sats</Text>
+                                    <Text bold style={[{ fontSize: 16 }, rtl.ltrText]}>{formatNumber(selectedThreshold)} sats</Text>
                                     <Text style={{ fontSize: 13, color: '#AAAAAA' }}>{loc.cypherbox.account.checking_created.tap_to_change}</Text>
                                 </TouchableOpacity>
 
                                 {isStrike && strikeMe?.username ? (
-                                    <Text style={{ width: '100%', fontSize: 20, paddingTop: 16, fontWeight: 'bold', textAlign: 'center' }}>{strikeMe.username + '@strike.me'}</Text>
+                                    <Text style={[{ width: '100%', fontSize: 20, paddingTop: 16, fontWeight: 'bold', textAlign: 'center' }, rtl.ltrText]}>{strikeMe.username + '@strike.me'}</Text>
                                 ) : null}
 
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 16 }]}>{loc.cypherbox.account.checking_created.bar_desc}</Text>

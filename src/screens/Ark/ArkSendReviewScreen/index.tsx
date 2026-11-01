@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ScreenLayout, Text } from '@Cypher/component-library';
 import { GradientButton } from '@Cypher/components';
@@ -19,7 +19,7 @@ import {
     type ArkDestination,
     type ArkSendFeeView,
 } from '@Cypher/services/ark';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
 
 import TextViewV2 from '../../Invoice/TextView';
@@ -255,7 +255,7 @@ export default function ArkSendReviewScreen({ route }: Props) {
                         <TextViewV2
                             keytext={loc.cypherbox.ark.send_review.you_will_send}
                             text={`${amountSats.toLocaleString()} sats ~ ${cur}${amountFiat}`}
-                            textStyle={reviewStyles.price}
+                            textStyle={StyleSheet.flatten([reviewStyles.price, rtl.ltrText])}
                         />
 
                         <TextViewV2 keytext={loc.cypherbox.ark.common.sent_from} text={loc.cypherbox.ark.common.bark_vault} />
@@ -281,11 +281,11 @@ export default function ArkSendReviewScreen({ route }: Props) {
                             >
                                 <Text
                                     italic
-                                    style={{
+                                    style={[{
                                         fontSize: 12,
                                         fontFamily: 'monospace',
                                         color: colors.ark.light,
-                                    }}
+                                    }, rtl.ltrText]}
                                 >
                                     {destinationRaw}
                                 </Text>
@@ -327,10 +327,12 @@ export default function ArkSendReviewScreen({ route }: Props) {
                                               }%)`
                                             : ''
                                     }`}
+                                    textStyle={rtl.ltrText}
                                 />
                                 <TextViewV2
                                     keytext={loc.cypherbox.ark.send_review.total_debited}
                                     text={`${fee.grossAmountSats.toLocaleString()} sats ~ ${cur}${grossFiat}`}
+                                    textStyle={rtl.ltrText}
                                 />
                                 {fee.vtxosSpent.length > 0 && (
                                     <TextViewV2

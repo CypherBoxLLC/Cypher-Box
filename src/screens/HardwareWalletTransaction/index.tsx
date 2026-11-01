@@ -4,7 +4,7 @@ import { StyleSheet, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SwipeButton } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { assertSignedTxMatchesPsbt, createPendingSignature, isRawTransactionHex, sameUnsignedTransaction } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
@@ -212,7 +212,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>{to ? loc.cypherbox.payments.common.top_up_amount : loc.cypherbox.payments.common.recipient_will_get}</Text>
-                            <Text bold style={[styles.value, {color: colors.blueText}]}>{sats + ' sats ~$'+ inUSD}</Text>
+                            <Text bold style={[styles.value, {color: colors.blueText}, rtl.ltrText]}>{sats + ' sats ~$'+ inUSD}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>

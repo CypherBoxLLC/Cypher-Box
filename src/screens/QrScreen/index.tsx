@@ -16,6 +16,7 @@ import { GradientCard, ImageTextVertical } from "@Cypher/components";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import useAuthStore from "@Cypher/stores/authStore";
+import { rtl } from "@Cypher/style-guide";
 
 interface Props {
     route: any;
@@ -116,7 +117,7 @@ export default function QrScreen({ route }: Props) {
                         </View>
 
                         {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
-                        <Text semibold style={styles.code}>{shortenAddress(hash)}</Text>
+                        <Text semibold style={[styles.code, rtl.ltrText]}>{shortenAddress(hash)}</Text>
                         <View style={styles.imageView2}>
                             <ImageTextVertical text={loc.cypherbox.payments.common.copy} source={Copy} onPress={() => copyToClipboard(hash)} />
                             <ImageTextVertical text={loc.cypherbox.payments.common.share} source={Share2} onPress={shareQRCode} />

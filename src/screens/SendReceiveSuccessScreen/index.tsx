@@ -5,6 +5,7 @@ import loc from "../../../loc";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { Electricity } from "@Cypher/assets/images";
 import { dispatchReset } from "@Cypher/helpers/navigation";
+import { rtl } from "@Cypher/style-guide";
 
 interface Props {
     route?: any;
@@ -28,9 +29,9 @@ export default function SendReceiveSuccessScreen({ route }: Props) {
             <Text subHeader style={styles.text}>{isReceive_ ? loc.cypherbox.payments.send_receive_success.boom : loc.cypherbox.payments.send_receive_success.zapped}</Text>
             <Image style={styles.image} source={Electricity} resizeMode="contain" />
             <Text subHeader style={styles.text}>{isReceive_ ? loc.cypherbox.payments.send_receive_success.payment_received : loc.cypherbox.payments.send_receive_success.payment_sent}</Text>
-            <Text subHeader style={styles.text}>{isReceive_ ? `${value} sats` : `${value} sats`}</Text>
+            <Text subHeader style={[styles.text, rtl.ltrText]}>{isReceive_ ? `${value} sats` : `${value} sats`}</Text>
             {!isReceive_ &&
-                <Text subHeader style={styles.subtext}>{`$${valueUsd}`}</Text>
+                <Text subHeader style={[styles.subtext, rtl.ltrText]}>{`$${valueUsd}`}</Text>
             }
         </ScreenLayout>
     )

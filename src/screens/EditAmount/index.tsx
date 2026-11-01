@@ -4,7 +4,7 @@ import styles from "./styles";
 import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { CustomKeyboardNew, GradientInput, GradientInputNew } from "@Cypher/components";
-import { colors, widths } from "@Cypher/style-guide";
+import { colors, widths, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import VaultCapsules from "../../components/VaultCapsules";
 import Capsule from "../HotStorageVault/Capsule";
@@ -178,7 +178,7 @@ export default function SendScreen({ route, navigation }: Props) {
                                 <Text bold style={{ fontSize: 13, color: '#000' }}>
                                     {loc.formatString(loc.cypherbox.payments.edit_amount.max_btc, { amount: totalBTC })}
                                 </Text>
-                                <Text style={{ fontSize: 11, color: '#000', marginLeft: 6 }}>~${totalUSD}</Text>
+                                <Text style={[{ fontSize: 11, color: '#000', marginLeft: 6 }, rtl.ltrText]}>~${totalUSD}</Text>
                             </TouchableOpacity>
                         </View>
 

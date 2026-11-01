@@ -28,7 +28,7 @@ import {
 } from "@Cypher/services/ark";
 import type { DriveErrorClass, SafErrorClass } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 
 import styles from "./styles";
@@ -877,7 +877,7 @@ export default function ArkSeedPhraseScreen() {
                             <View style={styles.grid}>
                                 {words.map((word, idx) => (
                                     <View key={`${idx}-${word}`} style={styles.word}>
-                                        <Text style={styles.wordText}>{`${idx + 1}. ${word}`}</Text>
+                                        <Text style={[styles.wordText, rtl.ltrText]}>{`${idx + 1}. ${word}`}</Text>
                                     </View>
                                 ))}
 

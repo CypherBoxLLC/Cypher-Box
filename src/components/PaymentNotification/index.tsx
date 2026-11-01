@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View, Vibration } from 'react-native';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
 import loc from '../../../loc';
+import { rtl } from '@Cypher/style-guide';
 
 type WalletType = 'coinos' | 'hot' | 'cold' | 'lightning';
 
@@ -153,7 +154,7 @@ const PaymentNotification: React.FC = () => {
         <Text style={styles.icon}>⚡️</Text>
         <View style={styles.textContainer}>
           <Text style={[styles.title, { color: theme.accent }]}>{label} · {walletLabel}</Text>
-          <Text style={styles.amount}>{formatted}</Text>
+          <Text style={[styles.amount, rtl.ltrText]}>{formatted}</Text>
         </View>
       </View>
     </Animated.View>

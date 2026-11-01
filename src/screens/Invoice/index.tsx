@@ -7,7 +7,7 @@ import TextView from "./TextView";
 import { CoinOS } from "@Cypher/assets/images";
 import { getTransactionDetail } from "@Cypher/api/coinOSApis";
 import { btc } from "@Cypher/helpers/coinosHelper";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import dayjs from "dayjs";
 
 interface Props {
@@ -74,8 +74,8 @@ export default function Invoice({ route }: Props) {
                 <View style={styles.main}>
                     <View style={{flex: 1}}>
                     <View style={styles.valueView}>
-                        <Text semibold style={StyleSheet.flatten([styles.sats, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }])}>{`${amountSign}${satsAmount} sats`}</Text>
-                        <Text bold subHeader>{`$${dollarAmount.toFixed(2)}`}</Text>
+                        <Text semibold style={StyleSheet.flatten([styles.sats, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }, rtl.ltrText])}>{`${amountSign}${satsAmount} sats`}</Text>
+                        <Text bold subHeader style={rtl.ltrText}>{`$${dollarAmount.toFixed(2)}`}</Text>
                     </View>
                     <TextView keytext={loc.cypherbox.payments.common.sent_from_label} text={historyDetail?.amount < 0 ? loc.cypherbox.payments.common.my_coinos_lightning_account : historyDetail?.with ? historyDetail?.with?.username : loc.cypherbox.payments.invoice.unknown} />
                     {(historyDetail?.with || historyDetail?.amount > 0) &&
@@ -83,15 +83,15 @@ export default function Invoice({ route }: Props) {
                     }
                     {((historyDetail?.type == 'bitcoin' || historyDetail?.type == 'liquid') && historyDetail?.amount < 0) ?
                         <>
-                            <TextView keytext={loc.cypherbox.payments.common.network_fee_label} text={`~${(historyDetail?.fee || 0)} sats`} />
+                            <TextView keytext={loc.cypherbox.payments.common.network_fee_label} text={`~${(historyDetail?.fee || 0)} sats`} textStyle={rtl.ltrText} />
                             {historyDetail?.ourfee > 0 && (
-                                <TextView keytext={loc.cypherbox.payments.common.coinos_fee_label} text={`~${(historyDetail?.ourfee || 0)} sats`} />
+                                <TextView keytext={loc.cypherbox.payments.common.coinos_fee_label} text={`~${(historyDetail?.ourfee || 0)} sats`} textStyle={rtl.ltrText} />
                             )}
                             {/* <TextView keytext={`Service Fee (0.1%):  `} text={`~${((Number(satsAmount) + ((0.1 / 100) * Number(satsAmount))) * (0.1 / 100)).toFixed(2)} sats`} /> */}
-                            <TextView keytext={loc.cypherbox.payments.common.total_fee_label} text={`~${(Number(((Number(satsAmount) + ((0.1 / 100) * Number(satsAmount))) * (0.1 / 100)).toFixed(2)) + Number((historyDetail?.fee + (historyDetail?.ourfee || 0)))).toFixed(2)} sats ${" ("+percentageFee+"%)"}`} />
+                            <TextView keytext={loc.cypherbox.payments.common.total_fee_label} text={`~${(Number(((Number(satsAmount) + ((0.1 / 100) * Number(satsAmount))) * (0.1 / 100)).toFixed(2)) + Number((historyDetail?.fee + (historyDetail?.ourfee || 0)))).toFixed(2)} sats ${" ("+percentageFee+"%)"}`} textStyle={rtl.ltrText} />
                         </>
                         :
-                            <TextView keytext={loc.cypherbox.payments.invoice.fee_label} text={`~${(historyDetail?.fee || 0)} sats`} />
+                            <TextView keytext={loc.cypherbox.payments.invoice.fee_label} text={`~${(historyDetail?.fee || 0)} sats`} textStyle={rtl.ltrText} />
                     }
 
                     <TextView keytext={loc.cypherbox.payments.common.date_label} text={dayjs(historyDetail?.created).format('HH:mm:ss MM/DD/YYYY')} />
@@ -103,9 +103,9 @@ export default function Invoice({ route }: Props) {
                         </TouchableOpacity>
                         :
                         (historyDetail?.type == 'bitcoin' || historyDetail?.type == 'liquid') ? (
-                            <TextView keytext={loc.cypherbox.payments.common.txid_label} text={historyDetail?.ref || historyDetail?.hash} />
+                            <TextView keytext={loc.cypherbox.payments.common.txid_label} text={historyDetail?.ref || historyDetail?.hash} textStyle={rtl.ltrText} />
                         ) : (
-                            <TextView keytext={loc.cypherbox.payments.invoice.lightning_preimage} text={historyDetail?.ref} />
+                            <TextView keytext={loc.cypherbox.payments.invoice.lightning_preimage} text={historyDetail?.ref} textStyle={rtl.ltrText} />
                         )
                     }
                     </View>

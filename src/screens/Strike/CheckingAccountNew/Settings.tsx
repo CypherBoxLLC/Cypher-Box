@@ -6,7 +6,7 @@ import { GradientSwitch, Text } from "@Cypher/component-library";
 import { ExitFundingSourceList, GradientView } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
-import { colors, widths } from "@Cypher/style-guide";
+import { colors, widths, rtl } from "@Cypher/style-guide";
 import React, { useContext, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -2180,7 +2180,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                           long word in one row would silently drag the
                           whole grid into a smaller font. Built-in
                           Text honors fontSize literally. */}
-                      <RNText style={{ fontSize: 14, color: '#FFF', textAlign: 'center' }}>
+                      <RNText style={[{ fontSize: 14, color: '#FFF', textAlign: 'center' }, rtl.ltrText]}>
                         {`${i + 1}. ${word}`}
                       </RNText>
                     </View>
@@ -2356,7 +2356,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 )}
               </View>
               {localBackup && (
-                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                <Text style={[{ fontSize: 11, color: '#666', marginTop: 2 }, rtl.ltrText]}>
                   {`${formatSize(localBackup.sizeBytes)} · ${localBackup.filename ?? 'ark-backup.cbark'}`}
                 </Text>
               )}
@@ -2406,7 +2406,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 )}
               </View>
               {Platform.OS === 'ios' && iCloudBackup && (
-                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                <Text style={[{ fontSize: 11, color: '#666', marginTop: 2 }, rtl.ltrText]}>
                   {`${formatSize(iCloudBackup.sizeBytes)} · ${iCloudBackup.filename ?? 'ark-backup.cbark'}`}
                 </Text>
               )}
@@ -2416,7 +2416,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 </Text>
               )}
               {Platform.OS === 'android' && driveBackup && (
-                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                <Text style={[{ fontSize: 11, color: '#666', marginTop: 2 }, rtl.ltrText]}>
                   {`${formatSize(driveBackup.sizeBytes)} · appDataFolder`}
                 </Text>
               )}
@@ -2622,7 +2622,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               </View>
             )}
             {arkExitDestinationAddress && (
-              <Text style={{ fontSize: 12, color: '#888' }} numberOfLines={1}>
+              <Text style={[{ fontSize: 12, color: '#888' }, rtl.ltrText]} numberOfLines={1}>
                 → {arkExitDestinationAddress}
               </Text>
             )}
@@ -3046,7 +3046,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                         activeOpacity={0.7}
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, marginBottom: 10 }}
                       >
-                        <Text style={{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }} numberOfLines={1}>
+                        <Text style={[{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }, rtl.ltrText]} numberOfLines={1}>
                           {selectedAddr}
                         </Text>
                         <Image source={Copy} style={{ width: 20, height: 16, marginLeft: 8, tintColor: '#aaa' }} resizeMode="contain" />
@@ -3152,7 +3152,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                               <Text style={{ fontSize: 11, color: '#888', marginBottom: 2 }}>
                                 {idx === 0 ? loc.cypherbox.strike.ark_exit.default_new_address : loc.formatString(loc.cypherbox.strike.ark_exit.previously_derived, { n: idx })}
                               </Text>
-                              <Text style={{ fontSize: 12, color: '#FFF' }}>
+                              <Text style={[{ fontSize: 12, color: '#FFF' }, rtl.ltrText]}>
                                 {addr}
                               </Text>
                             </TouchableOpacity>
@@ -3189,7 +3189,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     autoCapitalize="none"
                     autoCorrect={false}
                     spellCheck={false}
-                    style={{
+                    style={[{
                       backgroundColor: '#0E0E0E',
                       color: '#FFF',
                       fontSize: 13,
@@ -3198,7 +3198,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       paddingVertical: 10,
                       borderWidth: 1,
                       borderColor: '#333',
-                    }}
+                    }, rtl.ltrText]}
                   />
                   <TouchableOpacity
                     onPress={handlePickExternal}
@@ -3330,7 +3330,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                         activeOpacity={0.7}
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, marginBottom: 8 }}
                       >
-                        <Text style={{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }} numberOfLines={1}>
+                        <Text style={[{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }, rtl.ltrText]} numberOfLines={1}>
                           {onchainFundAddr}
                         </Text>
                         <Image source={Copy} style={{ width: 20, height: 16, marginLeft: 8, tintColor: '#aaa' }} resizeMode="contain" />

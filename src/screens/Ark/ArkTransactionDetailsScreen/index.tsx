@@ -17,7 +17,7 @@ import type {
     ArkMovementStatus,
     ArkMovementView,
 } from '@Cypher/services/ark';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 
 import TextView from '../../Invoice/TextView';
 import styles from './styles';
@@ -185,6 +185,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                         style={StyleSheet.flatten([
                             styles.sats,
                             { color: amountColor },
+                            rtl.ltrText,
                         ])}
                     >
                         {sign}
@@ -238,6 +239,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                                 : counterpartyLabel.sent.replace(': ', ` (${sentTo.length}): `)
                         }
                         text={truncateMiddle(sentTo[0], 40)}
+                        textStyle={rtl.ltrText}
                     />
                 )}
                 {showCounterpartyRows && receivedOn.length > 0 && (
@@ -248,6 +250,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                                 : counterpartyLabel.received.replace(': ', ` (${receivedOn.length}): `)
                         }
                         text={truncateMiddle(receivedOn[0], 40)}
+                        textStyle={rtl.ltrText}
                     />
                 )}
 
@@ -276,6 +279,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                         <TextView
                             keytext={loc.cypherbox.ark.tx_details.txid}
                             text={truncateMiddle(onchainTxid, 40)}
+                            textStyle={rtl.ltrText}
                         />
                     </TouchableOpacity>
                 )}

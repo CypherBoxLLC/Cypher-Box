@@ -21,7 +21,7 @@ import {
 import type { ArkOnchainRecoverEstimate } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 import loc from "../../../../loc";
 
@@ -226,7 +226,7 @@ export default function ArkOnchainRecoverSection() {
                             style={{ marginTop: 12 }}
                         >
                             <Text style={{ color: colors.gray.light, fontSize: 11 }}>{loc.cypherbox.strike.ark_onchain_recover.txid_tap_to_copy}</Text>
-                            <RNText style={{ color: "#FFF", fontSize: 12 }} numberOfLines={1} ellipsizeMode="middle">
+                            <RNText style={[{ color: "#FFF", fontSize: 12 }, rtl.ltrText]} numberOfLines={1} ellipsizeMode="middle">
                                 {recoverTxid}
                             </RNText>
                         </TouchableOpacity>
@@ -365,7 +365,7 @@ export default function ArkOnchainRecoverSection() {
                             autoCapitalize="none"
                             autoCorrect={false}
                             multiline
-                            style={{ color: "#FFF", borderWidth: 1, borderColor: "#444", borderRadius: 8, padding: 10, fontSize: 13, minHeight: 48 }}
+                            style={[{ color: "#FFF", borderWidth: 1, borderColor: "#444", borderRadius: 8, padding: 10, fontSize: 13, minHeight: 48 }, rtl.ltrText]}
                         />
                         <View style={{ flexDirection: "row", marginTop: 8 }}>
                             <TouchableOpacity

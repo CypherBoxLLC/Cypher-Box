@@ -10,7 +10,7 @@ import { Input, LoadingSpinner, ScreenLayout, Text } from "@Cypher/component-lib
 import { Check, CoinOS, CoinOSSmall, Cold1, Edit, Electricity, Hot, StrikeFull } from "@Cypher/assets/images";
 import { GradientButton, GradientCard, GradientCardWithShadow, GradientText, ImageText, SwipeButton } from "@Cypher/components";
 import CustomProgressBar from "@Cypher/components/CustomProgressBar";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate, dispatchReset, isIOS } from "@Cypher/helpers";
 import LinearGradient from "react-native-linear-gradient";
 import TextView from "./TextView";
@@ -1540,7 +1540,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         so its position stays put relative to the screen. */}
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginRight: 15, marginTop: 10 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-                            <TextViewV2 keytext={type == 'SELL' ? loc.cypherbox.payments.review_payment.you_will_sell : type == 'BUY' ? loc.cypherbox.payments.review_payment.you_will_receive : loc.cypherbox.payments.review_payment.recipient_will_get} text={isSats ? `${value} sats ~ ${getStrikeCurrency(currency || 'USD')}${converted}` : `${getStrikeCurrency(currency || 'USD')}${value} ~ ${converted} sats`} textStyle={styles.price} containerStyle={{ marginBottom: 10 }} />
+                            <TextViewV2 keytext={type == 'SELL' ? loc.cypherbox.payments.review_payment.you_will_sell : type == 'BUY' ? loc.cypherbox.payments.review_payment.you_will_receive : loc.cypherbox.payments.review_payment.recipient_will_get} text={isSats ? `${value} sats ~ ${getStrikeCurrency(currency || 'USD')}${converted}` : `${getStrikeCurrency(currency || 'USD')}${value} ~ ${converted} sats`} textStyle={StyleSheet.flatten([styles.price, rtl.ltrText])} containerStyle={{ marginBottom: 10 }} />
                         </View>
                         {(isWithdrawal || type === 'BUY' || type === 'SELL') &&
                             <TouchableOpacity activeOpacity={0.7} onPress={editAmountClickHandler} style={{
@@ -1603,7 +1603,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         <View style={{ marginHorizontal: 12, marginBottom: 10 }}>
                             <Text bold style={{fontSize: 18}}>{loc.cypherbox.payments.common.to_label}</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                                <Text style={{ flex: 1, fontSize: 12, fontFamily: 'monospace', color: '#CCC' }}>{to}</Text>
+                                <Text style={[{ flex: 1, fontSize: 12, fontFamily: 'monospace', color: '#CCC' }, rtl.ltrText]}>{to}</Text>
                                 {!to.includes('@') && to.length > 20 && (
                                     <TouchableOpacity onPress={() => setShowAddressQR(true)} style={{ marginLeft: 8 }}>
                                         <Icon name="qrcode" type="font-awesome" color="#CCC" size={22} />
@@ -1634,7 +1634,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             {receiveType ?
                                 <View style={{ zIndex: 100, elevation: 100 }}>
                                     <View style={[styles.feesView, { zIndex: 100, elevation: 100 }]}>
-                                        <TextViewV2 keytext={loc.cypherbox.payments.common.network_fee_label} text={` ~   ${estimatedFee} sats`} />
+                                        <TextViewV2 keytext={loc.cypherbox.payments.common.network_fee_label} text={` ~   ${estimatedFee} sats`} textStyle={rtl.ltrText} />
                                         <View style={{ marginLeft: 10, marginTop: -10, width: 160, zIndex: 100, elevation: 100 }}>
                                             <TouchableOpacity
                                                 onPress={() => setModalVisible(!isModalVisible)}
@@ -1719,15 +1719,15 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 const pct = amountSats > 0 ? ((feeSats / amountSats) * 100).toFixed(1) : '0';
                                 const usdAmt = (Number(selectedStrikeFee?.estimatedFee?.amount || 0) * (matchedRate || 0)).toFixed(2);
                                 return (
-                                    <Text bold style={{ fontSize: 18 }}>{loc.cypherbox.payments.review_payment.fee_label}<Text italic style={{ fontSize: 16, fontWeight: 'normal' }}>{`~ ${feeSats.toFixed(0)} sats (~${getStrikeCurrency(currency || 'USD')}${usdAmt}) (${pct}%)`}</Text></Text>
+                                    <Text bold style={{ fontSize: 18 }}>{loc.cypherbox.payments.review_payment.fee_label}<Text italic style={[{ fontSize: 16, fontWeight: 'normal' }, rtl.ltrText]}>{`~ ${feeSats.toFixed(0)} sats (~${getStrikeCurrency(currency || 'USD')}${usdAmt}) (${pct}%)`}</Text></Text>
                                 );
                             })()}
                                     </View>
                                 </View>
                             }
                             {/* <TextViewV2 keytext="Coinos Fee + Service Fee:  " text={` ~   ${(networkFee || 0) + (bamskiiFee || 0)} sats`} /> */}
-                            {receiveType && <TextViewV2 keytext={loc.cypherbox.payments.common.coinos_fee_label} text={` ~   ${(networkFee || 0)} sats`} /> }
-                            {receiveType && <TextViewV2 keytext={loc.cypherbox.payments.common.total_fee_label} text={isWithdrawal ? ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~${handleWithdrawalFee((networkFee || 0) + (estimatedFee || 0)).toFixed(0)}%)` : ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~0.2%)`} />}
+                            {receiveType && <TextViewV2 keytext={loc.cypherbox.payments.common.coinos_fee_label} text={` ~   ${(networkFee || 0)} sats`} textStyle={rtl.ltrText} /> }
+                            {receiveType && <TextViewV2 keytext={loc.cypherbox.payments.common.total_fee_label} text={isWithdrawal ? ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~${handleWithdrawalFee((networkFee || 0) + (estimatedFee || 0)).toFixed(0)}%)` : ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~0.2%)`} textStyle={rtl.ltrText} />}
                             {!receiveType && !selectedStrikeFee && paymentQuoteData && (
                                 <TextViewV2
                                     keytext={loc.cypherbox.payments.review_payment.trading_fees_label}
@@ -1741,6 +1741,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                         route?.params?.matchedRate,
                                     )}
                                     containerStyle={{ marginBottom: 10 }}
+                                    textStyle={rtl.ltrText}
                                 />
                             )}
                         </>
@@ -1764,6 +1765,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                     matchedRate,
                                     route?.params?.matchedRate,
                                 )}
+                                textStyle={rtl.ltrText}
                             />
                         :
                         <TextView keytext={loc.cypherbox.payments.common.fees_label} text={` ~   ${receiveType ? estimatedFee : paymentQuoteData && to?.length > 0 ? usdToSats(paymentQuoteData?.totalFee?.amount || 0, (matchedRate || 0)) : paymentQuoteData && to.length == 0 ? usdToSats(paymentQuoteData?.fee?.amount || 0, (matchedRate || 0)) : 0} sats`} />
@@ -1913,12 +1915,12 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                         }}
                                     >
                                         <Text
-                                            style={{
+                                            style={[{
                                                 color: '#ddd',
                                                 fontSize: 12,
                                                 flex: 1,
                                                 marginRight: 8,
-                                            }}
+                                            }, rtl.ltrText]}
                                             numberOfLines={1}
                                             ellipsizeMode="middle"
                                         >
@@ -1973,9 +1975,9 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                                         }}
                                                     >
                                                         <Text bold style={{ fontSize: 13, color: '#fff' }}>{tier.label}</Text>
-                                                        <Text style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{tierSats} sats</Text>
-                                                        <Text style={{ fontSize: 10, color: '#bbb' }}>~{getStrikeCurrency(currency || 'USD')}{tierFiat}</Text>
-                                                        <Text style={{ fontSize: 10, color: '#bbb' }}>{tierPctStr}</Text>
+                                                        <Text style={[{ fontSize: 10, color: '#bbb', marginTop: 2 }, rtl.ltrText]}>{tierSats} sats</Text>
+                                                        <Text style={[{ fontSize: 10, color: '#bbb' }, rtl.ltrText]}>~{getStrikeCurrency(currency || 'USD')}{tierFiat}</Text>
+                                                        <Text style={[{ fontSize: 10, color: '#bbb' }, rtl.ltrText]}>{tierPctStr}</Text>
                                                     </TouchableOpacity>
                                                 );
                                             })}
@@ -2116,7 +2118,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 12 }}>
                         <QRCode value={to} size={200} color="black" backgroundColor="white" />
                     </View>
-                    <Text style={{ fontSize: 11, fontFamily: 'monospace', color: '#CCC', marginTop: 16, textAlign: 'center', lineHeight: 18 }}>
+                    <Text style={[{ fontSize: 11, fontFamily: 'monospace', color: '#CCC', marginTop: 16, textAlign: 'center', lineHeight: 18 }, rtl.ltrText]}>
                         {to}
                     </Text>
                     <TouchableOpacity

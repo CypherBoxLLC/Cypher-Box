@@ -4,7 +4,7 @@ import LinearGradient from 'react-native-linear-gradient';
 
 import { Text } from '@Cypher/component-library';
 import { Electricity, GradientShock } from '@Cypher/assets/images';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 
 import styles from './styles';
 import loc from '../../../loc';
@@ -157,8 +157,8 @@ export default function LightningSendSuccess({
             style={[styles.container, { transform: [{ translateY: slideAnim }], opacity: fadeAnim }]}
         >
             <Text semibold style={styles.title}>{title}</Text>
-            <Text semibold style={styles.value}>{satsNum.toLocaleString()} sats</Text>
-            <Text semibold style={styles.fiat}>{fiatSymbol}{fiat}</Text>
+            <Text semibold style={[styles.value, rtl.ltrText]}>{satsNum.toLocaleString()} sats</Text>
+            <Text semibold style={[styles.fiat, rtl.ltrText]}>{fiatSymbol}{fiat}</Text>
             {feeRow}
             <View style={styles.animationContainer}>
                 <Animated.View

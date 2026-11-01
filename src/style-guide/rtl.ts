@@ -7,4 +7,8 @@ export const mirrorTransform = [{ scaleX: I18nManager.isRTL ? -1 : 1 }];
 
 export default StyleSheet.create({
   mirror: { transform: mirrorTransform },
+  // Addresses, amounts, txids, keys and seed words are Latin and must read
+  // left-to-right even on an RTL screen. writingDirection is honoured on iOS;
+  // Android lays these out by their first strong character, which is Latin.
+  ltrText: { writingDirection: 'ltr' },
 });

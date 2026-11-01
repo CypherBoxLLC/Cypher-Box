@@ -1,8 +1,8 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { Alert, ActivityIndicator, Animated, Switch, TouchableOpacity, View } from 'react-native';
+import { Alert, ActivityIndicator, Animated, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import styles from './styles';
 import { ScreenLayout, Text, Input, Button } from '@Cypher/component-library';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import { HDSegwitBech32Wallet } from '../../../class';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -540,13 +540,13 @@ export default function RecoverSavingVault({ route }: Props) {
                             <View style={styles.inputColumn}>
                                 {inputs.slice(0, 6).map((input, index) => (
                                     <View key={input} style={styles.inputContainer}>
-                                        <Text h2 style={styles.labelText}>{input}.</Text>
+                                        <Text h2 style={[styles.labelText, rtl.ltrText]}>{input}.</Text>
                                         <Input
                                             ref={el => inputRefs.current[index] = el}
                                             style={styles.inputStyle}
                                             onChange={(value) => handleSecretWordChange(index, value)}
                                             value={secretWords[index]}
-                                            textInputStyle={styles.textInputStyle}
+                                            textInputStyle={StyleSheet.flatten([styles.textInputStyle, rtl.ltrText])}
                                             autoCapitalize='none'
                                             onKeyPress={(event) => handleKeyPress(event, index)}
                                             onSubmitEditing={() => {
@@ -563,13 +563,13 @@ export default function RecoverSavingVault({ route }: Props) {
                             <View style={styles.inputColumn}>
                                 {inputs.slice(6).map((input, index) => (
                                     <View key={input} style={styles.inputContainer}>
-                                        <Text h2 style={styles.labelText}>{input}.</Text>
+                                        <Text h2 style={[styles.labelText, rtl.ltrText]}>{input}.</Text>
                                         <Input
                                             ref={el => inputRefs.current[index + 6] = el}
                                             style={styles.inputStyle}
                                             onChange={(value) => handleSecretWordChange(index + 6, value)}
                                             value={secretWords[index + 6]}
-                                            textInputStyle={styles.textInputStyle}
+                                            textInputStyle={StyleSheet.flatten([styles.textInputStyle, rtl.ltrText])}
                                             autoCapitalize='none'
                                             onKeyPress={(event) => handleKeyPress(event, index + 6)}
                                             onSubmitEditing={() => {

@@ -23,7 +23,7 @@ import {
     type ArkMovementStatus,
     type ArkMovementView,
 } from '@Cypher/services/ark';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import screenHeight from '@Cypher/style-guide/screenHeight';
 import useAuthStore from '@Cypher/stores/authStore';
 import useEventLogStore, { type AppEvent } from '@Cypher/stores/eventLogStore';
@@ -449,7 +449,7 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
                                 )}
                             </View>
                         </View>
-                        <Text h3 style={{ color: amountColor }}>
+                        <Text h3 style={[{ color: amountColor }, rtl.ltrText]}>
                             {sign}
                             {absSats} sats
                         </Text>
@@ -458,6 +458,7 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
                         style={StyleSheet.flatten([
                             itemStyles.text,
                             { color: amountColor },
+                            rtl.ltrText,
                         ])}
                     >
                         {getStrikeCurrency(currency)}

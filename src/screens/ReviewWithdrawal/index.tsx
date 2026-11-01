@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, TouchableOpacity, View, KeyboardAvoidingView } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View, KeyboardAvoidingView } from 'react-native';
 import SimpleToast from 'react-native-simple-toast';
 import { Icon } from 'react-native-elements';
 import ReactNativeModal from 'react-native-modal';
@@ -20,7 +20,7 @@ import {
     ProgressBar,
     SwipeButton,
 } from '@Cypher/components';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import { dispatchNavigate } from '@Cypher/helpers';
 import LinearGradient from 'react-native-linear-gradient';
 import TextView from './TextView';
@@ -508,7 +508,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                         <TextViewV2
                             keytext={loc.cypherbox.payments.review_withdrawal.withdrawn_amount}
                             text={isSats ? `${value} btc ~ $${converted}` : `$${value} ~ $${converted} btc`}
-                            textStyle={styles.price}
+                            textStyle={StyleSheet.flatten([styles.price, rtl.ltrText])}
                             style={styles.textContainer}
 
                         />
@@ -561,7 +561,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     {to && value && (type === 'bitcoin' || type === 'liquid') && recommendedFee ? (
                         <>
                             <View style={styles.feesView}>
-                                <TextViewV2 keytext={loc.cypherbox.payments.common.network_fee_label} text={` ~   ${estimatedFee} sats`}
+                                <TextViewV2 keytext={loc.cypherbox.payments.common.network_fee_label} text={` ~   ${estimatedFee} sats`} textStyle={rtl.ltrText}
 
                                     style={{ marginBottom: 10 }}
                                 />

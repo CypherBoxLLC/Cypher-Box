@@ -2,7 +2,7 @@ import { CoinOS, CoinOSSmall, CoinOs, Electricity, Second, Strike2, StrikeFull }
 import { Text } from "@Cypher/component-library";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
 import { formatCapsuleAmount, formatNumber, formatSats, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import MaskedView from "@react-native-masked-view/masked-view";
 import React, { useContext, useEffect, useRef } from "react";
 import { Animated, Easing, Image, StyleSheet, TouchableOpacity, View } from "react-native";
@@ -355,7 +355,7 @@ export default function Card({ onPress,
                     // siblings of the outer row (space-between) and the
                     // refreshing line would be shoved to the far right.
                     <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                        <Text h2 bold style={styles.sats}>
+                        <Text h2 bold style={[styles.sats, rtl.ltrText]}>
                             {getBalance()}
                         </Text>
                         {refreshingText && (

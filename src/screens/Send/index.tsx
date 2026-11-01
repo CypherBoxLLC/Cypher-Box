@@ -12,7 +12,7 @@ import styles from "./styles";
 import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { CustomKeyboard, GradientCard, GradientInput, GradientInputNew } from "@Cypher/components";
-import { colors, } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { bitcoinRecommendedFee, getInvoiceByLightening, getMe } from "../../api/coinOSApis";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -590,7 +590,7 @@ export default function SendScreen({ navigation, route }: any) {
                                                     if (newValue.trim().toLowerCase().startsWith('ln')) setIsPaste(true);
                                                 }}
                                                 value={!sender.includes('@') && sender.length > 20 ? shortenAddress(sender) : sender}
-                                                textInputStyle={styles.senderText}
+                                                textInputStyle={StyleSheet.flatten([styles.senderText, rtl.ltrText])}
                                                 onFocus={() => {
                                                     setAddressFocused(true);
                                                 }}

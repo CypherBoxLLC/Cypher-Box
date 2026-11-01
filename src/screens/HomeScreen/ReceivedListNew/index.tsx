@@ -882,7 +882,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   :
                   <>
                     <View style={styles.addressRow}>
-                      <Text semibold style={styles.bitcoinAddressText}>
+                      <Text semibold style={[styles.bitcoinAddressText, rtl.ltrText]}>
                         {shortenAddress(hashLiquid)}
                       </Text>
                       <TouchableOpacity onPress={() =>{
@@ -991,7 +991,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 ) : (
                   <>
                     <View style={[styles.addressRow, { marginTop: 12 }]}>
-                      <Text semibold style={[styles.bitcoinAddressText, { fontSize: 13 }]}>
+                      <Text semibold style={[styles.bitcoinAddressText, { fontSize: 13 }, rtl.ltrText]}>
                         {arkOnchainAddress}
                       </Text>
                       <TouchableOpacity onPress={() => {
@@ -1059,7 +1059,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                         }
                         style={styles.addressValueTap}
                       >
-                        <Text semibold style={styles.bitcoinAddressText}>
+                        <Text semibold style={[styles.bitcoinAddressText, rtl.ltrText]}>
                           {arkAddress.length > 13
                             ? `${arkAddress.slice(0, 6)}…${arkAddress.slice(-6)}`
                             : arkAddress}
@@ -1078,7 +1078,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                         horizontal scroller hides how much is left. */}
                     {arkAddressExpanded && (
                       <View style={styles.fullAddressBox}>
-                        <Text style={styles.fullAddressText}>
+                        <Text style={[styles.fullAddressText, rtl.ltrText]}>
                           {arkAddress}
                         </Text>
                       </View>

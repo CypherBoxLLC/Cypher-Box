@@ -16,7 +16,7 @@ import SimpleToast from 'react-native-simple-toast';
 import { Input, ScreenLayout, Text } from '@Cypher/component-library';
 import { Check, Edit } from '@Cypher/assets/images';
 import { GradientCard, SwipeButton } from '@Cypher/components';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import { isIOS } from '@Cypher/helpers';
 import { formatNumber, getStrikeCurrency } from '@Cypher/helpers/coinosHelper';
 import { btc } from '@Cypher/helpers/bitcoinUnits';
@@ -494,7 +494,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                     value={draftAmount}
                                     onChangeText={setDraftAmount}
                                     keyboardType="number-pad"
-                                    style={{
+                                    style={[{
                                         flex: 1,
                                         color: colors.white,
                                         fontSize: 16,
@@ -502,7 +502,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                         borderBottomColor: colors.ark.light,
                                         paddingVertical: 2,
                                         marginRight: 8,
-                                    }}
+                                    }, rtl.ltrText]}
                                     placeholder="sats"
                                     placeholderTextColor="#555"
                                 />
@@ -511,7 +511,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                             <TextViewV2
                                 keytext={loc.cypherbox.ark.withdraw_review.recipient_will_get}
                                 text={`${formatNumber(amountSats)} sats ~ ${getStrikeCurrency(currency)}${amountFiat}`}
-                                textStyle={reviewStyles.price}
+                                textStyle={StyleSheet.flatten([reviewStyles.price, rtl.ltrText])}
                             />
                         )}
                         <TouchableOpacity
@@ -722,6 +722,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                           }%)`
                                         : ''
                                 }`}
+                                textStyle={rtl.ltrText}
                             />
                             {/* Fee composition disclosure. The SDK returns a
                              * single total for `fee.totalSats` that combines:

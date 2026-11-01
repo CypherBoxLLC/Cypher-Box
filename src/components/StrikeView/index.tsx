@@ -15,7 +15,7 @@ import SimpleToast from "react-native-simple-toast";
 import { useNavigation } from '@react-navigation/native'
 import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout, revokeStrikeToken } from '@Cypher/api/strikeAPIs'
 import { bitcoinRecommendedFee } from '@Cypher/api/coinOSApis'
-import { colors } from '@Cypher/style-guide'
+import { colors, rtl } from '@Cypher/style-guide'
 import loc from '../../../loc'
 
 interface Props {
@@ -285,8 +285,8 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 linearFirstColors={[colors.black.default, colors.black.default]}
                             >
                                 <CustomProgressBar value={dollarStrikeText} />
-                                <Text h3 bold >{dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} BTC` : `${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
-                                <Text h4 semibold>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
+                                <Text h3 bold style={rtl.ltrText}>{dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} BTC` : `${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
+                                <Text h4 semibold style={rtl.ltrText}>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
                             </BlackBGView>
                             {/* BUY sits 5pt lower than SELL by default —
                                 the capsule's marginTop:45 (vs fiatBalanceBox's
@@ -314,7 +314,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                     matches the trimmed visual weight Bam
                                     asked for after the 10pt up nudge. */}
                                 <Text h2 bold style={{ fontSize: 17 }}>{loc.cypherbox.components.strike_view.fiat_balance}</Text>
-                                <Text h2 bold style={{ fontSize: 17 }}>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
+                                <Text h2 bold style={[{ fontSize: 17 }, rtl.ltrText]}>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
                             </View>
                             {/* fiatBalanceBox.marginTop went 40 → 30 (Fiat
                                 Balance up 10pt), which dragged SELL up 10pt
@@ -573,7 +573,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                 linearSecondStyle={styles.bitcoinPriceContainerInner}
                 linearFirstColors={[colors.black.default, colors.black.default]}
             >
-                <Text bold style={[styles.bitcoinPriceText, { color: rateColor }]}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
+                <Text bold style={[styles.bitcoinPriceText, { color: rateColor }, rtl.ltrText]}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
             </BlackBGView>
             {isShowButtons &&
                 <GradientView

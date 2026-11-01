@@ -5,7 +5,7 @@ import styles from "./styles"
 import { Text } from "@Cypher/component-library";
 import { Bitcoin, LiquidBitCoin, Socked } from "@Cypher/assets/images";
 import { btc, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import loc from "../../../../../loc";
 
 interface Props {
@@ -63,9 +63,9 @@ export default function Items({ matchedRate, currency, receiveType, item, onPres
                             }
                         </Text>
                     }
-                    <Text h3 style={{ color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }}>{amountSign+satsAmount} sats</Text>
+                    <Text h3 style={[{ color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }, rtl.ltrText]}>{amountSign+satsAmount} sats</Text>
                 </View>
-                <Text style={StyleSheet.flatten([styles.text, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }])}>{getStrikeCurrency(currency)}{amountSign+dollarAmount.toFixed(2)}</Text>
+                <Text style={StyleSheet.flatten([styles.text, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }, rtl.ltrText])}>{getStrikeCurrency(currency)}{amountSign+dollarAmount.toFixed(2)}</Text>
                 <Shadow
                     inner
                     useArt

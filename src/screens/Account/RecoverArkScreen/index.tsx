@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Platform, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import DocumentPicker, { types as DocTypes } from "react-native-document-picker";
 import RNFS from "react-native-fs";
 import * as Keychain from "react-native-keychain";
@@ -33,7 +33,7 @@ import type { ChannelLookupResult } from "@Cypher/services/ark";
 import { validateMnemonic } from "@secondts/bark-react-native";
 import useAuthStore from "@Cypher/stores/authStore";
 import { useKeyboardLift } from "@Cypher/custom-hooks";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 
 import styles from "./styles";
 import loc from "../../../../loc";
@@ -1261,13 +1261,13 @@ function TypeSeedView({
                 <View style={styles.inputColumn}>
                     {inputs.slice(0, 6).map((label, index) => (
                         <View key={label} style={styles.inputContainer}>
-                            <Text h2 style={styles.labelText}>{label}.</Text>
+                            <Text h2 style={[styles.labelText, rtl.ltrText]}>{label}.</Text>
                             <Input
                                 ref={(el: any) => (inputRefs.current[index] = el)}
                                 style={styles.inputStyle}
                                 onChange={(value: string) => onWordChange(index, value)}
                                 value={secretWords[index]}
-                                textInputStyle={styles.textInputStyle}
+                                textInputStyle={StyleSheet.flatten([styles.textInputStyle, rtl.ltrText])}
                                 autoCapitalize="none"
                                 onKeyPress={(event: any) => onKeyPress(event, index)}
                                 onSubmitEditing={() => {
@@ -1282,13 +1282,13 @@ function TypeSeedView({
                 <View style={styles.inputColumn}>
                     {inputs.slice(6).map((label, index) => (
                         <View key={label} style={styles.inputContainer}>
-                            <Text h2 style={styles.labelText}>{label}.</Text>
+                            <Text h2 style={[styles.labelText, rtl.ltrText]}>{label}.</Text>
                             <Input
                                 ref={(el: any) => (inputRefs.current[index + 6] = el)}
                                 style={styles.inputStyle}
                                 onChange={(value: string) => onWordChange(index + 6, value)}
                                 value={secretWords[index + 6]}
-                                textInputStyle={styles.textInputStyle}
+                                textInputStyle={StyleSheet.flatten([styles.textInputStyle, rtl.ltrText])}
                                 autoCapitalize="none"
                                 onKeyPress={(event: any) => onKeyPress(event, index + 6)}
                                 onSubmitEditing={() => {

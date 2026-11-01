@@ -4,7 +4,7 @@ import styles from "./styles";
 import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput } from "@Cypher/components";
-import { colors, widths, } from "@Cypher/style-guide";
+import { colors, widths, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import * as Progress from 'react-native-progress';
 // import { Ring, Ring3, } from "@Cypher/assets/gif";
@@ -188,10 +188,10 @@ export default function Transaction({navigation, route}: any) {
                                     <CustomProgressBar value={Number(amountSat) || 0} />
                                 </View>
                             )}
-                            <Text semibold center style={styles.sats}>{amountSat} sats</Text>
-                            <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
+                            <Text semibold center style={[styles.sats, rtl.ltrText]}>{amountSat} sats</Text>
+                            <Text subHeader bold center style={rtl.ltrText}>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                             { to?.length > 0 && <View style={styles.extra} /> }
-                            { to.length > 0 && <Text subHeader bold center>{type !== 'username' ? shortenAddress(to) : to}</Text> }
+                            { to.length > 0 && <Text subHeader bold center style={rtl.ltrText}>{type !== 'username' ? shortenAddress(to) : to}</Text> }
                         </Animated.View>
                     }
                 </View>

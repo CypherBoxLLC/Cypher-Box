@@ -7,7 +7,7 @@ import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { selectCapsules } from "@Cypher/helpers/capsuleSelection";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
@@ -1066,7 +1066,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                       <View style={styles.priceView}>
                           <View>
                               <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? loc.cypherbox.vault.cold_storage.transfer_amount : to || toStrike || toArk ? loc.cypherbox.vault.cold_storage.topup_amount : vaultSend ? loc.cypherbox.vault.cold_storage.amount_moved : loc.cypherbox.vault.cold_storage.recipient_will_get}</Text>
-                              <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
+                              <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
                               <View style={{flexDirection: 'row', marginTop: 8}}>
                                   <View style={styles.tabs}>
                                       <VaultCapsules item={((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000)} />
@@ -1105,7 +1105,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                         <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16 }}>{loc.cypherbox.vault.cold_storage.change_capsule_info}</Text>
                                                     </View>
                                                 )}
-                                                <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
+                                                <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
                                                 <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 8}}>
                                                     <View style={styles.tabs}>
                                                         <VaultCapsules item={changeSats} />
@@ -1385,7 +1385,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                           <View style={styles.pasteview}>
                               <TouchableOpacity style={[styles.button, { borderColor: destinationAddress?.length > 0 ? primaryColor : '#B6B6B6' }]} onPress={pasteClickHandler}>
                                   {destinationAddress ?
-                                      <Text h3 bold>{destinationAddress}</Text>
+                                      <Text h3 bold style={rtl.ltrText}>{destinationAddress}</Text>
                                       :
                                       <Text bold>{loc.cypherbox.vault.cold_storage.paste_destination}</Text>
                                   }
@@ -1497,7 +1497,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                         */}
                         <Text style={[styles.recipientTitle, { marginTop: 20 }]}>{loc.cypherbox.vault.cold_storage.network_fee}</Text>
                             
-                            <Text bold style={[styles.fees, { marginTop: 8 }]}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
+                            <Text bold style={[styles.fees, { marginTop: 8 }, rtl.ltrText]}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text bold style={styles.fees}>~ {isCustomFee ? customFee + " sats/vByte" :  getCurrentFee().fee + " sats"}</Text> */}
                         </View>
                         {visibleSelection &&
@@ -1590,7 +1590,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                             {/* Destination */}
                             <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
                                 <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>{loc.cypherbox.vault.cold_storage.to_label}</Text>
-                                <Text style={{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }}>{lightningInvoice}</Text>
+                                <Text style={[{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }, rtl.ltrText]}>{lightningInvoice}</Text>
                             </View>
                             
                             {/* Electrified Capsule */}
@@ -1608,7 +1608,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     shadowRadius: 20,
                                     elevation: 10
                                 }}>
-                                    <Text style={{ fontSize: 24, color: '#fff', fontWeight: 'bold' }}>{Math.round((Number(usd || 0) / Number(matchedRate || 1)) * 100000000)} sats</Text>
+                                    <Text style={[{ fontSize: 24, color: '#fff', fontWeight: 'bold' }, rtl.ltrText]}>{Math.round((Number(usd || 0) / Number(matchedRate || 1)) * 100000000)} sats</Text>
                                 </View>
                             </View>
                             

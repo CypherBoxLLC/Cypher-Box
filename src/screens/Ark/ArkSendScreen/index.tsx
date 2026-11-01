@@ -21,7 +21,7 @@ import {
     labelForDestinationKind,
     type ArkDestination,
 } from '@Cypher/services/ark';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
 import LockedInRefreshNotice from '@Cypher/components/LockedInRefreshNotice';
 import loc from '../../../../loc';
@@ -333,7 +333,7 @@ export default function ArkSendScreen({ route }: Props) {
                 </Text>
                 <View style={styles.destInputWrap}>
                     <TextInput
-                        style={styles.destInput}
+                        style={[styles.destInput, rtl.ltrText]}
                         placeholder="bc1…, lnbc…, alice@host, ark1…"
                         placeholderTextColor="#666"
                         value={destinationRaw}

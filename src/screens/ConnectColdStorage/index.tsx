@@ -6,7 +6,7 @@ import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityI
 import Clipboard from "@react-native-clipboard/clipboard";
 import IdleTimerManager from 'react-native-idle-timer';
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
-import { colors, } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { requestCameraAuthorization, scanQrHelper } from "../../../helpers/scan-qr";
 import styles from "./styles";
 import { HDSegwitBech32Wallet } from "../../../class";
@@ -420,7 +420,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                     <View style={styles.insideView}>
                                         <Image source={require('../../../img/paste-icon.png')} style={styles.qrimage} resizeMode="contain" />
                                         {address ?
-                                            <Text style={{fontSize: 14}}>{shortenAddress(address)}</Text>
+                                            <Text style={[{fontSize: 14}, rtl.ltrText]}>{shortenAddress(address)}</Text>
                                         :
                                             <Text h2>Paste <Text style={styles.keyKinds}>(xpub, zpub, etc)</Text></Text>
                                         }

@@ -18,7 +18,7 @@ import {
 } from "@Cypher/services/ark";
 import { estimateSwapFee, listLightningSwapProviders, swap } from "@Cypher/services/lightningSwap";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 import loc from "../../../../loc";
 
@@ -372,7 +372,7 @@ export default function ArkStuckCapsuleScreen() {
                                 placeholderTextColor="#777"
                                 autoCapitalize="none"
                                 autoCorrect={false}
-                                style={{ marginTop: 2, marginBottom: 8, borderWidth: 1, borderColor: "#444", borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, color: "#FFF", fontSize: 13 }}
+                                style={[{ marginTop: 2, marginBottom: 8, borderWidth: 1, borderColor: "#444", borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, color: "#FFF", fontSize: 13 }, rtl.ltrText]}
                             />
                         )}
 

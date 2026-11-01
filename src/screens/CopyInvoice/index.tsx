@@ -12,7 +12,7 @@ import { Copy, QrCode, Second, Share2 } from "@Cypher/assets/images";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton, ImageTextVertical } from "@Cypher/components";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 
 interface Props {
     route: any;
@@ -94,8 +94,8 @@ export default function CopyInvoice({ route }: Props) {
                             </Text>
                         </View>
                     )}
-                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1}>{route?.params?.value}</Text>
-                    <Text bold style={styles.usd}>{route?.params?.converted}</Text>
+                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1} style={rtl.ltrText}>{route?.params?.value}</Text>
+                    <Text bold style={[styles.usd, rtl.ltrText]}>{route?.params?.converted}</Text>
                     {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
                     <View style={{ margin: 20, padding: 30, backgroundColor: 'white', borderRadius: 30 }}>
                         <QRCode
@@ -106,7 +106,7 @@ export default function CopyInvoice({ route }: Props) {
                         />
                     </View>
 
-                    <Text semibold style={styles.code}>{shortenAddress(hash)}</Text>
+                    <Text semibold style={[styles.code, rtl.ltrText]}>{shortenAddress(hash)}</Text>
                     <View style={styles.imageView}>
                         <ImageTextVertical text={loc.cypherbox.payments.common.copy} source={Copy} onPress={() => copyToClipboard(hash)} />
                         <ImageTextVertical text={loc.cypherbox.payments.common.share} source={Share2} onPress={shareQRCode} />

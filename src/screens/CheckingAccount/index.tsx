@@ -6,7 +6,7 @@ import SimpleToast from "react-native-simple-toast";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientCard, GradientTab, GradientText } from "@Cypher/components";
 import { CoinOS, Information, Line, Time } from "@Cypher/assets/images";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import Items from "./Items";
 import Header from "./Header";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -455,8 +455,8 @@ export default function CheckAccount({ navigation, route }: any) {
                                             return (
                                                 <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                                                     onPress={() => selectClickHandler(item?.sats)}>
-                                                    <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                                                    <Text style={{ fontSize: 18, marginStart: 30 }}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
+                                                    <Text bold style={[{ fontSize: 18 }, rtl.ltrText]}>{formatNumber(item?.sats) + " sats"}</Text>
+                                                    <Text style={[{ fontSize: 18, marginStart: 30 }, rtl.ltrText]}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
                                                 </TouchableOpacity>
                                             )
                                         })}
@@ -464,7 +464,7 @@ export default function CheckAccount({ navigation, route }: any) {
                                 </GradientCard>
                             </View>
                         </Modal>
-                        <Text center style={styles.usd}>${(value * matchedRate * currency).toFixed(2)}</Text>
+                        <Text center style={[styles.usd, rtl.ltrText]}>${(value * matchedRate * currency).toFixed(2)}</Text>
                         <TouchableOpacity onPress={() => customizeClickHandler(0)}>
                             <GradientText style={styles.gradientText}>{loc.cypherbox.account.checking_account.customize}</GradientText>
                         </TouchableOpacity>
@@ -490,7 +490,7 @@ export default function CheckAccount({ navigation, route }: any) {
                             </TouchableOpacity>
                             <Text style={styles.text}>Sats</Text>
                         </View>
-                        <Text center style={styles.usd}>${(reserveAmt * matchedRate * currency).toFixed(2)}</Text>
+                        <Text center style={[styles.usd, rtl.ltrText]}>${(reserveAmt * matchedRate * currency).toFixed(2)}</Text>
                         <TouchableOpacity onPress={() => customizeClickHandler(1)}>
                             <GradientText style={styles.gradientText}>{loc.cypherbox.account.checking_account.customize}</GradientText>
                         </TouchableOpacity>
@@ -503,8 +503,8 @@ export default function CheckAccount({ navigation, route }: any) {
                                             return (
                                                 <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                                                     onPress={() => selectRAClickHandler(item?.sats)}>
-                                                    <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                                                    <Text style={{ fontSize: 18, marginStart: 30 }}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
+                                                    <Text bold style={[{ fontSize: 18 }, rtl.ltrText]}>{formatNumber(item?.sats) + " sats"}</Text>
+                                                    <Text style={[{ fontSize: 18, marginStart: 30 }, rtl.ltrText]}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
                                                 </TouchableOpacity>
                                             )
                                         })}

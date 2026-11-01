@@ -467,11 +467,11 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}>
-                  <Text bold style={{ fontSize: 13, color: '#fff' }} numberOfLines={1}>
+                  <Text bold style={[{ fontSize: 13, color: '#fff' }, rtl.ltrText]} numberOfLines={1}>
                     {totalBTC} BTC
                   </Text>
                 </View>
-                <Text bold style={{ fontSize: 13, color: '#aaa', marginHorizontal: 6 }} numberOfLines={1}>
+                <Text bold style={[{ fontSize: 13, color: '#aaa', marginHorizontal: 6 }, rtl.ltrText]} numberOfLines={1}>
                   ~${totalUSD.toFixed(2)}
                 </Text>
                 <GradientView
