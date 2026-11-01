@@ -280,7 +280,7 @@
     "header": "الإعدادات",
     "language": "اللغة",
     "last_updated": "آخر تحديث",
-    "language_isRTL": "يجب اعادة تشغيل BlueWallet حتى تظهر تعديلات تغيير اللغة.",
+    "language_isRTL": "يجب إعادة تشغيل Cypher Box حتى يُطبَّق اتجاه اللغة الجديد.",
     "lightning_error_lndhub_uri": "معرِّف URI لبرنامج تضمين LndHub غير صالح",
     "lightning_saved": "تم حفظ تغييراتك بنجاح",
     "lightning_settings": "إعدادات البرق",
