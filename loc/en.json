@@ -3070,6 +3070,9 @@
       },
       "addresses": {
         "vault_unavailable": "This vault is no longer available on this device. Go back and open it again from the home screen."
+      },
+      "coin_control": {
+        "label_capsule": "Label capsule"
       }
     }
   }
