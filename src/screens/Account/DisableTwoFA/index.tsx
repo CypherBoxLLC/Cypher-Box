@@ -7,6 +7,7 @@ import { colors } from "@Cypher/style-guide";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchGoBack } from "@Cypher/helpers";
 import { disableTwoFA } from "@Cypher/api/coinOSApis";
+import loc from "../../../../loc";
 
 export default function DisableTwoFA() {
     const [verificationCode, setVerificationCode] = useState('');
@@ -14,18 +15,18 @@ export default function DisableTwoFA() {
 
     const handleDisable = async () => {
         if (verificationCode.length !== 6) {
-            SimpleToast.show('Please enter a valid 6-digit code', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.valid_6_digit_code, SimpleToast.SHORT);
             return;
         }
 
         setIsLoading(true);
         try {
             await disableTwoFA(verificationCode);
-            SimpleToast.show('2FA disabled successfully', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.disable_2fa.disabled_toast, SimpleToast.SHORT);
             dispatchGoBack();
         } catch (error: any) {
             console.error('Error disabling 2FA:', error);
-            SimpleToast.show(error?.message || 'Invalid code. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(error?.message || loc.cypherbox.account.common.invalid_code_retry, SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
         }
@@ -35,15 +36,15 @@ export default function DisableTwoFA() {
         <ScreenLayout showToolbar>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <GradientText>Disable 2FA</GradientText>
+                    <GradientText>{loc.cypherbox.account.disable_2fa.title}</GradientText>
                     <View style={styles.space} />
                     
                     <Text h4 style={styles.warningText}>
-                        ⚠️ Warning: Disabling two-factor authentication will make your account less secure.
+                        {loc.cypherbox.account.disable_2fa.warning}
                     </Text>
 
                     <Text style={styles.description}>
-                        Enter the 6-digit code from your authenticator app to disable 2FA.
+                        {loc.cypherbox.account.disable_2fa.desc}
                     </Text>
 
                     <GradientCard style={{ width: '100%' }} colors_={[colors.gray.thin, colors.gray.thin2]}>
@@ -54,19 +55,19 @@ export default function DisableTwoFA() {
                             keyboardType="numeric"
                             maxLength={6}
                             placeholder="000000"
-                            label="Authentication Code"
+                            label={loc.cypherbox.account.common.authentication_code}
                         />
                     </GradientCard>
 
                     <View style={styles.extra} />
                     <GradientButton 
-                        title="Disable 2FA" 
+                        title={loc.cypherbox.account.disable_2fa.title} 
                         disabled={verificationCode.length !== 6 || isLoading}
                         onPress={handleDisable}
                     />
                     <View style={styles.extra} />
                     <GradientButton 
-                        title="Cancel" 
+                        title={loc._.cancel} 
                         onPress={dispatchGoBack}
                         colors={[colors.gray.thin, colors.gray.thin2]}
                     />

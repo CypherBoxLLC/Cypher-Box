@@ -8,6 +8,7 @@ import { colors } from "@Cypher/style-guide";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchGoBack } from "@Cypher/helpers";
 import { getOTPsecret, enableTwoFA } from "@Cypher/api/coinOSApis";
+import loc from "../../../../loc";
 
 export default function EnableTwoFA() {
     const [otpSecret, setOtpSecret] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export default function EnableTwoFA() {
             setUsername(data.username);
         } catch (error: any) {
             console.error('Error loading OTP secret:', error);
-            SimpleToast.show(error?.message || 'Failed to load 2FA setup. Please try again.', SimpleToast.LONG);
+            SimpleToast.show(error?.message || loc.cypherbox.account.enable_2fa.load_failed, SimpleToast.LONG);
             dispatchGoBack();
         } finally {
             setIsLoading(false);
@@ -37,18 +38,18 @@ export default function EnableTwoFA() {
 
     const handleEnable = async () => {
         if (verificationCode.length !== 6) {
-            SimpleToast.show('Please enter a valid 6-digit code', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.valid_6_digit_code, SimpleToast.SHORT);
             return;
         }
 
         setIsLoading(true);
         try {
             await enableTwoFA(verificationCode);
-            SimpleToast.show('2FA enabled successfully!', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.enable_2fa.enabled_toast, SimpleToast.SHORT);
             dispatchGoBack();
         } catch (error: any) {
             console.error('Error enabling 2FA:', error);
-            SimpleToast.show(error?.message || 'Invalid code. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(error?.message || loc.cypherbox.account.common.invalid_code_retry, SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
         }
@@ -64,34 +65,34 @@ export default function EnableTwoFA() {
             <ScreenLayout showToolbar>
                 <View style={styles.container}>
                     <View style={styles.innerView}>
-                        <GradientText>Enable Two-Factor Authentication</GradientText>
+                        <GradientText>{loc.cypherbox.account.enable_2fa.title}</GradientText>
                         <View style={styles.space} />
                         
                         <Text h4 style={styles.description}>
-                            Add an extra layer of security to your CoinOS account using an authenticator app like Google Authenticator, Authy, or 1Password.
+                            {loc.cypherbox.account.enable_2fa.intro_desc}
                         </Text>
 
                         <View style={styles.featureList}>
                             <Text style={styles.featureItem}>
-                                📱 Requires a 6-digit code from your device
+                                {loc.cypherbox.account.enable_2fa.feature_code}
                             </Text>
                             <Text style={styles.featureItem}>
-                                🔒 Protects your account even if password is compromised
+                                {loc.cypherbox.account.enable_2fa.feature_protects}
                             </Text>
                             <Text style={styles.featureItem}>
-                                ⚠️ Keep your backup codes safe
+                                {loc.cypherbox.account.enable_2fa.feature_backup}
                             </Text>
                         </View>
 
                         <View style={styles.extra} />
                         <GradientButton 
-                            title="Get Started" 
+                            title={loc.cypherbox.account.enable_2fa.get_started} 
                             disabled={isLoading}
                             onPress={() => setStep('scan')} 
                         />
                         <View style={styles.extra} />
                         <GradientButton 
-                            title="Cancel" 
+                            title={loc._.cancel} 
                             disabled={isLoading}
                             onPress={dispatchGoBack}
                             colors={[colors.gray.thin, colors.gray.thin2]}
@@ -107,11 +108,11 @@ export default function EnableTwoFA() {
             <ScreenLayout showToolbar>
                 <View style={styles.container}>
                     <View style={styles.innerView}>
-                        <GradientText>Scan QR Code</GradientText>
+                        <GradientText>{loc.cypherbox.account.enable_2fa.scan_title}</GradientText>
                         <View style={styles.space} />
                         
                         <Text h4 style={styles.description}>
-                            Scan this QR code with your authenticator app, or enter the secret key manually.
+                            {loc.cypherbox.account.enable_2fa.scan_desc}
                         </Text>
 
                         {otpSecret && (
@@ -126,18 +127,18 @@ export default function EnableTwoFA() {
                         )}
 
                         <GradientCard style={{ width: '100%' }} colors_={[colors.gray.thin, colors.gray.thin2]}>
-                            <Text style={styles.secretLabel}>Or enter manually:</Text>
+                            <Text style={styles.secretLabel}>{loc.cypherbox.account.enable_2fa.enter_manually}</Text>
                             <Text style={styles.secretText}>{otpSecret}</Text>
                         </GradientCard>
 
                         <View style={styles.extra} />
                         <GradientButton 
-                            title="Next" 
+                            title={loc.cypherbox.account.common.next} 
                             onPress={() => setStep('verify')} 
                         />
                         <View style={styles.extra} />
                         <GradientButton 
-                            title="Back" 
+                            title={loc.cypherbox.account.common.back} 
                             onPress={() => setStep('intro')}
                             colors={[colors.gray.thin, colors.gray.thin2]}
                         />
@@ -152,11 +153,11 @@ export default function EnableTwoFA() {
         <ScreenLayout showToolbar>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <GradientText>Verify Setup</GradientText>
+                    <GradientText>{loc.cypherbox.account.enable_2fa.verify_title}</GradientText>
                     <View style={styles.space} />
                     
                     <Text h4 style={styles.description}>
-                        Enter the 6-digit code from your authenticator app to verify everything is working.
+                        {loc.cypherbox.account.enable_2fa.verify_desc}
                     </Text>
 
                     <GradientCard style={{ width: '100%' }} colors_={verificationCode ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}>
@@ -167,19 +168,19 @@ export default function EnableTwoFA() {
                             keyboardType="numeric"
                             maxLength={6}
                             placeholder="000000"
-                            label="Authentication Code"
+                            label={loc.cypherbox.account.common.authentication_code}
                         />
                     </GradientCard>
 
                     <View style={styles.extra} />
                     <GradientButton 
-                        title="Enable 2FA" 
+                        title={loc.cypherbox.account.enable_2fa.enable_button} 
                         disabled={verificationCode.length !== 6 || isLoading}
                         onPress={handleEnable}
                     />
                     <View style={styles.extra} />
                     <GradientButton 
-                        title="Back" 
+                        title={loc.cypherbox.account.common.back} 
                         onPress={() => setStep('scan')}
                         colors={[colors.gray.thin, colors.gray.thin2]}
                     />

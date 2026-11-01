@@ -25,6 +25,7 @@ import accountStyles from "@Cypher/components/CheckingAccount/styles";
 import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
 import Ionicons from "react-native-vector-icons/Ionicons";
+import loc from "../../../loc";
 
 const config = {
     id: 'strike',
@@ -192,7 +193,7 @@ export default function CheckingAccountLogin() {
       if (responseJSON.success) {
         return responseJSON.data;
       } else {
-        SimpleToast.show('Strike authentication failed.', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.account.checking_login.strike_auth_failed, SimpleToast.SHORT);
         return null;
       }
     } catch (error) {
@@ -218,7 +219,7 @@ export default function CheckingAccountLogin() {
       <ScreenLayout showToolbar>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.white} />
-          <Text style={styles.loadingText}>Logging in to Strike...</Text>
+          <Text style={styles.loadingText}>{loc.cypherbox.account.checking_login.logging_in_strike}</Text>
         </View>
       </ScreenLayout>
     );
@@ -238,24 +239,22 @@ export default function CheckingAccountLogin() {
   return (
       <ScreenLayout showToolbar>
       <View style={styles.container}>
-        <HeaderWithLine title="Add a Lightning Wallet" titleColor="#FFFFFF" />
+        <HeaderWithLine title={loc.cypherbox.account.checking_login.title} titleColor="#FFFFFF" />
         <View style={styles.content}>
           <Text style={styles.intro}>
-            Pick a provider to power Lightning send/receive. Custodial accounts
-            hold your bitcoin with a third party, while non-custodial wallets
-            let you have full control over your keys and funds.
+            {loc.cypherbox.account.checking_login.intro}
           </Text>
 
           {showArk && (
             <>
               <View style={styles.sectionHeader}>
                 <Text bold style={[styles.sectionTitle, styles.sectionTitleAccent]}>
-                  NON-CUSTODIAL  ·  LIGHTNING-ENABLED
+                  {loc.cypherbox.account.checking_login.non_custodial_header}
                 </Text>
                 <View style={[styles.sectionDivider, styles.sectionDividerArk]} />
               </View>
               <Text style={styles.sectionSubtitle}>
-                Create a self-custodial wallet. Keys under your full control.
+                {loc.cypherbox.account.checking_login.non_custodial_subtitle}
               </Text>
 
               {/* Ark (Second.tech) — gated behind FEATURE_ARK_ENABLED until
@@ -267,7 +266,7 @@ export default function CheckingAccountLogin() {
                   tab and home Card use, so the brand is consistent. */}
               <View style={accountStyles.providerRow}>
                 <LoginOption
-                  label="Create Bark Vault"
+                  label={loc.cypherbox.account.checking_login.create_bark_vault}
                   labelColor={colors.white}
                   iconPrefixIonicon="boat-outline"
                   iconPrefixTint={colors.white}
@@ -276,7 +275,7 @@ export default function CheckingAccountLogin() {
                   containerStyle={accountStyles.loginOptionContainerInRow}
                 />
                 <CreateButton
-                  label="Recover"
+                  label={loc.cypherbox.account.checking_login.recover}
                   accentColor={colors.ark.light}
                   onPress={handleArkRecover}
                 />
@@ -293,10 +292,10 @@ export default function CheckingAccountLogin() {
                   style={accountStyles.experimentalIcon}
                 />
                 <Text style={accountStyles.experimentalText}>
-                  Experimental technology. Use at your own risk.{' '}
+                  {loc.cypherbox.account.checking_login.experimental_warning}{' '}
                 </Text>
                 <TouchableOpacity onPress={openArkInfo} activeOpacity={0.7}>
-                  <Text bold style={accountStyles.experimentalLink}>Learn more</Text>
+                  <Text bold style={accountStyles.experimentalLink}>{loc.cypherbox.account.checking_login.learn_more}</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -305,7 +304,7 @@ export default function CheckingAccountLogin() {
           {showCustodial && (
             <>
               <View style={styles.sectionHeader}>
-                <Text bold style={styles.sectionTitle}>CUSTODIAL  ·  LIGHTNING-ENABLED</Text>
+                <Text bold style={styles.sectionTitle}>{loc.cypherbox.account.checking_login.custodial_header}</Text>
                 {/* On-demand explainer of custodial-Lightning trust
                     assumptions. Replaces the prior one-time
                     CheckingAccountIntro gate so users who already
@@ -316,7 +315,7 @@ export default function CheckingAccountLogin() {
                   activeOpacity={0.7}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   style={styles.helpIcon}
-                  accessibilityLabel="Learn about custodial Lightning"
+                  accessibilityLabel={loc.cypherbox.account.checking_login.custodial_info_a11y}
                   accessibilityRole="button"
                 >
                   <Ionicons name="help-circle-outline" size={16} color={colors.white} />
@@ -325,8 +324,7 @@ export default function CheckingAccountLogin() {
               </View>
               {(showStrikeRow || showCoinosRow) && (
                 <Text style={styles.sectionSubtitle}>
-                  Sign in to an existing Lightning account. Or create an account
-                  on provider's website and come back again to Cypher Box and login!
+                  {loc.cypherbox.account.checking_login.custodial_subtitle}
                 </Text>
               )}
 
@@ -337,7 +335,7 @@ export default function CheckingAccountLogin() {
                    and links to Strike's signup page. */
                 <View style={accountStyles.providerRow}>
                   <LoginOption
-                    label="Login to"
+                    label={loc.cypherbox.account.checking_login.login_to}
                     logo={require("@Cypher/assets/images/strike.png")}
                     onPress={handleStrikeLogin}
                     containerStyle={accountStyles.loginOptionContainerInRow}
@@ -347,16 +345,13 @@ export default function CheckingAccountLogin() {
               )}
               {showStrikeNotice && (
                 <Text style={styles.regionNotice}>
-                  Strike is not available in Cypher Box in your region. If
-                  Strike serves your country, you can use the Strike app
-                  directly, and pay to or from Cypher Box with a Lightning
-                  invoice or a bitcoin address.
+                  {loc.cypherbox.account.checking_login.strike_region_notice}
                 </Text>
               )}
               {showCoinosRow && (
                 <View style={accountStyles.providerRow}>
                   <LoginOption
-                    label="Login to"
+                    label={loc.cypherbox.account.checking_login.login_to}
                     logo={require("@Cypher/assets/images/coinos.png")}
                     onPress={handleCoinosLogin}
                     containerStyle={accountStyles.loginOptionContainerInRow}
@@ -370,9 +365,7 @@ export default function CheckingAccountLogin() {
                    previous gate just dropped it, which reads as a bug and
                    generates support mail. */
                 <Text style={styles.regionNotice}>
-                  CoinOS is not available in your region. You can use it
-                  directly at coinos.io, and pay to or from Cypher Box with a
-                  Lightning invoice or a bitcoin address.
+                  {loc.cypherbox.account.checking_login.coinos_region_notice}
                 </Text>
               )}
             </>

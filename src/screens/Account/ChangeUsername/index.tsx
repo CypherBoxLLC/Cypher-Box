@@ -9,6 +9,7 @@ import { getMe, updateUserName } from "@Cypher/api/coinOSApis";
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { emailRegex } from "@Cypher/helpers/regex";
+import loc from "../../../../loc";
 
 export default function ChangeUsername({navigation, route}: any) {
     const username = route?.params?.username;
@@ -25,11 +26,11 @@ export default function ChangeUsername({navigation, route}: any) {
     const nextClickHandler = async () => {
         setIsLoading(true);
         if (email == "") {
-            SimpleToast.show("Please enter your username", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.enter_username, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         } else if (!validateEmail(email)) {
-            SimpleToast.show('Please enter a valid email address.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.valid_email, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         } 
@@ -44,7 +45,7 @@ export default function ChangeUsername({navigation, route}: any) {
             if (response && response !== 'Username taken' && response?.startsWith('{')) {
                 const jsonResponse = JSON.parse(response);
                 if(jsonResponse.ok){
-                    SimpleToast.show("⚠️ Please verify your email now because the the verification link will expire soon!", SimpleToast.SHORT);    
+                    SimpleToast.show(loc.cypherbox.account.change_username.verify_email_toast, SimpleToast.SHORT);    
                     if(goBack){
                         navigation.goBack();
                     } else {
@@ -66,20 +67,20 @@ export default function ChangeUsername({navigation, route}: any) {
         <ScreenLayout disableScroll showToolbar progress={username ? 1 : undefined} isBackButton={username ? false : true}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <GradientText>Recovery Email</GradientText>
+                    <GradientText>{loc.cypherbox.account.change_username.recovery_email}</GradientText>
                     <View style={styles.space} />
-                    <Text bold center style={{ fontSize: 18, lineHeight: 30, marginBottom: 20 }}>For password resets and payment notifications only.</Text>
+                    <Text bold center style={{ fontSize: 18, lineHeight: 30, marginBottom: 20 }}>{loc.cypherbox.account.change_username.recovery_email_desc}</Text>
                     <GradientCard style={{width: '100%'}} colors_={email ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}>
                         <Input onChange={setEmail}
                             value={email}
                             style={styles.textInput}
                             // keyboardType="email-address"
-                            label="Email"
+                            label={loc.cypherbox.account.common.email}
                         />
                     </GradientCard>
                     <View style={styles.extra} />
                 </View>
-                <GradientButton title="Set Recovery Email" disabled={!email.length || isLoading} onPress={nextClickHandler} />
+                <GradientButton title={loc.cypherbox.account.change_username.set_recovery_email} disabled={!email.length || isLoading} onPress={nextClickHandler} />
             </View>
         </ScreenLayout>
     )

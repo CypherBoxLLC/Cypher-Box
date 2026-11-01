@@ -7,6 +7,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { colors, heights } from "@Cypher/style-guide";
 import LinearGradient from "react-native-linear-gradient";
 import { dispatchReset } from "@Cypher/helpers/navigation";
+import loc from "../../../../loc";
 
 export default function AccountStatus() {
 
@@ -19,11 +20,11 @@ export default function AccountStatus() {
         <ScreenLayout disableScroll progress={2}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <GradientText>Lightning Account Created!</GradientText>
+                    <GradientText>{loc.cypherbox.account.common.lightning_account_created}</GradientText>
                     <GradientCardWithShadow colors_={[colors.gray.dark, colors.gray.dark]} style={styles.linearGradient} disabled linearStyle={styles.height} shadowStyleTop={styles.top} shadowStyleBottom={styles.bottom}>
                         <View style={styles.view}>
                             <Text h2 bold style={styles.check}>
-                                Lightning Account
+                                {loc.cypherbox.account.common.lightning_account}
                             </Text>
                             <Image
                                 source={CoinOSSmall}
@@ -44,10 +45,10 @@ export default function AccountStatus() {
                             </Shadow> */}
                         </LinearGradient>
                     </GradientCardWithShadow>
-                    <Text h4 style={styles.description}>Your Lightning Account has been created. The interactive bar display helps you in visualizing your Lightning Account's balance, indicating a threshold above which storing bitcoin in a bank carries increased counter-party risk.{'\n'}{'\n'}
-                        You can deposit money beyond the threshold, but remember, you are technically not the owner of it; you are relying on a third-party custodian. Cypher Box will enable you to become the sole owner of your money once you max out the bar slot (set to 2.1 million sats by default but you can adjust it in the settings).</Text>
+                    <Text h4 style={styles.description}>{loc.cypherbox.account.account_status.desc_1}{'\n'}{'\n'}
+                        {loc.cypherbox.account.account_status.desc_2}</Text>
                 </View>
-                <GradientButton title="Home" onPress={nextClickHandler} />
+                <GradientButton title={loc.cypherbox.account.common.home} onPress={nextClickHandler} />
             </View>
         </ScreenLayout>
     )
