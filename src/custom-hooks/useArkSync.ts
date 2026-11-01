@@ -53,6 +53,7 @@ import { processArkMovementsForActivity } from '@Cypher/services/ark/movementsAc
 // Imported from the file path directly (not the @Cypher/services/ark
 // barrel) — the barrel doesn't re-export the expiry module.
 import { formatBlocksUntil } from '@Cypher/services/ark/expiry';
+import loc from '../../loc';
 // Also not re-exported through the barrel.
 import { shouldRescheduleExpiryWarning } from '@Cypher/services/ark/chainTipFreshness';
 import useAuthStore from '@Cypher/stores/authStore';
@@ -1716,13 +1717,9 @@ export default function useArkSync(): UseArkSync {
                     'minBlocks=', minBlocksAnySpendable,
                 );
                 Alert.alert(
-                    'Refresh keeps failing',
-                    `Your capsules expire ${formatBlocksUntil(minBlocksAnySpendable)} and your last ` +
-                    `${failStreak} refresh attempts failed. Switch networks (Wi-Fi to cellular, or ` +
-                    'cellular to Wi-Fi) and refresh again. If refresh still fails, use ' +
-                    'Settings → Emergency Exit to move your funds on-chain before they expire. ' +
-                    'Once a capsule expires, recovery is not guaranteed.',
-                    [{ text: 'OK' }],
+                    loc.cypherbox.services.ark_sync.refresh_failing_title,
+                    String(loc.formatString(loc.cypherbox.services.ark_sync.refresh_failing_body, { when: formatBlocksUntil(minBlocksAnySpendable), count: failStreak })),
+                    [{ text: loc._.ok }],
                 );
             }
 

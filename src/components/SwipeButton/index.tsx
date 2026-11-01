@@ -31,6 +31,7 @@ import Animated, {
 import { useState } from 'react';
 import { widths } from '@Cypher/style-guide';
 import GradientCard from '../GradientCard';
+import loc from '../../../loc';
 
 const BUTTON_WIDTH = widths - 40;
 const BUTTON_HEIGHT = 48;
@@ -62,7 +63,7 @@ const ShimmerText = ({ text, shimmer }: { text: string; shimmer: Animated.Shared
     return <Animated.Text style={[styles.swipeText, shimmerStyle]}>{text}</Animated.Text>;
 };
 
-const SwipeButton = forwardRef(({ onToggle, isLoading, title = "Slide to Send" }: {title: string, onToggle: Function, isLoading: boolean}, ref) => {
+const SwipeButton = forwardRef(({ onToggle, isLoading, title = loc.cypherbox.components.swipe_button.slide_to_send }: {title: string, onToggle: Function, isLoading: boolean}, ref) => {
     // Animated value for X translation
     const X = useSharedValue(0);
     // Shimmer animation
@@ -195,7 +196,7 @@ const SwipeButton = forwardRef(({ onToggle, isLoading, title = "Slide to Send" }
                 <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'center'}}>
                     <ActivityIndicator size="small" color="black" />
                     <Text style={[styles.swipeText, {marginLeft: 10}]}>
-                        Please wait
+                        {loc.cypherbox.components.swipe_button.please_wait}
                     </Text>
                 </View>
             :

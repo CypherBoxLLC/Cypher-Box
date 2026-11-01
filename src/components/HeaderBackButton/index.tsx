@@ -8,6 +8,7 @@ import { colors } from '@Cypher/style-guide';
 import styles from './styles';
 // import RoundedIcon from '../RoundedIcon';
 import { Back } from '@Cypher/assets/images';
+import loc from '../../../loc';
 
 type Props = StackHeaderLeftButtonProps;
 
@@ -31,7 +32,7 @@ export default function HeaderBackButton({ onPress }: Props) {
   return (
     <TouchableOpacity
       testID={'backbutton'}
-      accessibilityLabel={'backbutton'}
+      accessibilityLabel={loc.cypherbox.components.header_back_button.back_a11y}
       onPress={onPressHeaderBackButton}
       activeOpacity={0.5}
       style={styles.headerBackButton}>

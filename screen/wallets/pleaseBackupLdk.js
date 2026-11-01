@@ -55,7 +55,7 @@ const PleaseBackupLdk = () => {
     <SafeArea style={styles.root}>
       <ScrollView centerContent contentContainerStyle={styles.scrollViewContent}>
         <View>
-          <BlueTextCentered>Please save this wallet backup. It allows you to restore all your channels on other device.</BlueTextCentered>
+          <BlueTextCentered>{loc.cypherbox.legacy.please_backup_ldk.message}</BlueTextCentered>
           <BlueSpacing20 />
         </View>
         <BlueSpacing20 />

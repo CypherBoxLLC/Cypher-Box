@@ -2646,6 +2646,420 @@
         "kept_for_exit_fees": "Kept on-chain for exit fees.",
         "leave_as_exit_fees": "Leave on-chain funds as exit fees"
       }
+    },
+    "services": {
+      "exit_funding_sources": {
+        "not_connected": "Not connected",
+        "balance_below": "Balance below {amount} sats",
+        "no_vault_on_device": "No vault on this device",
+        "no_spendable_capsules": "No spendable capsules",
+        "hot_vault": "Hot Vault",
+        "cold_vault": "Cold Vault"
+      },
+      "coinos_api": {
+        "invalid_credentials": "Invalid username or password",
+        "too_many_attempts": "Too many login attempts. Please wait and try again later.",
+        "temporarily_unavailable": "Coinos is temporarily unavailable. Please try again in a moment.",
+        "login_failed_status": "Login failed with status {status}",
+        "auth_prompt_refresh_session": "Authenticate to refresh CoinOS session",
+        "cannot_send_to_self": "Cannot send to self",
+        "invalid_lnurl_pay_response": "Invalid LNURL-Pay response",
+        "withdrawal_may_have_been_sent": "This withdrawal may already have been sent. Check your CoinOS history before trying again.",
+        "authorization_expired": "Authorization expired. Please login again to continue",
+        "pin_required": "PIN required. Please set a PIN in your CoinOS account first.",
+        "otp_secret_failed": "Failed to get OTP secret: {status}",
+        "invalid_totp": "Invalid TOTP code. Please try again.",
+        "enable_2fa_failed": "Failed to enable 2FA: {error}",
+        "disable_2fa_failed": "Failed to disable 2FA: {error}",
+        "captcha_failed": "Captcha verification failed. Please try again.",
+        "invalid_2fa": "Invalid 2FA code. Please try again.",
+        "verify_2fa_failed": "2FA verification failed: {error}"
+      },
+      "strike_api": {
+        "authorization_expired": "Authorization expired. Please login again to continue",
+        "not_logged_in": "Strike not logged in. Please log into Strike first.",
+        "session_expired": "Strike session expired. Please log into Strike again."
+      },
+      "vtxo_spend_state": {
+        "spent_title": "Those sats are already gone",
+        "spent_body": "The Ark server reports this capsule as already spent, so the balance shown was out of date. Your wallet has been corrected. This happens when the same seed phrase is used on another device, or after restoring an old backup file.",
+        "unregistered_title": "A capsule is stuck",
+        "unregistered_body": "One of your capsules is in a state the Ark server won't spend, so payments from Bark Vault keep failing. Try sending from a different wallet for now.",
+        "unclaimed_title": "A capsule is not ready yet",
+        "unclaimed_body": "One of your capsules is still being finalised by the Ark server and cannot be spent yet. Wait a few minutes and try again.",
+        "default_title": "That capsule cannot be spent",
+        "default_body": "The Ark server refused to spend one of your capsules. Try again in a few minutes, or send from a different wallet."
+      },
+      "background_notifications": {
+        "channel_name": "Lightning capsule reminders",
+        "channel_description": "Reminders to refresh your lightning capsules (VTXOs) before they expire.",
+        "auto_refresh_trouble_title": "Auto-refresh trouble",
+        "auto_refresh_trouble_body": "Couldn't auto-refresh. Tap to refresh manually.",
+        "fee_high_title": "Refresh fee unusually high",
+        "fee_high_body": "Estimated {fee} sats (limit {max}). Open Cypher Box to review.",
+        "subject_vault_balance": "your Bark Vault balance",
+        "body_urgent": "Tap to refresh. Refresh takes up to 3 hours.",
+        "body_sats_lost": "Tap to refresh, or these sats may be lost.",
+        "body_funds_lost": "Tap to refresh, or these funds may be lost.",
+        "left_to_refresh_title": "{time} left to refresh {subject}{suffix}",
+        "label_7_days": "7 days",
+        "label_4_days": "4 days",
+        "label_2_days": "2 days",
+        "label_24_hours": "24 hours",
+        "label_12_hours": "12 hours",
+        "label_6_hours": "6 hours",
+        "label_3_hours": "3 hours",
+        "stuck_move_out_title": "Refresh stuck: move {subject} out{suffix}",
+        "stuck_left_before_expiry": "{time} left before expiry. Tap to move your funds to another wallet.",
+        "exit_ready_title": "Your exit is ready to finish",
+        "exit_ready_body_sats": "Open Cypher Box to collect {amount} sats to your Bitcoin wallet.",
+        "exit_ready_body": "Open Cypher Box to collect your funds to your Bitcoin wallet.",
+        "dust_uneconomic_title": "Tiny capsules at risk",
+        "dust_uneconomic_body_one": "{count} capsule totalling {total} sats will expire. The refresh fee ({fee} sats) exceeds their value.",
+        "dust_uneconomic_body_other": "{count} capsules totalling {total} sats will expire. The refresh fee ({fee} sats) exceeds their value.",
+        "dust_stranded_title": "Spend your tiny capsules",
+        "dust_stranded_body_one": "{count} capsule totalling {total} sats is below the {min}-sat refresh minimum, so it can't auto-refresh. Spend it in a payment before it expires.",
+        "dust_stranded_body_other": "{count} capsules totalling {total} sats are below the {min}-sat refresh minimum, so they can't auto-refresh. Spend them in a payment before they expire.",
+        "received_title": "Payment received",
+        "received_body_sats": "You received {amount} sats in your Bark Vault.",
+        "received_body": "You received a payment in your Bark Vault.",
+        "capsule_count_one": "{count} capsule",
+        "capsule_count_other": "{count} capsules",
+        "your_capsules": "Your capsules",
+        "refresh_complete_title": "Refresh complete",
+        "refresh_complete_body": "{subject} refreshed successfully. Fresh expiry is locked in.",
+        "refresh_reminder_title": "Refresh should be done",
+        "refresh_reminder_body": "{subject} were refreshing. Tap to check they went through.",
+        "stuck_refresh_title": "Refresh stuck",
+        "stuck_refresh_body": "A capsule refresh got stuck{amount}. Open Cypher Box to recover it."
+      },
+      "arkoor_receive": {
+        "less_than_hour": "less than an hour",
+        "time_days_hours": "{days}d {hours}h",
+        "time_hours": "{hours}h",
+        "these_sats": "these sats",
+        "received_refreshing": "Received {amount} sats. Refreshing now so they are yours to exit, not the server's.",
+        "safe_and_spendable": "These sats are safe and spendable. You can refresh them from Capsules.",
+        "received_combining": "Received {amount}. Combining your small capsules to keep them longer.",
+        "reason_too_small": "too small to refresh on its own",
+        "reason_not_refreshable": "not refreshable on its own right now",
+        "notice_within": "Received {amount}, {reason}. Spend them in a payment within {time}.",
+        "notice_before_expiry": "Received {amount}, {reason}. Spend them in a payment before they expire."
+      },
+      "expiry": {
+        "now": "now",
+        "shortly": "shortly",
+        "soon": "soon",
+        "in_about_hours": "in about {hours} hours",
+        "in_about_days": "in about {days} days",
+        "in_hours_short": "in ~{hours}h",
+        "in_days_short": "in ~{days}d"
+      },
+      "ark_sync": {
+        "refresh_failing_title": "Refresh keeps failing",
+        "refresh_failing_body": "Your capsules expire {when} and your last {count} refresh attempts failed. Switch networks (Wi-Fi to cellular, or cellular to Wi-Fi) and refresh again. If refresh still fails, use Settings → Emergency Exit to move your funds on-chain before they expire. Once a capsule expires, recovery is not guaranteed."
+      },
+      "helpers": {
+        "cannot_open_url": "Don't know how to open this URL: {url}"
+      },
+      "ark_history": {
+        "received": "Received",
+        "sent": "Sent",
+        "via_lightning": "via Lightning",
+        "via_ark": "via Ark",
+        "onchain": "on-chain",
+        "boarded_to_ark": "boarded to Ark",
+        "exit_to_onchain": "exit to on-chain",
+        "ark_refresh": "Ark refresh",
+        "capsule_refresh": "Capsule refresh",
+        "pending_prefix": "Pending: {body}",
+        "failed_prefix": "Failed: {body}",
+        "canceled_prefix": "Canceled: {body}"
+      },
+      "exit_funding": {
+        "already_funded": "The exit-fee reserve is already funded.",
+        "not_enough_for_fee": "Not enough to cover the {fee} sat network fee and a useful top-up.",
+        "balance_too_small": "Balance is too small to be worth sending.",
+        "no_reserve_address": "Could not get the on-chain address for the fee reserve.",
+        "duplicate_top_up": "A matching top-up already went out a moment ago. Check your CoinOS history rather than sending again.",
+        "top_up_may_have_been_sent": "This top-up may already have been sent. Check your CoinOS history before trying again.",
+        "top_up_failed": "The top-up could not be sent."
+      },
+      "ark_lightning": {
+        "cancel_failed": "Cancel failed; try again or wait for the next sync.",
+        "wallet_not_open": "Ark wallet not open",
+        "cancel_in_flight": "Payment is already in flight, so it can't be cancelled.",
+        "cancel_already_settled": "Receive already settled, so there is nothing to cancel.",
+        "cancel_connection_dropped": "The connection dropped, so this may or may not have been cancelled. Check again in a moment."
+      },
+      "ark_refresh": {
+        "already_in_progress": "A refresh is already in progress. Wait for it to finish before starting another."
+      },
+      "ark_send": {
+        "cannot_estimate_unknown_dest": "Cannot estimate fee for an unrecognised destination",
+        "cannot_send_unknown_dest": "Cannot send to an unrecognised destination",
+        "payment_in_flight": "This payment may still be in flight. Do not send it again: wait for your balance to settle, or confirm with the recipient before retrying.",
+        "ln_failed_refunded": "Lightning payment failed after several attempts and was refunded. Your Ark funds are safe, nothing was sent.",
+        "dest_ln_invoice": "Lightning invoice",
+        "dest_ln_offer": "Lightning offer",
+        "dest_ln_address": "Lightning address",
+        "dest_ark": "Ark address",
+        "dest_onchain": "Bitcoin on-chain address",
+        "dest_unknown": "Unknown destination"
+      },
+      "ark_exit": {
+        "destination_required": "Destination address is required",
+        "exit_in_progress": "Emergency Exit is in progress. Sending from the Bark vault is disabled until the exit completes on-chain.",
+        "vault_not_open": "The vault is not open yet. It needs a connection to open, so check yours and reopen the vault, then try again.",
+        "no_capsules_exitable": "No capsules can be exited right now.",
+        "vault_could_not_open": "The vault could not be opened. It needs a connection, so check yours, or switch between Wi-Fi and mobile data, then try again."
+      },
+      "network_fault": {
+        "chain_source": "Can't reach the Bitcoin network data provider. If you're on Wi-Fi, try mobile data, then try again.",
+        "chain_source_rate_limited": "The Bitcoin network data provider is limiting how many requests this connection can make. Nothing is wrong with your wallet. It clears within the hour, or switch networks to get a different address.",
+        "ark_server": "The Ark server is not responding right now. Your funds are safe, and an emergency exit does not need this server.",
+        "unknown_error": "unknown error"
+      },
+      "indeterminate": {
+        "connection_dropped": "The connection dropped, so this {what} may already have gone through. Check your balance and your transaction history before trying again.",
+        "what_payment": "payment",
+        "what_withdrawal": "withdrawal",
+        "what_claim": "claim",
+        "what_transfer": "transfer",
+        "what_conversion": "conversion",
+        "what_release": "release"
+      },
+      "ark_reset": {
+        "delete_failed": "Could not delete the Ark wallet data, so the seed was kept to avoid leaving wallet data on this device with no way to open it. Nothing was deleted. Close the app and try again."
+      },
+      "ark_recover": {
+        "no_address": "No Bitcoin address to recover to.",
+        "too_small": "Too small to recover. The network fee is larger than the stuck amount."
+      },
+      "exit_phase": {
+        "under_a_minute": "under a minute",
+        "about_min": "about {mins} min",
+        "about_hours": "about {hours} hours",
+        "about_days": "about {days} days",
+        "ready_headline_one": "Ready to collect. {count} capsule is past the timelock.",
+        "ready_headline_other": "Ready to collect. {count} capsules are past the timelock.",
+        "ready_detail_together": "Collecting together with {count} still finishing, so it arrives as one payment. Keep the app open.",
+        "ready_detail": "Keep the app open while it sends.",
+        "publishing_progress": "{inFlight} of {total} published, waiting on a confirmation.",
+        "publishing_also_waiting_one": "{count} capsule is already through and waiting out the timelock.",
+        "publishing_also_waiting_other": "{count} capsules are already through and waiting out the timelock.",
+        "publishing_headline_one": "Publishing exit transactions for {count} capsule.",
+        "publishing_headline_other": "Publishing exit transactions for {count} capsules.",
+        "publishing_detail_tail": "Each step needs a confirmation before the next can go, so this is slow. Keep the app open.",
+        "waiting_published_one": "{count} capsule is published and waiting out the timelock.",
+        "waiting_published_other": "{count} capsules are published and waiting out the timelock.",
+        "waiting_no_chain": "Cannot reach a chain source to check the countdown. Try cellular if you are on wifi.",
+        "waiting_timelock_passed": "The timelock has passed. Collecting on the next check.",
+        "waiting_blocks_to_go_one": "{count} block to go, {duration}.",
+        "waiting_blocks_to_go_other": "{count} blocks to go, {duration}.",
+        "waiting_close_app": "You can close the app. We will tell you when it is ready to collect.",
+        "settling_headline": "Checking the exit status."
+      },
+      "exit_triage": {
+        "note_expiry_unknown": "could not check how close it is to expiry",
+        "note_beyond_depth_cap": "past the server depth cap, so it can only be exited or refreshed",
+        "note_under_water": "costs more in fees than it returns",
+        "note_see_details": "see details",
+        "exclusion_no_exit_chain": "no exit chain available",
+        "exclusion_too_close_to_expiry": "too close to expiry to exit safely",
+        "exclusion_refresh_before_exiting": "expiring soon, refresh it instead of exiting it",
+        "exclusion_returns_nothing": "network fee is more than it holds",
+        "exclusion_fees_dwarf_value": "costs far more in fees than it holds",
+        "exclusion_default": "cannot be exited"
+      },
+      "ark_backup": {
+        "not_valid_json": "That backup file is not valid JSON. Is it the right file?",
+        "seed_mismatch": "Decryption produced nothing. That seed does not match this backup.",
+        "manifest_corrupted": "The decrypted manifest is not valid JSON. The backup may be corrupted."
+      },
+      "google_drive": {
+        "auth_not_configured": "Google Drive isn't authorized for this build (the app's signing certificate isn't registered with Google). Save the backup file manually below, then continue.",
+        "auth_cancelled": "Google Drive sign-in was cancelled. Tap Connect again to retry, or save the backup file manually.",
+        "auth_token_missing": "Google Drive session expired. Tap Connect again to sign in.",
+        "network": "Couldn't reach Google Drive. Check your internet connection and retry, or save the backup file manually.",
+        "quota": "Google Drive rejected the upload (quota or permission). Save the backup file manually instead.",
+        "server": "Google Drive is having issues right now. Retry in a moment, or save the backup file manually.",
+        "unknown": "Google Drive backup failed. Save the backup file manually below.",
+        "access_expired": "Google Drive access has expired. Reconnect Google Drive and try again."
+      },
+      "saf_backup": {
+        "permission_revoked": "Cypher Box no longer has permission to write to your chosen backup folder. Tap 'Pick folder' to re-grant access.",
+        "folder_unreachable": "The backup folder is no longer reachable (it may have been deleted, moved, or the storage was removed). Tap 'Pick folder' to choose a new one.",
+        "create_failed": "Couldn't create the backup file in the chosen folder. The folder may be read-only, so pick a different one.",
+        "write_failed": "Couldn't write the backup to the chosen folder. The storage may be full or read-only, so pick a different folder.",
+        "native_not_loaded": "Local-folder backup is not available on this build.",
+        "unknown": "Couldn't save the backup to the chosen folder. Try picking a different folder, or use the share-sheet save below."
+      },
+      "lightning_swap": {
+        "coinos_payment_failed": "Coinos payment failed",
+        "coinos_invoice_error": "Coinos invoice error: {message}",
+        "coinos_no_invoice": "Coinos returned no invoice",
+        "coinos_pending": "Coinos didn't confirm the payment in time. It may still complete. Check your Coinos balance in a moment before retrying.",
+        "coinos_insufficient": "Coinos balance is short by {short} sats (needs {amount} + {fee} routing fee = {required}, you have {balance}). Try swapping {safe} sats.",
+        "strike_no_invoice": "Strike returned no invoice",
+        "strike_pending_unconfirmed": "Strike accepted your payment (id {id}) but it's still settling on Lightning and the app can't confirm the result. Do NOT retry. Open the Strike app to check: it will either complete or refund automatically within a few hours.",
+        "strike_pending_settling": "Strike payment {id} is still settling on Lightning. Do NOT retry. Open the Strike app to check. It will complete or refund automatically within a few hours.",
+        "ark_routing_fee": "Ark routing fee"
+      }
+    },
+    "components": {
+      "exit_funding_source_list": {
+        "covers_it": "covers it",
+        "partial": "partial",
+        "needs_signing_device": "needs your signing device"
+      },
+      "tabs": {
+        "capsules": "Capsules",
+        "account": "Account",
+        "vault": "Vault",
+        "threshold": "Threshold",
+        "history": "History",
+        "settings": "Settings"
+      },
+      "header_back_button": {
+        "back_a11y": "Back"
+      },
+      "activity_dropdown": {
+        "no_activity": "No activity yet.",
+        "show_all_a11y": "Show all activity",
+        "show_more": "Show more"
+      },
+      "card": {
+        "lightning_account": "Lightning Account",
+        "refreshing_amount": "+ Refreshing {amount}",
+        "connected": "Connected",
+        "connection_slow": "Connection slow",
+        "offline": "Offline"
+      },
+      "circular_view": {
+        "region_both_unavailable": "Strike and CoinOS are not available in Cypher Box in your region. Your balances are held by them, not by Cypher Box, and are untouched. Use the Strike app or coinos.io to access them.",
+        "region_strike_unavailable": "Strike is not available in Cypher Box in your region. Your Strike balance is held by Strike, not by Cypher Box, and is untouched. Use the Strike app to access it.",
+        "region_coinos_unavailable": "CoinOS is not available in your region. Your CoinOS balance is held by CoinOS, not by Cypher Box, and is untouched. Sign in at coinos.io to use it."
+      },
+      "coinos_wallet": {
+        "region_unavailable": "CoinOS is not available in your region. Your balance is held by CoinOS, not by Cypher Box, and it is untouched. Sign in at coinos.io to use it.",
+        "login_to_lightning_account": "Login to Your Lightning Account",
+        "no_account": "Don’t have an account?",
+        "create_on_coinos": "Create on Coinos.io"
+      },
+      "create_button": {
+        "create": "Create"
+      },
+      "custom_keyboard": {
+        "max": "MAX"
+      },
+      "lightning_send_success": {
+        "payment_sent": "Payment Sent ⚡",
+        "lightning_network": "Lightning Network",
+        "home": "Home",
+        "network_fee": "Network fee: {fee} sats",
+        "paid_to": "Paid to {destination}",
+        "from_wallet": "from {wallet}"
+      },
+      "saving_vault": {
+        "savings_vault": "Savings Vault",
+        "bitcoin_network": "Bitcoin Network"
+      },
+      "lightning_vault_create": {
+        "withdrawal_threshold": "withdrawal threshold"
+      },
+      "payment_notification": {
+        "lightning": "Lightning",
+        "hot_vault": "Hot Vault",
+        "cold_storage": "Cold Storage",
+        "received": "Received",
+        "incoming": "Incoming"
+      },
+      "private_key_generator": {
+        "tap_to_reveal": "Tap to reveal your seed phrase",
+        "no_one_watching": "Make sure no one is watching your screen.",
+        "view": "View"
+      },
+      "strike_signup_sheet": {
+        "title": "Sign up for Strike",
+        "message": "Strike's mobile sign-up works best in their app. How would you like to continue?",
+        "get_app": "Get the Strike app",
+        "continue_in_browser": "Continue in browser"
+      },
+      "strike_view": {
+        "fiat_balance_empty": "Fiat balance is empty, please add cash to buy BTC",
+        "amount_cannot_be_zero": "Amount cannot be 0",
+        "bitcoin_balance_empty": "Bitcoin balance is empty, please add cash to buy Fiat",
+        "buy": "₿UY",
+        "sell": "SELL",
+        "fiat_balance": "Fiat Balance",
+        "deposit": "Deposit",
+        "withdraw": "Withdraw",
+        "no_bank_accounts": "No bank accounts linked.\nConnect a bank account in the Strike app first.",
+        "deposit_from": "Deposit from:",
+        "withdraw_to": "Withdraw to:",
+        "bank": "Bank",
+        "bank_lowercase": "bank",
+        "amount_currency": "Amount ({currency})",
+        "available": "Available: {amount}",
+        "enter_valid_amount": "Enter a valid amount",
+        "amount_exceeds_balance": "Amount exceeds available balance",
+        "confirm_deposit_title": "Confirm Deposit",
+        "confirm_withdrawal_title": "Confirm Withdrawal",
+        "confirm_deposit_message": "Deposit {amount} from {bank} (****{last4})?",
+        "confirm_withdraw_message": "Withdraw {amount} to {bank} (****{last4})?",
+        "confirm": "Confirm",
+        "deposit_initiated": "Deposit initiated! Settlement may take 1-5 business days.",
+        "deposit_failed": "Deposit failed. Check Strike app for details.",
+        "withdrawal_initiated": "Withdrawal initiated! Funds will arrive in 1-5 business days.",
+        "withdrawal_failed": "Withdrawal initiation failed.",
+        "payout_failed": "Payout creation failed. Check Strike app.",
+        "error_with_message": "Error: {message}",
+        "unknown_error": "Unknown error",
+        "logout": "Logout"
+      },
+      "strike_wallet": {
+        "region_unavailable": "Strike is not available in Cypher Box in your region. Your balance is held by Strike, not by Cypher Box, and it is untouched. Use the Strike app to access it.",
+        "login_to_strike_account": "Login to Your Strike Account",
+        "no_account": "Don't have an account?",
+        "create_on_strike": "Create on Strike"
+      },
+      "swipe_button": {
+        "slide_to_send": "Slide to Send",
+        "please_wait": "Please wait"
+      },
+      "tips": {
+        "title": "Security Tips:",
+        "list": "• Write them in the correct order from 1 to 12\n• Do not reveal to anyone\n• Make multiple copies\n• Store in secure locations"
+      },
+      "checking_account": {
+        "create": "Create"
+      }
+    },
+    "legacy": {
+      "scan_qr_code": {
+        "flip_camera_a11y": "Flip camera",
+        "provide_manually": "Provide QR code contents manually:"
+      },
+      "wallet_details": {
+        "show_payment_codes": "Show payment codes"
+      },
+      "import_speed": {
+        "mnemonic": "Mnemonic",
+        "wallet_type": "Wallet type"
+      },
+      "payment_codes_list": {
+        "internal_error": "Internal error"
+      },
+      "please_backup_ldk": {
+        "message": "Please save this wallet backup. It allows you to restore all your channels on other device."
+      },
+      "about": {
+        "electrum_server": "Electrum server"
+      },
+      "licensing": {
+        "title": "License"
+      }
     }
   }
 }

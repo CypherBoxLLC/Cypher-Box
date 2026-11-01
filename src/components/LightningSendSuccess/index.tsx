@@ -7,6 +7,7 @@ import { Electricity, GradientShock } from '@Cypher/assets/images';
 import { colors } from '@Cypher/style-guide';
 
 import styles from './styles';
+import loc from '../../../loc';
 
 /**
  * Success view for a completed LIGHTNING send.
@@ -56,15 +57,15 @@ export default function LightningSendSuccess({
     sats,
     fiat,
     fiatSymbol = '$',
-    title = 'Payment Sent ⚡',
+    title = loc.cypherbox.components.lightning_send_success.payment_sent,
     feeSats = null,
     feeNote = null,
     paidTo,
     fromLabel,
     detail,
-    networkLabel = 'Lightning Network',
+    networkLabel = loc.cypherbox.components.lightning_send_success.lightning_network,
     onHome,
-    homeLabel = 'Home',
+    homeLabel = loc.cypherbox.components.lightning_send_success.home,
 }: Props) {
     const slideAnim = useRef(new Animated.Value(300)).current;
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -146,7 +147,7 @@ export default function LightningSendSuccess({
             pct === null ? '' : pct < 0.01 ? ' (< 0.01%)' : ` (${pct.toFixed(pct < 1 ? 2 : 1)}%)`;
         return (
             <Text style={styles.fee}>
-                Network fee: {feeSats} sats{pctStr}{feeNote ? ` · ${feeNote}` : ''}
+                {loc.formatString(loc.cypherbox.components.lightning_send_success.network_fee, { fee: feeSats })}{pctStr}{feeNote ? ` · ${feeNote}` : ''}
             </Text>
         );
     })();
@@ -175,10 +176,10 @@ export default function LightningSendSuccess({
             {detail ?? (
                 <View style={styles.detail}>
                     {!!paidTo && (
-                        <Text style={styles.paidTo}>Paid to {paidTo}</Text>
+                        <Text style={styles.paidTo}>{loc.formatString(loc.cypherbox.components.lightning_send_success.paid_to, { destination: paidTo })}</Text>
                     )}
                     {!!fromLabel && (
-                        <Text style={styles.fromWallet}>from {fromLabel}</Text>
+                        <Text style={styles.fromWallet}>{loc.formatString(loc.cypherbox.components.lightning_send_success.from_wallet, { wallet: fromLabel })}</Text>
                     )}
                 </View>
             )}

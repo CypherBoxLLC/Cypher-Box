@@ -42,6 +42,8 @@
 // these rather than keeping its own copy, so the reserve the user is asked to
 // fund and the triage that decides what the reserve is for can never disagree.
 
+import loc from '../../../loc';
+
 /** Per exit-tree level: the CPFP child (anchor input + funding input + change)
  *  that bumps that level. Upper-bounded; matches RECOVER_EST_VSIZE in
  *  ./recoverOnchainBoard.ts. Applied `exitDepth` times per capsule. */
@@ -1122,29 +1124,29 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
 export function describeExitNote(note: ExitTriageNote): string {
     switch (note) {
         case 'expiry-unknown':
-            return 'could not check how close it is to expiry';
+            return loc.cypherbox.services.exit_triage.note_expiry_unknown;
         case 'beyond-server-depth-cap':
-            return 'past the server depth cap, so it can only be exited or refreshed';
+            return loc.cypherbox.services.exit_triage.note_beyond_depth_cap;
         case 'under-water':
-            return 'costs more in fees than it returns';
+            return loc.cypherbox.services.exit_triage.note_under_water;
         default:
-            return 'see details';
+            return loc.cypherbox.services.exit_triage.note_see_details;
     }
 }
 
 export function describeExitExclusion(reason: ExitExclusionReason | undefined): string {
     switch (reason) {
         case 'no-exit-chain':
-            return 'no exit chain available';
+            return loc.cypherbox.services.exit_triage.exclusion_no_exit_chain;
         case 'too-close-to-expiry':
-            return 'too close to expiry to exit safely';
+            return loc.cypherbox.services.exit_triage.exclusion_too_close_to_expiry;
         case 'refresh-before-exiting':
-            return 'expiring soon, refresh it instead of exiting it';
+            return loc.cypherbox.services.exit_triage.exclusion_refresh_before_exiting;
         case 'returns-nothing':
-            return 'network fee is more than it holds';
+            return loc.cypherbox.services.exit_triage.exclusion_returns_nothing;
         case 'fees-dwarf-value':
-            return 'costs far more in fees than it holds';
+            return loc.cypherbox.services.exit_triage.exclusion_fees_dwarf_value;
         default:
-            return 'cannot be exited';
+            return loc.cypherbox.services.exit_triage.exclusion_default;
     }
 }

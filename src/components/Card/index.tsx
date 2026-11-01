@@ -15,6 +15,7 @@ import type { VaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
 import { CarouselPageVisibilityContext, useEasedProgress } from "@Cypher/custom-hooks";
 import { useIsFocused } from "@react-navigation/native";
 import Reanimated, { useAnimatedStyle } from "react-native-reanimated";
+import loc from "../../../loc";
 
 interface Props {
     onPress?: (value: boolean) => void;
@@ -78,7 +79,7 @@ interface Props {
 
 export default function Card({ onPress,
     wallet,
-    title = 'Lightning Account',
+    title = loc.cypherbox.components.card.lightning_account,
     balance,
     convertedRate,
     withdrawThreshold,
@@ -135,7 +136,7 @@ export default function Card({ onPress,
     // ("+ Refreshing 120,000 sats") overflowed the card on a 95k-plus round,
     // which is exactly the size where a user most wants to see this line.
     const refreshingText = refreshingInfo
-        ? `+ Refreshing ${formatCapsuleAmount(refreshingInfo.sats)}`
+        ? String(loc.formatString(loc.cypherbox.components.card.refreshing_amount, { amount: formatCapsuleAmount(refreshingInfo.sats) }))
         : null;
     const showRefreshingInsteadOfBalance =
         refreshingInfo !== null && (Number(balance) || 0) === 0;
@@ -528,10 +529,10 @@ export default function Card({ onPress,
                         }}
                     >
                         {vaultConnectivity.level === 'green'
-                            ? 'Connected'
+                            ? loc.cypherbox.components.card.connected
                             : vaultConnectivity.level === 'yellow'
-                                ? 'Connection slow'
-                                : 'Offline'}
+                                ? loc.cypherbox.components.card.connection_slow
+                                : loc.cypherbox.components.card.offline}
                     </Text>
                 </View>
             )}
@@ -588,13 +589,13 @@ export default function Card({ onPress,
             {isShowButtons && !hideActionButtons &&
                 <View style={styles.btnView}>
                     <GradientButtonWithShadow
-                        title="Receive"
+                        title={loc.receive.header}
                         onPress={onReceiveClickHandler}
                         isShadow
                         isTextShadow
                     />
                     <GradientButtonWithShadow
-                        title="Send"
+                        title={loc.send.header}
                         onPress={onSendClickHandler}
                         isShadow
                         isTextShadow

@@ -75,12 +75,12 @@ const WalletsImportSpeed = () => {
   return (
     <SafeArea style={styles.root}>
       <BlueSpacing20 />
-      <BlueFormLabel>Mnemonic</BlueFormLabel>
+      <BlueFormLabel>{loc.cypherbox.legacy.import_speed.mnemonic}</BlueFormLabel>
       <BlueSpacing20 />
       <BlueFormMultiInput testID="SpeedMnemonicInput" value={importText} onChangeText={setImportText} />
-      <BlueFormLabel>Wallet type</BlueFormLabel>
+      <BlueFormLabel>{loc.cypherbox.legacy.import_speed.wallet_type}</BlueFormLabel>
       <TextInput testID="SpeedWalletTypeInput" value={walletType} style={styles.pathInput} onChangeText={setWalletType} />
-      <BlueFormLabel>Passphrase</BlueFormLabel>
+      <BlueFormLabel>{loc.wallets.import_passphrase}</BlueFormLabel>
       <TextInput testID="SpeedPassphraseInput" value={passphrase} style={styles.pathInput} onChangeText={setPassphrase} />
       <BlueSpacing20 />
       <View style={styles.center}>

@@ -9,6 +9,7 @@ import { scheduleArkRefreshReminder } from './backgroundNotifications';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import useAuthStore from '@Cypher/stores/authStore';
 import type { FeeEstimate, RoundState } from '@secondts/bark-react-native';
+import loc from '../../../loc';
 
 export type ArkRefreshFeeView = {
     feeSats: number;
@@ -49,7 +50,7 @@ async function requireHandle() {
  */
 export class ArkRefreshInFlightError extends Error {
     constructor(pendingCount: number) {
-        super('A refresh is already in progress. Wait for it to finish before starting another.');
+        super(loc.cypherbox.services.ark_refresh.already_in_progress);
         this.name = 'ArkRefreshInFlightError';
         this.pendingCount = pendingCount;
     }

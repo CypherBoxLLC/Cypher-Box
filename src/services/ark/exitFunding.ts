@@ -45,6 +45,7 @@ import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
 import { runBroadcastCall } from './indeterminate';
+import loc from '../../../loc';
 
 // --- Tunable sizing constants ----------------------------------------------
 //
@@ -612,7 +613,7 @@ export async function convertToExitFees(
     // the UI.
     const txid = await runBroadcastCall(
         () => handle.sendOnchain(address, BigInt(Math.floor(amountSats))),
-        'conversion',
+        loc.cypherbox.services.indeterminate.what_conversion,
     );
     if (__DEV__) {
         console.log(

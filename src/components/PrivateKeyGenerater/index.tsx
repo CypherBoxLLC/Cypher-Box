@@ -13,6 +13,7 @@ import { mnemonicToSeedQR, seedQRGrid } from "@Cypher/helpers/seedQR";
 import { dispatchNavigate } from "@Cypher/helpers";
 import SeedQRGrid from "../SeedQRGrid";
 import OfflineSeedWarning from "../OfflineSeedWarning";
+import loc from "../../../loc";
 
 interface Props {
     callNext(): void;
@@ -148,12 +149,12 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                     <View style={[styles.hideView, styles.hideOverlay]}>
                         <View style={styles.centerView}>
                             <View>
-                                <Text style={styles.title} center>Tap to reveal your seed phrase</Text>
-                                <Text style={styles.detail} center>Make sure no one is watching your screen.</Text>
+                                <Text style={styles.title} center>{loc.cypherbox.components.private_key_generator.tap_to_reveal}</Text>
+                                <Text style={styles.detail} center>{loc.cypherbox.components.private_key_generator.no_one_watching}</Text>
                             </View>
                             <TouchableOpacity style={styles.viewStyle} onPress={viewClickHandler}>
                                 <Image source={EyeVisible} />
-                                <Text h3 style={styles.viewBtn}>View</Text>
+                                <Text h3 style={styles.viewBtn}>{loc.cypherbox.components.private_key_generator.view}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

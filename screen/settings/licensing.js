@@ -3,6 +3,7 @@ import { ScrollView } from 'react-native';
 import navigationStyle from '../../components/navigationStyle';
 import { BlueCard, BlueText, BlueSpacing20, BlueLoading } from '../../BlueComponents';
 import SafeArea from '../../components/SafeArea';
+import loc from '../../loc';
 
 const Licensing = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -17,7 +18,7 @@ const Licensing = () => {
     <SafeArea>
       <ScrollView>
         <BlueCard>
-          <BlueText>MIT License</BlueText>
+          <BlueText>{loc.settings.about_license}</BlueText>
           <BlueSpacing20 />
           <BlueText>Copyright (c) 2018-2024 BlueWallet developers</BlueText>
           <BlueSpacing20 />
@@ -46,8 +47,6 @@ const Licensing = () => {
   );
 };
 
-Licensing.navigationOptions = navigationStyle({
-  title: 'License',
-});
+Licensing.navigationOptions = navigationStyle({}, opts => ({ ...opts, title: loc.cypherbox.legacy.licensing.title }));
 
 export default Licensing;

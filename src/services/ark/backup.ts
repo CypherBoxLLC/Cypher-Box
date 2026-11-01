@@ -2,6 +2,7 @@ import { NativeModules, Platform } from 'react-native';
 
 import RNFS from 'react-native-fs';
 import Aes from 'react-native-aes-crypto';
+import loc from '../../../loc';
 
 /**
  * Atomic-ish file write: stage to `${path}.tmp`, unlink target, rename.
@@ -909,7 +910,7 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
     try {
         envelope = JSON.parse(blob);
     } catch (err) {
-        throw new Error('That backup file is not valid JSON. Is it the right file?');
+        throw new Error(loc.cypherbox.services.ark_backup.not_valid_json);
     }
     if (typeof envelope !== 'object' || envelope === null) {
         throw new Error('Backup file is malformed');
@@ -943,14 +944,14 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
     if (!plaintext) {
         // Aes.decrypt typically throws on key/padding mismatch, but defend
         // against an empty-output edge case the same way the prior code did.
-        throw new Error('Decryption produced nothing. That seed does not match this backup.');
+        throw new Error(loc.cypherbox.services.ark_backup.seed_mismatch);
     }
 
     let manifest: BackupManifest;
     try {
         manifest = JSON.parse(plaintext) as BackupManifest;
     } catch (err) {
-        throw new Error('The decrypted manifest is not valid JSON. The backup may be corrupted.');
+        throw new Error(loc.cypherbox.services.ark_backup.manifest_corrupted);
     }
 
     if (!manifest || !Array.isArray(manifest.files)) {

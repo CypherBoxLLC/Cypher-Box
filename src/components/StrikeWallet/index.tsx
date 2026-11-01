@@ -12,6 +12,7 @@ import styles from "./styles";
 import { CarouselPageVisibilityContext, useEasedProgress } from "@Cypher/custom-hooks";
 import { useIsFocused } from "@react-navigation/native";
 import Reanimated, { useAnimatedStyle } from "react-native-reanimated";
+import loc from "../../../loc";
 
 
 interface Props {
@@ -149,7 +150,7 @@ export default function StrikeWallet({
                                 />
                                 <View style={styles.view}>
                                     <Text h2 bold style={[styles.check, { fontSize: 16 }]}>
-                                        Lightning Account
+                                        {loc.cypherbox.components.card.lightning_account}
                                     </Text>
                                     <Image
                                         source={require("@Cypher/assets/images/strike.png")}
@@ -208,23 +209,20 @@ export default function StrikeWallet({
                     {!strikeAllowed && (
                         <View style={styles.regionNotice}>
                             <Text h4 style={styles.alert}>
-                                Strike is not available in Cypher Box in your
-                                region. Your balance is held by Strike, not by
-                                Cypher Box, and it is untouched. Use the Strike
-                                app to access it.
+                                {loc.cypherbox.components.strike_wallet.region_unavailable}
                             </Text>
                         </View>
                     )}
                     {!hideActionButtons && strikeAllowed && (
                         <View style={styles.btnView}>
                             <GradientButtonWithShadow
-                                title="Receive"
+                                title={loc.receive.header}
                                 onPress={() => receiveClickHandler(true)}
                                 isShadow
                                 isTextShadow
                             />
                             <GradientButtonWithShadow
-                                title="Send"
+                                title={loc.send.header}
                                 onPress={() => sendClickHandler(false)}
                                 isShadow
                                 isTextShadow
@@ -260,17 +258,17 @@ export default function StrikeWallet({
                                 source={require("../../../img/arrow-right.png")}
                             />
                             <Text h2 style={styles.shadow} center>
-                                Login to Your Strike Account
+                                {loc.cypherbox.components.strike_wallet.login_to_strike_account}
                             </Text>
                         </View>
                     </GradientCardWithShadow>
                     <View style={styles.createAccount}>
                         <Text bold style={styles.text}>
-                            Don't have an account?
+                            {loc.cypherbox.components.strike_wallet.no_account}
                         </Text>
                         <TouchableOpacity onPress={createStrikeAccountClickHandler}>
                             <Text bold style={styles.login}>
-                                Create on Strike
+                                {loc.cypherbox.components.strike_wallet.create_on_strike}
                             </Text>
                         </TouchableOpacity>
                     </View>

@@ -10,6 +10,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { SATS, formatSats, getStrikeCurrency, btc } from "@Cypher/helpers/coinosHelper";
+import loc from "../../../loc";
 
 interface Props {
     wallet: any;
@@ -34,10 +35,10 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
     const coinosAllowed = isCoinosAllowed();
     const swapAllowed = strikeAllowed && coinosAllowed;
     const regionNotice = !strikeAllowed && !coinosAllowed
-        ? 'Strike and CoinOS are not available in Cypher Box in your region. Your balances are held by them, not by Cypher Box, and are untouched. Use the Strike app or coinos.io to access them.'
+        ? loc.cypherbox.components.circular_view.region_both_unavailable
         : !strikeAllowed
-            ? 'Strike is not available in Cypher Box in your region. Your Strike balance is held by Strike, not by Cypher Box, and is untouched. Use the Strike app to access it.'
-            : 'CoinOS is not available in your region. Your CoinOS balance is held by CoinOS, not by Cypher Box, and is untouched. Sign in at coinos.io to use it.';
+            ? loc.cypherbox.components.circular_view.region_strike_unavailable
+            : loc.cypherbox.components.circular_view.region_coinos_unavailable;
 
     const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
     const safeMatchedRate = Number(matchedRateStrike) || 0;
@@ -111,7 +112,7 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
                     style={styles.linearGradientStyle}
                     linearGradientStyle={styles.mainShadowStyle}
                 >
-                    <Text h3 style={{ ...shadow.text25 }}>Receive</Text>
+                    <Text h3 style={{ ...shadow.text25 }}>{loc.receive.header}</Text>
                 </GradientView>
                 <GradientView
                     onPress={() => sendClickHandler(false)}
@@ -120,7 +121,7 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
                     style={styles.linearGradientStyle}
                     linearGradientStyle={styles.mainShadowStyle}
                 >
-                    <Text h3 style={{ ...shadow.text25 }}>Send</Text>
+                    <Text h3 style={{ ...shadow.text25 }}>{loc.send.header}</Text>
                 </GradientView>
             </View>
         )}

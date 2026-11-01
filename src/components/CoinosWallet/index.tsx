@@ -6,6 +6,7 @@ import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 
 interface Props {
     balance: any;
@@ -100,10 +101,7 @@ export default function CoinosWallet({
                     {!coinosAllowed && (
                         <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
                             <Text h4 style={styles.alert}>
-                                CoinOS is not available in your region. Your
-                                balance is held by CoinOS, not by Cypher Box,
-                                and it is untouched. Sign in at coinos.io to
-                                use it.
+                                {loc.cypherbox.components.coinos_wallet.region_unavailable}
                             </Text>
                         </View>
                     )}
@@ -137,17 +135,17 @@ export default function CoinosWallet({
                                 source={require("../../../img/arrow-right.png")}
                             />
                             <Text h2 style={styles.shadow} center>
-                                Login to Your Lightning Account
+                                {loc.cypherbox.components.coinos_wallet.login_to_lightning_account}
                             </Text>
                         </View>
                     </GradientCardWithShadow>
                     <View style={styles.createAccount}>
                         <Text bold style={styles.text}>
-                            Don’t have an account?
+                            {loc.cypherbox.components.coinos_wallet.no_account}
                         </Text>
                         <TouchableOpacity onPress={createChekingAccountClickHandler}>
                             <Text bold style={styles.login}>
-                                Create on Coinos.io
+                                {loc.cypherbox.components.coinos_wallet.create_on_coinos}
                             </Text>
                         </TouchableOpacity>
                     </View>

@@ -2604,6 +2604,420 @@
         "kept_for_exit_fees": "تم الاحتفاظ بها على السلسلة لرسوم الخروج.",
         "leave_as_exit_fees": "ترك الأموال على السلسلة كرسوم للخروج"
       }
+    },
+    "services": {
+      "exit_funding_sources": {
+        "not_connected": "غير متصل",
+        "balance_below": "الرصيد أقل من {amount} sats",
+        "no_vault_on_device": "لا توجد خزنة على هذا الجهاز",
+        "no_spendable_capsules": "لا توجد كبسولات قابلة للإنفاق",
+        "hot_vault": "الخزنة الساخنة",
+        "cold_vault": "الخزنة الباردة"
+      },
+      "coinos_api": {
+        "invalid_credentials": "اسم المستخدم أو كلمة المرور غير صحيحة",
+        "too_many_attempts": "محاولات تسجيل دخول كثيرة جدًا. يرجى الانتظار والمحاولة مرة أخرى لاحقًا.",
+        "temporarily_unavailable": "خدمة Coinos غير متاحة مؤقتًا. يرجى المحاولة مرة أخرى بعد قليل.",
+        "login_failed_status": "فشل تسجيل الدخول برمز الحالة {status}",
+        "auth_prompt_refresh_session": "تحقق من هويتك لتحديث جلسة CoinOS",
+        "cannot_send_to_self": "لا يمكنك الإرسال إلى نفسك",
+        "invalid_lnurl_pay_response": "استجابة LNURL-Pay غير صالحة",
+        "withdrawal_may_have_been_sent": "ربما تم إرسال عملية السحب هذه بالفعل. راجع سجل CoinOS قبل المحاولة مرة أخرى.",
+        "authorization_expired": "انتهت صلاحية التفويض. يرجى تسجيل الدخول مرة أخرى للمتابعة",
+        "pin_required": "رمز PIN مطلوب. يرجى تعيين رمز PIN في حسابك على CoinOS أولًا.",
+        "otp_secret_failed": "تعذر الحصول على مفتاح OTP السري: {status}",
+        "invalid_totp": "رمز TOTP غير صالح. يرجى المحاولة مرة أخرى.",
+        "enable_2fa_failed": "تعذر تفعيل المصادقة الثنائية (2FA): {error}",
+        "disable_2fa_failed": "تعذر تعطيل المصادقة الثنائية (2FA): {error}",
+        "captcha_failed": "فشل التحقق من Captcha. يرجى المحاولة مرة أخرى.",
+        "invalid_2fa": "رمز المصادقة الثنائية (2FA) غير صالح. يرجى المحاولة مرة أخرى.",
+        "verify_2fa_failed": "فشل التحقق بالمصادقة الثنائية (2FA): {error}"
+      },
+      "strike_api": {
+        "authorization_expired": "انتهت صلاحية التفويض. يرجى تسجيل الدخول مرة أخرى للمتابعة",
+        "not_logged_in": "لم يتم تسجيل الدخول إلى Strike. يرجى تسجيل الدخول إلى Strike أولًا.",
+        "session_expired": "انتهت صلاحية جلسة Strike. يرجى تسجيل الدخول إلى Strike مرة أخرى."
+      },
+      "vtxo_spend_state": {
+        "spent_title": "هذه الـ sats لم تعد موجودة",
+        "spent_body": "يُفيد خادم Ark بأن هذه الكبسولة قد أُنفقت بالفعل، لذا كان الرصيد المعروض قديمًا. تم تصحيح محفظتك. يحدث هذا عند استخدام عبارة الاسترداد نفسها على جهاز آخر، أو بعد استعادة ملف نسخة احتياطية قديم.",
+        "unregistered_title": "إحدى الكبسولات عالقة",
+        "unregistered_body": "إحدى كبسولاتك في حالة لا يقبل خادم Ark إنفاقها، لذا تستمر المدفوعات من خزنة Bark بالفشل. جرّب الإرسال من محفظة أخرى في الوقت الحالي.",
+        "unclaimed_title": "إحدى الكبسولات ليست جاهزة بعد",
+        "unclaimed_body": "لا يزال خادم Ark يُتمّ إحدى كبسولاتك ولا يمكن إنفاقها بعد. انتظر بضع دقائق ثم حاول مرة أخرى.",
+        "default_title": "لا يمكن إنفاق هذه الكبسولة",
+        "default_body": "رفض خادم Ark إنفاق إحدى كبسولاتك. حاول مرة أخرى بعد بضع دقائق، أو أرسل من محفظة أخرى."
+      },
+      "background_notifications": {
+        "channel_name": "تذكيرات كبسولات البرق",
+        "channel_description": "تذكيرات لتجديد كبسولات البرق الخاصة بك (VTXOs) قبل انتهاء صلاحيتها.",
+        "auto_refresh_trouble_title": "مشكلة في التجديد التلقائي",
+        "auto_refresh_trouble_body": "تعذر التجديد التلقائي. انقر للتجديد يدويًا.",
+        "fee_high_title": "رسوم التجديد مرتفعة على نحو غير معتاد",
+        "fee_high_body": "الرسوم المقدّرة {fee} sats (الحد {max}). افتح Cypher Box للمراجعة.",
+        "subject_vault_balance": "رصيد خزنة Bark الخاص بك",
+        "body_urgent": "انقر للتجديد. يستغرق التجديد حتى 3 ساعات.",
+        "body_sats_lost": "انقر للتجديد، وإلا فقد تُفقد هذه الـ sats.",
+        "body_funds_lost": "انقر للتجديد، وإلا فقد تُفقد هذه الأموال.",
+        "left_to_refresh_title": "متبقٍ {time} لتجديد {subject}{suffix}",
+        "label_7_days": "7 أيام",
+        "label_4_days": "4 أيام",
+        "label_2_days": "يومان",
+        "label_24_hours": "24 ساعة",
+        "label_12_hours": "12 ساعة",
+        "label_6_hours": "6 ساعات",
+        "label_3_hours": "3 ساعات",
+        "stuck_move_out_title": "التجديد عالق: انقل {subject} إلى الخارج{suffix}",
+        "stuck_left_before_expiry": "متبقٍ {time} قبل انتهاء الصلاحية. انقر لنقل أموالك إلى محفظة أخرى.",
+        "exit_ready_title": "خروجك جاهز للإتمام",
+        "exit_ready_body_sats": "افتح Cypher Box لتحصيل {amount} sats إلى محفظة بتكوين الخاصة بك.",
+        "exit_ready_body": "افتح Cypher Box لتحصيل أموالك إلى محفظة بتكوين الخاصة بك.",
+        "dust_uneconomic_title": "كبسولات صغيرة جدًا معرّضة للخطر",
+        "dust_uneconomic_body_one": "ستنتهي صلاحية {count} كبسولة مجموعها {total} sats. رسوم التجديد ({fee} sats) تتجاوز قيمتها.",
+        "dust_uneconomic_body_other": "ستنتهي صلاحية {count} كبسولات مجموعها {total} sats. رسوم التجديد ({fee} sats) تتجاوز قيمتها.",
+        "dust_stranded_title": "أنفق كبسولاتك الصغيرة جدًا",
+        "dust_stranded_body_one": "{count} كبسولة مجموعها {total} sats أقل من الحد الأدنى للتجديد البالغ {min} sat، لذا لا يمكن تجديدها تلقائيًا. أنفقها في دفعة قبل انتهاء صلاحيتها.",
+        "dust_stranded_body_other": "{count} كبسولات مجموعها {total} sats أقل من الحد الأدنى للتجديد البالغ {min} sat، لذا لا يمكن تجديدها تلقائيًا. أنفقها في دفعة قبل انتهاء صلاحيتها.",
+        "received_title": "تم استلام دفعة",
+        "received_body_sats": "استلمت {amount} sats في خزنة Bark الخاصة بك.",
+        "received_body": "استلمت دفعة في خزنة Bark الخاصة بك.",
+        "capsule_count_one": "{count} كبسولة",
+        "capsule_count_other": "{count} كبسولات",
+        "your_capsules": "كبسولاتك",
+        "refresh_complete_title": "اكتمل التجديد",
+        "refresh_complete_body": "تم تجديد {subject} بنجاح. تم تثبيت تاريخ صلاحية جديد.",
+        "refresh_reminder_title": "يُفترض أن التجديد قد اكتمل",
+        "refresh_reminder_body": "كان تجديد {subject} جاريًا. انقر للتحقق من اكتماله.",
+        "stuck_refresh_title": "التجديد عالق",
+        "stuck_refresh_body": "علِق تجديد إحدى الكبسولات{amount}. افتح Cypher Box لاستردادها."
+      },
+      "arkoor_receive": {
+        "less_than_hour": "أقل من ساعة",
+        "time_days_hours": "{days} ي {hours} س",
+        "time_hours": "{hours} س",
+        "these_sats": "هذه الـ sats",
+        "received_refreshing": "تم استلام {amount} sats. جارٍ تجديدها الآن لتصبح ملكك ويمكنك الخروج بها، لا ملك الخادم.",
+        "safe_and_spendable": "هذه الـ sats آمنة وقابلة للإنفاق. يمكنك تجديدها من «الكبسولات».",
+        "received_combining": "تم استلام {amount}. جارٍ دمج كبسولاتك الصغيرة للاحتفاظ بها مدة أطول.",
+        "reason_too_small": "صغيرة جدًا بحيث لا يمكن تجديدها وحدها",
+        "reason_not_refreshable": "غير قابلة للتجديد وحدها في الوقت الحالي",
+        "notice_within": "تم استلام {amount}، {reason}. أنفقها في دفعة خلال {time}.",
+        "notice_before_expiry": "تم استلام {amount}، {reason}. أنفقها في دفعة قبل انتهاء صلاحيتها."
+      },
+      "expiry": {
+        "now": "الآن",
+        "shortly": "بعد قليل",
+        "soon": "قريبًا",
+        "in_about_hours": "خلال نحو {hours} ساعة",
+        "in_about_days": "خلال نحو {days} يوم",
+        "in_hours_short": "خلال ~{hours} س",
+        "in_days_short": "خلال ~{days} ي"
+      },
+      "ark_sync": {
+        "refresh_failing_title": "التجديد يفشل باستمرار",
+        "refresh_failing_body": "تنتهي صلاحية كبسولاتك {when}، وقد فشلت آخر {count} محاولات تجديد. بدّل الشبكة (من Wi-Fi إلى بيانات الجوال أو العكس) ثم جدّد مرة أخرى. إذا استمر فشل التجديد، فاستخدم الإعدادات ← الخروج الطارئ لنقل أموالك على السلسلة قبل انتهاء صلاحيتها. بمجرد انتهاء صلاحية الكبسولة، لا يكون الاسترداد مضمونًا."
+      },
+      "helpers": {
+        "cannot_open_url": "لا يمكن فتح هذا الرابط: {url}"
+      },
+      "ark_history": {
+        "received": "استلام",
+        "sent": "إرسال",
+        "via_lightning": "عبر البرق",
+        "via_ark": "عبر Ark",
+        "onchain": "على السلسلة",
+        "boarded_to_ark": "بالإيداع في Ark",
+        "exit_to_onchain": "بالخروج إلى السلسلة",
+        "ark_refresh": "تجديد Ark",
+        "capsule_refresh": "تجديد الكبسولة",
+        "pending_prefix": "معلّقة: {body}",
+        "failed_prefix": "فاشلة: {body}",
+        "canceled_prefix": "ملغاة: {body}"
+      },
+      "exit_funding": {
+        "already_funded": "احتياطي رسوم الخروج ممول بالفعل.",
+        "not_enough_for_fee": "الرصيد غير كافٍ لتغطية رسوم الشبكة البالغة {fee} sat وتعبئة مفيدة.",
+        "balance_too_small": "الرصيد صغير جدًا بحيث لا يستحق الإرسال.",
+        "no_reserve_address": "تعذر الحصول على العنوان على السلسلة لاحتياطي الرسوم.",
+        "duplicate_top_up": "أُرسلت تعبئة مطابقة قبل لحظات. راجع سجل CoinOS بدلًا من الإرسال مرة أخرى.",
+        "top_up_may_have_been_sent": "ربما تم إرسال هذه التعبئة بالفعل. راجع سجل CoinOS قبل المحاولة مرة أخرى.",
+        "top_up_failed": "تعذر إرسال التعبئة."
+      },
+      "ark_lightning": {
+        "cancel_failed": "فشل الإلغاء؛ حاول مرة أخرى أو انتظر المزامنة التالية.",
+        "wallet_not_open": "محفظة Ark غير مفتوحة",
+        "cancel_in_flight": "الدفعة قيد التنفيذ بالفعل، لذا لا يمكن إلغاؤها.",
+        "cancel_already_settled": "اكتمل الاستلام بالفعل، لذا لا يوجد ما يمكن إلغاؤه.",
+        "cancel_connection_dropped": "انقطع الاتصال، لذا قد يكون الإلغاء قد تم وقد لا يكون. تحقق مرة أخرى بعد قليل."
+      },
+      "ark_refresh": {
+        "already_in_progress": "هناك عملية تجديد قيد التنفيذ بالفعل. انتظر حتى تنتهي قبل بدء عملية أخرى."
+      },
+      "ark_send": {
+        "cannot_estimate_unknown_dest": "لا يمكن تقدير الرسوم لوجهة غير معروفة",
+        "cannot_send_unknown_dest": "لا يمكن الإرسال إلى وجهة غير معروفة",
+        "payment_in_flight": "قد تكون هذه الدفعة لا تزال قيد التنفيذ. لا ترسلها مرة أخرى: انتظر حتى يستقر رصيدك، أو تأكد من المستلم قبل إعادة المحاولة.",
+        "ln_failed_refunded": "فشلت دفعة البرق بعد عدة محاولات وتمت إعادة المبلغ. أموالك في Ark آمنة، ولم يُرسل أي شيء.",
+        "dest_ln_invoice": "فاتورة البرق",
+        "dest_ln_offer": "عرض البرق",
+        "dest_ln_address": "عنوان البرق",
+        "dest_ark": "عنوان Ark",
+        "dest_onchain": "عنوان بتكوين على السلسلة",
+        "dest_unknown": "وجهة غير معروفة"
+      },
+      "ark_exit": {
+        "destination_required": "عنوان الوجهة مطلوب",
+        "exit_in_progress": "الخروج الطارئ قيد التنفيذ. الإرسال من خزنة Bark معطّل حتى يكتمل الخروج على السلسلة.",
+        "vault_not_open": "الخزنة غير مفتوحة بعد. تحتاج إلى اتصال لفتحها، لذا تحقق من اتصالك وأعد فتح الخزنة، ثم حاول مرة أخرى.",
+        "no_capsules_exitable": "لا توجد كبسولات يمكن الخروج بها حاليًا.",
+        "vault_could_not_open": "تعذر فتح الخزنة. تحتاج إلى اتصال، لذا تحقق من اتصالك أو بدّل بين Wi-Fi وبيانات الجوال، ثم حاول مرة أخرى."
+      },
+      "network_fault": {
+        "chain_source": "تعذر الوصول إلى مزوّد بيانات شبكة بتكوين. إذا كنت متصلًا بشبكة Wi-Fi، فجرّب بيانات الجوال ثم حاول مرة أخرى.",
+        "chain_source_rate_limited": "يحدّ مزوّد بيانات شبكة بتكوين من عدد الطلبات التي يمكن لهذا الاتصال إرسالها. لا توجد أي مشكلة في محفظتك. يزول هذا القيد خلال ساعة، أو بدّل الشبكة للحصول على عنوان مختلف.",
+        "ark_server": "خادم Ark لا يستجيب حاليًا. أموالك آمنة، والخروج الطارئ لا يحتاج إلى هذا الخادم.",
+        "unknown_error": "خطأ غير معروف"
+      },
+      "indeterminate": {
+        "connection_dropped": "انقطع الاتصال، لذا ربما تكون {what} قد تمت بالفعل. راجع رصيدك وسجل معاملاتك قبل المحاولة مرة أخرى.",
+        "what_payment": "هذه الدفعة",
+        "what_withdrawal": "عملية السحب هذه",
+        "what_claim": "عملية التحصيل هذه",
+        "what_transfer": "عملية النقل هذه",
+        "what_conversion": "عملية التحويل هذه",
+        "what_release": "عملية التحرير هذه"
+      },
+      "ark_reset": {
+        "delete_failed": "تعذر حذف بيانات محفظة Ark، لذا تم الاحتفاظ بعبارة الاسترداد لتجنّب ترك بيانات المحفظة على هذا الجهاز دون وسيلة لفتحها. لم يُحذف أي شيء. أغلق التطبيق وحاول مرة أخرى."
+      },
+      "ark_recover": {
+        "no_address": "لا يوجد عنوان بتكوين للاسترداد إليه.",
+        "too_small": "المبلغ صغير جدًا للاسترداد. رسوم الشبكة أكبر من المبلغ العالق."
+      },
+      "exit_phase": {
+        "under_a_minute": "أقل من دقيقة",
+        "about_min": "نحو {mins} دقيقة",
+        "about_hours": "نحو {hours} ساعة",
+        "about_days": "نحو {days} يوم",
+        "ready_headline_one": "جاهز للتحصيل. {count} كبسولة تجاوزت القفل الزمني.",
+        "ready_headline_other": "جاهز للتحصيل. {count} كبسولات تجاوزت القفل الزمني.",
+        "ready_detail_together": "يجري التحصيل مع {count} لا تزال قيد الإتمام، لتصل كدفعة واحدة. أبقِ التطبيق مفتوحًا.",
+        "ready_detail": "أبقِ التطبيق مفتوحًا أثناء الإرسال.",
+        "publishing_progress": "تم نشر {inFlight} من {total}، بانتظار التأكيد.",
+        "publishing_also_waiting_one": "{count} كبسولة اجتازت المرحلة وتنتظر انقضاء القفل الزمني.",
+        "publishing_also_waiting_other": "{count} كبسولات اجتازت المرحلة وتنتظر انقضاء القفل الزمني.",
+        "publishing_headline_one": "جارٍ نشر معاملات الخروج لـ {count} كبسولة.",
+        "publishing_headline_other": "جارٍ نشر معاملات الخروج لـ {count} كبسولات.",
+        "publishing_detail_tail": "تحتاج كل خطوة إلى تأكيد قبل أن تبدأ الخطوة التالية، لذا فالعملية بطيئة. أبقِ التطبيق مفتوحًا.",
+        "waiting_published_one": "{count} كبسولة منشورة وتنتظر انقضاء القفل الزمني.",
+        "waiting_published_other": "{count} كبسولات منشورة وتنتظر انقضاء القفل الزمني.",
+        "waiting_no_chain": "تعذر الوصول إلى مصدر بيانات السلسلة للتحقق من العد التنازلي. جرّب بيانات الجوال إذا كنت متصلًا بشبكة Wi-Fi.",
+        "waiting_timelock_passed": "انقضى القفل الزمني. سيتم التحصيل عند الفحص التالي.",
+        "waiting_blocks_to_go_one": "متبقٍ {count} كتلة، {duration}.",
+        "waiting_blocks_to_go_other": "متبقٍ {count} كتل، {duration}.",
+        "waiting_close_app": "يمكنك إغلاق التطبيق. سنُعلمك عندما يصبح جاهزًا للتحصيل.",
+        "settling_headline": "جارٍ التحقق من حالة الخروج."
+      },
+      "exit_triage": {
+        "note_expiry_unknown": "تعذر التحقق من مدى قربها من انتهاء الصلاحية",
+        "note_beyond_depth_cap": "تجاوزت حد العمق لدى الخادم، لذا لا يمكن إلا الخروج بها أو تجديدها",
+        "note_under_water": "تكلّف رسومًا أكثر مما تعيده",
+        "note_see_details": "راجع التفاصيل",
+        "exclusion_no_exit_chain": "لا تتوفر سلسلة خروج",
+        "exclusion_too_close_to_expiry": "قريبة جدًا من انتهاء الصلاحية بحيث لا يمكن الخروج بها بأمان",
+        "exclusion_refresh_before_exiting": "تنتهي صلاحيتها قريبًا، جدّدها بدلًا من الخروج بها",
+        "exclusion_returns_nothing": "رسوم الشبكة أكبر مما تحمله",
+        "exclusion_fees_dwarf_value": "تكلّف رسومًا تفوق بكثير ما تحمله",
+        "exclusion_default": "لا يمكن الخروج بها"
+      },
+      "ark_backup": {
+        "not_valid_json": "ملف النسخة الاحتياطية هذا ليس بتنسيق JSON صالح. هل هو الملف الصحيح؟",
+        "seed_mismatch": "لم يُنتج فك التشفير أي شيء. عبارة الاسترداد هذه لا تطابق هذه النسخة الاحتياطية.",
+        "manifest_corrupted": "البيان المفكوك تشفيره ليس بتنسيق JSON صالح. قد تكون النسخة الاحتياطية تالفة."
+      },
+      "google_drive": {
+        "auth_not_configured": "لم يتم تفويض Google Drive لهذا الإصدار (شهادة توقيع التطبيق غير مسجلة لدى Google). احفظ ملف النسخة الاحتياطية يدويًا أدناه، ثم تابع.",
+        "auth_cancelled": "تم إلغاء تسجيل الدخول إلى Google Drive. اضغط على «الاتصال» مرة أخرى لإعادة المحاولة، أو احفظ ملف النسخة الاحتياطية يدويًا.",
+        "auth_token_missing": "انتهت صلاحية جلسة Google Drive. اضغط على «الاتصال» مرة أخرى لتسجيل الدخول.",
+        "network": "تعذر الوصول إلى Google Drive. تحقق من اتصالك بالإنترنت وأعد المحاولة، أو احفظ ملف النسخة الاحتياطية يدويًا.",
+        "quota": "رفض Google Drive الرفع (الحصة أو الأذونات). احفظ ملف النسخة الاحتياطية يدويًا بدلًا من ذلك.",
+        "server": "يواجه Google Drive مشكلات حاليًا. أعد المحاولة بعد قليل، أو احفظ ملف النسخة الاحتياطية يدويًا.",
+        "unknown": "فشل النسخ الاحتياطي إلى Google Drive. احفظ ملف النسخة الاحتياطية يدويًا أدناه.",
+        "access_expired": "انتهت صلاحية الوصول إلى Google Drive. أعد ربط Google Drive وحاول مرة أخرى."
+      },
+      "saf_backup": {
+        "permission_revoked": "لم يعد لدى Cypher Box إذن بالكتابة في مجلد النسخ الاحتياطي الذي اخترته. اضغط على «اختيار مجلد» لمنح الإذن مجددًا.",
+        "folder_unreachable": "لم يعد الوصول إلى مجلد النسخ الاحتياطي ممكنًا (ربما حُذف أو نُقل أو أُزيلت وحدة التخزين). اضغط على «اختيار مجلد» لاختيار مجلد جديد.",
+        "create_failed": "تعذر إنشاء ملف النسخة الاحتياطية في المجلد المختار. قد يكون المجلد للقراءة فقط، لذا اختر مجلدًا آخر.",
+        "write_failed": "تعذرت كتابة النسخة الاحتياطية في المجلد المختار. قد تكون وحدة التخزين ممتلئة أو للقراءة فقط، لذا اختر مجلدًا آخر.",
+        "native_not_loaded": "النسخ الاحتياطي إلى مجلد محلي غير متاح في هذا الإصدار.",
+        "unknown": "تعذر حفظ النسخة الاحتياطية في المجلد المختار. جرّب اختيار مجلد آخر، أو استخدم الحفظ عبر قائمة المشاركة أدناه."
+      },
+      "lightning_swap": {
+        "coinos_payment_failed": "فشلت دفعة Coinos",
+        "coinos_invoice_error": "خطأ في فاتورة Coinos: {message}",
+        "coinos_no_invoice": "لم تُرجع Coinos أي فاتورة",
+        "coinos_pending": "لم تؤكد Coinos الدفعة في الوقت المحدد. قد تكتمل لاحقًا. راجع رصيدك في Coinos بعد قليل قبل إعادة المحاولة.",
+        "coinos_insufficient": "رصيد Coinos ناقص بمقدار {short} sats (المطلوب {amount} + {fee} رسوم توجيه = {required}، ولديك {balance}). جرّب مبادلة {safe} sats.",
+        "strike_no_invoice": "لم تُرجع Strike أي فاتورة",
+        "strike_pending_unconfirmed": "قبلت Strike دفعتك (المعرّف {id}) لكنها لا تزال قيد التسوية على شبكة البرق، ولا يستطيع التطبيق تأكيد النتيجة. لا تُعِد المحاولة. افتح تطبيق Strike للتحقق: ستكتمل الدفعة أو يُعاد المبلغ تلقائيًا خلال بضع ساعات.",
+        "strike_pending_settling": "دفعة Strike {id} لا تزال قيد التسوية على شبكة البرق. لا تُعِد المحاولة. افتح تطبيق Strike للتحقق. ستكتمل أو يُعاد المبلغ تلقائيًا خلال بضع ساعات.",
+        "ark_routing_fee": "رسوم توجيه Ark"
+      }
+    },
+    "components": {
+      "exit_funding_source_list": {
+        "covers_it": "يغطي المبلغ",
+        "partial": "جزئي",
+        "needs_signing_device": "يتطلب جهاز التوقيع الخاص بك"
+      },
+      "tabs": {
+        "capsules": "الكبسولات",
+        "account": "الحساب",
+        "vault": "الخزنة",
+        "threshold": "الحد",
+        "history": "السجل",
+        "settings": "الإعدادات"
+      },
+      "header_back_button": {
+        "back_a11y": "رجوع"
+      },
+      "activity_dropdown": {
+        "no_activity": "لا يوجد نشاط بعد.",
+        "show_all_a11y": "عرض كل النشاط",
+        "show_more": "عرض المزيد"
+      },
+      "card": {
+        "lightning_account": "حساب البرق",
+        "refreshing_amount": "+ جارٍ تجديد {amount}",
+        "connected": "متصل",
+        "connection_slow": "الاتصال بطيء",
+        "offline": "غير متصل"
+      },
+      "circular_view": {
+        "region_both_unavailable": "خدمتا Strike وCoinOS غير متاحتين في Cypher Box في منطقتك. أرصدتك محفوظة لديهما وليس لدى Cypher Box، ولم يطرأ عليها أي تغيير. استخدم تطبيق Strike أو coinos.io للوصول إليها.",
+        "region_strike_unavailable": "خدمة Strike غير متاحة في Cypher Box في منطقتك. رصيدك في Strike محفوظ لدى Strike وليس لدى Cypher Box، ولم يطرأ عليه أي تغيير. استخدم تطبيق Strike للوصول إليه.",
+        "region_coinos_unavailable": "خدمة CoinOS غير متاحة في منطقتك. رصيدك في CoinOS محفوظ لدى CoinOS وليس لدى Cypher Box، ولم يطرأ عليه أي تغيير. سجّل الدخول عبر coinos.io لاستخدامه."
+      },
+      "coinos_wallet": {
+        "region_unavailable": "خدمة CoinOS غير متاحة في منطقتك. رصيدك محفوظ لدى CoinOS وليس لدى Cypher Box، ولم يطرأ عليه أي تغيير. سجّل الدخول عبر coinos.io لاستخدامه.",
+        "login_to_lightning_account": "سجّل الدخول إلى حساب البرق الخاص بك",
+        "no_account": "ليس لديك حساب؟",
+        "create_on_coinos": "أنشئ حسابًا على Coinos.io"
+      },
+      "create_button": {
+        "create": "إنشاء"
+      },
+      "custom_keyboard": {
+        "max": "الحد الأقصى"
+      },
+      "lightning_send_success": {
+        "payment_sent": "تم إرسال الدفعة ⚡",
+        "lightning_network": "شبكة البرق (Lightning)",
+        "home": "الرئيسية",
+        "network_fee": "رسوم الشبكة: {fee} sats",
+        "paid_to": "تم الدفع إلى {destination}",
+        "from_wallet": "من {wallet}"
+      },
+      "saving_vault": {
+        "savings_vault": "خزنة الادخار",
+        "bitcoin_network": "شبكة بتكوين"
+      },
+      "lightning_vault_create": {
+        "withdrawal_threshold": "حد السحب"
+      },
+      "payment_notification": {
+        "lightning": "البرق",
+        "hot_vault": "الخزنة الساخنة",
+        "cold_storage": "التخزين البارد",
+        "received": "تم الاستلام",
+        "incoming": "وارد"
+      },
+      "private_key_generator": {
+        "tap_to_reveal": "انقر لإظهار عبارة الاسترداد الخاصة بك",
+        "no_one_watching": "تأكد من أن لا أحد يراقب شاشتك.",
+        "view": "عرض"
+      },
+      "strike_signup_sheet": {
+        "title": "إنشاء حساب في Strike",
+        "message": "يعمل إنشاء الحساب في Strike على الهاتف بشكل أفضل عبر تطبيقها. كيف تود المتابعة؟",
+        "get_app": "احصل على تطبيق Strike",
+        "continue_in_browser": "المتابعة في المتصفح"
+      },
+      "strike_view": {
+        "fiat_balance_empty": "رصيد العملة الورقية فارغ، يرجى إضافة نقود لشراء BTC",
+        "amount_cannot_be_zero": "لا يمكن أن يكون المبلغ 0",
+        "bitcoin_balance_empty": "رصيد بتكوين فارغ، يرجى إضافة نقود لشراء العملة الورقية",
+        "buy": "شراء",
+        "sell": "بيع",
+        "fiat_balance": "رصيد العملة الورقية",
+        "deposit": "إيداع",
+        "withdraw": "سحب",
+        "no_bank_accounts": "لا توجد حسابات مصرفية مرتبطة.\nاربط حسابًا مصرفيًا في تطبيق Strike أولًا.",
+        "deposit_from": "الإيداع من:",
+        "withdraw_to": "السحب إلى:",
+        "bank": "مصرف",
+        "bank_lowercase": "المصرف",
+        "amount_currency": "المبلغ ({currency})",
+        "available": "المتاح: {amount}",
+        "enter_valid_amount": "أدخل مبلغًا صالحًا",
+        "amount_exceeds_balance": "المبلغ يتجاوز الرصيد المتاح",
+        "confirm_deposit_title": "تأكيد الإيداع",
+        "confirm_withdrawal_title": "تأكيد السحب",
+        "confirm_deposit_message": "إيداع {amount} من {bank} (****{last4})؟",
+        "confirm_withdraw_message": "سحب {amount} إلى {bank} (****{last4})؟",
+        "confirm": "تأكيد",
+        "deposit_initiated": "تم بدء الإيداع! قد تستغرق التسوية من 1 إلى 5 أيام عمل.",
+        "deposit_failed": "فشل الإيداع. راجع تطبيق Strike للاطلاع على التفاصيل.",
+        "withdrawal_initiated": "تم بدء السحب! ستصل الأموال خلال 1 إلى 5 أيام عمل.",
+        "withdrawal_failed": "فشل بدء السحب.",
+        "payout_failed": "فشل إنشاء عملية الدفع. راجع تطبيق Strike.",
+        "error_with_message": "خطأ: {message}",
+        "unknown_error": "خطأ غير معروف",
+        "logout": "تسجيل الخروج"
+      },
+      "strike_wallet": {
+        "region_unavailable": "خدمة Strike غير متاحة في Cypher Box في منطقتك. رصيدك محفوظ لدى Strike وليس لدى Cypher Box، ولم يطرأ عليه أي تغيير. استخدم تطبيق Strike للوصول إليه.",
+        "login_to_strike_account": "سجّل الدخول إلى حسابك في Strike",
+        "no_account": "ليس لديك حساب؟",
+        "create_on_strike": "أنشئ حسابًا على Strike"
+      },
+      "swipe_button": {
+        "slide_to_send": "اسحب للإرسال",
+        "please_wait": "يرجى الانتظار"
+      },
+      "tips": {
+        "title": "نصائح أمنية:",
+        "list": "• اكتبها بالترتيب الصحيح من 1 إلى 12\n• لا تكشفها لأي شخص\n• احتفظ بعدة نسخ\n• خزّنها في أماكن آمنة"
+      },
+      "checking_account": {
+        "create": "إنشاء"
+      }
+    },
+    "legacy": {
+      "scan_qr_code": {
+        "flip_camera_a11y": "تبديل الكاميرا",
+        "provide_manually": "أدخل محتوى رمز QR يدويًا:"
+      },
+      "wallet_details": {
+        "show_payment_codes": "عرض أكواد الدفع"
+      },
+      "import_speed": {
+        "mnemonic": "العبارة التذكيرية",
+        "wallet_type": "نوع المحفظة"
+      },
+      "payment_codes_list": {
+        "internal_error": "خطأ داخلي"
+      },
+      "please_backup_ldk": {
+        "message": "يرجى حفظ هذه النسخة الاحتياطية للمحفظة. فهي تتيح لك استعادة جميع قنواتك على جهاز آخر."
+      },
+      "about": {
+        "electrum_server": "خادم Electrum"
+      },
+      "licensing": {
+        "title": "الترخيص"
+      }
     }
   }
 }

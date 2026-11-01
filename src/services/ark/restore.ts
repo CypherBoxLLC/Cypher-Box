@@ -10,6 +10,7 @@ import {
 import { getEsploraHealth, noteEsploraFailure } from './esploraHealth';
 import { ARK_DATADIR } from './datadir';
 import { cacheArkMnemonicForReopen, getArkWalletHandle, getCachedArkMnemonic, openArkWallet } from './walletHandle';
+import loc from '../../../loc';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
@@ -318,8 +319,7 @@ export async function ensureArkWalletHandleReady(
         // when the cause is no connectivity: waiting never succeeds.
         if (openError) throw openError;
         throw new Error(
-            'The vault could not be opened. It needs a connection, so check yours, ' +
-            'or switch between Wi-Fi and mobile data, then try again.',
+            loc.cypherbox.services.ark_exit.vault_could_not_open,
         );
     }
     return handle;

@@ -12,6 +12,7 @@
  */
 
 import { MIN_USEFUL_FUNDING_SATS } from './exitFundingSources';
+import loc from '../../../loc';
 
 export type ExitFundingPlanInput = {
     /** Sats the reserve is short by. */
@@ -42,7 +43,7 @@ export function planExitFunding(input: ExitFundingPlanInput): ExitFundingPlan {
     const fee = Math.max(0, Math.floor(input.feeSats || 0));
 
     if (shortfall <= 0) {
-        return { ok: false, reason: 'The exit-fee reserve is already funded.' };
+        return { ok: false, reason: loc.cypherbox.services.exit_funding.already_funded };
     }
 
     // An unreadable balance is not a zero balance. Plan for the full shortfall
@@ -72,8 +73,8 @@ export function planExitFunding(input: ExitFundingPlanInput): ExitFundingPlan {
             // someone looking at a balance larger than the amount they typed.
             reason:
                 fee > 0
-                    ? `Not enough to cover the ${fee.toLocaleString()} sat network fee and a useful top-up.`
-                    : 'Balance is too small to be worth sending.',
+                    ? String(loc.formatString(loc.cypherbox.services.exit_funding.not_enough_for_fee, { fee: fee.toLocaleString() }))
+                    : loc.cypherbox.services.exit_funding.balance_too_small,
         };
     }
 
