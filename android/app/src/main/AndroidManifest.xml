@@ -111,12 +111,14 @@
 <!--        </activity>-->
 
 
+        <!-- Portrait only, like the iPhone app: several screens size themselves from the width read at start-up. -->
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTop"
+            android:screenOrientation="portrait"
             android:theme="@style/BootTheme"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
