@@ -2,7 +2,7 @@ import React, { useState, useContext, useEffect, useRef } from 'react';
 import { Alert, ActivityIndicator, Animated, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import styles from './styles';
 import { ScreenLayout, Text, Input, Button } from '@Cypher/component-library';
-import { colors, rtl } from '@Cypher/style-guide';
+import { colors, ltr, rtl } from '@Cypher/style-guide';
 import { HDSegwitBech32Wallet } from '../../../class';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -540,7 +540,7 @@ export default function RecoverSavingVault({ route }: Props) {
                             <View style={styles.inputColumn}>
                                 {inputs.slice(0, 6).map((input, index) => (
                                     <View key={input} style={styles.inputContainer}>
-                                        <Text h2 style={[styles.labelText, rtl.ltrText]}>{input}.</Text>
+                                        <Text h2 style={[styles.labelText, rtl.ltrText]}>{ltr(`${input}.`)}</Text>
                                         <Input
                                             ref={el => inputRefs.current[index] = el}
                                             style={styles.inputStyle}
@@ -563,7 +563,7 @@ export default function RecoverSavingVault({ route }: Props) {
                             <View style={styles.inputColumn}>
                                 {inputs.slice(6).map((input, index) => (
                                     <View key={input} style={styles.inputContainer}>
-                                        <Text h2 style={[styles.labelText, rtl.ltrText]}>{input}.</Text>
+                                        <Text h2 style={[styles.labelText, rtl.ltrText]}>{ltr(`${input}.`)}</Text>
                                         <Input
                                             ref={el => inputRefs.current[index + 6] = el}
                                             style={styles.inputStyle}

@@ -23,7 +23,7 @@ import {
     type ArkMovementStatus,
     type ArkMovementView,
 } from '@Cypher/services/ark';
-import { colors, rtl } from '@Cypher/style-guide';
+import { colors, ltr, rtl } from '@Cypher/style-guide';
 import screenHeight from '@Cypher/style-guide/screenHeight';
 import useAuthStore from '@Cypher/stores/authStore';
 import useEventLogStore, { type AppEvent } from '@Cypher/stores/eventLogStore';
@@ -461,9 +461,7 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
                             rtl.ltrText,
                         ])}
                     >
-                        {getStrikeCurrency(currency)}
-                        {sign}
-                        {fiatAmount.toFixed(2)}
+                        {ltr(`${getStrikeCurrency(currency)}${sign}${fiatAmount.toFixed(2)}`)}
                     </Text>
                     <Shadow inner useArt style={itemStyles.shadowBottom} />
                 </View>

@@ -33,7 +33,7 @@ import type { ChannelLookupResult } from "@Cypher/services/ark";
 import { validateMnemonic } from "@secondts/bark-react-native";
 import useAuthStore from "@Cypher/stores/authStore";
 import { useKeyboardLift } from "@Cypher/custom-hooks";
-import { colors, rtl } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
 
 import styles from "./styles";
 import loc from "../../../../loc";
@@ -1261,7 +1261,7 @@ function TypeSeedView({
                 <View style={styles.inputColumn}>
                     {inputs.slice(0, 6).map((label, index) => (
                         <View key={label} style={styles.inputContainer}>
-                            <Text h2 style={[styles.labelText, rtl.ltrText]}>{label}.</Text>
+                            <Text h2 style={[styles.labelText, rtl.ltrText]}>{ltr(`${label}.`)}</Text>
                             <Input
                                 ref={(el: any) => (inputRefs.current[index] = el)}
                                 style={styles.inputStyle}
@@ -1282,7 +1282,7 @@ function TypeSeedView({
                 <View style={styles.inputColumn}>
                     {inputs.slice(6).map((label, index) => (
                         <View key={label} style={styles.inputContainer}>
-                            <Text h2 style={[styles.labelText, rtl.ltrText]}>{label}.</Text>
+                            <Text h2 style={[styles.labelText, rtl.ltrText]}>{ltr(`${label}.`)}</Text>
                             <Input
                                 ref={(el: any) => (inputRefs.current[index + 6] = el)}
                                 style={styles.inputStyle}
