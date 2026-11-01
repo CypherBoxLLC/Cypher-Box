@@ -23,7 +23,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors, widths } from "@Cypher/style-guide";
+import { colors, rtl, widths } from "@Cypher/style-guide";
 import styles from "./styles";
 import Capsule from "../../HotStorageVault/Capsule";
 import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
@@ -390,7 +390,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
               {/* Header — centered */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10, position: 'relative' }}>
                 <TouchableOpacity activeOpacity={0.6} onPress={backClickHandler} style={{ position: 'absolute', left: 0, padding: 8 }}>
-                  <Image source={Back} style={{ width: 24, height: 22 }} resizeMode="contain" />
+                  <Image source={Back} style={[{ width: 24, height: 22 }, rtl.mirror]} resizeMode="contain" />
                 </TouchableOpacity>
                 <Image
                   source={selectedItem === 3 ? Hot : Cold1}

@@ -17,7 +17,7 @@ import { deriveVaultConnectivity } from "@Cypher/services/ark/chainTipFreshness"
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import SimpleToast from "react-native-simple-toast";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Image, Platform, TouchableOpacity, View } from "react-native";
@@ -969,7 +969,7 @@ export default function ArkWallet({
                     >
                         <View style={styles.middle}>
                             <Image
-                                style={styles.arrow}
+                                style={[styles.arrow, rtl.mirror]}
                                 resizeMode="contain"
                                 source={require("../../../img/arrow-right.png")}
                             />

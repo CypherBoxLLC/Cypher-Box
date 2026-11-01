@@ -23,7 +23,7 @@ import {
 import { dispatchNavigate } from "@Cypher/helpers";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors, widths } from "@Cypher/style-guide";
+import { colors, rtl, widths } from "@Cypher/style-guide";
 import withdrawStyles from "../WithdrawList/styles";
 import sendStyles from "../SendListNew/styles";
 import Capsule from "../../HotStorageVault/Capsule";
@@ -529,7 +529,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
               {/* Header */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10, position: 'relative' }}>
                 <TouchableOpacity onPress={backClickHandler} style={{ position: 'absolute', left: 0 }}>
-                  <Image source={Back} style={{ width: 24, height: 22 }} resizeMode="contain" />
+                  <Image source={Back} style={[{ width: 24, height: 22 }, rtl.mirror]} resizeMode="contain" />
                 </TouchableOpacity>
                 <Image
                   source={selectedVault === 1 ? Hot : Cold1}

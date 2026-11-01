@@ -33,7 +33,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { describeArkFailure } from "@Cypher/services/ark/networkFault";
 import { ARK_SERVER_URL, ESPLORA_URLS } from "@Cypher/services/ark";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import Clipboard from "@react-native-clipboard/clipboard";
 import styles from "./styles";
 import { createInvoice } from "@Cypher/api/coinOSApis";
@@ -644,7 +644,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 <TouchableOpacity onPress={backClickHandler} style={{ padding: 4 }}>
                   <Image
                     source={Back}
-                    style={{ width: 26, height: 24 }}
+                    style={[{ width: 26, height: 24 }, rtl.mirror]}
                     resizeMode="contain"
                   />
                 </TouchableOpacity>

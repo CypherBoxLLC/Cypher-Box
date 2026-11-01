@@ -4,7 +4,7 @@ import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } fro
 import { formatNumber, formatSats, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isStrikeAllowed } from "@Cypher/services/featureFlags";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import React, { useContext, useRef } from "react";
 import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
@@ -253,7 +253,7 @@ export default function StrikeWallet({
                     >
                         <View style={styles.middle}>
                             <Image
-                                style={styles.arrow}
+                                style={[styles.arrow, rtl.mirror]}
                                 resizeMode="contain"
                                 source={require("../../../img/arrow-right.png")}
                             />

@@ -3,6 +3,7 @@ import { Card, GradientCardWithShadow } from "@Cypher/components";
 import { calculateBalancePercentage, dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { rtl } from "@Cypher/style-guide";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
@@ -130,7 +131,7 @@ export default function CoinosWallet({
                     >
                         <View style={styles.middle}>
                             <Image
-                                style={styles.arrow}
+                                style={[styles.arrow, rtl.mirror]}
                                 resizeMode="contain"
                                 source={require("../../../img/arrow-right.png")}
                             />

@@ -11,7 +11,7 @@ import {
     getArkOnchainAddress,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { useRoute } from "@react-navigation/native";
 
 import { getFiatRate } from "../../../../models/fiatUnit";
@@ -161,7 +161,7 @@ export default function ArkReceiveScreen() {
                                         {loc.cypherbox.ark.receive.bark_address_warning}
                                     </Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>
@@ -180,7 +180,7 @@ export default function ArkReceiveScreen() {
                                         {loc.cypherbox.ark.receive.lightning_invoice_desc}
                                     </Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>
@@ -202,7 +202,7 @@ export default function ArkReceiveScreen() {
                                         {loc.formatString(loc.cypherbox.ark.receive.min_board_warning, { amount: minBoardSats })}
                                     </Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>

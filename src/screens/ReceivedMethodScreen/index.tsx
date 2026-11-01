@@ -6,6 +6,7 @@ import { LeftArrow } from "@Cypher/assets/images";
 import { GradientCard, GradientCardWithShadow } from "@Cypher/components";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { rtl } from "@Cypher/style-guide";
 
 export default function ReceivedMethodScreen() {
 
@@ -32,7 +33,7 @@ export default function ReceivedMethodScreen() {
                                     <Text subHeader bold style={styles.title}>{loc.cypherbox.payments.received_method.lightning_invoice}</Text>
                                     <Text h4 bold style={styles.desc}>{loc.cypherbox.payments.received_method.lightning_invoice_desc}</Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>
@@ -44,7 +45,7 @@ export default function ReceivedMethodScreen() {
                                     <Text subHeader bold style={styles.title}>{loc.cypherbox.payments.received_method.network_address}</Text>
                                     <Text h4 bold style={styles.desc}>{loc.cypherbox.payments.received_method.network_address_desc}</Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>
