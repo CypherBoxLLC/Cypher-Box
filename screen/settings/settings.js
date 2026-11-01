@@ -166,7 +166,7 @@ const Settings = ({ navigation }) => {
         {/* <ListItem title={loc.settings.encrypt_title} onPress={() => navigate('EncryptStorage')} testID="SecurityButton" chevron /> */}
         <ListItem 
           chevron 
-          title={"Security"} 
+          title={loc.settings.encrypt_title} 
           onPress={() => {
             dispatchNavigate('Security');
           }} 
@@ -190,11 +190,11 @@ const Settings = ({ navigation }) => {
           testID="NetworkSettings"
           chevron
         />
-        <ListItem title="Push Notifications" onPress={() => navigate('NotificationSettings')} testID="NotificationSettings" chevron />
-        {isAuth && <ListItem title={"Set Recovery Email (CoinOS)"} onPress={() => navigate('ChangeUsername', { goBack: true })} testID="ChangeUsername" chevron /> }
+        <ListItem title={loc.settings.push_notifications} onPress={() => navigate('NotificationSettings')} testID="NotificationSettings" chevron />
+        {isAuth && <ListItem title={loc.cypherbox.settings.set_recovery_email} onPress={() => navigate('ChangeUsername', { goBack: true })} testID="ChangeUsername" chevron /> }
         {/* <ListItem title={loc.settings.tools} onPress={() => navigate('Tools')} testID="Tools" chevron /> */}
         {/* <ListItem title={loc.settings.about} onPress={() => navigate('About')} testID="AboutButton" chevron /> */}
-        <ListItem title={"Terms of Service & Privacy Policy"} onPress={() => navigate('TermOfService')} testID="TermOfServiceButton" chevron />
+        <ListItem title={loc.cypherbox.tos.title} onPress={() => navigate('TermOfService')} testID="TermOfServiceButton" chevron />
         {/* <ListItem
           testID="EncyptedAndPasswordProtected"
           hideChevron
@@ -202,8 +202,8 @@ const Settings = ({ navigation }) => {
           Component={TouchableWithoutFeedback}
           switch={{ onValueChange: onEncryptStorageSwitch, value: storageIsEncryptedSwitchEnabled }}
         /> */}
-        {isAuth && <ListItem title={"Log Out from CoinOS"} onPress={handleLogout} testID="LogoutButton" chevron />}
-        {isStrikeAuth && <ListItem title={"Log Out from Strike"} onPress={handleStrikeLogout} testID="StrikeLogoutButton" chevron />}
+        {isAuth && <ListItem title={loc.cypherbox.settings.logout_coinos} onPress={handleLogout} testID="LogoutButton" chevron />}
+        {isStrikeAuth && <ListItem title={loc.cypherbox.settings.logout_strike} onPress={handleStrikeLogout} testID="StrikeLogoutButton" chevron />}
       </ScrollView>
     </SafeAreaView>
   );

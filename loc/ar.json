@@ -626,6 +626,11 @@
       "bitcoin_onchain": "بتكوين على السلسلة",
       "bark_vault": "خزنة Bark",
       "not_connected": "غير متصلة"
+    },
+    "settings": {
+      "set_recovery_email": "تعيين بريد الاسترداد (CoinOS)",
+      "logout_coinos": "تسجيل الخروج من CoinOS",
+      "logout_strike": "تسجيل الخروج من Strike"
     }
   }
 }

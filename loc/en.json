@@ -668,6 +668,11 @@
       "bitcoin_onchain": "Bitcoin on-chain",
       "bark_vault": "Bark Vault",
       "not_connected": "not connected"
+    },
+    "settings": {
+      "set_recovery_email": "Set Recovery Email (CoinOS)",
+      "logout_coinos": "Log Out from CoinOS",
+      "logout_strike": "Log Out from Strike"
     }
   }
 }
