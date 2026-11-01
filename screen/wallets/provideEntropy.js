@@ -24,6 +24,7 @@ import { FContainer, FButton } from '../../components/FloatButtons';
 import { BlueSpacing20, BlueTabs } from '../../BlueComponents';
 import navigationStyle from '../../components/navigationStyle';
 import SafeArea from '../../components/SafeArea';
+import useProtectSecret from '../../src/custom-hooks/useProtectSecret';
 
 const ENTROPY_LIMIT = 256;
 
@@ -277,6 +278,9 @@ Buttons.propTypes = {
 
 const Entropy = () => {
   const [entropy, dispatch] = useReducer(eReducer, initialState);
+  // The rolls, the entropy hex and the check screen's values are the key
+  // itself, so keep them out of screenshots and the app-switcher preview.
+  useProtectSecret();
   // Optional params (all default to legacy BlueWallet behaviour when absent):
   //   minBits     — Save refuses below this many collected bits. BlueWallet
   //                 happily saves ANY amount (even 0 bytes, silently padded

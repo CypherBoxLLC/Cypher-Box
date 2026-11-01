@@ -322,6 +322,14 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="SeedQRBackup" component={SeedQRBackup} options={{ headerShown: false }} />
       <WalletsStack.Screen name="SeedSignerGate" component={SeedSignerGate} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CreateSignerSeed" component={CreateSignerSeed} options={{ headerShown: false }} />
+      {/* The dice screen again, for CreateSignerSeed's "Add your own dice rolls": the copy in HotVaultFlow can't be
+          reached from here, so without this the button did nothing. The back title is set because CreateSignerSeed has
+          none, and its route name would show instead. */}
+      <WalletsStack.Screen
+        name="ProvideEntropy"
+        component={ProvideEntropy}
+        options={{ headerShown: true, title: loc.entropy.title, headerBackTitle: 'Back' }}
+      />
       <WalletsStack.Screen name="TransactionBroadCastNew" component={TransactionBroadCastNew} options={{ headerShown: false }} />
       <WalletsStack.Screen name="PurchaseVault" component={PurchaseVault} options={{ headerShown: false }} />
       <WalletsStack.Screen name="TransactionNew" component={TransactionNew} options={{ headerShown: false }} />
