@@ -4,6 +4,7 @@ import { TouchableOpacity, View } from 'react-native';
 import { Text } from '@Cypher/component-library';
 import { dispatchNavigate } from '@Cypher/helpers';
 import useAuthStore from '@Cypher/stores/authStore';
+import loc from '../../loc';
 
 /**
  * Shown in the Ark send / withdraw / swap flows when the user can't spend
@@ -42,8 +43,7 @@ export default function LockedInRefreshNotice({ lockedSats }: { lockedSats: numb
             }}
         >
             <Text style={{ fontSize: 12, color: '#CCC', lineHeight: 17 }}>
-                {lockedSats.toLocaleString()} sats are in a pending refresh, not lost.
-                Cancel the refresh from Capsules to spend them.
+                {loc.formatString(loc.cypherbox.ark.locked_notice.body, { amount: lockedSats.toLocaleString() })}
             </Text>
             <TouchableOpacity
                 onPress={goToCapsules}
@@ -56,7 +56,7 @@ export default function LockedInRefreshNotice({ lockedSats }: { lockedSats: numb
                 }}
             >
                 <Text bold style={{ fontSize: 13, color: '#1C1C1C' }}>
-                    Go to Capsules to cancel refresh
+                    {loc.cypherbox.ark.locked_notice.go_to_capsules}
                 </Text>
             </TouchableOpacity>
         </View>

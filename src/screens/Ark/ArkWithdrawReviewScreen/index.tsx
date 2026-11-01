@@ -34,6 +34,7 @@ import { ARK_SERVER_URL, ESPLORA_URLS } from '@Cypher/services/ark/config';
 
 import TextViewV2 from '../../Invoice/TextView';
 import reviewStyles from '../../ReviewPayment/styles';
+import loc from '../../../../loc';
 
 /**
  * ArkWithdrawReviewScreen — Phase 3.
@@ -190,7 +191,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
             } catch (err: any) {
                 if (cancelled) return;
                 setFee(null);
-                setFeeError(describeArkFailure(err, 'Fee estimate failed', { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }));
+                setFeeError(describeArkFailure(err, loc.cypherbox.ark.common.fee_estimate_failed, { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }));
             } finally {
                 if (!cancelled) setIsEstimating(false);
             }
@@ -209,7 +210,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                 setAmountSats(next);
             } else {
                 SimpleToast.show(
-                    `Amount must be between 1 and ${formatNumber(spendableSats)} sats`,
+                    String(loc.formatString(loc.cypherbox.ark.withdraw_review.amount_range, { max: formatNumber(spendableSats) })),
                     SimpleToast.LONG,
                 );
             }
@@ -251,34 +252,34 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
         // again" instruction is advice the UI immediately contradicts.
         if (sendIndeterminate) {
             Alert.alert(
-                'Withdrawal may still be in flight',
-                'The previous attempt has not resolved yet. Sending again could pay twice. Wait for your balance to settle, then start a new withdrawal.',
+                loc.cypherbox.ark.withdraw_review.in_flight_title,
+                loc.cypherbox.ark.withdraw_review.in_flight_previous,
             );
             return;
         }
         if (!destinationLooksValid) {
             SimpleToast.show(
-                'Destination address is not a valid Bitcoin address',
+                loc.cypherbox.ark.withdraw_review.invalid_destination_toast,
                 SimpleToast.LONG,
             );
             swipeButtonRef.current?.reset();
             return;
         }
         if (amountSats <= 0) {
-            SimpleToast.show('Set an amount greater than 0', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.ark.withdraw_review.amount_zero, SimpleToast.SHORT);
             swipeButtonRef.current?.reset();
             return;
         }
         if (amountSats > spendableSats) {
             SimpleToast.show(
-                `Amount exceeds spendable balance (${formatNumber(spendableSats)} sats after reserve)`,
+                String(loc.formatString(loc.cypherbox.ark.withdraw_review.amount_exceeds, { amount: formatNumber(spendableSats) })),
                 SimpleToast.LONG,
             );
             swipeButtonRef.current?.reset();
             return;
         }
         if (!fee) {
-            SimpleToast.show('Waiting for fee estimate…', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.ark.withdraw_review.waiting_for_fee, SimpleToast.SHORT);
             swipeButtonRef.current?.reset();
             return;
         }
@@ -290,7 +291,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
         if (Number(fee.grossAmountSats) > arkBalanceSats) {
             const maxSendable = Math.max(0, arkBalanceSats - Number(fee.feeSats));
             SimpleToast.show(
-                `Amount + fee (${formatNumber(Number(fee.grossAmountSats))} sats) exceeds your Ark balance. Try ${formatNumber(maxSendable)} sats to drain the wallet.`,
+                String(loc.formatString(loc.cypherbox.ark.withdraw_review.gross_exceeds, { gross: formatNumber(Number(fee.grossAmountSats)), max: formatNumber(maxSendable) })),
                 SimpleToast.LONG,
             );
             swipeButtonRef.current?.reset();
@@ -300,7 +301,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
         // through both rails see consistent messaging.
         if (vaultTab && !isCheck) {
             SimpleToast.show(
-                'Please verify the destination address',
+                loc.cypherbox.ark.withdraw_review.verify_address_toast,
                 SimpleToast.SHORT,
             );
             swipeButtonRef.current?.reset();
@@ -339,15 +340,15 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                 // relying on a routing detail three modules away staying true.
                 setSendIndeterminate(true);
                 Alert.alert(
-                    'Withdrawal may still be in flight',
+                    loc.cypherbox.ark.withdraw_review.in_flight_title,
                     err?.message ??
-                        'This withdrawal may still be in flight. Do not send it again: wait for your balance to settle before retrying.',
+                        loc.cypherbox.ark.withdraw_review.in_flight_body,
                 );
             } else {
                 // Only reached once the ambiguous case is ruled out, so naming
                 // a definite outcome is safe here.
                 SimpleToast.show(
-                    describeArkFailure(err, 'Withdraw failed', {
+                    describeArkFailure(err, loc.cypherbox.ark.withdraw_review.withdraw_failed, {
                         chainUrls: ESPLORA_URLS,
                         arkUrl: ARK_SERVER_URL,
                     }),
@@ -385,7 +386,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
             <ScreenLayout
                 showToolbar
                 isBackButton={false}
-                title="Withdrawal sent"
+                title={loc.cypherbox.ark.withdraw_review.sent_title}
             >
                 <View
                     style={{
@@ -409,11 +410,10 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                         <Icon name="check" type="font-awesome" color="#000" size={48} />
                     </View>
                     <Text bold h2 white center style={{ marginBottom: 12 }}>
-                        Withdrawal broadcast
+                        {loc.cypherbox.ark.withdraw_review.broadcast_title}
                     </Text>
                     <Text style={{ color: colors.gray.light, textAlign: 'center', lineHeight: 20 }}>
-                        Your {destinationKind} vault will reflect the funds once the
-                        transaction confirms on-chain.
+                        {destinationKind === 'cold' ? loc.cypherbox.ark.withdraw_review.broadcast_body_cold : loc.cypherbox.ark.withdraw_review.broadcast_body_hot}
                     </Text>
 
                     {resultId && (
@@ -429,7 +429,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                             }}
                         >
                             <Text bold style={{ color: colors.ark.light }}>
-                                View on mempool.space
+                                {loc.cypherbox.ark.common.view_on_mempool}
                             </Text>
                         </TouchableOpacity>
                     )}
@@ -445,7 +445,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                         }}
                     >
                         <Text bold style={{ color: '#000', fontSize: 16 }}>
-                            Back to home
+                            {loc.cypherbox.ark.withdraw_review.back_to_home}
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -456,7 +456,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
     // ---- Review state — visual structure matches ReviewPayment line-for-line --
 
     return (
-        <ScreenLayout showToolbar isBackButton title="Review Withdrawal">
+        <ScreenLayout showToolbar isBackButton title={loc.cypherbox.ark.withdraw_review.title}>
             <View style={reviewStyles.topView}>
                 <View style={reviewStyles.middle}>
                     {/* Threshold-not-yet-reached notice. Same color/copy
@@ -470,7 +470,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                 marginBottom: 25,
                             }}
                         >
-                            You haven't reached your withdrawal threshold yet.
+                            {loc.cypherbox.ark.withdraw_review.threshold_not_reached}
                         </Text>
                     )}
 
@@ -488,7 +488,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                         {isEditAmount ? (
                             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginLeft: 15 }}>
                                 <Text bold style={{ fontSize: 18, color: colors.white }}>
-                                    Recipient will get:{' '}
+                                    {loc.cypherbox.ark.withdraw_review.recipient_will_get}
                                 </Text>
                                 <TextInput
                                     value={draftAmount}
@@ -509,7 +509,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                             </View>
                         ) : (
                             <TextViewV2
-                                keytext="Recipient will get: "
+                                keytext={loc.cypherbox.ark.withdraw_review.recipient_will_get}
                                 text={`${formatNumber(amountSats)} sats ~ ${getStrikeCurrency(currency)}${amountFiat}`}
                                 textStyle={reviewStyles.price}
                             />
@@ -533,7 +533,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                     color: isEditAmount ? colors.green : colors.white,
                                 }}
                             >
-                                {isEditAmount ? 'Save' : 'Edit Amount'}
+                                {isEditAmount ? loc._.save : loc.cypherbox.ark.withdraw_review.edit_amount}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -553,13 +553,13 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                             marginBottom: 12,
                         }}
                     >
-                        Spendable: {formatNumber(spendableSats)} sats
+                        {loc.formatString(loc.cypherbox.ark.withdraw_review.spendable, { amount: formatNumber(spendableSats) })}
                         {arkBalanceSats > reserveSats && reserveSats > 0
-                            ? ` (${formatNumber(reserveSats)} sats reserve kept on Ark)`
+                            ? ` ${String(loc.formatString(loc.cypherbox.ark.withdraw_review.reserve_kept, { amount: formatNumber(reserveSats) }))}`
                             : ''}
                     </Text>
 
-                    <TextViewV2 keytext="Sent from: " text="Bark Vault" />
+                    <TextViewV2 keytext={loc.cypherbox.ark.common.sent_from} text={loc.cypherbox.ark.common.bark_vault} />
 
                     {/* Address card. Same shape as ReviewPayment's
                         `isWithdrawal && to.length > 0` branch: bordered
@@ -574,7 +574,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                         }}
                     >
                         <Text bold style={{ fontSize: 18 }}>
-                            {'To: '}
+                            {loc.cypherbox.ark.common.to}
                         </Text>
                         <View
                             style={{
@@ -603,7 +603,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                         : colors.greenShadow,
                                 })}
                             >
-                                {'Vault Address: '}
+                                {loc.cypherbox.ark.withdraw_review.vault_address}
                                 {destinationAddress}
                             </Text>
                             <Image
@@ -614,7 +614,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                         </View>
                         {!destinationLooksValid && (
                             <Text style={{ color: '#FF7A68', fontSize: 12, marginTop: 6 }}>
-                                Destination doesn't look like a valid Bitcoin address.
+                                {loc.cypherbox.ark.withdraw_review.invalid_destination}
                             </Text>
                         )}
                     </View>
@@ -666,7 +666,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                     }}
                                     italic
                                 >
-                                    I verified this address
+                                    {loc.cypherbox.ark.withdraw_review.i_verified}
                                 </Text>
                             </TouchableOpacity>
                         </>
@@ -695,7 +695,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                     fontSize: 13,
                                 }}
                             >
-                                Estimating fee…
+                                {loc.cypherbox.ark.common.estimating_fee}
                             </Text>
                         </View>
                     ) : feeError ? (
@@ -712,7 +712,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                     ) : fee ? (
                         <>
                             <TextViewV2
-                                keytext="Ark withdraw fee:  "
+                                keytext={loc.cypherbox.ark.withdraw_review.withdraw_fee}
                                 text={` ~   ${getStrikeCurrency(currency)}${feeFiat}${
                                     feePct !== null
                                         ? ` (${
@@ -743,11 +743,11 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                     lineHeight: 14,
                                 }}
                             >
-                                Includes Ark server service fee + on-chain broadcast fee.
+                                {loc.cypherbox.ark.withdraw_review.fee_includes}
                             </Text>
                             {fee.vtxosSpent.length > 0 && (
                                 <TextViewV2
-                                    keytext="Capsules used:  "
+                                    keytext={loc.cypherbox.ark.withdraw_review.capsules_used}
                                     text={` ~   ${fee.vtxosSpent.length}`}
                                 />
                             )}
@@ -771,7 +771,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                         onChange={setNote}
                         value={note}
                         textInputStyle={reviewStyles.heigth2}
-                        label="Add note"
+                        label={loc.cypherbox.ark.withdraw_review.add_note}
                     />
                 </GradientCard>
             </View>
@@ -801,7 +801,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                     lineHeight: 16,
                 }}
             >
-                Estimated confirmation: 1–6h at current rates. To speed up after broadcast, tap the pending transaction in your Hot Vault history and choose "Accelerate transaction".
+                {loc.cypherbox.ark.withdraw_review.confirmation_estimate}
             </Text>
 
             {/* Caution caption — same copy + position as ReviewPayment. */}
@@ -813,17 +813,20 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                     marginBottom: 10,
                 }}
             >
-                <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 'bold' }}>
-                    Caution:
-                </Text>{' '}
-                Bitcoin transactions are irreversible
+                {loc.formatString(loc.cypherbox.ark.common.caution_irreversible, {
+                    caution: (
+                        <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 'bold' }}>
+                            {loc.cypherbox.ark.common.caution}
+                        </Text>
+                    ),
+                })}
             </Text>
 
             {/* Slide-to-Withdraw — same SwipeButton component, same title
                 copy as ReviewPayment when isWithdrawal is true. */}
             <View style={reviewStyles.container}>
                 <SwipeButton
-                    title="Slide to Withdraw"
+                    title={loc.cypherbox.ark.withdraw_review.slide_to_withdraw}
                     ref={swipeButtonRef}
                     onToggle={handleToggle}
                     isLoading={isSendLoading}

@@ -21,6 +21,7 @@ import { colors } from '@Cypher/style-guide';
 
 import TextView from '../../Invoice/TextView';
 import styles from './styles';
+import loc from '../../../../loc';
 
 /**
  * ArkTransactionDetailsScreen — per-movement detail view for the Ark history.
@@ -67,10 +68,10 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
     // state restoration edge case), render an empty state rather than crash.
     if (!movement) {
         return (
-            <ScreenLayout showToolbar isBackButton title="Transaction Details">
+            <ScreenLayout showToolbar isBackButton title={loc.cypherbox.ark.tx_details.title}>
                 <View style={styles.main}>
                     <Text white style={{ textAlign: 'center', marginTop: 40 }}>
-                        Transaction not found.
+                        {loc.cypherbox.ark.tx_details.not_found}
                     </Text>
                 </View>
             </ScreenLayout>
@@ -139,15 +140,15 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
     const counterpartyLabel = ((): { sent: string; received: string } => {
         switch (kind) {
             case 'lightning':
-                return { sent: 'Lightning invoice: ', received: 'Lightning invoice: ' };
+                return { sent: loc.cypherbox.ark.tx_details.lightning_invoice, received: loc.cypherbox.ark.tx_details.lightning_invoice };
             case 'ark':
-                return { sent: 'Ark address: ', received: 'Ark address: ' };
+                return { sent: loc.cypherbox.ark.tx_details.ark_address, received: loc.cypherbox.ark.tx_details.ark_address };
             case 'board':
             case 'exit':
             case 'onchain':
-                return { sent: 'Bitcoin address: ', received: 'Bitcoin address: ' };
+                return { sent: loc.cypherbox.ark.tx_details.bitcoin_address, received: loc.cypherbox.ark.tx_details.bitcoin_address };
             default:
-                return { sent: 'Sent to: ', received: 'Received on: ' };
+                return { sent: loc.cypherbox.ark.tx_details.sent_to, received: loc.cypherbox.ark.tx_details.received_on };
         }
     })();
 
@@ -165,7 +166,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
     };
 
     return (
-        <ScreenLayout showToolbar isBackButton title="Transaction Details">
+        <ScreenLayout showToolbar isBackButton title={loc.cypherbox.ark.tx_details.title}>
             <ScrollView
                 style={styles.main}
                 contentContainerStyle={{ paddingBottom: 40 }}
@@ -200,27 +201,27 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                 {/* Field list — same TextView component the Invoice screen
                     uses. Fields in the order a user most likely cares about:
                     status → rail → timing → fee → counterparty → internals. */}
-                <TextView keytext="Status: " text={prettyStatus(status)} />
-                <TextView keytext="Type: " text={prettyKind(kind, amountSats)} />
+                <TextView keytext={loc.cypherbox.ark.tx_details.status} text={prettyStatus(status)} />
+                <TextView keytext={loc.cypherbox.ark.tx_details.type} text={prettyKind(kind, amountSats)} />
                 <TextView
-                    keytext="Date: "
+                    keytext={loc.cypherbox.ark.tx_details.date}
                     text={dayjs(timestamp).format('HH:mm:ss MM/DD/YYYY')}
                 />
                 {raw.completedAt && raw.completedAt !== raw.createdAt && (
                     <TextView
-                        keytext="Completed: "
+                        keytext={loc.cypherbox.ark.tx_details.completed}
                         text={dayjs(raw.completedAt).format('HH:mm:ss MM/DD/YYYY')}
                     />
                 )}
                 {feeSats > 0 && (
                     <TextView
-                        keytext="Fee: "
+                        keytext={loc.cypherbox.ark.tx_details.fee}
                         text={`${feeSats} sats${feeFiat ? `  ·  $${feeFiat}` : ''}`}
                     />
                 )}
                 {feePct !== null && (
                     <TextView
-                        keytext="Fee % of total: "
+                        keytext={loc.cypherbox.ark.tx_details.fee_pct}
                         text={
                             feePct < 0.01
                                 ? '< 0.01%'
@@ -252,14 +253,14 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
 
                 {inputVtxoIds.length > 0 && (
                     <TextView
-                        keytext="Input capsules: "
-                        text={`${inputVtxoIds.length} consumed`}
+                        keytext={loc.cypherbox.ark.tx_details.input_capsules}
+                        text={String(loc.formatString(loc.cypherbox.ark.tx_details.consumed, { count: inputVtxoIds.length }))}
                     />
                 )}
                 {outputVtxoIds.length > 0 && (
                     <TextView
-                        keytext="Output capsules: "
-                        text={`${outputVtxoIds.length} produced`}
+                        keytext={loc.cypherbox.ark.tx_details.output_capsules}
+                        text={String(loc.formatString(loc.cypherbox.ark.tx_details.produced, { count: outputVtxoIds.length }))}
                     />
                 )}
 
@@ -273,7 +274,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                 {canLinkExplorer && onchainTxid && (
                     <TouchableOpacity onPress={handleOpenExplorer}>
                         <TextView
-                            keytext="Bitcoin TX ID: "
+                            keytext={loc.cypherbox.ark.tx_details.txid}
                             text={truncateMiddle(onchainTxid, 40)}
                         />
                     </TouchableOpacity>
@@ -285,7 +286,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                         onPress={handleOpenExplorer}
                     >
                         <Text bold h4 style={styles.buttonText}>
-                            View on mempool.space
+                            {loc.cypherbox.ark.common.view_on_mempool}
                         </Text>
                     </TouchableOpacity>
                 )}
@@ -312,24 +313,24 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
 
 function prettyStatus(status: ArkMovementStatus): string {
     switch (status) {
-        case 'successful': return 'Confirmed';
-        case 'pending':    return 'Pending';
-        case 'failed':     return 'Failed';
-        case 'canceled':   return 'Canceled';
-        default:           return 'Unknown';
+        case 'successful': return loc.cypherbox.ark.tx_details.status_confirmed;
+        case 'pending':    return loc.cypherbox.ark.tx_details.status_pending;
+        case 'failed':     return loc.cypherbox.ark.tx_details.status_failed;
+        case 'canceled':   return loc.cypherbox.ark.tx_details.status_canceled;
+        default:           return loc.cypherbox.ark.tx_details.status_unknown;
     }
 }
 
 function prettyKind(kind: ArkMovementKind, amountSats: number): string {
     const direction = amountSats >= 0 ? 'receive' : 'send';
     switch (kind) {
-        case 'lightning': return `Lightning ${direction}`;
-        case 'ark':       return `Ark ${direction}`;
-        case 'onchain':   return `Bitcoin on-chain ${direction}`;
-        case 'board':     return 'Board to Ark';
-        case 'exit':      return 'Exit from Ark';
-        case 'refresh':   return 'Capsule refresh';
-        default:          return 'Movement';
+        case 'lightning': return direction === 'receive' ? loc.cypherbox.ark.tx_details.kind_lightning_receive : loc.cypherbox.ark.tx_details.kind_lightning_send;
+        case 'ark':       return direction === 'receive' ? loc.cypherbox.ark.tx_details.kind_ark_receive : loc.cypherbox.ark.tx_details.kind_ark_send;
+        case 'onchain':   return direction === 'receive' ? loc.cypherbox.ark.tx_details.kind_onchain_receive : loc.cypherbox.ark.tx_details.kind_onchain_send;
+        case 'board':     return loc.cypherbox.ark.tx_details.kind_board;
+        case 'exit':      return loc.cypherbox.ark.tx_details.kind_exit;
+        case 'refresh':   return loc.cypherbox.ark.tx_details.kind_refresh;
+        default:          return loc.cypherbox.ark.tx_details.kind_movement;
     }
 }
 

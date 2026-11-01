@@ -25,6 +25,7 @@ import { Alert, AppState, Image, Platform, TouchableOpacity, View } from "react-
 import RefreshWaitBanner from "@Cypher/components/RefreshWaitBanner";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import styles from "./styles";
+import loc from "../../../loc";
 
 /**
  * Minimum gap between exit-cost estimates kicked off from the home screen.
@@ -230,18 +231,18 @@ export default function ArkWallet({
         if (confirmed > 0 && confirmed < minBoardSats) {
             return {
                 sats: confirmed, color: '#FFD54F', stuck: true,
-                label: `Boarding (on-chain): ${confirmed} sats. Too small to board (min ${minBoardSats} sats).`,
+                label: String(loc.formatString(loc.cypherbox.ark.wallet.boarding_too_small, { amount: confirmed, min: minBoardSats })),
             };
         }
         if (confirmed >= minBoardSats) {
             return {
                 sats: confirmed, color: colors.green, stuck: false,
-                label: `Boarding (on-chain): ${confirmed} sats. Joining the next round.`,
+                label: String(loc.formatString(loc.cypherbox.ark.wallet.boarding_joining, { amount: confirmed })),
             };
         }
         return {
             sats: confirming, color: colors.green, stuck: false,
-            label: `Boarding (on-chain): ${confirming} sats. Confirming.`,
+            label: String(loc.formatString(loc.cypherbox.ark.wallet.boarding_confirming, { amount: confirming })),
         };
     }, [arkBalanceDetail, minBoardSats, boardingHiddenAfterRecover, arkExitFeeReserveSats]);
 
@@ -263,7 +264,7 @@ export default function ArkWallet({
             (w: any) => typeof w?.getID === 'function' && w.getID() === walletID,
         );
         if (!hotVault || typeof hotVault._getInternalAddressByIndex !== 'function') {
-            Alert.alert('No Hot Vault found', 'Open or create your Hot Vault first, then try again.');
+            Alert.alert(loc.cypherbox.ark.wallet.no_hot_vault_title, loc.cypherbox.ark.wallet.no_hot_vault_body);
             return;
         }
 
@@ -272,8 +273,8 @@ export default function ArkWallet({
             est = await estimateArkOnchainRecover(arkBalanceDetail?.onchainBoardingSats ?? 0);
         } catch {
             Alert.alert(
-                'Recovery unavailable',
-                'Could not read the on-chain balance right now. Check your connection and try again.',
+                loc.cypherbox.ark.wallet.recovery_unavailable_title,
+                loc.cypherbox.ark.wallet.recovery_unavailable_body,
             );
             return;
         }
@@ -285,8 +286,8 @@ export default function ArkWallet({
         }
         if (!est.economical) {
             Alert.alert(
-                'Too small to recover',
-                'The network fee would be larger than the stuck amount, so recovering it on-chain would cost more than it returns.',
+                loc.cypherbox.ark.wallet.too_small_title,
+                loc.cypherbox.ark.wallet.too_small_body,
             );
             return;
         }
@@ -296,38 +297,38 @@ export default function ArkWallet({
         try {
             destAddress = hotVault._getInternalAddressByIndex(hotVault.getNextFreeChangeAddressIndex());
         } catch {
-            Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to recover to.');
+            Alert.alert(loc.cypherbox.ark.wallet.no_hot_vault_address_title, loc.cypherbox.ark.wallet.no_hot_vault_address_body);
             return;
         }
         if (!destAddress) {
-            Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to recover to.');
+            Alert.alert(loc.cypherbox.ark.wallet.no_hot_vault_address_title, loc.cypherbox.ark.wallet.no_hot_vault_address_body);
             return;
         }
 
         Alert.alert(
-            'Recover stuck funds',
-            `Send ${est.recoverableSats} sats back to your Hot Vault? This is an on-chain transaction. The network fee is about ${est.feeSats} sats.`,
+            loc.cypherbox.ark.wallet.recover_confirm_title,
+            String(loc.formatString(loc.cypherbox.ark.wallet.recover_confirm_body, { amount: est.recoverableSats, fee: est.feeSats })),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: loc._.cancel, style: 'cancel' },
                 {
-                    text: 'Recover',
+                    text: loc.cypherbox.ark.wallet.recover,
                     onPress: async () => {
                         setRecovering(true);
                         try {
                             const res = await recoverArkOnchainBoard(destAddress, est.confirmedSats, est.feeRateSatPerVb);
                             setBoardingHiddenAfterRecover(true);
                             if (res.status === 'already-cleared') {
-                                Alert.alert('Nothing to recover', 'These funds already cleared.');
+                                Alert.alert(loc.cypherbox.ark.wallet.nothing_to_recover_title, loc.cypherbox.ark.wallet.nothing_to_recover_body);
                             } else {
                                 Alert.alert(
-                                    'Recovery sent',
-                                    `${res.sentSats} sats are on the way to your Hot Vault. They will appear there as a pending transaction.`,
+                                    loc.cypherbox.ark.wallet.recovery_sent_title,
+                                    String(loc.formatString(loc.cypherbox.ark.wallet.recovery_sent_body, { amount: res.sentSats })),
                                 );
                             }
                         } catch (e: any) {
                             Alert.alert(
-                                'Recovery failed',
-                                String(e?.message || '') || 'The recovery transaction could not be sent. Your funds are unchanged.',
+                                loc.cypherbox.ark.wallet.recovery_failed_title,
+                                String(e?.message || '') || loc.cypherbox.ark.wallet.recovery_failed_body,
                             );
                         } finally {
                             setRecovering(false);
@@ -404,7 +405,7 @@ export default function ArkWallet({
     }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
     const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
-        ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d, refresh soon`
+        ? String(loc.formatString(loc.cypherbox.ark.wallet.expiry_warning, { days: Math.round(soonestDaysLeft) }))
         : null;
 
     /**
@@ -552,7 +553,7 @@ export default function ArkWallet({
         if (vaultConnectivity.level === 'red') {
             // COPY: Bam finalizes. Kept identical to WalletsView on purpose.
             return {
-                text: 'Bark vault is offline. Capsule times shown are estimates until it reconnects.',
+                text: loc.cypherbox.ark.wallet.offline,
                 error: true,
                 tapTab: 0,
             };
@@ -586,8 +587,8 @@ export default function ArkWallet({
         //    tab. Render "here" as an underlined link to invite the tap.
         if (dustCapsuleCount > 0) {
             return {
-                text: 'Attention: you have dust ark capsules that might expire. Batch refresh or spend them here.',
-                linkText: 'here',
+                text: String(loc.formatString(loc.cypherbox.ark.wallet.dust_warning, { link: loc.cypherbox.ark.wallet.dust_warning_link })),
+                linkText: loc.cypherbox.ark.wallet.dust_warning_link,
                 tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
                 error: true,
             };
@@ -607,7 +608,7 @@ export default function ArkWallet({
         //    fires until we actually know the answer.
         if (notificationsEnabled === false) {
             return {
-                text: 'Notifications off. Capsules can expire without warning. Enable in Settings.',
+                text: loc.cypherbox.ark.wallet.notifications_off,
                 error: true,
             };
         }
@@ -628,8 +629,8 @@ export default function ArkWallet({
             && (arkBalanceDetail?.onchainBoardingSats ?? 0) <= 0) {
             return {
                 // COPY: Bam finalizes.
-                text: 'Emergency Exit has no fees reserved. Fund it in the Vault tab so you can exit without the server.',
-                linkText: 'Vault tab',
+                text: String(loc.formatString(loc.cypherbox.ark.wallet.exit_fees_missing, { link: loc.cypherbox.ark.wallet.exit_fees_missing_link })),
+                linkText: loc.cypherbox.ark.wallet.exit_fees_missing_link,
                 tapTab: 1, // Vault tab: where the exit fee reserve card lives
                 error: true,
             };
@@ -640,7 +641,7 @@ export default function ArkWallet({
         //    enabling iCloud Drive). Android never sets this flag.
         if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
             return {
-                text: 'Backup not synced. Enable iCloud Drive in iOS Settings',
+                text: loc.cypherbox.ark.wallet.backup_not_synced,
                 error: true,
             };
         }
@@ -738,7 +739,7 @@ export default function ArkWallet({
                 <View style={allThreeLightning ? { transform: [{ translateY: 10 }] } : undefined}>
                     <Card
                         wallet="ARK"
-                        title="Bark Vault"
+                        title={loc.cypherbox.ark.common.bark_vault}
                         balance={arkBalance}
                         // See `arkConvertedRate` above — the parent's
                         // `convertedRate` prop is the CoinOS figure, not ours.
@@ -823,8 +824,8 @@ export default function ArkWallet({
                                     activeOpacity={0.7}
                                     accessibilityRole="button"
                                     accessibilityLabel={arkRefreshStuck.nearExpiry
-                                        ? 'Move your stuck funds out'
-                                        : 'Recover stuck refresh'}
+                                        ? loc.cypherbox.ark.wallet.stuck_move_out_a11y
+                                        : loc.cypherbox.ark.wallet.stuck_recover_a11y}
                                 >
                                     <Text
                                         h4
@@ -834,8 +835,8 @@ export default function ArkWallet({
                                         ]}
                                     >
                                         {arkRefreshStuck.nearExpiry
-                                            ? `Warning: Refresh stuck near expiry · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to move funds out`
-                                            : `Refresh stuck · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover`}
+                                            ? loc.formatString(loc.cypherbox.ark.wallet.stuck_near_expiry, { amount: arkRefreshStuck.stuckSats.toLocaleString() })
+                                            : loc.formatString(loc.cypherbox.ark.wallet.stuck_refresh, { amount: arkRefreshStuck.stuckSats.toLocaleString() })}
                                     </Text>
                                 </TouchableOpacity>
                             )}
@@ -847,7 +848,7 @@ export default function ArkWallet({
                                         disabled={recovering}
                                         activeOpacity={0.7}
                                         accessibilityRole="button"
-                                        accessibilityLabel="Recover stuck on-chain funds to your Hot Vault"
+                                        accessibilityLabel={loc.cypherbox.ark.wallet.recover_onchain_a11y}
                                     >
                                         <Text h4 style={[styles.alert, { color: boardingView.color }]}>
                                             {boardingView.label}{' '}
@@ -855,7 +856,7 @@ export default function ArkWallet({
                                                 bold
                                                 style={{ color: boardingView.color, textDecorationLine: 'underline' }}
                                             >
-                                                {recovering ? 'Recovering…' : 'Recover'}
+                                                {recovering ? loc.cypherbox.ark.wallet.recovering : loc.cypherbox.ark.wallet.recover}
                                             </Text>
                                         </Text>
                                     </TouchableOpacity>
@@ -868,14 +869,14 @@ export default function ArkWallet({
                                     <TouchableOpacity
                                         onPress={() => {
                                             setArkExitFeeReserveSats(boardingView.sats);
-                                            SimpleToast.show('Kept on-chain for exit fees.', SimpleToast.SHORT);
+                                            SimpleToast.show(loc.cypherbox.ark.wallet.kept_for_exit_fees, SimpleToast.SHORT);
                                         }}
                                         activeOpacity={0.7}
                                         accessibilityRole="button"
-                                        accessibilityLabel="Leave on-chain funds as exit fees"
+                                        accessibilityLabel={loc.cypherbox.ark.wallet.leave_as_exit_fees}
                                     >
                                         <Text h4 style={[styles.alert, { color: colors.gray.light, textDecorationLine: 'underline' }]}>
-                                            Leave on-chain funds as exit fees
+                                            {loc.cypherbox.ark.wallet.leave_as_exit_fees}
                                         </Text>
                                     </TouchableOpacity>
                                     </>
@@ -973,17 +974,17 @@ export default function ArkWallet({
                                 source={require("../../../img/arrow-right.png")}
                             />
                             <Text h2 style={styles.shadow} center>
-                                Create an Ark Wallet
+                                {loc.cypherbox.ark.wallet.create_wallet}
                             </Text>
                         </View>
                     </TouchableOpacity>
                     <View style={styles.createAccount}>
                         <Text bold style={styles.text}>
-                            Non-custodial Lightning via Ark
+                            {loc.cypherbox.ark.wallet.non_custodial}
                         </Text>
                         <TouchableOpacity onPress={createArkWalletClickHandler}>
                             <Text bold style={styles.login}>
-                                ⚠ Experimental · tap to learn more
+                                {loc.cypherbox.ark.wallet.experimental}
                             </Text>
                         </TouchableOpacity>
                     </View>

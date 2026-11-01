@@ -19,6 +19,7 @@ import { colors } from '@Cypher/style-guide';
 // circle, text scale) is identical — this is the Bark-vault-themed twin of
 // that screen, not a fork of the layout.
 import styles from '../../Transaction/styles';
+import loc from '../../../../loc';
 
 /**
  * ArkSendSuccessScreen — success animation for a completed Bark Lightning
@@ -81,8 +82,8 @@ export default function ArkSendSuccessScreen({ route }: Props) {
     const value = String(route?.params?.value ?? '0');
     const valueUsd = route?.params?.valueUsd ?? '0.00';
     const currency = route?.params?.currency ?? 'USD';
-    const title = route?.params?.title ?? 'Payment Sent';
-    const networkLabel = route?.params?.networkLabel ?? 'Lightning Network';
+    const title = route?.params?.title ?? loc.cypherbox.ark.send_success.payment_sent;
+    const networkLabel = route?.params?.networkLabel ?? loc.cypherbox.ark.send_success.lightning_network;
     const isOnchain = route?.params?.isOnchain === true;
     const note = route?.params?.note;
     const isLightning = route?.params?.isLightning === true;
@@ -254,7 +255,7 @@ export default function ArkSendSuccessScreen({ route }: Props) {
                         <GradientButton
                             style={styles.invoiceButton}
                             textStyle={{ fontFamily: 'Lato-Medium', color: colors.black.default }}
-                            title="Home"
+                            title={loc.cypherbox.ark.send_success.home}
                             colors_={[colors.ark.gradient1, colors.ark.gradient2]}
                             onPress={onHome}
                         />

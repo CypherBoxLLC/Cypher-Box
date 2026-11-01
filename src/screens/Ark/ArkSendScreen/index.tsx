@@ -24,6 +24,7 @@ import {
 import { colors } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
 import LockedInRefreshNotice from '@Cypher/components/LockedInRefreshNotice';
+import loc from '../../../../loc';
 
 /**
  * Decode the sat amount encoded in an amount-bearing BOLT11, or null if the
@@ -146,7 +147,7 @@ export default function ArkSendScreen({ route }: Props) {
         try {
             const pasted = await Clipboard.getString();
             if (!pasted) {
-                SimpleToast.show('Clipboard empty', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.ark.send.clipboard_empty, SimpleToast.SHORT);
                 return;
             }
             onChangeDestination(pasted.trim());
@@ -181,7 +182,7 @@ export default function ArkSendScreen({ route }: Props) {
                             ? ret
                             : (ret?.data ?? '');
                         if (!raw) {
-                            SimpleToast.show('No data in QR code', SimpleToast.SHORT);
+                            SimpleToast.show(loc.cypherbox.ark.send.no_qr_data, SimpleToast.SHORT);
                             return;
                         }
                         onChangeDestination(raw.trim());
@@ -190,7 +191,7 @@ export default function ArkSendScreen({ route }: Props) {
             });
         }).catch((err: any) => {
             console.warn('[ArkSend] camera authorization failed:', err?.message ?? err);
-            SimpleToast.show('Camera permission needed to scan', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.ark.send.camera_permission, SimpleToast.SHORT);
         });
     }, [navigation, onChangeDestination]);
 
@@ -302,11 +303,11 @@ export default function ArkSendScreen({ route }: Props) {
             ? colors.ark.light
             : '#FF7A68';
     const pillLabel = pillIsEmpty
-        ? 'Paste an invoice, address, or Lightning address'
+        ? loc.cypherbox.ark.send.destination_hint
         : labelForDestinationKind(destination.kind);
 
     return (
-        <ScreenLayout disableScroll showToolbar isBackButton title="Send from Ark">
+        <ScreenLayout disableScroll showToolbar isBackButton title={loc.cypherbox.ark.send.title}>
             <ScrollView
                 style={styles.main}
                 contentContainerStyle={{ paddingBottom: 12 }}
@@ -328,7 +329,7 @@ export default function ArkSendScreen({ route }: Props) {
 
                 {/* --- Destination (below the amount). --- */}
                 <Text bold style={styles.destLabel}>
-                    Destination
+                    {loc.cypherbox.ark.send.destination}
                 </Text>
                 <View style={styles.destInputWrap}>
                     <TextInput
@@ -350,7 +351,7 @@ export default function ArkSendScreen({ route }: Props) {
                         onSubmitEditing={() => Keyboard.dismiss()}
                     />
                     <TouchableOpacity style={styles.pasteBtn} onPress={handlePaste}>
-                        <Text style={styles.pasteBtnText}>PASTE</Text>
+                        <Text style={styles.pasteBtnText}>{loc.cypherbox.ark.send.paste}</Text>
                     </TouchableOpacity>
                     {/* Scan button — sits flush with PASTE so users have
                         both clipboard and camera entry without leaving
@@ -359,7 +360,7 @@ export default function ArkSendScreen({ route }: Props) {
                         kind-pill and validation behave identically to
                         a paste. */}
                     <TouchableOpacity style={styles.scanBtn} onPress={handleScan}>
-                        <Text style={styles.scanBtnText}>SCAN</Text>
+                        <Text style={styles.scanBtnText}>{loc.cypherbox.ark.send.scan}</Text>
                     </TouchableOpacity>
                 </View>
                 <View style={[styles.kindPill, { borderColor: pillBorderColor }]}>
@@ -383,7 +384,7 @@ export default function ArkSendScreen({ route }: Props) {
                         <LockedInRefreshNotice lockedSats={pendingInRoundSats} />
                     ) : (
                         <Text style={styles.error}>
-                            Insufficient spendable balance: {spendableSats.toLocaleString()} sats available.
+                            {loc.formatString(loc.cypherbox.ark.send.insufficient_balance, { amount: spendableSats.toLocaleString() })}
                         </Text>
                     )
                 )}
@@ -392,7 +393,7 @@ export default function ArkSendScreen({ route }: Props) {
             {/* Shared sats/USD keyboard. Its primary button hands off to the
                 Review Payment screen. */}
             <CustomKeyboard
-                title="Estimate fee"
+                title={loc.cypherbox.ark.send.estimate_fee}
                 onPress={handleContinue}
                 disabled={!canProceed}
                 setSATS={handleSatsFromKeyboard}
