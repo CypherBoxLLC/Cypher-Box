@@ -1,6 +1,7 @@
 // createInvoice moved to TopupList
 
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { GradientView, SavingVault } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
@@ -169,11 +170,11 @@ export default function BottomBar({
 
     const topupClickHandler = () => {
         if (!isAuth && !isStrikeAuth && !isArkAuth) {
-            SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.login_to_top_up, SimpleToast.SHORT);
             return;
         }
         if (!wallet && !coldStorageWallet) {
-            SimpleToast.show('You need to create a vault first', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.create_vault_first, SimpleToast.SHORT);
             return;
         }
         refTopupRBSheet?.current?.open();
@@ -181,7 +182,7 @@ export default function BottomBar({
 
     const withdrawClickHandler = () => {
         if (!isAuth && !isStrikeAuth && !isArkAuth) {
-            SimpleToast.show('You need to be logged in to wallet to withdraw', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.login_to_withdraw, SimpleToast.SHORT);
             return
         }
         if(!wallet && !coldStorageWallet) {
@@ -263,8 +264,8 @@ export default function BottomBar({
     };
 
     const tabs = [
-        { key: "hot", title: "Hot Storage", component: () => <HotStorageTab /> },
-        { key: "cold", title: "Cold Storage", component: () => <ColdStorageTab /> },
+        { key: "hot", title: loc.cypherbox.home.hot_storage, component: () => <HotStorageTab /> },
+        { key: "cold", title: loc.cypherbox.home.cold_storage, component: () => <ColdStorageTab /> },
     ];
 
     const HotStorageTab = () => (
@@ -277,7 +278,7 @@ export default function BottomBar({
                     shadowBottomBottom={styles.savingVault}
                     bitcoinText={styles.bitcoinText}
                     isVault={false}
-                    title={"Hot Vault"}
+                    title={loc.cypherbox.home.hot_vault}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={balanceVault}
                     inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)).toFixed(2)}`}
@@ -289,11 +290,11 @@ export default function BottomBar({
                     <View style={styles.createVaultContainer}>
                         <View style={styles.alreadyView}>
                             <Text bold style={styles.text}>
-                                Already have a vault?
+                                {loc.cypherbox.home.already_have_vault}
                             </Text>
                             <TouchableOpacity onPress={handleRecoverSavingVault}>
                                 <Text bold style={[styles.login, { color: colors.green }]}>
-                                    Recover
+                                    {loc.cypherbox.home.recover}
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -328,7 +329,7 @@ export default function BottomBar({
                     shadowTopBottom={styles.savingVault}
                     shadowBottomBottom={styles.savingVault}
                     bitcoinText={styles.bitcoinText}
-                    title={"Cold Vault"}
+                    title={loc.cypherbox.home.cold_vault}
                     isVault={true}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={coldStorageBalanceVault}
@@ -378,7 +379,7 @@ export default function BottomBar({
                                 pointerEvents="none"
                             />
                             <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                                Unlock Cold Vault
+                                {loc.cypherbox.home.unlock_cold_vault}
                             </Text>
                         </View>
                     </LinearGradient>

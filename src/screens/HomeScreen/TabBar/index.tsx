@@ -1,4 +1,5 @@
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { GradientCard } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import React, { useEffect, useRef, useState } from "react";
@@ -83,7 +84,7 @@ export default function TabBar({ isVault, scrollProgress, coldStorageClickHandle
           >
             <View style={styles.linearGradientbottom}>
               <Text h3 bold style={{ color: colors.redLight }}>
-                Hot Storage
+                {loc.cypherbox.home.hot_storage}
               </Text>
             </View>
           </TouchableOpacity>
@@ -95,7 +96,7 @@ export default function TabBar({ isVault, scrollProgress, coldStorageClickHandle
           >
             <View style={styles.linearGradientbottom}>
               <Text h3 bold style={{ color: colors.coldGreen }}>
-                Cold Storage
+                {loc.cypherbox.home.cold_storage}
               </Text>
             </View>
           </TouchableOpacity>

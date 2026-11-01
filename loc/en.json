@@ -631,6 +631,43 @@
       "title": "Terms of Service & Privacy Policy",
       "last_updated": "Last Updated: September 2026",
       "english_version": "English version"
+    },
+    "home": {
+      "total_assets": "Total Assets",
+      "add_wallet": "Add wallet",
+      "unlock_lightning_wallet": "Unlock Lightning Wallet",
+      "already_have_vault": "Already have a vault?",
+      "recover": "Recover",
+      "unlock_hot_vault": "Unlock Hot Vault",
+      "unlock_cold_vault": "Unlock Cold Vault",
+      "hot_vault": "Hot Vault",
+      "cold_vault": "Cold Vault",
+      "hot_storage": "Hot Storage",
+      "cold_storage": "Cold Storage",
+      "utxo_upgrade_cold": "You have more than 5 UTXOs. Consider upgrading to Cold Storage to consolidate and improve security.",
+      "utxo_consolidate": "Fees are low, a good time to consolidate your small UTXOs to save on future transaction costs.",
+      "strike_auth_expired": "Authorization expired. Please login again to strike account",
+      "lightning_invoice_failed": "Failed to process Lightning invoice. Please try again.",
+      "coinos_balance_failed": "Failed to load CoinOS balance. Pull to refresh.",
+      "balance_failed": "Failed to load balance. Pull to refresh.",
+      "payments_failed": "Failed to load payments. Pull to refresh.",
+      "strike_refresh_failed": "Failed to refresh Strike balance.",
+      "camera_permission_scan": "Camera permission needed to scan",
+      "no_spendable_capsules": "No spendable capsules in this vault",
+      "hot_vault_not_ready": "Hot Vault not ready. Open the vault once and try again.",
+      "cold_vault_not_ready": "Cold Vault not ready. Open the vault once and try again.",
+      "login_to_top_up": "You need to be logged in to wallet to top up",
+      "create_vault_first": "You need to create a vault first",
+      "login_to_withdraw": "You need to be logged in to wallet to withdraw"
+    },
+    "scan_with": {
+      "title": "Scan with",
+      "subtitle": "Choose which wallet pays the scanned address or invoice.",
+      "lightning_custodial": "Lightning · custodial",
+      "lightning_self_custodial": "Lightning · self-custodial",
+      "bitcoin_onchain": "Bitcoin on-chain",
+      "bark_vault": "Bark Vault",
+      "not_connected": "not connected"
     }
   }
 }
