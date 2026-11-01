@@ -10,7 +10,7 @@ import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags"
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Animated, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
 import { useFocusEffect } from "@react-navigation/native";
@@ -140,6 +140,10 @@ export default function BottomBar({
         return 0;
     };
     const [index, setIndex] = useState(getInitialIndex());
+    // In RTL, Android lays the horizontal pager out right-to-left. scrollToIndex and
+    // initialScrollIndex take the tab index, but the offset in scroll events is
+    // measured from the left, where the last tab sits, so map it back to the tab.
+    const pageToTab = (page: number) => (I18nManager.isRTL && Platform.OS === 'android' ? tabs.length - 1 - page : page);
 
     useEffect(() => {
         if (!hasSavingVault && hasColdStorage && !vaultTab) {
@@ -435,7 +439,7 @@ export default function BottomBar({
     };
 
     const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+        const next = pageToTab(Math.round(e.nativeEvent.contentOffset.x / screenWidth));
         if (next === index) return;
         setIndex(next);
         setVaultTab(next === 1 && coldStorageWallet ? true : wallet && false);
