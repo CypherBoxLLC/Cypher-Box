@@ -237,17 +237,17 @@ export default function SavingVaultIntro() {
         <ScreenLayout showToolbar progress={0} color={[colors.green, colors.green]}>
             <Animated.View style={[styles.container, { transform: [{ translateY: contentLift }] }]}>
                 <View style={styles.innerView}>
-                    <Text style={styles.title}>{signingMode ? 'Create a Seed' : 'Hot Savings Vault'}</Text>
+                    <Text style={styles.title}>{signingMode ? loc.cypherbox.vault.saving_vault_intro.seed_title : loc.cypherbox.vault.saving_vault_intro.title}</Text>
                     {/* a seed-signer's seed isn't a vault: it's backed up, wiped from the phone and scanned in to sign */}
                     {signingMode ? (
-                    <Text h4 style={styles.descption}>This phone creates a seed (12 words) to sign with. Back it up on paper and as a SeedQR, give your watch-only wallet its public key and check the first addresses match.
+                    <Text h4 style={styles.descption}>{loc.cypherbox.vault.saving_vault_intro.seed_para_1}
                         {'\n\n'}
-                        Then wipe the seed from this phone. To sign, scan the SeedQR: the seed is only held while you sign.
+                        {loc.cypherbox.vault.saving_vault_intro.seed_para_2}
                         {'\n\n'}
-                        Keep this phone offline for good. If it ever connects to the internet, treat this seed as a hot wallet and plan to move your coins to a new seed.
+                        {loc.cypherbox.vault.saving_vault_intro.seed_para_3}
                     </Text>
                     ) : (
-                    <Text h4 style={styles.descption}>Hot Vault, commonly known as a ‘hot wallet’, allows you to become the sole owner of your bitcoin, as the saying goes: Not your keys, not your coins. Money stored in this vault will be secured by the main Bitcoin network, not by a third party custodian.
+                    <Text h4 style={styles.descption}>{loc.cypherbox.vault.saving_vault_intro.para_1}
                         {'\n\n'}
                         {loc.cypherbox.vault.saving_vault_intro.para_2}
                         
@@ -350,7 +350,7 @@ export default function SavingVaultIntro() {
                         </TouchableOpacity>
                     )}
                 </View>
-                <Button text={signingMode ? 'Generate Seed' : 'Generate Private Key'} onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
+                <Button text={signingMode ? loc.cypherbox.vault.saving_vault_intro.generate_seed : loc.cypherbox.vault.saving_vault_intro.generate_key} onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
             </Animated.View>
         </ScreenLayout>
     )

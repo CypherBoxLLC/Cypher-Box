@@ -170,7 +170,7 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
             <View style={styles.container}>
                 <Text style={styles.title} center>{loc.cypherbox.payments.common.transaction_signing}</Text>
                 <View style={styles.recipientView}>
-                    <Text h4 style={{marginBottom: 20}}>Signed it on your signing device? Scan or import the signed transaction.</Text>
+                    <Text h4 style={{marginBottom: 20}}>{loc.cypherbox.payments.hardware_wallet_transaction_continue.instructions}</Text>
                     <TouchableOpacity onPress={openScanner} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
                         <Text h3>{loc.cypherbox.payments.common.scan}</Text>
                     </TouchableOpacity>
@@ -183,7 +183,7 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
                         accessibilityRole="button"
                         style={styles.showAgain}
                     >
-                        <Text h4 style={styles.showAgainText}>Need the unsigned transaction again? Show it</Text>
+                        <Text h4 style={styles.showAgainText}>{loc.cypherbox.payments.hardware_wallet_transaction_continue.show_again}</Text>
                     </TouchableOpacity>
                     <Text h4 style={[{marginTop: 20}, rtl.ltrText]}>{txHex}</Text>
                 </View>

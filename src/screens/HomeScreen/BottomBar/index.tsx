@@ -306,11 +306,11 @@ export default function BottomBar({
                         {/* for a phone that only signs for a watch-only wallet: it needn't keep a Hot Vault at all */}
                         <View style={[styles.alreadyView, signOnceStyles.row]}>
                             <Text bold style={[styles.text, signOnceStyles.text]}>
-                                Only signing?
+                                {loc.cypherbox.home.only_signing}
                             </Text>
                             <TouchableOpacity onPress={() => startSigning()} accessibilityRole="button">
                                 <Text bold style={[styles.login, signOnceStyles.text, signOnceStyles.link]}>
-                                    Sign once from a backup
+                                    {loc.cypherbox.home.sign_once}
                                 </Text>
                             </TouchableOpacity>
                         </View>

@@ -352,12 +352,12 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
         {/* <ScreenLayout disableScroll showToolbar isBackButton title={"Connect Hardware Device"}> */}
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text style={styles.title}>Connect Signing Device</Text>
+                    <Text style={styles.title}>{loc.cypherbox.vault.connect_cold_storage.title}</Text>
                     {loading ?
                         <ActivityIndicator style={{marginTop: 30}} color={colors.white} />
                     :
                         <>
-                            <Text h4 style={styles.descption}>Authorize your hardware wallet to display its Public Key (xpub, ypub, or zpub), then Scan, Paste, OR Import it from your files. Some devices don’t give you that, so you need to take it from their companion app’s settings.{'\n\n'}Signing with an offline phone? On that phone open Hot Vault → Settings → Vault’s Public Key (xpub).</Text>
+                            <Text h4 style={styles.descption}>{loc.cypherbox.vault.connect_cold_storage.description}{'\n\n'}{loc.cypherbox.vault.connect_cold_storage.offline_phone_hint}</Text>
                             {/* Before the key, not after: the third-party server learns every address of this vault as soon
                                 as it's loaded, and switching to a node later can't undo that */}
                             <TouchableOpacity
@@ -368,13 +368,13 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                 <MaterialCommunityIcons name={node ? 'check-circle' : 'shield-alert-outline'} size={22} color={node ? colors.green : colors.yellow2} />
                                 {node ?
                                     <View style={styles.nodeText}>
-                                        <Text h4 style={styles.nodeTitle}>Node connected: {node}</Text>
-                                        <Text style={styles.nodeHint}>You're watching your Cold Vault wallet and broadcasting from your own chosen node.</Text>
+                                        <Text h4 style={styles.nodeTitle}>{loc.formatString(loc.cypherbox.vault.connect_cold_storage.node_connected, { node })}</Text>
+                                        <Text style={styles.nodeHint}>{loc.cypherbox.vault.connect_cold_storage.node_hint}</Text>
                                     </View>
                                 :
                                     <View style={styles.nodeText}>
-                                        <Text h4 style={styles.nodeWarningTitle}>Privacy-security measure - connect node (optional):</Text>
-                                        <Text style={styles.nodeWarning}>Your public key and all addresses, transaction history, and balance will be exposed to a third-party server. Before you load your public key, connect your own node.</Text>
+                                        <Text h4 style={styles.nodeWarningTitle}>{loc.cypherbox.vault.connect_cold_storage.node_warning_title}</Text>
+                                        <Text style={styles.nodeWarning}>{loc.cypherbox.vault.connect_cold_storage.node_warning}</Text>
                                     </View>
                                 }
                                 <MaterialCommunityIcons name="chevron-right" size={22} color={node ? colors.blueText : colors.yellow2} />
@@ -390,8 +390,8 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                         {ignoreNode && <MaterialCommunityIcons name="check-bold" size={16} color={colors.black.default} />}
                                     </View>
                                     <Text style={styles.ignoreText}>
-                                        <Text style={styles.ignoreLabel}>Ignore: </Text>
-                                        If you don't yet have a node, Cypher Box will auto-connect you to a public third-party node. Less privacy: private keys and backups are not exposed, only balance, transaction history, addresses, etc.
+                                        <Text style={styles.ignoreLabel}>{loc.cypherbox.vault.connect_cold_storage.ignore_label}</Text>
+                                        {loc.cypherbox.vault.connect_cold_storage.ignore_text}
                                     </Text>
                                 </TouchableOpacity>
                             }
@@ -406,7 +406,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                     onPress={importScan}>
                                     <View style={styles.insideView}>
                                         <Image source={require("../../../img/scan-new.png")} style={styles.qrimage} resizeMode="contain" />
-                                        <Text h2>Scan <Text style={styles.keyKinds}>(xpub, zpub, etc)</Text></Text>
+                                        <Text h2>{loc.cypherbox.vault.connect_cold_storage.scan} <Text style={styles.keyKinds}>{loc.cypherbox.vault.connect_cold_storage.key_kinds}</Text></Text>
                                     </View>
                                 </GradientCard>
                                 <GradientCard
@@ -422,7 +422,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                         {address ?
                                             <Text style={[{fontSize: 14}, rtl.ltrText]}>{shortenAddress(address)}</Text>
                                         :
-                                            <Text h2>Paste <Text style={styles.keyKinds}>(xpub, zpub, etc)</Text></Text>
+                                            <Text h2>{loc.cypherbox.vault.connect_cold_storage.paste} <Text style={styles.keyKinds}>{loc.cypherbox.vault.connect_cold_storage.key_kinds}</Text></Text>
                                         }
                                     </View>
                                 </GradientCard>
@@ -436,7 +436,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                     onPress={showFilePicker}>
                                     <View style={styles.insideView}>
                                         <Image source={require('../../../img/import.png')} style={styles.qrimage} resizeMode="contain" />
-                                        <Text h2>Import <Text style={styles.keyKinds}>(xpub, zpub, etc)</Text></Text>
+                                        <Text h2>{loc.cypherbox.vault.connect_cold_storage.import} <Text style={styles.keyKinds}>{loc.cypherbox.vault.connect_cold_storage.key_kinds}</Text></Text>
                                     </View>
                                 </GradientCard>
                             </View>

@@ -639,7 +639,6 @@
       "unlock_lightning_wallet": "Unlock Lightning Wallet",
       "already_have_vault": "Already have a vault?",
       "recover": "Recover",
-      "unlock_hot_vault": "Unlock Hot Vault",
       "unlock_cold_vault": "Unlock Cold Vault",
       "hot_vault": "Hot Vault",
       "cold_vault": "Cold Vault",
@@ -666,16 +665,20 @@
       "withdraw": "Withdraw",
       "activity_a11y": "Activity",
       "address_failed_bitcoin": "Failed to generate bitcoin address. Please try again.",
-      "address_failed_liquid": "Failed to generate liquid address. Please try again."
+      "address_failed_liquid": "Failed to generate liquid address. Please try again.",
+      "only_signing": "Only signing?",
+      "sign_once": "Sign once from a backup"
     },
     "scan_with": {
       "title": "Scan with",
-      "subtitle": "Choose which wallet pays the scanned address or invoice.",
+      "subtitle": "Choose which wallet pays the scanned address or invoice, or sign a transaction.",
       "lightning_custodial": "Lightning · custodial",
       "lightning_self_custodial": "Lightning · self-custodial",
       "bitcoin_onchain": "Bitcoin on-chain",
       "bark_vault": "Bark Vault",
-      "not_connected": "not connected"
+      "not_connected": "not connected",
+      "sign_label": "Sign a transaction",
+      "sign_subtitle": "From a watch & broadcast only wallet"
     },
     "settings": {
       "set_recovery_email": "Set Recovery Email (CoinOS)",
@@ -946,7 +949,7 @@
         "reserve_kept": "({amount} sats reserve kept on Ark)",
         "vault_address": "Vault Address: ",
         "invalid_destination": "Destination doesn't look like a valid Bitcoin address.",
-        "verify_warning": "⚠️ DO NOT transfer to any of these addresses without verifying their authenticity from your hardware device!",
+        "verify_warning": "⚠️ DO NOT transfer to any of these addresses without checking them on your signing device!",
         "i_verified": "I verified this address",
         "withdraw_fee": "Ark withdraw fee:  ",
         "fee_includes": "Includes Ark server service fee + on-chain broadcast fee.",
@@ -1058,7 +1061,9 @@
         "custodial_subtitle": "Sign in to an existing Lightning account. Or create an account on provider's website and come back again to Cypher Box and login!",
         "login_to": "Login to",
         "strike_region_notice": "Strike is not available in Cypher Box in your region. If Strike serves your country, you can use the Strike app directly, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address.",
-        "coinos_region_notice": "CoinOS is not available in your region. You can use it directly at coinos.io, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address."
+        "coinos_region_notice": "CoinOS is not available in your region. You can use it directly at coinos.io, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address.",
+        "cold_signing_header": "COLD SIGNING  ·  OFFLINE PHONE",
+        "cold_signing_subtitle": "Turn an isolated phone that stays offline (a Pixel is recommended) into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign."
       },
       "checking_intro": {
         "title": "Lightning Account",
@@ -1476,7 +1481,7 @@
         "strike_fiat_account": "Strike Fiat Account",
         "strike_lightning_account": "Strike Lightning Account",
         "vault_address_label": "Vault Address: ",
-        "verify_hardware_warning_list": "⚠️ DO NOT transfer to any of these addresses without verifying their authenticity from your hardware device! ",
+        "verify_hardware_warning_list": "⚠️ DO NOT transfer to any of these addresses without checking them on your signing device!",
         "min_amount_btc": "Min: {amount} BTC",
         "fee_label": "Fee: ",
         "trading_fees_label": "Trading fees:  ",
@@ -1487,7 +1492,7 @@
         "network_fee_heading": "NETWORK FEE",
         "fetching_fee_options": "Fetching fee options…",
         "no_fee_options": "No fee options yet. Make sure your purchase amount is above Strike's minimum.",
-        "verify_hardware_warning_single": "⚠️ DO NOT transfer to this address without verifying its authenticity on your hardware device!",
+        "verify_hardware_warning_single": "⚠️ DO NOT transfer to this address without checking it on your signing device!",
         "caution_irreversible": "{caution} Bitcoin transactions are irreversible",
         "caution": "Caution:",
         "slow_swap_notice": "This is taking longer than usual. The swap keeps confirming in the background. It's safe to go Home, your balance updates when it lands.",
@@ -1497,7 +1502,7 @@
         "slide_to_send": "Slide to Send",
         "send": "Send",
         "verify_address": "Verify Address",
-        "scan_hardware_to_confirm": "Scan with your hardware wallet to confirm"
+        "scan_hardware_to_confirm": "Scan it with your hardware wallet, or compare it with Hot Vault → Show Addresses on your offline phone"
       },
       "review_withdrawal": {
         "title": "Review withdrawal",
@@ -1587,15 +1592,27 @@
       "confirm_hardware_transaction": {
         "title": "Confirm Transaction",
         "transaction_signed": "Transaction Signed!",
-        "verify_on_coinbin": "Verify on Coinb.in"
+        "tx_copied": "Transaction copied",
+        "check_matches": "Check this matches what you approved on your device:",
+        "back_to_wallet": "Back to your wallet:",
+        "to": "To:",
+        "unknown_output": "Unknown output script",
+        "network_fee": "Network fee:",
+        "copy_tx": "Copy transaction",
+        "verify_guide_a11y": "How to check this transaction yourself",
+        "verify_guide_text": "Spending large capsules from cold storage? Check this signed transaction in an independent, offline tool before you send it."
       },
       "hardware_wallet_transaction": {
-        "instructions": "Scan or export this unsigned transaction (PSBT) with your hardware device and sign it from there. Tap 'Next' when you're done.",
-        "export": "Export"
+        "instructions": "Scan or export this unsigned transaction (PSBT) with your signing device (a hardware wallet, or the signing wallet on your offline phone) and sign it there. Tap 'Next' when you're done.",
+        "export": "Export",
+        "leave_note": "You can leave Cypher Box while you sign. This transaction waits on your Cold Vault's Vault tab until you send it or discard it.",
+        "signing_safely_a11y": "Signing safely",
+        "signer_warning": "Sign only with a device or app you installed from its official source: a tampered signer can hide your recovery phrase inside the signature, even offline."
       },
       "hardware_wallet_transaction_continue": {
-        "instructions": "Did you finish signing from your hardware device? Scan or import the signed transaction",
-        "import": "Import"
+        "instructions": "Signed it on your signing device? Scan or import the signed transaction.",
+        "import": "Import",
+        "show_again": "Need the unsigned transaction again? Show it"
       },
       "swap_amount": {
         "pending_title": "Payment submitted, not yet confirmed",
@@ -2219,7 +2236,7 @@
         "no_cold_wallet_connected": "No Cold Storage wallet connected.",
         "no_cold_addresses": "Couldn't derive any Cold Storage addresses.",
         "dest_hot_vault": "Hot Vault",
-        "confirm_hw_verified_first": "Confirm you've verified the address on your hardware device first.",
+        "confirm_hw_verified_first": "Confirm you've checked the address on your signing device first.",
         "dest_cold_vault": "Cold Storage vault",
         "invalid_address": "That doesn't look like a valid Bitcoin address.",
         "dest_external": "external Bitcoin address",
@@ -2286,8 +2303,8 @@
         "cold_destination": "Cold Storage destination",
         "address_copied": "Address copied",
         "choose_another_address": "Choose another address",
-        "hw_verify_warning": "⚠️ DO NOT proceed without verifying the selected address on your hardware device. Confirm character-by-character that the address above matches what your device displays.",
-        "hw_verified_checkbox": "I have verified this address on my hardware device.",
+        "hw_verify_warning": "⚠️ DO NOT proceed without checking the selected address on your signing device (hardware wallet or offline phone). Confirm character-by-character that the address above matches what it displays.",
+        "hw_verified_checkbox": "I have checked this address on my signing device.",
         "send_to_this_address": "Send to this address",
         "address_list_desc": "Default (top) is a fresh address. Earlier addresses are listed below in case you want to send to one you've used before.",
         "default_new_address": "Default (new address)",
@@ -2321,21 +2338,24 @@
       },
       "cold_vault_intro2": {
         "title": "Cold Storage",
-        "para_1": "To create a Cold Storage Vault you need to purchase a new hardware device. It will also create a new key and give you a backup copy in case you lose access to your device. The backup looks like a series of 12 or 24 words. You need to write them down on a piece of paper or a steel plate to increase the durability and resilience of your backups.",
-        "guide_sentence": "This {guide} can help you choose between our most recommended wallets in Bitcoin sorted by: security, price, and ease of use, and how to connect them to Cypher Box. It also contains security tips and discount links.",
+        "para_1": "To create a Cold Storage Vault you need a signing device: a hardware wallet, or a spare phone kept offline with Cypher Box as your signing wallet. It will create a new key and give you a backup copy in case you lose access to it. The backup looks like a series of 12 or 24 words. You need to write them down on a piece of paper or a steel plate to increase the durability and resilience of your backups.",
+        "guide_sentence": "This {guide} can help you choose between our most recommended Bitcoin wallets, sorted by security, price and ease of use, and how to connect them to Cypher Box. It also contains security tips and discount links.",
         "guide": "guide",
         "connect_device": "Connect Device"
       },
       "saving_vault_created": {
         "cold_title": "Cold Storage Vault Created!",
         "hot_title": "Savings Vault Created!",
-        "cold_para_1": "Remember to keep your seed phrase safe, it's your responsibility! This is a Watch-only vault, meaning you can only inspect its balance and grab addresses from it for deposits, but in order to send out funds you need to ‘sign’ or authorize transactions using your hardware device.",
-        "cold_warning": "⚠️ DO NOT use any of its addresses without verifying their authenticity from your hardware device!",
+        "cold_para_1": "Remember to keep your seed phrase safe, it's your responsibility! This Cold Vault is watch & broadcast only: it shows your balance, gives you addresses to receive on, prepares transactions and broadcasts them once signed. Signing happens on your signing device: a hardware wallet, or an offline phone with Cypher Box as your signing wallet.",
+        "cold_warning": "⚠️ DO NOT use any of its addresses without checking them on your signing device!",
         "cold_para_3": "When Bitcoin Network fees become moderately low, you can select the capsules accumulated in your Hot Vault and transfer them to your Cold Storage Vault using the “Move to Cold Vault” button.",
         "seed_reminder": "Remember to keep your seed phrase safe, it's your responsibility!",
         "hot_para_2": "Each slot represents a materialized Bitcoin capsule (UTXO). You can tap inside the vault to browse its addresses, capsules, transaction history, seed phrase, and so on.",
         "hot_para_3": "It's recommended that you deposit small to medium sized capsules, and once network fees are low, you can either move them to your Cold Vault, or 'consolidate' them together to save on future network fees.",
-        "home": "Home"
+        "home": "Home",
+        "seed_title": "Seed Created!",
+        "seed_next_1": "Next, on the signer: make a SeedQR backup, give your watch-only wallet this seed's public key and check the first addresses match.",
+        "seed_next_2": "Then wipe the seed from this phone, and sign by scanning the SeedQR."
       },
       "saving_vault_intro_new": {
         "title": "Savings Vault",
@@ -2425,7 +2445,12 @@
         "dice_added": "✓ Dice rolls added, mixed with your phone's randomness",
         "discard_dice": "Discard dice entropy",
         "dice_advanced": "Advanced: create your own entropy via your dice rolls 🎲",
-        "generate_key": "Generate Private Key"
+        "generate_key": "Generate Private Key",
+        "seed_title": "Create a Seed",
+        "seed_para_1": "This phone creates a seed (12 words) to sign with. Back it up on paper and as a SeedQR, give your watch-only wallet its public key and check the first addresses match.",
+        "seed_para_2": "Then wipe the seed from this phone. To sign, scan the SeedQR: the seed is only held while you sign.",
+        "seed_para_3": "Keep this phone offline for good. If it ever connects to the internet, treat this seed as a hot wallet and plan to move your coins to a new seed.",
+        "generate_seed": "Generate Seed"
       },
       "withdraw_to_savings_vault": {
         "title": "Coin Withdrawal",
@@ -2466,11 +2491,19 @@
         "invalid_xpub_title": "Invalid Xpub",
         "invalid_xpub_message": "Please scan a valid xpub, ypub, or zpub QR code.",
         "import_error": "Import error",
-        "title": "Connect Hardware Device",
-        "description": "Authorize your hardware device to display its Public Key (xpub, ypub, or zpub) then Scan, Paste, OR Import it from your files. Some devices don’t give you that so you need to take it from their companion app’s settings.",
+        "title": "Connect Signing Device",
+        "description": "Authorize your hardware wallet to display its Public Key (xpub, ypub, or zpub), then Scan, Paste, OR Import it from your files. Some devices don’t give you that, so you need to take it from their companion app’s settings.",
         "scan": "Scan",
         "paste": "Paste",
-        "import": "Import"
+        "import": "Import",
+        "offline_phone_hint": "Signing with an offline phone? On that phone open Hot Vault → Settings → Vault’s Public Key (xpub).",
+        "node_connected": "Node connected: {node}",
+        "node_hint": "You're watching your Cold Vault wallet and broadcasting from your own chosen node.",
+        "node_warning_title": "Privacy-security measure - connect node (optional):",
+        "node_warning": "Your public key and all addresses, transaction history, and balance will be exposed to a third-party server. Before you load your public key, connect your own node.",
+        "ignore_label": "Ignore: ",
+        "ignore_text": "If you don't yet have a node, Cypher Box will auto-connect you to a public third-party node. Less privacy: private keys and backups are not exposed, only balance, transaction history, addresses, etc.",
+        "key_kinds": "(xpub, zpub, etc)"
       },
       "recover_saving_vault": {
         "invalid_mnemonic_title": "Invalid Mnemonic",
@@ -2541,7 +2574,7 @@
         "address_copied": "Address copied",
         "copy": "copy",
         "paste_destination": "Paste destination Bitcoin network address",
-        "verify_warning": "⚠️ DO NOT transfer to any of these addresses without verifying their authenticity from your hardware device!",
+        "verify_warning": "⚠️ DO NOT transfer to any of these addresses without checking them on your signing device!",
         "i_verified": "I verified this address",
         "network_fee": "Network fee:",
         "add_note": "Add note",
@@ -2955,9 +2988,6 @@
         "no_account": "Don’t have an account?",
         "create_on_coinos": "Create on Coinos.io"
       },
-      "create_button": {
-        "create": "Create"
-      },
       "custom_keyboard": {
         "max": "MAX"
       },
@@ -2986,7 +3016,10 @@
       "private_key_generator": {
         "tap_to_reveal": "Tap to reveal your seed phrase",
         "no_one_watching": "Make sure no one is watching your screen.",
-        "view": "View"
+        "view": "View",
+        "no_screenshot": "Don't take a screenshot of this.",
+        "seedqr_note": "Optional. With a SeedQR you can sign by scanning instead of typing your words.",
+        "copy_square": "Copy it square by square"
       },
       "strike_signup_sheet": {
         "title": "Sign up for Strike",
@@ -3073,6 +3106,9 @@
       },
       "coin_control": {
         "label_capsule": "Label capsule"
+      },
+      "psbt_hw": {
+        "your_wallet": " (your wallet)"
       }
     }
   }

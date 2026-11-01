@@ -191,15 +191,15 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
             <View style={styles.container}>
                 <Text style={styles.title} center>{loc.cypherbox.payments.common.transaction_signing}</Text>
                 <View style={styles.recipientView}>
-                    <Text h4 style={{marginBottom: 12}}>Scan or export this unsigned transaction (PSBT) with your signing device (a hardware wallet, or the signing wallet on your offline phone) and sign it there. Tap 'Next' when you're done.</Text>
-                    <Text h4 style={styles.leaveNote}>You can leave Cypher Box while you sign. This transaction waits on your Cold Vault's Vault tab until you send it or discard it.</Text>
+                    <Text h4 style={{marginBottom: 12}}>{loc.cypherbox.payments.hardware_wallet_transaction.instructions}</Text>
+                    <Text h4 style={styles.leaveNote}>{loc.cypherbox.payments.hardware_wallet_transaction.leave_note}</Text>
                     <TouchableOpacity
                         onPress={() => navigation.navigate('SigningSafetyGuide')}
                         style={styles.signerRow}
                         accessibilityRole="button"
-                        accessibilityLabel="Signing safely"
+                        accessibilityLabel={loc.cypherbox.payments.hardware_wallet_transaction.signing_safely_a11y}
                     >
-                        <Text h4 style={styles.signerText}>Sign only with a device or app you installed from its official source: a tampered signer can hide your recovery phrase inside the signature, even offline.</Text>
+                        <Text h4 style={styles.signerText}>{loc.cypherbox.payments.hardware_wallet_transaction.signer_warning}</Text>
                         <View style={styles.signerHelp}>
                             <Text bold style={styles.signerHelpText}>?</Text>
                         </View>

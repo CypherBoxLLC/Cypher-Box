@@ -106,18 +106,18 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                 // full-screen SeedQR flow, which has room for the zoom and the scan
                 <View style={styles.seedQR}>
                     {Platform.OS === 'ios' ? (
-                        <Text style={styles.seedQRWarning}>Don't take a screenshot of this.</Text>
+                        <Text style={styles.seedQRWarning}>{loc.cypherbox.components.private_key_generator.no_screenshot}</Text>
                     ) : null}
                     <SeedQRGrid grid={grid} width={300} zoomable={false} />
                     <Text style={styles.seedQRNote}>
-                        Optional. With a SeedQR you can sign by scanning instead of typing your words.
+                        {loc.cypherbox.components.private_key_generator.seedqr_note}
                     </Text>
                     <TouchableOpacity
                         style={styles.checkBtn}
                         onPress={() => dispatchNavigate('SeedQRBackup', { walletID: wallet?.getID?.() })}
                         accessibilityRole="button"
                     >
-                        <Text h3>Copy it square by square</Text>
+                        <Text h3>{loc.cypherbox.components.private_key_generator.copy_square}</Text>
                     </TouchableOpacity>
                 </View>
             ) : (

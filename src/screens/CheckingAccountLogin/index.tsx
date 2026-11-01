@@ -374,13 +374,12 @@ export default function CheckingAccountLogin() {
           {/* Not a Lightning wallet: an offline phone used as a cold signer. Last and in green, so it stands apart. */}
           <View style={styles.sectionHeader}>
             <Text bold style={[styles.sectionTitle, styles.sectionTitleSigner]}>
-              COLD SIGNING  ·  OFFLINE PHONE
+              {loc.cypherbox.account.checking_login.cold_signing_header}
             </Text>
             <View style={[styles.sectionDivider, styles.sectionDividerSigner]} />
           </View>
           <Text style={styles.sectionSubtitle}>
-            Turn an isolated phone that stays offline (a Pixel is recommended) into a cold signing device. The seed
-            doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign.
+            {loc.cypherbox.account.checking_login.cold_signing_subtitle}
           </Text>
           <LoginOption
             label={SEED_SIGNER}

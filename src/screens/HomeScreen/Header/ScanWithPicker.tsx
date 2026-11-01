@@ -107,8 +107,8 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
         {
             // not a payment: an unsigned transaction from a watch-only wallet, signed on this phone
             key: 'sign',
-            label: 'Sign a transaction',
-            subtitle: 'From a watch & broadcast only wallet',
+            label: loc.cypherbox.scan_with.sign_label,
+            subtitle: loc.cypherbox.scan_with.sign_subtitle,
             icon: null,
             vectorIcon: 'signature-freehand',
             accent: colors.blueText,
@@ -130,7 +130,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                         {loc.cypherbox.scan_with.title}
                     </Text>
                     <Text style={modalStyles.subtitle}>
-                        Choose which wallet pays the scanned address or invoice, or sign a transaction.
+                        {loc.cypherbox.scan_with.subtitle}
                     </Text>
 
                     {rows.map((row) => {

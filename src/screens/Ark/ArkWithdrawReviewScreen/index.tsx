@@ -634,8 +634,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                     },
                                 ]}
                             >
-                                ⚠️ DO NOT transfer to any of these addresses without
-                                checking them on your signing device!{' '}
+                                {loc.cypherbox.ark.withdraw_review.verify_warning}{' '}
                             </Text>
                             <TouchableOpacity
                                 activeOpacity={0.7}
