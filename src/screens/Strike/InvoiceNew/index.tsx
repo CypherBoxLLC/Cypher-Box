@@ -9,6 +9,7 @@ import { btc } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 import dayjs from "dayjs";
 import { dispatchNavigate } from "@Cypher/helpers";
+import loc from "../../../../loc";
 
 interface Props {
     route: any;
@@ -72,27 +73,27 @@ export default function InvoiceNew({ route }: Props) {
     }
 
     return (
-        <ScreenLayout showToolbar isBackButton title="Review Payment">
+        <ScreenLayout showToolbar isBackButton title={loc.cypherbox.strike.invoice_new.review_payment}>
             {!!isLoading ? (
                 <ActivityIndicator size={100} color={colors.white} />
             ) : (
                 <View style={styles.main}>
                     <View style={styles.container}>
-                        <TextView keytext="Recipient will get: " text="100K sats  ~$40" />
-                        <TextView keytext="Sent from: " text="Coinos Lightning Account" />
+                        <TextView keytext={loc.cypherbox.strike.invoice_new.recipient_will_get} text="100K sats  ~$40" />
+                        <TextView keytext={loc.cypherbox.strike.invoice_new.sent_from} text={loc.cypherbox.strike.invoice_new.coinos_lightning_account} />
 
-                        <TextView keytext="To: " text={`Bitcoin Address: \nbc1s....efwef`} />
-                        <Text style={styles.fees}>Fees:  ~   0 sat</Text>
+                        <TextView keytext={loc.cypherbox.strike.invoice_new.to} text={`${loc.cypherbox.strike.invoice_new.bitcoin_address}\nbc1s....efwef`} />
+                        <Text style={styles.fees}>{loc.cypherbox.strike.invoice_new.fees_zero}</Text>
                         <TextInput
                             value={note}
                             onChangeText={setNote}
-                            placeholder="Add note"
+                            placeholder={loc.cypherbox.strike.invoice_new.add_note}
                             placeholderTextColor={colors.white}
                             style={styles.textInput}
                         />
                     </View>
                     <TouchableOpacity style={styles.button} onPress={buyClickHandler}>
-                        <Text h3 style={{color: colors.black.default}}>BUY</Text>
+                        <Text h3 style={{color: colors.black.default}}>{loc.cypherbox.strike.invoice_new.buy}</Text>
                     </TouchableOpacity>
                 </View>
             )}

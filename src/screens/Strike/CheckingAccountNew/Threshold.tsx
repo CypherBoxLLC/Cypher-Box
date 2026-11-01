@@ -16,6 +16,7 @@ import { Icon } from "react-native-elements";
 import Modal from "react-native-modal";
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
+import loc from "../../../../loc";
 
 const data = [
   { sats: 100000 },
@@ -136,8 +137,8 @@ export default function Threshold({
   const customizeClickHandler = (index: number) => {
     // WithdrawThreshold   
     dispatchNavigate('WithdrawThreshold', {
-      title: index == 0 ? 'Withdraw Threshold' : 'Reserve Amount',
-      titleBtn: index == 0 ? 'Set Threshold' : 'Set Reserve Amount',
+      title: index == 0 ? loc.cypherbox.strike.threshold.withdraw_threshold : loc.cypherbox.strike.threshold.reserve_amount,
+      titleBtn: index == 0 ? loc.cypherbox.strike.threshold.set_threshold : loc.cypherbox.strike.threshold.set_reserve_amount,
       onSelect: onSelect,
       index,
       matchedRate,
@@ -194,7 +195,7 @@ export default function Threshold({
       setValue(Number(newValue));
       receiveType ? setWithdrawThreshold(newValue) : setWithdrawStrikeThreshold(newValue);
     } else {
-      SimpleToast.show("Withdraw Threshold cannot be less than 2M", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.threshold.threshold_min_toast, SimpleToast.SHORT);
     }
   };
 
@@ -207,7 +208,7 @@ export default function Threshold({
       setValue(Number(newValue));
       receiveType ? setWithdrawThreshold(newValue) : setWithdrawStrikeThreshold(newValue);
     } else {
-      SimpleToast.show("Withdraw Threshold cannot be greater than 9M", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.threshold.threshold_max_toast, SimpleToast.SHORT);
     }
   };
 
@@ -220,7 +221,7 @@ export default function Threshold({
       setReserveAmt(Number(newValue));
       receiveType ? setReserveAmount(newValue) : setReserveStrikeAmount(newValue);
     } else {
-      SimpleToast.show("Reserve Amount cannot be less than 100K", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.threshold.reserve_min_toast, SimpleToast.SHORT);
     }
   }
 
@@ -233,19 +234,19 @@ export default function Threshold({
       setReserveAmt(Number(newValue));
       receiveType ? setReserveAmount(newValue) : setReserveStrikeAmount(newValue);
     } else {
-      SimpleToast.show("Reserve Amount cannot be greater than 2M", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.threshold.reserve_max_toast, SimpleToast.SHORT);
     }
   }
 
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={styles.main}>
-        <Text h2 semibold>Withdraw Threshold</Text>
+        <Text h2 semibold>{loc.cypherbox.strike.threshold.withdraw_threshold}</Text>
         <Text>
-          You can adjust the threshold at which a message will be displayed to remind you to withdraw and materialize the money accumulated on your Lightning Account and move it into self-custody.
+          {loc.cypherbox.strike.threshold.threshold_description}
         </Text>
         <Text>
-          Be aware that adjusting this threshold involves balancing Bitcoin network fees against counter-party risk.
+          {loc.cypherbox.strike.threshold.threshold_risk_note}
           {/* <Text>fsds</Text> */}
         </Text>
         {/* <GradientText style={{ fontSize: 14 }}>Learn more</GradientText> */}
@@ -280,11 +281,11 @@ export default function Threshold({
         </Modal>
         <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(value * matchedRate * currencyBTC).toFixed(2)}</Text>
         <TouchableOpacity onPress={() => customizeClickHandler(0)}>
-          <GradientText style={styles.gradientText}>Customize</GradientText>
+          <GradientText style={styles.gradientText}>{loc.cypherbox.strike.threshold.customize}</GradientText>
         </TouchableOpacity>
         {/* <Text h3 center>Estimated withdraw fee: 0.2%</Text> */}
         <View style={styles.reserve}>
-          <Text h2 semibold>Reserve Amount</Text>
+          <Text h2 semibold>{loc.cypherbox.strike.threshold.reserve_amount}</Text>
           {/* <Image source={Information} style={styles.image} /> */}
         </View>
         <TouchableOpacity onPress={() => setModalRAVisible(true)} activeOpacity={0.7} style={styles.pickerButton}>
@@ -301,7 +302,7 @@ export default function Threshold({
         </TouchableOpacity>
         <Text center style={styles.usd}>{getStrikeCurrency(currency || 'USD')}{(reserveAmt * matchedRate * currencyBTC).toFixed(2)}</Text>
         <TouchableOpacity onPress={() => customizeClickHandler(1)}>
-          <GradientText style={styles.gradientText}>Customize</GradientText>
+          <GradientText style={styles.gradientText}>{loc.cypherbox.strike.threshold.customize}</GradientText>
         </TouchableOpacity>
         <Modal isVisible={isModalRAVisible} onBackdropPress={() => setModalRAVisible(false)}>
           <View style={{ backgroundColor: colors.gray.dark, borderRadius: 20, padding: 16 }}>

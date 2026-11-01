@@ -12,6 +12,7 @@ import { ArkSettingsBody } from "./Settings";
 import { btc } from "@Cypher/helpers/coinosHelper";
 import { blocksToDays, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
+import loc from "../../../../loc";
 
 interface AccountProps {
   matchedRate: string;
@@ -107,7 +108,7 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
         <View style={{ marginTop: 20, alignItems: 'center' }}>
           <Card
             wallet="ARK"
-            title="Bark Vault"
+            title={loc.cypherbox.strike.account.bark_vault}
             balance={Number(balance)}
             currency={currency}
             matchedRate={Number(matchedRate)}
@@ -157,7 +158,7 @@ export default function Account({ matchedRate, currency, receiveType, balance, c
           linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', alignItems: 'center' }}
           onPress={handleCoinosLogout}
         >
-          <Text h3 bold center>Logout</Text>
+          <Text h3 bold center>{loc.cypherbox.strike.account.logout}</Text>
         </GradientView>
       }
     </ScrollView>

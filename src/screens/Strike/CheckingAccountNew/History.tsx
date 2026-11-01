@@ -16,6 +16,7 @@ import { getTransactionHistory } from "@Cypher/api/coinOSApis";
 import { getInvoices } from "@Cypher/api/strikeAPIs";
 import screenHeight from "@Cypher/style-guide/screenHeight";
 import { CoinOS } from "@Cypher/assets/images";
+import loc from "../../../../loc";
 
 export default function History({ matchedRate, receiveType, currency }: any) {
   const [isLoading, setIsLoading] = useState(false);
@@ -125,7 +126,7 @@ export default function History({ matchedRate, receiveType, currency }: any) {
             }
             ListEmptyComponent={() => (
               <View style={{ height: screenHeight / 2.2, justifyContent: 'center', alignItems: 'center', marginTop: 30 }}>
-                <Text white h3 bold>No Transactions</Text>
+                <Text white h3 bold>{loc.cypherbox.strike.history.no_transactions}</Text>
               </View>
             )}
             refreshControl={

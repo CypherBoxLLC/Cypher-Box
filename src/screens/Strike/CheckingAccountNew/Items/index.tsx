@@ -6,6 +6,7 @@ import { Text } from "@Cypher/component-library";
 import { Bitcoin, LiquidBitCoin, Socked } from "@Cypher/assets/images";
 import { btc, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../../../loc";
 
 interface Props {
     matchedRate: number
@@ -48,17 +49,17 @@ export default function Items({ matchedRate, currency, receiveType, item, onPres
                         <Text bold style={styles.des}>
                             {item.amount > 0
                                 ? item.confirmed
-                                ? "Received"
-                                : "Pending"
-                                : "Sent"}
+                                ? loc.cypherbox.strike.items.received
+                                : loc.cypherbox.strike.items.pending
+                                : loc.cypherbox.strike.items.sent}
                         </Text>
                     :
                         <Text bold style={styles.des}>
                             {item.amount?.amount > 0
-                                ? item.state === "UNPAID" ? "Pending"
-                                : item.state === "PAID" ? "Received"
-                                : item.state === "PENDING" ? "Pending"
-                                : "Cancelled" : ""
+                                ? item.state === "UNPAID" ? loc.cypherbox.strike.items.pending
+                                : item.state === "PAID" ? loc.cypherbox.strike.items.received
+                                : item.state === "PENDING" ? loc.cypherbox.strike.items.pending
+                                : loc.cypherbox.strike.items.cancelled : ""
                             }
                         </Text>
                     }
