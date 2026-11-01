@@ -626,6 +626,11 @@
       "tos_updated": "We've updated our Terms of Service\n& Privacy Policy",
       "tos_agree": "By checking this box, you agree to the",
       "tos_link": "Terms of Service and Privacy Policy"
+    },
+    "tos": {
+      "title": "Terms of Service & Privacy Policy",
+      "last_updated": "Last Updated: September 2026",
+      "english_version": "English version"
     }
   }
 }

@@ -3,22 +3,35 @@ import { GradientText } from '@Cypher/components';
 import { colors } from '@Cypher/style-guide';
 import React from 'react';
 import { View, StyleSheet, ScrollView, Linking } from 'react-native';
+import loc from '../../../loc';
+import TermsArabic from './TermsArabic';
 
 const ASP_TERMS_URL = 'https://second.tech/terms';
 
 const TermsOfService = () => {
+    // Arabic shows its translation first, then the English text below it.
+    const isArabic = loc.getLanguage() === 'ar';
+
     const openAspTerms = () => {
         Linking.openURL(ASP_TERMS_URL);
     };
 
     return (
         <ScreenLayout showToolbar disableScroll>
-            <GradientText style={styles.title} center>Terms of Service & Privacy Policy</GradientText>
-            <Text style={styles.lastUpdated} center>Last Updated: September 2026</Text>
+            <GradientText style={styles.title} center>{loc.cypherbox.tos.title}</GradientText>
+            <Text style={styles.lastUpdated} center>{loc.cypherbox.tos.last_updated}</Text>
             <View style={styles.divider} />
             <ScrollView style={styles.container} showsVerticalScrollIndicator={true}
                 indicatorStyle='white'
             >
+                {isArabic && (
+                    <>
+                        <TermsArabic styles={styles} aspTermsUrl={ASP_TERMS_URL} onAspTermsPress={openAspTerms} />
+                        <View style={styles.divider} />
+                        <Text style={styles.sectionTitle}>{loc.cypherbox.tos.english_version}</Text>
+                    </>
+                )}
+                <View style={isArabic ? styles.ltr : undefined}>
                 {/* ===== TERMS OF SERVICE ===== */}
                 <Text style={styles.sectionTitle}>TERMS OF SERVICE</Text>
 
@@ -524,6 +537,7 @@ const TermsOfService = () => {
                         This Agreement and Privacy Policy were last updated in August 2026.
                     </Text>
                 </View>
+                </View>
 
                 <View style={{ height: 40 }} />
             </ScrollView>
@@ -595,6 +609,9 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#A3A3A3',
         marginVertical: 8,
+    },
+    ltr: {
+        direction: 'ltr',
     },
 });
 
