@@ -167,11 +167,11 @@ export default function SavingVaultIntro() {
       // match exactly — there is no recovery from a create-time typo.
       if (usePassphrase) {
         if (!passphrase) {
-          SimpleToast.show('Enter a passphrase, or turn the passphrase toggle off', SimpleToast.LONG);
+          SimpleToast.show(loc.cypherbox.vault.saving_vault_intro.enter_passphrase, SimpleToast.LONG);
           return;
         }
         if (passphrase !== passphraseConfirm) {
-          SimpleToast.show('Passphrases do not match', SimpleToast.LONG);
+          SimpleToast.show(loc.cypherbox.vault.saving_vault_intro.passphrases_mismatch, SimpleToast.LONG);
           return;
         }
       }
@@ -249,10 +249,10 @@ export default function SavingVaultIntro() {
                     ) : (
                     <Text h4 style={styles.descption}>Hot Vault, commonly known as a ‘hot wallet’, allows you to become the sole owner of your bitcoin, as the saying goes: Not your keys, not your coins. Money stored in this vault will be secured by the main Bitcoin network, not by a third party custodian.
                         {'\n\n'}
-                        To create a Hot Vault, you first need to generate your keys: your phone will  create the private key, encrypt it, and store it in its memory. It will also create a backup copy (12 words), just in case you lose access to your phone.
+                        {loc.cypherbox.vault.saving_vault_intro.para_2}
                         
                         {'\n\n'}
-                        Caution: while it offers a much more secure storage environment than the Lightning Account, the keys to your Hot Vault are generated and stored on an internet-connect device. As your balance and technical skills increase, you should think about investing in an offline hardware signing device for enhanced security.
+                        {loc.cypherbox.vault.saving_vault_intro.para_3}
                     </Text>
                     )}
 
@@ -267,7 +267,7 @@ export default function SavingVaultIntro() {
                         them; default flow is untouched. */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 18 }}>
                         <Text bold style={{ color: '#FFF', fontSize: 15, flex: 1 }}>
-                            Optional Passphrase
+                            {loc.cypherbox.vault.saving_vault_intro.optional_passphrase}
                         </Text>
                         <Switch
                             value={usePassphrase}
@@ -279,16 +279,16 @@ export default function SavingVaultIntro() {
                     {usePassphrase && (
                         <View style={{ marginTop: 8 }}>
                             <Text h4 style={{ color: '#CCC', fontSize: 12, lineHeight: 17 }}>
-                                Adds a secret "25th word" to your vault: anyone who finds your 12 words alone cannot spend your funds, and the seed copy stored on this phone stays useless without it.
+                                {loc.cypherbox.vault.saving_vault_intro.passphrase_info}
                             </Text>
                             <Text h4 style={{ color: '#FFD54F', fontSize: 12, lineHeight: 17, marginTop: 6 }}>
-                                ⚠ Losing the passphrase means irrecoverably losing your Hot Vault funds, even if you possess the 12-word seed phrase. It is case-sensitive and spaces count. You should be able to memorise it, and include it on your seed phrase paper.
+                                {loc.cypherbox.vault.saving_vault_intro.passphrase_warning}
                             </Text>
                             <View ref={passWrapRef} collapsable={false}>
                                 <Input
                                     onChange={setPassphrase}
                                     value={passphrase}
-                                    label="Passphrase"
+                                    label={loc.cypherbox.vault.saving_vault_intro.passphrase_label}
                                     autoCapitalize="none"
                                     secureTextEntry
                                     textInputStyle={{ color: '#FFF' }}
@@ -301,7 +301,7 @@ export default function SavingVaultIntro() {
                                 <Input
                                     onChange={setPassphraseConfirm}
                                     value={passphraseConfirm}
-                                    label="Confirm passphrase"
+                                    label={loc.cypherbox.vault.saving_vault_intro.confirm_passphrase_label}
                                     autoCapitalize="none"
                                     secureTextEntry
                                     textInputStyle={{ color: '#FFF' }}
@@ -320,12 +320,12 @@ export default function SavingVaultIntro() {
                     {diceEntropy ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
                             <Text bold style={{ color: colors.green, fontSize: 13, flex: 1 }}>
-                                ✓ Dice rolls added, mixed with your phone's randomness
+                                {loc.cypherbox.vault.saving_vault_intro.dice_added}
                             </Text>
                             <TouchableOpacity
                                 onPress={() => setDiceEntropy(null)}
                                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                accessibilityLabel="Discard dice entropy"
+                                accessibilityLabel={loc.cypherbox.vault.saving_vault_intro.discard_dice}
                             >
                                 <Text bold style={{ color: '#888', fontSize: 16 }}>✗</Text>
                             </TouchableOpacity>
@@ -345,7 +345,7 @@ export default function SavingVaultIntro() {
                             style={{ marginTop: 14 }}
                         >
                             <Text bold style={{ color: colors.green, fontSize: 14 }}>
-                                Advanced: create your own entropy via your dice rolls 🎲
+                                {loc.cypherbox.vault.saving_vault_intro.dice_advanced}
                             </Text>
                         </TouchableOpacity>
                     )}

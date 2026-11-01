@@ -34,6 +34,7 @@ import styles from "./styles";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
+import loc from "../../../../loc";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -123,7 +124,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
     // the chosen destination tile.
     ...(isArkAuth ? [{
       id: 5,
-      name: "Bark Vault",
+      name: loc.cypherbox.home_lists.withdraw_list.bark_vault,
       type: 0,
       icon: Second,
       description:
@@ -141,7 +142,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
   const [wallets, setWallets] = useState([    
     ...(walletID ? [{
       id: 3,
-      name: "Hot Vault",
+      name: loc.cypherbox.home_lists.withdraw_list.hot_vault,
       type: 1,
       icon: Hot,
       description:
@@ -156,7 +157,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
     }] : []),
     ...(coldStorageWalletID ? [{
       id: 4,
-      name: "Cold Vault",
+      name: loc.cypherbox.home_lists.withdraw_list.cold_vault,
       type: 2,
       icon: Cold1,
       description:
@@ -423,7 +424,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
 
           <Animated.View style={[{}, view1Style]}>
             <Text h2 bold style={styles.receiveToLabel}>
-              WITHDRAW FROM
+              {loc.cypherbox.home_lists.withdraw_list.withdraw_from}
             </Text>
             
             {/* Lightning sources (`data`) — 2-col × 2-row grid (max 4
@@ -504,7 +505,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
                           style={{ marginRight: 6 }}
                         />
                         <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>
-                          Bark Vault
+                          {loc.cypherbox.home_lists.withdraw_list.bark_vault}
                         </Text>
                       </View>
                     ) : item?.type === 0 ? (
@@ -582,7 +583,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
               );
             })()}
             <Text h2 bold style={[styles.receiveToLabel, { marginTop: 10 }]}>
-              SEND TO
+              {loc.cypherbox.home_lists.withdraw_list.send_to}
             </Text>
             {/* Vault row lifted 20pt up from the SEND TO label by
                 overriding cardListContainer's marginTop (20 → 0). */}
@@ -657,7 +658,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
               (the nextBtn default), white for Bark (id 5, the Bark palette).
               Disabled grey wins last. Dark text on the white Bark button. */}
           <TouchableOpacity activeOpacity={0.7} onPress={onNext} disabled={selectedItem === null || selectedWallet === null} style={[styles.nextBtn, { marginTop: 20 }, selectedItem === 5 && { backgroundColor: colors.ark.light }, (selectedItem == null || selectedWallet == null) && {backgroundColor: colors.gray.disable}]}>
-              <Text h3 style={selectedItem === 5 && selectedWallet !== null ? { color: '#202832' } : undefined}>Next</Text>
+              <Text h3 style={selectedItem === 5 && selectedWallet !== null ? { color: '#202832' } : undefined}>{loc.cypherbox.home_lists.withdraw_list.next}</Text>
           </TouchableOpacity>
         </LinearGradient>
       </LinearGradient>

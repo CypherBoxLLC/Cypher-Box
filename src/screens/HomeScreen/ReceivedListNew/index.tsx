@@ -41,6 +41,7 @@ import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import 'text-encoding';
 import QRCode from 'react-native-qrcode-svg';
 import { shortenAddress } from "@Cypher/screens/ColdStorage";
+import loc from "../../../../loc";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -80,7 +81,7 @@ function AddressFetchFailed({ message, onRetry }: { message: string; onRetry(): 
                 style={{ marginTop: 12 }}
             >
                 <Text bold style={{ fontSize: 14, color: '#FFFFFF', textDecorationLine: 'underline' }}>
-                    Try again
+                    {loc.cypherbox.home_lists.received_list_new.try_again}
                 </Text>
             </TouchableOpacity>
         </View>
@@ -217,13 +218,13 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
         if (arkRes.status === 'rejected') {
           console.warn('[Receive] Ark address fetch failed:', arkRes.reason);
           setArkAddressError(
-            describeArkFailure(arkRes.reason, "Couldn't get a Bark address", endpoints),
+            describeArkFailure(arkRes.reason, loc.cypherbox.home_lists.received_list_new.ark_address_failed, endpoints),
           );
         }
         if (onchainRes.status === 'rejected') {
           console.warn('[Receive] on-chain address fetch failed:', onchainRes.reason);
           setArkOnchainAddressError(
-            describeArkFailure(onchainRes.reason, "Couldn't get an on-chain address", endpoints),
+            describeArkFailure(onchainRes.reason, loc.cypherbox.home_lists.received_list_new.onchain_address_failed, endpoints),
           );
         }
       })();
@@ -317,10 +318,10 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
 
   const bitcoinLightning = {
     id: 2,
-    name: "Lightning invoice",
+    name: loc.cypherbox.home_lists.received_list_new.lightning_invoice,
     type: 0,
     description:
-      "To receive from wallets and exchanges that support the Lightning Network",
+      loc.cypherbox.home_lists.received_list_new.lightning_invoice_desc,
     navigation: {
       screen: "CreateInvoice",
       params: {
@@ -337,7 +338,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
     setReceivedListSecondTab(false);
     if (item?.id == 1) {
       Clipboard.setString(selectedItem === 2 ? user + '@coinos.io' : strikeMe?.username + '@strike.me');
-      SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.home_lists.received_list_new.copied, SimpleToast.SHORT);
 
     }
     if (__DEV__) console.log('item?.navigation?.params: ', item?.navigation?.params)
@@ -356,12 +357,12 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       return [
         {
           id: 0,
-          name: "Lightning",
+          name: loc.cypherbox.home_lists.received_list_new.tab_lightning,
           icon: Electrik,
         },
         {
           id: 1,
-          name: "Bitcoin",
+          name: loc.cypherbox.home_lists.received_list_new.tab_bitcoin,
           icon: Bitcoin,
         },
       ];
@@ -369,12 +370,12 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       return [
         {
           id: 0,
-          name: "Lightning",
+          name: loc.cypherbox.home_lists.received_list_new.tab_lightning,
           icon: Electrik,
         },
         {
           id: 1,
-          name: "Bitcoin",
+          name: loc.cypherbox.home_lists.received_list_new.tab_bitcoin,
           icon: Bitcoin,
         },
         {
@@ -395,12 +396,12 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       return [
         {
           id: 0,
-          name: "Lightning",
+          name: loc.cypherbox.home_lists.received_list_new.tab_lightning,
           icon: Electrik,
         },
         {
           id: 1,
-          name: "Bitcoin",
+          name: loc.cypherbox.home_lists.received_list_new.tab_bitcoin,
           icon: Bitcoin,
         },
         {
@@ -567,7 +568,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
           <Animated.View style={[{}, view1Style]}>
             <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
               <Text h2 bold style={{ alignSelf: 'center', marginBottom: 16 }}>
-                RECEIVE TO
+                {loc.cypherbox.home_lists.received_list_new.receive_to}
               </Text>
 
               {/* Modular 2-column adaptive grid. Only tiles for connected
@@ -593,28 +594,28 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   };
                   const tiles: TileDef[] = [];
                   if (isStrikeAuth) tiles.push({
-                    id: 1, label: 'Strike', subtitle: 'Small–medium amounts',
+                    id: 1, label: 'Strike', subtitle: loc.cypherbox.home_lists.received_list_new.small_medium_amounts,
                     icon: StrikeFull, iconStyle: {}, isEnabled: true,
                     accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
                   });
                   if (!!isAuth) tiles.push({
-                    id: 2, label: 'CoinOS', subtitle: 'Small–medium amounts',
+                    id: 2, label: 'CoinOS', subtitle: loc.cypherbox.home_lists.received_list_new.small_medium_amounts,
                     icon: CoinOS, iconStyle: {}, isEnabled: true,
                     accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
                   });
                   if (FEATURE_ARK_ENABLED && isArkAuth) tiles.push({
-                    id: 5, label: 'Ark', subtitle: 'Small–medium amounts',
+                    id: 5, label: 'Ark', subtitle: loc.cypherbox.home_lists.received_list_new.small_medium_amounts,
                     icon: null, iconStyle: {}, isEnabled: true,
                     accent: colors.ark.light, shadowColor: colors.ark.shadowTopNew,
-                    textLabel: 'Bark Vault',
+                    textLabel: loc.cypherbox.home_lists.received_list_new.bark_vault,
                   });
                   if (hasHotVault) tiles.push({
-                    id: 3, label: 'Hot Vault', subtitle: 'Medium–large amounts',
+                    id: 3, label: loc.cypherbox.home_lists.received_list_new.hot_vault, subtitle: loc.cypherbox.home_lists.received_list_new.medium_large_amounts,
                     icon: Hot, iconStyle: { width: 22, height: 30, marginEnd: 2 },
                     isEnabled: true, accent: colors.green, shadowColor: colors.greenShadow,
                   });
                   if (hasColdVault) tiles.push({
-                    id: 4, label: 'Cold Vault', subtitle: 'Medium–large amounts',
+                    id: 4, label: loc.cypherbox.home_lists.received_list_new.cold_vault, subtitle: loc.cypherbox.home_lists.received_list_new.medium_large_amounts,
                     icon: Cold1, iconStyle: { width: 30, height: 22, marginEnd: 2 },
                     isEnabled: true, accent: colors.coldGreen, shadowColor: colors.blueText,
                   });
@@ -671,7 +672,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       letterSpacing: 0.5,
                     }}
                   >
-                    Bark Vault
+                    {loc.cypherbox.home_lists.received_list_new.bark_vault}
                   </Text>
                 ) : (
                   <Image
@@ -691,7 +692,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 )}
                 {(selectedItem === 3 || selectedItem === 4) && (
                   <Text bold style={{ fontSize: 14, marginTop: 2 }}>
-                    {selectedItem === 3 ? 'Hot Vault' : 'Cold Vault'}
+                    {selectedItem === 3 ? loc.cypherbox.home_lists.received_list_new.hot_vault : loc.cypherbox.home_lists.received_list_new.cold_vault}
                   </Text>
                 )}
               </View>
@@ -721,7 +722,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                 center
                 style={{ marginHorizontal: 24, marginTop: 2, fontSize: 12, color: '#FFD54F', opacity: 0.95, lineHeight: 17 }}
               >
-                To receive 700-sat or above capsule from another Bark user. Need to be present with the app being open when you receive to this address.
+                {loc.cypherbox.home_lists.received_list_new.bark_receive_tip}
               </Text>
             )}
 
@@ -749,7 +750,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     const addr = selectedItem === 3 ? vaultAddress : coldStorageAddress;
                     if (addr) {
                       Clipboard.setString(addr);
-                      SimpleToast.show('Address copied', SimpleToast.SHORT);
+                      SimpleToast.show(loc.cypherbox.home_lists.received_list_new.address_copied, SimpleToast.SHORT);
                     }
                   }}
                   activeOpacity={0.7}
@@ -794,7 +795,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   }}
                 >
                   <Text bold style={{ fontSize: 13, color: selectedItem === 3 ? colors.green : colors.coldGreen, textAlign: 'center' }}>
-                    View All Vault Addresses
+                    {loc.cypherbox.home_lists.received_list_new.view_all_addresses}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -843,7 +844,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             ) : selectedItem !== 3 && selectedItem !== 4 && selectedItem !== 5 && tab === 1 ? (
               <View style={styles.bitcoinTabContent}>
                 <Text h2 bold>
-                  Bitcoin Network Address
+                  {loc.cypherbox.home_lists.received_list_new.bitcoin_network_address}
                 </Text>
                 {isLoading ? <ActivityIndicator size="large" color="#ffffff" />
                   :
@@ -854,7 +855,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       </Text>
                       <TouchableOpacity onPress={() =>{
                         Clipboard.setString(hashBitcoin);
-                        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT)
+                        SimpleToast.show(loc.cypherbox.home_lists.received_list_new.copied, SimpleToast.SHORT)
                       }}>
                         <Image source={Copy} style={styles.copyIconImage} />
                       </TouchableOpacity>
@@ -875,7 +876,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
             ) : selectedItem !== 3 && selectedItem !== 4 && selectedItem !== 5 && (
               <View style={styles.liquidTabContent}>
                 <Text h2 bold>
-                  Liquid Federation Address
+                  {loc.cypherbox.home_lists.received_list_new.liquid_address}
                 </Text>
                 {isLoading ? <ActivityIndicator size="large" color="#ffffff" />
                   :
@@ -886,7 +887,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       </Text>
                       <TouchableOpacity onPress={() =>{
                         Clipboard.setString(hashLiquid);
-                        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT)
+                        SimpleToast.show(loc.cypherbox.home_lists.received_list_new.copied, SimpleToast.SHORT)
                       }}>
                         <Image source={Copy} style={styles.copyIconImage} />
                       </TouchableOpacity>
@@ -905,7 +906,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   </>
                 }
                 <Text semibold style={styles.bitcoinAddressText}>
-                  Receive from wallets and exchanges that support the Liquid Federation
+                  {loc.cypherbox.home_lists.received_list_new.liquid_desc}
                 </Text>
               </View>
             )}
@@ -945,10 +946,10 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                     <View style={styles.invoiceCardContentRow}>
                       <View style={styles.invoiceCardTextContainer}>
                         <Text subHeader bold style={styles.invoiceCardTitle}>
-                          Lightning invoice
+                          {loc.cypherbox.home_lists.received_list_new.lightning_invoice}
                         </Text>
                         <Text h4 bold style={styles.invoiceCardDescription}>
-                          Receive Lightning payments into Ark, paid out as a VTXO once the next round commits.
+                          {loc.cypherbox.home_lists.received_list_new.ark_invoice_desc}
                         </Text>
                       </View>
                       <View style={styles.socketIconContainer}>
@@ -975,7 +976,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
               // beneath isn't shifted with it.
               <View style={[styles.bitcoinTabContent, { transform: [{ translateY: -10 }] }]}>
                 <Text semibold style={{ color: '#FFD54F', textAlign: 'center', fontSize: 13, paddingHorizontal: 16 }}>
-                  ⚠️ Do not receive less than {minBoardSats.toLocaleString('en-US')} sats to this on-chain address
+                  {loc.formatString(loc.cypherbox.home_lists.received_list_new.min_board_warning, { amount: minBoardSats.toLocaleString('en-US') })}
                 </Text>
                 {arkOnchainAddressError ? (
                   <AddressFetchFailed
@@ -995,7 +996,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       </Text>
                       <TouchableOpacity onPress={() => {
                         Clipboard.setString(arkOnchainAddress);
-                        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+                        SimpleToast.show(loc.cypherbox.home_lists.received_list_new.copied, SimpleToast.SHORT);
                       }}>
                         <Image source={Copy} style={styles.copyIconImage} />
                       </TouchableOpacity>
@@ -1039,7 +1040,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                         underneath already implied, and pushed the QR down. */}
                     <View style={styles.addressRow}>
                       <Text semibold style={styles.addressLabel}>
-                        Bark Address
+                        {loc.cypherbox.home_lists.received_list_new.bark_address}
                       </Text>
                       {/* Ark addresses are long opaque pubkey hex and do not
                           fit this row, so the row shows first 6 + last 6.
@@ -1053,8 +1054,8 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                         accessibilityRole="button"
                         accessibilityLabel={
                           arkAddressExpanded
-                            ? 'Hide the full Bark address'
-                            : 'Show the full Bark address'
+                            ? loc.cypherbox.home_lists.received_list_new.hide_full_address
+                            : loc.cypherbox.home_lists.received_list_new.show_full_address
                         }
                         style={styles.addressValueTap}
                       >
@@ -1066,7 +1067,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => {
                         Clipboard.setString(arkAddress);
-                        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+                        SimpleToast.show(loc.cypherbox.home_lists.received_list_new.copied, SimpleToast.SHORT);
                       }}>
                         <Image source={Copy} style={styles.copyIconImage} />
                       </TouchableOpacity>
@@ -1102,7 +1103,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                         a second line and pushed the panel taller for no reason.
                         It is a caption, so it is sized like one. */}
                     <Text semibold style={styles.addressCaption} numberOfLines={1}>
-                      Receive 0% fee payments from another Bark user
+                      {loc.cypherbox.home_lists.received_list_new.bark_caption}
                     </Text>
                   </>
                 )}

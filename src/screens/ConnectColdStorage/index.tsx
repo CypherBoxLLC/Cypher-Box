@@ -125,7 +125,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
         const isValid = isValidXpub(cleanedText);
         console.log('isValid: ', isValid)
         if (!isValid) {
-            Alert.alert('Invalid Xpub', 'Please scan a valid xpub, ypub, or zpub QR code.');
+            Alert.alert(loc.cypherbox.vault.connect_cold_storage.invalid_xpub_title, loc.cypherbox.vault.connect_cold_storage.invalid_xpub_message);
             return;
         }
 
@@ -173,7 +173,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
             })
             .catch((e: { message: string | undefined; }) => {
                 console.warn('import error', e);
-                Alert.alert('Import error', e.message);
+                Alert.alert(loc.cypherbox.vault.connect_cold_storage.import_error, e.message);
             })
             .finally(() => {
 

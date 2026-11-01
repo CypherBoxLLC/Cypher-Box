@@ -456,7 +456,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     
         if (changeDestination !== 'SELF' && !changeDepositAddress) {
           setIsLoading(false);
-          SimpleToast.show('Waiting for change deposit address. Please try again.', SimpleToast.SHORT);
+          SimpleToast.show(loc.cypherbox.vault.cold_storage.waiting_change_address, SimpleToast.SHORT);
           return;
         }
 
@@ -526,7 +526,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                 if (response?.onchain?.address) {
                     setChangeDepositAddress(response.onchain.address);
                 } else {
-                    SimpleToast.show('Failed to get Strike deposit address', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.vault.cold_storage.strike_deposit_failed, SimpleToast.SHORT);
                     setChangeDestination('SELF');
                 }
             } else if (destination === 'COINOS') {
@@ -534,7 +534,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                 if (response?.hash) {
                     setChangeDepositAddress(response.hash);
                 } else {
-                    SimpleToast.show('Failed to get CoinOS deposit address', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.vault.cold_storage.coinos_deposit_failed, SimpleToast.SHORT);
                     setChangeDestination('SELF');
                 }
             } else if (destination === 'HOT_VAULT') {
@@ -549,17 +549,17 @@ export default function ColdStorage({ route, navigation }: Props) {
                     if (addr) {
                         setChangeDepositAddress(addr);
                     } else {
-                        SimpleToast.show('Failed to get Hot Vault address', SimpleToast.SHORT);
+                        SimpleToast.show(loc.cypherbox.vault.cold_storage.hot_vault_address_failed, SimpleToast.SHORT);
                         setChangeDestination('SELF');
                     }
                 } else {
-                    SimpleToast.show('Hot Vault not found', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.vault.cold_storage.hot_vault_not_found, SimpleToast.SHORT);
                     setChangeDestination('SELF');
                 }
             }
         } catch (err) {
             console.error('Error fetching change deposit address:', err);
-            SimpleToast.show('Failed to get deposit address: ' + err.message, SimpleToast.SHORT);
+            SimpleToast.show(String(loc.formatString(loc.cypherbox.vault.cold_storage.deposit_address_failed, { error: err.message })), SimpleToast.SHORT);
             setChangeDestination('SELF');
         } finally {
             setChangeFetchLoading(false);
@@ -576,8 +576,8 @@ export default function ColdStorage({ route, navigation }: Props) {
         const lutxo = selectedUtxo;
         if (!lutxo || lutxo.length === 0) {
             Alert.alert(
-                'No capsules selected',
-                'Go back and choose which capsules to spend before sending.',
+                loc.cypherbox.vault.cold_storage.no_capsules_title,
+                loc.cypherbox.vault.cold_storage.no_capsules_message,
             );
             return;
         }
@@ -722,28 +722,28 @@ export default function ColdStorage({ route, navigation }: Props) {
                 console.log('strikeToken:', useAuthStore.getState().strikeToken ? 'exists' : 'missing');
                 if (bridgeDepositAddress) {
                     setDestinationAddress(bridgeDepositAddress);
-                    SimpleToast.show('Proceeding with Lightning bridge via Strike...', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.vault.cold_storage.bridge_via_strike, SimpleToast.SHORT);
                     createTransaction();
                 } else {
                     // Try fetching now as fallback
-                    SimpleToast.show('Fetching Strike address...', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.vault.cold_storage.fetching_strike_address, SimpleToast.SHORT);
                     try {
                         const data = await getStrikeDepositAddress();
                         if (data?.bitcoinAddress) {
                             setBridgeDepositAddress(data.bitcoinAddress);
                             setDestinationAddress(data.bitcoinAddress);
-                            SimpleToast.show('Proceeding with Lightning bridge via Strike...', SimpleToast.SHORT);
+                            SimpleToast.show(loc.cypherbox.vault.cold_storage.bridge_via_strike, SimpleToast.SHORT);
                             createTransaction();
                         }
                     } catch (err) {
                         console.error('Fetch error:', err);
-                        SimpleToast.show('Failed to get Strike address: ' + err.message, SimpleToast.LONG);
+                        SimpleToast.show(String(loc.formatString(loc.cypherbox.vault.cold_storage.strike_address_failed, { error: err.message })), SimpleToast.LONG);
                     }
                 }
                 return;
             } else if (bridgeProvider === 'COINOS') {
                 // For Coinos, use existing coinos deposit address
-                SimpleToast.show('Proceeding with Lightning bridge via Coinos...', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.vault.cold_storage.bridge_via_coinos, SimpleToast.SHORT);
                 // TODO: Get Coinos deposit address if needed
                 createTransaction();
                 return;
@@ -751,17 +751,17 @@ export default function ColdStorage({ route, navigation }: Props) {
         }
 
         if(!destinationAddress || destinationAddress.length == 0){
-            SimpleToast.show("Please Enter Destination Address", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.cold_storage.enter_destination, SimpleToast.SHORT)
             return
         }
         if(!isCheck && title){
-            SimpleToast.show("Please verify the destination address", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.cold_storage.verify_destination, SimpleToast.SHORT)
             return;
         }
         if (btcAddressRx.test(destinationAddress) || destinationAddress.startsWith('bc1') || destinationAddress.startsWith('BC1')) {
             createTransaction()
         } else {
-            SimpleToast.show("Destination Address is not valid", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.cold_storage.destination_invalid, SimpleToast.SHORT)
         }
     }
 
@@ -805,7 +805,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         if(selectedFee && !isCustomFee){
             return {fee: selectedFee.fee, label:  selectedFee?.label}
         } else {
-            return "Customize";
+            return loc.cypherbox.vault.cold_storage.customize;
         }
     }
 
@@ -820,7 +820,7 @@ export default function ColdStorage({ route, navigation }: Props) {
             }
             return selectedFee?.label
         } else {
-            return "Customize";
+            return loc.cypherbox.vault.cold_storage.customize;
         }
     }
 
@@ -911,7 +911,7 @@ export default function ColdStorage({ route, navigation }: Props) {
             setPayjoinUrl(options.pj || '');
             // RN Bug: contentOffset gets reset to 0 when state changes. Remove code once this bug is resolved.
         } else {
-            SimpleToast.show("Bitcoin Address is not valid", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.cold_storage.bitcoin_address_invalid, SimpleToast.SHORT)
         }
         // setIsLoading(false);
     };
@@ -974,7 +974,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         <ScreenLayout showToolbar>
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
-                <Text style={styles.title} center>{title ? title : isBatch ? "Batch Capsules" : to || toStrike || toArk ? "Top-up Transaction" : vaultSend ? (vaultTab ? "Move to Hot Vault" : "Move to Cold Vault") : "Construct transaction"}</Text>
+                <Text style={styles.title} center>{title ? title : isBatch ? loc.cypherbox.vault.cold_storage.batch_capsules : to || toStrike || toArk ? loc.cypherbox.vault.cold_storage.topup_transaction : vaultSend ? (vaultTab ? loc.cypherbox.vault.cold_storage.move_to_hot_vault : loc.cypherbox.vault.cold_storage.move_to_cold_vault) : loc.cypherbox.vault.cold_storage.construct_transaction}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -991,7 +991,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                 <View style={styles.recipientView}>
                     {/* <TouchableOpacity onPress={coinThresholdClickHandler}> */}
                     <View>
-                        <Text bold style={styles.coinselected}>Capsules selected:</Text>
+                        <Text bold style={styles.coinselected}>{loc.cypherbox.vault.cold_storage.capsules_selected}</Text>
                         {capsulesData && capsulesData.length > 0 ? (
                           <View style={{ marginTop: 10, marginBottom: 10 }}>
                             {capsulesData.map((item: any, i: number) => (
@@ -1005,7 +1005,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                               </View>
                             ))}
                             {(to || toStrike || toArk) && capsuleTotal > 0 && (
-                              <Text bold style={[styles.coinselected, { fontSize: 12, marginTop: 4 }]}>Total: {formatBalance(capsuleTotal, BitcoinUnit.BTC, true)}</Text>
+                              <Text bold style={[styles.coinselected, { fontSize: 12, marginTop: 4 }]}>{loc.formatString(loc.cypherbox.vault.cold_storage.total, { amount: formatBalance(capsuleTotal, BitcoinUnit.BTC, true) })}</Text>
                             )}
                           </View>
                         ) : (
@@ -1027,7 +1027,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                         // marginStart:15,
                         // marginEnd: 10,
                       }}>
-                        <Text bold style={{fontSize: 18}}>{"Batched capsule size: "}</Text>
+                        <Text bold style={{fontSize: 18}}>{loc.cypherbox.vault.cold_storage.batched_capsule_size}</Text>
                         <View style={{flexDirection: 'row', alignItems: 'center'}}>
                           <TouchableOpacity activeOpacity={0.7} onPress={editAmountClickHandler} style={{
                             flexDirection: 'row', 
@@ -1065,7 +1065,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                     :
                       <View style={styles.priceView}>
                           <View>
-                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? "Transfer amount" : to || toStrike || toArk ? "Top-up amount" : vaultSend ? "Amount moved" : "Recipient will get:"}</Text>
+                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? loc.cypherbox.vault.cold_storage.transfer_amount : to || toStrike || toArk ? loc.cypherbox.vault.cold_storage.topup_amount : vaultSend ? loc.cypherbox.vault.cold_storage.amount_moved : loc.cypherbox.vault.cold_storage.recipient_will_get}</Text>
                               <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
                               <View style={{flexDirection: 'row', marginTop: 8}}>
                                   <View style={styles.tabs}>
@@ -1074,7 +1074,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                               </View>
                           </View>
                           <TouchableOpacity style={[styles.editAmount, { borderColor: satsEditable ? primaryColor : '#B6B6B6' }]} onPress={editAmountClickHandler}>
-                              <Text>Edit amount</Text>
+                              <Text>{loc.cypherbox.vault.cold_storage.edit_amount}</Text>
                           </TouchableOpacity>
                       </View>                    
                     }
@@ -1092,7 +1092,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                         <View style={{flexDirection: 'row'}}>
                                             <View style={{flex: 1}}>
                                                 <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                                                    <Text style={styles.recipientTitle}>Change capsule</Text>
+                                                    <Text style={styles.recipientTitle}>{loc.cypherbox.vault.cold_storage.change_capsule}</Text>
                                                     <TouchableOpacity
                                                         onPress={() => setShowChangeInfo(!showChangeInfo)}
                                                         style={{marginLeft: 6, marginTop: -2}}
@@ -1102,7 +1102,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                 </View>
                                                 {showChangeInfo && (
                                                     <View style={{ marginTop: 6, marginBottom: 4, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: vaultTab ? colors.coldGreen : colors.green, backgroundColor: '#1a1a1a' }}>
-                                                        <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16 }}>Change capsule is the amount of Bitcoin sent back to you as a remainder. If it's a small amount, you can sweep it to your Lightning Account for quick spending or deposit it to your Hot Vault for future consolidation cycle.</Text>
+                                                        <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16 }}>{loc.cypherbox.vault.cold_storage.change_capsule_info}</Text>
                                                     </View>
                                                 )}
                                                 <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
@@ -1116,7 +1116,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                         {(isStrikeAuth || isAuth || showHotVault) && (
                                             <View style={{marginTop: 10}}>
                                                 <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                                                    <Text style={{fontSize: 13, color: '#AAAAAA', marginRight: 8}}>Sweep change to:</Text>
+                                                    <Text style={{fontSize: 13, color: '#AAAAAA', marginRight: 8}}>{loc.cypherbox.vault.cold_storage.sweep_change_to}</Text>
                                                     <TouchableOpacity
                                                         onPress={() => setShowChangeMenu(!showChangeMenu)}
                                                         disabled={changeFetchLoading}
@@ -1135,8 +1135,8 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                         }}
                                                     >
                                                         <Text style={{fontSize: 12, color: '#fff'}}>
-                                                            {changeDestination === 'SELF' ? (vaultTab ? 'Cold Vault' : 'Hot Vault')
-                                                            : changeDestination === 'HOT_VAULT' ? 'Hot Vault'
+                                                            {changeDestination === 'SELF' ? (vaultTab ? loc.cypherbox.vault.cold_storage.cold_vault : loc.cypherbox.vault.cold_storage.hot_vault)
+                                                            : changeDestination === 'HOT_VAULT' ? loc.cypherbox.vault.cold_storage.hot_vault
                                                             : changeDestination === 'STRIKE' ? 'Strike'
                                                             : 'CoinOS'}
                                                         </Text>
@@ -1153,7 +1153,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                             style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#333'}}
                                                         >
                                                             <Image source={vaultTab ? Cold1 : Hot} style={{width: 14, height: 14, marginRight: 8}} resizeMode="contain" />
-                                                            <Text style={{fontSize: 13, color: changeDestination === 'SELF' ? '#fff' : '#999'}}>{vaultTab ? 'Cold Vault' : 'Hot Vault'}</Text>
+                                                            <Text style={{fontSize: 13, color: changeDestination === 'SELF' ? '#fff' : '#999'}}>{vaultTab ? loc.cypherbox.vault.cold_storage.cold_vault : loc.cypherbox.vault.cold_storage.hot_vault}</Text>
                                                             {changeDestination === 'SELF' && <Icon name="check" type="font-awesome" color={vaultTab ? colors.coldGreen : colors.green} size={12} containerStyle={{marginLeft: 'auto'}} />}
                                                         </TouchableOpacity>
                                                         {showHotVault && (
@@ -1162,7 +1162,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                                 style={{flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#333'}}
                                                             >
                                                                 <Image source={Hot} style={{width: 14, height: 14, marginRight: 8}} resizeMode="contain" />
-                                                                <Text style={{fontSize: 13, color: changeDestination === 'HOT_VAULT' ? '#fff' : '#999'}}>Hot Vault</Text>
+                                                                <Text style={{fontSize: 13, color: changeDestination === 'HOT_VAULT' ? '#fff' : '#999'}}>{loc.cypherbox.vault.cold_storage.hot_vault}</Text>
                                                                 {changeDestination === 'HOT_VAULT' && <Icon name="check" type="font-awesome" color={colors.green} size={12} containerStyle={{marginLeft: 'auto'}} />}
                                                             </TouchableOpacity>
                                                         )}
@@ -1308,10 +1308,10 @@ export default function ColdStorage({ route, navigation }: Props) {
                               {!vaultSend &&
                                 <Text style={{fontSize: 12, color: '#AAAAAA'}}>
                                   {selectedItem == 1
-                                    ? "Strike Lightning account deposit address"
+                                    ? loc.cypherbox.vault.cold_storage.strike_deposit_label
                                     : selectedItem == 3
-                                      ? "Bark Vault boarding address (P2TR)"
-                                      : "CoinOS Lightning account deposit address"}
+                                      ? loc.cypherbox.vault.cold_storage.bark_boarding_label
+                                      : loc.cypherbox.vault.cold_storage.coinos_deposit_label}
                                 </Text>
                               }
                               {type !== 'TOPUP' && (
@@ -1321,7 +1321,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     // marginStart:15,
                                     // marginEnd: 10,
                                   }}>
-                                    <Text bold style={{fontSize: 18}}>{"To: "}</Text>
+                                    <Text bold style={{fontSize: 18}}>{loc.cypherbox.vault.cold_storage.to}</Text>
                                     <TouchableOpacity activeOpacity={0.7} onPress={addressHandler} style={{
                                       flexDirection: 'row',
                                       alignItems: 'center',
@@ -1336,7 +1336,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                         fontSize: 16,
                                         marginTop: 3,
                                         color: vaultTab ? colors.coldGreen : colors.greenShadow
-                                      })}>{"Vault Address: "+shortenAddress(to)}</Text>
+                                      })}>{loc.formatString(loc.cypherbox.vault.cold_storage.vault_address, { address: shortenAddress(to) })}</Text>
                                       <Image source={Edit} style={styles.editImage} resizeMode='contain' />
                                     </TouchableOpacity>
                                   </View>
@@ -1359,7 +1359,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                         onPress={() => {
                                           if (!fullAddr) return;
                                           Clipboard.setString(fullAddr);
-                                          SimpleToast.show('Address copied', SimpleToast.SHORT);
+                                          SimpleToast.show(loc.cypherbox.vault.cold_storage.address_copied, SimpleToast.SHORT);
                                         }}
                                         // Stack the address over the copy link instead of
                                         // sharing a row. A P2TR (bc1p, 62-char) boarding
@@ -1369,10 +1369,10 @@ export default function ColdStorage({ route, navigation }: Props) {
                                         style={{ marginTop: 4 }}
                                       >
                                         <Text style={{ fontSize: 11, color: vaultSend ? (vaultTab ? colors.green : colors.coldGreen) : '#888' }}>
-                                          {vaultSend ? "Vault Address: " + shortenAddress(to) : shortenAddress(fullAddr)}
+                                          {vaultSend ? loc.formatString(loc.cypherbox.vault.cold_storage.vault_address, { address: shortenAddress(to) }) : shortenAddress(fullAddr)}
                                         </Text>
                                         {!!fullAddr &&
-                                          <Text style={{ fontSize: 10, color: '#888', marginTop: 3, alignSelf: 'flex-end', textDecorationLine: 'underline' }}>copy</Text>
+                                          <Text style={{ fontSize: 10, color: '#888', marginTop: 3, alignSelf: 'flex-end', textDecorationLine: 'underline' }}>{loc.cypherbox.vault.cold_storage.copy}</Text>
                                         }
                                       </TouchableOpacity>
                                     );
@@ -1387,7 +1387,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                   {destinationAddress ?
                                       <Text h3 bold>{destinationAddress}</Text>
                                       :
-                                      <Text bold>Paste destination Bitcoin network address</Text>
+                                      <Text bold>{loc.cypherbox.vault.cold_storage.paste_destination}</Text>
                                   }
                               </TouchableOpacity>
                               <TouchableOpacity onPress={async () => {
@@ -1408,7 +1408,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                           <View style={styles.checkView}>
                             {isCheck && <Image source={Check} style={styles.checkImage} resizeMode='contain' /> }
                           </View>
-                          <Text style={{...styles.fees, color: colors.white, marginLeft: 10}} italic>I verified this address</Text>
+                          <Text style={{...styles.fees, color: colors.white, marginLeft: 10}} italic>{loc.cypherbox.vault.cold_storage.i_verified}</Text>
                         </TouchableOpacity>
                       </>
                     }
@@ -1495,7 +1495,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                             )}
                         </View>
                         */}
-                        <Text style={[styles.recipientTitle, { marginTop: 20 }]}>Network fee:</Text>
+                        <Text style={[styles.recipientTitle, { marginTop: 20 }]}>{loc.cypherbox.vault.cold_storage.network_fee}</Text>
                             
                             <Text bold style={[styles.fees, { marginTop: 8 }]}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text bold style={styles.fees}>~ {isCustomFee ? customFee + " sats/vByte" :  getCurrentFee().fee + " sats"}</Text> */}
@@ -1544,14 +1544,14 @@ export default function ColdStorage({ route, navigation }: Props) {
 
                                     setVisibleSelection(false)
                                 }}>
-                                    <Text bold style={selectedFees === 3 ? StyleSheet.flatten([styles.border, { paddingHorizontal: 20 }]) : {}}>Customize</Text>
+                                    <Text bold style={selectedFees === 3 ? StyleSheet.flatten([styles.border, { paddingHorizontal: 20 }]) : {}}>{loc.cypherbox.vault.cold_storage.customize}</Text>
                                 </TouchableOpacity> 
                             </View>
                             </>
                         }
                         <TouchableOpacity style={[styles.editAmount, { flexDirection: 'row', borderColor: feesEditable ? primaryColor : '#B6B6B6', marginStart: 0, marginTop: 16, alignSelf: 'flex-start' }]}
                             onPress={editFeesClickHandler}>
-                            <Text style={{ marginStart: 10, }}>{isCustomFee ? "Customize" : getCurrentFee().label}</Text>
+                            <Text style={{ marginStart: 10, }}>{isCustomFee ? loc.cypherbox.vault.cold_storage.customize : getCurrentFee().label}</Text>
                             <View style={{ marginHorizontal: 10 }}>
                                 <Icon name="chevron-up" type="font-awesome" color={colors.white} size={10} />
                                 <Icon name="chevron-down" type="font-awesome" color={colors.white} size={10} />
@@ -1573,23 +1573,23 @@ export default function ColdStorage({ route, navigation }: Props) {
                     <TextInput
                         value={transactionMemo}
                         onChangeText={setTransactionMemo}
-                        placeholder="Add note"
+                        placeholder={loc.cypherbox.vault.cold_storage.add_note}
                         placeholderTextColor={colors.white}
                         style={[styles.noteInput, { borderColor: transactionMemo?.length > 0 ? primaryColor : '#B6B6B6', marginTop: 20 }]}
                     />
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, vaultTab && {backgroundColor: colors.coldGreen}]}>
-                    <Text h3>Next</Text>
+                    <Text h3>{loc.cypherbox.vault.cold_storage.next}</Text>
                 </TouchableOpacity>
             </View>
             {showFirePopup && (
                     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
                         <View style={{ backgroundColor: '#0a0a0a', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#FF65D4', width: '85%', alignItems: 'center' }}>
-                            <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>On-chain confirmed! Ready to fire Lightning ⚡</Text>
+                            <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>{loc.cypherbox.vault.cold_storage.onchain_confirmed}</Text>
                             
                             {/* Destination */}
                             <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
-                                <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>To:</Text>
+                                <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>{loc.cypherbox.vault.cold_storage.to_label}</Text>
                                 <Text style={{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }}>{lightningInvoice}</Text>
                             </View>
                             
@@ -1612,17 +1612,17 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 </View>
                             </View>
                             
-                            <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>Route Lightning payment</Text>
+                            <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>{loc.cypherbox.vault.cold_storage.route_lightning_payment}</Text>
                             
                             <TouchableOpacity 
                                 onPress={() => setShowFirePopup(false)}
                                 style={{ backgroundColor: '#FF65D4', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 25 }}
                             >
-                                <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>⚡ Route Lightning</Text>
+                                <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>{loc.cypherbox.vault.cold_storage.route_lightning}</Text>
                             </TouchableOpacity>
                             
                             <TouchableOpacity onPress={() => setShowFirePopup(false)} style={{ marginTop: 16 }}>
-                                <Text style={{ fontSize: 14, color: '#666' }}>Cancel</Text>
+                                <Text style={{ fontSize: 14, color: '#666' }}>{loc._.cancel}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

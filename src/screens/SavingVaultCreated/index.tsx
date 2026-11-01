@@ -7,6 +7,7 @@ import { colors } from "@Cypher/style-guide";
 import { PrivateKeyGenerater, SavingVault } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchReset } from "@Cypher/helpers/navigation";
+import loc from "../../../loc";
 
 export default function SavingVaultCreated() {
     const [isValidate, setIsValidate] = useState(false);
@@ -47,19 +48,19 @@ export default function SavingVaultCreated() {
                                     {'\n\n'}
                                     ⚠️ DO NOT use any of its addresses without checking them on your signing device!
                                     {'\n\n'}
-                                    When Bitcoin Network fees become moderately low, you can select the capsules accumulated in your Hot Vault and transfer them to your Cold Storage Vault using the “Move to Cold Vault” button.
+                                    {loc.cypherbox.vault.saving_vault_created.cold_para_3}
                                 </Text>
                             </>
                         :
-                            <Text h4 style={styles.descption}>Remember to keep your seed phrase safe, it's your responsibility!
+                            <Text h4 style={styles.descption}>{loc.cypherbox.vault.saving_vault_created.seed_reminder}
                                 {'\n\n'}
-                                Each slot represents  a materialized Bitcoin capsule (UTXO). You can tap inside the vault to browse its addresses, capsules, transaction history seedphrase, and so on. {'\n\n'}It's recommended that you deposit small to medium sized capsules, and once network fees are low, you can either move them to your Cold Vault, or 'consolidate' them together to save on future network fees.
+                                {loc.cypherbox.vault.saving_vault_created.hot_para_2}{'\n\n'}{loc.cypherbox.vault.saving_vault_created.hot_para_3}
                             </Text>
                         }
                     </ScrollView>
                 </View>
             </View>
-            <Button text="Home"
+            <Button text={loc.cypherbox.vault.saving_vault_created.home}
                 onPress={nextClickHandler}
                 style={{...styles.button, ...{ backgroundColor: vaultTab ? colors.coldGreen : colors.green, marginTop: vaultTab ? 30 : 0 } }}
                 textStyle={styles.btnText}

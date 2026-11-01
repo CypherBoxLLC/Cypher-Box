@@ -52,7 +52,7 @@ export default function ColdVaultIntro2() {
             </Text>
             <Image source={Cold2} style={{ marginTop: 25, width: 320, height: 190, resizeMode: "contain"}} />
           </View>
-          <Button text="Connect Device" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
+          <Button text={loc.cypherbox.vault.cold_vault_intro2.connect_device} onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
         </View>
       </ScreenLayout>
     )

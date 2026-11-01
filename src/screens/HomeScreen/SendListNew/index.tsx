@@ -28,6 +28,7 @@ import styles from "./styles";
 import Capsule from "../../HotStorageVault/Capsule";
 import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import loc from "../../../../loc";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const TILE_WIDTH = Math.floor((SCREEN_WIDTH - 48) * 0.48);
@@ -153,7 +154,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
 
   const handleSend = () => {
     if (selectedIds.length === 0) {
-      SimpleToast.show("Select capsules to send", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.home_lists.send_list.select_capsules_toast, SimpleToast.SHORT);
       return;
     }
     const isVault = selectedItem === 4;
@@ -286,7 +287,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
           <Capsule item={item} wallet={null} onPress={() => {}} handleChoose={() => {}} ids={[]} vaultTab={isVaultCold} />
         </View>
         <Text numberOfLines={1} style={{ fontSize: 10, color: isVaultCold ? colors.coldGreen : colors.green, fontStyle: memo ? 'normal' : 'italic', marginTop: 6 }}>
-          {memo || '(not labeled)'}
+          {memo || loc.cypherbox.home_lists.send_list.not_labeled}
         </Text>
       </TouchableOpacity>
     );
@@ -320,7 +321,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
           {/* ======= FIRST VIEW: 2x2 Grid ======= */}
           <Animated.View style={[{}, view1Style]}>
             <View style={{ paddingHorizontal: 24, marginTop: 20 }}>
-              <Text h2 bold style={{ alignSelf: 'center', marginBottom: 16 }}>SEND FROM</Text>
+              <Text h2 bold style={{ alignSelf: 'center', marginBottom: 16 }}>{loc.cypherbox.home_lists.send_list.send_from}</Text>
               {/* Modular 2-column adaptive grid (mirrors ReceivedListNew).
                   Only tiles for connected wallets render; the grid wraps
                   so empty slots aren't reserved. Order: Strike → CoinOS →
@@ -340,30 +341,30 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                   };
                   const tiles: TileDef[] = [];
                   if (isStrikeAuth) tiles.push({
-                    id: 1, label: 'Strike', subtitle: 'Lightning Network',
+                    id: 1, label: 'Strike', subtitle: loc.cypherbox.home_lists.send_list.lightning_network,
                     icon: StrikeFull, iconStyle: {}, isEnabled: true,
                     accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
                   });
                   // CoinOS still gated by isCoinosAllowed() — feature flag
                   // (region/platform) overrides auth state.
                   if (isCoinosAllowed() && !!isAuth) tiles.push({
-                    id: 2, label: 'CoinOS', subtitle: 'Lightning Network',
+                    id: 2, label: 'CoinOS', subtitle: loc.cypherbox.home_lists.send_list.lightning_network,
                     icon: CoinOS, iconStyle: {}, isEnabled: true,
                     accent: '#FF65D4', shadowColor: colors.pink.shadowTopNew,
                   });
                   if (FEATURE_ARK_ENABLED && isArkAuth) tiles.push({
-                    id: 5, label: 'Bark', subtitle: 'Small–medium amounts',
+                    id: 5, label: 'Bark', subtitle: loc.cypherbox.home_lists.send_list.small_medium_amounts,
                     icon: null, iconStyle: {}, isEnabled: true,
                     accent: colors.ark.light, shadowColor: colors.ark.shadowTopNew,
-                    textLabel: 'Bark Vault',
+                    textLabel: loc.cypherbox.home_lists.send_list.bark_vault,
                   });
                   if (hasHotVault) tiles.push({
-                    id: 3, label: 'Hot Vault', subtitle: 'On-chain capsules',
+                    id: 3, label: loc.cypherbox.home_lists.send_list.hot_vault, subtitle: loc.cypherbox.home_lists.send_list.onchain_capsules,
                     icon: Hot, iconStyle: { width: 22, height: 30, marginEnd: 2 },
                     isEnabled: true, accent: colors.green, shadowColor: colors.greenShadow,
                   });
                   if (hasColdVault) tiles.push({
-                    id: 4, label: 'Cold Vault', subtitle: 'On-chain capsules',
+                    id: 4, label: loc.cypherbox.home_lists.send_list.cold_vault, subtitle: loc.cypherbox.home_lists.send_list.onchain_capsules,
                     icon: Cold1, iconStyle: { width: 30, height: 22, marginEnd: 2 },
                     isEnabled: true, accent: colors.coldGreen, shadowColor: colors.blueText,
                   });
@@ -397,14 +398,14 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                   resizeMode="contain"
                 />
                 <Text bold style={{ fontSize: 16 }}>
-                  {selectedItem === 3 ? 'Hot Vault' : 'Cold Vault'}
+                  {selectedItem === 3 ? loc.cypherbox.home_lists.send_list.hot_vault : loc.cypherbox.home_lists.send_list.cold_vault}
                 </Text>
               </View>
 
               {/* Instruction text + cheatsheet link */}
               <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, marginBottom: 2 }}>
                 <Text style={{ fontSize: 13, color: '#999', flex: 1, marginLeft: 40 }}>
-                  Select the utxo capsules you want to spend from:
+                  {loc.cypherbox.home_lists.send_list.select_capsules}
                 </Text>
                 <TouchableOpacity
                   activeOpacity={0.6}
@@ -436,7 +437,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                 </View>
               ) : utxoList.length === 0 ? (
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                  <Text style={{ color: '#888' }}>No capsules in this vault</Text>
+                  <Text style={{ color: '#888' }}>{loc.cypherbox.home_lists.send_list.no_capsules}</Text>
                 </View>
               ) : (
                 <ScrollView
@@ -519,7 +520,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                       width: 135,
                     }}
                   >
-                    <Text bold center style={{ fontSize: 15 }}>Send</Text>
+                    <Text bold center style={{ fontSize: 15 }}>{loc.cypherbox.home_lists.send_list.send}</Text>
                   </GradientView>
               </View>
             </View>
