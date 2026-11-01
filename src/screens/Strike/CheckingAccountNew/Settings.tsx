@@ -1882,7 +1882,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const confirmColdAddr = () => {
     if (!selectedAddr) return;
     if (!hardwareVerified) {
-      SimpleToast.show("Confirm you've verified the address on your hardware device first.", SimpleToast.LONG);
+      SimpleToast.show("Confirm you've checked the address on your signing device first.", SimpleToast.LONG);
       return;
     }
     void startExitWithAddress('Cold Storage vault', selectedAddr);
@@ -3065,10 +3065,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       {pickerStep === 'cold-addr' && (
                         <View style={{ padding: 10, borderRadius: 8, backgroundColor: 'rgba(232, 92, 90, 0.08)', borderWidth: 1, borderColor: colors.redLight, marginBottom: 4 }}>
                           <Text style={{ fontSize: 12, color: '#FFF', marginBottom: 8 }}>
-                            ⚠️ DO NOT proceed without verifying the selected
-                            address on your hardware device. Confirm
-                            character-by-character that the address above
-                            matches what your device displays.
+                            ⚠️ DO NOT proceed without checking the selected
+                            address on your signing device (hardware wallet
+                            or offline phone). Confirm character-by-character
+                            that the address above matches what it displays.
                           </Text>
                           <TouchableOpacity
                             onPress={() => setHardwareVerified((v) => !v)}
@@ -3085,7 +3085,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                               )}
                             </View>
                             <Text style={{ fontSize: 12, color: '#FFF', flex: 1 }}>
-                              I have verified this address on my hardware device.
+                              I have checked this address on my signing device.
                             </Text>
                           </TouchableOpacity>
                         </View>

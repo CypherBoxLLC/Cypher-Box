@@ -635,7 +635,7 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                                 ]}
                             >
                                 ⚠️ DO NOT transfer to any of these addresses without
-                                verifying their authenticity from your hardware device!{' '}
+                                checking them on your signing device!{' '}
                             </Text>
                             <TouchableOpacity
                                 activeOpacity={0.7}

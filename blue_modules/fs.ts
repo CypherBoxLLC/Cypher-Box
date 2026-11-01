@@ -73,15 +73,26 @@ const writeFileAndExport = async function (filename: string, contents: string) {
 };
 
 /**
- * Opens & reads *.psbt files, and returns base64 psbt. FALSE if something went wrong (wont throw).
+ * Path RNFS can read for a DocumentPicker uri. iOS returns a percent-encoded file:// URL and RNFS only strips the
+ * scheme, so a file named "Signed tx.txn" would not be found. Android content:// URIs have to stay encoded.
+ */
+const pickedFilePath = (uri: string): string => (uri.startsWith('file://') ? decodeURIComponent(uri) : uri);
+
+/**
+ * Opens & reads *.psbt / *.txn files, and returns base64 psbt, or the file's text (e.g. a raw transaction hex).
+ * FALSE if something went wrong (wont throw).
  */
 const openSignedTransaction = async function (): Promise<string | boolean> {
   try {
     const res = await DocumentPicker.pickSingle({
-      type: Platform.OS === 'ios' ? ['io.bluewallet.psbt', 'io.bluewallet.psbt.txn'] : [DocumentPicker.types.allFiles],
+      // plain text and JSON too: signers and other wallets save a transaction under all sorts of names
+      type:
+        Platform.OS === 'ios'
+          ? ['io.bluewallet.psbt', 'io.bluewallet.psbt.txn', DocumentPicker.types.plainText, 'public.json']
+          : [DocumentPicker.types.allFiles],
     });
 
-    return await _readPsbtFileIntoBase64(res.uri);
+    return await _readPsbtFileIntoBase64(pickedFilePath(res.uri));
   } catch (err) {
     if (!DocumentPicker.isCancel(err)) {
       alert(loc.send.details_no_signed_tx);
@@ -206,6 +217,7 @@ const readFileOutsideSandbox = (filePath: string) => {
 
 module.exports.writeFileAndExport = writeFileAndExport;
 module.exports.openSignedTransaction = openSignedTransaction;
+module.exports.pickedFilePath = pickedFilePath;
 module.exports.showFilePickerAndReadFile = showFilePickerAndReadFile;
 module.exports.showImagePickerAndReadImage = showImagePickerAndReadImage;
 module.exports.readFileOutsideSandbox = readFileOutsideSandbox;

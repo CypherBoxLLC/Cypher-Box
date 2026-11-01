@@ -3,6 +3,11 @@ import { ImageStyle, StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 interface Style {
     container: ViewStyle;
+    leaveNote: TextStyle;
+    signerRow: ViewStyle;
+    signerText: TextStyle;
+    signerHelp: ViewStyle;
+    signerHelpText: TextStyle;
     title: TextStyle;
     titleVault: TextStyle;
     savingVault: ViewStyle;
@@ -177,5 +182,33 @@ export default StyleSheet.create<Style>({
     swipeview: {
         alignSelf: 'center',
         marginTop: 10,
-    }
+    },
+    leaveNote: {
+        marginBottom: 12,
+        color: colors.gray.light,
+    },
+    signerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    signerText: {
+        flex: 1,
+        color: colors.gray.light,
+    },
+    signerHelp: {
+        marginLeft: 12,
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        borderWidth: 1,
+        borderColor: colors.blueText,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    signerHelpText: {
+        color: colors.blueText,
+        fontSize: 15,
+        lineHeight: 19,
+    },
 })

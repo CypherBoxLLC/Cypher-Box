@@ -14,6 +14,21 @@ interface Style {
     linearGradientInside: ViewStyle;
     linearStyle: ViewStyle;
     insideView: ViewStyle;
+    keyKinds: TextStyle;
+    node: ViewStyle;
+    nodeMissing: ViewStyle;
+    nodeConnected: ViewStyle;
+    nodeText: ViewStyle;
+    nodeTitle: TextStyle;
+    nodeHint: TextStyle;
+    nodeWarningTitle: TextStyle;
+    nodeWarning: TextStyle;
+    ignore: ViewStyle;
+    checkbox: ViewStyle;
+    checkboxTicked: ViewStyle;
+    ignoreText: TextStyle;
+    ignoreLabel: TextStyle;
+    keyLocked: ViewStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -55,8 +70,9 @@ export default StyleSheet.create<Style>({
         // marginHorizontal: 30,
         // marginTop: 300,
         marginTop: 10,
-        justifyContent: 'center',
-        alignItems: 'center'
+        // as wide as the node box above, so the labels with the key kinds fit on one line
+        alignSelf: 'stretch',
+        marginHorizontal: 22,
     },
     qrcode: {
         width: 40,
@@ -73,13 +89,11 @@ export default StyleSheet.create<Style>({
     },
     linearGradientInside: {
         height: 54,
-        width: 190,
         borderRadius: 8,
         marginTop: 20,
     },
     linearStyle: {
         height: 54,
-        width: 190,
         borderRadius: 8,
     },
     insideView: {
@@ -91,9 +105,91 @@ export default StyleSheet.create<Style>({
         margin: 1,
         borderRadius: 8,
     },
+    keyKinds: {
+        fontSize: 15,
+        color: colors.gray.light,
+    },
     qrimage: {
         width: 30,
         height: 30,
         marginEnd: 10
+    },
+    // the own-node box above the ways to load the key: yellow until a node is connected, then blue
+    node: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'stretch',
+        marginTop: 20,
+        marginHorizontal: 22,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        borderWidth: 1,
+        borderRadius: 12,
+    },
+    nodeMissing: {
+        borderColor: colors.yellow2,
+    },
+    nodeConnected: {
+        borderColor: colors.blueText,
+    },
+    nodeText: {
+        flex: 1,
+        marginHorizontal: 12,
+    },
+    nodeTitle: {
+        color: colors.white,
+    },
+    nodeHint: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.gray.light,
+        marginTop: 2,
+    },
+    nodeWarningTitle: {
+        color: colors.yellow2,
+        fontFamily: 'Archivo-SemiBold',
+    },
+    nodeWarning: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.yellow2,
+        marginTop: 2,
+    },
+    ignore: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        alignSelf: 'stretch',
+        marginTop: 12,
+        marginHorizontal: 22,
+        paddingHorizontal: 14,
+    },
+    checkbox: {
+        width: 22,
+        height: 22,
+        borderRadius: 4,
+        borderWidth: 2,
+        borderColor: colors.white,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    checkboxTicked: {
+        backgroundColor: colors.white,
+    },
+    ignoreText: {
+        flex: 1,
+        marginStart: 12,
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.gray.light,
+    },
+    ignoreLabel: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.white,
+        fontFamily: 'Archivo-SemiBold',
+    },
+    // Scan, Paste and Import until there's a node or the user ticked "Ignore"
+    keyLocked: {
+        opacity: 0.4,
     },
 })

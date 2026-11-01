@@ -32,6 +32,7 @@ import Privacy from './blue_modules/Privacy';
 import MenuElements from './components/MenuElements';
 import PaymentNotification from './src/components/PaymentNotification';
 import { updateExchangeRate } from './blue_modules/currency';
+import { isSeedSignerLocked } from './src/services/seedSignerLock';
 // Side-effect import: configures the Google Drive OAuth client at app
 // startup using the GOOGLE_WEB_CLIENT_ID from .env (via react-native-
 // config). No-op on iOS and on Android if the env var is unset; we
@@ -222,7 +223,8 @@ const App = () => {
   };
 
   const handleAppStateChange = async nextAppState => {
-    if (wallets.length === 0) return;
+    // a seed-signer fetches no rates and has no push notifications to process
+    if (wallets.length === 0 || isSeedSignerLocked()) return;
     if ((appState.current.match(/background/) && nextAppState === 'active') || nextAppState === undefined) {
       setTimeout(() => A(A.ENUM.APP_UNSUSPENDED), 2000);
       updateExchangeRate();
@@ -266,7 +268,8 @@ const App = () => {
       <View style={styles.root}>
         <NavigationContainer ref={navigationRef} theme={colorScheme === 'dark' ? BlueDarkTheme : BlueDefaultTheme}>
           <InitRoot />
-          <Notifications onProcessNotifications={processPushNotifications} />
+          {/* push set-up registers with the push servers on start-up, which a seed-signer never does */}
+          {isSeedSignerLocked() ? null : <Notifications onProcessNotifications={processPushNotifications} />}
           <PaymentNotification />
           <MenuElements />
           <DeviceQuickActions />

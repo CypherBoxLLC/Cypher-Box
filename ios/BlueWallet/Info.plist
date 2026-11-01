@@ -168,6 +168,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>In order to quickly scan the recipient's address, we need your permission to use the camera to scan their QR Code.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Cypher Box connects to your own Bitcoin node when it is on your home network.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>In order to use FaceID please confirm your permission.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

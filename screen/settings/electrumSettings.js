@@ -36,6 +36,7 @@ import { requestCameraAuthorization } from '../../helpers/scan-qr';
 import Button from '../../components/Button';
 import ListItem from '../../components/ListItem';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../blue_modules/hapticFeedback';
+import { colors } from '@Cypher/style-guide';
 
 const BlueElectrum = require('../../blue_modules/BlueElectrum');
 
@@ -154,6 +155,21 @@ export default class ElectrumSettings extends Component {
     });
   };
 
+  // Switches to the saved server now rather than after a restart: a Cold Vault set up right after connecting a node
+  // must not have its addresses looked up on the old server. Opened from that setup (`returnAfterSave`), the screen
+  // then goes back to it.
+  useSavedServer = async () => {
+    if (!(await BlueElectrum.isDisabled())) {
+      try {
+        BlueElectrum.forceDisconnect();
+      } catch (_) {
+        // not connected yet
+      }
+      BlueElectrum.connectMain();
+    }
+    if (this.props.route?.params?.returnAfterSave) this.props.navigation.goBack();
+  };
+
   save = () => {
     const host = this.state.host ? this.state.host : '';
     const port = this.state.port ? this.state.port : '';
@@ -178,6 +194,7 @@ export default class ElectrumSettings extends Component {
           }
           triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
           alert(loc.settings.electrum_saved);
+          await this.useSavedServer();
         } else if (!(await BlueElectrum.testConnection(host, port, sslPort))) {
           triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
           alert(loc.settings.electrum_error_connect);
@@ -207,6 +224,7 @@ export default class ElectrumSettings extends Component {
           }
           triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
           alert(loc.settings.electrum_saved);
+          await this.useSavedServer();
         }
       } catch (error) {
         triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
@@ -281,14 +299,27 @@ export default class ElectrumSettings extends Component {
       );
     });
 
+    const connected = this.state.config.connected === 1;
+    // yellow on one of the public servers the app picks by itself, green only on a node the user typed in
+    const thirdParty = connected && BlueElectrum.isPublicServer(this.state.config.host);
+
     return (
       <>
         <BlueCard>
           <BlueText style={styles.status}>{loc.settings.electrum_status}</BlueText>
           <View style={styles.connectWrap}>
-            <View style={[styles.container, this.state.config.connected === 1 ? styles.containerConnected : styles.containerDisconnected]}>
-              <BlueText style={this.state.config.connected === 1 ? styles.textConnected : styles.textDisconnected}>
-                {this.state.config.connected === 1 ? loc.settings.electrum_connected : loc.settings.electrum_connected_not}
+            <View
+              style={[
+                styles.container,
+                !connected ? styles.containerDisconnected : thirdParty ? styles.containerThirdParty : styles.containerConnected,
+              ]}
+            >
+              <BlueText style={!connected ? styles.textDisconnected : thirdParty ? styles.textThirdParty : styles.textConnected}>
+                {!connected
+                  ? loc.settings.electrum_connected_not
+                  : thirdParty
+                    ? loc.settings.electrum_connected_third_party
+                    : loc.settings.electrum_connected}
               </BlueText>
             </View>
           </View>
@@ -296,6 +327,12 @@ export default class ElectrumSettings extends Component {
           <BlueText style={styles.hostname} onPress={this.checkServer}>
             {this.state.config.host}:{this.state.config.port}
           </BlueText>
+          {thirdParty && (
+            <View style={styles.thirdParty}>
+              <BlueText style={styles.thirdPartyTitle}>{loc.settings.electrum_third_party_title}</BlueText>
+              <BlueText style={styles.thirdPartyText}>{loc.settings.electrum_third_party_explain}</BlueText>
+            </View>
+          )}
         </BlueCard>
         <KeyboardAvoidingView>
           <BlueCard>
@@ -449,6 +486,7 @@ ElectrumSettings.propTypes = {
     name: PropTypes.string,
     params: PropTypes.shape({
       server: PropTypes.string,
+      returnAfterSave: PropTypes.bool,
     }),
   }),
 };
@@ -463,7 +501,7 @@ const styles = StyleSheet.create({
   },
   connectWrap: {
     width: 'auto',
-    height: 34,
+    minHeight: 34,
     flexWrap: 'wrap',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -476,14 +514,33 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   containerConnected: {
-    backgroundColor: BlueCurrentTheme.colors.feeLabel,
+    backgroundColor: colors.green,
+  },
+  containerThirdParty: {
+    backgroundColor: colors.tundora,
   },
   containerDisconnected: {
     backgroundColor: BlueCurrentTheme.colors.redBG,
   },
   textConnected: {
-    color: BlueCurrentTheme.colors.feeValue,
+    color: colors.black.default,
     fontWeight: 'bold',
+  },
+  textThirdParty: {
+    color: colors.yellow2,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  thirdParty: {
+    marginTop: 16,
+  },
+  thirdPartyTitle: {
+    color: colors.yellow2,
+    fontWeight: 'bold',
+  },
+  thirdPartyText: {
+    color: colors.yellow2,
+    marginTop: 4,
   },
   textDisconnected: {
     color: BlueCurrentTheme.colors.redText,

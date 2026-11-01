@@ -1,7 +1,9 @@
 import { create, GetState, SetState } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { zustandStorage } from "./index";
+import { isSeedSignerLocked, lockSeedSigner } from "@Cypher/services/seedSignerLock";
 import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
+import type { PendingSignature } from "@Cypher/helpers/pendingSignature";
 
 /**
  * Stuck-refresh detection state.
@@ -239,6 +241,30 @@ export type AuthStateType = {
      * onto a different wallet.
      */
     vaultDisplayAddress: Record<string, string>;
+    /**
+     * Cold vault spends exported for signing and not broadcast yet, per walletID: one each, so preparing another
+     * replaces it. Lets the user leave the app while they sign and resume from the vault tab; see
+     * helpers/pendingSignature.
+     */
+    pendingSignatures: Record<string, PendingSignature>;
+    /** "Signing safely" was shown before this phone's first Hot Vault "Sign a transaction"; it isn't forced again. */
+    signingSafetySeen: boolean;
+    /**
+     * Cold vaults whose "your Cold Vault's key is on this phone" warning the user chose to hide, per walletID.
+     * Keyed by wallet so a new cold vault with the same mistake still gets warned.
+     */
+    coldKeyWarningHidden: Record<string, boolean>;
+    /**
+     * Offline Seed-Signer mode: this install is a seed-signer for an offline phone, and the signer is its only home
+     * screen. Always the one-way lock in services/seedSignerLock: it can be turned on, never off, and only reinstalling
+     * the app clears it.
+     */
+    signingMode: boolean;
+    /**
+     * A transaction was signed on this phone (with the Hot Vault or a backup). Together with being offline or in signing
+     * mode, it puts "Sign a transaction" on the Hot Vault tab: phones that never sign keep the tab as it was.
+     */
+    signedOnThisPhone: boolean;
     arkChainTipHeight: number | null;
     // Epoch ms the tip above was read. The tip is PERSISTED, so a cold launch
     // offline rehydrates one that may be days old, and
@@ -394,6 +420,11 @@ export type AuthStateType = {
     setArkExpiryNotifsScheduleVersion: (state: number) => void;
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setVaultDisplayAddress: (walletID: string, address: string | null) => void;
+    setPendingSignature: (walletID: string, pending: PendingSignature | null) => void;
+    setSigningSafetySeen: (seen: boolean) => void;
+    hideColdKeyWarning: (walletID: string) => void;
+    setSigningMode: (on: boolean) => void;
+    setSignedOnThisPhone: (signed: boolean) => void;
     /** `at` is when the tip was READ FROM THE NETWORK. Pass
      *  getChainTipFetchedAt() when the value may have come from the tip cache:
      *  chainTipFreshness derives FRESH/DEGRADED/STALE from this stamp, so
@@ -678,6 +709,11 @@ const createAuthStore = (
     arkExpiryNotifsScheduleVersion: 0,
     arkPendingLnReceives: [],
     vaultDisplayAddress: {},
+    pendingSignatures: {},
+    signingSafetySeen: false,
+    coldKeyWarningHidden: {},
+    signingMode: isSeedSignerLocked(),
+    signedOnThisPhone: false,
     arkChainTipHeight: null,
     arkChainTipHeightAt: null,
     arkLastSyncedAt: null,
@@ -792,6 +828,23 @@ const createAuthStore = (
             else delete next[walletID];
             return { vaultDisplayAddress: next };
         }),
+    setPendingSignature: (walletID: string, pending: PendingSignature | null) =>
+        set((state: any) => {
+            const next = { ...(state.pendingSignatures ?? {}) };
+            // null: broadcast, discarded, or its capsules spent some other way
+            if (pending) next[walletID] = pending;
+            else delete next[walletID];
+            return { pendingSignatures: next };
+        }),
+    setSigningSafetySeen: (seen: boolean) => set({ signingSafetySeen: seen }),
+    // turning it on locks this install for good; turning it off does nothing
+    setSigningMode: (on: boolean) => {
+        if (on) lockSeedSigner();
+        set({ signingMode: isSeedSignerLocked() });
+    },
+    setSignedOnThisPhone: (signed: boolean) => set({ signedOnThisPhone: signed }),
+    hideColdKeyWarning: (walletID: string) =>
+        set((state: any) => ({ coldKeyWarningHidden: { ...(state.coldKeyWarningHidden ?? {}), [walletID]: true } })),
     // Stamps the read time with the value, so the two can never drift apart.
     setArkChainTipHeight: (state: number | null, at?: number | null) =>
         set({
@@ -980,6 +1033,12 @@ const useAuthStore = create<AuthStateType>()(
         // fields: reserveStrikeAmount, withdrawStrikeThreshold — user
         // preferences, not auth state).
         version: 1,
+        // the lock decides signing mode, whatever was saved before it existed
+        merge: (persistedState, currentState) => ({
+            ...currentState,
+            ...(persistedState as Partial<AuthStateType>),
+            signingMode: isSeedSignerLocked(),
+        }),
         migrate: (persistedState, version) => {
             const state = (persistedState ?? {}) as Record<string, unknown>;
             if (version < 1) {

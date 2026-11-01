@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Platform, View, TouchableWithoutFeedback, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import navigationStyle from '../../components/navigationStyle';
 import { BlueHeaderDefaultSub } from '../../BlueComponents';
@@ -11,11 +12,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import useAuthStore from '@Cypher/stores/authStore';
 import { dispatchNavigate } from '@Cypher/helpers';
 import triggerHapticFeedback from '../../blue_modules/hapticFeedback';
+import { colors } from '@Cypher/style-guide';
+import { SEED_SIGNER_MODE, openSeedSignerGate } from '../../src/screens/SigningHome/seedSigner';
+const BlueElectrum = require('../../blue_modules/BlueElectrum');
 const prompt = require('../../helpers/prompt');
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  networkMark: {
+    marginStart: 8,
+  },
+  ownNode: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginStart: 10,
+    backgroundColor: colors.green,
   },
 });
 
@@ -27,7 +41,28 @@ const Settings = ({ navigation }) => {
   // By simply having it here, it'll re-render the UI if language is changed
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { language } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, clearAuth, clearStrikeAuth } = useAuthStore();
+  const { isAuth, isStrikeAuth, clearAuth, clearStrikeAuth, signingMode } = useAuthStore();
+  // the mark next to Network, like the Electrum Server status: 'third-party' on one of the public servers, 'own' on a
+  // node the user typed in, null while not connected
+  const [server, setServer] = useState(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      const read = () =>
+        BlueElectrum.getConfig()
+          .then(config => setServer(config.connected !== 1 ? null : BlueElectrum.isPublicServer(config.host) ? 'third-party' : 'own'))
+          .catch(() => setServer(null));
+      read();
+      // only reads the app's own connection, nothing goes out; again every second as the app may still be connecting
+      const timer = setInterval(read, 1000);
+      return () => clearInterval(timer);
+    }, []),
+  );
+
+  // Offline Seed-Signer mode is one-way: the switch opens the gate, and once it's on nothing here turns it off
+  const onSigningModeSwitch = value => {
+    if (value && !signingMode) openSeedSignerGate();
+  };
 
   const initialState = useCallback(async () => {
     const isStorageEncryptedSwitchEnabled = await isStorageEncrypted();
@@ -136,7 +171,25 @@ const Settings = ({ navigation }) => {
             dispatchNavigate('Security');
           }} 
         />
-        <ListItem title={loc.settings.network} onPress={() => navigate('NetworkSettings')} testID="NetworkSettings" chevron />
+        <ListItem
+          hideChevron
+          title={SEED_SIGNER_MODE}
+          Component={TouchableWithoutFeedback}
+          switch={{ onValueChange: onSigningModeSwitch, value: !!signingMode, disabled: !!signingMode }}
+        />
+        <ListItem
+          title={loc.settings.network}
+          titleIcon={
+            server === 'third-party' ? (
+              <MaterialCommunityIcons name="alert" size={20} color={colors.yellow2} style={styles.networkMark} />
+            ) : server === 'own' ? (
+              <View style={styles.ownNode} />
+            ) : null
+          }
+          onPress={() => navigate('ElectrumSettings')}
+          testID="NetworkSettings"
+          chevron
+        />
         <ListItem title="Push Notifications" onPress={() => navigate('NotificationSettings')} testID="NotificationSettings" chevron />
         {isAuth && <ListItem title={"Set Recovery Email (CoinOS)"} onPress={() => navigate('ChangeUsername', { goBack: true })} testID="ChangeUsername" chevron /> }
         {/* <ListItem title={loc.settings.tools} onPress={() => navigate('Tools')} testID="Tools" chevron /> */}

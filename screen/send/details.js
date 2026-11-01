@@ -663,7 +663,7 @@ const SendDetails = () => {
       if (DeeplinkSchemaMatch.isPossiblySignedPSBTFile(res.uri)) {
         // we assume that transaction is already signed, so all we have to do is get txhex and pass it to next screen
         // so user can broadcast:
-        const file = await RNFS.readFile(res.uri, 'ascii');
+        const file = await RNFS.readFile(fs.pickedFilePath(res.uri), 'ascii');
         const psbt = bitcoin.Psbt.fromBase64(file);
         const txhex = psbt.extractTransaction().toHex();
         navigation.navigate('PsbtWithHardwareWallet', { memo: transactionMemo, fromWallet: wallet, txhex });
@@ -675,7 +675,7 @@ const SendDetails = () => {
       if (DeeplinkSchemaMatch.isPossiblyPSBTFile(res.uri)) {
         // looks like transaction is UNsigned, so we construct PSBT object and pass to next screen
         // so user can do smth with it:
-        const file = await RNFS.readFile(res.uri, 'ascii');
+        const file = await RNFS.readFile(fs.pickedFilePath(res.uri), 'ascii');
         const psbt = bitcoin.Psbt.fromBase64(file);
         navigation.navigate('PsbtWithHardwareWallet', { memo: transactionMemo, fromWallet: wallet, psbt });
         setIsLoading(false);
@@ -685,7 +685,7 @@ const SendDetails = () => {
 
       if (DeeplinkSchemaMatch.isTXNFile(res.uri)) {
         // plain text file with txhex ready to broadcast
-        const file = (await RNFS.readFile(res.uri, 'ascii')).replace('\n', '').replace('\r', '');
+        const file = (await RNFS.readFile(fs.pickedFilePath(res.uri), 'ascii')).replace('\n', '').replace('\r', '');
         navigation.navigate('PsbtWithHardwareWallet', { memo: transactionMemo, fromWallet: wallet, txhex: file });
         setIsLoading(false);
         setOptionsVisible(false);

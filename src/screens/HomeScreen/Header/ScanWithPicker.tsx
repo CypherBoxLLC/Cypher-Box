@@ -15,6 +15,7 @@ import {
     StrikeFull,
 } from '@Cypher/assets/images';
 import { colors } from '@Cypher/style-guide';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 /**
  * Stable wallet keys — used by the parent's onSelect to dispatch the right
@@ -22,7 +23,7 @@ import { colors } from '@Cypher/style-guide';
  * (SendListNew tile ids are integers; we use string keys here so the call
  * site reads as code, not as magic numbers).
  */
-export type ScanTargetKey = 'strike' | 'coinos' | 'hotVault' | 'coldVault' | 'ark';
+export type ScanTargetKey = 'strike' | 'coinos' | 'hotVault' | 'coldVault' | 'ark' | 'sign';
 
 interface Props {
     visible: boolean;
@@ -34,6 +35,7 @@ interface Props {
         hotVault: boolean;
         coldVault: boolean;
         ark: boolean;
+        sign: boolean;
     };
 }
 
@@ -60,6 +62,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
         icon: any;
         isLogo?: boolean;
         textLabel?: string;
+        vectorIcon?: string;
         accent: string;
     }> = [
         {
@@ -100,6 +103,15 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
             icon: ColdIcon,
             accent: '#7fb3ff',
         },
+        {
+            // not a payment: an unsigned transaction from a watch-only wallet, signed on this phone
+            key: 'sign',
+            label: 'Sign a transaction',
+            subtitle: 'From a watch & broadcast only wallet',
+            icon: null,
+            vectorIcon: 'signature-freehand',
+            accent: colors.blueText,
+        },
     ];
 
     return (
@@ -117,7 +129,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                         Scan with
                     </Text>
                     <Text style={modalStyles.subtitle}>
-                        Choose which wallet pays the scanned address or invoice.
+                        Choose which wallet pays the scanned address or invoice, or sign a transaction.
                     </Text>
 
                     {rows.map((row) => {
@@ -144,6 +156,8 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                                 <View style={modalStyles.rowIconWrap}>
                                     {row.isLogo ? (
                                         <Image source={row.icon} style={modalStyles.logo} resizeMode="contain" />
+                                    ) : row.vectorIcon ? (
+                                        <MaterialCommunityIcons name={row.vectorIcon} size={26} color={row.accent} />
                                     ) : row.textLabel ? (
                                         <Text bold style={[modalStyles.textLogo, { color: row.accent }]}>
                                             {row.textLabel}

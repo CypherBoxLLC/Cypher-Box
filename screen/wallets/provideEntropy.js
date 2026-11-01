@@ -423,17 +423,20 @@ const Entropy = () => {
           <Text style={styles.verifyWarning}>
             Do this with practice rolls, not your real ones. Typing your real rolls into a website gives away one of the two things
             protecting this key, and it would then rest on your phone's secure entropy generator only. The safe way is a practice run: roll
-            a few times, check those, then throw them away and start again for real. If you do want to check your real rolls, put Ian
-            Coleman's tool on a separate computer, disconnect that computer from the internet, and check there. Not on this phone, and never
-            on a website.
+            a few times, check those, then throw them away and start again for real. If you do want to check your real rolls, use a
+            downloaded copy of Ian Coleman's BIP39 tool or EntropyLab, checked against its published SHA-256, on a computer you disconnect
+            from the internet first. If this phone is a signing phone that stays offline for good, you can open the file in its browser in
+            Airplane mode instead. Never on a website.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check your rolls: on that separate computer, type them into Ian Coleman's BIP39 tool and choose Dice. What it shows should
-            match "Your rolls" above. That is what proves this screen read your dice correctly.
+            To check your rolls: type them into Ian Coleman's BIP39 tool and choose Dice. What it shows should match "Your rolls" above.
+            That is what proves this screen read your dice correctly. Use Ian Coleman's tool for this step: EntropyLab hashes dice rolls, so
+            it shows different values from this screen.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check the result: it is a SHA-256 hash of your rolls followed by your phone's randomness, shortened to 16 bytes. Paste it
-            into the same tool as hex entropy to see the 12 words you are about to get.
+            To check the result: it is a SHA-256 hash of your rolls followed by your phone's randomness, shortened to 16 bytes. Enter it as
+            hex entropy in either tool to see the 12 words you are about to get. EntropyLab then also shows the master fingerprint and the
+            Native SegWit addresses, which should match what Cypher Box shows once the vault is made.
           </Text>
           <Text style={styles.verifyWarning}>
             These values are your key. Anyone who copies them can spend your money. Do not photograph them.

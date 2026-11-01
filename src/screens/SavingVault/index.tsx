@@ -43,6 +43,8 @@ export default function SavingVault() {
 
     const walletID = useAuthStore(s => s.walletID);
     const setHotVaultKeychainBackup = useAuthStore(s => s.setHotVaultKeychainBackup);
+    // a signing phone keeps no second copy of the seed, so there's no Keychain backup to offer
+    const signingMode = useAuthStore(s => s.signingMode);
     const { wallets } = useContext(BlueStorageContext);
 
     const nextClickInitiate = () => {
@@ -53,7 +55,7 @@ export default function SavingVault() {
         if (submitting) return;
         setSubmitting(true);
 
-        if (saveToKeychain) {
+        if (saveToKeychain && !signingMode) {
             // Re-resolve the wallet at tap time rather than caching it across
             // renders — the user might have navigated in from a deep link
             // with a stale storage-context snapshot.
@@ -156,7 +158,7 @@ export default function SavingVault() {
                   button on this; it's additive to the paper backup, not a
                   replacement.
                 */}
-                <View style={styles.keychainRow}>
+                {!signingMode && <View style={styles.keychainRow}>
                     <View style={styles.keychainTextWrap}>
                         <Text bold style={styles.keychainLabel}>
                             Also save to iPhone Keychain
@@ -176,7 +178,7 @@ export default function SavingVault() {
                         }}
                         thumbColor={colors.white}
                     />
-                </View>
+                </View>}
 
                 {keychainStatus === "ok" && (
                     <Text style={styles.keychainStatusOk}>

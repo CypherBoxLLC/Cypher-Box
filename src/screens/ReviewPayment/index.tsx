@@ -1618,7 +1618,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     } */}
                     {vaultTab && isWithdrawal &&
                         <>
-                            <Text style={[{marginHorizontal: 12, fontSize: 14, width: isIOS ? '90%' : '80%', marginTop: -10}]}>⚠️ DO NOT transfer to any of these addresses without verifying their authenticity from your hardware device! </Text>
+                            <Text style={[{marginHorizontal: 12, fontSize: 14, width: isIOS ? '90%' : '80%', marginTop: -10}]}>⚠️ DO NOT transfer to any of these addresses without checking them on your signing device!</Text>
                             <TouchableOpacity activeOpacity={0.7} onPress={() => setIsCheck(!isCheck)} style={{flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 25, marginHorizontal: 12 , alignSelf: 'flex-start' }}>
                                 <View style={styles.checkView}>
                                     {isCheck && <Image source={Check} style={styles.checkImage} resizeMode='contain' /> }
@@ -1995,7 +1995,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                     {purchaseDest === 'cold' && (
                                         <View style={{ marginTop: 14 }}>
                                             <Text style={{ fontSize: 13, color: '#FFFFFF', marginBottom: 6, paddingHorizontal: 4 }}>
-                                                ⚠️ DO NOT transfer to this address without verifying its authenticity on your hardware device!
+                                                ⚠️ DO NOT transfer to this address without checking it on your signing device!
                                             </Text>
                                             <TouchableOpacity
                                                 activeOpacity={0.7}
@@ -2110,7 +2110,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 <View style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 24, alignItems: 'center', width: '85%' }}>
                     <Text bold style={{ fontSize: 16, marginBottom: 4 }}>Verify Address</Text>
                     <Text style={{ fontSize: 12, color: '#888', marginBottom: 16, textAlign: 'center' }}>
-                        Scan with your hardware wallet to confirm
+                        Scan it with your hardware wallet, or compare it with Hot Vault → Show Addresses on your offline phone
                     </Text>
                     <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 12 }}>
                         <QRCode value={to} size={200} color="black" backgroundColor="white" />

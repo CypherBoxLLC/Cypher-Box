@@ -64,6 +64,8 @@ let serverName = false;
 let disableBatching = false;
 let connectionAttempt = 0;
 let currentPeerIndex = Math.floor(Math.random() * hardcodedPeers.length);
+// the server connectMain last tried, which serverAnswers() tries again once the open connection is down
+let lastPeer = null;
 
 let latestBlockheight = false;
 let latestBlockheightTimestamp = false;
@@ -99,6 +101,7 @@ async function connectMain() {
   if (savedPeer && savedPeer.host && (savedPeer.tcp || savedPeer.ssl)) {
     usingPeer = savedPeer;
   }
+  lastPeer = usingPeer;
 
   await DefaultPreference.setName('group.io.cypherbox.btc');
   try {
@@ -191,11 +194,26 @@ async function connectMain() {
   }
 }
 
+// "Use this phone only for signing" is on. Required when asked: the store is app code this module doesn't load.
+function isSigningPhone() {
+  try {
+    return !!require('../src/stores/authStore').default.getState().signingMode;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function presentNetworkErrorAlert(usingPeer) {
   if (await isDisabled()) {
     console.log(
       'Electrum connection disabled by user. Perhaps we are attempting to show this network error alert after the user disabled connections.',
     );
+    return;
+  }
+  if (isSigningPhone()) {
+    // a phone kept offline to sign with isn't meant to reach the server, so there's nothing to fix; as Cancel would
+    console.log('Signing mode: not showing the network error alert');
+    connectionAttempt = 0;
     return;
   }
   Alert.alert(
@@ -953,10 +971,54 @@ module.exports.testConnection = async function (host, tcpPort, sslPort) {
   } catch (_) {
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
+    // close() ends the socket and then destroys it, and on Android each of those removes the native socket: the second
+    // finds it gone and throws on a background thread, which crashes the app. Skipping the end leaves one removal, and
+    // close() still stops the client's keep-alive and reconnecting.
+    client.conn.end = () => {};
     client.close();
   }
 
   return false;
+};
+
+/**
+ * Whether any Electrum server answers now: a ping on the open connection or, when that's down, fresh connections to
+ * the saved server and every built-in one at once. Once connectMain has given up, the open connection stays down until
+ * the app restarts, so a ping alone would go on missing after a phone that was offline is back online. And any one
+ * server can be down, so asking just one would make a phone that's online look offline, and unlock signing on it.
+ */
+module.exports.serverAnswers = async function () {
+  let timeoutId;
+  const pinged = await Promise.race([
+    module.exports.ping(),
+    // a connection the phone dropped without saying so can leave a ping unanswered
+    new Promise(resolve => {
+      timeoutId = setTimeout(() => resolve(false), 5000);
+    }),
+  ]);
+  clearTimeout(timeoutId);
+  if (pinged) return true;
+  const saved = await getSavedPeer();
+  const peers = [];
+  for (const peer of [lastPeer, saved, ...hardcodedPeers]) {
+    if (!peer || !peer.host || !(peer.tcp || peer.ssl)) continue;
+    if (peers.some(p => p.host === peer.host && p.tcp === peer.tcp && p.ssl === peer.ssl)) continue;
+    peers.push(peer);
+  }
+  return new Promise(resolve => {
+    let left = peers.length;
+    const missed = () => {
+      left--;
+      if (left === 0) resolve(false);
+    };
+    if (left === 0) resolve(false);
+    for (const peer of peers) {
+      module.exports
+        .testConnection(peer.host, peer.tcp, peer.ssl)
+        .then(answered => (answered ? resolve(true) : missed()))
+        .catch(missed);
+    }
+  });
 };
 
 module.exports.forceDisconnect = () => {
@@ -974,6 +1036,8 @@ module.exports.connectMain = connectMain;
 module.exports.isDisabled = isDisabled;
 module.exports.setDisabled = setDisabled;
 module.exports.hardcodedPeers = hardcodedPeers;
+// the public servers the app picks by itself; any other server is one the user typed in, their own node
+module.exports.isPublicServer = host => hardcodedPeers.some(peer => peer.host === host);
 module.exports.ELECTRUM_HOST = ELECTRUM_HOST;
 module.exports.ELECTRUM_TCP_PORT = ELECTRUM_TCP_PORT;
 module.exports.ELECTRUM_SSL_PORT = ELECTRUM_SSL_PORT;

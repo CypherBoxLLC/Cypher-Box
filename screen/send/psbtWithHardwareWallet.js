@@ -1,9 +1,7 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, TouchableOpacity, ScrollView, View, TextInput, Linking, Platform, Text, StyleSheet } from 'react-native';
+import { ActivityIndicator, TouchableOpacity, ScrollView, View, TextInput, Text, StyleSheet } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
-import DocumentPicker from 'react-native-document-picker';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
-import RNFS from 'react-native-fs';
 import Biometric from '../../class/biometrics';
 
 import { SecondButton, BlueText, BlueCard, BlueSpacing20, BlueCopyToClipboardButton } from '../../BlueComponents';
@@ -17,6 +15,9 @@ import { requestCameraAuthorization } from '../../helpers/scan-qr';
 import { useTheme } from '../../components/themes';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../blue_modules/hapticFeedback';
 import SafeArea from '../../components/SafeArea';
+import { assertSignedTxMatchesPsbt, isRawTransactionHex, summarizeSignedTx, SIGNED_TX_INVALID } from '../../src/helpers/signedTransaction';
+import { spendsPendingInputs } from '../../src/helpers/pendingSignature';
+import useAuthStore from '../../src/stores/authStore';
 const BlueElectrum = require('../../blue_modules/BlueElectrum');
 const bitcoin = require('bitcoinjs-lib');
 const fs = require('../../blue_modules/fs');
@@ -56,6 +57,9 @@ const PsbtWithHardwareWallet = () => {
     hexText: {
       color: colors.foregroundColor,
     },
+    helpBtn: {
+      borderColor: colors.foregroundColor,
+    },
   });
 
   const _combinePSBT = receivedPSBT => {
@@ -67,9 +71,14 @@ const PsbtWithHardwareWallet = () => {
     if (ret.data.toUpperCase().startsWith('UR')) {
       alert('BC-UR not decoded. This should never happen');
     }
-    if (ret.data.indexOf('+') === -1 && ret.data.indexOf('=') === -1 && ret.data.indexOf('=') === -1) {
-      // this looks like NOT base64, so maybe its transaction's hex
-      setTxHex(ret.data);
+    if (isRawTransactionHex(ret.data)) {
+      // a finished transaction instead of a signed PSBT: only accept it if it is the one the user reviewed
+      try {
+        assertSignedTxMatchesPsbt(ret.data, psbt);
+        setTxHex(ret.data.trim());
+      } catch (Err) {
+        alert(Err.message);
+      }
       return;
     }
     try {
@@ -136,6 +145,9 @@ const PsbtWithHardwareWallet = () => {
         if (memo) {
           txMetadata[txid] = { memo };
         }
+        // a cold vault spend waiting for signature can't be resumed once its capsules are spent
+        const pending = useAuthStore.getState().pendingSignatures?.[fromWallet.getID()];
+        if (pending && spendsPendingInputs(txHex, pending)) useAuthStore.getState().setPendingSignature(fromWallet.getID(), null);
         navigation.navigate('WalletsRoot', { screen: "TransactionBroadCastNew", params: { sats: undefined, inUSD: undefined } });
         await new Promise(resolve => setTimeout(resolve, 3000)); // sleep to make sure network propagates
         fetchAndSaveWalletTransactions(fromWallet.getID());
@@ -151,26 +163,72 @@ const PsbtWithHardwareWallet = () => {
     }
   };
 
-  const handleOnVerifyPressed = () => {
-    Linking.openURL('https://coinb.in/?verify=' + txHex);
-  };
-
   const copyHexToClipboard = () => {
     Clipboard.setString(txHex);
+  };
+
+  const isOwnAddress = address => {
+    try {
+      return !!fromWallet?.weOwnAddress?.(address);
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const _renderTxSummary = () => {
+    let summary;
+    try {
+      // the fee needs the reviewed PSBT's input amounts; a transaction opened on its own shows outputs only
+      summary = summarizeSignedTx(txHex, psbt && !routeParamsTXHex ? psbt : undefined);
+    } catch (_) {
+      return <BlueText style={[styles.hexLabel, stylesHook.hexLabel]}>{SIGNED_TX_INVALID}</BlueText>;
+    }
+    return (
+      <View style={styles.summary}>
+        {summary.outputs.map((output, i) => (
+          <BlueText key={i} style={[styles.summaryRow, stylesHook.hexLabel]}>
+            {loc.send.create_amount}: {output.value} sats{'\n'}
+            {loc.send.create_to}: {output.address ?? 'Unknown output script'}
+            {output.address && isOwnAddress(output.address) ? ' (your wallet)' : ''}
+          </BlueText>
+        ))}
+        {summary.fee !== null ? (
+          <BlueText style={[styles.summaryRow, stylesHook.hexLabel]}>
+            {loc.send.create_fee}: {summary.fee} sats
+          </BlueText>
+        ) : null}
+      </View>
+    );
+  };
+
+  const openVerifyGuide = () => {
+    // an imported finished transaction has no reviewed PSBT, so the app had nothing to compare it against
+    navigation.navigate('VerifyTransactionGuide', { imported: !psbt || !!routeParamsTXHex });
   };
 
   const _renderBroadcastHex = () => {
     return (
       <View style={[styles.rootPadding, stylesHook.rootPadding]}>
         <BlueCard style={[styles.hexWrap, stylesHook.hexWrap]}>
+          {_renderTxSummary()}
           <BlueText style={[styles.hexLabel, stylesHook.hexLabel]}>{loc.send.create_this_is_hex}</BlueText>
           <TextInput style={[styles.hexInput, stylesHook.hexInput]} height={112} multiline editable value={txHex} />
 
           <TouchableOpacity accessibilityRole="button" style={styles.hexTouch} onPress={copyHexToClipboard}>
             <Text style={[styles.hexText, stylesHook.hexText]}>{loc.send.create_copy}</Text>
           </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" style={styles.hexTouch} onPress={handleOnVerifyPressed}>
-            <Text style={[styles.hexText, stylesHook.hexText]}>{loc.send.create_verify}</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="How to check this transaction yourself"
+            style={styles.verifyRow}
+            onPress={openVerifyGuide}
+          >
+            <Text style={[styles.verifyText, stylesHook.hexLabel]}>
+              Spending large capsules from cold storage? Check this signed transaction in an independent, offline tool before you send it.
+            </Text>
+            <View style={[styles.helpBtn, stylesHook.helpBtn]}>
+              <Text style={[styles.helpText, stylesHook.hexText]}>?</Text>
+            </View>
           </TouchableOpacity>
           <BlueSpacing20 />
           <SecondButton
@@ -193,20 +251,10 @@ const PsbtWithHardwareWallet = () => {
   };
 
   const openSignedTransaction = async () => {
-    try {
-      const res = await DocumentPicker.pickSingle({
-        type: Platform.OS === 'ios' ? ['io.bluewallet.psbt', 'io.bluewallet.psbt.txn'] : [DocumentPicker.types.allFiles],
-      });
-      const file = await RNFS.readFile(res.uri);
-      if (file) {
-        onBarScanned({ data: file });
-      } else {
-        throw new Error();
-      }
-    } catch (err) {
-      if (!DocumentPicker.isCancel(err)) {
-        alert(loc.send.details_no_signed_tx);
-      }
+    // the shared reader handles binary .psbt files and file names with spaces, and alerts on failure itself
+    const file = await fs.openSignedTransaction();
+    if (file) {
+      onBarScanned({ data: file });
     }
   };
 
@@ -323,6 +371,36 @@ const styles = StyleSheet.create({
   },
   hexTouch: {
     marginVertical: 24,
+  },
+  verifyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  verifyText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  helpBtn: {
+    marginLeft: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  helpText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  summary: {
+    alignSelf: 'stretch',
+    marginBottom: 20,
+  },
+  summaryRow: {
+    marginBottom: 12,
   },
   hexText: {
     fontSize: 15,

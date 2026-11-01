@@ -35,7 +35,9 @@ let usedBucketNum = false;
 let savingInProgress = 0; // its both a flag and a counter of attempts to write to disk
 const prompt = require('./helpers/prompt');
 const BlueElectrum = require('./blue_modules/BlueElectrum');
-BlueElectrum.connectMain();
+const { isSeedSignerLocked } = require('./src/services/seedSignerLock');
+// a seed-signer connects to nothing at start-up: it only looks, now and then, for whether any server answers
+if (!isSeedSignerLocked()) BlueElectrum.connectMain();
 
 class AppStorage {
   static FLAG_ENCRYPTED = 'data_encrypted';

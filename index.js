@@ -5,6 +5,7 @@ import App from './App';
 import { BlueStorageProvider } from './blue_modules/storage-context';
 import { registerArkNotificationTapHandler } from './src/services/ark/notificationHandler';
 import { refreshStorefrontCountry } from './src/services/featureFlags';
+import { isSeedSignerLocked, noteLockForNativeStartUp } from './src/services/seedSignerLock';
 
 const A = require('./blue_modules/analytics');
 if (!Error.captureStackTrace) {
@@ -21,7 +22,10 @@ registerArkNotificationTapHandler();
 // synchronously at render time, and it can be unavailable for a moment
 // right after launch. Fire and forget: the gates fail closed until it
 // arrives.
-refreshStorefrontCountry();
+// A seed-signer has no Lightning providers to gate, so it doesn't ask.
+if (!isSeedSignerLocked()) refreshStorefrontCountry();
+// and it makes sure native start-up knows to skip crash reporting next time
+else noteLockForNativeStartUp();
 
 const BlueAppComponent = () => {
   useEffect(() => {

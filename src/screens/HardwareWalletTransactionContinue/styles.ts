@@ -3,6 +3,8 @@ import { ImageStyle, StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 interface Style {
     container: ViewStyle;
+    showAgain: ViewStyle;
+    showAgainText: TextStyle;
     title: TextStyle;
     titleVault: TextStyle;
     savingVault: ViewStyle;
@@ -177,5 +179,13 @@ export default StyleSheet.create<Style>({
     swipeview: {
         alignSelf: 'center',
         marginTop: 10,
-    }
+    },
+    showAgain: {
+        marginTop: 16,
+        alignSelf: 'center',
+    },
+    showAgainText: {
+        color: colors.blueText,
+        textDecorationLine: 'underline',
+    },
 })

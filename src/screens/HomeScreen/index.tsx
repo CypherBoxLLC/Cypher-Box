@@ -55,6 +55,7 @@ import { connect as connectCoinosSocket, disconnect as disconnectCoinosSocket, s
 import Header from "./Header";
 import BalanceView from "./BalanceView";
 import BottomBar from "./BottomBar";
+import SigningHome from "../SigningHome";
 const A = require('../../../blue_modules/analytics');
 import CreateLightningAccount from "./CreateLightningAccount";
 import WalletsView, { WalletsViewHandle } from "./WalletsView";
@@ -173,7 +174,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, clearStrikeAuth, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
+  const { signingMode, isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, clearStrikeAuth, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
   // Ark boot restore: reopens the wallet from on-disk state (datadir +
   // Keychain mnemonic) once per mount, and reconciles zustand so the
   // carousel reflects reality. Handles Metro reload + zustand/disk drift.
@@ -539,6 +540,11 @@ export default function HomeScreen({ route }: Props) {
   const tokenRefreshedRef = useRef(false);
 
   useEffect(() => {
+    // None of this is for a signing phone, whose home is the signer: looking up the vaults' balances and uploading
+    // their addresses for push notifications would show the servers which addresses are this vault's, and the rest
+    // is the Lightning accounts' and rates, which the signer hides.
+    if (signingMode) return;
+
     async function handleToken() {
       if (isAuth && token) {
         // Refresh token once on first load to avoid 401 race
@@ -623,7 +629,7 @@ export default function HomeScreen({ route }: Props) {
       setIsColdWalletLoaded(false);
     }
     Promise.resolve(handleToken()).finally(() => __DEV__ && console.log('[HomeMount] handleToken done +', Date.now() - _t0, 'ms'));
-  }, [isAuth, token, wallets, walletID, coldStorageWalletID]);
+  }, [signingMode, isAuth, token, wallets, walletID, coldStorageWalletID]);
 
   // CoinOS WebSocket for real-time payment notifications.
   //
@@ -781,7 +787,8 @@ export default function HomeScreen({ route }: Props) {
   useFocusEffect(
     useCallback(() => {
       setSendAddress(null)
-      if (wallet) {
+      // not on a signing phone, whose home is the signer (see the wallet loading above)
+      if (wallet && !signingMode) {
         obtainWalletAddress();
         (async () => {
           try {
@@ -792,12 +799,12 @@ export default function HomeScreen({ route }: Props) {
         })();
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [wallet, sleep]),
+    }, [wallet, signingMode, sleep]),
   );
 
   useFocusEffect(
     useCallback(() => {
-      if (coldStorageWallet) {
+      if (coldStorageWallet && !signingMode) {
         obtainColdWalletAddress();
         (async () => {
           try {
@@ -808,7 +815,7 @@ export default function HomeScreen({ route }: Props) {
         })();
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [coldStorageWallet, sleep]),
+    }, [coldStorageWallet, signingMode, sleep]),
   );
 
   const handleUser = async () => {
@@ -1032,6 +1039,10 @@ export default function HomeScreen({ route }: Props) {
   };
 
   const homeMessage = getHomeMessage();
+
+  // "Use this phone only for signing": the whole home becomes the signer. Checked after every hook above, so the
+  // hook order stays the same either way.
+  if (signingMode) return <SigningHome />;
 
   return (
     <ScreenLayout

@@ -42,7 +42,12 @@
   // Register legacy Paper view managers (react-native-camera) with Fabric's interop layer.
   [RCTLegacyViewManagerInteropComponentView supportLegacyViewManagerWithName:@"RNCamera"];
 
-  [Bugsnag start];
+  // An Offline Seed-Signer stays offline, so it never starts crash reporting. The JS lock
+  // (src/services/seedSignerLock.ts) notes itself in these shared defaults for this check.
+  NSUserDefaults *sharedDefaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.io.cypherbox.btc"];
+  if (![[sharedDefaults stringForKey:@"seedsigner"] isEqualToString:@"1"]) {
+    [Bugsnag start];
+  }
   [self copyDeviceUID];
   
   [[NSUserDefaults standardUserDefaults] addObserver:self

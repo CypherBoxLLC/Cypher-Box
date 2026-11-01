@@ -1,5 +1,8 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Image, Keyboard, LayoutAnimation, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Clipboard from "@react-native-clipboard/clipboard";
 import IdleTimerManager from 'react-native-idle-timer';
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
@@ -22,6 +25,7 @@ import { BlueText } from "BlueComponents";
 import { extractXpub, isValidXpub } from "@Cypher/helpers/bbqrHelper";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 const fs = require('../../../blue_modules/fs');
+const BlueElectrum = require('../../../blue_modules/BlueElectrum');
 const Base43 = require('../../../blue_modules/base43');
 const bitcoin = require('bitcoinjs-lib');
 
@@ -40,6 +44,25 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
     const { addAndSaveWallet } = useContext(BlueStorageContext);
     const task = useRef<any>();
     const importing = useRef(false);
+    // the user's own node, if they saved one instead of the public servers, read again on coming back from the server screen
+    const [node, setNode] = useState<string | null>(null);
+    // without a node, loading the key stays locked until the user accepts a public third-party node
+    const [ignoreNode, setIgnoreNode] = useState(false);
+    const keyLocked = !node && !ignoreNode;
+
+    useFocusEffect(
+        useCallback(() => {
+            let cancelled = false;
+            Promise.all([BlueElectrum.ELECTRUM_HOST, BlueElectrum.ELECTRUM_SSL_PORT, BlueElectrum.ELECTRUM_TCP_PORT].map(key => AsyncStorage.getItem(key)))
+                .then(([host, sslPort, tcpPort]) => {
+                    if (!cancelled) setNode(host && !BlueElectrum.isPublicServer(host) ? `${host}:${sslPort || tcpPort}` : null);
+                })
+                .catch(() => {});
+            return () => {
+                cancelled = true;
+            };
+        }, []),
+    );
 
     console.log('address: ', address)
     const onBarScanned = value => {
@@ -325,42 +348,81 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
     };
 
     return (
-        <ScreenLayout disableScroll showToolbar progress={1} color={[colors.cold.gradient1, colors.cold.gradient2]}>
+        <ScreenLayout showToolbar progress={1} color={[colors.cold.gradient1, colors.cold.gradient2]}>
         {/* <ScreenLayout disableScroll showToolbar isBackButton title={"Connect Hardware Device"}> */}
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text style={styles.title}>Connect Hardware Device</Text>
+                    <Text style={styles.title}>Connect Signing Device</Text>
                     {loading ?
                         <ActivityIndicator style={{marginTop: 30}} color={colors.white} />
                     :
                         <>
-                            <Text h4 style={styles.descption}>Authorize your hardware device to display its Public Key (xpub, ypub, or zpub) then Scan, Paste, OR Import it from your files. Some devices don’t  give you that so you need to take it from their companion app’s settings.</Text>
+                            <Text h4 style={styles.descption}>Authorize your hardware wallet to display its Public Key (xpub, ypub, or zpub), then Scan, Paste, OR Import it from your files. Some devices don’t give you that, so you need to take it from their companion app’s settings.{'\n\n'}Signing with an offline phone? On that phone open Hot Vault → Settings → Vault’s Public Key (xpub).</Text>
+                            {/* Before the key, not after: the third-party server learns every address of this vault as soon
+                                as it's loaded, and switching to a node later can't undo that */}
+                            <TouchableOpacity
+                                style={[styles.node, node ? styles.nodeConnected : styles.nodeMissing]}
+                                onPress={() => navigation.navigate('ElectrumSettings', { returnAfterSave: true })}
+                                accessibilityRole="button"
+                            >
+                                <MaterialCommunityIcons name={node ? 'check-circle' : 'shield-alert-outline'} size={22} color={node ? colors.green : colors.yellow2} />
+                                {node ?
+                                    <View style={styles.nodeText}>
+                                        <Text h4 style={styles.nodeTitle}>Node connected: {node}</Text>
+                                        <Text style={styles.nodeHint}>You're watching your Cold Vault wallet and broadcasting from your own chosen node.</Text>
+                                    </View>
+                                :
+                                    <View style={styles.nodeText}>
+                                        <Text h4 style={styles.nodeWarningTitle}>Privacy-security measure - connect node (optional):</Text>
+                                        <Text style={styles.nodeWarning}>Your public key and all addresses, transaction history, and balance will be exposed to a third-party server. Before you load your public key, connect your own node.</Text>
+                                    </View>
+                                }
+                                <MaterialCommunityIcons name="chevron-right" size={22} color={node ? colors.blueText : colors.yellow2} />
+                            </TouchableOpacity>
+                            {!node &&
+                                <TouchableOpacity
+                                    style={styles.ignore}
+                                    onPress={() => setIgnoreNode(ignore => !ignore)}
+                                    accessibilityRole="checkbox"
+                                    accessibilityState={{ checked: ignoreNode }}
+                                >
+                                    <View style={ignoreNode ? [styles.checkbox, styles.checkboxTicked] : styles.checkbox}>
+                                        {ignoreNode && <MaterialCommunityIcons name="check-bold" size={16} color={colors.black.default} />}
+                                    </View>
+                                    <Text style={styles.ignoreText}>
+                                        <Text style={styles.ignoreLabel}>Ignore: </Text>
+                                        If you don't yet have a node, Cypher Box will auto-connect you to a public third-party node. Less privacy: private keys and backups are not exposed, only balance, transaction history, addresses, etc.
+                                    </Text>
+                                </TouchableOpacity>
+                            }
                             <View style={styles.pasteview}>
                                 <GradientCard
                                     colors_={["#1693EDFA", "#15A7A7"]}
                                     start={{ x: 0, y: 0 }}
-                                    end={{ x: 0, y: 1 }}            
-                                    style={styles.linearGradientInside}
+                                    end={{ x: 0, y: 1 }}
+                                    style={keyLocked ? [styles.linearGradientInside, styles.keyLocked] : styles.linearGradientInside}
                                     linearStyle={styles.linearStyle}
+                                    disabled={keyLocked}
                                     onPress={importScan}>
                                     <View style={styles.insideView}>
                                         <Image source={require("../../../img/scan-new.png")} style={styles.qrimage} resizeMode="contain" />
-                                        <Text h2>Scan</Text>
+                                        <Text h2>Scan <Text style={styles.keyKinds}>(xpub, zpub, etc)</Text></Text>
                                     </View>
                                 </GradientCard>
                                 <GradientCard
                                     colors_={["#1693EDFA", "#15A7A7"]}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 0, y: 1 }}            
-                                    style={styles.linearGradientInside}
+                                    style={keyLocked ? [styles.linearGradientInside, styles.keyLocked] : styles.linearGradientInside}
                                     linearStyle={styles.linearStyle}
+                                    disabled={keyLocked}
                                     onPress={pasteClickHandler}>
                                     <View style={styles.insideView}>
                                         <Image source={require('../../../img/paste-icon.png')} style={styles.qrimage} resizeMode="contain" />
                                         {address ?
                                             <Text style={{fontSize: 14}}>{shortenAddress(address)}</Text>
                                         :
-                                            <Text h2>Paste</Text>
+                                            <Text h2>Paste <Text style={styles.keyKinds}>(xpub, zpub, etc)</Text></Text>
                                         }
                                     </View>
                                 </GradientCard>
@@ -368,12 +430,13 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                     colors_={["#1693EDFA", "#15A7A7"]}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 0, y: 1 }}            
-                                    style={styles.linearGradientInside}
+                                    style={keyLocked ? [styles.linearGradientInside, styles.keyLocked] : styles.linearGradientInside}
                                     linearStyle={styles.linearStyle}
+                                    disabled={keyLocked}
                                     onPress={showFilePicker}>
                                     <View style={styles.insideView}>
                                         <Image source={require('../../../img/import.png')} style={styles.qrimage} resizeMode="contain" />
-                                        <Text h2>Import</Text>
+                                        <Text h2>Import <Text style={styles.keyKinds}>(xpub, zpub, etc)</Text></Text>
                                     </View>
                                 </GradientCard>
                             </View>

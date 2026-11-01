@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { I18nManager, ActivityIndicator, TouchableOpacity, Switch, StyleSheet, Pressable, PressableProps } from 'react-native';
+import { I18nManager, ActivityIndicator, TouchableOpacity, Switch, StyleSheet, Pressable, PressableProps, View } from 'react-native';
 import { ListItem as RNElementsListItem, Avatar } from 'react-native-elements'; // Replace with actual import paths
 import { useTheme } from './themes';
 
@@ -19,6 +19,7 @@ interface ListItemProps {
   switch?: object; // Define more specific type if needed
   leftIcon?: any; // Define more specific type if needed
   title: string;
+  titleIcon?: React.ReactNode; // a small mark right after the title
   subtitle?: string;
   subtitleNumberOfLines?: number;
   rightTitle?: string;
@@ -61,6 +62,12 @@ const ListItem: React.FC<ListItemProps> = React.memo(props => {
     },
   });
 
+  const title = (
+    <RNElementsListItem.Title style={stylesHook.title} numberOfLines={0} accessible={props.switch === undefined}>
+      {props.title}
+    </RNElementsListItem.Title>
+  );
+
   const memoizedSwitchProps = useMemo(() => {
     return props.switch ? { ...props.switch } : undefined;
   }, [props.switch]);
@@ -80,9 +87,14 @@ const ListItem: React.FC<ListItemProps> = React.memo(props => {
       {props.leftIcon && <Avatar icon={props.leftIcon} />}
       {props.leftAvatar && props.leftAvatar}
       <RNElementsListItem.Content>
-        <RNElementsListItem.Title style={stylesHook.title} numberOfLines={0} accessible={props.switch === undefined}>
-          {props.title}
-        </RNElementsListItem.Title>
+        {props.titleIcon ? (
+          <View style={styles.titleRow}>
+            {title}
+            {props.titleIcon}
+          </View>
+        ) : (
+          title
+        )}
         {props.subtitle && (
           <RNElementsListItem.Subtitle
             numberOfLines={props.subtitleNumberOfLines ?? 1}
@@ -112,6 +124,13 @@ const ListItem: React.FC<ListItemProps> = React.memo(props => {
       )}
     </RNElementsListItem>
   );
+});
+
+const styles = StyleSheet.create({
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
 });
 
 export default ListItem;

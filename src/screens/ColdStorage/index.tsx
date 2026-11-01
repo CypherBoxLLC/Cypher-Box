@@ -1403,7 +1403,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                     }
                     {title &&
                       <>
-                        <Text style={[{marginTop: 20, fontSize: 14}]}>⚠️ DO NOT transfer to any of these addresses without verifying their authenticity from your hardware device! </Text>
+                        <Text style={[{marginTop: 20, fontSize: 14}]}>⚠️ DO NOT transfer to any of these addresses without checking them on your signing device!</Text>
                         <TouchableOpacity activeOpacity={0.7} onPress={() => setIsCheck(!isCheck)} style={{flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 1, alignSelf: 'flex-start' }}>
                           <View style={styles.checkView}>
                             {isCheck && <Image source={Check} style={styles.checkImage} resizeMode='contain' /> }

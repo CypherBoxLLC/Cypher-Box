@@ -1,6 +1,8 @@
 package io.cypherbox.btc;
 
 import android.app.Application;
+import android.content.Context;
+import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 import androidx.work.Configuration;
 import com.facebook.react.PackageList;
@@ -64,7 +66,12 @@ public class MainApplication extends Application implements ReactApplication, Co
   @Override
   public void onCreate() {
     super.onCreate();
-    Bugsnag.start(this);
+    // An Offline Seed-Signer stays offline, so it never starts crash reporting. The JS lock
+    // (src/services/seedSignerLock.ts) notes itself in these shared preferences for this check.
+    SharedPreferences prefs = getSharedPreferences("group.io.cypherbox.btc", Context.MODE_PRIVATE);
+    if (!"1".equals(prefs.getString("seedsigner", null))) {
+      Bugsnag.start(this);
+    }
 
     I18nUtil sharedI18nUtilInstance = I18nUtil.getInstance();
     sharedI18nUtilInstance.allowRTL(getApplicationContext(), true);

@@ -38,7 +38,7 @@ export default function ColdVaultIntro2() {
         <View style={styles.container}>
           <View style={styles.innerView}>
             <Text style={styles.title}>Cold Storage</Text>
-            <Text h4 style={styles.descption}>To create a Cold Storage Vault you need to purchase a new hardware device. It will also create a new key and give you a backup copy in case you lose access to your device. The backup looks like a series of 12 or 24 words. You need to write them down on a piece of paper or a steal plate to increase the durability and resilience of your backups.
+            <Text h4 style={styles.descption}>To create a Cold Storage Vault you need a signing device: a hardware wallet, or a spare phone kept offline with Cypher Box as your signing wallet. It will create a new key and give you a backup copy in case you lose access to it. The backup looks like a series of 12 or 24 words. You need to write them down on a piece of paper or a steel plate to increase the durability and resilience of your backups.
               {'\n\n'}
               This{' '}
               <TouchableOpacity onPress={() => Linking.openURL('https://bitcoinpizza.substack.com/p/these-are-the-only-7-hardware-wallets')}>
@@ -46,7 +46,7 @@ export default function ColdVaultIntro2() {
                   guide
                 </Text>
               </TouchableOpacity> 
-              {' '}can help you choose between out most reccomended wallets in Bitcoin sorted by; security, price, and ease of use, and how to connect them to Cypher Box. It also contains security tips and discount links. 
+              {' '}can help you choose between our most recommended Bitcoin wallets, sorted by security, price and ease of use, and how to connect them to Cypher Box. It also contains security tips and discount links. 
               {/* {'\n\n'}
               Your Hot and Cold Vaults can work in conjunction. You can use your Hot Vault as a heating funnel that melts your small capsules and transfer them to your Cold Vault as one large cold capsule thereby reducing future fee costs (UTXO consolidation). */}
             </Text>

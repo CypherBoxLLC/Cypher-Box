@@ -112,7 +112,7 @@ export default function SavingVaultIntro() {
     const label = state.label;
     const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets } = useContext(BlueStorageContext);
     const A = require('../../../blue_modules/analytics');
-    const { setWalletID } = useAuthStore();
+    const { setWalletID, signingMode } = useAuthStore();
 
     /**
      * Create a fresh HDSegwitBech32 hot vault — and get out of the user's
@@ -237,7 +237,16 @@ export default function SavingVaultIntro() {
         <ScreenLayout showToolbar progress={0} color={[colors.green, colors.green]}>
             <Animated.View style={[styles.container, { transform: [{ translateY: contentLift }] }]}>
                 <View style={styles.innerView}>
-                    <Text style={styles.title}>Hot Savings Vault</Text>
+                    <Text style={styles.title}>{signingMode ? 'Create a Seed' : 'Hot Savings Vault'}</Text>
+                    {/* a seed-signer's seed isn't a vault: it's backed up, wiped from the phone and scanned in to sign */}
+                    {signingMode ? (
+                    <Text h4 style={styles.descption}>This phone creates a seed (12 words) to sign with. Back it up on paper and as a SeedQR, give your watch-only wallet its public key and check the first addresses match.
+                        {'\n\n'}
+                        Then wipe the seed from this phone. To sign, scan the SeedQR: the seed is only held while you sign.
+                        {'\n\n'}
+                        Keep this phone offline for good. If it ever connects to the internet, treat this seed as a hot wallet and plan to move your coins to a new seed.
+                    </Text>
+                    ) : (
                     <Text h4 style={styles.descption}>Hot Vault, commonly known as a ‘hot wallet’, allows you to become the sole owner of your bitcoin, as the saying goes: Not your keys, not your coins. Money stored in this vault will be secured by the main Bitcoin network, not by a third party custodian.
                         {'\n\n'}
                         To create a Hot Vault, you first need to generate your keys: your phone will  create the private key, encrypt it, and store it in its memory. It will also create a backup copy (12 words), just in case you lose access to your phone.
@@ -245,6 +254,7 @@ export default function SavingVaultIntro() {
                         {'\n\n'}
                         Caution: while it offers a much more secure storage environment than the Lightning Account, the keys to your Hot Vault are generated and stored on an internet-connect device. As your balance and technical skills increase, you should think about investing in an offline hardware signing device for enhanced security.
                     </Text>
+                    )}
 
                     <Image
                       source={require('@Cypher/assets/images/fireShield.png')}
@@ -340,7 +350,7 @@ export default function SavingVaultIntro() {
                         </TouchableOpacity>
                     )}
                 </View>
-                <Button text="Generate Private Key" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
+                <Button text={signingMode ? 'Generate Seed' : 'Generate Private Key'} onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
             </Animated.View>
         </ScreenLayout>
     )

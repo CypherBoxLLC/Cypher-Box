@@ -1,6 +1,7 @@
 import { getUniqueId } from 'react-native-device-info';
 import Bugsnag from '@bugsnag/react-native';
 const BlueApp = require('../BlueApp');
+const { isSeedSignerLocked } = require('../src/services/seedSignerLock');
 
 /**
  * in case Bugsnag was started, but user decided to opt out while using the app, we have this
@@ -14,7 +15,8 @@ if (process.env.NODE_ENV !== 'development') {
     const uniqueID = await getUniqueId();
     const doNotTrack = await BlueApp.isDoNotTrackEnabled();
 
-    if (doNotTrack) {
+    // nor does a seed-signer: crash reports are network traffic, and the phone is meant to stay offline
+    if (doNotTrack || isSeedSignerLocked()) {
       // dont start Bugsnag at all
       return;
     }

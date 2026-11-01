@@ -2,7 +2,7 @@ import { useContext, useEffect } from 'react';
 // @ts-ignore: react-native-obscure is not in the type definition
 import { enabled } from 'react-native-privacy-snapshot';
 import { BlueStorageContext } from './storage-context';
-import { isPrivacyBlurOn, setPrivacyBlurMasterSwitch } from './privacySetting';
+import { addSecretScreen, isPrivacyBlurOn, removeSecretScreen, setPrivacyBlurMasterSwitch } from './privacySetting';
 
 interface PrivacyComponent extends React.FC {
   enableBlur: () => void;
@@ -11,6 +11,9 @@ interface PrivacyComponent extends React.FC {
   // does not block screenshots, so users can screenshot their seed to back it up.
   enableBlurAllowingScreenshots: () => void;
   disableBlurAllowingScreenshots: () => void;
+  // Screens showing a recovery phrase or a SeedQR: always protected, whatever the privacy setting.
+  protectSecret: () => void;
+  releaseSecret: () => void;
 }
 
 const Privacy: PrivacyComponent = () => {
@@ -47,6 +50,15 @@ Privacy.enableBlurAllowingScreenshots = () => {
 
 Privacy.disableBlurAllowingScreenshots = () => {
   Privacy.disableBlur();
+};
+
+// iOS can't block screenshots, so this hides the app-switcher preview and the screen itself warns against them.
+Privacy.protectSecret = () => {
+  if (addSecretScreen()) enabled(true);
+};
+
+Privacy.releaseSecret = () => {
+  if (removeSecretScreen() && !isPrivacyBlurOn()) enabled(false);
 };
 
 export default Privacy;

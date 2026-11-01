@@ -5,7 +5,8 @@ import SimpleToast from "react-native-simple-toast";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { Text } from "@Cypher/component-library";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { dispatchNavigate, looksLikePsbt } from "@Cypher/helpers";
+import { startSigning } from "../../SignOnce/start";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
@@ -198,8 +199,17 @@ export default React.memo(function Header({
      * landing, not a hard crash, but they're worth keeping in sync.
      */
     const handleWalletPicked = useCallback(async (key: ScanTargetKey) => {
+        if (key === 'sign') {
+            startSigning();
+            return;
+        }
         const scanned = await openScanner();
         if (!scanned) return;
+        // an unsigned transaction is something to sign, whichever wallet was picked to pay with
+        if (looksLikePsbt(scanned)) {
+            startSigning({ psbt: scanned });
+            return;
+        }
         switch (key) {
             case 'strike':
                 dispatchNavigate('SendScreen', {
@@ -310,6 +320,7 @@ export default React.memo(function Header({
                     hotVault: !!walletID && !!wallet,
                     coldVault: !!coldStorageWalletID && !!coldStorageWallet,
                     ark: !!isArkAuth,
+                    sign: true,
                 }}
             />
 

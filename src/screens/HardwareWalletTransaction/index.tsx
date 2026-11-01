@@ -1,10 +1,12 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Linking, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
 
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SwipeButton } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
+import { assertSignedTxMatchesPsbt, createPendingSignature, isRawTransactionHex, sameUnsignedTransaction } from "@Cypher/helpers";
+import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { useIsFocused } from "@react-navigation/native";
@@ -14,8 +16,6 @@ import Notifications from "../../../blue_modules/notifications";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
 import Clipboard from "@react-native-clipboard/clipboard";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
-import DocumentPicker from 'react-native-document-picker';
-import RNFS from 'react-native-fs';
 import { DynamicQRCode } from "../../../components/DynamicQRCode";
 import { DynamicPSBTQRCode } from "../../../components/DynamicPSBTQRCode";
 import { SecondButton } from "../../../BlueComponents";
@@ -48,9 +48,14 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
         if (ret.data.toUpperCase().startsWith('UR')) {
           alert('BC-UR not decoded. This should never happen');
         }
-        if (ret.data.indexOf('+') === -1 && ret.data.indexOf('=') === -1 && ret.data.indexOf('=') === -1) {
-          // this looks like NOT base64, so maybe its transaction's hex
-          setTxHex(ret.data);
+        if (isRawTransactionHex(ret.data)) {
+          // a finished transaction instead of a signed PSBT: only accept it if it is the one the user reviewed
+          try {
+            assertSignedTxMatchesPsbt(ret.data, psbt);
+            setTxHex(ret.data.trim());
+          } catch (Err: any) {
+            alert(Err.message);
+          }
           return;
         }
         try {
@@ -67,6 +72,18 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
           alert(Err.message);
         }
     };
+
+    // Signing happens away from the app, so keep this until it is broadcast: if the app is closed meanwhile the
+    // vault tab offers to resume it, and checks what comes back against it.
+    useEffect(() => {
+        if (!psbt || !walletID) return;
+        const { pendingSignatures, setPendingSignature } = useAuthStore.getState();
+        const current = pendingSignatures?.[walletID];
+        // resuming the same transaction keeps when it was prepared
+        if (current && sameUnsignedTransaction(current.psbt, psbt)) return;
+        setPendingSignature(walletID, createPendingSignature(route.params));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [psbt, walletID]);
 
     useEffect(() => {
         if (isFocused) {
@@ -132,10 +149,6 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
         }
     };
 
-    const handleOnVerifyPressed = () => {
-        Linking.openURL('https://coinb.in/?verify=' + txHex);
-    };
-
     const copyHexToClipboard = () => {
         Clipboard.setString(txHex);
     };
@@ -149,20 +162,10 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
     };
 
     const openSignedTransaction = async () => {
-        try {
-            const res = await DocumentPicker.pickSingle({
-                type: Platform.OS === 'ios' ? ['io.bluewallet.psbt', 'io.bluewallet.psbt.txn'] : [DocumentPicker.types.allFiles],
-            });
-            const file = await RNFS.readFile(res.uri);
-            if (file) {
-                onBarScanned({ data: file });
-            } else {
-                throw new Error();
-            }
-        } catch (err) {
-            if (!DocumentPicker.isCancel(err)) {
-                alert(loc.send.details_no_signed_tx);
-            }
+        // the shared reader handles binary .psbt files and file names with spaces, and alerts on failure itself
+        const file = await fs.openSignedTransaction();
+        if (file) {
+            onBarScanned({ data: file });
         }
     };
 
@@ -188,7 +191,19 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
             <View style={styles.container}>
                 <Text style={styles.title} center>Transaction signing</Text>
                 <View style={styles.recipientView}>
-                    <Text h4 style={{marginBottom: 20}}>Scan or export this unsigned transaction (PSBT) with your hardware device and sign it from there. Tap 'Next' when you you're done.</Text>
+                    <Text h4 style={{marginBottom: 12}}>Scan or export this unsigned transaction (PSBT) with your signing device (a hardware wallet, or the signing wallet on your offline phone) and sign it there. Tap 'Next' when you're done.</Text>
+                    <Text h4 style={styles.leaveNote}>You can leave Cypher Box while you sign. This transaction waits on your Cold Vault's Vault tab until you send it or discard it.</Text>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('SigningSafetyGuide')}
+                        style={styles.signerRow}
+                        accessibilityRole="button"
+                        accessibilityLabel="Signing safely"
+                    >
+                        <Text h4 style={styles.signerText}>Sign only with a device or app you installed from its official source: a tampered signer can hide your recovery phrase inside the signature, even offline.</Text>
+                        <View style={styles.signerHelp}>
+                            <Text bold style={styles.signerHelpText}>?</Text>
+                        </View>
+                    </TouchableOpacity>
                     <DynamicPSBTQRCode value={psbt.toHex()} ref={dynamicQRCode} />
                     <TouchableOpacity onPress={exportPSBT} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
                         <Text h3>Export</Text>

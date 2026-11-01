@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
-import { Image, TouchableOpacity, View } from "react-native"
+import { Image, Platform, TouchableOpacity, View } from "react-native"
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
 import { EyeVisible } from "@Cypher/assets/images";
@@ -8,6 +8,11 @@ import { BlueStorageContext } from '../../../blue_modules/storage-context';
 import { AbstractWallet } from '../../../class';
 import { useTheme } from '../../../components/themes';
 import useAuthStore from "@Cypher/stores/authStore";
+import useProtectSecret from "../../custom-hooks/useProtectSecret";
+import { mnemonicToSeedQR, seedQRGrid } from "@Cypher/helpers/seedQR";
+import { dispatchNavigate } from "@Cypher/helpers";
+import SeedQRGrid from "../SeedQRGrid";
+import OfflineSeedWarning from "../OfflineSeedWarning";
 
 interface Props {
     callNext(): void;
@@ -16,6 +21,7 @@ interface Props {
 export default function PrivateKeyGenerater({ callNext }: Props) {
     const { wallets } = useContext(BlueStorageContext);
     const walletID = useAuthStore(s => s.walletID);
+    const signingMode = useAuthStore(s => s.signingMode);
     const wallet = useMemo(
         () => wallets.find((w: AbstractWallet) => w.getID() === walletID),
         [wallets, walletID],
@@ -26,6 +32,18 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
 
     const [isView, setIsView] = useState(false);
     const [secretList, setSecretList] = useState([]);
+    // the same backup, as words or as a SeedQR to copy by hand (lets a signing phone sign by scanning it)
+    const [format, setFormat] = useState<'words' | 'seedqr'>('words');
+    const grid = useMemo(() => {
+        try {
+            return seedQRGrid(mnemonicToSeedQR(wallet?.getSecret?.() ?? ''));
+        } catch (_) {
+            return null;
+        }
+    }, [wallet]);
+    // the words are in the view tree from the start, under the reveal overlay: hide them from the app switcher and,
+    // on Android, from screenshots for as long as this is shown
+    useProtectSecret();
 
     useEffect(() => {
         const entries = wallet?.getSecret().split(/\s/).entries();
@@ -62,12 +80,51 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
         { id: 7, label: 'exit' },
     ];
 
+    const showSeedQR = isView && format === 'seedqr' && grid;
+
     return (
         <View>
+            {grid ? (
+                <View style={styles.tabs}>
+                    {(['words', 'seedqr'] as const).map(f => (
+                        <TouchableOpacity
+                            key={f}
+                            onPress={() => setFormat(f)}
+                            style={[styles.tab, format === f && styles.tabOn]}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: format === f }}
+                        >
+                            <Text bold style={styles.tabText}>{f === 'words' ? `${secretList.length || 12} words` : 'SeedQR'}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            ) : null}
+            {showSeedQR ? (
+                // same width as the words, so switching tabs doesn't move the screen; copying and checking happen in the
+                // full-screen SeedQR flow, which has room for the zoom and the scan
+                <View style={styles.seedQR}>
+                    {Platform.OS === 'ios' ? (
+                        <Text style={styles.seedQRWarning}>Don't take a screenshot of this.</Text>
+                    ) : null}
+                    <SeedQRGrid grid={grid} width={300} zoomable={false} />
+                    <Text style={styles.seedQRNote}>
+                        Optional. With a SeedQR you can sign by scanning instead of typing your words.
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.checkBtn}
+                        onPress={() => dispatchNavigate('SeedQRBackup', { walletID: wallet?.getID?.() })}
+                        accessibilityRole="button"
+                    >
+                        <Text h3>Copy it square by square</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : (
+            <View>
             <View style={styles.container}>
                 {secretList.map((secret, index) => (
                     <TouchableOpacity key={index} style={styles.button}>
-                        <Text h4 style={styles.buttonText}>{`${secret.id}. ${secret.label}`}</Text>
+                        {/* the words showed faintly through the reveal overlay, so they aren't drawn until View */}
+                        <Text h4 style={styles.buttonText}>{`${secret.id}. ${isView ? secret.label : '••••••'}`}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
@@ -102,6 +159,9 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                     </View>
                 </>
             )}
+            </View>
+            )}
+            {signingMode ? <OfflineSeedWarning /> : null}
         </View>
     );
 }

@@ -18,6 +18,7 @@ import alert from '../../components/Alert';
 import { PERMISSIONS, RESULTS, request } from 'react-native-permissions';
 import { useTheme } from '../../components/themes';
 import { satoshiToBTC } from '../../blue_modules/currency';
+import SigningPhoneStatus from '../../src/components/SigningPhoneStatus';
 const bitcoin = require('bitcoinjs-lib');
 
 const SendCreate = ({navigation, route}) => {
@@ -140,18 +141,13 @@ const SendCreate = ({navigation, route}) => {
   const ListHeaderComponent = (
     <View>
       {showAnimatedQr && psbt ? <DynamicQRCode value={psbt.toHex()} /> : null}
+      {/* only a Hot Vault signing for something else gets here with a PSBT: say how to keep a signing phone safe */}
+      {showAnimatedQr && psbt ? <SigningPhoneStatus /> : null}
       <BlueText style={[styles.cardText, styleHooks.cardText]}>{loc.send.create_this_is_hex}</BlueText>
       <TextInput testID="TxhexInput" style={styles.cardTx} height={72} multiline editable={false} value={tx} />
 
       <TouchableOpacity accessibilityRole="button" style={styles.actionTouch} onPress={() => Clipboard.setString(tx)}>
         <Text style={styles.actionText}>{loc.send.create_copy}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        accessibilityRole="button"
-        style={styles.actionTouch}
-        onPress={() => Linking.openURL('https://coinb.in/?verify=' + tx)}
-      >
-        <Text style={styles.actionText}>{loc.send.create_verify}</Text>
       </TouchableOpacity>
     </View>
   );

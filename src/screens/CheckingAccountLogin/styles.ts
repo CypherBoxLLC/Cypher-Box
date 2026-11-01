@@ -78,6 +78,12 @@ export default StyleSheet.create({
   sectionDividerArk: {
     backgroundColor: '#3A2D0F',
   },
+  sectionTitleSigner: {
+    color: colors.green,
+  },
+  sectionDividerSigner: {
+    backgroundColor: '#123D2A',
+  },
   sectionSubtitle: {
     color: '#888',
     fontSize: 12,

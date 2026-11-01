@@ -10,7 +10,7 @@ import { dispatchReset } from "@Cypher/helpers/navigation";
 
 export default function SavingVaultCreated() {
     const [isValidate, setIsValidate] = useState(false);
-    const { vaultTab } = useAuthStore();
+    const { vaultTab, signingMode } = useAuthStore();
 
     const nextClickHandler = () => {
         console.log('next click');
@@ -30,16 +30,22 @@ export default function SavingVaultCreated() {
     return (
         <ScreenLayout disableScroll showToolbar progress={2} color={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
             <View style={styles.container}>
-                <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : "Savings Vault Created!"}</Text>
+                <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : signingMode ? "Seed Created!" : "Savings Vault Created!"}</Text>
                 <View style={styles.inner}>
-                    <SavingVault title={vaultTab ? "Cold Vault" : "Hot Vault"} />
+                    {/* a seed-signer's seed isn't a vault, so no vault picture or capsules */}
+                    {signingMode && !vaultTab ? null : <SavingVault title={vaultTab ? "Cold Vault" : "Hot Vault"} />}
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-                        {vaultTab ?
+                        {signingMode && !vaultTab ? (
+                            <Text h4 style={styles.descption}>Next, on the signer: make a SeedQR backup, give your watch-only wallet this seed's public key and check the first addresses match.
+                                {'\n\n'}
+                                Then wipe the seed from this phone, and sign by scanning the SeedQR.
+                            </Text>
+                        ) : vaultTab ?
                             <>
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 15 }]}>Remember to keep your seed phrase safe, it's your responsibility!
-                                    This is a Watch-only vault, meaning you can only inspect its balance and grab addresses from it for deposits, but in order to send out funds you need to ‘sign’ or authorize  transactions using your hardware device.
+                                    This Cold Vault is watch & broadcast only: it shows your balance, gives you addresses to receive on, prepares transactions and broadcasts them once signed. Signing happens on your signing device: a hardware wallet, or an offline phone with Cypher Box as your signing wallet.
                                     {'\n\n'}
-                                    ⚠️ DO NOT use any of its addresses without verifying their authenticity from your  hardware device!
+                                    ⚠️ DO NOT use any of its addresses without checking them on your signing device!
                                     {'\n\n'}
                                     When Bitcoin Network fees become moderately low, you can select the capsules accumulated in your Hot Vault and transfer them to your Cold Storage Vault using the “Move to Cold Vault” button.
                                 </Text>

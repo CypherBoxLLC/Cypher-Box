@@ -12,6 +12,7 @@ import { authorize } from "react-native-app-auth";
 import { jwtDecode } from "jwt-decode";
 import { Buffer } from "buffer";
 import { dispatchReset } from "@Cypher/helpers/navigation";
+import { SEED_SIGNER, openSeedSignerGate } from "../SigningHome/seedSigner";
 import {
   LoginOption,
   RegisterPrompt,
@@ -376,6 +377,26 @@ export default function CheckingAccountLogin() {
               )}
             </>
           )}
+
+          {/* Not a Lightning wallet: an offline phone used as a cold signer. Last and in green, so it stands apart. */}
+          <View style={styles.sectionHeader}>
+            <Text bold style={[styles.sectionTitle, styles.sectionTitleSigner]}>
+              COLD SIGNING  ·  OFFLINE PHONE
+            </Text>
+            <View style={[styles.sectionDivider, styles.sectionDividerSigner]} />
+          </View>
+          <Text style={styles.sectionSubtitle}>
+            Turn an isolated phone that stays offline (a Pixel is recommended) into a cold signing device. The seed
+            doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign.
+          </Text>
+          <LoginOption
+            label={SEED_SIGNER}
+            labelColor={colors.green}
+            iconPrefixIonicon="qr-code-outline"
+            iconPrefixTint={colors.green}
+            borderColor={colors.green}
+            onPress={openSeedSignerGate}
+          />
         </View>
       </View>
       <StrikeSignupSheet ref={strikeSignupSheetRef} />
