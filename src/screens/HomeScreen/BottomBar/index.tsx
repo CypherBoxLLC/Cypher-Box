@@ -402,7 +402,7 @@ export default function BottomBar({
                     resizeMode="contain"
                     source={require("../../../../img/arrow-right.png")}
                 />
-                <Text bold h3 center style={{ textAlign: 'center' }}>Top-up</Text>
+                <Text bold h3 center style={{ textAlign: 'center' }}>{loc.cypherbox.home.top_up}</Text>
             </GradientView>
             <GradientView
                 onPress={withdrawClickHandler}
@@ -411,7 +411,7 @@ export default function BottomBar({
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
             >
-                <Text bold h3 center style={{ textAlign: 'center' }}>Withdraw</Text>
+                <Text bold h3 center style={{ textAlign: 'center' }}>{loc.cypherbox.home.withdraw}</Text>
                 <Image
                     style={styles.arrowRight}
                     resizeMode="contain"

@@ -276,7 +276,7 @@ export default React.memo(function Header({
                         activeOpacity={0.6}
                         style={styles.imageView}
                         onPress={toggleActivityDropdown}
-                        accessibilityLabel="Activity"
+                        accessibilityLabel={loc.cypherbox.home.activity_a11y}
                     >
                         <Ionicons name="notifications-outline" size={28} color="#FFFFFF" />
                     </TouchableOpacity>

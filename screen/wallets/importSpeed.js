@@ -84,7 +84,7 @@ const WalletsImportSpeed = () => {
       <TextInput testID="SpeedPassphraseInput" value={passphrase} style={styles.pathInput} onChangeText={setPassphrase} />
       <BlueSpacing20 />
       <View style={styles.center}>
-        <Button testID="SpeedDoImport" title="Import" onPress={importMnemonic} />
+        <Button testID="SpeedDoImport" title={loc.wallets.import_do_import} onPress={importMnemonic} />
         {loading && <ActivityIndicator />}
       </View>
     </SafeArea>

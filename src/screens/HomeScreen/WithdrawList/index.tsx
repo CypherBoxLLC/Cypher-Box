@@ -208,7 +208,7 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
       }
     } catch (error) {
       console.error('Error generating bitcoin address handleCreateInvoice 3:', error);
-      SimpleToast.show(`Failed to generating ${type == 'bitcoin' ? "bitcoin" : "liquid"} address. Please try again.`, SimpleToast.SHORT);
+      SimpleToast.show(type == 'bitcoin' ? loc.cypherbox.home.address_failed_bitcoin : loc.cypherbox.home.address_failed_liquid, SimpleToast.SHORT);
     } finally {
       setIsLoading(false);
     }

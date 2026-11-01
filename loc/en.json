@@ -659,7 +659,14 @@
       "cold_vault_not_ready": "Cold Vault not ready. Open the vault once and try again.",
       "login_to_top_up": "You need to be logged in to wallet to top up",
       "create_vault_first": "You need to create a vault first",
-      "login_to_withdraw": "You need to be logged in to wallet to withdraw"
+      "login_to_withdraw": "You need to be logged in to wallet to withdraw",
+      "send": "Send",
+      "receive": "Receive",
+      "top_up": "Top-up",
+      "withdraw": "Withdraw",
+      "activity_a11y": "Activity",
+      "address_failed_bitcoin": "Failed to generate bitcoin address. Please try again.",
+      "address_failed_liquid": "Failed to generate liquid address. Please try again."
     },
     "scan_with": {
       "title": "Scan with",
@@ -3060,6 +3067,9 @@
       },
       "licensing": {
         "title": "License"
+      },
+      "addresses": {
+        "vault_unavailable": "This vault is no longer available on this device. Go back and open it again from the home screen."
       }
     }
   }

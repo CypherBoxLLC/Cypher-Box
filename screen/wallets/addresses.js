@@ -278,8 +278,7 @@ const WalletAddresses = () => {
     return (
       <View style={[styles.root, stylesHook.root, styles.missingWallet]}>
         <Text style={{ color: colors.foregroundColor, textAlign: 'center' }}>
-          This vault is no longer available on this device. Go back and open it
-          again from the home screen.
+          {loc.cypherbox.legacy.addresses.vault_unavailable}
         </Text>
       </View>
     );

@@ -1180,7 +1180,7 @@ export default function HomeScreen({ route }: Props) {
                       style={{ shadowColor: '#040404CC', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.80, shadowRadius: 16, elevation: 8 }}
                       linearGradientStyle={{ shadowColor: '#27272C7A', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
                     >
-                      <Text h3 style={{ ...shadow.text25 }}>Receive</Text>
+                      <Text h3 style={{ ...shadow.text25 }}>{loc.cypherbox.home.receive}</Text>
                     </GradientView>
                     <GradientView
                       onPress={() => { refSendRBSheet.current.open(); }}
@@ -1189,7 +1189,7 @@ export default function HomeScreen({ route }: Props) {
                       style={{ shadowColor: '#040404CC', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.80, shadowRadius: 16, elevation: 8 }}
                       linearGradientStyle={{ shadowColor: '#27272C7A', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
                     >
-                      <Text h3 style={{ ...shadow.text25 }}>Send</Text>
+                      <Text h3 style={{ ...shadow.text25 }}>{loc.cypherbox.home.send}</Text>
                     </GradientView>
                   </View>
                 )}
