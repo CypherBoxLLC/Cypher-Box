@@ -534,7 +534,7 @@ const TermsOfService = () => {
 
                 <View style={styles.section}>
                     <Text style={[styles.paragraph, { fontStyle: 'italic' }]}>
-                        This Agreement and Privacy Policy were last updated in August 2026.
+                        This Agreement and Privacy Policy were last updated in September 2026.
                     </Text>
                 </View>
                 </View>

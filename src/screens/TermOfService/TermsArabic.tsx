@@ -26,6 +26,13 @@ interface Props {
 
 const TermsArabic = ({ styles, aspTermsUrl, onAspTermsPress }: Props) => (
     <View>
+        {/* English prevails: this translation is a convenience copy. */}
+        <View style={styles.section}>
+            <Text style={styles.paragraph}>
+                هذه ترجمة عربية مقدَّمة للتيسير فقط. النسخة الإنجليزية الواردة أدناه هي النسخة المعتمدة، وفي حال وجود أي تعارض أو اختلاف في التفسير بين النسختين، تسري النسخة الإنجليزية.
+            </Text>
+        </View>
+
         {/* ===== شروط الخدمة ===== */}
         <Text style={styles.sectionTitle}>شروط الخدمة</Text>
 
@@ -526,7 +533,7 @@ const TermsArabic = ({ styles, aspTermsUrl, onAspTermsPress }: Props) => (
 
         <View style={styles.section}>
             <Text style={styles.paragraph}>
-                آخر تحديث لهذه الاتفاقية وسياسة الخصوصية كان في أغسطس 2026.
+                آخر تحديث لهذه الاتفاقية وسياسة الخصوصية كان في سبتمبر 2026.
             </Text>
         </View>
     </View>
