@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Image, ImageBackground, Linking, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput, GradientText } from "@Cypher/components";
 import { colors, widths, } from "@Cypher/style-guide";
@@ -26,7 +27,7 @@ export default function TransactionBroadCast({navigation, route}: any) {
     const [progress, setProgress] = useState(0);
     const [sats, setSats] = useState('100K sats');
     const [usd, setUsd] = useState('$40');
-    const [to, setTo] = useState('Awaiting Network Confirmation');
+    const [to, setTo] = useState(loc.cypherbox.payments.common.awaiting_confirmation);
     const fadeInOpacity = useSharedValue(0);
 
     useEffect(() => {
@@ -78,14 +79,14 @@ export default function TransactionBroadCast({navigation, route}: any) {
                 <View style={styles.container}>
                     {response &&
                         <>
-                            <Text h1 bold center style={styles.title}>{strikePending ? 'Withdrawal Submitted' : 'Transaction Broadcasted...'}</Text>
+                            <Text h1 bold center style={styles.title}>{strikePending ? loc.cypherbox.payments.transaction_broadcast.withdrawal_submitted : loc.cypherbox.payments.common.transaction_broadcasted}</Text>
                             <Animated.View style={animatedStyle}>
                                 <Text semibold center style={styles.sats}>{amountSat} sats</Text>
                                 <View style={styles.extra} />
                                 <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                                 <View style={styles.extra} />
                                 <Text h2 bold center>{to}</Text>
-                                <GradientText style={styles.gradientText}>{strikePending ? 'Strike is sending this on-chain. Arrives in about an hour.' : 'Estimated time: ~2hr'}</GradientText>
+                                <GradientText style={styles.gradientText}>{strikePending ? loc.cypherbox.payments.transaction_broadcast.strike_sending_onchain : loc.cypherbox.payments.transaction_broadcast.estimated_time}</GradientText>
                             </Animated.View>
                         </>
                         // :
@@ -103,7 +104,7 @@ export default function TransactionBroadCast({navigation, route}: any) {
                         <ImageBackground source={BitcoinTower} style={styles.image} resizeMode="contain">
                             <Image source={Bitcoin} style={styles.bitcoin} resizeMode="contain" />
                         </ImageBackground>
-                        <Text semibold center style={styles.text}>Bitcoin Network</Text>
+                        <Text semibold center style={styles.text}>{loc.cypherbox.payments.common.bitcoin_network}</Text>
                     </View>
                 }
                 {/* <View
@@ -190,18 +191,18 @@ export default function TransactionBroadCast({navigation, route}: any) {
                         }}
                     >
                         <Text semibold center style={{ color: colors.white, textDecorationLine: 'underline' }}>
-                            View transaction in Bitcoin Network Explorer
+                            {loc.cypherbox.payments.transaction_broadcast.view_tx_in_explorer}
                         </Text>
                         {item?.originalTxid &&
                             <Text center style={{ color: colors.gray.light, fontSize: 11, marginTop: 4 }}>
-                                {type === 'cpfp' ? 'Child of' : 'Replaces'} {String(item.originalTxid).substring(0, 8)}…
+                                {loc.formatString(type === 'cpfp' ? loc.cypherbox.payments.transaction_broadcast.child_of : loc.cypherbox.payments.transaction_broadcast.replaces, { txid: String(item.originalTxid).substring(0, 8) })}
                             </Text>
                         }
                     </TouchableOpacity>
                 }
                 {response &&
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
-                        title={receiveType ? 'Transaction Details' : 'Home'}
+                        title={receiveType ? loc.cypherbox.payments.transaction_broadcast.transaction_details : loc.cypherbox.payments.common.home}
                         disabled={!response}
                         onPress={onPressClickHandler} />
                     // :

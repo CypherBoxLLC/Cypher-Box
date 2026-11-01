@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Image, ImageBackground, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput, GradientText } from "@Cypher/components";
 import { colors, widths, } from "@Cypher/style-guide";
@@ -21,7 +22,7 @@ export default function TransactionBroadCastNew({navigation, route}: any) {
     const [progress, setProgress] = useState(0);
     // const [sats, setSats] = useState('100K sats');
     const [usd, setUsd] = useState('$40');
-    const [to, setTo] = useState('Awaiting Network Confirmation');
+    const [to, setTo] = useState(loc.cypherbox.payments.common.awaiting_confirmation);
     const fadeInOpacity = useSharedValue(0);
     console.log('route: ', route?.params)
     const { sats, inUSD } =  route?.params || {};
@@ -78,7 +79,7 @@ export default function TransactionBroadCastNew({navigation, route}: any) {
                 <View style={styles.container}>
                     {response &&
                         <>
-                            <Text h1 bold center style={styles.title}>Transaction Broadcasted...</Text>
+                            <Text h1 bold center style={styles.title}>{loc.cypherbox.payments.common.transaction_broadcasted}</Text>
                             {sats &&
                                 <Animated.View style={animatedStyle}>
                                     <Text semibold center style={styles.sats}>{sats} sats</Text>
@@ -105,12 +106,12 @@ export default function TransactionBroadCastNew({navigation, route}: any) {
                         <ImageBackground source={BitcoinTower} style={styles.image} resizeMode="contain">
                             <Image source={Bitcoin} style={styles.bitcoin} resizeMode="contain" />
                         </ImageBackground>
-                        <Text semibold center style={styles.text}>Bitcoin Network</Text>
+                        <Text semibold center style={styles.text}>{loc.cypherbox.payments.common.bitcoin_network}</Text>
                     </View>
                 }
                 {response &&
                     <TouchableOpacity onPress={onPressClickHandler} style={styles.nextBtn}>
-                        <Text h3>Home</Text>
+                        <Text h3>{loc.cypherbox.payments.common.home}</Text>
                     </TouchableOpacity>
                     // :
                     // <View style={styles.invoiceButton}>

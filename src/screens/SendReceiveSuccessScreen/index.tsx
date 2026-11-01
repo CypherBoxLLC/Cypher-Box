@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Image } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { Electricity } from "@Cypher/assets/images";
 import { dispatchReset } from "@Cypher/helpers/navigation";
@@ -24,9 +25,9 @@ export default function SendReceiveSuccessScreen({ route }: Props) {
 
     return (
         <ScreenLayout>
-            <Text subHeader style={styles.text}>{isReceive_ ? 'Boom!' : 'Zapped!'}</Text>
+            <Text subHeader style={styles.text}>{isReceive_ ? loc.cypherbox.payments.send_receive_success.boom : loc.cypherbox.payments.send_receive_success.zapped}</Text>
             <Image style={styles.image} source={Electricity} resizeMode="contain" />
-            <Text subHeader style={styles.text}>{`Payment ${isReceive_ ? 'Received' : 'Sent'}`}</Text>
+            <Text subHeader style={styles.text}>{isReceive_ ? loc.cypherbox.payments.send_receive_success.payment_received : loc.cypherbox.payments.send_receive_success.payment_sent}</Text>
             <Text subHeader style={styles.text}>{isReceive_ ? `${value} sats` : `${value} sats`}</Text>
             {!isReceive_ &&
                 <Text subHeader style={styles.subtext}>{`$${valueUsd}`}</Text>

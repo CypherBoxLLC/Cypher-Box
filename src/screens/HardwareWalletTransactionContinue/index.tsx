@@ -168,14 +168,14 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
-                <Text style={styles.title} center>Transaction signing</Text>
+                <Text style={styles.title} center>{loc.cypherbox.payments.common.transaction_signing}</Text>
                 <View style={styles.recipientView}>
                     <Text h4 style={{marginBottom: 20}}>Signed it on your signing device? Scan or import the signed transaction.</Text>
                     <TouchableOpacity onPress={openScanner} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
-                        <Text h3>Scan</Text>
+                        <Text h3>{loc.cypherbox.payments.common.scan}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={openSignedTransaction} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
-                        <Text h3>Import</Text>
+                        <Text h3>{loc.cypherbox.payments.hardware_wallet_transaction_continue.import}</Text>
                     </TouchableOpacity>
                     {/* resuming from the vault tab lands here; the device may still need the unsigned one */}
                     <TouchableOpacity
@@ -188,7 +188,7 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
                     <Text h4 style={{marginTop: 20}}>{txHex}</Text>
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} disabled={!txHex} style={[styles.nextBtn , {backgroundColor: txHex ? colors.blueText : colors.gray.default}]}>
-                    <Text h3>Next</Text>
+                    <Text h3>{loc.cypherbox.payments.common.next}</Text>
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

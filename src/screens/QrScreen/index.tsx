@@ -7,6 +7,7 @@ import QRCode from 'react-native-qrcode-svg';
 import Share from 'react-native-share';
 
 import styles from "./styles";
+import loc from "../../../loc";
 import { CoinOS, Copy, QrCode, Share2 } from "@Cypher/assets/images";
 import { LoadingSpinner, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -48,7 +49,7 @@ export default function QrScreen({ route }: Props) {
             setHash(hash);
         } catch (error) {
             console.error('Error generating bitcoin address handleCreateInvoice QR:', error);
-            SimpleToast.show(`Failed to generating ${type == 'bitcoin' ? "bitcoin" : "liquid"} address. Please try again.`, SimpleToast.SHORT);
+            SimpleToast.show(type == 'bitcoin' ? loc.cypherbox.payments.qr_screen.bitcoin_address_failed : loc.cypherbox.payments.qr_screen.liquid_address_failed, SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
         }
@@ -56,7 +57,7 @@ export default function QrScreen({ route }: Props) {
 
     const copyToClipboard = (text: string) => {
         Clipboard.setString(text);
-        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.payments.common.copied_to_clipboard, SimpleToast.SHORT);
     };
     
     const shortenAddress = (address: string) => {
@@ -77,7 +78,7 @@ export default function QrScreen({ route }: Props) {
             // console.log('qrCodeImage: ', qrCodeImage)
         
             const shareOptions = {
-                message: `QR image: ${hash}`,
+                message: String(loc.formatString(loc.cypherbox.payments.common.qr_image_share, { value: hash })),
                 url: `data:image/jpeg;base64,${base64QrCodeRef?.current}`,
             };
         
@@ -90,7 +91,7 @@ export default function QrScreen({ route }: Props) {
 
 
     return (
-        <ScreenLayout showToolbar title={type == 'liquid' ? 'Receive to Liquid Address' : 'Receive to Bitcoin Address'}>
+        <ScreenLayout showToolbar title={type == 'liquid' ? loc.cypherbox.payments.qr_screen.title_liquid : loc.cypherbox.payments.qr_screen.title_bitcoin}>
             <View style={styles.container}>
                 {isLoading ?
                     <View>
@@ -117,8 +118,8 @@ export default function QrScreen({ route }: Props) {
                         {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
                         <Text semibold style={styles.code}>{shortenAddress(hash)}</Text>
                         <View style={styles.imageView2}>
-                            <ImageTextVertical text="Copy" source={Copy} onPress={() => copyToClipboard(hash)} />
-                            <ImageTextVertical text="Share" source={Share2} onPress={shareQRCode} />
+                            <ImageTextVertical text={loc.cypherbox.payments.common.copy} source={Copy} onPress={() => copyToClipboard(hash)} />
+                            <ImageTextVertical text={loc.cypherbox.payments.common.share} source={Share2} onPress={shareQRCode} />
                         </View>
                         {/* <View style={styles.imageView}>
                             <ImageText text="Copy" source={Copy}/>
@@ -129,7 +130,7 @@ export default function QrScreen({ route }: Props) {
                                 <Text subHeader bold>bc1qt3......wmsn6u</Text>
                             </View>
                         </GradientCard> */}
-                        <Text h3 style={styles.title}>Bitcoin Network transactions may take hours, or in rare case, days to confirm depending on how much fees the sender paid and how fast your bitcoin banking provider, {receiveType ? 'Coinos' : 'Strike'}, will credit your account.</Text>
+                        <Text h3 style={styles.title}>{loc.formatString(loc.cypherbox.payments.qr_screen.onchain_delay_notice, { provider: receiveType ? 'Coinos' : 'Strike' })}</Text>
                     </View>
                 }
             </View>

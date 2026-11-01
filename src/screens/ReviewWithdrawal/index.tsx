@@ -4,6 +4,7 @@ import SimpleToast from 'react-native-simple-toast';
 import { Icon } from 'react-native-elements';
 import ReactNativeModal from 'react-native-modal';
 import styles from './styles';
+import loc from '../../../loc';
 import {
     findRecentMatchingWithdrawal,
     isCoinosWithdrawIndeterminate,
@@ -63,7 +64,7 @@ export default function ReviewWithdrawal({ route }: Props) {
     const [matchedRate, setMatchedRate] = useState(0);
     const [isStartLoading, setIsStartLoading] = useState(false);
     const [selectedFee, setSelectedFee] = useState<number | null>(null);
-    const [selectedFeeName, setSelectedFeeName] = useState<string>('Select Fee');
+    const [selectedFeeName, setSelectedFeeName] = useState<string>(loc.cypherbox.payments.common.select_fee);
     // Latched once a withdrawal's outcome becomes UNKNOWN. Never cleared on
     // this screen: the whole point is that it must not offer to send again.
     const [sendIndeterminate, setSendIndeterminate] = useState(false);
@@ -89,10 +90,10 @@ export default function ReviewWithdrawal({ route }: Props) {
 
     const swipeButtonRef = useRef(null);
     const feeNames: Record<Fee, string> = {
-        fastestFee: 'Fastest',
-        halfHourFee: 'Fast',
-        hourFee: 'Medium',
-        economyFee: 'Slow',
+        fastestFee: loc.cypherbox.payments.common.fee_fastest,
+        halfHourFee: loc.cypherbox.payments.common.fee_fast,
+        hourFee: loc.cypherbox.payments.common.fee_medium,
+        economyFee: loc.cypherbox.payments.common.fee_slow,
     };
 
     useEffect(() => {
@@ -134,7 +135,7 @@ export default function ReviewWithdrawal({ route }: Props) {
         // fetch; if that failed (offline, mempool.space down) indexing it
         // yields undefined and the estimate call gets a NaN fee rate.
         if (recommendedFee?.[fee] == null) {
-            SimpleToast.show('Network fees unavailable. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.network_fees_unavailable, SimpleToast.SHORT);
             setFeeLoading(false);
             return;
         }
@@ -147,7 +148,7 @@ export default function ReviewWithdrawal({ route }: Props) {
             console.log('feeForBamskki: ', feeForBamskki);
             console.log('remainingAmount: ', remainingAmount);
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setFeeLoading(false);
                 return;
             }
@@ -172,7 +173,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                 console.log('jsonObject: ', jsonObject);
             } catch (error) {
                 console.error('Error Send to bitcoin:', error);
-                SimpleToast.show(error?.message ? error?.message : 'Failed to estimate bitcoin fee. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(error?.message ? error?.message : loc.cypherbox.payments.common.fee_estimate_bitcoin_failed, SimpleToast.SHORT);
             } finally {
                 setModalVisible(false);
                 setFeeLoading(false);
@@ -180,7 +181,7 @@ export default function ReviewWithdrawal({ route }: Props) {
         } else {
             // liquid address
             if (amount == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setFeeLoading(false);
                 return;
             }
@@ -189,7 +190,7 @@ export default function ReviewWithdrawal({ route }: Props) {
             console.log('feeForBamskki: ', feeForBamskki);
             console.log('remainingAmount: ', remainingAmount);
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setFeeLoading(false);
                 return;
             }
@@ -211,7 +212,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                 }
             } catch (error) {
                 console.error('Error Send to liquid:', error);
-                SimpleToast.show(error?.message ? error?.message : 'Failed to estimate liquid fee. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(error?.message ? error?.message : loc.cypherbox.payments.common.fee_estimate_liquid_failed, SimpleToast.SHORT);
             } finally {
                 setModalVisible(false);
                 setFeeLoading(false);
@@ -241,7 +242,7 @@ export default function ReviewWithdrawal({ route }: Props) {
         setIsSendLoading(true);
         const amount = isSats ? value : converted;
         if (to == '') {
-            SimpleToast.show('Please enter an address or username', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.enter_address_or_username, SimpleToast.SHORT);
             setIsSendLoading(false);
         } else if (startsWithLn(to)) {
             // lightening invoice
@@ -256,19 +257,19 @@ export default function ReviewWithdrawal({ route }: Props) {
                 }
             } catch (error) {
                 console.error('Error handleSendSats:', error);
-                SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.send_lightning_failed, SimpleToast.SHORT);
             } finally {
                 setIsSendLoading(false);
             }
         } else if (to.startsWith('bc')) {
             // bitcoin onchain
             if (amount == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
             if (selectedFee == null) {
-                SimpleToast.show('Please select fee rate', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.select_fee_rate, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -277,7 +278,7 @@ export default function ReviewWithdrawal({ route }: Props) {
             console.log('feeForBamskki: ', feeForBamskki);
             console.log('remainingAmount: ', remainingAmount);
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -303,7 +304,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     if (dupe) {
                         setSendIndeterminate(true);
                         SimpleToast.show(
-                            'This withdrawal already went out a moment ago. Check your history rather than sending again.',
+                            loc.cypherbox.payments.review_withdrawal.duplicate_withdrawal,
                             SimpleToast.LONG,
                         );
                         setIsSendLoading(false);
@@ -344,11 +345,11 @@ export default function ReviewWithdrawal({ route }: Props) {
                     setSendIndeterminate(true);
                     SimpleToast.show(
                         (error as Error)?.message ??
-                            'This withdrawal may already have been sent. Check your history before trying again.',
+                            loc.cypherbox.payments.review_withdrawal.withdrawal_indeterminate,
                         SimpleToast.LONG,
                     );
                 } else {
-                    SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.payments.common.send_bitcoin_failed, SimpleToast.SHORT);
                 }
             } finally {
                 setIsSendLoading(false);
@@ -356,7 +357,7 @@ export default function ReviewWithdrawal({ route }: Props) {
         } else if (to.includes('@')) {
             // username
             if (amount == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -371,19 +372,19 @@ export default function ReviewWithdrawal({ route }: Props) {
                 }
             } catch (error) {
                 console.error('Error handleSendSats:', error);
-                SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.send_lightning_failed, SimpleToast.SHORT);
             } finally {
                 setIsSendLoading(false);
             }
         } else {
             // liquid address
             if (amount == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
             if (selectedFee == null) {
-                SimpleToast.show('Please select fee rate', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.select_fee_rate, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -392,7 +393,7 @@ export default function ReviewWithdrawal({ route }: Props) {
             console.log('feeForBamskki: ', feeForBamskki);
             console.log('remainingAmount: ', remainingAmount);
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -415,7 +416,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                 }
             } catch (error) {
                 console.error('Error Send to liquid:', error);
-                SimpleToast.show('Failed to Send to Liquid. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.send_liquid_failed, SimpleToast.SHORT);
             } finally {
                 setIsSendLoading(false);
             }
@@ -428,10 +429,10 @@ export default function ReviewWithdrawal({ route }: Props) {
 
     const increaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
-        const currentIndex = feeKeys.indexOf(selectedFeeName !== 'Select Fee' ? selectedFeeName : '');
+        const currentIndex = feeKeys.indexOf(selectedFeeName !== loc.cypherbox.payments.common.select_fee ? selectedFeeName : '');
         const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === feeKeys.length - 1) {
-            SimpleToast.show('You have reached the end of the fee list.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.end_of_fee_list, SimpleToast.SHORT);
             return;
         }
         const newIndex = (currentIndex + 1) % feeKeys.length;
@@ -441,10 +442,10 @@ export default function ReviewWithdrawal({ route }: Props) {
 
     const decreaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
-        const currentIndex = feeKeys.indexOf(selectedFeeName !== 'Select Fee' ? selectedFeeName : '');
+        const currentIndex = feeKeys.indexOf(selectedFeeName !== loc.cypherbox.payments.common.select_fee ? selectedFeeName : '');
         const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === 0) {
-            SimpleToast.show('You have reached the start of the fee list.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.start_of_fee_list, SimpleToast.SHORT);
             return;
         }
         const newIndex = (currentIndex - 1 + feeKeys.length) % feeKeys.length;
@@ -455,7 +456,7 @@ export default function ReviewWithdrawal({ route }: Props) {
 
 
     return (
-        <ScreenLayout showToolbar isBackButton keyboardAware title="Review withdrawal">
+        <ScreenLayout showToolbar isBackButton keyboardAware title={loc.cypherbox.payments.review_withdrawal.title}>
             <View style={styles.topView}>
                 {isStartLoading ? (
                     <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />
@@ -470,7 +471,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     >
                         <View style={styles.view}>
                             <Text h2 bold style={styles.check}>
-                                Lightning Account
+                                {loc.cypherbox.payments.common.lightning_account}
                             </Text>
                             <Image source={CoinOSSmall} style={styles.blink} resizeMode="contain" />
                         </View>
@@ -505,7 +506,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                 <View style={styles.middle}>
                     <View style={styles.withdrawnAmount}>
                         <TextViewV2
-                            keytext="Withdrawn amount:"
+                            keytext={loc.cypherbox.payments.review_withdrawal.withdrawn_amount}
                             text={isSats ? `${value} btc ~ $${converted}` : `$${value} ~ $${converted} btc`}
                             textStyle={styles.price}
                             style={styles.textContainer}
@@ -526,7 +527,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                             <View style={[styles.background, styles.editAmount]}>
                                 <TouchableOpacity onPress={editAmountHandler}>
                                     <Text bold style={{ fontSize: 16 }}>
-                                        Edit amount
+                                        {loc.cypherbox.payments.review_withdrawal.edit_amount}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -535,13 +536,13 @@ export default function ReviewWithdrawal({ route }: Props) {
                     </View>
 
                     <TextViewV2
-                        keytext="Sent from: "
-                        text="My Coinos Lightning Account"
+                        keytext={loc.cypherbox.payments.common.sent_from_label}
+                        text={loc.cypherbox.payments.common.my_coinos_lightning_account}
                         style={styles.textContainer}
 
                     />
                     <View style={styles.vaultAddress}>
-                        <TextViewV2 keytext="To: " style={{ marginTop: 15 }} />
+                        <TextViewV2 keytext={loc.cypherbox.payments.common.to_label} style={{ marginTop: 15 }} />
                         <GradientCard
                             disabled
                             colors_={['#FFFFFF', '#B6B6B6']}
@@ -551,7 +552,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                             <View style={styles.background}>
                                 <TouchableOpacity onPress={() => setModalVisible(true)}>
                                     <Text bold italic style={styles.vaultAddressText}>
-                                        Vault address: 1B8Du...HTzA
+                                        {loc.cypherbox.payments.common.vault_address_label}1B8Du...HTzA
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -560,7 +561,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     {to && value && (type === 'bitcoin' || type === 'liquid') && recommendedFee ? (
                         <>
                             <View style={styles.feesView}>
-                                <TextViewV2 keytext="Network Fee:  " text={` ~   ${estimatedFee} sats`}
+                                <TextViewV2 keytext={loc.cypherbox.payments.common.network_fee_label} text={` ~   ${estimatedFee} sats`}
 
                                     style={{ marginBottom: 10 }}
                                 />
@@ -589,7 +590,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                             </View>
                         </>
                     ) : (
-                        <TextView keytext="Fees:  " text={` ~   ${estimatedFee} sats`} />
+                        <TextView keytext={loc.cypherbox.payments.common.fees_label} text={` ~   ${estimatedFee} sats`} />
                     )}
                 </View>
 
@@ -621,7 +622,7 @@ export default function ReviewWithdrawal({ route }: Props) {
                     linearStyle={styles.heigth}
                     colors_={note ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}
                 >
-                    <Input onChange={setNote} value={note} textInputStyle={styles.heigth2} label="Add note" />
+                    <Input onChange={setNote} value={note} textInputStyle={styles.heigth2} label={loc.cypherbox.payments.common.add_note} />
                 </GradientCard>
             </View>
             <View style={styles.container}>

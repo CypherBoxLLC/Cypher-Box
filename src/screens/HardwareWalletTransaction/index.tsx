@@ -189,7 +189,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
     return (
         <ScreenLayout showToolbar>
             <View style={styles.container}>
-                <Text style={styles.title} center>Transaction signing</Text>
+                <Text style={styles.title} center>{loc.cypherbox.payments.common.transaction_signing}</Text>
                 <View style={styles.recipientView}>
                     <Text h4 style={{marginBottom: 12}}>Scan or export this unsigned transaction (PSBT) with your signing device (a hardware wallet, or the signing wallet on your offline phone) and sign it there. Tap 'Next' when you're done.</Text>
                     <Text h4 style={styles.leaveNote}>You can leave Cypher Box while you sign. This transaction waits on your Cold Vault's Vault tab until you send it or discard it.</Text>
@@ -206,24 +206,24 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
                     </TouchableOpacity>
                     <DynamicPSBTQRCode value={psbt.toHex()} ref={dynamicQRCode} />
                     <TouchableOpacity onPress={exportPSBT} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
-                        <Text h3>Export</Text>
+                        <Text h3>{loc.cypherbox.payments.hardware_wallet_transaction.export}</Text>
                     </TouchableOpacity>
 
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to ? "Top-up amount:" : "Recipient will get:"}</Text>
+                            <Text style={styles.recipientTitle}>{to ? loc.cypherbox.payments.common.top_up_amount : loc.cypherbox.payments.common.recipient_will_get}</Text>
                             <Text bold style={[styles.value, {color: colors.blueText}]}>{sats + ' sats ~$'+ inUSD}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to ? "To Coinos Bitcoin address" : "To:"}</Text>
-                            <Text style={StyleSheet.flatten([styles.fees, { color: colors.blueText }])}>Bitcoin Address: {shortenAddress(destinationAddress)}</Text>
+                            <Text style={styles.recipientTitle}>{to ? loc.cypherbox.payments.common.to_coinos_bitcoin_address : loc.cypherbox.payments.common.to_colon}</Text>
+                            <Text style={StyleSheet.flatten([styles.fees, { color: colors.blueText }])}>{loc.cypherbox.payments.common.bitcoin_address_label}{shortenAddress(destinationAddress)}</Text>
                         </View>
                     </View>
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, {backgroundColor: colors.blueText}]}>
-                    <Text h3>Next</Text>
+                    <Text h3>{loc.cypherbox.payments.common.next}</Text>
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

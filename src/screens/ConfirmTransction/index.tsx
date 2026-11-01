@@ -168,7 +168,7 @@ export default function ConfirmTransction({ route }: Props) {
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
-                <Text style={styles.title} center>Confirm transaction</Text>
+                <Text style={styles.title} center>{loc.cypherbox.payments.confirm_transaction.title}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -183,7 +183,7 @@ export default function ConfirmTransction({ route }: Props) {
                 /> */}
                 <View style={styles.recipientView}>
                     {!isBatch &&
-                        <Text bold style={styles.coinselected}>Capsules selected:</Text>
+                        <Text bold style={styles.coinselected}>{loc.cypherbox.payments.confirm_transaction.capsules_selected}</Text>
                     }
                     {capsulesData && capsulesData.length > 0 ? (
                         <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
@@ -204,7 +204,7 @@ export default function ConfirmTransction({ route }: Props) {
                     )}
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{isBatch ? "Amount to be batched:" : to ? "Top-up amount:" : "Recipient will get:"}</Text>
+                            <Text style={styles.recipientTitle}>{isBatch ? loc.cypherbox.payments.confirm_transaction.amount_to_batch : to ? loc.cypherbox.payments.common.top_up_amount : loc.cypherbox.payments.common.recipient_will_get}</Text>
                             <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{data?.sats + ' sats ~$'+ data?.inUSD}</Text>
                             <View style={{flexDirection: 'row', marginTop: 8}}>
                                 <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
@@ -223,7 +223,7 @@ export default function ConfirmTransction({ route }: Props) {
                                 return (
                                     <View style={[styles.priceView, {marginTop: 5}]}>
                                         <View>
-                                            <Text style={styles.recipientTitle}>Change:</Text>
+                                            <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.change}</Text>
                                             <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats' + (data?.matchedRate ? ' ~$' + (changeSats / 100000000 * Number(data.matchedRate)).toFixed(2) : '')}</Text>
                                             <View style={{flexDirection: 'row', marginTop: 8}}>
                                                 <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
@@ -239,19 +239,19 @@ export default function ConfirmTransction({ route }: Props) {
                     }
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>Sent from:</Text>
-                            <Text style={styles.fees}>{isBatch ? "Cold Vault address: " : "Vault address: "}{shortenAddress(data.sentFrom)}</Text>
+                            <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.sent_from}</Text>
+                            <Text style={styles.fees}>{isBatch ? loc.cypherbox.payments.common.cold_vault_address_label : loc.cypherbox.payments.common.vault_address_label}{shortenAddress(data.sentFrom)}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to && !vaultSend ? "To Coinos Bitcoin address" : "To:"}</Text>
-                            <Text style={StyleSheet.flatten([styles.fees, { color: vaultTab ? colors.coldGreen : colors.green }])}>{isBatch ? "Cold Vault address: " : "Bitcoin Address: "}{shortenAddress(data?.destinationAddress)}</Text>
+                            <Text style={styles.recipientTitle}>{to && !vaultSend ? loc.cypherbox.payments.common.to_coinos_bitcoin_address : loc.cypherbox.payments.common.to_colon}</Text>
+                            <Text style={StyleSheet.flatten([styles.fees, { color: vaultTab ? colors.coldGreen : colors.green }])}>{isBatch ? loc.cypherbox.payments.common.cold_vault_address_label : loc.cypherbox.payments.common.bitcoin_address_label}{shortenAddress(data?.destinationAddress)}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>Network fee:</Text>
+                            <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.network_fee}</Text>
                             <Text style={StyleSheet.flatten(styles.fees)}>~ {data?.isCustomFee ? data.networkFees + " sats/vByte" :  data?.networkFees + " sats"}{!data?.isCustomFee && data?.networkFees && data?.matchedRate ? ` (~$${(data.networkFees / 100000000 * Number(data.matchedRate)).toFixed(2)}) (${(data.networkFees / data.sats * 100).toFixed(1)}%)` : ''}</Text>
                             {/* <Text style={StyleSheet.flatten(styles.fees)}>~ {btcToSatoshi(data?.fee)}</Text> */}
                         </View>
@@ -269,7 +269,7 @@ export default function ConfirmTransction({ route }: Props) {
                         </View>
                     </View> */}
                     {data?.note &&
-                        <Text h4>Note: {data?.note}</Text>                        
+                        <Text h4>{loc.formatString(loc.cypherbox.payments.confirm_transaction.note, { note: data?.note })}</Text>                        
                     }
                 </View>
                 <View style={styles.swipeview}>
@@ -290,11 +290,11 @@ export default function ConfirmTransction({ route }: Props) {
 
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
                     <View style={{ backgroundColor: '#0a0a0a', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#FF65D4', width: '85%', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>On-chain confirmed! Ready to fire Lightning</Text>
+                        <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>{loc.cypherbox.payments.confirm_transaction.onchain_confirmed_fire}</Text>
                         
                         {/* Destination */}
                         <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
-                            <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>To:</Text>
+                            <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>{loc.cypherbox.payments.common.to_colon}</Text>
                             <Text style={{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }}>{lightningInvoice}</Text>
                         </View>
                         
@@ -317,41 +317,41 @@ export default function ConfirmTransction({ route }: Props) {
                             </View>
                         </View>
                         
-                        <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>Via {bridgeProvider}</Text>
+                        <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>{loc.formatString(loc.cypherbox.payments.confirm_transaction.via_provider, { provider: bridgeProvider })}</Text>
                         
                         <TouchableOpacity 
                             onPress={async () => {
                                 if (bridgeProvider === 'STRIKE') {
                                     try {
-                                        SimpleToast.show('Sending via Strike...', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.payments.confirm_transaction.sending_via_strike, SimpleToast.SHORT);
                                         const result = await sendStrikeLightningPayment(lightningInvoice);
                                         console.log('Strike Lightning result:', result);
                                         setShowFirePopup(false);
-                                        SimpleToast.show('Lightning payment sent via Strike!', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.payments.confirm_transaction.sent_via_strike, SimpleToast.SHORT);
                                     } catch (err) {
                                         console.error('Strike payment error:', err);
-                                        SimpleToast.show('Payment failed: ' + err.message, SimpleToast.LONG);
+                                        SimpleToast.show(String(loc.formatString(loc.cypherbox.payments.confirm_transaction.payment_failed, { error: err.message })), SimpleToast.LONG);
                                     }
                                 } else if (bridgeProvider === 'COINOS') {
                                     try {
-                                        SimpleToast.show('Sending via Coinos...', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.payments.confirm_transaction.sending_via_coinos, SimpleToast.SHORT);
                                         const result = await sendLightningPayment(lightningInvoice, '', data?.sats);
                                         console.log('Coinos Lightning result:', result);
                                         setShowFirePopup(false);
-                                        SimpleToast.show('Lightning payment sent via Coinos!', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.payments.confirm_transaction.sent_via_coinos, SimpleToast.SHORT);
                                     } catch (err) {
                                         console.error('Coinos payment error:', err);
-                                        SimpleToast.show('Payment failed: ' + err.message, SimpleToast.LONG);
+                                        SimpleToast.show(String(loc.formatString(loc.cypherbox.payments.confirm_transaction.payment_failed, { error: err.message })), SimpleToast.LONG);
                                     }
                                 }
                             }}
                             style={{ backgroundColor: '#FF65D4', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 25 }}
                         >
-                            <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>Route Lightning</Text>
+                            <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>{loc.cypherbox.payments.confirm_transaction.route_lightning}</Text>
                         </TouchableOpacity>
                         
                         <TouchableOpacity onPress={() => setShowFirePopup(false)} style={{ marginTop: 16 }}>
-                            <Text style={{ fontSize: 14, color: '#666' }}>Cancel</Text>
+                            <Text style={{ fontSize: 14, color: '#666' }}>{loc._.cancel}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>

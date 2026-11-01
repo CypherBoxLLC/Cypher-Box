@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Image, ImageBackground, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput } from "@Cypher/components";
 import { colors, widths, } from "@Cypher/style-guide";
@@ -22,7 +23,7 @@ export default function Transaction() {
     const [progress, setProgress] = useState(0.2);
     const [sats, setSats] = useState('30,000 sats');
     const [usd, setUsd] = useState('0.013');
-    const [to, setTo] = useState('To: Satoshi@cypherbox.io');
+    const [to, setTo] = useState(String(loc.formatString(loc.cypherbox.payments.transaction_new.to_address, { address: 'Satoshi@cypherbox.io' })));
     const fadeInOpacity = useSharedValue(0);
 
     useEffect(() => {
@@ -75,7 +76,7 @@ export default function Transaction() {
                     {/* {!response && <Text h1 semibold center style={{ lineHeight: 45 }}>Purchasing vault</Text>} */}
                     {response &&
                         <Animated.View style={animatedStyle}>
-                            <Text semibold center style={{ fontSize: 32, lineHeight: 45 }}>Purchase completed</Text>
+                            <Text semibold center style={{ fontSize: 32, lineHeight: 45 }}>{loc.cypherbox.payments.transaction_new.purchase_completed}</Text>
                             <Text semibold center style={styles.sats}>{sats}</Text>
                             <Text subHeader bold center>{usd}</Text>
                             <View style={styles.extra} />
@@ -107,7 +108,7 @@ export default function Transaction() {
                 <View style={styles.extra} />
                 {response &&
                     <TouchableOpacity style={styles.button} onPress={generateKeyClickHandler}>
-                        <Text bold h3 style={styles.nextBtn}>Generate Keys</Text>
+                        <Text bold h3 style={styles.nextBtn}>{loc.cypherbox.payments.transaction_new.generate_keys}</Text>
                     </TouchableOpacity>
                     // :
                     // <View style={styles.invoiceButton}>

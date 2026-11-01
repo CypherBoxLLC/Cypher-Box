@@ -111,7 +111,7 @@ export default function ConfirmHardwareTransaction({ route, navigation }: Props)
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
-                <Text style={styles.title} center>Confirm Transaction</Text>
+                <Text style={styles.title} center>{loc.cypherbox.payments.confirm_hardware_transaction.title}</Text>
                 <View style={styles.recipientView}>
                     <Text h2 style={{marginBottom: 20}} center>Transaction Signed!</Text>
                     {signedTx.error ? (

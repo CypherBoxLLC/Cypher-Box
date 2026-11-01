@@ -7,6 +7,7 @@ import QRCode from 'react-native-qrcode-svg';
 import Share from 'react-native-share';
 
 import styles from "./styles";
+import loc from "../../../loc";
 import { Copy, QrCode, Second, Share2 } from "@Cypher/assets/images";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton, ImageTextVertical } from "@Cypher/components";
@@ -42,7 +43,7 @@ export default function CopyInvoice({ route }: Props) {
 
     const copyToClipboard = (text: string) => {
         Clipboard.setString(text);
-        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.payments.common.copied_to_clipboard, SimpleToast.SHORT);
     };
     
     const shortenAddress = (address: string) => {
@@ -63,7 +64,7 @@ export default function CopyInvoice({ route }: Props) {
             // console.log('qrCodeImage: ', qrCodeImage)
         
             const shareOptions = {
-                message: `QR image: ${hash}`,
+                message: String(loc.formatString(loc.cypherbox.payments.common.qr_image_share, { value: hash })),
                 url: `data:image/jpeg;base64,${base64QrCodeRef?.current}`,
             };
         
@@ -75,7 +76,7 @@ export default function CopyInvoice({ route }: Props) {
     };
 
     return (
-        <ScreenLayout showToolbar title='Copy Invoice'>
+        <ScreenLayout showToolbar title={loc.cypherbox.payments.copy_invoice.title}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
                     {showArkoorNotice && (
@@ -86,14 +87,10 @@ export default function CopyInvoice({ route }: Props) {
                            COPY: Bam finalizes. */
                         <View style={styles.arkoorBanner}>
                             <Text bold style={styles.arkoorBannerTitle}>
-                                Custodial until refreshed
+                                {loc.cypherbox.payments.copy_invoice.arkoor_title}
                             </Text>
                             <Text style={styles.arkoorBannerBody}>
-                                A Lightning payment into your Bark vault should become
-                                spendable when it arrives, but it has no unilateral exit to
-                                Bitcoin until it finishes refreshing, which takes about 60
-                                minutes. Until then the Ark server could sweep it. Keep the
-                                app open.
+                                {loc.cypherbox.payments.copy_invoice.arkoor_body}
                             </Text>
                         </View>
                     )}
@@ -111,13 +108,13 @@ export default function CopyInvoice({ route }: Props) {
 
                     <Text semibold style={styles.code}>{shortenAddress(hash)}</Text>
                     <View style={styles.imageView}>
-                        <ImageTextVertical text="Copy" source={Copy} onPress={() => copyToClipboard(hash)} />
-                        <ImageTextVertical text="Share" source={Share2} onPress={shareQRCode} />
+                        <ImageTextVertical text={loc.cypherbox.payments.common.copy} source={Copy} onPress={() => copyToClipboard(hash)} />
+                        <ImageTextVertical text={loc.cypherbox.payments.common.share} source={Share2} onPress={shareQRCode} />
                     </View>
-                    <Text bold h3 style={styles.maintitle}>Copy this invoice code or share the QR with the sender to receive bitcoin</Text>
+                    <Text bold h3 style={styles.maintitle}>{loc.cypherbox.payments.copy_invoice.instructions}</Text>
                     <GradientButton
                         style={styles.homeButton}
-                        title="Home"
+                        title={loc.cypherbox.payments.common.home}
                         onPress={() => dispatchReset('HomeScreen')}
                         {...(isArk
                             ? {
@@ -133,7 +130,7 @@ export default function CopyInvoice({ route }: Props) {
                            all of them. */
                         <View style={styles.aspAttribution}>
                             <Text style={styles.aspAttributionText}>
-                                Ark capsules coordinated by
+                                {loc.cypherbox.payments.copy_invoice.asp_attribution}
                             </Text>
                             <Image
                                 source={Second}
