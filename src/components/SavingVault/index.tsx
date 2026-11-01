@@ -17,7 +17,7 @@ import { ProgressBar5, ProgressBarColdStorage } from "@Cypher/assets/images";
 import ProgressBar from "../ProgressBar";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, ltr } from "@Cypher/style-guide";
 import VaultCapsules from "../VaultCapsules";
 
 interface Props extends TouchableOpacityProps {
@@ -145,7 +145,8 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                     {bitcoinValue &&
                         <View style={[styles.bitcoin, { marginTop: 11, marginLeft: 6 }]}>
                             <Text h2 bold style={{ fontSize: 18 }}>{bitcoinValue} </Text>
-                            <Text h3>~ {inDollars}</Text>
+                            {/* The no-break space keeps a gap to the BTC amount when the row flips in RTL. */}
+                            <Text h3>{ltr(`~ ${inDollars}\u00A0`)}</Text>
                         </View>
                     }
 

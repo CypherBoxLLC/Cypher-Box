@@ -6,7 +6,7 @@ import SimpleToast from "react-native-simple-toast";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientCard, GradientTab, GradientText } from "@Cypher/components";
 import { CoinOS, Information, Line, Time } from "@Cypher/assets/images";
-import { colors, rtl } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
 import Items from "./Items";
 import Header from "./Header";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -456,7 +456,7 @@ export default function CheckAccount({ navigation, route }: any) {
                                                 <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                                                     onPress={() => selectClickHandler(item?.sats)}>
                                                     <Text bold style={[{ fontSize: 18 }, rtl.ltrText]}>{formatNumber(item?.sats) + " sats"}</Text>
-                                                    <Text style={[{ fontSize: 18, marginStart: 30 }, rtl.ltrText]}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
+                                                    <Text style={[{ fontSize: 18, marginStart: 30 }, rtl.ltrText]}>{ltr(`~$${(item?.sats * matchedRate * currency).toFixed(2)}`)}</Text>
                                                 </TouchableOpacity>
                                             )
                                         })}
@@ -504,7 +504,7 @@ export default function CheckAccount({ navigation, route }: any) {
                                                 <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                                                     onPress={() => selectRAClickHandler(item?.sats)}>
                                                     <Text bold style={[{ fontSize: 18 }, rtl.ltrText]}>{formatNumber(item?.sats) + " sats"}</Text>
-                                                    <Text style={[{ fontSize: 18, marginStart: 30 }, rtl.ltrText]}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
+                                                    <Text style={[{ fontSize: 18, marginStart: 30 }, rtl.ltrText]}>{ltr(`~$${(item?.sats * matchedRate * currency).toFixed(2)}`)}</Text>
                                                 </TouchableOpacity>
                                             )
                                         })}
