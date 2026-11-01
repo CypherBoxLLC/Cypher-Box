@@ -23,7 +23,7 @@ import {
 import { dispatchNavigate } from "@Cypher/helpers";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors, rtl, widths } from "@Cypher/style-guide";
+import { colors, ltr, rtl, widths } from "@Cypher/style-guide";
 import withdrawStyles from "../WithdrawList/styles";
 import sendStyles from "../SendListNew/styles";
 import Capsule from "../../HotStorageVault/Capsule";
@@ -590,7 +590,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   </Text>
                 </View>
                 <Text bold style={[{ fontSize: 13, color: '#aaa', marginHorizontal: 6 }, rtl.ltrText]} numberOfLines={1}>
-                  ~${totalUSD.toFixed(2)}
+                  {ltr(`~$${totalUSD.toFixed(2)}`)}
                 </Text>
                 <GradientView
                   onPress={handleTopup}

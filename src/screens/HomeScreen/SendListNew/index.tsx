@@ -23,7 +23,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors, rtl, widths } from "@Cypher/style-guide";
+import { colors, ltr, rtl, widths } from "@Cypher/style-guide";
 import styles from "./styles";
 import Capsule from "../../HotStorageVault/Capsule";
 import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
@@ -472,7 +472,7 @@ export default function SendListNew({ refRBSheet, reopenSendSheet, receiveType, 
                   </Text>
                 </View>
                 <Text bold style={[{ fontSize: 13, color: '#aaa', marginHorizontal: 6 }, rtl.ltrText]} numberOfLines={1}>
-                  ~${totalUSD.toFixed(2)}
+                  {ltr(`~$${totalUSD.toFixed(2)}`)}
                 </Text>
                 <GradientView
                     onPress={handleSend}

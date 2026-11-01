@@ -10,7 +10,7 @@ import { Input, LoadingSpinner, ScreenLayout, Text } from "@Cypher/component-lib
 import { Check, CoinOS, CoinOSSmall, Cold1, Edit, Electricity, Hot, StrikeFull } from "@Cypher/assets/images";
 import { GradientButton, GradientCard, GradientCardWithShadow, GradientText, ImageText, SwipeButton } from "@Cypher/components";
 import CustomProgressBar from "@Cypher/components/CustomProgressBar";
-import { colors, rtl } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate, dispatchReset, isIOS } from "@Cypher/helpers";
 import LinearGradient from "react-native-linear-gradient";
 import TextView from "./TextView";
@@ -1976,7 +1976,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                                     >
                                                         <Text bold style={{ fontSize: 13, color: '#fff' }}>{tier.label}</Text>
                                                         <Text style={[{ fontSize: 10, color: '#bbb', marginTop: 2 }, rtl.ltrText]}>{tierSats} sats</Text>
-                                                        <Text style={[{ fontSize: 10, color: '#bbb' }, rtl.ltrText]}>~{getStrikeCurrency(currency || 'USD')}{tierFiat}</Text>
+                                                        <Text style={[{ fontSize: 10, color: '#bbb' }, rtl.ltrText]}>{ltr(`~${getStrikeCurrency(currency || 'USD')}${tierFiat}`)}</Text>
                                                         <Text style={[{ fontSize: 10, color: '#bbb' }, rtl.ltrText]}>{tierPctStr}</Text>
                                                     </TouchableOpacity>
                                                 );
