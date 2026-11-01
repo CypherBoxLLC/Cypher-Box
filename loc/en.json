@@ -207,7 +207,8 @@
     "reset_amount_confirm": "Would you like to reset the amount?",
     "success_done": "Done",
     "txSaved": "The transaction file ({filePath}) has been saved in your Downloads folder.",
-    "problem_with_psbt": "Problem with PSBT"
+    "problem_with_psbt": "Problem with PSBT",
+    "scan_error": "Scan error"
   },
   "settings": {
     "about": "About",
