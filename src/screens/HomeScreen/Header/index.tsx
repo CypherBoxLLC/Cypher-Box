@@ -8,6 +8,7 @@ import { Text } from "@Cypher/component-library";
 import { dispatchNavigate, looksLikePsbt } from "@Cypher/helpers";
 import { startSigning } from "../../SignOnce/start";
 import loc from "../../../../loc";
+import { arabicFont } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
@@ -262,7 +263,7 @@ export default React.memo(function Header({
                     `subHeader` prop on @Cypher Text resolves to
                     fontSize 22 / lineHeight ~28 / Lato-Bold; we
                     replicate inline so visual weight is preserved. */}
-                <RNText style={{ fontSize: 22, fontFamily: 'Lato-Bold', color: '#FFF' }}>
+                <RNText style={[{ fontSize: 22, fontFamily: 'Lato-Bold', color: '#FFF' }, arabicFont({ fontFamily: 'Lato-Bold' })]}>
                     {loc.cypherbox.home.total_assets}
                 </RNText>
                 {/*

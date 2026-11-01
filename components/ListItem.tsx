@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { I18nManager, ActivityIndicator, TouchableOpacity, Switch, StyleSheet, Pressable, PressableProps, View } from 'react-native';
 import { ListItem as RNElementsListItem, Avatar } from 'react-native-elements'; // Replace with actual import paths
 import { useTheme } from './themes';
+import arabicFont from '../src/style-guide/arabicFont';
 
 // Update the type for the props
 interface ListItemProps {
@@ -63,7 +64,7 @@ const ListItem: React.FC<ListItemProps> = React.memo(props => {
   });
 
   const title = (
-    <RNElementsListItem.Title style={stylesHook.title} numberOfLines={0} accessible={props.switch === undefined}>
+    <RNElementsListItem.Title style={[stylesHook.title, arabicFont(stylesHook.title)]} numberOfLines={0} accessible={props.switch === undefined}>
       {props.title}
     </RNElementsListItem.Title>
   );
@@ -99,7 +100,7 @@ const ListItem: React.FC<ListItemProps> = React.memo(props => {
           <RNElementsListItem.Subtitle
             numberOfLines={props.subtitleNumberOfLines ?? 1}
             accessible={props.switch === undefined}
-            style={stylesHook.subtitle}
+            style={[stylesHook.subtitle, arabicFont(stylesHook.subtitle)]}
           >
             {props.subtitle}
           </RNElementsListItem.Subtitle>
@@ -107,7 +108,7 @@ const ListItem: React.FC<ListItemProps> = React.memo(props => {
       </RNElementsListItem.Content>
       {props.rightTitle && (
         <RNElementsListItem.Content right>
-          <RNElementsListItem.Title style={props.rightTitleStyle} numberOfLines={0} right>
+          <RNElementsListItem.Title style={[props.rightTitleStyle, arabicFont(props.rightTitleStyle)]} numberOfLines={0} right>
             {props.rightTitle}
           </RNElementsListItem.Title>
         </RNElementsListItem.Content>

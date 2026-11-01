@@ -1,6 +1,7 @@
 import React, { ReactNode } from 'react';
 import { LayoutChangeEvent, Text as RNText, TextStyle } from 'react-native';
 
+import { arabicFont } from '@Cypher/style-guide';
 import styles from './styles';
 
 export interface Props {
@@ -71,6 +72,23 @@ function Text({
   style,
   onLayout,
 }: Props) {
+  const composed = [
+    styles.default,
+    headline && styles.headline,
+    h1 && styles.h1,
+    h2 && styles.h2,
+    h3 && styles.h3,
+    h4 && styles.h4,
+    header && styles.header,
+    subHeader && styles.subHeader,
+    bold && styles.bold,
+    semibold && styles.semibold,
+    italic && styles.italic,
+    center && styles.center,
+    white && styles.white,
+    blue && styles.blue,
+    style && style,
+  ];
   return (
     <RNText
       textBreakStrategy="simple"
@@ -81,23 +99,7 @@ function Text({
       onPress={onPress}
       onLayout={onLayout}
       allowFontScaling={false}
-      style={[
-        styles.default,
-        headline && styles.headline,
-        h1 && styles.h1,
-        h2 && styles.h2,
-        h3 && styles.h3,
-        h4 && styles.h4,
-        header && styles.header,
-        subHeader && styles.subHeader,
-        bold && styles.bold,
-        semibold && styles.semibold,
-        italic && styles.italic,
-        center && styles.center,
-        white && styles.white,
-        blue && styles.blue,
-        style && style,
-      ]}>
+      style={[...composed, arabicFont(composed)]}>
       {children}
     </RNText>
   );
