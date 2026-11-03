@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Image, Platform, TouchableOpacity, View } from "react-native"
 import styles from "./styles";
 import { Text } from "@Cypher/component-library";
+import { rtl } from "@Cypher/style-guide";
 import { EyeVisible } from "@Cypher/assets/images";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -13,6 +14,7 @@ import { mnemonicToSeedQR, seedQRGrid } from "@Cypher/helpers/seedQR";
 import { dispatchNavigate } from "@Cypher/helpers";
 import SeedQRGrid from "../SeedQRGrid";
 import OfflineSeedWarning from "../OfflineSeedWarning";
+import loc from "../../../loc";
 
 interface Props {
     callNext(): void;
@@ -104,18 +106,18 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                 // full-screen SeedQR flow, which has room for the zoom and the scan
                 <View style={styles.seedQR}>
                     {Platform.OS === 'ios' ? (
-                        <Text style={styles.seedQRWarning}>Don't take a screenshot of this.</Text>
+                        <Text style={styles.seedQRWarning}>{loc.cypherbox.components.private_key_generator.no_screenshot}</Text>
                     ) : null}
                     <SeedQRGrid grid={grid} width={300} zoomable={false} />
                     <Text style={styles.seedQRNote}>
-                        Optional. With a SeedQR you can sign by scanning instead of typing your words.
+                        {loc.cypherbox.components.private_key_generator.seedqr_note}
                     </Text>
                     <TouchableOpacity
                         style={styles.checkBtn}
                         onPress={() => dispatchNavigate('SeedQRBackup', { walletID: wallet?.getID?.() })}
                         accessibilityRole="button"
                     >
-                        <Text h3>Copy it square by square</Text>
+                        <Text h3>{loc.cypherbox.components.private_key_generator.copy_square}</Text>
                     </TouchableOpacity>
                 </View>
             ) : (
@@ -124,7 +126,7 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                 {secretList.map((secret, index) => (
                     <TouchableOpacity key={index} style={styles.button}>
                         {/* the words showed faintly through the reveal overlay, so they aren't drawn until View */}
-                        <Text h4 style={styles.buttonText}>{`${secret.id}. ${isView ? secret.label : '••••••'}`}</Text>
+                        <Text h4 style={[styles.buttonText, rtl.ltrText]}>{`${secret.id}. ${isView ? secret.label : '••••••'}`}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
@@ -148,12 +150,12 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                     <View style={[styles.hideView, styles.hideOverlay]}>
                         <View style={styles.centerView}>
                             <View>
-                                <Text style={styles.title} center>Tap to reveal your seed phrase</Text>
-                                <Text style={styles.detail} center>Make sure no one is watching your screen.</Text>
+                                <Text style={styles.title} center>{loc.cypherbox.components.private_key_generator.tap_to_reveal}</Text>
+                                <Text style={styles.detail} center>{loc.cypherbox.components.private_key_generator.no_one_watching}</Text>
                             </View>
                             <TouchableOpacity style={styles.viewStyle} onPress={viewClickHandler}>
                                 <Image source={EyeVisible} />
-                                <Text h3 style={styles.viewBtn}>View</Text>
+                                <Text h3 style={styles.viewBtn}>{loc.cypherbox.components.private_key_generator.view}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

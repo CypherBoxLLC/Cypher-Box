@@ -5,6 +5,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import Svg, { Path, Defs, Pattern, Use, Image as RnSvgImage } from "react-native-svg"
 import CheckBox from '@react-native-community/checkbox';
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
 const { width } = Dimensions.get('screen')
 import { Start, StartNotActive } from "@Cypher/assets/images";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -169,21 +170,21 @@ export default function GetStartedScreen({ route }: Props) {
                 {returningUser ? (
                     <View style={[styles.textContainer, { alignItems: 'center', marginTop: 20 }]}>
                         <Text style={{ color: '#ddd', marginHorizontal: 24, textAlign: 'center', fontStyle: 'italic', fontSize: 15, lineHeight: 22 }}>
-                            "It might make sense just to get some in case it catches on."
+                            {loc.cypherbox.get_started.satoshi_quote}
                         </Text>
                         <Text style={{ color: '#888', marginTop: 10, textAlign: 'center', fontSize: 12 }}>
-                            - Satoshi Nakamoto
+                            {loc.cypherbox.get_started.satoshi_quote_author}
                         </Text>
                         <Text h3 style={{ color: '#888', marginTop: 28, textAlign: 'center' }}>
-                            We've updated our Terms of Service{'\n'}& Privacy Policy
+                            {loc.cypherbox.get_started.tos_updated}
                         </Text>
                     </View>
                 ) : (
                     <>
                         <View style={styles.textContainer}>
-                            <Text h2>{'\u2022'}{' '}A 'sat' is a tiny fraction of a Bitcoin</Text>
-                            <Text h2>{'\u2022'}{' '}100M sats equal 1 Bitcoin</Text>
-                            <Text h2>{'\u2022'}{' '}There will only ever be 21M Bitcoin</Text>
+                            <Text h2>{'\u2022'}{' '}{loc.cypherbox.welcome.sat_fraction}</Text>
+                            <Text h2>{'\u2022'}{' '}{loc.cypherbox.welcome.sats_per_bitcoin}</Text>
+                            <Text h2>{'\u2022'}{' '}{loc.cypherbox.welcome.max_supply}</Text>
                         </View>
                         <GoodLuck />
                     </>
@@ -202,11 +203,11 @@ export default function GetStartedScreen({ route }: Props) {
                         onValueChange={(newValue) => toggleHasAcceptedTermsOfService(newValue)}
                     />
                     <View>
-                        <Text h3>By checking this box, you  agree to the {' '}
+                        <Text h3>{loc.cypherbox.get_started.tos_agree}{' '}
                         </Text>
                         <TouchableOpacity onPress={handleTermOfServicePress}>
                             <GradientText style={styles.textStyle}>
-                                Terms of Service and Privacy Policy
+                                {loc.cypherbox.get_started.tos_link}
                             </GradientText>
                         </TouchableOpacity>
 

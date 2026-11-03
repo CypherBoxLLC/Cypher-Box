@@ -47,7 +47,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 
 // *** Custom component
 import Text from '../Text';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import ImageView from '../ImageView';
 import { Back, Close } from '@Cypher/assets/images';
 import { Progress } from '@Cypher/components';
@@ -133,7 +133,7 @@ function ScreenLayout({
                 onPress={handledBackPress}>
                 <ImageView
                   image={Back}
-                  imageStyle={{ width: 30, height: 28, tintColor: '#FFFFFF' }}
+                  imageStyle={[{ width: 30, height: 28, tintColor: '#FFFFFF' }, rtl.mirror]}
                   style={{ width: 30, height: 28 }}
                 />
               </TouchableOpacity>

@@ -3,6 +3,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import styles from "./styles";
 import { Image, TouchableOpacity, View } from "react-native";
 import { Close, GradientShock } from "@Cypher/assets/images";
+import loc from "../../../../loc";
 
 interface Props {
     navigation: any;
@@ -21,12 +22,12 @@ export default function PaymentSuccess({ navigation, route }: Props) {
                 <Image source={Close} style={styles.close} />
             </TouchableOpacity> */}
             <View style={styles.container}>
-                <Text semibold style={styles.title}>Payment Sent</Text>
+                <Text semibold style={styles.title}>{loc.cypherbox.strike.payment_success.payment_sent}</Text>
                 <Text semibold style={styles.value}>10,000 sats</Text>
                 <Text semibold style={styles.value}>$8.78</Text>
-                <Text bold style={styles.to}>To: Satoshi@cypherbox.io</Text>
+                <Text bold style={styles.to}>{loc.formatString(loc.cypherbox.strike.payment_success.to, { recipient: 'Satoshi@cypherbox.io' })}</Text>
                 <Image source={GradientShock} style={styles.image} />
-                <Text semibold style={styles.accType}>Lightning Network</Text>
+                <Text semibold style={styles.accType}>{loc.cypherbox.strike.payment_success.lightning_network}</Text>
             </View>
         </ScreenLayout>
     )

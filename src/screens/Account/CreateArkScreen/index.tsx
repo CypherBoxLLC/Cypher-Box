@@ -15,6 +15,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 import styles from "./styles";
+import loc from "../../../../loc";
 
 const SECOND_TERMS_URL = "https://second.tech/terms";
 
@@ -122,10 +123,10 @@ export default function CreateArkScreen() {
                 if (result.reason !== "already-open") {
                     setExistingError(
                         result.reason === "no-keychain"
-                            ? "Seed phrase isn't on this device. Tap Reset to start over."
+                            ? loc.cypherbox.account.create_ark.err_no_keychain
                             : result.reason === "open-failed"
-                            ? "Wallet state and seed don't match. Tap Reset to start over."
-                            : `Couldn't reopen wallet (${result.reason}).`,
+                            ? loc.cypherbox.account.create_ark.err_open_failed
+                            : String(loc.formatString(loc.cypherbox.account.create_ark.err_reopen, { reason: result.reason })),
                     );
                     setOpeningExisting(false);
                     return;
@@ -146,7 +147,7 @@ export default function CreateArkScreen() {
             setOpeningExisting(false);
             dispatchReset("HomeScreen", { isComplete: true });
         } catch (err) {
-            setExistingError((err as Error)?.message ?? "Failed to open existing wallet");
+            setExistingError((err as Error)?.message ?? loc.cypherbox.account.create_ark.err_open_existing);
             setOpeningExisting(false);
         }
     };
@@ -159,21 +160,21 @@ export default function CreateArkScreen() {
         // protection against a user who hits Create on an unrelated
         // device and would otherwise wipe a wallet that's not theirs.
         Alert.alert(
-            "Reset Ark wallet on this device?",
-            "This deletes the wallet's local state AND removes the seed phrase from your Keychain.\n\nWithout your written-down seed phrase AND your encrypted .cbark backup file, any funds in this wallet become permanently unrecoverable.\n\nOnly continue if:\n• You don't own this wallet (e.g. previous device owner), OR\n• You've written down your seed AND saved your backup file elsewhere",
+            loc.cypherbox.account.create_ark.reset_title,
+            loc.cypherbox.account.create_ark.reset_body,
             [
-                { text: "Cancel", style: "cancel" },
+                { text: loc._.cancel, style: "cancel" },
                 {
-                    text: "Continue…",
+                    text: loc.cypherbox.account.create_ark.continue_ellipsis,
                     style: "destructive",
                     onPress: () => {
                         Alert.alert(
-                            "Last chance, really reset?",
-                            "Tap 'Reset & wipe' to permanently delete the Ark wallet state on this device. This cannot be undone from inside the app.",
+                            loc.cypherbox.account.create_ark.last_chance_title,
+                            loc.cypherbox.account.create_ark.last_chance_body,
                             [
-                                { text: "Cancel", style: "cancel" },
+                                { text: loc._.cancel, style: "cancel" },
                                 {
-                                    text: "Reset & wipe",
+                                    text: loc.cypherbox.account.create_ark.reset_wipe,
                                     style: "destructive",
                                     onPress: async () => {
                                         setResetting(true);
@@ -244,7 +245,7 @@ export default function CreateArkScreen() {
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={colors.ark.light} />
                     <Text style={styles.loadingText}>
-                        {loading ? "Creating Ark wallet…" : "Checking Ark state…"}
+                        {loading ? loc.cypherbox.account.common.creating_ark_wallet : loc.cypherbox.account.create_ark.checking}
                     </Text>
                 </View>
             </ScreenLayout>
@@ -255,17 +256,15 @@ export default function CreateArkScreen() {
         return (
             <ScreenLayout showToolbar>
                 <View style={styles.container}>
-                    <HeaderWithLine title="Existing Ark Wallet" />
+                    <HeaderWithLine title={loc.cypherbox.account.create_ark.existing_header} />
 
                     <View style={styles.content}>
-                        <Text style={styles.warnTitle}>An Ark wallet already exists</Text>
+                        <Text style={styles.warnTitle}>{loc.cypherbox.account.create_ark.exists_title}</Text>
                         <Text style={styles.warnBody}>
-                            An Ark wallet was found on this device. Open it to resume
-                            using the seed in your Keychain.
+                            {loc.cypherbox.account.create_ark.exists_body_1}
                         </Text>
                         <Text style={styles.warnBody}>
-                            If this wallet isn't yours, or the seed no longer matches, tap
-                            Reset to delete everything and start over.
+                            {loc.cypherbox.account.create_ark.exists_body_2}
                         </Text>
 
                         {existingError && (
@@ -274,7 +273,7 @@ export default function CreateArkScreen() {
                     </View>
 
                     <Button
-                        text={openingExisting ? "Opening…" : "Open existing wallet"}
+                        text={openingExisting ? loc.cypherbox.account.create_ark.opening : loc.cypherbox.account.create_ark.open_existing}
                         onPress={handleOpenExisting}
                         style={styles.button}
                         textStyle={styles.btnText}
@@ -302,11 +301,11 @@ export default function CreateArkScreen() {
                         }}
                     >
                         <Text bold style={{ color: "#FF5A5A", fontSize: 13 }}>
-                            {resetting ? "Resetting…" : "Reset & wipe this wallet"}
+                            {resetting ? loc.cypherbox.account.create_ark.resetting : loc.cypherbox.account.create_ark.reset_wipe_wallet}
                         </Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => dispatchNavigate("HomeScreen")}>
-                        <Text style={styles.cancelText}>Cancel</Text>
+                        <Text style={styles.cancelText}>{loc._.cancel}</Text>
                     </TouchableOpacity>
                 </View>
             </ScreenLayout>
@@ -316,35 +315,30 @@ export default function CreateArkScreen() {
     return (
         <ScreenLayout showToolbar>
             <View style={styles.container}>
-                <HeaderWithLine title="Create Ark Wallet" />
+                <HeaderWithLine title={loc.cypherbox.account.create_ark.header} />
 
                 <View style={styles.content}>
-                    <Text style={styles.warnTitle}>⚠ Experimental</Text>
+                    <Text style={styles.warnTitle}>{loc.cypherbox.account.create_ark.experimental}</Text>
                     <Text style={styles.warnBody}>
-                        Ark is a new Bitcoin Layer 2 protocol (by Second.tech). It enables
-                        cheap non-custodial Lightning-style payments. The SDK is still
-                        pre-1.0, so treat it as experimental.
+                        {loc.cypherbox.account.create_ark.experimental_body}
                     </Text>
                     <Text style={styles.warnBody}>
-                        Recovery always needs your seed phrase. Your backup file
-                        (.cbark) is encrypted with that seed, so it can never restore
-                        anything on its own, and it brings back capsule state the
-                        server scan can miss. Keep both, and never lose the seed.
+                        {loc.cypherbox.account.create_ark.recovery_body}
                     </Text>
 
                     <View style={styles.divider} />
 
-                    <Text style={styles.sectionTitle}>Seed source</Text>
+                    <Text style={styles.sectionTitle}>{loc.cypherbox.account.create_ark.seed_source}</Text>
 
                     <View style={styles.toggleRow}>
                         <View style={{ flex: 1 }}>
                             <Text bold style={styles.toggleLabel}>
-                                Use Hot Vault seed
+                                {loc.cypherbox.account.create_ark.use_hot_vault_seed}
                             </Text>
                             <Text style={styles.toggleSub}>
                                 {hasHotVault
-                                    ? "Derive Ark wallet from your existing hot vault mnemonic."
-                                    : "No hot vault found. A fresh seed will be generated."}
+                                    ? loc.cypherbox.account.create_ark.derive_from_hot
+                                    : loc.cypherbox.account.create_ark.no_hot_vault}
                             </Text>
                         </View>
                         <Switch
@@ -358,34 +352,34 @@ export default function CreateArkScreen() {
 
                     <Text style={styles.infoText}>
                         {arkUseHotVaultSeed && hasHotVault
-                            ? "🔒 Ark will share the same seed as your Hot Vault. A leak of the mnemonic compromises both."
-                            : "🔑 A fresh Ark-only seed will be generated and stored securely."}
+                            ? loc.cypherbox.account.create_ark.shared_seed_warning
+                            : loc.cypherbox.account.create_ark.fresh_seed_info}
                     </Text>
 
                     <View style={styles.divider} />
 
-                    <Text style={styles.sectionTitle}>What to know</Text>
-                    <Text style={styles.bullet}>• Single server operator (Second.tech) sees your payment activity.</Text>
-                    <Text style={styles.bullet}>• Balance state is on-device. Back up your app before wiping.</Text>
-                    <Text style={styles.bullet}>• Can receive Lightning payments and on-chain deposits (board).</Text>
+                    <Text style={styles.sectionTitle}>{loc.cypherbox.account.create_ark.what_to_know}</Text>
+                    <Text style={styles.bullet}>{loc.cypherbox.account.create_ark.bullet_operator}</Text>
+                    <Text style={styles.bullet}>{loc.cypherbox.account.create_ark.bullet_balance}</Text>
+                    <Text style={styles.bullet}>{loc.cypherbox.account.create_ark.bullet_receive}</Text>
                     {/* Second's terms bind anyone whose wallet connects to their
                         Ark server, so Bark Vault users are their users too even
                         though they never see a Second-branded screen. Surface the
                         link here, at the moment of funding, not only in our ToS. */}
-                    <Text style={styles.bullet}>• You also become a Second.tech user under their own terms:</Text>
+                    <Text style={styles.bullet}>{loc.cypherbox.account.create_ark.bullet_terms}</Text>
                     <Text style={styles.link} onPress={() => Linking.openURL(SECOND_TERMS_URL)}>
                         second.tech/terms
                     </Text>
                 </View>
 
                 <Button
-                    text="Create Ark Wallet"
+                    text={loc.cypherbox.account.create_ark.header}
                     onPress={handleCreate}
                     style={styles.button}
                     textStyle={styles.btnText}
                 />
                 <TouchableOpacity onPress={() => dispatchNavigate("HomeScreen")}>
-                    <Text style={styles.cancelText}>Cancel</Text>
+                    <Text style={styles.cancelText}>{loc._.cancel}</Text>
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

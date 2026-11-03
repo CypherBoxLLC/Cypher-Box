@@ -10,6 +10,7 @@ import { TouchableOpacity, View } from "react-native";
 import Modal from "react-native-modal";
 import { getFiatRate } from "../../../../models/fiatUnit";
 import styles from "./styles";
+import loc from "../../../../loc";
 
 /**
  * ArkThreshold — picker UI for the Ark vault's withdraw trigger + spending
@@ -132,8 +133,8 @@ export default function ArkThreshold({ matchedRate, currency }: Props) {
   // not hard caps.
   const customizeClickHandler = (index: number) => {
     dispatchNavigate("WithdrawThreshold", {
-      title: index === 0 ? "Ark Withdraw Threshold" : "Ark Reserve Amount",
-      titleBtn: index === 0 ? "Set Threshold" : "Set Reserve Amount",
+      title: index === 0 ? loc.cypherbox.strike.ark_threshold.ark_withdraw_threshold : loc.cypherbox.strike.ark_threshold.ark_reserve_amount,
+      titleBtn: index === 0 ? loc.cypherbox.strike.ark_threshold.set_threshold : loc.cypherbox.strike.ark_threshold.set_reserve_amount,
       onSelect: onSelect,
       index,
       matchedRate,
@@ -144,7 +145,7 @@ export default function ArkThreshold({ matchedRate, currency }: Props) {
       // reserve in a per-tx band, not a savings band.
       minSats: index === 0 ? 50_000 : 50_000,
       maxSats: index === 0 ? 10_000_000 : 1_000_000,
-      kindLabel: "Ark vault",
+      kindLabel: loc.cypherbox.strike.ark_threshold.ark_vault,
       // Ark surface uses the yellow palette instead of the default pink,
       // and hides the MAX shortcut — "max" doesn't mean anything when
       // setting a withdrawal threshold or reserve floor (it's not bounded
@@ -167,11 +168,10 @@ export default function ArkThreshold({ matchedRate, currency }: Props) {
   return (
     <View style={{ marginTop: 12, marginHorizontal: 16 }}>
       <Text h2 semibold>
-        Withdraw Threshold
+        {loc.cypherbox.strike.ark_threshold.withdraw_threshold}
       </Text>
       <Text style={{ marginTop: 6 }}>
-        When your Ark vault balance crosses this amount, you'll be prompted to
-        move funds into deeper self-custody: your Hot or Cold Vault.
+        {loc.cypherbox.strike.ark_threshold.threshold_description}
       </Text>
 
       {/* Wide dark-rectangle dropdown — matches the new picker design used
@@ -195,7 +195,7 @@ export default function ArkThreshold({ matchedRate, currency }: Props) {
         <Text bold style={{ fontSize: 16 }}>
           {formatNumber(value)} sats
         </Text>
-        <Text style={{ fontSize: 13, color: "#AAAAAA" }}>Tap to change</Text>
+        <Text style={{ fontSize: 13, color: "#AAAAAA" }}>{loc.cypherbox.strike.ark_threshold.tap_to_change}</Text>
       </TouchableOpacity>
       <Modal
         isVisible={isModalVisible}
@@ -234,7 +234,7 @@ export default function ArkThreshold({ matchedRate, currency }: Props) {
           style={styles.gradientText}
           colors_={[colors.ark.light, colors.ark.main]}
         >
-          Customize
+          {loc.cypherbox.strike.ark_threshold.customize}
         </GradientText>
       </TouchableOpacity>
 
@@ -243,12 +243,11 @@ export default function ArkThreshold({ matchedRate, currency }: Props) {
           a withdraw won't drop below. */}
       <View style={styles.reserve}>
         <Text h2 semibold>
-          Reserve Amount
+          {loc.cypherbox.strike.ark_threshold.reserve_amount}
         </Text>
       </View>
       <Text style={{ marginTop: 6 }}>
-        Sats kept in your Ark vault after a withdrawal: your spending buffer
-        for everyday Lightning sends.
+        {loc.cypherbox.strike.ark_threshold.reserve_description}
       </Text>
       <TouchableOpacity
         onPress={() => setModalRAVisible(true)}
@@ -268,7 +267,7 @@ export default function ArkThreshold({ matchedRate, currency }: Props) {
         <Text bold style={{ fontSize: 16 }}>
           {formatNumber(reserveAmt)} sats
         </Text>
-        <Text style={{ fontSize: 13, color: "#AAAAAA" }}>Tap to change</Text>
+        <Text style={{ fontSize: 13, color: "#AAAAAA" }}>{loc.cypherbox.strike.ark_threshold.tap_to_change}</Text>
       </TouchableOpacity>
       <Text center style={[styles.usd, { marginTop: 20 }]}>
         {getStrikeCurrency(currency || "USD")}
@@ -279,7 +278,7 @@ export default function ArkThreshold({ matchedRate, currency }: Props) {
           style={styles.gradientText}
           colors_={[colors.ark.light, colors.ark.main]}
         >
-          Customize
+          {loc.cypherbox.strike.ark_threshold.customize}
         </GradientText>
       </TouchableOpacity>
       <Modal

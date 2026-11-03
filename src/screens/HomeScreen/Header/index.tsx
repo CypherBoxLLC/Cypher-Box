@@ -7,6 +7,8 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import { Text } from "@Cypher/component-library";
 import { dispatchNavigate, looksLikePsbt } from "@Cypher/helpers";
 import { startSigning } from "../../SignOnce/start";
+import loc from "../../../../loc";
+import { arabicFont } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
@@ -111,7 +113,7 @@ export default React.memo(function Header({
                 })
                 .catch((err: any) => {
                     console.warn('[Home/scan] camera authorization failed:', err?.message ?? err);
-                    SimpleToast.show('Camera permission needed to scan', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.home.camera_permission_scan, SimpleToast.SHORT);
                     resolve(null);
                 });
         });
@@ -134,8 +136,8 @@ export default React.memo(function Header({
         if (!vaultWallet) {
             SimpleToast.show(
                 which === 'hot'
-                    ? 'Hot Vault not ready. Open the vault once and try again.'
-                    : 'Cold Vault not ready. Open the vault once and try again.',
+                    ? loc.cypherbox.home.hot_vault_not_ready
+                    : loc.cypherbox.home.cold_vault_not_ready,
                 SimpleToast.LONG,
             );
             return;
@@ -149,7 +151,7 @@ export default React.memo(function Header({
             (a: any, b: any) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout,
         );
         if (!utxoList || utxoList.length === 0) {
-            SimpleToast.show('No spendable capsules in this vault', SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.home.no_spendable_capsules, SimpleToast.LONG);
             return;
         }
         const capsulesData = utxoList.map((u: any) => ({
@@ -261,8 +263,8 @@ export default React.memo(function Header({
                     `subHeader` prop on @Cypher Text resolves to
                     fontSize 22 / lineHeight ~28 / Lato-Bold; we
                     replicate inline so visual weight is preserved. */}
-                <RNText style={{ fontSize: 22, fontFamily: 'Lato-Bold', color: '#FFF' }}>
-                    Total Assets
+                <RNText style={[{ fontSize: 22, fontFamily: 'Lato-Bold', color: '#FFF' }, arabicFont({ fontFamily: 'Lato-Bold' })]}>
+                    {loc.cypherbox.home.total_assets}
                 </RNText>
                 {/*
                   Right-side action row — scan first, then settings. Bam's
@@ -275,7 +277,7 @@ export default React.memo(function Header({
                         activeOpacity={0.6}
                         style={styles.imageView}
                         onPress={toggleActivityDropdown}
-                        accessibilityLabel="Activity"
+                        accessibilityLabel={loc.cypherbox.home.activity_a11y}
                     >
                         <Ionicons name="notifications-outline" size={28} color="#FFFFFF" />
                     </TouchableOpacity>

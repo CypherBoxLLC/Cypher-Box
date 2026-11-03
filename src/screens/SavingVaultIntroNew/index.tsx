@@ -5,6 +5,7 @@ import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
 import LinearGradient from "react-native-linear-gradient";
+import loc from "../../../loc";
 
 export default function SavingVaultIntroNew() {
 
@@ -19,15 +20,15 @@ export default function SavingVaultIntroNew() {
         <ScreenLayout showToolbar>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text bold subHeader style={styles.title}>Savings Vault</Text>
-                    <Text bold h3 style={styles.descption}><Text bold h3 style={StyleSheet.flatten([styles.descption, { color: '#FFC92C' }])}>Careful: </Text>This features is highly advanced and may lead to a loss of access to your funds. Cypher Box will gradually guide you through proper security measures and allow you to create vaults as you progress in your bitcoin journey.</Text>
+                    <Text bold subHeader style={styles.title}>{loc.cypherbox.vault.saving_vault_intro_new.title}</Text>
+                    <Text bold h3 style={styles.descption}>{loc.formatString(loc.cypherbox.vault.saving_vault_intro_new.warning, { careful: <Text bold h3 style={StyleSheet.flatten([styles.descption, { color: '#FFC92C' }])}>{loc.cypherbox.vault.saving_vault_intro_new.careful}</Text> })}</Text>
                     <Text bold h3 style={StyleSheet.flatten([styles.descption, { color: colors.green, marginTop: 0 }])}>
                         <Text bold h3 >
-                            Already have one?
-                        </Text> Recover
+                            {loc.cypherbox.vault.saving_vault_intro_new.already_have_one}
+                        </Text> {loc.cypherbox.vault.saving_vault_intro_new.recover}
                     </Text>
                 </View>
-                <Button text="Home" onPress={homeClickHandler} style={styles.button} textStyle={styles.btnText} />
+                <Button text={loc.cypherbox.vault.saving_vault_intro_new.home} onPress={homeClickHandler} style={styles.button} textStyle={styles.btnText} />
                 <TouchableOpacity onPress={riskClickHandler}>
                     <LinearGradient
                         colors={[colors.black.top, colors.black.bottom]}
@@ -36,7 +37,7 @@ export default function SavingVaultIntroNew() {
                         locations={[0.25, 1]}
                         style={styles.linearGradient}>
                         <Text h3 style={styles.buttonText}>
-                            I understand the risks
+                            {loc.cypherbox.vault.saving_vault_intro_new.understand_risks}
                         </Text>
                     </LinearGradient>
                 </TouchableOpacity>

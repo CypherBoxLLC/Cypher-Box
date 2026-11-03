@@ -2,11 +2,12 @@ import React, { useContext, useEffect, useState, useRef } from "react";
 import { Linking, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import styles from "./styles";
+import loc from "../../../loc";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import TextView from "./TextView";
 import { btc } from "@Cypher/helpers/coinosHelper";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import RBSheet from "react-native-raw-bottom-sheet";
 import { HDSegwitBech32Wallet, HDSegwitBech32Transaction } from "../../../class";
@@ -121,13 +122,13 @@ export default function SendReceiveOnChain({ route }: Props) {
         try {
             const walletInstance = findWalletForTransaction();
             if (!walletInstance) {
-                alert('No wallet available for this transaction');
+                alert(loc.cypherbox.payments.send_receive_on_chain.no_wallet_for_tx);
                 setIsRBFLoading(false);
                 return;
             }
 
             if (walletInstance.type !== HDSegwitBech32Wallet.type) {
-                alert('Acceleration is only available for native SegWit (bc1) wallets');
+                alert(loc.cypherbox.payments.send_receive_on_chain.segwit_only);
                 setIsRBFLoading(false);
                 return;
             }
@@ -141,13 +142,13 @@ export default function SendReceiveOnChain({ route }: Props) {
             const isOurReceive = await txObject.isToUsTransaction();
 
             if (!isOurSend && !isOurReceive) {
-                alert('This transaction does not involve the current wallet');
+                alert(loc.cypherbox.payments.send_receive_on_chain.tx_not_in_wallet);
                 setIsRBFLoading(false);
                 return;
             }
 
             if (confirmations > 0) {
-                alert('This transaction is already confirmed');
+                alert(loc.cypherbox.payments.send_receive_on_chain.already_confirmed);
                 setIsRBFLoading(false);
                 return;
             }
@@ -158,7 +159,7 @@ export default function SendReceiveOnChain({ route }: Props) {
             if (isOurSend) {
                 const isReplaceable = await txObject.isSequenceReplaceable();
                 if (!isReplaceable) {
-                    alert('This transaction was not created with RBF enabled');
+                    alert(loc.cypherbox.payments.send_receive_on_chain.rbf_not_enabled);
                     setIsRBFLoading(false);
                     return;
                 }
@@ -181,7 +182,7 @@ export default function SendReceiveOnChain({ route }: Props) {
             rbfSheetRef.current?.open();
         } catch (error) {
             console.error('Accelerate prep error:', error);
-            alert('Unable to accelerate transaction: ' + error.message);
+            alert(String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.accelerate_prep_failed, { error: error.message })));
         }
         setIsRBFLoading(false);
     };
@@ -196,20 +197,20 @@ export default function SendReceiveOnChain({ route }: Props) {
         try {
             const walletInstance = (rbfTx as any)._wallet || findWalletForTransaction();
             if (!walletInstance) {
-                alert('No wallet available for broadcasting');
+                alert(loc.cypherbox.payments.send_receive_on_chain.no_wallet_for_broadcast);
                 setIsRBFSubmitting(false);
                 return;
             }
 
             const feeRateNumber = parseInt(newFeeRate, 10);
             if (isNaN(feeRateNumber)) {
-                alert('Please enter a valid fee rate');
+                alert(loc.cypherbox.payments.send_receive_on_chain.invalid_fee_rate);
                 setIsRBFSubmitting(false);
                 return;
             }
 
             if (currentFeeRate && feeRateNumber <= currentFeeRate) {
-                alert('New fee rate must be higher than current rate');
+                alert(loc.cypherbox.payments.send_receive_on_chain.fee_rate_too_low);
                 setIsRBFSubmitting(false);
                 return;
             }
@@ -232,14 +233,14 @@ export default function SendReceiveOnChain({ route }: Props) {
             // a real test. Returns Promise<boolean>; throws on transport
             // error and resolves to false on a typed server rejection.
             const ok = await walletInstance.broadcastTx(newTx.toHex());
-            if (!ok) throw new Error('Broadcast rejected by the network');
+            if (!ok) throw new Error(loc.cypherbox.payments.send_receive_on_chain.broadcast_rejected);
             console.log((isSent ? 'RBF' : 'CPFP') + ' transaction broadcasted:', newTx.getId());
 
             rbfSheetRef.current?.close();
             navigateToBroadcastScreen(feeRateNumber, newTx.getId(), isSent ? 'rbf' : 'cpfp');
         } catch (error) {
             console.error('Accelerate error:', error);
-            alert('Failed to accelerate transaction: ' + error.message);
+            alert(String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.accelerate_failed, { error: error.message })));
         }
         setIsRBFSubmitting(false);
     };
@@ -269,40 +270,40 @@ export default function SendReceiveOnChain({ route }: Props) {
     console.log('transaction?.confirmations: ', transaction)
     console.log('tx: ', tx)
     return (
-        <ScreenLayout showToolbar isBackButton title="Review Transaction">
+        <ScreenLayout showToolbar isBackButton title={loc.cypherbox.payments.send_receive_on_chain.title}>
             <View style={styles.main}>
                 <View style={styles.valueView}>
-                    <Text semibold center style={StyleSheet.flatten([styles.sats, { color: isSent ? '#FD7A68' : '#4FBF67' }])}>{amountSign+BTCAmount}</Text>
-                    <Text bold subHeader>{'$'+dollarAmount.toFixed(2)}</Text>
+                    <Text semibold center style={StyleSheet.flatten([styles.sats, { color: isSent ? '#FD7A68' : '#4FBF67' }, rtl.ltrText])}>{amountSign+BTCAmount}</Text>
+                    <Text bold subHeader style={rtl.ltrText}>{'$'+dollarAmount.toFixed(2)}</Text>
                 </View>
-                <TextView keytext="Sent from: " text={`Bitcoin Address: ${shortenAddress(transaction?.inputs[0].addresses[0])}`} />
-                <TextView keytext="Received to: " text={`Bitcoin Address: ${shortenAddress(transaction?.outputs[0].scriptPubKey.addresses[0])}`} />
+                <TextView keytext={loc.cypherbox.payments.common.sent_from_label} text={String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.bitcoin_address_value, { address: shortenAddress(transaction?.inputs[0].addresses[0]) }))} />
+                <TextView keytext={loc.cypherbox.payments.send_receive_on_chain.received_to} text={String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.bitcoin_address_value, { address: shortenAddress(transaction?.outputs[0].scriptPubKey.addresses[0]) }))} />
                 {/* Confirmation count, shown for every on-chain tx (sent or
                     received). Mirrors transactionStatus.js's "6+" cap so the
                     two detail screens read consistently. Uses the static
                     transaction.confirmations (same value the Status row uses);
                     it refreshes when the History list re-fetches and the user
                     reopens the tx. */}
-                <TextView keytext="Confirmations: " text={(transaction?.confirmations ?? 0) > 6 ? '6+' : `${transaction?.confirmations ?? 0}`} />
+                <TextView keytext={loc.cypherbox.payments.send_receive_on_chain.confirmations} text={(transaction?.confirmations ?? 0) > 6 ? '6+' : `${transaction?.confirmations ?? 0}`} />
                 {isSent &&
                     <>
-                        <TextView keytext="Status: " text={
+                        <TextView keytext={loc.cypherbox.payments.send_receive_on_chain.status} text={
                           transaction.confirmations > 0 ? 
                             transaction?.confirmations > 3 ? 
-                            "Received" : 
-                            "Sent"
-                        : "Pending"} />
+                            loc.cypherbox.payments.send_receive_on_chain.status_received : 
+                            loc.cypherbox.payments.send_receive_on_chain.status_sent
+                        : loc.cypherbox.payments.send_receive_on_chain.status_pending} />
                         {tx?.fee &&
-                            <TextView keytext="Network fee: " text={tx?.fee} />                        
+                            <TextView keytext={loc.cypherbox.payments.send_receive_on_chain.network_fee} text={tx?.fee} />                        
                         }
                         {/* <TextView keytext="Service fee: " text="~ 400 sats" />
                         <TextView keytext="Total fee: " text="~ 5,400 sats (~ 0.1%)" /> */}
                     </>
                 }
                 
-                <TextView keytext="Date:  " text={dayjs(tx?.received).format('HH:mm:ss MM/DD/YYYY')} />
+                <TextView keytext={loc.cypherbox.payments.common.date_label} text={dayjs(tx?.received).format('HH:mm:ss MM/DD/YYYY')} />
                 {/* {!isSent && <TextView keytext="At bitcoin exchange rate: " text={'$'+matchedRate} />} */}
-                <TextView keytext="Txid:  " text={transaction?.txid} />
+                <TextView keytext={loc.cypherbox.payments.common.txid_label} text={transaction?.txid} textStyle={rtl.ltrText} />
 
                 {transaction.confirmations == 0 && !cpfpAccelerator &&
                     <TouchableOpacity
@@ -310,7 +311,7 @@ export default function SendReceiveOnChain({ route }: Props) {
                         onPress={handleAccelerateTransaction}
                         disabled={isRBFLoading}
                     >
-                        <Text bold h4 style={styles.text}>{isRBFLoading ? 'Preparing...' : 'Accelerate transaction'}</Text>
+                        <Text bold h4 style={styles.text}>{isRBFLoading ? loc.cypherbox.payments.send_receive_on_chain.preparing : loc.cypherbox.payments.send_receive_on_chain.accelerate_transaction}</Text>
                     </TouchableOpacity>
                 }
                 {transaction.confirmations == 0 && cpfpAccelerator &&
@@ -337,17 +338,17 @@ export default function SendReceiveOnChain({ route }: Props) {
                     >
                         <View style={{ flex: 1 }}>
                             <Text semibold style={{ color: '#FFD54F', fontSize: 13 }}>
-                                ⚡ Accelerated with CPFP
+                                {loc.cypherbox.payments.send_receive_on_chain.accelerated_with_cpfp}
                             </Text>
                             <Text style={{ color: '#FFD54F', opacity: 0.7, fontSize: 11, marginTop: 2 }}>
-                                {'Child fee: +' + cpfpAccelerator.childFeeSats.toLocaleString() + ' sats · tap to view'}
+                                {loc.formatString(loc.cypherbox.payments.send_receive_on_chain.child_fee_tap_to_view, { sats: cpfpAccelerator.childFeeSats.toLocaleString() })}
                             </Text>
                         </View>
-                        <Text style={{ color: '#FFD54F', opacity: 0.6, fontSize: 16, marginLeft: 8 }}>›</Text>
+                        <Text style={[{ color: '#FFD54F', opacity: 0.6, fontSize: 16, marginLeft: 8 }, rtl.mirror]}>›</Text>
                     </TouchableOpacity>
                 }
                 <TouchableOpacity style={[styles.button, vaultTab && { borderColor: colors.coldGreen}]} onPress={handleViewBtcNetExplorerClickHandler}>
-                    <Text bold h4 style={styles.text}>View in Bitcoin Network Explorer</Text>
+                    <Text bold h4 style={styles.text}>{loc.cypherbox.payments.common.view_in_explorer}</Text>
                 </TouchableOpacity>
             </View>
 
@@ -366,16 +367,16 @@ export default function SendReceiveOnChain({ route }: Props) {
                 }}
             >
                 <View style={{ padding: 20 }}>
-                    <Text bold h3 center style={{ marginBottom: 4, color: colors.white }}>Accelerate Transaction</Text>
+                    <Text bold h3 center style={{ marginBottom: 4, color: colors.white }}>{loc.cypherbox.payments.send_receive_on_chain.accelerate_sheet_title}</Text>
                     <Text center style={{ marginBottom: 16, color: colors.gray.light, fontSize: 12 }}>
-                        {isSent ? 'Replace by Fee (RBF)' : 'Child Pays for Parent (CPFP)'}
+                        {isSent ? loc.cypherbox.payments.send_receive_on_chain.rbf_label : loc.cypherbox.payments.send_receive_on_chain.cpfp_label}
                     </Text>
                     {currentFeeRate !== null && (
                         <Text semibold style={{ marginBottom: 10, color: colors.gray.light }}>
-                            Current fee rate: {currentFeeRate} sat/vbyte
+                            {loc.formatString(loc.cypherbox.payments.send_receive_on_chain.current_fee_rate, { rate: currentFeeRate })}
                         </Text>
                     )}
-                    <Text semibold style={{ marginBottom: 10, color: colors.white }}>Select Fee Rate:</Text>
+                    <Text semibold style={{ marginBottom: 10, color: colors.white }}>{loc.cypherbox.payments.send_receive_on_chain.select_fee_rate}</Text>
                     
                     {feeOptions ? (
                         <View style={{ marginBottom: 20 }}>
@@ -392,9 +393,9 @@ export default function SendReceiveOnChain({ route }: Props) {
                                     }}
                                     onPress={() => setNewFeeRate(String(feeOptions.slow))}
                                 >
-                                    <Text bold center style={{ color: colors.white }}>Slow</Text>
+                                    <Text bold center style={{ color: colors.white }}>{loc.cypherbox.payments.common.fee_slow}</Text>
                                     <Text center style={{ color: colors.gray.light, fontSize: 12 }}>{feeOptions.slow} sat/vB</Text>
-                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>~{currentFeeRate ? Math.round((currentFeeRate/feeOptions.slow)*60) : '?'} min</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>{loc.formatString(loc.cypherbox.payments.send_receive_on_chain.approx_minutes, { minutes: currentFeeRate ? Math.round((currentFeeRate/feeOptions.slow)*60) : '?' })}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity 
                                     style={{
@@ -408,9 +409,9 @@ export default function SendReceiveOnChain({ route }: Props) {
                                     }}
                                     onPress={() => setNewFeeRate(String(feeOptions.medium))}
                                 >
-                                    <Text bold center style={{ color: colors.white }}>Medium</Text>
+                                    <Text bold center style={{ color: colors.white }}>{loc.cypherbox.payments.common.fee_medium}</Text>
                                     <Text center style={{ color: colors.gray.light, fontSize: 12 }}>{feeOptions.medium} sat/vB</Text>
-                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>~{currentFeeRate ? Math.round((currentFeeRate/feeOptions.medium)*60) : '?'} min</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>{loc.formatString(loc.cypherbox.payments.send_receive_on_chain.approx_minutes, { minutes: currentFeeRate ? Math.round((currentFeeRate/feeOptions.medium)*60) : '?' })}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity 
                                     style={{
@@ -424,13 +425,13 @@ export default function SendReceiveOnChain({ route }: Props) {
                                     }}
                                     onPress={() => setNewFeeRate(String(feeOptions.fast))}
                                 >
-                                    <Text bold center style={{ color: colors.white }}>Fast</Text>
+                                    <Text bold center style={{ color: colors.white }}>{loc.cypherbox.payments.common.fee_fast}</Text>
                                     <Text center style={{ color: colors.gray.light, fontSize: 12 }}>{feeOptions.fast} sat/vB</Text>
-                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>~{currentFeeRate ? Math.round((currentFeeRate/feeOptions.fast)*60) : '?'} min</Text>
+                                    <Text center style={{ color: colors.gray.light, fontSize: 10 }}>{loc.formatString(loc.cypherbox.payments.send_receive_on_chain.approx_minutes, { minutes: currentFeeRate ? Math.round((currentFeeRate/feeOptions.fast)*60) : '?' })}</Text>
                                 </TouchableOpacity>
                             </View>
                             
-                            <Text semibold style={{ marginBottom: 10, color: colors.white }}>Or enter custom rate:</Text>
+                            <Text semibold style={{ marginBottom: 10, color: colors.white }}>{loc.cypherbox.payments.send_receive_on_chain.custom_rate_prompt}</Text>
                             <TextInput
                                 style={{
                                     backgroundColor: colors.black.bg,
@@ -443,7 +444,7 @@ export default function SendReceiveOnChain({ route }: Props) {
                                 keyboardType="numeric"
                                 value={newFeeRate}
                                 onChangeText={setNewFeeRate}
-                                placeholder="Custom fee rate"
+                                placeholder={loc.cypherbox.payments.send_receive_on_chain.custom_fee_rate_placeholder}
                                 placeholderTextColor={colors.gray.placeholder}
                             />
                         </View>
@@ -460,7 +461,7 @@ export default function SendReceiveOnChain({ route }: Props) {
                             keyboardType="numeric"
                             value={newFeeRate}
                             onChangeText={setNewFeeRate}
-                            placeholder="Enter fee rate (sat/vbyte)"
+                            placeholder={loc.cypherbox.payments.send_receive_on_chain.enter_fee_rate_placeholder}
                             placeholderTextColor={colors.gray.placeholder}
                         />
                     )}
@@ -471,7 +472,7 @@ export default function SendReceiveOnChain({ route }: Props) {
                         disabled={isRBFSubmitting}
                     >
                         <Text bold h4 style={styles.text}>
-                            {isRBFSubmitting ? 'Processing...' : 'Accelerate'}
+                            {isRBFSubmitting ? loc.cypherbox.payments.send_receive_on_chain.processing : loc.cypherbox.payments.send_receive_on_chain.accelerate}
                         </Text>
                     </TouchableOpacity>
 
@@ -479,7 +480,7 @@ export default function SendReceiveOnChain({ route }: Props) {
                         style={[styles.button, { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.gray.light }]} 
                         onPress={() => rbfSheetRef.current?.close()}
                     >
-                        <Text bold h4 style={[styles.text, { color: colors.white }]}>Cancel</Text>
+                        <Text bold h4 style={[styles.text, { color: colors.white }]}>{loc._.cancel}</Text>
                     </TouchableOpacity>
                 </View>
             </RBSheet>

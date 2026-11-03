@@ -11,12 +11,13 @@ import {
 } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Text } from "@Cypher/component-library";
 import { ProgressBar5, ProgressBarColdStorage } from "@Cypher/assets/images";
 import ProgressBar from "../ProgressBar";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, ltr } from "@Cypher/style-guide";
 import VaultCapsules from "../VaultCapsules";
 
 interface Props extends TouchableOpacityProps {
@@ -35,7 +36,7 @@ interface Props extends TouchableOpacityProps {
     isColorable?: boolean;
 }
 
-export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = 'Savings Vault', titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
+export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = loc.cypherbox.components.saving_vault.savings_vault, titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
     const { wallets } = useContext(BlueStorageContext);
     // Per-field selectors, NOT a whole-store destructure. The bare
     // `useAuthStore()` re-rendered this card on EVERY store change (the Ark
@@ -132,7 +133,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                         </View>
                         <View style={styles.row}>
                             <Text h4 bold style={StyleSheet.flatten([styles.bitcointext, bitcoinText])}>
-                                Bitcoin Network
+                                {loc.cypherbox.components.saving_vault.bitcoin_network}
                             </Text>
                             <Image
                                 style={[styles.bitcoinimg, imageStyle]}
@@ -144,7 +145,8 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                     {bitcoinValue &&
                         <View style={[styles.bitcoin, { marginTop: 11, marginLeft: 6 }]}>
                             <Text h2 bold style={{ fontSize: 18 }}>{bitcoinValue} </Text>
-                            <Text h3>~ {inDollars}</Text>
+                            {/* The no-break space keeps a gap to the BTC amount when the row flips in RTL. */}
+                            <Text h3>{ltr(`~ ${inDollars}\u00A0`)}</Text>
                         </View>
                     }
 

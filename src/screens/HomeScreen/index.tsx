@@ -469,7 +469,7 @@ export default function HomeScreen({ route }: Props) {
           const balances = await getBalances();
           if (__DEV__) console.log('[Strike] getBalances DONE', Date.now());
           if (balances.data?.status === 401) {
-              SimpleToast.show("Authorization expired. Please login again to strike account", SimpleToast.SHORT);
+              SimpleToast.show(loc.cypherbox.home.strike_auth_expired, SimpleToast.SHORT);
               clearStrikeAuth();
           } else if (balances) {
               if (__DEV__) console.log('balances (post-login): ', balances);
@@ -751,7 +751,7 @@ export default function HomeScreen({ route }: Props) {
       }
     } catch (error) {
         console.error('Error handleLighteningInvoice:', error);
-        SimpleToast.show('Failed to generate lightening. Please try again.', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.home.lightning_invoice_failed, SimpleToast.SHORT);
     }
 }
   const obtainWalletAddress = async () => {
@@ -865,7 +865,7 @@ export default function HomeScreen({ route }: Props) {
       }
 
       if (coinosCallFailed) {
-        SimpleToast.show("Failed to load CoinOS balance. Pull to refresh.", SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.home.coinos_balance_failed, SimpleToast.SHORT);
       }
     } catch (error) {
       console.error('handleUser unexpected error:', error);
@@ -876,7 +876,7 @@ export default function HomeScreen({ route }: Props) {
       // so Ark-only users don't see a "Failed to load balance" alert
       // for a balance they don't have.
       if (coinosAuthed) {
-        SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.home.balance_failed, SimpleToast.SHORT);
       }
     } finally {
       setIsLoading(false)
@@ -890,7 +890,7 @@ export default function HomeScreen({ route }: Props) {
       setPayments(paymentList.payments);
     } catch (error) {
       console.error('Error loading payments:', error);
-      SimpleToast.show("Failed to load payments. Pull to refresh.", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.home.payments_failed, SimpleToast.SHORT);
     }
   };
 
@@ -939,7 +939,7 @@ export default function HomeScreen({ route }: Props) {
         }
       } catch (e) {
         if (__DEV__) console.log('Error refreshing Strike balance:', e);
-        SimpleToast.show("Failed to refresh Strike balance.", SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.home.strike_refresh_failed, SimpleToast.SHORT);
       }
     }
     // Pull-to-refresh also kicks an immediate Ark sync. Cheap (SQLite
@@ -1028,11 +1028,11 @@ export default function HomeScreen({ route }: Props) {
     const feesAreLow = fee > 0 && fee <= 15;
 
     if (wallet && !coldStorageWallet && hotUtxos.length > 5) {
-      return "You have more than 5 UTXOs. Consider upgrading to Cold Storage to consolidate and improve security.";
+      return loc.cypherbox.home.utxo_upgrade_cold;
     }
 
     if (smallUtxos.length > 5 && feesAreLow) {
-      return "Fees are low, a good time to consolidate your small UTXOs to save on future transaction costs.";
+      return loc.cypherbox.home.utxo_consolidate;
     }
 
     return null;
@@ -1180,7 +1180,7 @@ export default function HomeScreen({ route }: Props) {
                       style={{ shadowColor: '#040404CC', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.80, shadowRadius: 16, elevation: 8 }}
                       linearGradientStyle={{ shadowColor: '#27272C7A', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
                     >
-                      <Text h3 style={{ ...shadow.text25 }}>Receive</Text>
+                      <Text h3 style={{ ...shadow.text25 }}>{loc.cypherbox.home.receive}</Text>
                     </GradientView>
                     <GradientView
                       onPress={() => { refSendRBSheet.current.open(); }}
@@ -1189,7 +1189,7 @@ export default function HomeScreen({ route }: Props) {
                       style={{ shadowColor: '#040404CC', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.80, shadowRadius: 16, elevation: 8 }}
                       linearGradientStyle={{ shadowColor: '#27272C7A', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
                     >
-                      <Text h3 style={{ ...shadow.text25 }}>Send</Text>
+                      <Text h3 style={{ ...shadow.text25 }}>{loc.cypherbox.home.send}</Text>
                     </GradientView>
                   </View>
                 )}

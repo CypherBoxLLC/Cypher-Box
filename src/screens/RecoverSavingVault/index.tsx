@@ -1,8 +1,8 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { Alert, ActivityIndicator, Animated, Switch, TouchableOpacity, View } from 'react-native';
+import { Alert, ActivityIndicator, Animated, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import styles from './styles';
 import { ScreenLayout, Text, Input, Button } from '@Cypher/component-library';
-import { colors } from '@Cypher/style-guide';
+import { colors, ltr, rtl } from '@Cypher/style-guide';
 import { HDSegwitBech32Wallet } from '../../../class';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -16,6 +16,7 @@ import {
     HotVaultBackupSummary,
 } from '@Cypher/services/hotVaultKeychain';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
+import loc from '../../../loc';
 
 const inputs = [
     1, 2, 3, 4, 5, 6,
@@ -160,8 +161,8 @@ export default function RecoverSavingVault({ route }: Props) {
         w.setSecret(mnemonic.trim());
         if (!w.validateMnemonic()) {
             Alert.alert(
-                'Invalid Mnemonic',
-                'Please check your seed phrase and try again.',
+                loc.cypherbox.vault.recover_saving_vault.invalid_mnemonic_title,
+                loc.cypherbox.vault.recover_saving_vault.invalid_mnemonic_message,
             );
             return;
         }
@@ -284,8 +285,8 @@ export default function RecoverSavingVault({ route }: Props) {
                 prev.filter(s => s.walletID !== walletID),
             );
             Alert.alert(
-                'Backup not found',
-                'This Keychain entry is no longer available. You can recover manually by typing your 12 words below.',
+                loc.cypherbox.vault.recover_saving_vault.backup_not_found_title,
+                loc.cypherbox.vault.recover_saving_vault.backup_not_found_message,
             );
             return;
         }
@@ -311,12 +312,12 @@ export default function RecoverSavingVault({ route }: Props) {
     const handleKeychainDelete = (summary: HotVaultBackupSummary) => {
         if (pendingDeleteID || keychainLoading || loading) return;
         Alert.alert(
-            'Remove this Keychain backup?',
-            'The 12 words for this vault will be removed from this device\u2019s Keychain. If you haven\u2019t written them down on paper, you WILL lose access to any funds in this vault.',
+            loc.cypherbox.vault.recover_saving_vault.remove_backup_title,
+            loc.cypherbox.vault.recover_saving_vault.remove_backup_message,
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: loc._.cancel, style: 'cancel' },
                 {
-                    text: 'Remove',
+                    text: loc.cypherbox.vault.recover_saving_vault.remove,
                     style: 'destructive',
                     onPress: async () => {
                         setPendingDeleteID(summary.walletID);
@@ -335,8 +336,8 @@ export default function RecoverSavingVault({ route }: Props) {
                             );
                         } else {
                             Alert.alert(
-                                'Could not remove backup',
-                                'The Keychain entry may still be present. Try again, or remove it from the vault\u2019s Settings.',
+                                loc.cypherbox.vault.recover_saving_vault.remove_failed_title,
+                                loc.cypherbox.vault.recover_saving_vault.remove_failed_message,
                             );
                         }
                     },
@@ -354,15 +355,15 @@ export default function RecoverSavingVault({ route }: Props) {
      * that reads clearly as "we don't know when this was saved".
      */
     const formatBackupDate = (createdAt?: number | null): string => {
-        if (!createdAt) return 'Backed up (legacy)';
+        if (!createdAt) return loc.cypherbox.vault.recover_saving_vault.backed_up_legacy;
         try {
             const d = new Date(createdAt);
             const formatter = new Intl.DateTimeFormat(undefined, {
                 dateStyle: 'medium',
             } as Intl.DateTimeFormatOptions);
-            return `Backed up ${formatter.format(d)}`;
+            return String(loc.formatString(loc.cypherbox.vault.recover_saving_vault.backed_up, { date: formatter.format(d) }));
         } catch {
-            return `Backed up ${new Date(createdAt).toDateString()}`;
+            return String(loc.formatString(loc.cypherbox.vault.recover_saving_vault.backed_up, { date: new Date(createdAt).toDateString() }));
         }
     };
 
@@ -403,12 +404,10 @@ export default function RecoverSavingVault({ route }: Props) {
             return (
                 <View style={styles.keychainSection}>
                     <Text bold style={styles.keychainTitle}>
-                        Recover from iPhone Keychain
+                        {loc.cypherbox.vault.recover_saving_vault.keychain_title}
                     </Text>
                     <Text style={styles.keychainSub}>
-                        No Keychain backup found on this device. To use this,
-                        create a hot vault with "Save to iPhone Keychain"
-                        enabled, or turn it on later in vault settings.
+                        {loc.cypherbox.vault.recover_saving_vault.no_keychain_backup}
                     </Text>
                 </View>
             );
@@ -419,12 +418,12 @@ export default function RecoverSavingVault({ route }: Props) {
         return (
             <View style={styles.keychainSection}>
                 <Text bold style={styles.keychainTitle}>
-                    Recover from iPhone Keychain
+                    {loc.cypherbox.vault.recover_saving_vault.keychain_title}
                 </Text>
                 <Text style={styles.keychainSub}>
                     {isSingle
-                        ? 'Tap to unlock with FaceID / passcode and restore. No typing required.'
-                        : `We found ${keychainBackups.length} backed-up hot vaults on this device. Pick one to restore, or remove ones you no longer need.`}
+                        ? loc.cypherbox.vault.recover_saving_vault.tap_to_unlock
+                        : loc.formatString(loc.cypherbox.vault.recover_saving_vault.found_backups, { count: keychainBackups.length })}
                 </Text>
 
                 {keychainBackups.map(summary => {
@@ -450,7 +449,7 @@ export default function RecoverSavingVault({ route }: Props) {
                                     <ActivityIndicator color={colors.white} />
                                 ) : (
                                     <Text bold style={styles.keychainButtonText}>
-                                        Recover from Keychain
+                                        {loc.cypherbox.vault.recover_saving_vault.recover_from_keychain}
                                     </Text>
                                 )}
                             </TouchableOpacity>
@@ -478,14 +477,14 @@ export default function RecoverSavingVault({ route }: Props) {
                                         {formatBackupDate(meta?.createdAt)}
                                     </Text>
                                     <Text style={styles.keychainRowId}>
-                                        {`Vault ID  ${walletID.slice(0, 12)}\u2026`}
+                                        {loc.formatString(loc.cypherbox.vault.recover_saving_vault.vault_id, { id: walletID.slice(0, 12) })}
                                     </Text>
                                 </View>
                                 {keychainLoading && !isDeleting ? (
                                     <ActivityIndicator color={colors.white} />
                                 ) : (
                                     <Text style={styles.keychainRowCta}>
-                                        Recover
+                                        {loc.cypherbox.vault.recover_saving_vault.recover}
                                     </Text>
                                 )}
                             </TouchableOpacity>
@@ -503,13 +502,13 @@ export default function RecoverSavingVault({ route }: Props) {
                                     left: 10,
                                     right: 10,
                                 }}
-                                accessibilityLabel="Remove this Keychain backup"
+                                accessibilityLabel={loc.cypherbox.vault.recover_saving_vault.remove_backup_a11y}
                             >
                                 {isDeleting ? (
                                     <ActivityIndicator color={colors.white} />
                                 ) : (
                                     <Text style={styles.keychainRowDeleteText}>
-                                        Remove
+                                        {loc.cypherbox.vault.recover_saving_vault.remove}
                                     </Text>
                                 )}
                             </TouchableOpacity>
@@ -519,7 +518,7 @@ export default function RecoverSavingVault({ route }: Props) {
 
                 <View style={styles.keychainDivider}>
                     <View style={styles.keychainDividerLine} />
-                    <Text style={styles.keychainDividerText}>or type your 12 words</Text>
+                    <Text style={styles.keychainDividerText}>{loc.cypherbox.vault.recover_saving_vault.or_type_words}</Text>
                     <View style={styles.keychainDividerLine} />
                 </View>
             </View>
@@ -529,7 +528,7 @@ export default function RecoverSavingVault({ route }: Props) {
 
 
     return (
-        <ScreenLayout title="Enter Your Seed phrase" showToolbar isBackButton disableScroll>
+        <ScreenLayout title={loc.cypherbox.vault.recover_saving_vault.title} showToolbar isBackButton disableScroll>
             <Animated.View style={[styles.container, { transform: [{ translateY: totalLift }] }]}>
                 {loading ?
                     <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />
@@ -541,13 +540,13 @@ export default function RecoverSavingVault({ route }: Props) {
                             <View style={styles.inputColumn}>
                                 {inputs.slice(0, 6).map((input, index) => (
                                     <View key={input} style={styles.inputContainer}>
-                                        <Text h2 style={styles.labelText}>{input}.</Text>
+                                        <Text h2 style={[styles.labelText, rtl.ltrText]}>{ltr(`${input}.`)}</Text>
                                         <Input
                                             ref={el => inputRefs.current[index] = el}
                                             style={styles.inputStyle}
                                             onChange={(value) => handleSecretWordChange(index, value)}
                                             value={secretWords[index]}
-                                            textInputStyle={styles.textInputStyle}
+                                            textInputStyle={StyleSheet.flatten([styles.textInputStyle, rtl.ltrText])}
                                             autoCapitalize='none'
                                             onKeyPress={(event) => handleKeyPress(event, index)}
                                             onSubmitEditing={() => {
@@ -564,13 +563,13 @@ export default function RecoverSavingVault({ route }: Props) {
                             <View style={styles.inputColumn}>
                                 {inputs.slice(6).map((input, index) => (
                                     <View key={input} style={styles.inputContainer}>
-                                        <Text h2 style={styles.labelText}>{input}.</Text>
+                                        <Text h2 style={[styles.labelText, rtl.ltrText]}>{ltr(`${input}.`)}</Text>
                                         <Input
                                             ref={el => inputRefs.current[index + 6] = el}
                                             style={styles.inputStyle}
                                             onChange={(value) => handleSecretWordChange(index + 6, value)}
                                             value={secretWords[index + 6]}
-                                            textInputStyle={styles.textInputStyle}
+                                            textInputStyle={StyleSheet.flatten([styles.textInputStyle, rtl.ltrText])}
                                             autoCapitalize='none'
                                             onKeyPress={(event) => handleKeyPress(event, index + 6)}
                                             onSubmitEditing={() => {
@@ -587,7 +586,7 @@ export default function RecoverSavingVault({ route }: Props) {
                             the creation screen's toggle-gated field. */}
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, marginHorizontal: 20 }}>
                             <Text bold style={{ color: '#FFF', fontSize: 14, flex: 1 }}>
-                                Optional Passphrase
+                                {loc.cypherbox.vault.recover_saving_vault.optional_passphrase}
                             </Text>
                             <Switch
                                 value={usePassphrase}
@@ -600,7 +599,7 @@ export default function RecoverSavingVault({ route }: Props) {
                             <Input
                                 onChange={setRecoverPassphrase}
                                 value={recoverPassphrase}
-                                label="Passphrase"
+                                label={loc.cypherbox.vault.recover_saving_vault.passphrase_label}
                                 autoCapitalize="none"
                                 secureTextEntry
                                 onFocus={() => liftForPassphrase(true)}
@@ -610,7 +609,7 @@ export default function RecoverSavingVault({ route }: Props) {
                             />
                         )}
                         <Button
-                            text="Recover"
+                            text={loc.cypherbox.vault.recover_saving_vault.recover}
                             onPress={() =>
                                 fastImportHotVault(
                                     secretWords.join(' '),

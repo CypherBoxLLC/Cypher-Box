@@ -23,6 +23,8 @@
  * list.
  */
 
+import loc from '../../../loc';
+
 export type ExitFundingSourceId = 'coinos' | 'strike' | 'hot-vault' | 'cold-vault';
 
 export type ExitFundingSource = {
@@ -60,7 +62,7 @@ function custodial(
     entry: { connected: boolean; balanceSats?: number | null } | null | undefined,
 ): ExitFundingSource {
     if (!entry?.connected) {
-        return { id, label, available: false, unavailableReason: `Not connected` };
+        return { id, label, available: false, unavailableReason: loc.cypherbox.services.exit_funding_sources.not_connected };
     }
     const balanceSats = sats(entry.balanceSats);
     if (balanceSats != null && balanceSats < MIN_USEFUL_FUNDING_SATS) {
@@ -71,7 +73,7 @@ function custodial(
             balanceSats,
             // Naming the floor beats "insufficient balance", which leaves the
             // user guessing how much would be enough.
-            unavailableReason: `Balance below ${MIN_USEFUL_FUNDING_SATS.toLocaleString()} sats`,
+            unavailableReason: String(loc.formatString(loc.cypherbox.services.exit_funding_sources.balance_below, { amount: MIN_USEFUL_FUNDING_SATS.toLocaleString() })),
         };
     }
     return { id, label, available: true, balanceSats };
@@ -85,7 +87,7 @@ function vault(
 ): ExitFundingSource {
     const base = { id, label, slow: opts.slow } as ExitFundingSource;
     if (!entry?.walletID) {
-        return { ...base, available: false, unavailableReason: 'No vault on this device' };
+        return { ...base, available: false, unavailableReason: loc.cypherbox.services.exit_funding_sources.no_vault_on_device };
     }
     const balanceSats = sats(entry.balanceSats);
     if (balanceSats != null && balanceSats < MIN_USEFUL_FUNDING_SATS) {
@@ -93,7 +95,7 @@ function vault(
             ...base,
             available: false,
             balanceSats,
-            unavailableReason: 'No spendable capsules',
+            unavailableReason: loc.cypherbox.services.exit_funding_sources.no_spendable_capsules,
         };
     }
     return { ...base, available: true, balanceSats };
@@ -112,8 +114,8 @@ export function buildExitFundingSources(
     return [
         custodial('coinos', 'CoinOS', state.coinos),
         custodial('strike', 'Strike', state.strike),
-        vault('hot-vault', 'Hot Vault', state.hotVault),
-        vault('cold-vault', 'Cold Vault', state.coldVault, { slow: true }),
+        vault('hot-vault', loc.cypherbox.services.exit_funding_sources.hot_vault, state.hotVault),
+        vault('cold-vault', loc.cypherbox.services.exit_funding_sources.cold_vault, state.coldVault, { slow: true }),
     ];
 }
 

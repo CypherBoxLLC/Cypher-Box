@@ -20,6 +20,7 @@ import { Text } from "@Cypher/component-library";
 import { GradientView } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
+import loc from "../../../../loc";
 import { StyleSheet } from "react-native";
 import {
     listLightningSwapProviders,
@@ -229,10 +230,10 @@ export default function SwapSheet({
                 colors={[colors.black.gradientTop2, colors.black.default]}
                 style={styles.containerGradientView}
             >
-                <Text h2 bold style={styles.sectionTitle}>SWAP FROM</Text>
+                <Text h2 bold style={styles.sectionTitle}>{loc.cypherbox.home_lists.swap_sheet.swap_from}</Text>
                 {renderTileRow('from')}
 
-                <Text h2 bold style={styles.sectionTitle}>SEND TO</Text>
+                <Text h2 bold style={styles.sectionTitle}>{loc.cypherbox.home_lists.swap_sheet.send_to}</Text>
                 {renderTileRow('to')}
 
                 <TouchableOpacity
@@ -243,7 +244,7 @@ export default function SwapSheet({
                         !canProceed && { backgroundColor: colors.gray.disable },
                     ]}
                 >
-                    <Text h3>Next</Text>
+                    <Text h3>{loc.cypherbox.home_lists.swap_sheet.next}</Text>
                 </TouchableOpacity>
             </LinearGradient>
         </LinearGradient>

@@ -417,7 +417,7 @@ const ScanQRCode = () => {
       {cameraStatusGranted && isFocused && (
         <TouchableOpacity
           accessibilityRole="button"
-          accessibilityLabel="Flip camera"
+          accessibilityLabel={loc.cypherbox.legacy.scan_qr_code.flip_camera_a11y}
           style={styles.cameraFlipTouch}
           onPress={flipCamera}
         >
@@ -452,7 +452,7 @@ const ScanQRCode = () => {
       )}
       {backdoorVisible && (
         <View style={styles.backdoorInputWrapper}>
-          <BlueText>Provide QR code contents manually:</BlueText>
+          <BlueText>{loc.cypherbox.legacy.scan_qr_code.provide_manually}</BlueText>
           <TextInput
             testID="scanQrBackdoorInput"
             multiline
@@ -467,7 +467,7 @@ const ScanQRCode = () => {
             onChangeText={setBackdoorText}
           />
           <Button
-            title="OK"
+            title={loc._.ok}
             testID="scanQrBackdoorOkButton"
             onPress={() => {
               setBackdoorVisible(false);

@@ -60,6 +60,7 @@ import RefreshWaitBanner from '@Cypher/components/RefreshWaitBanner';
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
 import rowStyles from "../../HotStorageVault/ListView/styles";
+import loc from "../../../../loc";
 
 /**
  * ArkCapsules — VTXO management surface for the Ark wallet menu.
@@ -137,7 +138,7 @@ function formatExpiryLeft(daysLeft: number): string {
     const totalHours = Math.max(0, Math.round(daysLeft * 24));
     const d = Math.floor(totalHours / 24);
     const h = totalHours % 24;
-    return d > 0 ? `${d}d ${h}h left` : `${h}h left`;
+    return d > 0 ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_dh, { d, h })) : String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_h, { h }));
 }
 
 // --- Ring constants ---
@@ -315,17 +316,17 @@ function formatRoundUpperBound(secs: number): string {
  * "expiring" (≈0 or past). Returns null for arkoor / unknown expiry.
  */
 function formatTimeLeftDetailed(daysLeft: number): string {
-    if (!Number.isFinite(daysLeft) || daysLeft <= 0) return 'expiring';
+    if (!Number.isFinite(daysLeft) || daysLeft <= 0) return loc.cypherbox.strike.ark_capsules.expiring;
     const totalHours = daysLeft * 24;
     if (totalHours >= 24) {
         const days = Math.floor(daysLeft);
         const hours = Math.round((daysLeft - days) * 24);
         // Carry: "1d 24h" reads wrong, roll it into the next day.
-        if (hours >= 24) return `${days + 1}d left`;
-        return hours > 0 ? `${days}d ${hours}h left` : `${days}d left`;
+        if (hours >= 24) return String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_d, { d: days + 1 }));
+        return hours > 0 ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_dh, { d: days, h: hours })) : String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_d, { d: days }));
     }
-    if (totalHours >= 1) return `${Math.round(totalHours)}h left`;
-    return `${Math.max(1, Math.round(totalHours * 60))}m left`;
+    if (totalHours >= 1) return String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_h, { h: Math.round(totalHours) }));
+    return String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_m, { m: Math.max(1, Math.round(totalHours * 60)) }));
 }
 
 /**
@@ -436,15 +437,15 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                 ? '#888'
                 : view.color;
     const labelText = isExiting
-        ? 'Exiting on-chain\n(sweeps after the ~24h timelock)'
+        ? loc.cypherbox.strike.ark_capsules.label_exiting
         : isTransientForLabel
             ? (isCancelling
-                ? 'Cancelling\n(takes less than an hour)'
+                ? loc.cypherbox.strike.ark_capsules.label_cancelling
                 : (failedAttempts && failedAttempts > 0
-                    ? `Refreshing or In-flight\n⚠️ ${failedAttempts} refresh attempt${failedAttempts === 1 ? '' : 's'} failed`
-                    : 'Refreshing or In-flight\n(takes less than an hour)'))
+                    ? String(loc.formatString((failedAttempts === 1 ? loc.cypherbox.strike.ark_capsules.label_refresh_failed_one : loc.cypherbox.strike.ark_capsules.label_refresh_failed_other), { count: failedAttempts }))
+                    : loc.cypherbox.strike.ark_capsules.label_refreshing))
             : isExpired
-                ? 'Expired'
+                ? loc.cypherbox.strike.ark_capsules.label_expired
                 : vtxo.unknownExpiry
                     ? vtxo.kind
                     : formatExpiryLeft(vtxo.daysLeft);
@@ -468,12 +469,9 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
     // them in step if this wording changes again.
     const showExpiredExplainer = () => {
         Alert.alert(
-            'Capsule expired',
-            `This ${vtxo.sats.toLocaleString()}-sat capsule passed its expiry without a successful refresh.\n\n` +
-            'After expiry the Second.tech server can sweep these funds at any time, so they may already be gone. ' +
-            'Recovery is not guaranteed.\n\n' +
-            "Refresh your other capsules before they expire so this doesn't happen to them.",
-            [{ text: 'OK' }],
+            loc.cypherbox.strike.ark_capsules.expired_alert_title,
+            String(loc.formatString(loc.cypherbox.strike.ark_capsules.expired_alert_message, { sats: vtxo.sats.toLocaleString() })),
+            [{ text: loc._.ok }],
         );
     };
 
@@ -482,10 +480,9 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
     // Bam finalizes.
     const showDustExplainer = () => {
         Alert.alert(
-            'Too small to refresh',
-            `This ${vtxo.sats.toLocaleString()}-sat capsule is below the ~${ARK_REFRESH_MIN_SATS}-sat round minimum, so it can't be refreshed on its own.\n\n` +
-            'Spend it in a payment before it expires. A normal send folds it in.',
-            [{ text: 'OK' }],
+            loc.cypherbox.strike.ark_capsules.dust_alert_title,
+            String(loc.formatString(loc.cypherbox.strike.ark_capsules.dust_alert_message, { sats: vtxo.sats.toLocaleString(), min: ARK_REFRESH_MIN_SATS })),
+            [{ text: loc._.ok }],
         );
     };
 
@@ -501,16 +498,16 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
     let recoverabilityColor: string;
     switch (vtxo.recoverability) {
         case 'backed-up':
-            recoverabilityText = "✓ Backed up";
+            recoverabilityText = loc.cypherbox.strike.ark_capsules.backed_up;
             recoverabilityColor = "#4ADE80";
             break;
         case 'needs-backup':
-            recoverabilityText = "⚠ Back up to recover";
+            recoverabilityText = loc.cypherbox.strike.ark_capsules.needs_backup;
             recoverabilityColor = "#FB923C"; // orange — actionable, not just informative
             break;
         case 'in-flight':
         default:
-            recoverabilityText = "In-flight";
+            recoverabilityText = loc.cypherbox.strike.ark_capsules.in_flight;
             recoverabilityColor = colors.ark.light;
             break;
     }
@@ -627,7 +624,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                                     a red border. Going direct keeps
                                     the red. */}
                                 <RNText style={{ fontSize: 9, color: '#FF7A68', fontWeight: '700' }}>
-                                    DUST
+                                    {loc.cypherbox.strike.ark_capsules.dust_pill}
                                 </RNText>
                             </View>
                         )}
@@ -701,7 +698,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                         }}
                     >
                         <RNText style={{ fontSize: 10, color: '#888', fontWeight: '700', textAlign: 'center' }}>
-                            {vtxo.sats <= ARK_VTXO_DUST_SATS ? 'EXPIRED DUST' : 'EXPIRED'}
+                            {vtxo.sats <= ARK_VTXO_DUST_SATS ? loc.cypherbox.strike.ark_capsules.expired_dust_badge : loc.cypherbox.strike.ark_capsules.expired_badge}
                         </RNText>
                     </View>
                 ) : isDust ? (
@@ -730,7 +727,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                         activeOpacity={0.6}
                     >
                         <RNText style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '700', textAlign: 'center' }}>
-                            DUST REFRESH
+                            {loc.cypherbox.strike.ark_capsules.dust_refresh_button}
                         </RNText>
                     </TouchableOpacity>
                 ) : (
@@ -775,7 +772,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                             ) : isTransient ? (
                                 isCancelling ? (
                                     <Text bold style={{ color: colors.redLight, fontSize: 12 }}>
-                                        Cancelling
+                                        {loc.cypherbox.strike.ark_capsules.cancelling}
                                     </Text>
                                 ) : (
                                     <Icon name="x" type="feather" color={colors.redLight} size={24} />
@@ -956,10 +953,10 @@ function PendingLnReceiveRow({ sats, onPress }: PendingLnReceiveRowProps) {
                 <View style={[rowStyles.size, { flex: 2.8 }]}>
                     <Text bold style={rowStyles.value}>{BTCAmount}</Text>
                     <Text bold numberOfLines={1} style={{ color: colors.ark.light, fontSize: 12, fontStyle: "italic" }}>
-                        Claiming via round…
+                        {loc.cypherbox.strike.ark_capsules.claiming_via_round}
                     </Text>
                     <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 11 }}>
-                        {onPress ? "Lightning ~1–3 min · tap to cancel" : "Lightning ~1–3 min"}
+                        {onPress ? loc.cypherbox.strike.ark_capsules.ln_eta_tap_to_cancel : loc.cypherbox.strike.ark_capsules.ln_eta}
                     </Text>
                 </View>
                 {/* Bolt icon in the refresh column — visually distinguishes
@@ -1039,10 +1036,10 @@ function VaultConnectivityPill({ conn }: { conn: VaultConnectivity }) {
 
     const label =
         level === 'green'
-            ? 'Vault connected'
+            ? loc.cypherbox.strike.ark_capsules.vault_connected
             : level === 'yellow'
-                ? `Vault connection slow (updated ${ageLabel})`
-                : `Vault offline (last updated ${ageLabel})`;
+                ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.vault_slow, { age: ageLabel }))
+                : String(loc.formatString(loc.cypherbox.strike.ark_capsules.vault_offline, { age: ageLabel }));
 
     return (
         <View style={{ marginBottom: 6 }}>
@@ -1064,7 +1061,7 @@ function VaultConnectivityPill({ conn }: { conn: VaultConnectivity }) {
                 are projections rather than reads. */}
             {!conn.tip.trusted && (
                 <RNText style={{ fontSize: 11, color: '#ddd', marginTop: 3 }}>
-                    Times below are estimates until the vault reconnects.
+                    {loc.cypherbox.strike.ark_capsules.times_are_estimates}
                 </RNText>
             )}
         </View>
@@ -1079,10 +1076,10 @@ function VaultConnectivityPill({ conn }: { conn: VaultConnectivity }) {
  */
 function formatAgo(ms: number): string {
     const mins = Math.floor(ms / 60000);
-    if (mins < 60) return `${Math.max(1, mins)}m ago`;
+    if (mins < 60) return String(loc.formatString(loc.cypherbox.strike.ark_capsules.ago_m, { m: Math.max(1, mins) }));
     const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
+    if (hours < 24) return String(loc.formatString(loc.cypherbox.strike.ark_capsules.ago_h, { h: hours }));
+    return String(loc.formatString(loc.cypherbox.strike.ark_capsules.ago_d, { d: Math.floor(hours / 24) }));
 }
 
 /**
@@ -1266,7 +1263,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 // this gesture submits nothing. The remedy text after the
                 // prefix is the existing shared network-fault copy.
                 SimpleToast.show(
-                    describeArkFailure(err, "Couldn't update", {
+                    describeArkFailure(err, loc.cypherbox.strike.ark_capsules.couldnt_update, {
                         chainUrls: ESPLORA_URLS,
                         arkUrl: ARK_SERVER_URL,
                     }),
@@ -1297,7 +1294,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             }
         }
         setArkRefreshStuck(null);
-        SimpleToast.show('Recovering stuck refresh…', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.strike.ark_capsules.recovering_stuck, SimpleToast.SHORT);
     }, [setArkRefreshStuck]);
 
     // Block-height the wallet's policy says we need to refresh by, or null
@@ -1553,19 +1550,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
         if (batch.ids.length === 0 && batch.strandedDustCount > 0) {
             SimpleToast.show(
-                `Your imminent capsule${batch.strandedDustCount === 1 ? '' : 's'} ` +
-                `(${batch.strandedDustSats.toLocaleString()} sats) ` +
-                `${batch.strandedDustCount === 1 ? 'is' : 'are'} below the ` +
-                `${ARK_REFRESH_MIN_SATS}-sat refresh minimum. Spend ` +
-                `${batch.strandedDustCount === 1 ? 'it' : 'them'} in a payment before ` +
-                `${batch.strandedDustCount === 1 ? 'it expires' : 'they expire'}.`,
+                String(loc.formatString((batch.strandedDustCount === 1 ? loc.cypherbox.strike.ark_capsules.imminent_dust_one : loc.cypherbox.strike.ark_capsules.imminent_dust_other), { sats: batch.strandedDustSats.toLocaleString(), min: ARK_REFRESH_MIN_SATS })),
                 SimpleToast.LONG,
             );
             return;
         }
 
         if (batch.ids.length === 0) {
-            SimpleToast.show('No capsules need refreshing right now.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.no_capsules_need_refresh, SimpleToast.SHORT);
             return;
         }
 
@@ -1595,7 +1587,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         const row = rows.find((r) => r.id === id);
         if (row?.exiting) {
             SimpleToast.show(
-                'This capsule is exiting on-chain and can no longer be spent or refreshed.',
+                loc.cypherbox.strike.ark_capsules.capsule_exiting,
                 SimpleToast.SHORT,
             );
             return;
@@ -1648,10 +1640,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             if (!result.restored && result.reason !== "already-open") {
                 const detail =
                     result.reason === "no-keychain"
-                        ? "Unlock prompt was declined. Restart the app and confirm the biometric prompt to unlock the Ark wallet."
+                        ? loc.cypherbox.strike.ark_capsules.unlock_declined
                         : result.reason === "no-datadir"
-                            ? "Ark wallet data is missing on this device. Use Recover from the home screen to restore it."
-                            : "Could not open the Ark wallet right now. Try again in a few seconds.";
+                            ? loc.cypherbox.strike.ark_capsules.wallet_data_missing
+                            : loc.cypherbox.strike.ark_capsules.wallet_open_failed;
                 SimpleToast.show(detail, SimpleToast.LONG);
                 return;
             }
@@ -1666,7 +1658,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         );
         if (expiredSelected.length > 0) {
             SimpleToast.show(
-                `${expiredSelected.length} capsule(s) already expired and can no longer be refreshed`,
+                String(loc.formatString(loc.cypherbox.strike.ark_capsules.selected_expired, { count: expiredSelected.length })),
                 SimpleToast.LONG,
             );
             return;
@@ -1679,7 +1671,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         );
         if (exitingSelected.length > 0) {
             SimpleToast.show(
-                `${exitingSelected.length} capsule(s) are exiting on-chain and can no longer be refreshed`,
+                String(loc.formatString(loc.cypherbox.strike.ark_capsules.selected_exiting, { count: exitingSelected.length })),
                 SimpleToast.LONG,
             );
             return;
@@ -1694,7 +1686,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         );
         if (lockedSelected.length > 0) {
             SimpleToast.show(
-                `${lockedSelected.length} capsule(s) already in a pending round. Wait for it to finalise before refreshing again`,
+                String(loc.formatString(loc.cypherbox.strike.ark_capsules.selected_locked, { count: lockedSelected.length })),
                 SimpleToast.LONG,
             );
             return;
@@ -1719,18 +1711,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             );
             if (refreshable.length === 0) {
                 SimpleToast.show(
-                    `${dustSats}-sat capsule${dustRows.length === 1 ? ' is' : 's are'} too small ` +
-                    `to refresh (server minimum ~${ARK_REFRESH_MIN_SATS}). ` +
-                    `Spend ${dustRows.length === 1 ? 'it' : 'them'} in a payment ` +
-                    `before ${dustRows.length === 1 ? 'it expires' : 'they expire'}.`,
+                    String(loc.formatString((dustRows.length === 1 ? loc.cypherbox.strike.ark_capsules.dust_all_one : loc.cypherbox.strike.ark_capsules.dust_all_other), { sats: dustSats, min: ARK_REFRESH_MIN_SATS })),
                     SimpleToast.LONG,
                 );
                 return;
             }
             SimpleToast.show(
-                `Skipping ${dustRows.length} tiny capsule${dustRows.length === 1 ? '' : 's'} ` +
-                `(${dustSats} sats, below the ~${ARK_REFRESH_MIN_SATS}-sat minimum). ` +
-                `Spend ${dustRows.length === 1 ? 'it' : 'them'} in a payment. Refreshing the rest.`,
+                String(loc.formatString((dustRows.length === 1 ? loc.cypherbox.strike.ark_capsules.dust_skipping_one : loc.cypherbox.strike.ark_capsules.dust_skipping_other), { count: dustRows.length, sats: dustSats, min: ARK_REFRESH_MIN_SATS })),
                 SimpleToast.LONG,
             );
             ids = refreshable;
@@ -1775,7 +1762,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             }
             if (ids.length === 0) {
                 SimpleToast.show(
-                    'Those capsules just changed state (spent or now in a round), so there is nothing left to refresh.',
+                    loc.cypherbox.strike.ark_capsules.capsules_changed_state,
                     SimpleToast.LONG,
                 );
                 setRefreshing(false);
@@ -1813,16 +1800,16 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 ? true
                 : await new Promise<boolean>((resolve) => {
                     Alert.alert(
-                        "Refresh capsules?",
-                        `Re-boarding ${ids.length} capsule${ids.length === 1 ? '' : 's'} ` +
-                        `(${displayTotal.toLocaleString()} sats) into a new Ark round costs about ` +
-                        `${fee.feeSats.toLocaleString()} sats` +
-                        (feePct !== null ? `, which is ${feePct.toFixed(2)}% of the amount` : '') +
-                        `. That extends their expiry by another full lifetime. It finishes in the ` +
-                        `background within the hour, so you can close the app once it is submitted.`,
+                        loc.cypherbox.strike.ark_capsules.refresh_confirm_title,
+                        String(loc.formatString((ids.length === 1 ? loc.cypherbox.strike.ark_capsules.refresh_confirm_message_one : loc.cypherbox.strike.ark_capsules.refresh_confirm_message_other), {
+                            count: ids.length,
+                            total: displayTotal.toLocaleString(),
+                            fee: fee.feeSats.toLocaleString(),
+                            pct_clause: feePct !== null ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.refresh_confirm_pct_clause, { pct: feePct.toFixed(2) })) : '',
+                        })),
                         [
-                            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                            { text: "Refresh", onPress: () => resolve(true) },
+                            { text: loc._.cancel, style: "cancel", onPress: () => resolve(false) },
+                            { text: loc.cypherbox.strike.ark_capsules.refresh_button, onPress: () => resolve(true) },
                         ],
                         { cancelable: true, onDismiss: () => resolve(false) },
                     );
@@ -1847,8 +1834,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             await refreshArkVtxosDelegatedAndSync(ids, totalIn);
             setSelectedIds([]);
             SimpleToast.show(
-                `Refresh submitted for ${ids.length} capsule${ids.length === 1 ? '' : 's'}. ` +
-                `They finish in the background within the hour, so you can close the app.`,
+                String(loc.formatString((ids.length === 1 ? loc.cypherbox.strike.ark_capsules.refresh_submitted_one : loc.cypherbox.strike.ark_capsules.refresh_submitted_other), { count: ids.length })),
                 SimpleToast.LONG,
             );
         } catch (err: any) {
@@ -1856,7 +1842,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // failure. Tell the user to let the running round finish.
             if (err instanceof ArkRefreshInFlightError) {
                 SimpleToast.show(
-                    'A refresh is already running. Wait for it to finish, then try again.',
+                    loc.cypherbox.strike.ark_capsules.refresh_already_running,
                     SimpleToast.LONG,
                 );
                 return;
@@ -1873,7 +1859,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const serverSpent = await recordServerSpentFromError(err);
             if (serverSpent) {
                 const { title, body } = notSpendableMessage(serverSpent);
-                Alert.alert(title, body, [{ text: 'OK', style: 'default' }], { cancelable: true });
+                Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
                 return;
             }
             // BarkError.Internal is the SDK's opaque catch-all when the ASP
@@ -1905,12 +1891,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 // remedy (change network, or wait out a quota), and a chip that
                 // disappears before it is read leaves them tapping Refresh
                 // again into the same wall. Alert stays until dismissed.
-                Alert.alert('Refresh failed', faultAdvice);
+                Alert.alert(loc.cypherbox.strike.ark_capsules.refresh_failed, faultAdvice);
             } else {
                 SimpleToast.show(
                     isInternalLikelyDust
-                        ? `Refresh rejected by Ark server. The ${totalSats}-sat capsule is likely below the round's minimum size. Consolidate it via a self-send before refreshing.`
-                        : describeArkFailure(err, 'Refresh failed', {
+                        ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.refresh_rejected_dust, { sats: totalSats }))
+                        : describeArkFailure(err, loc.cypherbox.strike.ark_capsules.refresh_failed, {
                               chainUrls: ESPLORA_URLS,
                               arkUrl: ARK_SERVER_URL,
                           }),
@@ -1924,7 +1910,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     const handleRefresh = () => {
         if (selectedIds.length === 0) {
-            SimpleToast.show("Select capsules to refresh", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.select_capsules_to_refresh, SimpleToast.SHORT);
             return;
         }
         void refreshIds([...selectedIds]);
@@ -1972,7 +1958,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 void refreshIds(batch.ids);
             } else {
                 SimpleToast.show(
-                    'Your imminent capsules are still settling from a recent refresh. They should be spendable again within a minute.',
+                    loc.cypherbox.strike.ark_capsules.imminent_settling,
                     SimpleToast.LONG,
                 );
             }
@@ -1996,9 +1982,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
         if (!stuck) {
             SimpleToast.show(
-                `${lockedImminentCount} capsule${lockedImminentCount === 1 ? '' : 's'} ` +
-                `(${lockedImminentSats.toLocaleString()} sats) ${lockedImminentCount === 1 ? 'is' : 'are'} ` +
-                `already in an active refresh round. It should finalise within 3 hours.`,
+                String(loc.formatString((lockedImminentCount === 1 ? loc.cypherbox.strike.ark_capsules.active_round_one : loc.cypherbox.strike.ark_capsules.active_round_other), { count: lockedImminentCount, sats: lockedImminentSats.toLocaleString() })),
                 SimpleToast.LONG,
             );
             if (batch.ids.length > 0) {
@@ -2012,13 +1996,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         // barely over the threshold.
         const ageHours = Math.max(1, Math.round(oldestAgeMs / (60 * 60 * 1000)));
         Alert.alert(
-            'Refresh stuck',
-            `A refresh has been in progress for about ${ageHours} hour${ageHours === 1 ? '' : 's'}. ` +
-            `Cancel it and retry now to save your capsules from expiring?`,
+            loc.cypherbox.strike.ark_capsules.refresh_stuck_title,
+            String(loc.formatString((ageHours === 1 ? loc.cypherbox.strike.ark_capsules.refresh_stuck_message_one : loc.cypherbox.strike.ark_capsules.refresh_stuck_message_other), { hours: ageHours })),
             [
-                { text: 'Wait', style: 'cancel' },
+                { text: loc.cypherbox.strike.ark_capsules.wait, style: 'cancel' },
                 {
-                    text: 'Cancel & retry',
+                    text: loc.cypherbox.strike.ark_capsules.cancel_and_retry,
                     style: 'destructive',
                     onPress: () => {
                         void cancelOngoingRoundsAndRetry(
@@ -2076,7 +2059,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         }
         if (succeeded === 0) {
             SimpleToast.show(
-                'Cancel held up server-side. The round will settle in about a minute, try the notification tap again after that.',
+                loc.cypherbox.strike.ark_capsules.cancel_held_up_retry_tap,
                 SimpleToast.LONG,
             );
             return;
@@ -2130,15 +2113,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // up). Toast then bail; the next foreground sync will
             // refresh them on its own once they're spendable.
             SimpleToast.show(
-                `Cancelled ${succeeded} stuck round${succeeded === 1 ? '' : 's'}. ` +
-                `Your capsules should be spendable in a moment, then refresh will run on the next sync.`,
+                String(loc.formatString((succeeded === 1 ? loc.cypherbox.strike.ark_capsules.cancelled_stuck_spendable_one : loc.cypherbox.strike.ark_capsules.cancelled_stuck_spendable_other), { count: succeeded })),
                 SimpleToast.LONG,
             );
             return;
         }
 
         SimpleToast.show(
-            `Cancelled ${succeeded} stuck round${succeeded === 1 ? '' : 's'}, retrying refresh now…`,
+            String(loc.formatString((succeeded === 1 ? loc.cypherbox.strike.ark_capsules.cancelled_stuck_retrying_one : loc.cypherbox.strike.ark_capsules.cancelled_stuck_retrying_other), { count: succeeded })),
             SimpleToast.SHORT,
         );
         void refreshIds(freshBatch.ids, { skipConfirm: true });
@@ -2183,7 +2165,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const ids = dust.map((v) => v.id);
             const total = dust.reduce((acc, v) => acc + v.sats, 0);
             if (ids.length === 0) {
-                SimpleToast.show('No dust capsules to refresh.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.strike.ark_capsules.no_dust_capsules, SimpleToast.SHORT);
                 return;
             }
             // Gate on whether the sweep is WORTH anything, not on whether the
@@ -2221,7 +2203,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 // honest answer.
                 if (!isCoinosConnected) {
                     SimpleToast.show(
-                        `Only ${total} sats of dust so far. It needs to total at least ${ARK_REFRESH_MIN_SATS} sats before combining it is worth the fee.`,
+                        String(loc.formatString(loc.cypherbox.strike.ark_capsules.dust_total_too_low, { total, min: ARK_REFRESH_MIN_SATS })),
                         SimpleToast.LONG,
                     );
                     return;
@@ -2247,13 +2229,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 );
                 // COPY: Bam finalizes.
                 Alert.alert(
-                    "Combining these won't help yet",
-                    `${total} sats of dust across ${ids.length} capsule${ids.length === 1 ? '' : 's'}. ` +
-                    `Combining them costs a fee and still leaves you under ${ARK_REFRESH_MIN_SATS} sats, ` +
-                    `so the result would be dust again.`,
+                    loc.cypherbox.strike.ark_capsules.combine_wont_help_title,
+                    String(loc.formatString((ids.length === 1 ? loc.cypherbox.strike.ark_capsules.combine_wont_help_message_one : loc.cypherbox.strike.ark_capsules.combine_wont_help_message_other), { total, count: ids.length, min: ARK_REFRESH_MIN_SATS })),
                     [
                         {
-                            text: 'Move them to CoinOS',
+                            text: loc.cypherbox.strike.ark_capsules.move_to_coinos,
                             onPress: () => {
                                 dispatchNavigate('SwapAmount', {
                                     swapFrom: 'ark',
@@ -2271,7 +2251,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                             },
                         },
                         {
-                            text: `Top up ${shortfall} sats`,
+                            text: String(loc.formatString(loc.cypherbox.strike.ark_capsules.top_up_sats, { sats: shortfall })),
                             onPress: () => {
                                 // Arm the follow-up sweep. The swap happens on
                                 // another screen, so the intent has to outlive
@@ -2294,7 +2274,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                                 });
                             },
                         },
-                        { text: 'Not now', style: 'cancel' },
+                        { text: loc.cypherbox.strike.ark_capsules.not_now, style: 'cancel' },
                     ],
                     { cancelable: true },
                 );
@@ -2305,12 +2285,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 const fee = await estimateArkRefreshFee(ids);
                 const confirmed = await new Promise<boolean>((resolve) => {
                     Alert.alert(
-                        'Sweep dust?',
-                        `Combine ${ids.length} tiny capsule${ids.length === 1 ? '' : 's'} (${total} sats) into one for ~${fee.feeSats} sats. ` +
-                        `It finishes in the background within the hour, so you can close the app once it's submitted.`,
+                        loc.cypherbox.strike.ark_capsules.sweep_dust_title,
+                        String(loc.formatString((ids.length === 1 ? loc.cypherbox.strike.ark_capsules.sweep_dust_message_one : loc.cypherbox.strike.ark_capsules.sweep_dust_message_other), { count: ids.length, total, fee: fee.feeSats })),
                         [
-                            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-                            { text: 'Sweep', onPress: () => resolve(true) },
+                            { text: loc._.cancel, style: 'cancel', onPress: () => resolve(false) },
+                            { text: loc.cypherbox.strike.ark_capsules.sweep_button, onPress: () => resolve(true) },
                         ],
                         { cancelable: true, onDismiss: () => resolve(false) },
                     );
@@ -2323,13 +2302,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 setQueuedRoundsCount(queuedRoundsCountRef.current);
                 await refreshArkVtxosDelegatedAndSync(ids, total);
                 SimpleToast.show(
-                    'Dust sweep submitted. It finishes in the background within the hour.',
+                    loc.cypherbox.strike.ark_capsules.dust_sweep_submitted,
                     SimpleToast.LONG,
                 );
             } catch (err: any) {
                 if (err instanceof ArkRefreshInFlightError) {
                     SimpleToast.show(
-                        'A refresh is already running. Wait for it to finish, then try again.',
+                        loc.cypherbox.strike.ark_capsules.refresh_already_running,
                         SimpleToast.LONG,
                     );
                 } else {
@@ -2343,10 +2322,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     const dustSpent = await recordServerSpentFromError(err);
                     if (dustSpent) {
                         const { title, body } = notSpendableMessage(dustSpent);
-                        Alert.alert(title, body, [{ text: 'OK', style: 'default' }], { cancelable: true });
+                        Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
                     } else {
                         SimpleToast.show(
-                            'Dust sweep failed. Your funds are safe, nothing was spent.',
+                            loc.cypherbox.strike.ark_capsules.dust_sweep_failed,
                             SimpleToast.LONG,
                         );
                     }
@@ -2375,13 +2354,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const handleCancelPendingLnReceive = useCallback(
         (paymentHash: string, sats: number) => {
             Alert.alert(
-                "Cancel Lightning receive?",
-                `Cancel pending Lightning receive of ${formatCapsuleAmount(sats)}? ` +
-                `The sender (if any) will see the invoice as unpaid.`,
+                loc.cypherbox.strike.ark_capsules.cancel_ln_title,
+                String(loc.formatString(loc.cypherbox.strike.ark_capsules.cancel_ln_message, { amount: formatCapsuleAmount(sats) })),
                 [
-                    { text: "Keep waiting", style: "cancel" },
+                    { text: loc.cypherbox.strike.ark_capsules.keep_waiting, style: "cancel" },
                     {
-                        text: "Cancel receive",
+                        text: loc.cypherbox.strike.ark_capsules.cancel_receive,
                         style: "destructive",
                         onPress: async () => {
                             const result = await cancelArkLightningReceive(paymentHash);
@@ -2395,7 +2373,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                                     current.filter((r) => r.paymentHash !== paymentHash),
                                 );
                                 SimpleToast.show(
-                                    "Lightning receive cancelled.",
+                                    loc.cypherbox.strike.ark_capsules.ln_receive_cancelled,
                                     SimpleToast.SHORT,
                                 );
                             } else {
@@ -2435,7 +2413,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const states = await fetchArkPendingRoundStates();
             const ongoing = states.filter((s) => s.ongoing);
             if (ongoing.length === 0) {
-                SimpleToast.show('No active refresh to cancel', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.strike.ark_capsules.no_active_refresh, SimpleToast.SHORT);
                 return;
             }
             // Per-round cancel with retry. Bark's cancel can fail with
@@ -2488,23 +2466,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             }
             if (succeeded === ongoing.length) {
                 SimpleToast.show(
-                    `Cancelled ${succeeded} refresh${succeeded === 1 ? '' : 'es'}, funds unlocked`,
+                    String(loc.formatString((succeeded === 1 ? loc.cypherbox.strike.ark_capsules.cancelled_refreshes_one : loc.cypherbox.strike.ark_capsules.cancelled_refreshes_other), { count: succeeded })),
                     SimpleToast.SHORT,
                 );
             } else if (succeeded > 0) {
                 SimpleToast.show(
-                    `Cancelled ${succeeded} of ${ongoing.length}, the rest will settle in ~1 min`,
+                    String(loc.formatString(loc.cypherbox.strike.ark_capsules.cancelled_partial, { succeeded, total: ongoing.length })),
                     SimpleToast.LONG,
                 );
             } else {
                 SimpleToast.show(
-                    'Cancel held up server-side. The round will settle in ~1 min',
+                    loc.cypherbox.strike.ark_capsules.cancel_held_up,
                     SimpleToast.LONG,
                 );
             }
         } catch (err: any) {
             console.warn('[Ark] fetch pending rounds for cancel failed:', err?.message ?? err);
-            SimpleToast.show('Cancel failed. Try again in a moment.', SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.cancel_failed, SimpleToast.LONG);
             // Outer-catch (the fetch itself failed, not the per-round
             // cancels). No round was ever attempted; clear the UI gate
             // immediately so the X icon comes back and the user can
@@ -2619,24 +2597,26 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     them. */}
                 <VaultConnectivityPill conn={connectivity} />
                 <Text bold style={{ fontSize: 16, color: '#FFF', marginBottom: 6 }}>
-                    Reminders:{' '}
+                    {loc.formatString(loc.cypherbox.strike.ark_capsules.reminders_label, { state: (
                     <Text
                         bold
                         style={{ color: arkBgRefreshEnabled ? colors.green : colors.redLight, fontSize: 16 }}
                     >
-                        {arkBgRefreshEnabled ? 'on' : 'off'}
+                        {arkBgRefreshEnabled ? loc.cypherbox.strike.ark_capsules.reminders_on : loc.cypherbox.strike.ark_capsules.reminders_off}
                     </Text>
+                    ) })}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                        Your lightning capsules (VTXOs) must be refreshed before they expire. Once expired, recovery is not guaranteed.{' '}
+                        {loc.formatString(loc.cypherbox.strike.ark_capsules.capsules_tagline, { learn_more: (
                         <Text
                             bold
                             style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
                             onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
                         >
-                            Learn more
+                            {loc.cypherbox.strike.ark_capsules.learn_more}
                         </Text>
+                        ) })}
                     </Text>
                     <TouchableOpacity
                         onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
@@ -2717,8 +2697,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel={stuckExpirySoon
-                        ? 'Move your stuck funds out'
-                        : 'Recover stuck refresh'}
+                        ? loc.cypherbox.strike.ark_capsules.a11y_move_stuck_funds
+                        : loc.cypherbox.strike.ark_capsules.a11y_recover_stuck}
                     style={{
                         marginHorizontal: 20,
                         marginBottom: 10,
@@ -2733,33 +2713,36 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     <Text bold style={{ color: colors.redLight, fontSize: 13, lineHeight: 18 }}>
                         {arkRefreshStuck.nearExpiry ? (
                             <>
-                                Warning: Refresh stuck near expiry · {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
+                                {loc.formatString(loc.cypherbox.strike.ark_capsules.stuck_near_expiry_banner, { sats: arkRefreshStuck.stuckSats.toLocaleString(), link: (
                                 <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
-                                    Tap to move funds out
+                                    {loc.cypherbox.strike.ark_capsules.stuck_tap_move_out}
                                 </Text>
+                                ) })}
                             </>
                         ) : stuckExpirySoon ? (
                             <>
-                                Refresh looks stuck and this capsule expires soon.{' '}
+                                {loc.formatString(loc.cypherbox.strike.ark_capsules.stuck_expiring_banner, { link: (
                                 <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
-                                    Tap to swap it to another wallet
+                                    {loc.cypherbox.strike.ark_capsules.stuck_tap_swap}
                                 </Text>
+                                ) })}
                             </>
                         ) : (
                             <>
-                                Refresh stuck for {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
+                                {loc.formatString(loc.cypherbox.strike.ark_capsules.stuck_banner, { sats: arkRefreshStuck.stuckSats.toLocaleString(), link: (
                                 <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
-                                    Tap to recover.
+                                    {loc.cypherbox.strike.ark_capsules.stuck_tap_recover}
                                 </Text>
+                                ) })}
                             </>
                         )}
                     </Text>
                     <Text style={{ color: '#B0B0B0', fontSize: 11, marginTop: 3, lineHeight: 15 }}>
                         {arkRefreshStuck.nearExpiry
-                            ? 'Refresh process is stuck and some capsules are about to expire. Tap to move funds to another wallet before they expire.'
+                            ? loc.cypherbox.strike.ark_capsules.stuck_near_expiry_detail
                             : stuckExpirySoon
-                                ? `This refresh keeps failing and the capsule has ${formatTimeLeftDetailed(soonestStuckDaysLeft)}. Move it to another wallet and try the refresh again later.`
-                                : 'This round is taking longer than expected. Recovering unlocks your capsules so you can try again. Your funds are safe.'}
+                                ? loc.formatString(loc.cypherbox.strike.ark_capsules.stuck_expiring_detail, { time: formatTimeLeftDetailed(soonestStuckDaysLeft) })
+                                : loc.cypherbox.strike.ark_capsules.stuck_detail}
                     </Text>
                 </TouchableOpacity>
             )}
@@ -2793,10 +2776,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         }}
                     >
                         <RNText style={{ fontSize: 13, color: '#FFFFFF', fontWeight: '700', marginBottom: 4 }}>
-                            {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} ({strandedDust.total.toLocaleString()} sats) can be combined
+                            {loc.formatString((strandedDust.dust.length === 1 ? loc.cypherbox.strike.ark_capsules.sweepable_dust_title_one : loc.cypherbox.strike.ark_capsules.sweepable_dust_title_other), { count: strandedDust.dust.length, sats: strandedDust.total.toLocaleString() })}
                         </RNText>
                         <RNText style={{ fontSize: 12, color: '#ddd' }}>
-                            Tap here (or "Dust refresh" on a capsule) to combine {strandedDust.dust.length === 1 ? 'it' : 'them'} into one capsule before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}.
+                            {(strandedDust.dust.length === 1 ? loc.cypherbox.strike.ark_capsules.sweepable_dust_body_one : loc.cypherbox.strike.ark_capsules.sweepable_dust_body_other)}
                         </RNText>
                     </TouchableOpacity>
                 ) : (
@@ -2818,10 +2801,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         }}
                     >
                         <RNText style={{ fontSize: 13, color: '#FF7A68', fontWeight: '700', marginBottom: 4 }}>
-                            {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} cannot be refreshed yet
+                            {loc.formatString((strandedDust.dust.length === 1 ? loc.cypherbox.strike.ark_capsules.stranded_dust_title_one : loc.cypherbox.strike.ark_capsules.stranded_dust_title_other), { count: strandedDust.dust.length })}
                         </RNText>
                         <RNText style={{ fontSize: 12, color: '#ddd' }}>
-                            Only {strandedDust.total.toLocaleString()} sats total, below the {ARK_VTXO_DUST_SATS}-sat dust limit. Spend {strandedDust.dust.length === 1 ? 'it' : 'them'} in a payment before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}. A normal send folds {strandedDust.dust.length === 1 ? 'it' : 'them'} in.
+                            {loc.formatString((strandedDust.dust.length === 1 ? loc.cypherbox.strike.ark_capsules.stranded_dust_body_one : loc.cypherbox.strike.ark_capsules.stranded_dust_body_other), { sats: strandedDust.total.toLocaleString(), limit: ARK_VTXO_DUST_SATS })}
                         </RNText>
                     </View>
                 )
@@ -2829,8 +2812,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
             {/* Column header row — matches Hot Vault's layout */}
             <View style={vaultStyles.titleStyle}>
-                <Text bold style={vaultStyles.coin}>Capsules</Text>
-                <Text bold style={vaultStyles.size}>Size</Text>
+                <Text bold style={vaultStyles.coin}>{loc.cypherbox.strike.ark_capsules.col_capsules}</Text>
+                <Text bold style={vaultStyles.size}>{loc.cypherbox.strike.ark_capsules.col_size}</Text>
                 {/* Column header for the per-row refresh/cancel icons. Flips to
                     "Cancel" while a round is in flight, matching the per-row
                     icons that switch from the refresh arrows to a cancel-X. */}
@@ -2839,9 +2822,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     numberOfLines={1}
                     style={[vaultStyles.label, { fontSize: 18, textAlign: 'left', marginLeft: -8, flex: 1.35 }]}
                 >
-                    {roundInFlight ? 'Cancel' : 'Refresh'}
+                    {roundInFlight ? loc.cypherbox.strike.ark_capsules.col_cancel : loc.cypherbox.strike.ark_capsules.col_refresh}
                 </Text>
-                <Text bold style={vaultStyles.select}>Select</Text>
+                <Text bold style={vaultStyles.select}>{loc.cypherbox.strike.ark_capsules.col_select}</Text>
             </View>
             <View style={vaultStyles.border} />
 
@@ -2904,7 +2887,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     arkPendingLnReceives.length > 0 ? null : (
                         <View style={{ alignItems: "center", marginTop: 40 }}>
                             <Text style={{ color: colors.gray.light, fontSize: 13 }}>
-                                No lightning capsules yet. Receive Bitcoin via Ark to populate.
+                                {loc.cypherbox.strike.ark_capsules.empty}
                             </Text>
                         </View>
                     )
@@ -2936,9 +2919,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     />
                 )}
                 <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 12 }}>
-                    {renderActionButton("Send", handleSend)}
+                    {renderActionButton(loc.cypherbox.strike.ark_capsules.send_button, handleSend)}
                     {renderActionButton(
-                        refreshing ? "Refreshing…" : "Refresh",
+                        refreshing ? loc.cypherbox.strike.ark_capsules.refreshing_button : loc.cypherbox.strike.ark_capsules.refresh_button,
                         refreshing ? () => {} : handleRefresh,
                     )}
                 </View>
@@ -2978,14 +2961,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         }}
                     >
                         <Text bold style={{ fontSize: 12, color: colors.ark.light }}>
-                            {queuedRoundsCount} refresh rounds queued at Ark server
+                            {loc.formatString(loc.cypherbox.strike.ark_capsules.queued_rounds, { count: queuedRoundsCount })}
                         </Text>
                         <Text style={{ fontSize: 11, color: '#999', marginTop: 4, lineHeight: 15 }}>
-                            Tapping Refresh again won't speed it up, because each tap
-                            submits a new round and burns another fee on
-                            completion. Wait for the round to finalise (typically
-                            under a minute) or time out (~few hours) before
-                            retrying.
+                            {loc.cypherbox.strike.ark_capsules.queued_rounds_hint}
                         </Text>
                     </View>
                 )}
@@ -3008,8 +2987,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         paddingHorizontal: 24,
                     }}
                 >
-                    Don't trust the Ark server? Settings → Emergency Exit will
-                    sweep funds back on-chain without ASP cooperation.
+                    {loc.cypherbox.strike.ark_capsules.emergency_exit_pointer}
                 </RNText>
                 {/* Background-refresh opt-in card + DEV buttons moved to
                     FlatList ListFooterComponent so they scroll with the

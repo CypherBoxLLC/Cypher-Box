@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DocumentPicker from 'react-native-document-picker';
 
 import { peekBackupHeader } from './backup';
+import loc from '../../../loc';
 
 /**
  * User-chosen folder backup channel — Storage Access Framework (SAF)
@@ -164,19 +165,19 @@ function classifySafError(err: unknown): SafErrorClass {
 export function messageForSafError(cls: SafErrorClass): string {
     switch (cls) {
         case 'permission-revoked':
-            return "Cypher Box no longer has permission to write to your chosen backup folder. Tap 'Pick folder' to re-grant access.";
+            return loc.cypherbox.services.saf_backup.permission_revoked;
         case 'folder-unreachable':
-            return "The backup folder is no longer reachable (it may have been deleted, moved, or the storage was removed). Tap 'Pick folder' to choose a new one.";
+            return loc.cypherbox.services.saf_backup.folder_unreachable;
         case 'create-failed':
-            return "Couldn't create the backup file in the chosen folder. The folder may be read-only, so pick a different one.";
+            return loc.cypherbox.services.saf_backup.create_failed;
         case 'open-failed':
         case 'write-failed':
-            return "Couldn't write the backup to the chosen folder. The storage may be full or read-only, so pick a different folder.";
+            return loc.cypherbox.services.saf_backup.write_failed;
         case 'native-not-loaded':
-            return 'Local-folder backup is not available on this build.';
+            return loc.cypherbox.services.saf_backup.native_not_loaded;
         case 'unknown':
         default:
-            return "Couldn't save the backup to the chosen folder. Try picking a different folder, or use the share-sheet save below.";
+            return loc.cypherbox.services.saf_backup.unknown;
     }
 }
 

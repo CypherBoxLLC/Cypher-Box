@@ -1,4 +1,5 @@
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, shadow, widths } from "@Cypher/style-guide";
@@ -85,7 +86,7 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
                                         containerStyle={{ marginRight: 4 }}
                                     />
                                     <Text bold style={{ color: pressed ? '#FFFFFF' : '#000000', fontSize: 12, letterSpacing: 0.3 }}>
-                                        Add wallet
+                                        {loc.cypherbox.home.add_wallet}
                                     </Text>
                                 </>
                             )}

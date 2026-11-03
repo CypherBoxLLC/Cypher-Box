@@ -15,6 +15,7 @@ import {
 import { colors } from "@Cypher/style-guide";
 
 import styles from "./styles";
+import loc from "../../../../loc";
 
 // Ark yellow palette for the input border, sats/fiat tab strip, MAX
 // button, and Create-invoice CTA — replaces the pink defaults inherited
@@ -58,7 +59,7 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
 
     const handleCreate = async () => {
         if (!sats) {
-            SimpleToast.show("Please enter an amount", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.ark.invoice.enter_amount, SimpleToast.SHORT);
             return;
         }
         // Resolve the sat amount. CustomKeyboard writes the raw typed value to
@@ -74,7 +75,7 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
         const rate = Number(matchedRate) || 0;
         const satsAmount = Math.round(isSats ? Number(sats) : Number(usd));
         if (!Number.isFinite(satsAmount) || satsAmount <= 0) {
-            SimpleToast.show("Please enter a valid amount", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.ark.invoice.enter_valid_amount, SimpleToast.SHORT);
             return;
         }
 
@@ -99,7 +100,7 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
                 : "";
 
             navigation.replace("CopyInvoice", {
-                value: `Receive ${satsAmount} sats`,
+                value: String(loc.formatString(loc.cypherbox.ark.invoice.receive_amount, { amount: satsAmount })),
                 converted: formattedFiat,
                 hash: invoice,
                 receiveType: false,
@@ -125,8 +126,8 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
             );
             SimpleToast.show(
                 faultMsg
-                    ? `Could not create the invoice. ${faultMsg}`
-                    : `Failed to create Ark invoice: ${(err as Error)?.message ?? "unknown error"}`,
+                    ? String(loc.formatString(loc.cypherbox.ark.invoice.create_failed_fault, { reason: faultMsg }))
+                    : String(loc.formatString(loc.cypherbox.ark.invoice.create_failed, { message: (err as Error)?.message ?? loc.cypherbox.ark.common.unknown_error })),
                 SimpleToast.LONG,
             );
         } finally {
@@ -135,7 +136,7 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
     };
 
     return (
-        <ScreenLayout disableScroll showToolbar isBackButton title="Ark Lightning invoice">
+        <ScreenLayout disableScroll showToolbar isBackButton title={loc.cypherbox.ark.invoice.title}>
             <View style={styles.main}>
                 <GradientInput
                     isSats={isSats}
@@ -148,11 +149,11 @@ export default function ArkInvoiceScreen({ navigation, route }: any) {
             </View>
             {smallAmountWarn && (
                 <Text style={{ textAlign: 'center', marginHorizontal: 24, marginBottom: 6, fontSize: 12, color: '#FFD54F', lineHeight: 17 }}>
-                    Small amounts can leave un-refreshable dust that expires. Receiving 700 sats or more keeps them refreshable.
+                    {loc.cypherbox.ark.invoice.small_amount_warning}
                 </Text>
             )}
             <CustomKeyboard
-                title={smallAmountWarn ? "Create anyways" : "Create invoice"}
+                title={smallAmountWarn ? loc.cypherbox.ark.invoice.create_anyway : loc.cypherbox.ark.invoice.create_invoice}
                 onPress={handleCreate}
                 disabled={!sats.length || isLoading}
                 prevSats={sats}

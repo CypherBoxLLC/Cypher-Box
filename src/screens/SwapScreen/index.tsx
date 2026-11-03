@@ -8,6 +8,7 @@ import { colors } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import styles from "./styles";
+import loc from "../../../loc";
 
 type Service = 'strike' | 'coinos' | null;
 
@@ -87,13 +88,13 @@ export default function SwapScreen() {
                 style={{ height: 3, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}
             />
             <View style={styles.sheet}>
-                <Text style={styles.sectionTitle}>SWAP FROM</Text>
+                <Text style={styles.sectionTitle}>{loc.cypherbox.payments.swap_screen.swap_from}</Text>
                 <View style={styles.row}>
                     {renderOption('strike', swapFrom === 'strike', () => handleSelectFrom('strike'), !isStrikeAuth)}
                     {renderOption('coinos', swapFrom === 'coinos', () => handleSelectFrom('coinos'), !isAuth)}
                 </View>
 
-                <Text style={styles.sectionTitle}>SEND TO</Text>
+                <Text style={styles.sectionTitle}>{loc.cypherbox.payments.swap_screen.send_to}</Text>
                 <View style={styles.row}>
                     {renderOption('strike', sendTo === 'strike', () => handleSelectTo('strike'), !isStrikeAuth)}
                     {renderOption('coinos', sendTo === 'coinos', () => handleSelectTo('coinos'), !isAuth)}
@@ -104,7 +105,7 @@ export default function SwapScreen() {
                     onPress={handleNext}
                     disabled={!canProceed}
                 >
-                    <Text style={[styles.nextText, !canProceed && { opacity: 0.4 }]}>Next</Text>
+                    <Text style={[styles.nextText, !canProceed && { opacity: 0.4 }]}>{loc.cypherbox.payments.common.next}</Text>
                 </TouchableOpacity>
             </View>
         </View>

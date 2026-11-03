@@ -3,48 +3,49 @@ import { ScrollView, View, StyleSheet } from "react-native";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
 
-const tiers = [
+const getTiers = () => [
     {
-        name: "White",
+        name: loc.cypherbox.vault.capsule_catalog.tier_white,
         range: "10K – 100K sats",
         color: "#FFFFFF",
-        description: "Small amounts (like pennies & quarters)",
+        description: loc.cypherbox.vault.capsule_catalog.tier_white_desc,
         samples: [10_000, 30_000, 50_000, 70_000, 99_000],
     },
     {
-        name: "Orange",
+        name: loc.cypherbox.vault.capsule_catalog.tier_orange,
         range: "100K – 1.1M sats",
         color: "#FF8C00",
-        description: "Everyday spending range",
+        description: loc.cypherbox.vault.capsule_catalog.tier_orange_desc,
         samples: [110_000, 300_000, 500_000, 700_000, 1_050_000],
     },
     {
-        name: "Green",
+        name: loc.cypherbox.vault.capsule_catalog.tier_green,
         range: "1.1M – 11M sats",
         color: "#23C47F",
-        description: "Mid-size savings",
+        description: loc.cypherbox.vault.capsule_catalog.tier_green_desc,
         samples: [1_100_000, 3_000_000, 5_000_000, 7_000_000, 10_500_000],
     },
     {
-        name: "Pink",
+        name: loc.cypherbox.vault.capsule_catalog.tier_pink,
         range: "11M – 110M sats (~0.11 – 1.1 BTC)",
         color: "#FF69B4",
-        description: "Significant holdings",
+        description: loc.cypherbox.vault.capsule_catalog.tier_pink_desc,
         samples: [11_000_000, 30_000_000, 50_000_000, 70_000_000, 105_000_000],
     },
     {
-        name: "Blue",
+        name: loc.cypherbox.vault.capsule_catalog.tier_blue,
         range: "110M – 1.1B sats (~1.1 – 11 BTC)",
         color: "#1693ED",
-        description: "Large savings",
+        description: loc.cypherbox.vault.capsule_catalog.tier_blue_desc,
         samples: [110_000_000, 300_000_000, 500_000_000, 700_000_000, 1_050_000_000],
     },
     {
-        name: "Red",
+        name: loc.cypherbox.vault.capsule_catalog.tier_red,
         range: "1.1B+ sats (~11+ BTC)",
         color: "#FF0000",
-        description: "Whale tier",
+        description: loc.cypherbox.vault.capsule_catalog.tier_red_desc,
         samples: [1_100_000_000],
     },
 ];
@@ -58,22 +59,22 @@ const formatSats = (sats: number) => {
 
 export default function CapsuleCatalog() {
     return (
-        <ScreenLayout showToolbar title="Capsule Cheat Sheet">
+        <ScreenLayout showToolbar title={loc.cypherbox.vault.capsule_catalog.title}>
             <ScrollView style={styles.container} contentContainerStyle={styles.content}>
 
                 {/* Intro */}
                 <View style={styles.introCard}>
                     <Text h4 style={styles.introText}>
-                        White capsules = small amounts (like pennies, nickels, quarters) - cost high fees relative to their size{"\n"}
-                        Colored capsules = larger amounts of Bitcoin - cost lower fees relative to their size
+                        {loc.cypherbox.vault.capsule_catalog.intro_white}{"\n"}
+                        {loc.cypherbox.vault.capsule_catalog.intro_colored}
                     </Text>
                     <Text h4 style={[styles.introText, { marginTop: 10 }]}>
-                        The fill level shows how full the capsule is within its tier.
+                        {loc.cypherbox.vault.capsule_catalog.fill_level}
                     </Text>
                 </View>
 
                 {/* Tier visuals */}
-                {tiers.map((tier) => (
+                {getTiers().map((tier) => (
                     <View key={tier.name} style={styles.tierContainer}>
                         <View style={styles.tierHeader}>
                             <View style={[styles.colorDot, { backgroundColor: tier.color }]} />
@@ -97,28 +98,28 @@ export default function CapsuleCatalog() {
 
                 {/* Fees & Change */}
                 <View style={styles.infoCard}>
-                    <Text h4 bold style={styles.infoTitle}>⛽ Fees & Change</Text>
+                    <Text h4 bold style={styles.infoTitle}>{loc.cypherbox.vault.capsule_catalog.fees_title}</Text>
                     <Text h4 style={styles.infoText}>
-                        Just like spending quarters and pennies can be cumbersome, spending small-sized BTC capsules has its engineering friction in terms of fees. If you select lots of white capsules to spend from, your transaction gets bigger in terms of complexity which means higher fees.
+                        {loc.cypherbox.vault.capsule_catalog.fees_text}
                     </Text>
                     <Text h4 style={[styles.infoText, { marginTop: 10 }]}>
-                        There's also a privacy concern. Each capsule usually has its own history. If you use a large capsule to buy something small, your wallet will send the leftover back to you as a new "change capsule." This can sometimes suggest that you control a larger amount of Bitcoin.
+                        {loc.cypherbox.vault.capsule_catalog.privacy_text}
                     </Text>
                 </View>
 
                 {/* Recommendations */}
                 <View style={styles.infoCard}>
-                    <Text h4 bold style={styles.infoTitle}>💡 Recommendations</Text>
-                    <Text h4 style={styles.bulletText}>• Use small capsules for everyday payments</Text>
-                    <Text h4 style={styles.bulletText}>• Keep larger capsules for long-term saving</Text>
-                    <Text h4 style={styles.bulletText}>• Occasionally combine small capsules when fees are low, unless you plan to spend them soon</Text>
-                    <Text h4 style={styles.bulletText}>• Label your capsules when you receive them, especially KYC'd ones, so you can track and manage them strategically</Text>
+                    <Text h4 bold style={styles.infoTitle}>{loc.cypherbox.vault.capsule_catalog.recommendations_title}</Text>
+                    <Text h4 style={styles.bulletText}>{loc.cypherbox.vault.capsule_catalog.rec_small}</Text>
+                    <Text h4 style={styles.bulletText}>{loc.cypherbox.vault.capsule_catalog.rec_large}</Text>
+                    <Text h4 style={styles.bulletText}>{loc.cypherbox.vault.capsule_catalog.rec_combine}</Text>
+                    <Text h4 style={styles.bulletText}>{loc.cypherbox.vault.capsule_catalog.rec_label}</Text>
                 </View>
 
                 {/* KYC Warning */}
                 <View style={[styles.infoCard, { borderWidth: 1, borderColor: '#FF8C00' }]}>
                     <Text h4 style={[styles.infoText, { fontWeight: 'bold', color: '#FF8C00' }]}>
-                        ⚠️ Never mix KYC and non-KYC capsules in the same transaction. Selecting a KYC capsule alongside a non-KYC one links them on-chain, compromising the privacy of your non-KYC coins.
+                        {loc.cypherbox.vault.capsule_catalog.kyc_warning}
                     </Text>
                 </View>
 

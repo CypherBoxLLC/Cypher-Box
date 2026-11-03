@@ -188,8 +188,8 @@ const PsbtWithHardwareWallet = () => {
         {summary.outputs.map((output, i) => (
           <BlueText key={i} style={[styles.summaryRow, stylesHook.hexLabel]}>
             {loc.send.create_amount}: {output.value} sats{'\n'}
-            {loc.send.create_to}: {output.address ?? 'Unknown output script'}
-            {output.address && isOwnAddress(output.address) ? ' (your wallet)' : ''}
+            {loc.send.create_to}: {output.address ?? loc.cypherbox.payments.confirm_hardware_transaction.unknown_output}
+            {output.address && isOwnAddress(output.address) ? loc.cypherbox.legacy.psbt_hw.your_wallet : ''}
           </BlueText>
         ))}
         {summary.fee !== null ? (
@@ -219,12 +219,12 @@ const PsbtWithHardwareWallet = () => {
           </TouchableOpacity>
           <TouchableOpacity
             accessibilityRole="button"
-            accessibilityLabel="How to check this transaction yourself"
+            accessibilityLabel={loc.cypherbox.payments.confirm_hardware_transaction.verify_guide_a11y}
             style={styles.verifyRow}
             onPress={openVerifyGuide}
           >
             <Text style={[styles.verifyText, stylesHook.hexLabel]}>
-              Spending large capsules from cold storage? Check this signed transaction in an independent, offline tool before you send it.
+              {loc.cypherbox.payments.confirm_hardware_transaction.verify_guide_text}
             </Text>
             <View style={[styles.helpBtn, stylesHook.helpBtn]}>
               <Text style={[styles.helpText, stylesHook.hexText]}>?</Text>

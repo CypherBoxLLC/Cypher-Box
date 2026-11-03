@@ -18,8 +18,9 @@ import {
 } from "@Cypher/services/ark";
 import { estimateSwapFee, listLightningSwapProviders, swap } from "@Cypher/services/lightningSwap";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import loc from "../../../../loc";
 
 /**
  * ArkStuckCapsuleScreen: the "your refresh is stuck, move your funds out" rescue.
@@ -199,19 +200,19 @@ export default function ArkStuckCapsuleScreen() {
                 await swap("ark", selected, amount);
                 setResult({
                     ok: true,
-                    msg: `Moving ${amount.toLocaleString()} sats to ${selected === "strike" ? "Strike" : "Coinos"}.`,
+                    msg: String(loc.formatString(loc.cypherbox.ark.stuck_capsule.moving_to_wallet, { amount: amount.toLocaleString(), wallet: selected === "strike" ? "Strike" : "Coinos" })),
                 });
             } else {
                 const addr = addressFor(selected);
                 if (!addr) {
-                    setResult({ ok: false, msg: "Enter a valid Bitcoin address first." });
+                    setResult({ ok: false, msg: loc.cypherbox.ark.stuck_capsule.enter_valid_address_first });
                     setExiting(false);
                     return;
                 }
                 await offboardArkVtxos(expiring.ids, addr);
                 setResult({
                     ok: true,
-                    msg: `Moving ${expiring.sats.toLocaleString()} sats on-chain. It will confirm shortly.`,
+                    msg: String(loc.formatString(loc.cypherbox.ark.stuck_capsule.moving_onchain, { amount: expiring.sats.toLocaleString() })),
                 });
             }
             try {
@@ -232,7 +233,7 @@ export default function ArkStuckCapsuleScreen() {
             } else {
                 setResult({
                     ok: false,
-                    msg: "The move failed. Your funds are unchanged, try another wallet.",
+                    msg: loc.cypherbox.ark.stuck_capsule.move_failed_body,
                 });
             }
         } finally {
@@ -244,9 +245,9 @@ export default function ArkStuckCapsuleScreen() {
     const options: { key: Dest; label: string; disabled: boolean }[] = [
         { key: "strike", label: "Strike", disabled: !swapAvail.strike },
         { key: "coinos", label: "Coinos", disabled: !swapAvail.coinos },
-        { key: "hot", label: "Hot Vault (on-chain)", disabled: !walletID },
-        { key: "cold", label: "Cold Vault (on-chain)", disabled: !coldStorageWalletID },
-        { key: "external", label: "External Bitcoin address (on-chain)", disabled: false },
+        { key: "hot", label: loc.cypherbox.ark.stuck_capsule.option_hot_vault, disabled: !walletID },
+        { key: "cold", label: loc.cypherbox.ark.stuck_capsule.option_cold_vault, disabled: !coldStorageWalletID },
+        { key: "external", label: loc.cypherbox.ark.stuck_capsule.option_external, disabled: false },
     ];
 
     const canExit =
@@ -259,11 +260,11 @@ export default function ArkStuckCapsuleScreen() {
     // ----- render -----
     if (preparing) {
         return (
-            <ScreenLayout showToolbar isBackButton title="Stuck refresh">
+            <ScreenLayout showToolbar isBackButton title={loc.cypherbox.ark.stuck_capsule.title}>
                 <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
                     <ActivityIndicator color={accent} />
                     <Text style={{ fontSize: 13, color: "#CCC", marginTop: 12 }}>
-                        Unlocking your capsules…
+                        {loc.cypherbox.ark.stuck_capsule.unlocking}
                     </Text>
                 </View>
             </ScreenLayout>
@@ -272,10 +273,10 @@ export default function ArkStuckCapsuleScreen() {
 
     if (result) {
         return (
-            <ScreenLayout showToolbar isBackButton title="Stuck refresh">
+            <ScreenLayout showToolbar isBackButton title={loc.cypherbox.ark.stuck_capsule.title}>
                 <View style={{ flex: 1, padding: 24 }}>
                     <Text bold style={{ fontSize: 18, color: result.ok ? colors.green : colors.redLight, marginBottom: 12 }}>
-                        {result.ok ? "Funds on the way" : "Move failed"}
+                        {result.ok ? loc.cypherbox.ark.stuck_capsule.funds_on_the_way : loc.cypherbox.ark.stuck_capsule.move_failed}
                     </Text>
                     <Text style={{ fontSize: 13, color: "#CCC", lineHeight: 19 }}>{result.msg}</Text>
                     {!result.ok && (
@@ -284,7 +285,7 @@ export default function ArkStuckCapsuleScreen() {
                             activeOpacity={0.7}
                             style={{ marginTop: 20, paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: accent }}
                         >
-                            <Text bold style={{ fontSize: 14, color: "#0B0B0B" }}>Try another wallet</Text>
+                            <Text bold style={{ fontSize: 14, color: "#0B0B0B" }}>{loc.cypherbox.ark.stuck_capsule.try_another_wallet}</Text>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -293,42 +294,43 @@ export default function ArkStuckCapsuleScreen() {
     }
 
     return (
-        <ScreenLayout showToolbar isBackButton title="Stuck refresh">
+        <ScreenLayout showToolbar isBackButton title={loc.cypherbox.ark.stuck_capsule.title}>
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 40 }}>
                 <Text bold style={{ fontSize: 18, color: colors.redLight, lineHeight: 24, marginBottom: 12 }}>
-                    Your {expiring.sats.toLocaleString()} sats lightning capsule (VTXO) is caught in a stuck-refresh loop
+                    {loc.formatString(loc.cypherbox.ark.stuck_capsule.heading, { amount: expiring.sats.toLocaleString() })}
                 </Text>
                 <Text style={{ fontSize: 13, color: "#CCC", lineHeight: 19, marginBottom: 10 }}>
-                    This is an ASP-side problem, not Cypher Box. Refresh rounds run on the Ark
-                    server. When a round wedges, your capsule stays locked and keeps retrying
-                    instead of finishing.
+                    {loc.cypherbox.ark.stuck_capsule.asp_problem}
                 </Text>
                 <Text style={{ fontSize: 13, color: "#CCC", lineHeight: 19, marginBottom: 12 }}>
-                    Your funds are safe, but the capsule still has an expiry. The safe move is to{" "}
-                    <Text bold style={{ fontSize: 13, color: "#FFF", lineHeight: 19 }}>
-                        move the funds into another wallet before it expires
-                    </Text>
-                    .
+                    {loc.formatString(loc.cypherbox.ark.stuck_capsule.safe_move, {
+                        action: (
+                            <Text bold style={{ fontSize: 13, color: "#FFF", lineHeight: 19 }}>
+                                {loc.cypherbox.ark.stuck_capsule.safe_move_action}
+                            </Text>
+                        ),
+                    })}
                 </Text>
 
                 {expiring.ids.length === 0 ? (
                     <Text style={{ fontSize: 13, color: colors.green, lineHeight: 19, marginTop: 8 }}>
-                        No capsules are near expiry right now. The stuck refresh cleared and your
-                        funds are safe.
+                        {loc.cypherbox.ark.stuck_capsule.none_expiring}
                     </Text>
                 ) : (
                     <>
                         <View style={{ marginTop: 4, marginBottom: 8, padding: 12, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.04)" }}>
                             <Text bold style={{ fontSize: 14, color: "#FFF" }}>
-                                {expiring.ids.length} capsule{expiring.ids.length === 1 ? "" : "s"} about to expire
+                                {expiring.ids.length === 1
+                                    ? loc.formatString(loc.cypherbox.ark.stuck_capsule.expiring_count_one, { count: expiring.ids.length })
+                                    : loc.formatString(loc.cypherbox.ark.stuck_capsule.expiring_count_other, { count: expiring.ids.length })}
                             </Text>
                             <Text style={{ fontSize: 13, color: "#BBB", marginTop: 2 }}>
-                                {expiring.sats.toLocaleString()} sats total
+                                {loc.formatString(loc.cypherbox.ark.stuck_capsule.total_sats, { amount: expiring.sats.toLocaleString() })}
                             </Text>
                         </View>
 
                         <Text bold style={{ fontSize: 14, color: accent, marginTop: 12, marginBottom: 8 }}>
-                            Move them to
+                            {loc.cypherbox.ark.stuck_capsule.move_them_to}
                         </Text>
                         {options.map((opt) => {
                             const isSel = selected === opt.key;
@@ -366,11 +368,11 @@ export default function ArkStuckCapsuleScreen() {
                             <TextInput
                                 value={externalAddr}
                                 onChangeText={setExternalAddr}
-                                placeholder="Paste a Bitcoin address"
+                                placeholder={loc.cypherbox.ark.stuck_capsule.paste_address}
                                 placeholderTextColor="#777"
                                 autoCapitalize="none"
                                 autoCorrect={false}
-                                style={{ marginTop: 2, marginBottom: 8, borderWidth: 1, borderColor: "#444", borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, color: "#FFF", fontSize: 13 }}
+                                style={[{ marginTop: 2, marginBottom: 8, borderWidth: 1, borderColor: "#444", borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, color: "#FFF", fontSize: 13 }, rtl.ltrText]}
                             />
                         )}
 
@@ -379,15 +381,15 @@ export default function ArkStuckCapsuleScreen() {
                                 {estimating ? (
                                     <View style={{ flexDirection: "row", alignItems: "center" }}>
                                         <ActivityIndicator color={accent} />
-                                        <Text style={{ fontSize: 13, color: "#BBB", marginLeft: 10 }}>Estimating fee…</Text>
+                                        <Text style={{ fontSize: 13, color: "#BBB", marginLeft: 10 }}>{loc.cypherbox.ark.common.estimating_fee}</Text>
                                     </View>
                                 ) : (
                                     <Text style={{ fontSize: 13, color: "#DDD", lineHeight: 19 }}>
                                         {isOnchain(selected) && !addressFor(selected)
-                                            ? "Enter a valid Bitcoin address to see the fee."
+                                            ? loc.cypherbox.ark.stuck_capsule.enter_address_for_fee
                                             : feeSats == null
-                                            ? "Fee unavailable, you can still continue."
-                                            : `Fee: ${feeSats.toLocaleString()} sats`}
+                                            ? loc.cypherbox.ark.stuck_capsule.fee_unavailable
+                                            : loc.formatString(loc.cypherbox.ark.stuck_capsule.fee_amount, { amount: feeSats.toLocaleString() })}
                                     </Text>
                                 )}
                             </View>
@@ -398,13 +400,13 @@ export default function ArkStuckCapsuleScreen() {
                             disabled={!canExit}
                             activeOpacity={0.7}
                             accessibilityRole="button"
-                            accessibilityLabel="Rescue near-expired funds"
+                            accessibilityLabel={loc.cypherbox.ark.stuck_capsule.rescue}
                             style={{ marginTop: 16, paddingVertical: 14, borderRadius: 12, alignItems: "center", backgroundColor: canExit ? accent : "#444" }}
                         >
                             {exiting ? (
                                 <ActivityIndicator color="#0B0B0B" />
                             ) : (
-                                <Text bold style={{ fontSize: 15, color: "#0B0B0B" }}>Rescue near-expired funds</Text>
+                                <Text bold style={{ fontSize: 15, color: "#0B0B0B" }}>{loc.cypherbox.ark.stuck_capsule.rescue}</Text>
                             )}
                         </TouchableOpacity>
                     </>

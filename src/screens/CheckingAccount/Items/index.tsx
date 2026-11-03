@@ -5,7 +5,8 @@ import styles from "./styles"
 import { Text } from "@Cypher/component-library";
 import { Bitcoin, LiquidBitCoin, Socked } from "@Cypher/assets/images";
 import { btc } from "@Cypher/helpers/coinosHelper";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
+import loc from "../../../../loc";
 
 interface Props {
     matchedRate: number
@@ -47,23 +48,23 @@ export default function Items({ matchedRate, receiveType, item, onPressHandler }
                         <Text bold style={styles.des}>
                             {item.amount > 0
                                 ? item.confirmed
-                                ? "Received"
-                                : "Pending"
-                                : "Sent"}
+                                ? loc.cypherbox.account.checking_account.received
+                                : loc.cypherbox.account.checking_account.pending
+                                : loc.cypherbox.account.checking_account.sent}
                         </Text>
                     :
                         <Text bold style={styles.des}>
                             {item.amount?.amount > 0
-                                ? item.state === "UNPAID" ? "Pending"
-                                : item.state === "PAID" ? "Received"
-                                : item.state === "PENDING" ? "Pending"
-                                : "Cancelled" : ""
+                                ? item.state === "UNPAID" ? loc.cypherbox.account.checking_account.pending
+                                : item.state === "PAID" ? loc.cypherbox.account.checking_account.received
+                                : item.state === "PENDING" ? loc.cypherbox.account.checking_account.pending
+                                : loc.cypherbox.account.checking_account.cancelled : ""
                             }
                         </Text>
                     }
-                    <Text h3 style={{ color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }}>{amountSign+satsAmount} sats</Text>
+                    <Text h3 style={[{ color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }, rtl.ltrText]}>{amountSign+satsAmount} sats</Text>
                 </View>
-                <Text style={StyleSheet.flatten([styles.text, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }])}>{'$'+dollarAmount.toFixed(2)}</Text>
+                <Text style={StyleSheet.flatten([styles.text, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }, rtl.ltrText])}>{'$'+dollarAmount.toFixed(2)}</Text>
                 <Shadow
                     inner
                     useArt

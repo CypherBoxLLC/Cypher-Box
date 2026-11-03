@@ -21,8 +21,9 @@ import {
 import type { ArkOnchainRecoverEstimate } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import loc from "../../../../loc";
 
 // ark.second.tech server minimum board amount. Deposits below this can never
 // board into a VTXO, so they sit stuck in bark's on-chain (BDK) wallet until
@@ -114,14 +115,14 @@ export default function ArkOnchainRecoverSection() {
             const e = await estimateArkOnchainRecover(confirmedSats);
             setEst(e);
             if (e.confirmedSats <= 0) {
-                SimpleToast.show("Nothing to recover right now.", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.strike.ark_onchain_recover.nothing_to_recover_now, SimpleToast.SHORT);
                 return;
             }
             // Prefill the user's Hot Vault address as the default destination.
             setAddr(resolveHotVaultAddress() ?? "");
             setVisible(true);
         } catch {
-            SimpleToast.show("Could not read the on-chain balance. Try again.", SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.strike.ark_onchain_recover.read_balance_failed, SimpleToast.LONG);
         } finally {
             setBusy(false);
         }
@@ -155,11 +156,11 @@ export default function ArkOnchainRecoverSection() {
     const doRecover = useCallback(async () => {
         const dest = addr.trim();
         if (!dest || classifyArkDestination(dest).kind !== "onchain") {
-            SimpleToast.show("Enter a valid Bitcoin address.", SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.strike.ark_onchain_recover.enter_valid_address, SimpleToast.LONG);
             return;
         }
         if (!est || !est.economical) {
-            SimpleToast.show("Too small to recover (the network fee is larger than the amount).", SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.strike.ark_onchain_recover.too_small_to_recover, SimpleToast.LONG);
             return;
         }
         setBusy(true);
@@ -167,7 +168,7 @@ export default function ArkOnchainRecoverSection() {
             const res = await recoverArkOnchainBoard(dest, est.confirmedSats, est.feeRateSatPerVb);
             setVisible(false);
             if (res.status === "already-cleared") {
-                Alert.alert("Nothing to recover", "These funds already cleared.");
+                Alert.alert(loc.cypherbox.strike.ark_onchain_recover.nothing_to_recover_title, loc.cypherbox.strike.ark_onchain_recover.already_cleared);
             } else {
                 // Show the pending state with the txid (persists until the
                 // balance drops on the next sync).
@@ -184,14 +185,14 @@ export default function ArkOnchainRecoverSection() {
                     dest: isHotVaultAddress(dest) ? "hot-vault" : "external",
                 });
                 Alert.alert(
-                    "Recovery broadcast",
-                    `${res.sentSats.toLocaleString()} sats sent on-chain. It is pending confirmation and will appear at the destination shortly.\n\nTxid:\n${res.txid}`,
+                    loc.cypherbox.strike.ark_onchain_recover.recovery_broadcast,
+                    String(loc.formatString(loc.cypherbox.strike.ark_onchain_recover.recovery_broadcast_message, { sats: res.sentSats.toLocaleString(), txid: res.txid })),
                 );
             }
         } catch (e: any) {
             Alert.alert(
-                "Recovery failed",
-                String(e?.message || "") || "The recovery transaction could not be sent. Your funds are unchanged.",
+                loc.cypherbox.strike.ark_onchain_recover.recovery_failed,
+                String(e?.message || "") || loc.cypherbox.strike.ark_onchain_recover.recovery_failed_message,
             );
         } finally {
             setBusy(false);
@@ -203,7 +204,7 @@ export default function ArkOnchainRecoverSection() {
         return (
             <View style={{ marginTop: 16, marginBottom: 8 }}>
                 <Text bold style={{ color: "#FFF", fontSize: 14, marginHorizontal: 24, marginBottom: 8 }}>
-                    On-chain recovery
+                    {loc.cypherbox.strike.ark_onchain_recover.onchain_recovery}
                 </Text>
                 <View style={{ marginHorizontal: 18, borderRadius: 16, overflow: "hidden" }}>
                     <LinearGradient
@@ -212,20 +213,20 @@ export default function ArkOnchainRecoverSection() {
                         end={{ x: 0.5, y: 0.866 }}
                         style={{ padding: 16, borderRadius: 16, borderWidth: 1, borderColor: colors.green }}
                     >
-                        <Text bold style={{ color: "#FFF", fontSize: 16 }}>Recovery broadcast</Text>
+                        <Text bold style={{ color: "#FFF", fontSize: 16 }}>{loc.cypherbox.strike.ark_onchain_recover.recovery_broadcast}</Text>
                         <Text style={{ color: colors.green, fontSize: 12, marginTop: 4, fontStyle: "italic" }}>
-                            Pending confirmation. Funds are on the way and will clear here shortly.
+                            {loc.cypherbox.strike.ark_onchain_recover.pending_confirmation}
                         </Text>
                         <TouchableOpacity
                             onPress={() => {
                                 Clipboard.setString(recoverTxid);
-                                SimpleToast.show("Txid copied", SimpleToast.SHORT);
+                                SimpleToast.show(loc.cypherbox.strike.ark_onchain_recover.txid_copied, SimpleToast.SHORT);
                             }}
                             activeOpacity={0.7}
                             style={{ marginTop: 12 }}
                         >
-                            <Text style={{ color: colors.gray.light, fontSize: 11 }}>Transaction id (tap to copy)</Text>
-                            <RNText style={{ color: "#FFF", fontSize: 12 }} numberOfLines={1} ellipsizeMode="middle">
+                            <Text style={{ color: colors.gray.light, fontSize: 11 }}>{loc.cypherbox.strike.ark_onchain_recover.txid_tap_to_copy}</Text>
+                            <RNText style={[{ color: "#FFF", fontSize: 12 }, rtl.ltrText]} numberOfLines={1} ellipsizeMode="middle">
                                 {recoverTxid}
                             </RNText>
                         </TouchableOpacity>
@@ -233,7 +234,7 @@ export default function ArkOnchainRecoverSection() {
                             onPress={() => {
                                 const url = `https://mempool.space/tx/${recoverTxid}#details`;
                                 Linking.openURL(url).catch(() =>
-                                    SimpleToast.show("Could not open the explorer.", SimpleToast.SHORT),
+                                    SimpleToast.show(loc.cypherbox.strike.ark_onchain_recover.open_explorer_failed, SimpleToast.SHORT),
                                 );
                             }}
                             activeOpacity={0.7}
@@ -247,7 +248,7 @@ export default function ArkOnchainRecoverSection() {
                             }}
                         >
                             <RNText style={{ color: colors.green, fontSize: 12, fontWeight: "700" }}>
-                                View in Bitcoin network explorer
+                                {loc.cypherbox.strike.ark_onchain_recover.view_in_explorer}
                             </RNText>
                         </TouchableOpacity>
                     </LinearGradient>
@@ -268,16 +269,16 @@ export default function ArkOnchainRecoverSection() {
     const headlineSats = confirmedSats > 0 ? confirmedSats : confirmingSats;
     const statusText =
         confirmedSats <= 0
-            ? "Confirming on-chain…"
+            ? loc.cypherbox.strike.ark_onchain_recover.confirming_onchain
             : belowMin
-                ? `Too small to board (min ${MIN_BOARD_SATS.toLocaleString()} sats). Recover it on-chain.`
-                : "Waiting to board. You can recover it on-chain instead.";
+                ? String(loc.formatString(loc.cypherbox.strike.ark_onchain_recover.too_small_to_board, { min: MIN_BOARD_SATS.toLocaleString() }))
+                : loc.cypherbox.strike.ark_onchain_recover.waiting_to_board;
     const accent = belowMin ? "#FFD54F" : colors.ark.light;
 
     return (
         <View style={{ marginTop: 16, marginBottom: 8 }}>
             <Text bold style={{ color: "#FFF", fontSize: 14, marginHorizontal: 24, marginBottom: 8 }}>
-                On-chain (not boarded)
+                {loc.cypherbox.strike.ark_onchain_recover.onchain_not_boarded}
             </Text>
 
             {/* Capsule card — echoes the VTXO row gradient so it reads as part
@@ -309,7 +310,7 @@ export default function ArkOnchainRecoverSection() {
                             }}
                         >
                             <RNText style={{ color: "#1C1C1C", fontWeight: "700", fontSize: 14 }}>
-                                {busy ? "Working…" : "Recover to a Bitcoin address"}
+                                {busy ? loc.cypherbox.strike.ark_onchain_recover.working : loc.cypherbox.strike.ark_onchain_recover.recover_to_address}
                             </RNText>
                         </TouchableOpacity>
                     )}
@@ -321,7 +322,7 @@ export default function ArkOnchainRecoverSection() {
                         <TouchableOpacity
                             onPress={() => {
                                 setArkExitFeeReserveSats(confirmedSats);
-                                SimpleToast.show("Kept on-chain for exit fees.", SimpleToast.SHORT);
+                                SimpleToast.show(loc.cypherbox.strike.ark_onchain_recover.kept_for_exit_fees, SimpleToast.SHORT);
                             }}
                             activeOpacity={0.7}
                             style={{
@@ -334,7 +335,7 @@ export default function ArkOnchainRecoverSection() {
                             }}
                         >
                             <RNText style={{ color: accent, fontWeight: "700", fontSize: 13 }}>
-                                Leave on-chain funds as exit fees
+                                {loc.cypherbox.strike.ark_onchain_recover.leave_as_exit_fees}
                             </RNText>
                         </TouchableOpacity>
                     )}
@@ -346,16 +347,16 @@ export default function ArkOnchainRecoverSection() {
                 <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", paddingHorizontal: 24 }}>
                     <View style={{ backgroundColor: "#1C1C1C", borderRadius: 16, padding: 20, borderWidth: 1, borderColor: colors.ark.light }}>
                         <Text bold style={{ color: "#FFF", fontSize: 16, marginBottom: 12 }}>
-                            Recover on-chain funds
+                            {loc.cypherbox.strike.ark_onchain_recover.recover_onchain_funds}
                         </Text>
                         {est && (
                             <Text style={{ color: colors.gray.light, fontSize: 13, marginBottom: 12, lineHeight: 19 }}>
                                 {est.economical
-                                    ? `Send ${est.recoverableSats.toLocaleString()} sats to the address below. On-chain fee about ${est.feeSats.toLocaleString()} sats (${est.feeRateSatPerVb} sat/vB).`
-                                    : "This amount is too small to recover economically: the network fee would be larger than it."}
+                                    ? loc.formatString(loc.cypherbox.strike.ark_onchain_recover.recover_estimate, { sats: est.recoverableSats.toLocaleString(), fee: est.feeSats.toLocaleString(), rate: est.feeRateSatPerVb })
+                                    : loc.cypherbox.strike.ark_onchain_recover.not_economical}
                             </Text>
                         )}
-                        <Text style={{ color: "#FFF", fontSize: 12, marginBottom: 6 }}>Destination Bitcoin address</Text>
+                        <Text style={{ color: "#FFF", fontSize: 12, marginBottom: 6 }}>{loc.cypherbox.strike.ark_onchain_recover.destination_address}</Text>
                         <TextInput
                             value={addr}
                             onChangeText={setAddr}
@@ -364,36 +365,36 @@ export default function ArkOnchainRecoverSection() {
                             autoCapitalize="none"
                             autoCorrect={false}
                             multiline
-                            style={{ color: "#FFF", borderWidth: 1, borderColor: "#444", borderRadius: 8, padding: 10, fontSize: 13, minHeight: 48 }}
+                            style={[{ color: "#FFF", borderWidth: 1, borderColor: "#444", borderRadius: 8, padding: 10, fontSize: 13, minHeight: 48 }, rtl.ltrText]}
                         />
                         <View style={{ flexDirection: "row", marginTop: 8 }}>
                             <TouchableOpacity
                                 onPress={onPaste}
                                 style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: "#555", marginRight: 8 }}
                             >
-                                <RNText style={{ color: colors.ark.light, fontSize: 12, fontWeight: "700" }}>Paste</RNText>
+                                <RNText style={{ color: colors.ark.light, fontSize: 12, fontWeight: "700" }}>{loc.cypherbox.strike.ark_onchain_recover.paste}</RNText>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => {
                                     const hv = resolveHotVaultAddress();
                                     if (hv) setAddr(hv);
-                                    else SimpleToast.show("No Hot Vault address found.", SimpleToast.SHORT);
+                                    else SimpleToast.show(loc.cypherbox.strike.ark_onchain_recover.no_hot_vault_address, SimpleToast.SHORT);
                                 }}
                                 style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, borderWidth: 1, borderColor: "#555" }}
                             >
-                                <RNText style={{ color: colors.ark.light, fontSize: 12, fontWeight: "700" }}>Use Hot Vault</RNText>
+                                <RNText style={{ color: colors.ark.light, fontSize: 12, fontWeight: "700" }}>{loc.cypherbox.strike.ark_onchain_recover.use_hot_vault}</RNText>
                             </TouchableOpacity>
                         </View>
                         <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 18, alignItems: "center" }}>
                             <TouchableOpacity onPress={() => !busy && setVisible(false)} style={{ paddingVertical: 10, paddingHorizontal: 16, marginRight: 8 }}>
-                                <RNText style={{ color: "#999", fontSize: 14, fontWeight: "700" }}>Cancel</RNText>
+                                <RNText style={{ color: "#999", fontSize: 14, fontWeight: "700" }}>{loc._.cancel}</RNText>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={doRecover}
                                 disabled={busy || !est?.economical}
                                 style={{ paddingVertical: 10, paddingHorizontal: 18, borderRadius: 8, backgroundColor: busy || !est?.economical ? "#444" : colors.ark.light }}
                             >
-                                <RNText style={{ color: "#1C1C1C", fontSize: 14, fontWeight: "700" }}>{busy ? "Sending…" : "Recover"}</RNText>
+                                <RNText style={{ color: "#1C1C1C", fontSize: 14, fontWeight: "700" }}>{busy ? loc.cypherbox.strike.ark_onchain_recover.sending : loc.cypherbox.strike.ark_onchain_recover.recover}</RNText>
                             </TouchableOpacity>
                         </View>
                     </View>

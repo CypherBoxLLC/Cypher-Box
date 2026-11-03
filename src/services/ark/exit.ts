@@ -44,6 +44,7 @@ import useAuthStore from '@Cypher/stores/authStore';
 import { isActiveExit } from './barkState';
 import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
 import { runBroadcastCall } from './indeterminate';
+import loc from '../../../loc';
 
 /**
  * Hard gate for every OUTGOING spend path (send, offboard, convert, swap
@@ -67,7 +68,7 @@ export function assertNoActiveArkExit(): void {
     const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
     if (s.arkExitInProgress || exitingVtxo) {
         throw new Error(
-            'Emergency Exit is in progress. Sending from the Bark vault is disabled until the exit completes on-chain.',
+            loc.cypherbox.services.ark_exit.exit_in_progress,
         );
     }
 }
@@ -75,7 +76,7 @@ export function assertNoActiveArkExit(): void {
 function requireWallet() {
     const handle = getArkWalletHandle();
     if (!handle) throw new Error(
-        'The vault is not open yet. It needs a connection to open, so check yours and reopen the vault, then try again.',
+        loc.cypherbox.services.ark_exit.vault_not_open,
     );
     return handle;
 }
@@ -103,7 +104,7 @@ export async function startArkEmergencyExit(vtxoIds: readonly string[]): Promise
     const handle = requireWallet();
     const ids = (vtxoIds ?? []).filter((id) => !!id);
     if (ids.length === 0) {
-        throw new Error('No capsules can be exited right now.');
+        throw new Error(loc.cypherbox.services.ark_exit.no_capsules_exitable);
     }
     // Spawn the onchain wallet eagerly — progressExits() needs it on the very
     // next tick. Catching here surfaces a clean error to the UI rather than
@@ -300,7 +301,7 @@ export async function claimArkExitsToAddress(
     const handle = requireWallet();
     const dest = address?.trim();
     if (!dest) {
-        throw new Error('Destination address is required');
+        throw new Error(loc.cypherbox.services.ark_exit.destination_required);
     }
 
     // 1. Build + sign the claim PSBT. Does NOT broadcast.
@@ -319,7 +320,7 @@ export async function claimArkExitsToAddress(
     // If this dies mid-call the claim may already be in a mempool. Reporting a
     // clean failure would invite a second claim attempt against outputs that
     // are already being spent.
-    const txid = await runBroadcastCall(() => handle.broadcastTx(txHex), 'claim');
+    const txid = await runBroadcastCall(() => handle.broadcastTx(txHex), loc.cypherbox.services.indeterminate.what_claim);
     console.log(`[Ark exit] claim broadcast txid=${txid}`);
 
     return { txid, feeSats, psbtBase64: claim.psbtBase64 };

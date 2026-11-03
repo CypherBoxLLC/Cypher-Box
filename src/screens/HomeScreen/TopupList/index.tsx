@@ -23,12 +23,13 @@ import {
 import { dispatchNavigate } from "@Cypher/helpers";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors, widths } from "@Cypher/style-guide";
+import { colors, ltr, rtl, widths } from "@Cypher/style-guide";
 import withdrawStyles from "../WithdrawList/styles";
 import sendStyles from "../SendListNew/styles";
 import Capsule from "../../HotStorageVault/Capsule";
 import { btc as btcHandle } from "@Cypher/helpers/coinosHelper";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import loc from "../../../../loc";
 import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import { getArkOnchainAddress } from "@Cypher/services/ark/receive";
@@ -70,13 +71,13 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
   const vaultData = [
     ...(hasHotVault ? [{
       id: 1,
-      name: "Hot Vault",
+      name: loc.cypherbox.home_lists.topup_list.hot_vault,
       icon: Hot,
       shadowColor: colors.greenShadow,
     }] : []),
     ...(hasColdVault ? [{
       id: 2,
-      name: "Cold Vault",
+      name: loc.cypherbox.home_lists.topup_list.cold_vault,
       icon: Cold1,
       shadowColor: colors.blueText,
     }] : []),
@@ -105,7 +106,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
     // generation in the address-fetch step below.
     ...(isArkAuth ? [{
       id: 5,
-      name: "Bark Vault",
+      name: loc.cypherbox.home_lists.topup_list.bark_vault,
       icon: Second,
       isLogo: true,
     }] : []),
@@ -200,7 +201,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
 
   const handleTopup = async () => {
     if (selectedIds.length === 0) {
-      SimpleToast.show("Select capsules to top up from", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.home_lists.topup_list.select_capsules_toast, SimpleToast.SHORT);
       return;
     }
 
@@ -261,7 +262,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
       }, 150);
     } catch (error) {
       console.error('TopupList: Error generating address:', error);
-      SimpleToast.show("Failed to generate address. Try again.", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.home_lists.topup_list.address_failed, SimpleToast.SHORT);
     } finally {
       setGeneratingAddress(false);
     }
@@ -272,7 +273,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
   const accountLabel =
     selectedAccount === 3 ? 'CoinOS'
     : selectedAccount === 4 ? 'Strike'
-    : selectedAccount === 5 ? 'Bark Vault'
+    : selectedAccount === 5 ? loc.cypherbox.home_lists.topup_list.bark_vault
     : 'Strike';
 
   // Get memo/label for a UTXO
@@ -318,7 +319,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
           <Capsule item={item} wallet={null} onPress={() => {}} handleChoose={() => {}} ids={[]} vaultTab={isVaultCold} />
         </View>
         <Text numberOfLines={1} style={{ fontSize: 10, color: isVaultCold ? colors.coldGreen : colors.green, fontStyle: memo ? 'normal' : 'italic', marginTop: 6 }}>
-          {memo || '(not labeled)'}
+          {memo || loc.cypherbox.home_lists.topup_list.not_labeled}
         </Text>
       </TouchableOpacity>
     );
@@ -341,7 +342,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
           {/* ======= FIRST VIEW: Withdraw-style card selection ======= */}
           <Animated.View style={[{}, view1Style]}>
             <Text h2 bold style={withdrawStyles.receiveToLabel}>
-              TOP-UP FROM
+              {loc.cypherbox.home_lists.topup_list.topup_from}
             </Text>
 
             {/* Vault cards (source) — single row (max 2 vaults).
@@ -397,7 +398,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
             </View>
 
             <Text h2 bold style={[withdrawStyles.receiveToLabel, { marginTop: 30 }]}>
-              TOP-UP TO
+              {loc.cypherbox.home_lists.topup_list.topup_to}
             </Text>
 
             {/* Account cards (Lightning destinations) — 2-col × 2-row
@@ -451,7 +452,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                           color="#FFFFFF"
                           style={{ marginRight: 6 }}
                         />
-                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>Bark Vault</Text>
+                        <Text bold style={{ fontSize: 16, color: '#FFFFFF' }}>{loc.cypherbox.home_lists.topup_list.bark_vault}</Text>
                       </>
                     ) : (
                       <Image
@@ -528,7 +529,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
               {/* Header */}
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10, position: 'relative' }}>
                 <TouchableOpacity onPress={backClickHandler} style={{ position: 'absolute', left: 0 }}>
-                  <Image source={Back} style={{ width: 24, height: 22 }} resizeMode="contain" />
+                  <Image source={Back} style={[{ width: 24, height: 22 }, rtl.mirror]} resizeMode="contain" />
                 </TouchableOpacity>
                 <Image
                   source={selectedVault === 1 ? Hot : Cold1}
@@ -536,14 +537,14 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   resizeMode="contain"
                 />
                 <Text bold style={{ fontSize: 16 }}>
-                  {selectedVault === 1 ? 'Hot Vault' : 'Cold Vault'} → {accountLabel}
+                  {loc.formatString(loc.cypherbox.home_lists.topup_list.vault_to_account, { vault: selectedVault === 1 ? loc.cypherbox.home_lists.topup_list.hot_vault : loc.cypherbox.home_lists.topup_list.cold_vault, account: accountLabel })}
                 </Text>
               </View>
 
               {/* Instruction text */}
               <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, marginBottom: 2 }}>
                 <Text style={{ fontSize: 13, color: '#999', flex: 1, marginLeft: 10 }}>
-                  Select the capsules you want to top up from:
+                  {loc.cypherbox.home_lists.topup_list.select_capsules}
                 </Text>
               </View>
 
@@ -554,7 +555,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                 </View>
               ) : utxoList.length === 0 ? (
                 <View style={{ maxHeight: Dimensions.get('window').height * 0.30, justifyContent: 'center', alignItems: 'center', marginTop: 10 }}>
-                  <Text style={{ color: '#888' }}>No capsules in this vault</Text>
+                  <Text style={{ color: '#888' }}>{loc.cypherbox.home_lists.topup_list.no_capsules}</Text>
                 </View>
               ) : (
                 <ScrollView
@@ -584,12 +585,12 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}>
-                  <Text bold style={{ fontSize: 13, color: '#fff' }} numberOfLines={1}>
+                  <Text bold style={[{ fontSize: 13, color: '#fff' }, rtl.ltrText]} numberOfLines={1}>
                     {totalBTC} BTC
                   </Text>
                 </View>
-                <Text bold style={{ fontSize: 13, color: '#aaa', marginHorizontal: 6 }} numberOfLines={1}>
-                  ~${totalUSD.toFixed(2)}
+                <Text bold style={[{ fontSize: 13, color: '#aaa', marginHorizontal: 6 }, rtl.ltrText]} numberOfLines={1}>
+                  {ltr(`~$${totalUSD.toFixed(2)}`)}
                 </Text>
                 <GradientView
                   onPress={handleTopup}
@@ -640,7 +641,7 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
                   {generatingAddress ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
-                    <Text bold center style={{ fontSize: 15 }}>Top-up</Text>
+                    <Text bold center style={{ fontSize: 15 }}>{loc.cypherbox.home_lists.topup_list.topup}</Text>
                   )}
                 </GradientView>
               </View>

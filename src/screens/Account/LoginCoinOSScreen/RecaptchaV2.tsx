@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
+import loc from '../../../../loc';
 
 interface RecaptchaV2Props {
   siteKey: string;
@@ -66,9 +67,9 @@ const RecaptchaV2: React.FC<RecaptchaV2Props> = ({
       </head>
       <body>
         <div class="container">
-          <h2>Verifying...</h2>
+          <h2>${loc.cypherbox.account.login_coinos.verifying}</h2>
           <div class="spinner"></div>
-          <p class="loading">Please wait while we verify you're human</p>
+          <p class="loading">${loc.cypherbox.account.login_coinos.captcha_wait}</p>
         </div>
         <script>
           function onRecaptchaSuccess(token) {

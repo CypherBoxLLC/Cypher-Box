@@ -1,4 +1,5 @@
 import { colors, widths } from "@Cypher/style-guide";
+import { mirrorTransform } from "@Cypher/style-guide/rtl";
 import { ImageStyle, StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 interface Style {
@@ -110,7 +111,7 @@ export default StyleSheet.create<Style>({
     image: {
         width: 41,
         height: 31,
-        transform: [{ rotate: '180deg' }]
+        transform: [{ rotate: '180deg' }, ...mirrorTransform]
     },
     middle: {
         flex: 1,

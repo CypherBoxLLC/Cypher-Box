@@ -220,6 +220,10 @@
 		<string>Lato-Italic.ttf</string>
 		<string>Archivo-Regular.ttf</string>
 		<string>Lato-Thin.ttf</string>
+		<string>Tajawal-Bold.ttf</string>
+		<string>Tajawal-Light.ttf</string>
+		<string>Tajawal-Medium.ttf</string>
+		<string>Tajawal-Regular.ttf</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

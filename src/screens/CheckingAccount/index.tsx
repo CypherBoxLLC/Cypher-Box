@@ -6,7 +6,7 @@ import SimpleToast from "react-native-simple-toast";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientCard, GradientTab, GradientText } from "@Cypher/components";
 import { CoinOS, Information, Line, Time } from "@Cypher/assets/images";
-import { colors } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
 import Items from "./Items";
 import Header from "./Header";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -16,6 +16,7 @@ import screenHeight from "@Cypher/style-guide/screenHeight";
 import { btc, formatNumber } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { getInvoices } from "@Cypher/api/strikeAPIs";
+import loc from "../../../loc";
 
 interface Transaction {
     date: string;
@@ -191,7 +192,7 @@ export default function CheckAccount({ navigation, route }: any) {
             setValue(Number(newValue));
             receiveType ? setWithdrawThreshold(newValue) : setWithdrawStrikeThreshold(newValue);
         } else {
-            SimpleToast.show("Withdraw Threshold cannot be less than 2M", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.checking_account.withdraw_min_toast, SimpleToast.SHORT);
         }
     };
 
@@ -204,7 +205,7 @@ export default function CheckAccount({ navigation, route }: any) {
             setValue(Number(newValue));
             receiveType ? setWithdrawThreshold(newValue) : setWithdrawStrikeThreshold(newValue);
         } else {
-            SimpleToast.show("Withdraw Threshold cannot be greater than 9M", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.checking_account.withdraw_max_toast, SimpleToast.SHORT);
         }
     };
 
@@ -217,7 +218,7 @@ export default function CheckAccount({ navigation, route }: any) {
             setReserveAmt(Number(newValue));
             receiveType ? setReserveAmount(newValue) : setReserveStrikeAmount(newValue);
         } else {
-            SimpleToast.show("Reserve Amount cannot be less than 100K", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.checking_account.reserve_min_toast, SimpleToast.SHORT);
         }
     }
 
@@ -230,7 +231,7 @@ export default function CheckAccount({ navigation, route }: any) {
             setReserveAmt(Number(newValue));
             receiveType ? setReserveAmount(newValue) : setReserveStrikeAmount(newValue);
         } else {
-            SimpleToast.show("Reserve Amount cannot be greater than 2M", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.checking_account.reserve_max_toast, SimpleToast.SHORT);
         }
     }
 
@@ -249,8 +250,8 @@ export default function CheckAccount({ navigation, route }: any) {
     const customizeClickHandler = (index: number) => {
         // WithdrawThreshold   
         dispatchNavigate('WithdrawThreshold', {
-            title: index == 0 ? 'Withdraw Threshold' : 'Reserve Amount',
-            titleBtn: index == 0 ? 'Set Threshold' : 'Set Reserve Amount',
+            title: index == 0 ? loc.cypherbox.account.checking_account.withdraw_threshold : loc.cypherbox.account.checking_account.reserve_amount,
+            titleBtn: index == 0 ? loc.cypherbox.account.checking_account.set_threshold : loc.cypherbox.account.checking_account.set_reserve_amount,
             onSelect: onSelect,
             index,
             matchedRate
@@ -366,12 +367,12 @@ export default function CheckAccount({ navigation, route }: any) {
         <ScreenLayout disableScroll showToolbar isBackButton>
             <View style={styles.container}>
                 <View style={[styles.innerView, { borderBottomColor: isTab ? '#333333' : colors.primary }]}>
-                    <Text subHeader bold>Lightning Account</Text>
+                    <Text subHeader bold>{loc.cypherbox.account.common.lightning_account}</Text>
                     <GradientTab isTextAfter firstTabImg={Time} secondTabImg={
                         <View style={[styles.lineView, !isTab && { borderColor: colors.white }]}>
                             <Image source={Line} style={[styles.line, !isTab && { tintColor: colors.white }]} resizeMode="contain" />
                         </View>
-                    } tab1="History" tab2="Threshold" isSats={isTab} setIsSats={setIsTab}
+                    } tab1={loc.cypherbox.account.checking_account.history} tab2={loc.cypherbox.account.checking_account.threshold} isSats={isTab} setIsSats={setIsTab}
                         imageStyle={{ width: 30, height: 26 }}
                         color_={['#454545', '#3636368C']} />
                 </View>
@@ -394,7 +395,7 @@ export default function CheckAccount({ navigation, route }: any) {
                                     }
                                     ListEmptyComponent={() => (
                                         <View style={{ height: screenHeight / 2.2, justifyContent: 'center', alignItems: 'center', marginTop: 30 }}>
-                                            <Text white h3 bold>No Transactions</Text>
+                                            <Text white h3 bold>{loc.cypherbox.account.checking_account.no_transactions}</Text>
                                         </View>
                                     )}
                                     refreshControl={
@@ -419,12 +420,12 @@ export default function CheckAccount({ navigation, route }: any) {
                     </View>
                     :
                     <View style={styles.main}>
-                        <Text h2 semibold>Withdraw Threshold</Text>
+                        <Text h2 semibold>{loc.cypherbox.account.checking_account.withdraw_threshold}</Text>
                         <Text>
-                            You can adjust the threshold at which a message will be displayed to remind you to withdraw and materialize the money accumulated on your Lightning Account and move it into self-custody.
+                            {loc.cypherbox.account.checking_account.threshold_desc}
                         </Text>
                         <Text>
-                            Be aware that adjusting this threshold involves balancing Bitcoin network fees against counter-party risk.
+                            {loc.cypherbox.account.checking_account.threshold_fees_note}
                             {/* <Text>fsds</Text> */}
                         </Text>
                         {/* <GradientText style={{ fontSize: 14 }}>Learn more</GradientText> */}
@@ -454,8 +455,8 @@ export default function CheckAccount({ navigation, route }: any) {
                                             return (
                                                 <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                                                     onPress={() => selectClickHandler(item?.sats)}>
-                                                    <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                                                    <Text style={{ fontSize: 18, marginStart: 30 }}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
+                                                    <Text bold style={[{ fontSize: 18 }, rtl.ltrText]}>{formatNumber(item?.sats) + " sats"}</Text>
+                                                    <Text style={[{ fontSize: 18, marginStart: 30 }, rtl.ltrText]}>{ltr(`~$${(item?.sats * matchedRate * currency).toFixed(2)}`)}</Text>
                                                 </TouchableOpacity>
                                             )
                                         })}
@@ -463,13 +464,13 @@ export default function CheckAccount({ navigation, route }: any) {
                                 </GradientCard>
                             </View>
                         </Modal>
-                        <Text center style={styles.usd}>${(value * matchedRate * currency).toFixed(2)}</Text>
+                        <Text center style={[styles.usd, rtl.ltrText]}>${(value * matchedRate * currency).toFixed(2)}</Text>
                         <TouchableOpacity onPress={() => customizeClickHandler(0)}>
-                            <GradientText style={styles.gradientText}>Customize</GradientText>
+                            <GradientText style={styles.gradientText}>{loc.cypherbox.account.checking_account.customize}</GradientText>
                         </TouchableOpacity>
                         {/* <Text h3 center>Estimated withdraw fee: 0.2%</Text> */}
                         <View style={styles.reserve}>
-                            <Text h2 semibold>Reserve Amount</Text>
+                            <Text h2 semibold>{loc.cypherbox.account.checking_account.reserve_amount}</Text>
                             {/* <Image source={Information} style={styles.image} /> */}
                         </View>
                         <View style={styles.priceView}>
@@ -489,9 +490,9 @@ export default function CheckAccount({ navigation, route }: any) {
                             </TouchableOpacity>
                             <Text style={styles.text}>Sats</Text>
                         </View>
-                        <Text center style={styles.usd}>${(reserveAmt * matchedRate * currency).toFixed(2)}</Text>
+                        <Text center style={[styles.usd, rtl.ltrText]}>${(reserveAmt * matchedRate * currency).toFixed(2)}</Text>
                         <TouchableOpacity onPress={() => customizeClickHandler(1)}>
-                            <GradientText style={styles.gradientText}>Customize</GradientText>
+                            <GradientText style={styles.gradientText}>{loc.cypherbox.account.checking_account.customize}</GradientText>
                         </TouchableOpacity>
                         <Modal isVisible={isModalRAVisible}>
                             <View>
@@ -502,8 +503,8 @@ export default function CheckAccount({ navigation, route }: any) {
                                             return (
                                                 <TouchableOpacity style={[styles.row, index % 2 == 0 && { backgroundColor: colors.primary }]}
                                                     onPress={() => selectRAClickHandler(item?.sats)}>
-                                                    <Text bold style={{ fontSize: 18 }}>{formatNumber(item?.sats) + " sats"}</Text>
-                                                    <Text style={{ fontSize: 18, marginStart: 30 }}>~${(item?.sats * matchedRate * currency).toFixed(2)}</Text>
+                                                    <Text bold style={[{ fontSize: 18 }, rtl.ltrText]}>{formatNumber(item?.sats) + " sats"}</Text>
+                                                    <Text style={[{ fontSize: 18, marginStart: 30 }, rtl.ltrText]}>{ltr(`~$${(item?.sats * matchedRate * currency).toFixed(2)}`)}</Text>
                                                 </TouchableOpacity>
                                             )
                                         })}

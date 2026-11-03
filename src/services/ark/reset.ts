@@ -4,6 +4,7 @@ import { clearArkKeyCache, deleteArkBackupForWallet } from './backup';
 import { deleteBackgroundArkSeed } from './backgroundKeychain';
 import { deleteArkDatadir } from './datadir';
 import { clearArkWalletHandle } from './walletHandle';
+import loc from '../../../loc';
 
 /**
  * Keychain storage convention — MUST match ArkSeedPhraseScreen:
@@ -110,9 +111,7 @@ export async function resetArkWalletState(
     } catch (err: any) {
         console.warn('[Ark] deleteArkDatadir failed, aborting reset:', err);
         throw new Error(
-            'Could not delete the Ark wallet data, so the seed was kept to avoid ' +
-            'leaving wallet data on this device with no way to open it. ' +
-            'Nothing was deleted. Close the app and try again.',
+            loc.cypherbox.services.ark_reset.delete_failed,
         );
     }
 

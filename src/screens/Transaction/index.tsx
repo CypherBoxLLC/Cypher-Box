@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Image, ImageBackground, ScrollView, StyleSheet, TextInput, Vibration, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput } from "@Cypher/components";
-import { colors, widths, } from "@Cypher/style-guide";
+import { colors, widths, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import * as Progress from 'react-native-progress';
 // import { Ring, Ring3, } from "@Cypher/assets/gif";
@@ -155,7 +156,7 @@ export default function Transaction({navigation, route}: any) {
                 <View style={styles.container}>
                     {response &&
                         <Animated.View style={animatedStyle}>
-                            <Text h1 semibold center>{type == "BUY" ? "Purchase Complete" : type == "SELL" ? "Sale Complete" : "Payment Sent"}</Text>
+                            <Text h1 semibold center>{type == "BUY" ? loc.cypherbox.payments.transaction.purchase_complete : type == "SELL" ? loc.cypherbox.payments.transaction.sale_complete : loc.cypherbox.payments.transaction.payment_sent}</Text>
                             {/* Swap-destination badge. Renders only when
                                 the BUY auto-routed to a non-Strike rail
                                 (CoinOS or Ark). Bigger + bordered + white
@@ -172,7 +173,7 @@ export default function Transaction({navigation, route}: any) {
                                     borderColor: swappedTo === 'Bark Vault' ? '#FFD93D' : '#FF65D4',
                                 }}>
                                     <Text bold center style={{ color: '#fff', fontSize: 16 }}>
-                                        {`→ Swapped to ${swappedTo}`}
+                                        {loc.formatString(loc.cypherbox.payments.transaction.swapped_to, { destination: swappedTo })}
                                     </Text>
                                 </View>
                             )}
@@ -187,10 +188,10 @@ export default function Transaction({navigation, route}: any) {
                                     <CustomProgressBar value={Number(amountSat) || 0} />
                                 </View>
                             )}
-                            <Text semibold center style={styles.sats}>{amountSat} sats</Text>
-                            <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
+                            <Text semibold center style={[styles.sats, rtl.ltrText]}>{amountSat} sats</Text>
+                            <Text subHeader bold center style={rtl.ltrText}>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                             { to?.length > 0 && <View style={styles.extra} /> }
-                            { to.length > 0 && <Text subHeader bold center>{type !== 'username' ? shortenAddress(to) : to}</Text> }
+                            { to.length > 0 && <Text subHeader bold center style={rtl.ltrText}>{type !== 'username' ? shortenAddress(to) : to}</Text> }
                         </Animated.View>
                     }
                 </View>
@@ -267,13 +268,13 @@ export default function Transaction({navigation, route}: any) {
                 {(type == "BUY" || type == "SELL") ?
                     <Image source={StrikeFull} style={styles.strikeLogo} resizeMode="contain" />
                 : to.length > 0 ?
-                    <Text semibold center style={styles.text}>Lightning Network</Text>
+                    <Text semibold center style={styles.text}>{loc.cypherbox.payments.transaction.lightning_network}</Text>
                 :
-                    <Text semibold center style={styles.text}>Fiat Network</Text>
+                    <Text semibold center style={styles.text}>{loc.cypherbox.payments.transaction.fiat_network}</Text>
                 }
                 {response &&
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
-                        title={type == "BUY" || type == "SELL" || startsWithLn(to) || to.includes("@") || to.length == 0 ? 'Home' : 'Payment Details'}
+                        title={type == "BUY" || type == "SELL" || startsWithLn(to) || to.includes("@") || to.length == 0 ? loc.cypherbox.payments.common.home : loc.cypherbox.payments.transaction.payment_details}
                         disabled={!response}
                         onPress={onPressClickHandler} />
                     // :

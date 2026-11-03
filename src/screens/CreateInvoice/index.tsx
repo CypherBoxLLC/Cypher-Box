@@ -3,6 +3,7 @@ import { View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 
 import styles from "./styles";
+import loc from "../../../loc";
 import { ScreenLayout } from "@Cypher/component-library";
 import { CustomKeyboard, GradientInput } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -30,7 +31,7 @@ export default function CreateInvoice({navigation, route}: any) {
     const handleCreateInvoice = async () => {
         setIsLoading(true);
         if(!sats) {
-            SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         }
@@ -52,7 +53,7 @@ export default function CreateInvoice({navigation, route}: any) {
             const hash = receiveType ? response.hash : response.bolt11?.invoice
             console.log('hash: ', hash)
             navigation.replace('CopyInvoice', {
-                value: isSats ? `Receive ${sats} sats` : `Receive ${sats} ${currency || 'USD'}`,
+                value: isSats ? String(loc.formatString(loc.cypherbox.payments.create_invoice.receive_sats, { amount: sats })) : String(loc.formatString(loc.cypherbox.payments.create_invoice.receive_fiat, { amount: sats, currency: currency || 'USD' })),
                 converted: isSats ? `${getStrikeCurrency(currency || 'USD')} ${usd}` : `${usd} sats`,
                 hash: hash,
                 receiveType
@@ -63,19 +64,19 @@ export default function CreateInvoice({navigation, route}: any) {
             console.log('response: ', response)
         } catch (error) {
             console.error('Error creating invoice:', error);
-            SimpleToast.show('Failed to create invoice. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.create_invoice.create_failed, SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <ScreenLayout disableScroll showToolbar isBackButton title="Receive with Invoice">
+        <ScreenLayout disableScroll showToolbar isBackButton title={loc.cypherbox.payments.create_invoice.title}>
             <View style={styles.main}>
             <GradientInput isSats={isSats} walletInfo={route.params} sats={sats} setSats={setSats} usd={usd} />
             </View>
             <CustomKeyboard
-                title="Create invoice"
+                title={loc.cypherbox.payments.create_invoice.create_invoice}
                 onPress={handleCreateInvoice}
                 disabled={!sats.length || isLoading}
                 setSATS={setSats}

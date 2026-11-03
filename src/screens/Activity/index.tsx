@@ -5,27 +5,28 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import useEvents from "@Cypher/custom-hooks/useEvents";
 import { AppEvent, EventWallet } from "@Cypher/stores/eventLogStore";
+import loc from "../../../loc";
 
-const WALLET_LABEL: Record<EventWallet, string> = {
+const getWalletLabel = (): Record<EventWallet, string> => ({
     "coinos": "CoinOS",
     "strike": "Strike",
-    "hot-vault": "Hot Vault",
+    "hot-vault": loc.cypherbox.payments.common.hot_vault,
     "ark": "Ark",
-};
+});
 
 const formatSats = (sats: number) =>
     `${sats.toLocaleString("en-US")} sats`;
 
 const formatRelative = (ts: number, now: number): string => {
     const diff = now - ts;
-    if (diff < 0) return "just now";
+    if (diff < 0) return loc.cypherbox.payments.activity.just_now;
     const min = Math.floor(diff / 60_000);
-    if (min < 1) return "just now";
-    if (min < 60) return `${min} min ago`;
+    if (min < 1) return loc.cypherbox.payments.activity.just_now;
+    if (min < 60) return String(loc.formatString(loc.cypherbox.payments.activity.minutes_ago, { count: min }));
     const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr} hour${hr === 1 ? "" : "s"} ago`;
+    if (hr < 24) return String(loc.formatString(hr === 1 ? loc.cypherbox.payments.activity.hour_ago : loc.cypherbox.payments.activity.hours_ago, { count: hr }));
     const day = Math.floor(hr / 24);
-    if (day < 7) return `${day} day${day === 1 ? "" : "s"} ago`;
+    if (day < 7) return String(loc.formatString(day === 1 ? loc.cypherbox.payments.activity.day_ago : loc.cypherbox.payments.activity.days_ago, { count: day }));
     const d = new Date(ts);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
@@ -39,52 +40,52 @@ type RowMeta = {
 const describe = (ev: AppEvent): RowMeta => {
     switch (ev.kind) {
         case "ln-sent":
-            return { icon: "flash", line1: `Sent ${formatSats(ev.sats)}`, walletLabel: WALLET_LABEL[ev.wallet] };
+            return { icon: "flash", line1: String(loc.formatString(loc.cypherbox.payments.activity.sent, { amount: formatSats(ev.sats) })), walletLabel: getWalletLabel()[ev.wallet] };
         case "ln-received":
-            return { icon: "flash-outline", line1: `Received ${formatSats(ev.sats)}`, walletLabel: WALLET_LABEL[ev.wallet] };
+            return { icon: "flash-outline", line1: String(loc.formatString(loc.cypherbox.payments.activity.received, { amount: formatSats(ev.sats) })), walletLabel: getWalletLabel()[ev.wallet] };
         case "onchain-sent":
-            return { icon: "arrow-up-circle-outline", line1: `Sent ${formatSats(ev.sats)} on-chain`, walletLabel: WALLET_LABEL[ev.wallet] };
+            return { icon: "arrow-up-circle-outline", line1: String(loc.formatString(loc.cypherbox.payments.activity.sent_onchain, { amount: formatSats(ev.sats) })), walletLabel: getWalletLabel()[ev.wallet] };
         case "onchain-received":
-            return { icon: "arrow-down-circle-outline", line1: `Received ${formatSats(ev.sats)} on-chain`, walletLabel: WALLET_LABEL[ev.wallet] };
+            return { icon: "arrow-down-circle-outline", line1: String(loc.formatString(loc.cypherbox.payments.activity.received_onchain, { amount: formatSats(ev.sats) })), walletLabel: getWalletLabel()[ev.wallet] };
         case "hot-vault-created":
-            return { icon: "shield-checkmark-outline", line1: "Hot Vault created", walletLabel: WALLET_LABEL["hot-vault"] };
+            return { icon: "shield-checkmark-outline", line1: loc.cypherbox.payments.activity.hot_vault_created, walletLabel: getWalletLabel()["hot-vault"] };
         case "hot-vault-recovered":
             return {
                 icon: "shield-checkmark-outline",
-                line1: ev.source === "cloud" ? "Hot Vault recovered from cloud" : "Hot Vault recovered from seed",
-                walletLabel: WALLET_LABEL["hot-vault"],
+                line1: ev.source === "cloud" ? loc.cypherbox.payments.activity.hot_vault_recovered_cloud : loc.cypherbox.payments.activity.hot_vault_recovered_seed,
+                walletLabel: getWalletLabel()["hot-vault"],
             };
         case "cold-vault-created":
-            return { icon: "snow-outline", line1: "Cold Vault connected", walletLabel: "Cold Vault" };
+            return { icon: "snow-outline", line1: loc.cypherbox.payments.activity.cold_vault_connected, walletLabel: loc.cypherbox.payments.common.cold_vault };
         case "cold-vault-deleted":
-            return { icon: "trash-outline", line1: "Cold Vault deleted", walletLabel: "Cold Vault" };
+            return { icon: "trash-outline", line1: loc.cypherbox.payments.activity.cold_vault_deleted, walletLabel: loc.cypherbox.payments.common.cold_vault };
         case "ark-created":
-            return { icon: "boat-outline", line1: "Ark wallet created", walletLabel: WALLET_LABEL["ark"] };
+            return { icon: "boat-outline", line1: loc.cypherbox.payments.activity.ark_created, walletLabel: getWalletLabel()["ark"] };
         case "ark-recovered":
-            return { icon: "boat-outline", line1: "Ark wallet recovered", walletLabel: WALLET_LABEL["ark"] };
+            return { icon: "boat-outline", line1: loc.cypherbox.payments.activity.ark_recovered, walletLabel: getWalletLabel()["ark"] };
         case "ark-onchain-recovered":
             return {
                 icon: "arrow-undo-outline",
-                line1: `Recovered ${formatSats(ev.sats)} on-chain`,
-                walletLabel: WALLET_LABEL["ark"],
+                line1: String(loc.formatString(loc.cypherbox.payments.activity.ark_onchain_recovered, { amount: formatSats(ev.sats) })),
+                walletLabel: getWalletLabel()["ark"],
             };
         case "ark-exit-started":
             return {
                 icon: "exit-outline",
-                line1: `Emergency exit started (${formatSats(ev.sats)})`,
-                walletLabel: WALLET_LABEL["ark"],
+                line1: String(loc.formatString(loc.cypherbox.payments.activity.exit_started, { amount: formatSats(ev.sats) })),
+                walletLabel: getWalletLabel()["ark"],
             };
         case "ark-exit-finished":
             return {
                 icon: ev.result === "success" ? "checkmark-circle-outline" : "alert-circle-outline",
-                line1: ev.result === "success" ? "Emergency exit complete" : "Emergency exit failed",
-                walletLabel: WALLET_LABEL["ark"],
+                line1: ev.result === "success" ? loc.cypherbox.payments.activity.exit_complete : loc.cypherbox.payments.activity.exit_failed,
+                walletLabel: getWalletLabel()["ark"],
             };
         case "ark-refresh-started":
             return {
                 icon: "refresh-outline",
-                line1: `Refreshing ${ev.vtxoCount} VTXO${ev.vtxoCount === 1 ? "" : "s"} (${formatSats(ev.totalSats)})`,
-                walletLabel: WALLET_LABEL["ark"],
+                line1: String(loc.formatString(ev.vtxoCount === 1 ? loc.cypherbox.payments.activity.refreshing_vtxo : loc.cypherbox.payments.activity.refreshing_vtxos, { count: ev.vtxoCount, amount: formatSats(ev.totalSats) })),
+                walletLabel: getWalletLabel()["ark"],
             };
         case "ark-refresh-finished":
             // Three outcomes, not two. "accepted" is the ASP taking the
@@ -97,17 +98,17 @@ const describe = (ev: AppEvent): RowMeta => {
                         ? "time-outline"
                         : "alert-circle-outline",
                 line1: ev.result === "success"
-                    ? `Refresh complete${ev.vtxoCount ? ` (${ev.vtxoCount} capsule${ev.vtxoCount === 1 ? '' : 's'})` : ''}`
+                    ? (ev.vtxoCount ? String(loc.formatString(ev.vtxoCount === 1 ? loc.cypherbox.payments.activity.refresh_complete_capsule : loc.cypherbox.payments.activity.refresh_complete_capsules, { count: ev.vtxoCount })) : loc.cypherbox.payments.activity.refresh_complete)
                     : ev.result === "accepted"
-                        ? "Refresh submitted, finishing in the background"
-                        : "Refresh failed",
-                walletLabel: WALLET_LABEL["ark"],
+                        ? loc.cypherbox.payments.activity.refresh_submitted
+                        : loc.cypherbox.payments.activity.refresh_failed,
+                walletLabel: getWalletLabel()["ark"],
             };
         case "auto-backup":
             return {
                 icon: ev.result === "success" ? "cloud-done-outline" : "cloud-offline-outline",
-                line1: ev.result === "success" ? "Auto-backup saved" : "Auto-backup failed",
-                walletLabel: ev.target === "cloud" ? "Cloud" : "Local",
+                line1: ev.result === "success" ? loc.cypherbox.payments.activity.auto_backup_saved : loc.cypherbox.payments.activity.auto_backup_failed,
+                walletLabel: ev.target === "cloud" ? loc.cypherbox.payments.activity.cloud : loc.cypherbox.payments.activity.local,
             };
         case "ark-bg-refresh": {
             // Per-outcome copy. The outcome set here is the user-visible
@@ -118,14 +119,14 @@ const describe = (ev: AppEvent): RowMeta => {
             // future outcome lands without an explicit branch.
             const triggerLabel =
                 ev.trigger === "scheduled"
-                    ? "Scheduled"
+                    ? loc.cypherbox.payments.activity.trigger_scheduled
                     : ev.trigger === "push"
-                    ? "Push"
+                    ? loc.cypherbox.payments.activity.trigger_push
                     : ev.trigger === "foreground"
-                    ? "Foreground"
+                    ? loc.cypherbox.payments.activity.trigger_foreground
                     : ev.trigger === "arrival"
-                    ? "On-arrival"
-                    : "Manual-test";
+                    ? loc.cypherbox.payments.activity.trigger_arrival
+                    : loc.cypherbox.payments.activity.trigger_manual_test;
             let icon = "refresh-outline";
             let line1 = "";
             switch (ev.outcome) {
@@ -133,42 +134,42 @@ const describe = (ev: AppEvent): RowMeta => {
                     icon = "checkmark-circle-outline";
                     line1 =
                         ev.vtxoCount != null && ev.vtxoCount > 0
-                            ? `Auto-refresh complete · ${ev.vtxoCount} VTXO${ev.vtxoCount === 1 ? "" : "s"}`
-                            : "Auto-refresh complete";
+                            ? String(loc.formatString(ev.vtxoCount === 1 ? loc.cypherbox.payments.activity.auto_refresh_complete_vtxo : loc.cypherbox.payments.activity.auto_refresh_complete_vtxos, { count: ev.vtxoCount }))
+                            : loc.cypherbox.payments.activity.auto_refresh_complete;
                     break;
                 case "error":
                     icon = "alert-circle-outline";
                     line1 = ev.errorMsg
-                        ? `Auto-refresh failed · ${ev.errorMsg.slice(0, 60)}`
-                        : "Auto-refresh failed";
+                        ? String(loc.formatString(loc.cypherbox.payments.activity.auto_refresh_failed_reason, { error: ev.errorMsg.slice(0, 60) }))
+                        : loc.cypherbox.payments.activity.auto_refresh_failed;
                     break;
                 case "fee_gated":
                     icon = "warning-outline";
                     line1 =
                         ev.feeSats != null
-                            ? `Auto-refresh paused · fee ${formatSats(ev.feeSats)} above limit`
-                            : "Auto-refresh paused · fee above limit";
+                            ? String(loc.formatString(loc.cypherbox.payments.activity.auto_refresh_paused_fee, { amount: formatSats(ev.feeSats) }))
+                            : loc.cypherbox.payments.activity.auto_refresh_paused;
                     break;
                 case "dust_uneconomic":
                     icon = "warning-outline";
-                    line1 = "Auto-refresh skipped · fee exceeds VTXO value";
+                    line1 = loc.cypherbox.payments.activity.auto_refresh_dust_uneconomic;
                     break;
                 case "dust_stranded":
                     icon = "warning-outline";
-                    line1 = "Auto-refresh skipped · balance below recoverable threshold";
+                    line1 = loc.cypherbox.payments.activity.auto_refresh_dust_stranded;
                     break;
                 case "no_seed":
                     icon = "key-outline";
-                    line1 = "Auto-refresh blocked · seed not available";
+                    line1 = loc.cypherbox.payments.activity.auto_refresh_no_seed;
                     break;
                 default:
                     icon = "refresh-outline";
-                    line1 = `Auto-refresh: ${ev.outcome}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.auto_refresh_outcome, { outcome: ev.outcome }));
             }
             return {
                 icon,
                 line1,
-                walletLabel: `${WALLET_LABEL["ark"]} · ${triggerLabel}`,
+                walletLabel: `${getWalletLabel()["ark"]} · ${triggerLabel}`,
             };
         }
         case "arkoor-prompt": {
@@ -184,47 +185,47 @@ const describe = (ev: AppEvent): RowMeta => {
             switch (ev.outcome) {
                 case "fired":
                     icon = "chatbubble-ellipses-outline";
-                    line1 = `Arkoor prompt shown${satsTag}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.arkoor_shown, { details: satsTag }));
                     break;
                 case "skipped-disabled":
                     icon = "notifications-off-outline";
-                    line1 = `Arkoor prompt skipped · toggle off${satsTag}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.arkoor_skipped_disabled, { details: satsTag }));
                     break;
                 case "skipped-background":
                     icon = "moon-outline";
-                    line1 = `Arkoor prompt skipped · app backgrounded${satsTag}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.arkoor_skipped_background, { details: satsTag }));
                     break;
                 case "skipped-in-flight":
                     icon = "hourglass-outline";
-                    line1 = `Arkoor prompt skipped · alert busy${satsTag}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.arkoor_skipped_in_flight, { details: satsTag }));
                     break;
                 case "skipped-vtxo-gone":
                     icon = "ghost-outline";
-                    line1 = `Arkoor prompt skipped · capsule already refreshed${satsTag}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.arkoor_skipped_vtxo_gone, { details: satsTag }));
                     break;
                 case "refresh-now":
                     icon = "refresh-outline";
-                    line1 = `You chose: Refresh now${satsTag}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.arkoor_refresh_now, { details: satsTag }));
                     break;
                 case "use-immediately":
                     icon = "flash-outline";
-                    line1 = `You chose: Use immediately${satsTag}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.arkoor_use_immediately, { details: satsTag }));
                     break;
                 case "auto-skipped":
                     icon = "shield-checkmark-outline";
                     line1 =
                         ev.vtxoCount != null && ev.vtxoCount > 0
-                            ? `Auto-refresh skipped ${ev.vtxoCount} deferred VTXO${ev.vtxoCount === 1 ? "" : "s"}`
-                            : "Auto-refresh respected your deferral";
+                            ? String(loc.formatString(ev.vtxoCount === 1 ? loc.cypherbox.payments.activity.auto_skipped_vtxo : loc.cypherbox.payments.activity.auto_skipped_vtxos, { count: ev.vtxoCount }))
+                            : loc.cypherbox.payments.activity.auto_skipped_deferral;
                     break;
                 default:
                     icon = "chatbubble-ellipses-outline";
-                    line1 = `Arkoor prompt: ${(ev as any).outcome}`;
+                    line1 = String(loc.formatString(loc.cypherbox.payments.activity.arkoor_outcome, { outcome: (ev as any).outcome }));
             }
             return {
                 icon,
                 line1,
-                walletLabel: `${WALLET_LABEL["ark"]}${idTag}`,
+                walletLabel: `${getWalletLabel()["ark"]}${idTag}`,
             };
         }
     }
@@ -253,16 +254,16 @@ export default function Activity() {
 
     if (events.length === 0) {
         return (
-            <ScreenLayout showToolbar title="Activity" disableScroll>
+            <ScreenLayout showToolbar title={loc.cypherbox.payments.activity.title} disableScroll>
                 <View style={styles.empty}>
-                    <Text style={styles.emptyText}>No activity yet.</Text>
+                    <Text style={styles.emptyText}>{loc.cypherbox.payments.activity.no_activity}</Text>
                 </View>
             </ScreenLayout>
         );
     }
 
     return (
-        <ScreenLayout showToolbar title="Activity" disableScroll>
+        <ScreenLayout showToolbar title={loc.cypherbox.payments.activity.title} disableScroll>
             <FlatList
                 data={events}
                 keyExtractor={(ev) => ev.id}

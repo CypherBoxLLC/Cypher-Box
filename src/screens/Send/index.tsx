@@ -9,9 +9,10 @@ import { RNCamera } from 'react-native-camera';
 import bolt11 from "bolt11";
 
 import styles from "./styles";
+import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { CustomKeyboard, GradientCard, GradientInput, GradientInputNew } from "@Cypher/components";
-import { colors, } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { bitcoinRecommendedFee, getInvoiceByLightening, getMe } from "../../api/coinOSApis";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -93,7 +94,7 @@ const validateAddress = (address: string): { valid: boolean; type: string; warni
     }
     
     // Unrecognized
-    return { valid: false, type: 'unknown', warning: 'Unrecognized address format. Supported: Bitcoin (bc1.., 1.., 3..), Lightning (ln..), Liquid, or CoinOS username' };
+    return { valid: false, type: 'unknown', warning: loc.cypherbox.payments.send.unrecognized_address };
 }
 
 export default function SendScreen({ navigation, route }: any) {
@@ -228,11 +229,11 @@ export default function SendScreen({ navigation, route }: any) {
             const granted = await PermissionsAndroid.request(
                 PermissionsAndroid.PERMISSIONS.CAMERA,
                 {
-                    title: 'Camera Permission',
-                    message: 'We need access to your camera to scan QR codes',
-                    buttonNeutral: 'Ask Me Later',
-                    buttonNegative: 'Cancel',
-                    buttonPositive: 'OK',
+                    title: loc.cypherbox.payments.send.camera_permission_title,
+                    message: loc.cypherbox.payments.send.camera_permission_message,
+                    buttonNeutral: loc.cypherbox.payments.send.ask_me_later,
+                    buttonNegative: loc._.cancel,
+                    buttonPositive: loc._.ok,
                 },
             );
             if (granted === PermissionsAndroid.RESULTS.GRANTED) {
@@ -250,7 +251,7 @@ export default function SendScreen({ navigation, route }: any) {
         const clipboardContent = await Clipboard.getString();
         setSender(clipboardContent);
         setIsPaste(true)
-        SimpleToast.show('Pasted from clipboard', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.payments.send.pasted_from_clipboard, SimpleToast.SHORT);
     };
 
     // useEffect(() => {
@@ -281,7 +282,7 @@ export default function SendScreen({ navigation, route }: any) {
             }
         } catch (error) {
             console.error('Error handleLighteningInvoice:', error);
-            SimpleToast.show('Failed to generate lightening. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.send.lightning_invoice_failed, SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
         }
@@ -295,7 +296,7 @@ export default function SendScreen({ navigation, route }: any) {
         if (sender && !info?.isWithdrawal && !info?.fiatAmount) {
             const validation = validateAddress(sender);
             if (!validation.valid) {
-                SimpleToast.show('Unsupported address format. Use Bitcoin, Lightning, Liquid, or CoinOS username.', SimpleToast.LONG);
+                SimpleToast.show(loc.cypherbox.payments.send.unsupported_address, SimpleToast.LONG);
                 setIsLoading(false);
                 return;
             }
@@ -316,7 +317,7 @@ export default function SendScreen({ navigation, route }: any) {
             });
             setIsLoading(false);
         } else if (sender == '' && (!info?.to || info?.to == '')) {
-            SimpleToast.show('Please enter an address or username', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.enter_address_or_username, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         } else if (startsWithLn(sender)) { //lightening invoice
@@ -337,13 +338,13 @@ export default function SendScreen({ navigation, route }: any) {
 
             } catch (error) {
                 console.error('Error handleSendNext:', error);
-                SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.send_lightning_failed, SimpleToast.SHORT);
             } finally {
                 setIsLoading(false);
             }
         } else if (sender.startsWith('bc')) { //bitcoin onchain
             if (sats == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsLoading(false);
                 return;
             }
@@ -353,7 +354,7 @@ export default function SendScreen({ navigation, route }: any) {
             console.log('feeForBamskki: ', feeForBamskki)
             console.log('remainingAmount: ', remainingAmount)
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setIsLoading(false);
                 return;
             }
@@ -379,13 +380,13 @@ export default function SendScreen({ navigation, route }: any) {
                 });
             } catch (error) {
                 console.error('Error Send to bitcoin:', error);
-                SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.send_bitcoin_failed, SimpleToast.SHORT);
             } finally {
                 setIsLoading(false);
             }
         } else if (sender.includes("@")) { //username
             if (sats == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsLoading(false);
                 return;
             }
@@ -405,14 +406,14 @@ export default function SendScreen({ navigation, route }: any) {
                 });
             } catch (error) {
                 console.error('Error handleSendNext:', error);
-                SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.send_lightning_failed, SimpleToast.SHORT);
             } finally {
                 setIsLoading(false);
             }
         } else if (info?.receiveType) { //liquid address
             console.log('Sending to liquid address: ', info?.receiveType)
             if (sats == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsLoading(false);
                 return;
             }
@@ -421,7 +422,7 @@ export default function SendScreen({ navigation, route }: any) {
             console.log('feeForBamskki: ', feeForBamskki)
             console.log('remainingAmount: ', remainingAmount)
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setIsLoading(false);
                 return;
             }
@@ -443,12 +444,12 @@ export default function SendScreen({ navigation, route }: any) {
                 });
             } catch (error) {
                 console.error('Error Send to liquid:', error);
-                SimpleToast.show('Failed to Send to Liquid. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.send_liquid_failed, SimpleToast.SHORT);
             } finally {
                 setIsLoading(false);
             }
         } else {
-            SimpleToast.show('Please enter a valid address, invoice, or username', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.send.enter_valid_destination, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         }
@@ -487,7 +488,7 @@ export default function SendScreen({ navigation, route }: any) {
         console.log('feeForBamskki: ', feeForBamskki)
         console.log('remainingAmount: ', remainingAmount)
         if (remainingAmount <= 0) {
-            SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         }
@@ -514,7 +515,7 @@ export default function SendScreen({ navigation, route }: any) {
             });
         } catch (error) {
             console.error('Error Send to bitcoin:', error);
-            SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.send_bitcoin_failed, SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
         }
@@ -525,7 +526,7 @@ export default function SendScreen({ navigation, route }: any) {
     return (
         <>
             {isScannerActive ? (
-                <ScreenLayout disableScroll showToolbar isBackButton onBackPress={() => setIsScannerActive(false)} title="Scan QR Code">
+                <ScreenLayout disableScroll showToolbar isBackButton onBackPress={() => setIsScannerActive(false)} title={loc.cypherbox.payments.send.scan_qr_title}>
                     <View style={styles.scannerContainer}>
                         <QRCodeScanner
                             onRead={handleScan}
@@ -542,7 +543,7 @@ export default function SendScreen({ navigation, route }: any) {
             )
                 :
                 (
-                    <ScreenLayout keyboardAware showToolbar isBackButton title={info?.isWithdrawal ? "Edit Amount" : "Send Bitcoin"}>
+                    <ScreenLayout keyboardAware showToolbar isBackButton title={info?.isWithdrawal ? loc.cypherbox.payments.send.title_edit_amount : loc.cypherbox.payments.send.title_send_bitcoin}>
                         <View style={styles.container}>
                             <GradientInputNew 
                                 isSats={isSats} 
@@ -557,7 +558,7 @@ export default function SendScreen({ navigation, route }: any) {
                             {info?.isWithdrawal && 
                                 <>
                                     <TouchableOpacity onPress={maxSendClickHandler} style={[styles.btn]}>
-                                        <Text bold style={{ fontSize: 13 }}>Send Max: {info?.total} BTC</Text>
+                                        <Text bold style={{ fontSize: 13 }}>{loc.formatString(loc.cypherbox.payments.common.send_max_btc, { amount: info?.total })}</Text>
                                     </TouchableOpacity>
                                 </>
                             }
@@ -568,7 +569,7 @@ export default function SendScreen({ navigation, route }: any) {
                                     {/* <Text h2 style={styles.destination}>Destination</Text> */}
                                     <View style={styles.priceView}>
                                         {addressFocused || sender?.length == 0 &&
-                                            <Text h4 center onPress={() => senderRef?.current?.focus()} style={StyleSheet.flatten([styles.label])}>Paste any address or invoice{'\n'} (Bitcoin, Lightning, Liquid)</Text>
+                                            <Text h4 center onPress={() => senderRef?.current?.focus()} style={StyleSheet.flatten([styles.label])}>{loc.cypherbox.payments.send.paste_destination_hint}</Text>
                                         }
                                         {/* <GradientInputNew isSats={isSats} sats={sats} setSats={setSats} usd={usd} title={'Specify  Amount'} /> */}
 
@@ -589,7 +590,7 @@ export default function SendScreen({ navigation, route }: any) {
                                                     if (newValue.trim().toLowerCase().startsWith('ln')) setIsPaste(true);
                                                 }}
                                                 value={!sender.includes('@') && sender.length > 20 ? shortenAddress(sender) : sender}
-                                                textInputStyle={styles.senderText}
+                                                textInputStyle={StyleSheet.flatten([styles.senderText, rtl.ltrText])}
                                                 onFocus={() => {
                                                     setAddressFocused(true);
                                                 }}
@@ -617,7 +618,7 @@ export default function SendScreen({ navigation, route }: any) {
                                                 onPress={handlePaste}>
                                                 <View style={styles.insideView}>
                                                     <Image source={require('../../../img/paste-icon.png')} style={styles.qrimage} resizeMode="contain" />
-                                                    <Text h2>Paste</Text>
+                                                    <Text h2>{loc.cypherbox.payments.send.paste}</Text>
                                                 </View>
                                             </GradientCard>
                                             <GradientCard
@@ -626,7 +627,7 @@ export default function SendScreen({ navigation, route }: any) {
                                                 onPress={async () => { await requestCameraPermission(); setIsScannerActive(true); }}>
                                                 <View style={styles.insideView}>
                                                     <Image source={require('../../../img/scan-qr.png')} style={[styles.qrimage, { width: 35, marginEnd: 5, marginTop: 4 }]} />
-                                                    <Text h2 style={{ paddingRight: 6 }}>Scan</Text>
+                                                    <Text h2 style={{ paddingRight: 6 }}>{loc.cypherbox.payments.common.scan}</Text>
                                                 </View>
                                             </GradientCard>
                                         </View>
@@ -635,7 +636,7 @@ export default function SendScreen({ navigation, route }: any) {
                             }
                         </View >
                         <CustomKeyboard
-                            title="Next"
+                            title={loc.cypherbox.payments.common.next}
                             prevSats={info?.value ? String(info?.value) : info?.fiatAmount ? String(info?.fiatAmount / info?.matchedRate  * 100000000) : false}
                             onPress={handleSendNext}
                             disabled={isLoading || ((!startsWithLn(sender)) ? (sats?.length == 0 || sender?.length == 0) : (sender?.length == 0))}

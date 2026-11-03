@@ -13,6 +13,7 @@ import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo
 import { Animated, AppState, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
+import loc from "../../../../loc";
 
 interface Props {
     balance: any;
@@ -191,7 +192,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     }, [arkVtxos, arkChainTipHeight]);
 
     const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
-        ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d, refresh soon`
+        ? String(loc.formatString(loc.cypherbox.home_lists.wallets_view.oldest_capsule_expires, { days: Math.round(soonestDaysLeft) }))
         : null;
 
     // Dust capsules: below the PER-INPUT refresh floor (ARK_REFRESH_MIN_SATS,
@@ -293,7 +294,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         if (vaultConnectivity.level === 'red') {
             return {
                 // COPY: Bam finalizes.
-                text: 'Bark vault is offline. Capsule times shown are estimates until it reconnects.',
+                text: loc.cypherbox.home_lists.wallets_view.vault_offline,
                 error: true,
                 tapTab: 0,
             };
@@ -325,8 +326,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // and the recover section this deep-links to is hidden anyway.
             if (stuckSats > 0 && stuckSats < STUCK_BOARD_MIN_SATS && (arkExitFeeReserveSats ?? 0) <= 0) {
                 return {
-                    text: `You have ${stuckSats.toLocaleString()} sats failing to board your Bark vault. Recover here, or use them for Emergency Exit fees.`,
-                    linkText: 'here',
+                    text: String(loc.formatString(loc.cypherbox.home_lists.wallets_view.stuck_boarding, { sats: stuckSats.toLocaleString() })),
+                    linkText: loc.cypherbox.home_lists.wallets_view.link_here,
                     tapTab: 0, // Capsules tab
                     openOnchainRecover: true,
                     error: true,
@@ -351,15 +352,15 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // result is itself dust, so spending is the honest advice.
             if (dustCapsules.sats >= ARK_REFRESH_MIN_SATS) {
                 return {
-                    text: 'You have dust Bark capsules above 500 sats, tap here to batch refresh',
-                    linkText: 'here',
+                    text: loc.cypherbox.home_lists.wallets_view.dust_above_500,
+                    linkText: loc.cypherbox.home_lists.wallets_view.link_here,
                     tapTab: 0, // Capsules tab
                     error: true,
                 };
             }
             return {
-                text: 'Attention: you have dust ark capsules that might expire. Batch refresh or spend them here.',
-                linkText: 'here',
+                text: loc.cypherbox.home_lists.wallets_view.dust_might_expire,
+                linkText: loc.cypherbox.home_lists.wallets_view.link_here,
                 tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
                 error: true,
             };
@@ -375,7 +376,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // revoked OS permission is the equivalent loss of protection.
         if (notificationsEnabled === false) {
             return {
-                text: 'Notifications off. Capsules can expire without warning. Enable in Settings.',
+                text: loc.cypherbox.home_lists.wallets_view.notifications_off,
                 error: true,
             };
         }
@@ -389,8 +390,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             && (arkBalanceDetail?.onchainBoardingSats ?? 0) <= 0) {
             return {
                 // COPY: Bam finalizes. Kept identical to ArkWallet on purpose.
-                text: 'Emergency Exit has no fees reserved. Fund it in the Vault tab so you can exit without the server.',
-                linkText: 'Vault tab',
+                text: loc.cypherbox.home_lists.wallets_view.exit_no_fees,
+                linkText: loc.cypherbox.home_lists.wallets_view.link_vault_tab,
                 tapTab: 1, // Vault tab: where the exit fee reserve card lives
                 error: true,
             };
@@ -398,7 +399,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
 
         if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
             return {
-                text: 'Backup not synced. Enable iCloud Drive in iOS Settings',
+                text: loc.cypherbox.home_lists.wallets_view.backup_not_synced,
                 error: true,
             };
         }
@@ -1005,7 +1006,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         transform: [{ translateX: buttonsTranslateX }],
                     }}>
                     <GradientButtonWithShadow
-                        title="Receive"
+                        title={loc.cypherbox.home_lists.wallets_view.receive}
                         onPress={sharedReceive}
                         isShadow
                         isTextShadow
@@ -1026,7 +1027,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         </TouchableOpacity>
                     )}
                     <GradientButtonWithShadow
-                        title="Send"
+                        title={loc.cypherbox.home_lists.wallets_view.send}
                         onPress={sharedSend}
                         isShadow
                         isTextShadow
@@ -1077,8 +1078,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         activeOpacity={0.7}
                         accessibilityRole="button"
                         accessibilityLabel={arkRefreshStuck.nearExpiry
-                            ? 'Move your stuck funds out'
-                            : 'Recover stuck refresh'}
+                            ? loc.cypherbox.home_lists.wallets_view.move_stuck_funds_a11y
+                            : loc.cypherbox.home_lists.wallets_view.recover_stuck_refresh_a11y}
                     >
                         <Text
                             h4
@@ -1090,8 +1091,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                             }}
                         >
                             {arkRefreshStuck.nearExpiry
-                                ? `Warning: Refresh stuck near expiry · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to move funds out`
-                                : `Refresh stuck · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover`}
+                                ? loc.formatString(loc.cypherbox.home_lists.wallets_view.refresh_stuck_near_expiry, { sats: arkRefreshStuck.stuckSats.toLocaleString() })
+                                : loc.formatString(loc.cypherbox.home_lists.wallets_view.refresh_stuck, { sats: arkRefreshStuck.stuckSats.toLocaleString() })}
                         </Text>
                     </TouchableOpacity>
                 </Animated.View>
@@ -1161,7 +1162,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         }}
                     >
                         <Text bold style={{ fontSize: 12, color: '#FB923C', textAlign: 'center' }}>
-                            ⚠ Re-export Bark backup after every receive. Tap to manage.
+                            {loc.cypherbox.home_lists.wallets_view.reexport_backup}
                         </Text>
                     </TouchableOpacity>
                 </Animated.View>
@@ -1260,12 +1261,12 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                                     setArkExitFeeReserveSats(
                                         Number((bgRefreshStatus as any).reserveExitFeeSats),
                                     );
-                                    SimpleToast.show('Kept on-chain for exit fees.', SimpleToast.SHORT);
+                                    SimpleToast.show(loc.cypherbox.home_lists.wallets_view.kept_for_exit_fees, SimpleToast.SHORT);
                                 }}
                                 activeOpacity={0.7}
                                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                 accessibilityRole="button"
-                                accessibilityLabel="Leave on-chain funds as exit fees"
+                                accessibilityLabel={loc.cypherbox.home_lists.wallets_view.leave_as_exit_fees}
                                 style={{ marginTop: 6 }}
                             >
                                 <Text
@@ -1278,7 +1279,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                                         paddingHorizontal: 12,
                                     }}
                                 >
-                                    Leave on-chain funds as exit fees
+                                    {loc.cypherbox.home_lists.wallets_view.leave_as_exit_fees}
                                 </Text>
                             </TouchableOpacity>
                         )}

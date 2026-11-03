@@ -4,6 +4,7 @@ import styles from "./styles";
 import { GradientButton } from "@Cypher/components";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
+import loc from "../../../../loc";
 
 interface Props {
     route: any;
@@ -20,7 +21,7 @@ export default function VerifyPhone({ route}:Props) {
         <ScreenLayout disableScroll showToolbar progress={1}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text h2 semibold style={styles.title}>{`To confirm your phone number, enter code we sent you by SMS on ${route?.params?.phone}`}</Text>
+                    <Text h2 semibold style={styles.title}>{loc.formatString(loc.cypherbox.account.verify_phone.enter_code, { phone: route?.params?.phone })}</Text>
                     <TextInput
                         value={code}
                         onChangeText={setCode}
@@ -31,7 +32,7 @@ export default function VerifyPhone({ route}:Props) {
                         placeholder="000-000"
                     />
                 </View>
-                <GradientButton title="Submit" onPress={nextClickHandler} disabled={code.length < 6} />
+                <GradientButton title={loc.cypherbox.account.common.submit} onPress={nextClickHandler} disabled={code.length < 6} />
             </View>
         </ScreenLayout>
     )

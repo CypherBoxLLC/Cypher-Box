@@ -1,6 +1,7 @@
 // createInvoice moved to TopupList
 
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { GradientView, SavingVault } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
@@ -9,7 +10,7 @@ import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags"
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Animated, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
 import { useFocusEffect } from "@react-navigation/native";
@@ -139,6 +140,10 @@ export default function BottomBar({
         return 0;
     };
     const [index, setIndex] = useState(getInitialIndex());
+    // In RTL, Android lays the horizontal pager out right-to-left. scrollToIndex and
+    // initialScrollIndex take the tab index, but the offset in scroll events is
+    // measured from the left, where the last tab sits, so map it back to the tab.
+    const pageToTab = (page: number) => (I18nManager.isRTL && Platform.OS === 'android' ? tabs.length - 1 - page : page);
 
     useEffect(() => {
         if (!hasSavingVault && hasColdStorage && !vaultTab) {
@@ -169,11 +174,11 @@ export default function BottomBar({
 
     const topupClickHandler = () => {
         if (!isAuth && !isStrikeAuth && !isArkAuth) {
-            SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.login_to_top_up, SimpleToast.SHORT);
             return;
         }
         if (!wallet && !coldStorageWallet) {
-            SimpleToast.show('You need to create a vault first', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.create_vault_first, SimpleToast.SHORT);
             return;
         }
         refTopupRBSheet?.current?.open();
@@ -181,7 +186,7 @@ export default function BottomBar({
 
     const withdrawClickHandler = () => {
         if (!isAuth && !isStrikeAuth && !isArkAuth) {
-            SimpleToast.show('You need to be logged in to wallet to withdraw', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.login_to_withdraw, SimpleToast.SHORT);
             return
         }
         if(!wallet && !coldStorageWallet) {
@@ -263,8 +268,8 @@ export default function BottomBar({
     };
 
     const tabs = [
-        { key: "hot", title: "Hot Storage", component: () => <HotStorageTab /> },
-        { key: "cold", title: "Cold Storage", component: () => <ColdStorageTab /> },
+        { key: "hot", title: loc.cypherbox.home.hot_storage, component: () => <HotStorageTab /> },
+        { key: "cold", title: loc.cypherbox.home.cold_storage, component: () => <ColdStorageTab /> },
     ];
 
     const HotStorageTab = () => (
@@ -277,7 +282,7 @@ export default function BottomBar({
                     shadowBottomBottom={styles.savingVault}
                     bitcoinText={styles.bitcoinText}
                     isVault={false}
-                    title={"Hot Vault"}
+                    title={loc.cypherbox.home.hot_vault}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={balanceVault}
                     inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)).toFixed(2)}`}
@@ -289,11 +294,11 @@ export default function BottomBar({
                     <View style={styles.createVaultContainer}>
                         <View style={styles.alreadyView}>
                             <Text bold style={styles.text}>
-                                Already have a vault?
+                                {loc.cypherbox.home.already_have_vault}
                             </Text>
                             <TouchableOpacity onPress={handleRecoverSavingVault}>
                                 <Text bold style={[styles.login, { color: colors.green }]}>
-                                    Recover
+                                    {loc.cypherbox.home.recover}
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -301,11 +306,11 @@ export default function BottomBar({
                         {/* for a phone that only signs for a watch-only wallet: it needn't keep a Hot Vault at all */}
                         <View style={[styles.alreadyView, signOnceStyles.row]}>
                             <Text bold style={[styles.text, signOnceStyles.text]}>
-                                Only signing?
+                                {loc.cypherbox.home.only_signing}
                             </Text>
                             <TouchableOpacity onPress={() => startSigning()} accessibilityRole="button">
                                 <Text bold style={[styles.login, signOnceStyles.text, signOnceStyles.link]}>
-                                    Sign once from a backup
+                                    {loc.cypherbox.home.sign_once}
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -328,7 +333,7 @@ export default function BottomBar({
                     shadowTopBottom={styles.savingVault}
                     shadowBottomBottom={styles.savingVault}
                     bitcoinText={styles.bitcoinText}
-                    title={"Cold Vault"}
+                    title={loc.cypherbox.home.cold_vault}
                     isVault={true}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={coldStorageBalanceVault}
@@ -378,7 +383,7 @@ export default function BottomBar({
                                 pointerEvents="none"
                             />
                             <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                                Unlock Cold Vault
+                                {loc.cypherbox.home.unlock_cold_vault}
                             </Text>
                         </View>
                     </LinearGradient>
@@ -401,7 +406,7 @@ export default function BottomBar({
                     resizeMode="contain"
                     source={require("../../../../img/arrow-right.png")}
                 />
-                <Text bold h3 center style={{ textAlign: 'center' }}>Top-up</Text>
+                <Text bold h3 center style={{ textAlign: 'center' }}>{loc.cypherbox.home.top_up}</Text>
             </GradientView>
             <GradientView
                 onPress={withdrawClickHandler}
@@ -410,7 +415,7 @@ export default function BottomBar({
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
             >
-                <Text bold h3 center style={{ textAlign: 'center' }}>Withdraw</Text>
+                <Text bold h3 center style={{ textAlign: 'center' }}>{loc.cypherbox.home.withdraw}</Text>
                 <Image
                     style={styles.arrowRight}
                     resizeMode="contain"
@@ -434,7 +439,7 @@ export default function BottomBar({
     };
 
     const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+        const next = pageToTab(Math.round(e.nativeEvent.contentOffset.x / screenWidth));
         if (next === index) return;
         setIndex(next);
         setVaultTab(next === 1 && coldStorageWallet ? true : wallet && false);

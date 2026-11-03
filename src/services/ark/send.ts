@@ -13,6 +13,7 @@ import { ensureArkWalletHandleReady } from './restore';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos } from './vtxos';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
+import loc from '../../../loc';
 
 /**
  * What kind of thing the user pasted into the destination field.
@@ -152,7 +153,7 @@ export async function estimateArkSendFee(
         case 'onchain':
             return viewFee(await handle.estimateSendOnchainFee(dest.value, amount));
         case 'unknown':
-            throw new Error('Cannot estimate fee for an unrecognised destination');
+            throw new Error(loc.cypherbox.services.ark_send.cannot_estimate_unknown_dest);
     }
 }
 
@@ -470,7 +471,7 @@ export async function executeArkSend(
             // indeterminate outcome must never be retried.
             const status = await runBroadcastCall(
                 () => dispatchLnSend(handle, dest, amount, comment),
-                'payment',
+                loc.cypherbox.services.indeterminate.what_payment,
             );
 
             // Fast path: bark settled at dispatch and handed us the preimage.
@@ -515,8 +516,7 @@ export async function executeArkSend(
                 // funds are safe, and MUST NOT re-arm its send control, when
                 // this flag is set.
                 throw makeIndeterminate(
-                    'This payment may still be in flight. Do not send it again: wait for your ' +
-                    'balance to settle, or confirm with the recipient before retrying.',
+                    loc.cypherbox.services.ark_send.payment_in_flight,
                 );
             }
             // outcome === 'failed' -> HTLC refunded, funds back. Retry if attempts remain.
@@ -527,7 +527,7 @@ export async function executeArkSend(
         }
         if (!settled) {
             throw new Error(
-                'Lightning payment failed after several attempts and was refunded. Your Ark funds are safe, nothing was sent.',
+                loc.cypherbox.services.ark_send.ln_failed_refunded,
             );
         }
     } else {
@@ -538,19 +538,19 @@ export async function executeArkSend(
                 // leave it empty.
                 await runBroadcastCall(
                     () => handle.sendArkoorPayment(dest.value, amount),
-                    'payment',
+                    loc.cypherbox.services.indeterminate.what_payment,
                 );
                 id = '';
                 break;
             case 'onchain':
                 id = await runBroadcastCall(
                     () => handle.sendOnchain(dest.value, amount),
-                    'withdrawal',
+                    loc.cypherbox.services.indeterminate.what_withdrawal,
                 );
                 break;
             case 'unknown':
             default:
-                throw new Error('Cannot send to an unrecognised destination');
+                throw new Error(loc.cypherbox.services.ark_send.cannot_send_unknown_dest);
         }
     }
 
@@ -654,11 +654,11 @@ export async function executeArkSend(
  */
 export function labelForDestinationKind(kind: ArkDestinationKind): string {
     switch (kind) {
-        case 'ln-invoice': return 'Lightning invoice';
-        case 'ln-offer': return 'Lightning offer';
-        case 'ln-address': return 'Lightning address';
-        case 'ark': return 'Ark address';
-        case 'onchain': return 'Bitcoin on-chain address';
-        case 'unknown': return 'Unknown destination';
+        case 'ln-invoice': return loc.cypherbox.services.ark_send.dest_ln_invoice;
+        case 'ln-offer': return loc.cypherbox.services.ark_send.dest_ln_offer;
+        case 'ln-address': return loc.cypherbox.services.ark_send.dest_ln_address;
+        case 'ark': return loc.cypherbox.services.ark_send.dest_ark;
+        case 'onchain': return loc.cypherbox.services.ark_send.dest_onchain;
+        case 'unknown': return loc.cypherbox.services.ark_send.dest_unknown;
     }
 }
