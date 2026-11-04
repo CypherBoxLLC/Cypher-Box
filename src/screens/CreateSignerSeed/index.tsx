@@ -7,7 +7,7 @@ import * as bip39 from "bip39";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import OfflineSeedWarning from "@Cypher/components/OfflineSeedWarning";
 import SeedQRGrid from "@Cypher/components/SeedQRGrid";
-import { backupToMnemonic, dispatchNavigate, keyWithOrigin, mnemonicToSeedQR, seedQRGrid } from "@Cypher/helpers";
+import { backupToMnemonic, dispatchNavigate, keyWithOrigin, mnemonicToSeedQR, multisigKeyExpression, seedQRGrid } from "@Cypher/helpers";
 import { colors, widths } from "@Cypher/style-guide";
 import { HDSegwitBech32Wallet } from "../../../class";
 import QRCodeComponent from "../../../components/QRCodeComponent";
@@ -25,6 +25,8 @@ interface PublicInfo {
     fingerprint: string;
     addresses: string[];
     path: string;
+    // the m/48' key with its origin, for a multisig coordinator such as Nunchuk or Sparrow
+    multisigKey: string;
 }
 
 /**
@@ -47,6 +49,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     const [revealed, setRevealed] = useState(false);
     const [typed, setTyped] = useState('');
     const [info, setInfo] = useState<PublicInfo | null>(null);
+    const [showMultisigKey, setShowMultisigKey] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const check = useSeedQRCheck(mnemonic);
     // a seed is only made or loaded while no server answers: on a phone that's online, it would be a hot wallet
@@ -86,6 +89,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             fingerprint,
             addresses: [0, 1, 2].map(i => w._getExternalAddressByIndex(i)),
             path,
+            multisigKey: multisigKeyExpression(phrase, pass),
         };
     };
 
@@ -348,6 +352,33 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                 <SelectableText key={a} selectable style={styles.mono}>{`${i}  ${a}`}</SelectableText>
                             ))}
                         </View>
+                        <TouchableOpacity onPress={() => setShowMultisigKey(v => !v)} accessibilityRole="button">
+                            <Text style={styles.link}>
+                                {showMultisigKey ? 'Hide the multisig key' : 'Using this seed as one key of a multisig?'}
+                            </Text>
+                        </TouchableOpacity>
+                        {showMultisigKey ? (
+                            <View style={styles.multisig}>
+                                <Text style={styles.subtitle}>Multisig key</Text>
+                                <Text style={styles.body}>
+                                    In your multisig app (Nunchuk, Sparrow, BlueWallet or another), add a key from an
+                                    air-gapped device and scan this QR. It's a different public key from the one above,
+                                    made for multisig (path m/48'/0'/0'/2'), so don't add the one above to a multisig
+                                    wallet. Once the wallet is made, add its wallet file to this signer under Multisig
+                                    Wallets.
+                                </Text>
+                                <View style={styles.qr}>
+                                    <QRCodeComponent value={info.multisigKey} isLogoRendered={false} isMenuAvailable={false} size={widths - 96} />
+                                </View>
+                                <SelectableText selectable style={styles.mono}>{info.multisigKey}</SelectableText>
+                                <TouchableOpacity style={styles.secondary} onPress={() => {
+                                    Clipboard.setString(info.multisigKey);
+                                    SimpleToast.show('Multisig key copied', SimpleToast.SHORT);
+                                }} accessibilityRole="button">
+                                    <Text h3>Copy multisig key</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : null}
                         <Text style={styles.note}>
                             Nothing is kept on this phone. Still, if it's ever stolen, assume the seed is compromised and
                             move your coins to a new seed: getting a seed out of a phone is very difficult, but not
@@ -472,6 +503,18 @@ const styles = StyleSheet.create({
     facts: {
         marginTop: 16,
         gap: 4,
+    },
+    multisig: {
+        marginTop: 8,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#444',
+    },
+    subtitle: {
+        fontSize: 17,
+        lineHeight: 24,
+        fontFamily: 'Archivo-SemiBold',
+        marginBottom: 8,
     },
     fact: {
         fontSize: 14,
