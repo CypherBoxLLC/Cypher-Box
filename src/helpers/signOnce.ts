@@ -26,6 +26,8 @@ export const SIGN_BACKUP_MISMATCH =
     "This backup doesn't belong to the wallet that made this transaction. Check the words, and the passphrase if you use one.";
 export const SIGN_VAULT_MISMATCH =
     "This transaction wasn't made for your Hot Vault. Sign it with the backup or signing device it was made for.";
+export const SIGN_ON_SIGNING_DEVICE =
+    "This phone only signs for its own Hot Vault. Sign this transaction on your signing device: a hardware wallet, or an offline phone in Offline Seed-Signer mode.";
 export const SIGN_FALSE_CHANGE =
     "An amount marked as coming back to your wallet goes to an address that isn't yours. Don't sign this transaction.";
 export const SIGN_NOTHING_SIGNED = "Nothing in this transaction could be signed with this key.";

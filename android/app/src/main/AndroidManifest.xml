@@ -125,6 +125,9 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Payment links only. The data lines of one filter combine, so a host on any of them would be required of
+                 bitcoin:address links too, which have none. Strike's sign-in link (cypherbox://oauth/callback) is
+                 received by the sign-in library's own activity, which claims the cypherbox scheme. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
@@ -133,31 +136,7 @@
 
                 <data android:scheme="bitcoin" />
                 <data android:scheme="lightning" />
-                <data android:scheme="cypherbox" android:host="oauth/callback" />
-                <data android:scheme="lapp" />
-                <data android:scheme="blue" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
             </intent-filter>
-            <intent-filter tools:ignore="AppLinkUrlError">
-                <action android:name="android.intent.action.VIEW" />
-                <action android:name="android.intent.action.EDIT" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <data
-                    android:mimeType="application/octet-stream"
-                    android:pathPattern=".*\\.psbt" />
-            </intent-filter>
-            <intent-filter tools:ignore="AppLinkUrlError">
-                <action android:name="android.intent.action.VIEW" />
-                <action android:name="android.intent.action.EDIT" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <data
-                    android:mimeType="text/plain"
-                    android:pathPattern=".*\\.psbt" />
-            </intent-filter>
-
         </activity>
 
         <meta-data

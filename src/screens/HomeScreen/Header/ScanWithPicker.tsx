@@ -15,7 +15,6 @@ import {
     StrikeFull,
 } from '@Cypher/assets/images';
 import { colors } from '@Cypher/style-guide';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import loc from '../../../../loc';
 
 /**
@@ -24,10 +23,12 @@ import loc from '../../../../loc';
  * (SendListNew tile ids are integers; we use string keys here so the call
  * site reads as code, not as magic numbers).
  */
-export type ScanTargetKey = 'strike' | 'coinos' | 'hotVault' | 'coldVault' | 'ark' | 'sign';
+export type ScanTargetKey = 'strike' | 'coinos' | 'hotVault' | 'coldVault' | 'ark';
 
 interface Props {
     visible: boolean;
+    /** open for a bitcoin: or lightning: link the phone opened Cypher Box with, rather than for the scanner */
+    forLink?: boolean;
     onClose: () => void;
     onSelect: (key: ScanTargetKey) => void;
     available: {
@@ -36,7 +37,6 @@ interface Props {
         hotVault: boolean;
         coldVault: boolean;
         ark: boolean;
-        sign: boolean;
     };
 }
 
@@ -55,7 +55,7 @@ interface Props {
  * routing dance. Keeping this component dumb means the same picker can
  * later be reused for a "Receive with" flow if we want a symmetric UX.
  */
-export default function ScanWithPicker({ visible, onClose, onSelect, available }: Props) {
+export default function ScanWithPicker({ visible, forLink = false, onClose, onSelect, available }: Props) {
     const rows: Array<{
         key: ScanTargetKey;
         label: string;
@@ -63,7 +63,6 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
         icon: any;
         isLogo?: boolean;
         textLabel?: string;
-        vectorIcon?: string;
         accent: string;
     }> = [
         {
@@ -104,15 +103,6 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
             icon: ColdIcon,
             accent: '#7fb3ff',
         },
-        {
-            // not a payment: an unsigned transaction from a watch-only wallet, signed on this phone
-            key: 'sign',
-            label: loc.cypherbox.scan_with.sign_label,
-            subtitle: loc.cypherbox.scan_with.sign_subtitle,
-            icon: null,
-            vectorIcon: 'signature-freehand',
-            accent: colors.blueText,
-        },
     ];
 
     return (
@@ -127,10 +117,10 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                     backdrop dismiss only fires when tapping outside. */}
                 <Pressable style={modalStyles.sheet} onPress={() => {}}>
                     <Text bold style={modalStyles.title}>
-                        {loc.cypherbox.scan_with.title}
+                        {forLink ? loc.cypherbox.scan_with.link_title : loc.cypherbox.scan_with.title}
                     </Text>
                     <Text style={modalStyles.subtitle}>
-                        {loc.cypherbox.scan_with.subtitle}
+                        {forLink ? loc.cypherbox.scan_with.link_subtitle : loc.cypherbox.scan_with.subtitle}
                     </Text>
 
                     {rows.map((row) => {
@@ -157,8 +147,6 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                                 <View style={modalStyles.rowIconWrap}>
                                     {row.isLogo ? (
                                         <Image source={row.icon} style={modalStyles.logo} resizeMode="contain" />
-                                    ) : row.vectorIcon ? (
-                                        <MaterialCommunityIcons name={row.vectorIcon} size={26} color={row.accent} />
                                     ) : row.textLabel ? (
                                         <Text bold style={[modalStyles.textLogo, { color: row.accent }]}>
                                             {row.textLabel}

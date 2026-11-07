@@ -1,6 +1,6 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Image, Text as RNText, TouchableOpacity, View } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
@@ -10,6 +10,7 @@ import { startSigning } from "../../SignOnce/start";
 import loc from "../../../../loc";
 import { arabicFont } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
+import usePaymentLinkStore from "@Cypher/stores/paymentLinkStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -52,6 +53,9 @@ interface Props {
  * `capsulesData = ALL UTXOs` to EditAmount, so the downstream flow uses
  * BlueWallet's `createTransaction` to pick the actual inputs. The capsule
  * grid never appears.
+ *
+ * A bitcoin: or lightning: link the phone opens Cypher Box with lands here too: the picker asks which wallet pays it,
+ * and the link takes the scanner's place.
  */
 export default React.memo(function Header({
     matchedRate,
@@ -72,7 +76,25 @@ export default React.memo(function Header({
     const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
 
     const [pickerVisible, setPickerVisible] = useState(false);
+    // the link the picker is open for, or null when it's open for the scanner
+    const [pickerLink, setPickerLink] = useState<string | null>(null);
+    const paymentLink = usePaymentLinkStore((s) => s.link);
+    const clearPaymentLink = usePaymentLinkStore((s) => s.clearLink);
+    const isFocused = useIsFocused();
     const [activityDropdownVisible, setActivityDropdownVisible] = useState(false);
+
+    // only once the home screen is in front, so the picker never opens over another screen
+    useEffect(() => {
+        if (!paymentLink || !isFocused) return;
+        clearPaymentLink();
+        setPickerLink(paymentLink);
+        setPickerVisible(true);
+    }, [paymentLink, isFocused, clearPaymentLink]);
+
+    const openPickerForScanner = () => {
+        setPickerLink(null);
+        setPickerVisible(true);
+    };
 
     const navigateToSettings = () => {
         dispatchNavigate("Settings");
@@ -201,13 +223,11 @@ export default React.memo(function Header({
      * landing, not a hard crash, but they're worth keeping in sync.
      */
     const handleWalletPicked = useCallback(async (key: ScanTargetKey) => {
-        if (key === 'sign') {
-            startSigning();
-            return;
-        }
-        const scanned = await openScanner();
+        const scanned = pickerLink ?? await openScanner();
+        setPickerLink(null);
         if (!scanned) return;
-        // an unsigned transaction is something to sign, whichever wallet was picked to pay with
+        // an unsigned transaction is something to sign, whichever wallet was picked to pay with. Outside Offline
+        // Seed-Signer mode the signing screen only signs with the Hot Vault, and points anything else to a signing device
         if (looksLikePsbt(scanned)) {
             startSigning({ psbt: scanned });
             return;
@@ -248,7 +268,7 @@ export default React.memo(function Header({
                 // anything that still listens at the home-screen level.
                 if (onBarScanned) onBarScanned(scanned);
         }
-    }, [openScanner, matchedRate, currency, navigateVaultSend, onBarScanned]);
+    }, [pickerLink, openScanner, matchedRate, currency, navigateVaultSend, onBarScanned]);
 
     return (
         <>
@@ -294,7 +314,7 @@ export default React.memo(function Header({
                     </TouchableOpacity>
                     <TouchableOpacity
                         activeOpacity={0.7}
-                        onPress={() => setPickerVisible(true)}
+                        onPress={openPickerForScanner}
                         style={{
                             width: 42,
                             height: 42,
@@ -313,6 +333,7 @@ export default React.memo(function Header({
 
             <ScanWithPicker
                 visible={pickerVisible}
+                forLink={!!pickerLink}
                 onClose={() => setPickerVisible(false)}
                 onSelect={handleWalletPicked}
                 available={{
@@ -322,7 +343,6 @@ export default React.memo(function Header({
                     hotVault: !!walletID && !!wallet,
                     coldVault: !!coldStorageWalletID && !!coldStorageWallet,
                     ark: !!isArkAuth,
-                    sign: true,
                 }}
             />
 

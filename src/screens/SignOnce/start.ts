@@ -13,8 +13,8 @@ export function afterSigningGuide(then: () => void) {
 }
 
 /**
- * Opens the sign-once screen, after the guide. Every way into signing goes through here: the empty Hot Vault card,
- * the home scan button, signing mode, and the Hot Vault's "Sign a transaction" in Settings and on the vault tab (which
+ * Opens the sign-once screen, after the guide. Every way into signing goes through here: an unsigned transaction scanned
+ * on the home screen, signing mode, and the Hot Vault's "Sign a transaction" in Settings and on the vault tab (which
  * opens the file picker or the scanner itself, then comes here with the transaction).
  */
 export function startSigning(params: { psbt?: string; mode?: 'vault' } = {}) {
