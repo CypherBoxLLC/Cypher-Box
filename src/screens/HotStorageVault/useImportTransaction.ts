@@ -63,22 +63,22 @@ export default function useImportTransaction(wallet: any, memo = '') {
         }
         if (spendsPendingInputs(imported.txhex, pending)) {
             Alert.alert(
-                "Doesn't match what you prepared",
-                'This signed transaction spends the same capsules as the one waiting for signature, but pays different amounts or addresses. ' +
-                    "Don't send it unless you changed the transaction on purpose on your signing device.",
+                loc.cypherbox.vault.storage_vault.import.mismatch_title,
+                loc.cypherbox.vault.storage_vault.import.mismatch_body_1 +
+                    loc.cypherbox.vault.storage_vault.import.mismatch_body_2,
                 [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Review it anyway', style: 'destructive', onPress: () => openImported(imported) },
+                    { text: loc._.cancel, style: 'cancel' },
+                    { text: loc.cypherbox.vault.storage_vault.import.review_anyway, style: 'destructive', onPress: () => openImported(imported) },
                 ],
             );
             return;
         }
         Alert.alert(
-            'A different transaction',
-            "This isn't the transaction waiting for signature. It spends other capsules. Open it if you made it somewhere else.",
+            loc.cypherbox.vault.storage_vault.import.different_title,
+            loc.cypherbox.vault.storage_vault.import.different_body,
             [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Open it', onPress: () => openImported(imported) },
+                { text: loc._.cancel, style: 'cancel' },
+                { text: loc.cypherbox.vault.storage_vault.import.open_it, onPress: () => openImported(imported) },
             ],
         );
     };

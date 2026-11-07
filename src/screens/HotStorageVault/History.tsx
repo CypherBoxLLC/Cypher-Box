@@ -11,6 +11,7 @@ import { BlueStorageContext, WalletTransactionsStatus } from "../../../blue_modu
 import screenHeight from "@Cypher/style-guide/screenHeight";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { detectCpfpRelations } from "./cpfpDetection";
+import loc from "../../../loc";
 
 export default function History({ wallet, matchedRate, vaultTab }: any) {
 
@@ -251,14 +252,14 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
                         {isLoading || isRefreshing ? (
                             <>
                                 <ActivityIndicator color={colors.white} />
-                                <Text white h4 style={{ marginTop: 12 }}>Loading transactions...</Text>
+                                <Text white h4 style={{ marginTop: 12 }}>{loc.cypherbox.vault.storage_vault.history.loading}</Text>
                             </>
                         ) : didTimeout ? (
                             <Text white h4 center style={{ marginHorizontal: 30 }}>
-                                Network slow. Pull down to retry.
+                                {loc.cypherbox.vault.storage_vault.history.network_slow}
                             </Text>
                         ) : (
-                            <Text white h3 bold>No Transactions History</Text>
+                            <Text white h3 bold>{loc.cypherbox.vault.storage_vault.history.empty}</Text>
                         )}
                     </View>
                 )}

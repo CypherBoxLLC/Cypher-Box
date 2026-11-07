@@ -3,6 +3,7 @@ import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { Text } from "@Cypher/component-library";
+import loc from "../../../loc";
 
 const AMBER = '#FFD54F';
 
@@ -15,8 +16,7 @@ export default function OfflineSeedWarning({ style }: { style?: StyleProp<ViewSt
         <View style={[styles.row, style]}>
             <Ionicons name="warning-outline" size={16} color={AMBER} style={styles.icon} />
             <Text style={styles.text}>
-                If this offline phone ever connects to the internet, treat this seed as a hot wallet and plan to move
-                your coins to a new seed.
+                {loc.cypherbox.components.offline_seed_warning.text}
             </Text>
         </View>
     );

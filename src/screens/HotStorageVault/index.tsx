@@ -10,6 +10,7 @@ import Capsules from "./Capsules";
 import ListView from "./ListView";
 import { useRoute } from "@react-navigation/native";
 import useAuthStore from "@Cypher/stores/authStore";
+import loc from "../../../loc";
 
 
 
@@ -49,7 +50,7 @@ const HotStorageVault = ({ _, route }: any) => {
     return (
         <ScreenLayout
             showToolbar
-            title={vaultTab ? 'Cold Storage Vault' : 'Hot Storage Vault'}
+            title={vaultTab ? loc.cypherbox.vault.storage_vault.screen.cold_title : loc.cypherbox.vault.storage_vault.screen.hot_title}
             disableScroll
             style={{ paddingBottom: 20 }}
         >

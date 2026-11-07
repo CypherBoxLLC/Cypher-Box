@@ -1,8 +1,8 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./styles";
-import { Dimensions, Image, ScrollView, StyleSheet, TouchableOpacity, View, Animated as RNAnimated, InteractionManager, ActivityIndicator, Alert } from "react-native";
+import { Dimensions, Image, ScrollView, StyleSheet, TouchableOpacity, View, Animated as RNAnimated, InteractionManager, ActivityIndicator, Alert, I18nManager } from "react-native";
 import { Text } from "@Cypher/component-library";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { Back } from "@Cypher/assets/images";
 import Animated, {
     useSharedValue,
@@ -178,7 +178,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         if (keychainBusy) return;
         const mnemonic = wallet?.getSecret?.();
         if (!thisWalletID || !mnemonic) {
-            SimpleToast.show("Could not read vault seed", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.settings.seed_read_failed, SimpleToast.SHORT);
             return;
         }
         setKeychainBusy(true);
@@ -196,24 +196,24 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         if (result.ok) {
             setHotVaultKeychainBackup(thisWalletID, true);
             triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
-            SimpleToast.show("Seed backed up to Keychain", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.settings.keychain_saved, SimpleToast.SHORT);
         } else {
             console.warn("[HotVault] Keychain save failed:", result.error);
-            SimpleToast.show("Keychain save failed", SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.settings.keychain_save_failed, SimpleToast.LONG);
         }
     };
 
     const handleKeychainRemove = () => {
         if (keychainBusy || !thisWalletID) return;
         Alert.alert(
-            "Remove Keychain backup?",
+            loc.cypherbox.vault.storage_vault.settings.keychain_remove_title,
             header
                 ? "The copy of this seed in this phone's secure storage is removed. The seed on this phone and your paper or SeedQR backup aren't affected. A seed-signer doesn't keep this second copy, so it can't be made again here."
-                : "The 12 words will be removed from this device's Keychain. Your wallet and its paper backup are not affected. You can re-enable this anytime.",
+                : loc.cypherbox.vault.storage_vault.settings.keychain_remove_body,
             [
-                { text: "Cancel", style: "cancel" },
+                { text: loc._.cancel, style: "cancel" },
                 {
-                    text: "Remove",
+                    text: loc.cypherbox.vault.storage_vault.settings.remove,
                     style: "destructive",
                     onPress: async () => {
                         setKeychainBusy(true);
@@ -356,8 +356,8 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         triggerHapticFeedback(HapticFeedbackTypes.NotificationWarning);
         try {
             const walletBalanceConfirmation = await showPrompt(
-                "Delete Vault",
-                loc.formatString("This vault has a balance. Before proceeding, please be aware that you will not be able to recover the funds without this vault’s seed phrase. In order to avoid accidental removal, please enter your vault’s balance of {balance} satoshis.", { balance: wallet.getBalance() }),
+                loc.cypherbox.vault.storage_vault.settings.delete_vault,
+                loc.formatString(loc.cypherbox.vault.storage_vault.settings.delete_balance_prompt, { balance: wallet.getBalance() }),
                 true,
                 'plain-text',
                 true,
@@ -377,11 +377,11 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
     const handleDeleteButtonTapped = () => {
         triggerHapticFeedback(HapticFeedbackTypes.NotificationWarning);
         Alert.alert(
-            "Delete Vault",
-            "Are you sure?",
+            loc.cypherbox.vault.storage_vault.settings.delete_vault,
+            loc.cypherbox.vault.storage_vault.settings.are_you_sure,
             [
                 {
-                    text: "Yes, delete",
+                    text: loc.cypherbox.vault.storage_vault.settings.yes_delete,
                     onPress: async () => {
                         const isBiometricsEnabled = await Biometric.isBiometricUseCapableAndEnabled();
                         if (isBiometricsEnabled) {
@@ -397,7 +397,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                     },
                     style: 'destructive',
                 },
-                { text: "No, cancel", onPress: () => { }, style: 'cancel' },
+                { text: loc.cypherbox.vault.storage_vault.settings.no_cancel, onPress: () => { }, style: 'cancel' },
             ],
             { cancelable: false },
         );
@@ -489,7 +489,9 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                 <RNAnimated.View
                     style={[
                         styles.main,
-                        { transform: [{ translateX: RNAnimated.multiply(right, -1) }] },
+                        // right-to-left swaps the second panel's `right` offset to the left side, so there it slides
+                        // in the other way; sliding left as well left Info and the seed backup blank
+                        { transform: [{ translateX: I18nManager.isRTL ? right : RNAnimated.multiply(right, -1) }] },
                     ]}
                 >
                     {header ? (
@@ -509,7 +511,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                             {!vaultTab &&
                                 <>
                                     <TouchableOpacity onPress={backupSeedPhraseClickHandler}>
-                                        <Text bold style={styles.text}>Backup Seed Phrase</Text>
+                                        <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.backup_seed}</Text>
                                     </TouchableOpacity>
                                     <View style={styles.line} />
                                     {/*
@@ -528,10 +530,10 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                                     >
                                         <Text bold style={styles.text}>
                                             {keychainBusy
-                                                ? "Updating Keychain…"
+                                                ? loc.cypherbox.vault.storage_vault.settings.keychain_updating
                                                 : isKeychainBackedUp
-                                                ? "Seed saved to Keychain ✓ · Remove"
-                                                : "Back up seed to iPhone Keychain"}
+                                                ? loc.cypherbox.vault.storage_vault.settings.keychain_saved_remove
+                                                : loc.cypherbox.vault.storage_vault.settings.keychain_back_up}
                                         </Text>
                                     </TouchableOpacity>
                                     <View style={styles.line} />
@@ -540,7 +542,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                             {wallet instanceof AbstractHDElectrumWallet && (
                                 <>
                                     <TouchableOpacity onPress={navigateToAddresses}>
-                                        <Text bold style={styles.text}>Show Addresses</Text>
+                                        <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.show_addresses}</Text>
                                     </TouchableOpacity>
                                     <View style={styles.line} />
                                 </>
@@ -548,20 +550,20 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                             {wallet.allowXpub() && (
                                 <>
                                     <TouchableOpacity onPress={navigateToXPub}>
-                                        <Text bold style={styles.text}>Vault’s Public Key (xpub)</Text>
+                                        <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.public_key}</Text>
                                     </TouchableOpacity>
                                     <View style={styles.line} />
                                 </>
                             )}
                             <TouchableOpacity onPress={rightToLeft}>
-                                <Text bold style={styles.text}>Info</Text>
+                                <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.info}</Text>
                             </TouchableOpacity>
                             <View style={styles.line} />
                             {wallet && !vaultTab && wallet.allowCosignPsbt() && (
                                 <>
                                     {/* the phrase as a QR to copy by hand: lets a signing phone sign from the backup by scanning */}
                                     <TouchableOpacity onPress={() => dispatchNavigate('SeedQRBackup', { walletID: wallet.getID() })}>
-                                        <Text bold style={styles.text}>Make a SeedQR backup</Text>
+                                        <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.seedqr_backup}</Text>
                                     </TouchableOpacity>
                                     <View style={styles.line} />
                                 </>
@@ -592,7 +594,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
 
                             <View style={styles.line} />
                             <TouchableOpacity onPress={handleDeleteButtonTapped}>
-                                <Text bold style={StyleSheet.flatten([styles.text, { color: colors.red }])}>Delete</Text>
+                                <Text bold style={StyleSheet.flatten([styles.text, { color: colors.red }])}>{loc.cypherbox.vault.storage_vault.settings.delete}</Text>
                             </TouchableOpacity>
                             <View style={styles.line} />
                         </View>
@@ -600,30 +602,30 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                     {viewType == 0 ?
                         <View style={styles.settingView2}>
                             <TouchableOpacity onPress={leftToRight}>
-                                <Image source={Back} style={styles.backbtn} />
+                                <Image source={Back} style={[styles.backbtn, rtl.mirror]} />
                             </TouchableOpacity>
                             <View style={styles.typeView}>
-                                <Text bold style={styles.typeText}>Type</Text>
+                                <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.type}</Text>
                                 <Text h3>{wallet.typeReadable}</Text>
                             </View>
                             <View style={styles.typeView}>
-                                <Text bold style={styles.typeText}>Transaction count</Text>
+                                <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.transaction_count}</Text>
                                 <Text h3>{wallet.getTransactions().length || 0}</Text>
                             </View>
                             {/* compared between the two phones when one of them only signs */}
                             <View style={styles.typeView}>
-                                <Text bold style={styles.typeText}>App version</Text>
+                                <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.app_version}</Text>
                                 <Text h3>{`${getVersion()} (build ${getBuildNumber()})`}</Text>
                             </View>
                             {isAdvancedModeEnabledRender && (
                                 <>
                                     <View style={styles.typeView}>
-                                        <Text bold style={styles.typeText}>Master fingerprint</Text>
+                                        <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.master_fingerprint}</Text>
                                         <Text h3>{masterFingerprint ?? <ActivityIndicator />}</Text>
                                     </View>
                                     {derivationPath && (
                                         <View style={styles.typeView}>
-                                            <Text bold style={styles.typeText}>Derivation path</Text>
+                                            <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.derivation_path}</Text>
                                             <Text h3>{derivationPath}</Text>
                                         </View>
                                     )}
@@ -634,9 +636,9 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                         <View style={styles.settingView2}>
                             <View style={styles.backupView}>
                                 <TouchableOpacity onPress={leftToRight}>
-                                    <Image source={Back} style={styles.backbtn} />
+                                    <Image source={Back} style={[styles.backbtn, rtl.mirror]} />
                                 </TouchableOpacity>
-                                <Text h4 style={styles.titleBackup}>Write  this backup copy on a piece of paper</Text>
+                                <Text h4 style={styles.titleBackup}>{loc.cypherbox.vault.storage_vault.settings.write_backup}</Text>
                             </View>
                             <PrivateKeyGenerater callNext={nextClickInitiate} />
                             <Tips />

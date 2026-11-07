@@ -302,10 +302,11 @@ const WalletAddresses = () => {
   );
 };
 
-WalletAddresses.navigationOptions = navigationStyle({
+// the title is read when the screen is drawn: this file loads before the saved language is applied
+WalletAddresses.navigationOptions = navigationStyle({ statusBarStyle: 'auto' }, opts => ({
+  ...opts,
   title: loc.addresses.addresses_title,
-  statusBarStyle: 'auto',
-});
+}));
 
 export default WalletAddresses;
 
