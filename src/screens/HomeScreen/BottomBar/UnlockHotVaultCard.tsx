@@ -4,10 +4,11 @@ import LinearGradient from "react-native-linear-gradient";
 
 import { Text } from "@Cypher/component-library";
 import { colors, shadow } from "@Cypher/style-guide";
+import loc from "../../../../loc";
 import styles from "../styles";
 
 /** The empty Hot Vault's card, on the home screen and on a signing phone that has no Hot Vault yet */
-export default function UnlockHotVaultCard({ onPress, label = 'Unlock Hot Vault' }: { onPress: () => void; label?: string }) {
+export default function UnlockHotVaultCard({ onPress, label = loc.cypherbox.home.unlock_hot_vault }: { onPress: () => void; label?: string }) {
     // Outlined only: green gradient ring on a dark interior, matching the slick treatment of the Unlock Lightning
     // Wallet CTA. Replaces the previous solid green fill so the shield watermark and label read against a dark surface.
     // Sized from the live window width: the screenWidth read at start-up is the landscape width if the app started

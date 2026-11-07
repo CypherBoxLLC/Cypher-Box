@@ -140,10 +140,12 @@ export default function BottomBar({
         return 0;
     };
     const [index, setIndex] = useState(getInitialIndex());
-    // In RTL, Android lays the horizontal pager out right-to-left. scrollToIndex and
-    // initialScrollIndex take the tab index, but the offset in scroll events is
-    // measured from the left, where the last tab sits, so map it back to the tab.
-    const pageToTab = (page: number) => (I18nManager.isRTL && Platform.OS === 'android' ? tabs.length - 1 - page : page);
+    // In RTL the horizontal pager lays its pages out right-to-left, with the last tab on the left. scrollToIndex takes
+    // the tab index, but the offset in scroll events is measured from the left on both platforms, so map it back to
+    // the tab, and iOS's initialScrollIndex counts from the left too. Without this, iOS showed the Cold Vault card on
+    // the Hot tab, and the card opened the Hot Vault.
+    const pageToTab = (page: number) => (I18nManager.isRTL ? tabs.length - 1 - page : page);
+    const initialPage = (tab: number) => (I18nManager.isRTL && Platform.OS === 'ios' ? tabs.length - 1 - tab : tab);
 
     useEffect(() => {
         if (!hasSavingVault && hasColdStorage && !vaultTab) {
@@ -472,7 +474,7 @@ export default function BottomBar({
                     snapToInterval={screenWidth}
                     decelerationRate="fast"
                     disableIntervalMomentum
-                    initialScrollIndex={index}
+                    initialScrollIndex={initialPage(index)}
                     getItemLayout={(_, i) => ({ length: screenWidth, offset: screenWidth * i, index: i })}
                     onMomentumScrollEnd={onMomentumScrollEnd}
                 />

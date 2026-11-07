@@ -50,6 +50,8 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
     const vaultTab = useAuthStore(s => s.vaultTab);
     const vaultTabCheck = isVault === false || isVault === true ? isVault : vaultTab;
     const wallet = vaultTabCheck ? wallets.find(w => w.getID() === coldStorageWalletID) : wallets.find(w => w.getID() === walletID);
+    // the flame, not the snowflake: a card marked as the Hot Vault's gets it whatever language its title is in
+    const isHotCard = isVault === false || title === 'Hot Vault';
     const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];
     // const inDollar = '6500';
     const emptyUTXO = !utxo ? 5 : utxo.length <= 5 ? 5 - utxo.length : utxo.length > 5 && 0;
@@ -99,7 +101,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                         background gradient and the foreground content. */}
                     <Image
                         source={
-                            title === 'Hot Vault'
+                            isHotCard
                                 ? require('@Cypher/assets/images/fireShield.png')
                                 : require('@Cypher/assets/images/coldShield.png')
                         }
@@ -117,7 +119,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                     />
                     <View style={styles.bottominner}>
                         <View style={{flexDirection: "row", flex:1, justifyContent: "flex-start", alignItems: "center"}}>
-                        {title === 'Hot Vault' ?
+                        {isHotCard ?
                             <Image
                             source={require('@Cypher/assets/images/fireShield.png')}
                             style={{width:25, height: 25, marginRight:8}}

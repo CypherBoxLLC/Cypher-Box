@@ -21,7 +21,8 @@ const TermsOfService = () => {
             <GradientText style={styles.title} center>{loc.cypherbox.tos.title}</GradientText>
             <Text style={styles.lastUpdated} center>{loc.cypherbox.tos.last_updated}</Text>
             <View style={styles.divider} />
-            <ScrollView style={styles.container} showsVerticalScrollIndicator={true}
+            {/* the padding goes on the content: on the scroll view itself, right-to-left layout shifted the text by it */}
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={true}
                 indicatorStyle='white'
             >
                 {isArabic && (
@@ -546,8 +547,10 @@ const TermsOfService = () => {
 };
 
 const styles = StyleSheet.create({
-    container: {
+    scroll: {
         flex: 1,
+    },
+    container: {
         padding: 20,
         paddingHorizontal: 40
     },
@@ -563,8 +566,10 @@ const styles = StyleSheet.create({
         color: '#888',
         marginBottom: 12,
     },
+    // headings set their own line height: the shared 18pt one cut off the dots above Arabic letters at this size
     sectionTitle: {
         fontSize: 20,
+        lineHeight: 30,
         fontWeight: 'bold',
         color: '#fff',
         marginTop: 16,
@@ -576,6 +581,7 @@ const styles = StyleSheet.create({
     },
     subHeader: {
         fontSize: 18,
+        lineHeight: 27,
         fontWeight: 'bold',
         marginBottom: 8,
         color: '#fff',

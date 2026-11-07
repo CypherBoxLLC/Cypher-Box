@@ -210,8 +210,11 @@ const Settings = ({ navigation }) => {
 };
 
 export default Settings;
-Settings.navigationOptions = navigationStyle({
-  headerTransparent: true,
-  headerTitle: Platform.select({ ios: loc.settings.header, default: '' }),
-  headerLargeTitle: true,
-});
+// the title is read when the screen is drawn: this file loads before the saved language is applied
+Settings.navigationOptions = navigationStyle(
+  {
+    headerTransparent: true,
+    headerLargeTitle: true,
+  },
+  opts => ({ ...opts, headerTitle: Platform.select({ ios: loc.settings.header, default: '' }) }),
+);

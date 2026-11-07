@@ -89,6 +89,16 @@ interface Props {
   isArk?: boolean;
 }
 
+// The backup service writes its local-save notes in English; they're shown here in the app's language.
+const LOCAL_SAVE_FAILED = 'Local save failed: ';
+const localBackupNoteText = (note: string): string => {
+  if (note.startsWith(LOCAL_SAVE_FAILED)) {
+    return String(loc.formatString(loc.cypherbox.strike.ark_settings.local_save_failed, { error: note.slice(LOCAL_SAVE_FAILED.length) }));
+  }
+  if (note.startsWith('Saved via direct write')) return loc.cypherbox.strike.ark_settings.local_save_direct;
+  return note;
+};
+
 export default function Settings({ receiveType, currency, isArk }: Props) {
   const { strikeMe, clearStrikeAuth, clearAuth } = useAuthStore();
   const navigation = useNavigation();
@@ -2366,8 +2376,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   : loc.cypherbox.strike.ark_settings.local_path_android}
               </Text>
               {localNote && (
-                <Text style={{ fontSize: 11, color: localNote.startsWith('Local save failed') ? '#E85C5A' : '#888', marginTop: 2 }}>
-                  {localNote}
+                <Text style={{ fontSize: 11, color: localNote.startsWith(LOCAL_SAVE_FAILED) ? '#E85C5A' : '#888', marginTop: 2 }}>
+                  {localBackupNoteText(localNote)}
                 </Text>
               )}
             </View>
