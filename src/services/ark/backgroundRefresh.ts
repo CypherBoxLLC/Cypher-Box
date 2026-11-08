@@ -19,6 +19,48 @@ import { fetchArkVtxos } from './vtxos';
 import { recordTelemetry } from './backgroundTelemetry';
 
 /**
+ * Mint the push token GroundControl uses to wake this device before a capsule
+ * expires. Returns whether a token is held afterwards. Never throws.
+ *
+ * `prompt: false` never shows the OS permission dialog: it mints only when
+ * notifications are already allowed, so it is safe to call right after a
+ * consent step the user has already answered. A user who just declined is not
+ * asked a second time (Android 13+ would show the system dialog again).
+ *
+ * This does NOT opt the user into onchain address uploads: that consent is a
+ * separate flag which ensurePushTokenForArk pins before minting. Lazy require
+ * because notifications.js is a JS singleton whose statics attach at App
+ * bootstrap.
+ */
+export async function acquireArkPushToken(
+    options: { prompt?: boolean } = {},
+): Promise<boolean> {
+    const { prompt = true } = options;
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const Notifications = require('../../../blue_modules/notifications').default;
+        const got = await Notifications.ensurePushTokenForArk?.({ prompt });
+        console.log('[Ark reminders] push token acquired:', !!got, 'prompt=', prompt);
+        // DEV verdict line: proves the privacy guarantee on device without
+        // attaching a debugger. onchainSubs MUST stay false here, otherwise
+        // minting a token for Bark silently opted the user into uploading
+        // wallet addresses. Remove once this is covered by a test.
+        if (__DEV__) {
+            const tok = await Notifications.getPushToken?.();
+            const onchain = await Notifications.isOnchainSubscriptionEnabled?.();
+            console.log(
+                '[Ark reminders] VERDICT hasToken=', !!(tok && tok.token),
+                'onchainSubs=', onchain,
+            );
+        }
+        return !!got;
+    } catch (tokenErr) {
+        console.warn('[Ark reminders] push token acquisition threw:', tokenErr);
+        return false;
+    }
+}
+
+/**
  * Toggle the capsule-expiry reminders + opt-in background maintenance on/off.
  *
  * While ENABLED this governs two things:
@@ -77,30 +119,14 @@ export async function setArkBackgroundRefreshEnabled(
         // token, so without this the wake registration silently no-ops and
         // the unattended refresh can never fire.
         //
-        // This does NOT opt the user into onchain address uploads: that
-        // consent is a separate flag which ensurePushTokenForArk pins before
-        // minting. Lazy require because notifications.js is a JS singleton
-        // whose statics attach at App bootstrap.
-        try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const Notifications = require('../../../blue_modules/notifications').default;
-            const got = await Notifications.ensurePushTokenForArk?.();
-            console.log('[Ark reminders] push token acquired:', !!got);
-            // DEV verdict line: proves the privacy guarantee on device without
-            // attaching a debugger. onchainSubs MUST stay false here, otherwise
-            // minting a token for Bark silently opted the user into uploading
-            // wallet addresses. Remove once this is covered by a test.
-            if (__DEV__) {
-                const tok = await Notifications.getPushToken?.();
-                const onchain = await Notifications.isOnchainSubscriptionEnabled?.();
-                console.log(
-                    '[Ark reminders] VERDICT hasToken=', !!(tok && tok.token),
-                    'onchainSubs=', onchain,
-                );
-            }
-        } catch (tokenErr) {
-            console.warn('[Ark reminders] push token acquisition threw:', tokenErr);
-        }
+        // Same prompt rule as the permission request above. Minting from an
+        // undecided permission goes through requestNotifications(), which IS
+        // the OS dialog, so with requestNotificationPermission false this only
+        // mints if notifications are already allowed. Until it checked, the
+        // create flow showed the dialog from here despite passing false.
+        // Callers that skip the prompt mint after their own consent step
+        // instead (CheckingAccountCreated does it on "Yes").
+        await acquireArkPushToken({ prompt: requestNotificationPermission });
         return;
     }
 

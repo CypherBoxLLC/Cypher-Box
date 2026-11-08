@@ -12,7 +12,7 @@ import { formatNumber } from "@Cypher/helpers/coinosHelper";
 import { Picker } from "@react-native-picker/picker";
 import Modal from "react-native-modal";
 import { useRoute } from "@react-navigation/native";
-import { ensureBgNotificationPermission, setArkBackgroundRefreshEnabled } from "@Cypher/services/ark";
+import { acquireArkPushToken, ensureBgNotificationPermission, setArkBackgroundRefreshEnabled } from "@Cypher/services/ark";
 import styles from "./styles";
 import LightningVaultCreate from "@Cypher/components/LightningVaultCreate/LightningVaultCreate";
 import loc from "../../../loc";
@@ -139,6 +139,13 @@ export default function CheckingAccountCreated() {
                 } catch (err) {
                     console.warn('[Ark vault created] notification permission threw:', err);
                 }
+                // Now mint the push token the server needs to wake this device
+                // before a capsule expires. Create skipped it on purpose:
+                // minting from an undecided permission IS the OS dialog.
+                // prompt: false, so a user who just declined is not asked
+                // again. Not awaited: the token can take a while to arrive and
+                // leaving this screen should not wait for it.
+                void acquireArkPushToken({ prompt: false });
             }
         }
         goHome();

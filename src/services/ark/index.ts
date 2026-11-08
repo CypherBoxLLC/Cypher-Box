@@ -213,7 +213,7 @@ export type {
 } from './exitTriage';
 export type { ArkRefreshFeeView, ArkRefreshResult, ArkDelegatedRefreshResult } from './refresh';
 
-export { setArkBackgroundRefreshEnabled } from './backgroundRefresh';
+export { acquireArkPushToken, setArkBackgroundRefreshEnabled } from './backgroundRefresh';
 
 export { saveArkSeedToKeychain } from './seedKeychain';
 export type { SaveArkSeedResult } from './seedKeychain';
