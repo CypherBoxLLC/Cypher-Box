@@ -6,7 +6,6 @@ import Aes from 'react-native-aes-crypto';
 import {
     buildArkBackupFilename,
     loadArkBackupInstanceId,
-    parseArkBackupFilename,
 } from './backupInstance';
 
 /**
@@ -149,18 +148,14 @@ import { ARK_DATADIR, ensureArkDatadir } from './datadir';
 import {
     classifyDriveError,
     deleteDriveBackupByFingerprint,
-    deleteLegacyDriveBackup,
-    downloadArkBackupFromDrive,
     downloadDriveBackupByFingerprint,
     isGoogleDriveConnected,
     uploadArkBackupToDrive,
 } from './googleDrive';
 import type { DriveErrorClass } from './googleDrive';
 import {
-    deleteLegacySafBackup,
     deleteSafBackupByFingerprint,
     getSavedSafBackupFolder,
-    readArkBackupFromSaf,
     writeAndReadbackSafBackup,
     writeArkBackupToSaf,
 } from './safFolderBackup';
@@ -723,15 +718,23 @@ async function _packDatadirIntoBlob(
 }
 
 /**
- * Delete the local Documents per-wallet backup file
- * (`ark-backup-{fingerprint}.cbark`). Wallet-scoped: only this
- * wallet's file is removed; other wallets' per-wallet files in
- * Documents survive. Idempotent — no error when the file's already
- * gone. Best-effort: errors logged in __DEV__ but not thrown so the
- * caller's reset / migration path keeps moving.
+ * Delete THIS device's local Documents file for a wallet
+ * (`ark-backup-{fingerprint}-{instance}.cbark`). Other wallets' files
+ * and the fingerprint-only file from before per-device names survive:
+ * a fingerprint says which seed a file holds, never which device wrote
+ * it. Idempotent — no error when the file's already gone. Best-effort:
+ * errors logged in __DEV__ but not thrown so the caller's reset path
+ * keeps moving.
+ *
+ * `instance` defaults to this install's own id.
  */
-export async function deleteLocalArkBackup(fingerprint: string): Promise<void> {
-    const path = getAutoBackupPath(fingerprint);
+export async function deleteLocalArkBackup(
+    fingerprint: string,
+    instance?: string | null,
+): Promise<void> {
+    const own = instance === undefined ? await loadArkBackupInstanceId() : instance;
+    if (!own) return;
+    const path = getAutoBackupPath(fingerprint, own);
     try {
         if (await RNFS.exists(path)) {
             await RNFS.unlink(path);
@@ -769,8 +772,10 @@ async function deleteLegacyLocalArkBackup(): Promise<void> {
  * best-effort — a Drive outage doesn't prevent the local file from
  * being deleted, and vice versa.
  *
- * Other wallets' per-wallet files at the same destinations are NOT
- * touched. The caller passes the fingerprint of THIS wallet only.
+ * Only files THIS device wrote are touched. Other wallets' files, other
+ * devices' files for this wallet, and fingerprint-only files from before
+ * per-device names stay where they are. The caller passes the
+ * fingerprint of THIS wallet only.
  *
  * Used by `resetArkWalletState({ deleteBackupFilesForFingerprint })` —
  * but the Settings UI today doesn't yet expose a "delete vault AND
@@ -779,12 +784,13 @@ async function deleteLegacyLocalArkBackup(): Promise<void> {
  * available for explicit opt-in.
  */
 export async function deleteArkBackupForWallet(fingerprint: string): Promise<void> {
+    const instance = await loadArkBackupInstanceId();
     // Run all three independently. Sequential so errors in one don't
     // mask errors in another in the dev logs; the per-channel helpers
     // already swallow failures.
-    await deleteLocalArkBackup(fingerprint);
-    await deleteDriveBackupByFingerprint(fingerprint);
-    await deleteSafBackupByFingerprint(fingerprint);
+    await deleteLocalArkBackup(fingerprint, instance);
+    await deleteDriveBackupByFingerprint(fingerprint, instance);
+    await deleteSafBackupByFingerprint(fingerprint, instance);
 }
 
 /**
@@ -1416,11 +1422,12 @@ export async function writeAndVerifyArkBackup(
     // blob, or (worst case) the wrong account ending up with the file
     // would all pass the upload step. Decrypting with the same mnemonic
     // we just used to encrypt is the cheapest end-to-end witness that
-    // the round-trip works. Fast-path read by the per-wallet name we
-    // just uploaded — avoids a full appDataFolder enumeration on the
-    // verified-create hot path.
+    // the round-trip works. Read back by the exact name just uploaded,
+    // instance included — avoids a full appDataFolder enumeration on the
+    // verified-create hot path. Without the instance this would read the
+    // fingerprint-only name, which is not the file that was uploaded.
     try {
-        const remote = await downloadDriveBackupByFingerprint(fingerprint);
+        const remote = await downloadDriveBackupByFingerprint(fingerprint, instance);
         if (!remote) {
             return {
                 blob,

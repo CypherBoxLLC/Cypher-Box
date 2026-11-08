@@ -8,14 +8,11 @@ import {
 import RNFS from 'react-native-fs';
 
 import {
-    getAutoBackupPath,
     getICloudBackupPath,
-    getICloudBackupPathForFingerprint,
     peekBackupHeader,
 } from './backup';
 import {
     downloadArkBackupFromDrive,
-    downloadDriveBackupByFingerprint,
     findDriveBackupByFingerprint,
     isGoogleDriveConnected,
 } from './googleDrive';
@@ -23,7 +20,6 @@ import {
     findSafBackupByFingerprint,
     getSavedSafBackupFolder,
     readArkBackupFromSaf,
-    readSafBackupByFingerprint,
 } from './safFolderBackup';
 
 /**
@@ -40,22 +36,28 @@ import {
  * so the UI can iterate channels with `if (found) restore(); else next`.
  *
  * MATCH ORDER PER CHANNEL:
- *   1. Fast path — read the file at the per-wallet name (`ark-backup-
- *      {fp}.cbark`). The owner of this seed wrote that exact filename;
- *      if it's there and the header matches, we're done in one IO call.
- *   2. Scan path — list every `.cbark` at the destination, peek each
- *      header, return the blob whose `header.fingerprint` matches.
- *      Catches files the user manually renamed (downloaded + re-uploaded
- *      from a different device, organised their Drive folder, etc.).
+ *   1. Scan path — list every `.cbark` at the destination, peek each
+ *      header, collect every blob whose `header.fingerprint` matches and
+ *      return the best one (./backupCandidates ranks them). Catches files
+ *      the user manually renamed (downloaded + re-uploaded from a
+ *      different device, organised their Drive folder, etc.).
  *      Rename-tolerance is criterion 3 of the multi-wallet PR.
- *   3. Legacy path — single shared `ark-backup.cbark` (v1) or
+ *
+ *      There is deliberately no fast path by name in front of the scan
+ *      any more. One used to read `ark-backup-{fp}.cbark` first and
+ *      return it. Since each device writes `ark-backup-{fp}-{instance}
+ *      .cbark`, that fingerprint-only name is a file from before the
+ *      upgrade that no build writes, so the fast path restored a
+ *      snapshot frozen at the upgrade and the per-device files were never
+ *      looked at. The scan still reads that file, as one candidate.
+ *   2. Legacy path — single shared `ark-backup.cbark` (v1) or
  *      `cypher-box-ark-backup.cbark` (v0). No header fingerprint, so
  *      callers must try-decrypt with the entered seed; on success the
  *      next auto-backup tick rewrites it under the per-wallet name and
  *      the orphaned legacy file gets cleaned up by Slice 4.
  *
  * RESULT VARIANTS:
- *   - `matched`              v2 file with header.fingerprint === target.
+ *   - `matched`              v2 or v3 file with header.fingerprint === target.
  *                            Definitive: `restoreArkBackupBlob(blob, m)`
  *                            will succeed.
  *   - `legacy-v1-candidate`  v1/v0 file, no fingerprint header. May or
@@ -82,9 +84,8 @@ export type ChannelLookupResult =
 
 /**
  * Scan the app's Documents directory for an Ark backup matching
- * `fingerprint`. Order: fast-path read of the per-wallet filename, then
- * directory scan with header-match for renamed files, then legacy v1
- * fallback at the original `ark-backup.cbark` path.
+ * `fingerprint`. Order: directory scan with header-match and ranking,
+ * then legacy v1 fallback at the original `ark-backup.cbark` path.
  */
 export async function lookupArkBackupInLocalDocuments(
     fingerprint: string,
@@ -101,23 +102,9 @@ export async function lookupArkBackupInLocalDocuments(
         if (iCloudResult.kind !== 'not-found') return iCloudResult;
     }
 
-    // Step 1: fast path — exact per-wallet filename.
-    const perWalletPath = getAutoBackupPath(fingerprint);
-    try {
-        if (await RNFS.exists(perWalletPath)) {
-            const blob = await RNFS.readFile(perWalletPath, 'utf8');
-            const header = peekBackupHeader(blob);
-            if (header?.fingerprint === fingerprint) {
-                return { kind: 'matched', blob };
-            }
-            // File present but header doesn't match — fall through to scan.
-        }
-    } catch (err) {
-        if (__DEV__) console.log('[Ark/find-local] fast-path read failed:', err);
-    }
-
-    // Step 2: scan every `.cbark` in Documents, peek headers, collect ALL
-    // matches and rank them.
+    // Step 1: scan every `.cbark` in Documents, peek headers, collect ALL
+    // matches and rank them. No fast path by name first: see the header
+    // comment for why the fingerprint-only name must not win by default.
     //
     // This used to return the first fingerprint match it found. That was
     // correct while one seed had at most one file per destination. Now that
@@ -164,7 +151,7 @@ export async function lookupArkBackupInLocalDocuments(
         if (__DEV__) console.log('[Ark/find-local] readDir failed:', err);
     }
 
-    // Step 3: legacy v1 / v0 fallback. Single file at the historical path.
+    // Step 2: legacy v1 / v0 fallback. Single file at the historical path.
     for (const legacyName of ['ark-backup.cbark', 'cypher-box-ark-backup.cbark']) {
         const legacyPath = `${RNFS.DocumentDirectoryPath}/${legacyName}`;
         try {
@@ -192,32 +179,15 @@ export async function lookupArkBackupInLocalDocuments(
 
 /**
  * iOS iCloud Documents container scan. Same shape as the local-sandbox
- * scan in `lookupArkBackupInLocalDocuments` — fast-path per-wallet
- * filename, directory enumeration with header match, legacy v1 / v0
- * fallback — but rooted at the ubiquity container instead of
- * RNFS.DocumentDirectoryPath. Returns `not-found` if iCloud Drive is
- * not reachable for Cypher Box, so callers cleanly fall through to the
- * local sandbox scan.
+ * scan in `lookupArkBackupInLocalDocuments` — directory enumeration with
+ * header match and ranking, then legacy v1 / v0 fallback — but rooted at
+ * the ubiquity container instead of RNFS.DocumentDirectoryPath. Returns
+ * `not-found` if iCloud Drive is not reachable for Cypher Box, so callers
+ * cleanly fall through to the local sandbox scan.
  */
 async function scanICloudContainerForBackup(
     fingerprint: string,
 ): Promise<ChannelLookupResult> {
-    // Fast path — exact per-wallet filename inside the iCloud container.
-    try {
-        const perWalletICloudPath = await getICloudBackupPathForFingerprint(fingerprint);
-        if (perWalletICloudPath && (await RNFS.exists(perWalletICloudPath))) {
-            const blob = await RNFS.readFile(perWalletICloudPath, 'utf8');
-            const header = peekBackupHeader(blob);
-            if (header?.fingerprint === fingerprint) {
-                return { kind: 'matched', blob };
-            }
-            // Header present but mismatched — fall through to scan in case
-            // the user renamed files in iCloud Drive.
-        }
-    } catch (err) {
-        if (__DEV__) console.log('[Ark/find-icloud] fast-path read failed:', err);
-    }
-
     // Derive the iCloud Documents container directory by stripping the
     // filename from the legacy-name iCloud path. If that probe returns
     // null, iCloud Drive isn't reachable — bail out cleanly.
@@ -319,28 +289,15 @@ export async function lookupArkBackupOnDrive(
     }
     if (!connected) return { kind: 'not-found' };
 
-    // Step 1: fast path — exact per-wallet filename.
-    try {
-        const blob = await downloadDriveBackupByFingerprint(fingerprint);
-        if (blob) {
-            const header = peekBackupHeader(blob);
-            if (header?.fingerprint === fingerprint) {
-                return { kind: 'matched', blob };
-            }
-        }
-    } catch (err) {
-        // Drive download error: don't swallow — propagate so UI can render
-        // the "Drive failed" path with classification.
-        throw err;
-    }
-
-    // Step 2: scan path — list all .cbark in appDataFolder + header match.
+    // Step 1: scan path — list all .cbark in appDataFolder, header match,
+    // ranked. A list failure (auth, network, quota) throws so the UI can
+    // render the "Drive failed" path with classification.
     const matched = await findDriveBackupByFingerprint(fingerprint);
     if (matched) {
         return { kind: 'matched', blob: matched };
     }
 
-    // Step 3: legacy v1 / v0 fallback.
+    // Step 2: legacy v1 / v0 fallback.
     const legacy = await downloadArkBackupFromDrive();
     if (legacy) {
         const header = peekBackupHeader(legacy);
@@ -372,21 +329,7 @@ export async function lookupArkBackupInSafFolder(
     const saved = await getSavedSafBackupFolder();
     if (!saved) return { kind: 'not-found' };
 
-    // Step 1: fast path — exact per-wallet filename.
-    try {
-        const blob = await readSafBackupByFingerprint(fingerprint);
-        if (blob) {
-            const header = peekBackupHeader(blob);
-            if (header?.fingerprint === fingerprint) {
-                return { kind: 'matched', blob };
-            }
-        }
-    } catch (err) {
-        if (__DEV__) console.log('[Ark/find-saf] fast-path read failed:', err);
-        // Fall through — scan path may still succeed.
-    }
-
-    // Step 2: scan all .cbark in folder + header match.
+    // Step 1: scan all .cbark in folder, header match, ranked.
     try {
         const matched = await findSafBackupByFingerprint(fingerprint);
         if (matched) {
@@ -396,7 +339,7 @@ export async function lookupArkBackupInSafFolder(
         if (__DEV__) console.log('[Ark/find-saf] scan failed:', err);
     }
 
-    // Step 3: legacy v1 fallback.
+    // Step 2: legacy v1 fallback.
     try {
         const legacy = await readArkBackupFromSaf();
         if (legacy) {

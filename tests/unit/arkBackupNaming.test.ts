@@ -7,15 +7,6 @@
  * The instance id puts the writer in the name.
  */
 
-jest.mock('react-native-aes-crypto', () => ({
-    randomKey: jest.fn(async (bytes: number) => 'ab'.repeat(bytes)),
-}));
-jest.mock('@Cypher/stores/storageService', () => ({
-    getItem: jest.fn(async () => null),
-    setItem: jest.fn(async () => undefined),
-    removeItem: jest.fn(async () => undefined),
-}));
-
 import {
     buildArkBackupFilename,
     isOwnBackupFilename,
@@ -25,6 +16,17 @@ import {
     __resetArkBackupInstanceIdCacheForTests,
     LEGACY_BACKUP_FILENAME_V1,
 } from '../../src/services/ark/backupInstance';
+
+// Hoisted above the import by babel-jest, so the module under test loads
+// with these in place.
+jest.mock('react-native-aes-crypto', () => ({
+    randomKey: jest.fn(async (bytes: number) => 'ab'.repeat(bytes)),
+}));
+jest.mock('@Cypher/stores/storageService', () => ({
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+}));
 
 const FP = 'd8f74ce1';
 const INSTANCE_A = '1111aaaa';

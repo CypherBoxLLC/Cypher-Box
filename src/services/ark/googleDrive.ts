@@ -427,11 +427,16 @@ async function downloadDriveFileById(id: string): Promise<string> {
  *
  * @param fingerprint - active wallet fingerprint, or null to look up
  *   the legacy single-file entry (back-compat).
+ * @param instance - this device's backup instance id. Pass it: this
+ *   device uploads `ark-backup-{fingerprint}-{instance}.cbark`, and the
+ *   fingerprint-only name is a file from before per-device names that
+ *   nothing writes any more, so its date would never move.
  */
 export async function getDriveBackupInfo(
     fingerprint: string | null = null,
+    instance: string | null = null,
 ): Promise<{ modifiedAt: number; sizeBytes: number } | null> {
-    const meta = await findDriveBackupMetaByName(getDriveBackupName(fingerprint));
+    const meta = await findDriveBackupMetaByName(getDriveBackupName(fingerprint, instance));
     if (!meta) return null;
     const modifiedAt = meta.modifiedTime ? Date.parse(meta.modifiedTime) : NaN;
     const sizeBytes = meta.size ? Number(meta.size) : NaN;
@@ -535,17 +540,22 @@ export async function uploadArkBackupToDrive(
 }
 
 /**
- * Fast-path read by exact per-wallet name. Used by the verify-after-
- * upload step in `writeAndVerifyArkBackup` — we just uploaded as
- * `ark-backup-{fingerprint}.cbark`, so reading back by that exact
- * name avoids a full appDataFolder scan.
+ * Read one file back by its exact name. Used by the verify-after-upload
+ * step in `writeAndVerifyArkBackup`, which passes the instance it just
+ * uploaded under, so the read finds `ark-backup-{fingerprint}-{instance}.cbark`.
  *
- * Returns null when no entry exists for this fingerprint.
+ * Without the instance this resolves the fingerprint-only name, which is
+ * not the file that was uploaded: on a new wallet nothing has that name
+ * and the verify fails, and on an upgraded device it is the file from
+ * before the upgrade, so the verify checks a file the upload never touched.
+ *
+ * Returns null when no entry has that name.
  */
 export async function downloadDriveBackupByFingerprint(
     fingerprint: string,
+    instance: string | null = null,
 ): Promise<string | null> {
-    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint));
+    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint, instance));
     if (!id) return null;
     return downloadDriveFileById(id);
 }
@@ -635,15 +645,22 @@ async function deleteDriveFileById(id: string): Promise<void> {
 }
 
 /**
- * Delete the per-wallet entry (`ark-backup-{fingerprint}.cbark`) from
- * the Drive appDataFolder. Wallet-scoped: only this wallet's entry is
- * removed; other wallets' entries survive. Idempotent — resolves
- * cleanly when no entry exists for this fingerprint.
+ * Delete THIS device's entry for a wallet
+ * (`ark-backup-{fingerprint}-{instance}.cbark`) from the Drive
+ * appDataFolder. Other wallets' entries, other devices' entries for the
+ * same wallet, and fingerprint-only files from before per-device names
+ * all survive: a fingerprint says which seed a file holds, never which
+ * device wrote it. Idempotent — resolves cleanly when no entry exists.
  *
  * iOS callers: short-circuits with no-op (Drive is Android-only).
  */
-export async function deleteDriveBackupByFingerprint(fingerprint: string): Promise<void> {
+export async function deleteDriveBackupByFingerprint(
+    fingerprint: string,
+    instance: string | null,
+): Promise<void> {
     if (Platform.OS !== 'android') return;
+    // No instance, no file this device can show it wrote.
+    if (!instance) return;
     let connected = false;
     try {
         connected = await isGoogleDriveConnected();
@@ -651,7 +668,7 @@ export async function deleteDriveBackupByFingerprint(fingerprint: string): Promi
         // Sign-in lib hiccup — nothing to delete if we can't reach Drive.
     }
     if (!connected) return;
-    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint));
+    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint, instance));
     if (!id) return;
     await deleteDriveFileById(id);
 }

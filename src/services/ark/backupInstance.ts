@@ -61,6 +61,31 @@ let cachedInstanceId: string | null = null;
 /** In-flight load, so concurrent callers cannot each mint a different id. */
 let inFlightLoad: Promise<string> | null = null;
 
+async function mintInstanceId(): Promise<string> {
+    try {
+        // Same entropy source the envelope's AES IV uses. Returns hex.
+        const hex = await Aes.randomKey(INSTANCE_ID_HEX_CHARS / 2);
+        const cleaned = String(hex).toLowerCase().replace(/[^0-9a-f]/g, '');
+        if (cleaned.length >= INSTANCE_ID_HEX_CHARS) {
+            return cleaned.slice(0, INSTANCE_ID_HEX_CHARS);
+        }
+    } catch {
+        // Native crypto unavailable. Fall through.
+    }
+    // Fallback only. Collision resistance here is weaker than the native
+    // source, but the consequence of a collision is two devices sharing a
+    // filename, which is the pre-fix behaviour rather than something worse.
+    let out = '';
+    while (out.length < INSTANCE_ID_HEX_CHARS) {
+        out += Math.floor(Math.random() * 16).toString(16);
+    }
+    return out;
+}
+
+export function isValidInstanceId(value: string): boolean {
+    return new RegExp(`^[0-9a-f]{${INSTANCE_ID_HEX_CHARS}}$`).test(value);
+}
+
 /**
  * This install's backup instance id, creating and persisting one on first use.
  *
@@ -118,31 +143,6 @@ export function getArkBackupInstanceIdCached(): string | null {
 export function __resetArkBackupInstanceIdCacheForTests(): void {
     cachedInstanceId = null;
     inFlightLoad = null;
-}
-
-async function mintInstanceId(): Promise<string> {
-    try {
-        // Same entropy source the envelope's AES IV uses. Returns hex.
-        const hex = await Aes.randomKey(INSTANCE_ID_HEX_CHARS / 2);
-        const cleaned = String(hex).toLowerCase().replace(/[^0-9a-f]/g, '');
-        if (cleaned.length >= INSTANCE_ID_HEX_CHARS) {
-            return cleaned.slice(0, INSTANCE_ID_HEX_CHARS);
-        }
-    } catch {
-        // Native crypto unavailable. Fall through.
-    }
-    // Fallback only. Collision resistance here is weaker than the native
-    // source, but the consequence of a collision is two devices sharing a
-    // filename, which is the pre-fix behaviour rather than something worse.
-    let out = '';
-    while (out.length < INSTANCE_ID_HEX_CHARS) {
-        out += Math.floor(Math.random() * 16).toString(16);
-    }
-    return out;
-}
-
-export function isValidInstanceId(value: string): boolean {
-    return new RegExp(`^[0-9a-f]{${INSTANCE_ID_HEX_CHARS}}$`).test(value);
 }
 
 /**
