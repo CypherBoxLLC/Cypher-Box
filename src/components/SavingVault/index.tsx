@@ -50,8 +50,9 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
     const vaultTab = useAuthStore(s => s.vaultTab);
     const vaultTabCheck = isVault === false || isVault === true ? isVault : vaultTab;
     const wallet = vaultTabCheck ? wallets.find(w => w.getID() === coldStorageWalletID) : wallets.find(w => w.getID() === walletID);
-    // the flame, not the snowflake: a card marked as the Hot Vault's gets it whatever language its title is in
-    const isHotCard = isVault === false || title === 'Hot Vault';
+    // the flame for the Hot Vault's card, the snowflake for the Cold Vault's: the same choice as the wallet above, so
+    // it holds in any language and for titles like "Hot Savings"
+    const isHotCard = !vaultTabCheck;
     const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];
     // const inDollar = '6500';
     const emptyUTXO = !utxo ? 5 : utxo.length <= 5 ? 5 - utxo.length : utxo.length > 5 && 0;

@@ -34,7 +34,7 @@ export default function SavingVaultCreated() {
                 <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? loc.cypherbox.vault.saving_vault_created.cold_title : signingMode ? loc.cypherbox.vault.saving_vault_created.seed_title : loc.cypherbox.vault.saving_vault_created.hot_title}</Text>
                 <View style={styles.inner}>
                     {/* a seed-signer's seed isn't a vault, so no vault picture or capsules */}
-                    {signingMode && !vaultTab ? null : <SavingVault title={vaultTab ? "Cold Vault" : "Hot Vault"} />}
+                    {signingMode && !vaultTab ? null : <SavingVault title={vaultTab ? loc.cypherbox.home.cold_vault : loc.cypherbox.home.hot_vault} />}
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
                         {signingMode && !vaultTab ? (
                             <Text h4 style={styles.descption}>{loc.cypherbox.vault.saving_vault_created.seed_next_1}

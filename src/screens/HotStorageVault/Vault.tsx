@@ -385,7 +385,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                         ) : (
                             <TouchableOpacity style={styles.codeView} onPress={() => copyToClipboard(address)}>
                                 <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
-                                <Text semibold style={styles.address}>{shortenAddress(address)}</Text>
+                                <Text semibold style={[styles.address, rtl.ltrText]}>{shortenAddress(address)}</Text>
                             </TouchableOpacity>
                         )}
                         {/* <TouchableOpacity onPress={shareQRCode}>

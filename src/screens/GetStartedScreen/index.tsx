@@ -6,6 +6,7 @@ import Svg, { Path, Defs, Pattern, Use, Image as RnSvgImage } from "react-native
 import CheckBox from '@react-native-community/checkbox';
 import { colors } from "@Cypher/style-guide";
 import loc from "../../../loc";
+import { GoodLuckWords, StartWord, welcomeArtFits } from "@Cypher/components/WelcomeWords";
 const { width } = Dimensions.get('screen')
 import { Start, StartNotActive } from "@Cypher/assets/images";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -186,7 +187,7 @@ export default function GetStartedScreen({ route }: Props) {
                             <Text h2>{'\u2022'}{' '}{loc.cypherbox.welcome.sats_per_bitcoin}</Text>
                             <Text h2>{'\u2022'}{' '}{loc.cypherbox.welcome.max_supply}</Text>
                         </View>
-                        <GoodLuck />
+                        {welcomeArtFits() ? <GoodLuck /> : <GoodLuckWords />}
                     </>
                 )}
                 <View style={styles.checkBoxContainer}>
@@ -219,7 +220,9 @@ export default function GetStartedScreen({ route }: Props) {
                     disabled={!hasAcceptedTermsOfService}
                     style={[styles.gradient, { marginBottom: 100, opacity: hasAcceptedTermsOfService ? 1 : 0.5 }, !hasAcceptedTermsOfService ? { backgroundColor: 'transparent' } : {}]}>
                     <View style={styles.container4}>
-                        {hasAcceptedTermsOfService ?
+                        {!welcomeArtFits() ?
+                            <StartWord active={hasAcceptedTermsOfService} />
+                        : hasAcceptedTermsOfService ?
                             <Image source={Start}
                                 resizeMode="contain" style={styles.start} />
                             :

@@ -9,6 +9,7 @@ import { MiddleImage, TitleImage } from "../../../img";
 import { Start, Title } from "@Cypher/assets/images";
 import { ScreenLayout } from "@Cypher/component-library";
 import loc from "../../../loc";
+import { GoodLuckWords, StartWord, welcomeArtFits } from "@Cypher/components/WelcomeWords";
 
 export default function WelcomeScreen() {
     const { setWalletsInitialized, startAndDecrypt } = useContext(BlueStorageContext);
@@ -47,11 +48,15 @@ export default function WelcomeScreen() {
                     <Description text={loc.cypherbox.welcome.sats_per_bitcoin} />
                     <Description text={loc.cypherbox.welcome.max_supply} />
                 </View>
-                <Image source={MiddleImage} style={styles.middle}
-                    resizeMode="contain" />
-                <TouchableOpacity onPress={startClickHandler}>
-                    <Image source={Start} style={styles.start}
+                {welcomeArtFits() ?
+                    <Image source={MiddleImage} style={styles.middle}
                         resizeMode="contain" />
+                    : <GoodLuckWords />}
+                <TouchableOpacity onPress={startClickHandler}>
+                    {welcomeArtFits() ?
+                        <Image source={Start} style={styles.start}
+                            resizeMode="contain" />
+                        : <StartWord active />}
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

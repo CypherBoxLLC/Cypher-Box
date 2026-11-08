@@ -619,7 +619,10 @@
     "welcome": {
       "sat_fraction": "A 'sat' is a tiny fraction of a Bitcoin",
       "sats_per_bitcoin": "100M sats equal 1 Bitcoin",
-      "max_supply": "There will only ever be 21M Bitcoin"
+      "max_supply": "There will only ever be 21M Bitcoin",
+      "good_luck": "Good Luck,",
+      "have_fun": "Have Fun!",
+      "start": "START"
     },
     "get_started": {
       "satoshi_quote": "\"It might make sense just to get some in case it catches on.\"",
