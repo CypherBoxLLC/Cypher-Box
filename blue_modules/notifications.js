@@ -241,9 +241,10 @@ function Notifications(props) {
    * notification permission is already granted and otherwise returns without
    * configuring, because configureNotifications() calls requestNotifications(),
    * which IS the OS dialog while the permission is still undecided. The Bark
-   * create flow and the Home backfill use it: the dialog used to appear during
-   * create, before the "Bark Vault Created" screen had said what reminders are
-   * for. That screen asks in its own words and mints after the user agrees.
+   * create and recover flows and the Home backfill use it: the dialog used to
+   * appear during create and recovery, before anything had said what
+   * reminders are for. Both flows ask in their own words and mint after the
+   * user agrees.
    *
    * Never rejects, and never hangs: configureNotifications only resolves once
    * onRegister fires, so a denied prompt would leave it pending forever. A

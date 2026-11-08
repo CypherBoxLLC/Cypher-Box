@@ -28,10 +28,10 @@ import useAuthStore from '@Cypher/stores/authStore';
  * Consent: the reminders flag is the consent, and it is already on here. This
  * mints the token that flag always implied, but only when the OS permission is
  * already granted (`prompt: false`). It never shows the dialog itself. Home
- * stays mounted under the Bark create flow, so this effect fires the moment
- * create sets isArkAuth, before the "Bark Vault Created" screen has explained
- * reminders and asked. A prompting call here put the OS dialog in front of
- * the user mid-create. That screen mints after its own "Yes" instead.
+ * stays mounted under the Bark create and recover flows, so this effect fires
+ * the moment either sets isArkAuth, before the user has been told what
+ * reminders are for and asked. A prompting call here put the OS dialog in
+ * front of the user mid-create. Both flows mint after their own "Yes" instead.
  *
  * Calibrate expectations. A token is necessary for the wake, not sufficient.
  * Apple states plainly that background notifications have no delivery

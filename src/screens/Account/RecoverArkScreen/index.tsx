@@ -8,6 +8,7 @@ import { Button, Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
+    acquireArkPushToken,
     checkArkSeedKeychainConflict,
     classifyPickedBackupBlob,
     clearArkWalletHandle,
@@ -15,6 +16,7 @@ import {
     createArkWallet,
     deleteArkDatadir,
     deriveBackupFingerprint,
+    ensureBgNotificationPermission,
     getArkWalletHandle,
     getLastArkRecoveryReport,
     hasArkDatadir,
@@ -305,15 +307,63 @@ export default function RecoverArkScreen() {
                     `[Ark restore] seed NOT saved (${label}): no biometric gate, storage=`,
                     saved.storage,
                 );
-                Alert.alert(
-                    loc.cypherbox.account.common.seed_not_saved_title,
-                    loc.cypherbox.account.recover_ark.seed_not_saved_body,
-                );
+                // AWAITED: more Alerts follow (the reminders question in
+                // finalizeWallet, and before it the reopen notice on the
+                // seed-only adopt path). On Android a new Alert closes the one
+                // already showing, so this warning would be gone unread.
+                await new Promise<void>((resolve) => {
+                    Alert.alert(
+                        loc.cypherbox.account.common.seed_not_saved_title,
+                        loc.cypherbox.account.recover_ark.seed_not_saved_body,
+                        [{ text: loc._.ok, onPress: () => resolve() }],
+                        { cancelable: true, onDismiss: () => resolve() },
+                    );
+                });
             } else {
                 console.warn(`[Ark restore] Keychain save failed (${label}):`, saved.reason);
             }
         }
         return saved.ok;
+    };
+
+    /**
+     * Ask in plain words whether to turn on capsule reminders, and request the
+     * OS notification permission only on a yes. Same question and order as the
+     * "Bark Vault Created" screen (CheckingAccountCreated nextClickHandler).
+     *
+     * Recovery used to arm reminders with the prompting default, so the OS
+     * dialog appeared mid-recovery with nothing on screen saying what it was
+     * for. finalizeWallet now arms them without the dialog and asks this
+     * before going Home.
+     *
+     * Resolves on dismiss too, as a no. The user cannot dismiss it
+     * (cancelable: false), but on Android a new Alert closes the one showing,
+     * and an unanswered promise here would leave the user on the loading
+     * screen with a wallet that is already open.
+     */
+    const askToEnableReminders = async (): Promise<void> => {
+        const wantsReminders = await new Promise<boolean>((resolve) => {
+            Alert.alert(
+                loc.cypherbox.account.checking_created.reminders_alert_title,
+                loc.cypherbox.account.checking_created.reminders_alert_body,
+                [
+                    { text: loc._.no, style: "cancel", onPress: () => resolve(false) },
+                    { text: loc._.yes, onPress: () => resolve(true) },
+                ],
+                { cancelable: false, onDismiss: () => resolve(false) },
+            );
+        });
+        if (!wantsReminders) return;
+        // Resolves false on a denial. A throw means the permission bridge
+        // failed; the token step below checks the permission again without
+        // prompting and logs its outcome, so the throw is not logged here.
+        await ensureBgNotificationPermission().catch(() => false);
+        // Mint the push token the server needs to wake this device before a
+        // capsule expires. Arming skipped it on purpose: minting from an
+        // undecided permission IS the OS dialog. prompt: false, so a user who
+        // just declined is not asked again. Not awaited: going Home should not
+        // wait for the token.
+        void acquireArkPushToken({ prompt: false });
     };
 
     const finalizeWallet = async (mnemonic: string, restoredFrom?: string, keychainSaved: boolean = true) => {
@@ -343,11 +393,16 @@ export default function RecoverArkScreen() {
         // leaves the user's restored arkoor VTXOs under server-trust until
         // they notice the toggle. Mirroring create here keeps the post-
         // recovery experience identical to a fresh wallet.
+        //
+        // Also like create, without the OS permission dialog: the user is
+        // asked in plain words first (askToEnableReminders), and the OS
+        // dialog shows only after a yes.
         try {
-            await setArkBackgroundRefreshEnabled(true);
+            await setArkBackgroundRefreshEnabled(true, { requestNotificationPermission: false });
         } catch (err) {
             console.warn("[Ark recover] failed to arm reminders:", err);
         }
+        await askToEnableReminders();
         dispatchReset("HomeScreen", { isComplete: true });
     };
 
@@ -437,8 +492,11 @@ export default function RecoverArkScreen() {
             return false;
         }
         const seedStored = await persistSeedToKeychain(mnemonic, keychainLabel);
-        setRestoring(false);
+        // `restoring` stays true until finalizeWallet has left the screen. It
+        // asks the reminders question first, and clearing this before would
+        // put the typed seed grid back on screen behind that question.
         await finalizeWallet(mnemonic, finalizeChannel, seedStored);
+        setRestoring(false);
         return true;
     };
 
@@ -849,7 +907,10 @@ export default function RecoverArkScreen() {
                 // from the mailbox would mean deleting local state that the
                 // mailbox cannot give back.
                 const adopted = await persistSeedToKeychain(mnemonic, 'seed-only adopt');
-                setSubmitting(false);
+                // `submitting` stays true through this alert and the reminders
+                // question in finalizeWallet, for the same reason as at the end
+                // of this function: clearing it re-renders the typed seed grid
+                // behind them.
                 await new Promise<void>((resolve) => {
                     Alert.alert(
                         loc.cypherbox.account.recover_ark.reopened_title,
@@ -859,6 +920,7 @@ export default function RecoverArkScreen() {
                     );
                 });
                 await finalizeWallet(mnemonic, undefined, adopted);
+                setSubmitting(false);
                 return;
             }
 

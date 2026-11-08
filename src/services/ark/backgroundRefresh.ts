@@ -83,11 +83,12 @@ export async function setArkBackgroundRefreshEnabled(
     options: { requestNotificationPermission?: boolean } = {},
 ): Promise<void> {
     // requestNotificationPermission: pass false to arm reminders WITHOUT
-    // firing the OS permission dialog. The create flow uses that, because the
-    // dialog used to appear before the "Bark Vault Created!" screen had
-    // explained what reminders are for, so users were granting or denying a
-    // permission with no context. That screen now asks for consent in its own
-    // words when the user leaves it, and requests the OS permission only then.
+    // firing the OS permission dialog. The create and recover flows use that,
+    // because the dialog used to appear before anything had explained what
+    // reminders are for, so users were granting or denying a permission with
+    // no context. Both now ask for consent in their own words (create when the
+    // user leaves the "Bark Vault Created!" screen, recover right after the
+    // restore) and request the OS permission only on a yes.
     const { requestNotificationPermission = true } = options;
     const store = useAuthStore.getState();
 
@@ -125,7 +126,7 @@ export async function setArkBackgroundRefreshEnabled(
         // mints if notifications are already allowed. Until it checked, the
         // create flow showed the dialog from here despite passing false.
         // Callers that skip the prompt mint after their own consent step
-        // instead (CheckingAccountCreated does it on "Yes").
+        // instead (CheckingAccountCreated and RecoverArkScreen do it on "Yes").
         await acquireArkPushToken({ prompt: requestNotificationPermission });
         return;
     }
