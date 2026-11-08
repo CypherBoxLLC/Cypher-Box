@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
+import { TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
@@ -123,10 +123,11 @@ export default function CheckingAccountLogin() {
   };
 
   const openArkInfo = () => {
-    // Bark Vault "Learn more" opens our own how-to guide rather than the ASP's
-    // marketing site, so the user gets the app-specific safety guidance
-    // (refresh habit, dust, exit funding, offline-phone warning).
-    Linking.openURL("https://cypherbox.io/how-to-use-your-bark-vault/");
+    // Bark Vault "Learn more" opens the in-app guide (the same screen as the
+    // Capsules tab's "?"), not a web page: it carries the app-specific safety
+    // guidance from cypherbox.io/how-to-use-your-bark-vault (offline-phone
+    // warning, refresh habit, dust, exit funding) and works offline.
+    dispatchNavigate("ArkCapsulesInfoScreen", {});
   };
 
   // Opens the standalone custodial-risk explainer (CheckingAccountIntro,
