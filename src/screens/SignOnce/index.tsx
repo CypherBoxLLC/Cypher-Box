@@ -12,16 +12,19 @@ import {
     SIGN_NOTHING_SIGNED,
     SIGN_ON_SIGNING_DEVICE,
     SIGN_VAULT_MISMATCH,
+    SigningKey,
     TransactionReview,
     assertBackupMatches,
-    assertKeyMatches,
+    assertKeyOwns,
     formatSignSats,
     inputFingerprints,
+    isForKey,
     parseUnsignedPsbt,
     reviewWithRoot,
     reviewWithWallet,
     rootFromBackup,
     signWithRoot,
+    signingKeyForWallet,
 } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -87,20 +90,21 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const hotVaultFingerprint = (): string | null => {
+    // what a transaction is checked against: the Hot Vault's fingerprint and its account's public keys, so a Cold Vault
+    // set up from its bare xpub, which writes 00000000 for the fingerprint, is still recognised, as cosigning always did
+    const hotVaultKey = (): SigningKey | null => {
         try {
-            // the wallet reports it in capitals, transactions in lower case
-            return hotVault?.getMasterFingerprintHex?.()?.toLowerCase() ?? null;
+            return hotVault ? signingKeyForWallet(hotVault) : null;
         } catch (_) {
             return null;
         }
     };
 
     const reviewWithHotVault = (tx: bitcoin.Psbt) => {
-        const fingerprint = hotVaultFingerprint();
-        if (!fingerprint) throw new Error(loc.cypherbox.sign_once.no_hot_vault);
-        assertKeyMatches(tx, fingerprint, SIGN_VAULT_MISMATCH);
-        setReview(reviewWithWallet(tx, (address: string) => !!hotVault.weOwnAddress(address), fingerprint));
+        const key = hotVaultKey();
+        if (!key) throw new Error(loc.cypherbox.sign_once.no_hot_vault);
+        assertKeyOwns(tx, key, SIGN_VAULT_MISMATCH);
+        setReview(reviewWithWallet(tx, (address: string) => !!hotVault.weOwnAddress(address), key));
         setMode('vault');
         setStep('review');
     };
@@ -111,8 +115,8 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             const tx = parseUnsignedPsbt(data);
             if (!inputFingerprints(tx).length) throw new Error(SIGN_NO_KEY_INFO);
             setPsbt(tx);
-            const fingerprint = hotVaultFingerprint();
-            const forHotVault = !!fingerprint && inputFingerprints(tx).includes(fingerprint);
+            const key = hotVaultKey();
+            const forHotVault = !!key && isForKey(tx, key);
             if (route?.params?.mode === 'vault') {
                 reviewWithHotVault(tx);
             } else if (!signingMode) {

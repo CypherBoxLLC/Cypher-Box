@@ -1,7 +1,7 @@
 import { Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
-import { SIGN_VAULT_MISMATCH, assertKeyMatches, parseUnsignedPsbt } from "@Cypher/helpers";
+import { SIGN_VAULT_MISMATCH, assertKeyOwns, parseUnsignedPsbt, signingKeyForWallet } from "@Cypher/helpers";
 import loc from "../../../loc";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
 import { afterSigningGuide, startSigning } from "../SignOnce/start";
@@ -20,8 +20,8 @@ export default function useSignTransaction(wallet: any) {
 
     const open = (data: string) => {
         try {
-            // the wallet reports its fingerprint in capitals, transactions in lower case
-            assertKeyMatches(parseUnsignedPsbt(data), String(wallet.getMasterFingerprintHex()).toLowerCase(), SIGN_VAULT_MISMATCH);
+            // by fingerprint, or by public key for a Cold Vault set up from this vault's bare xpub (it writes 00000000)
+            assertKeyOwns(parseUnsignedPsbt(data), signingKeyForWallet(wallet), SIGN_VAULT_MISMATCH);
         } catch (e: any) {
             Alert.alert(loc.errors.error, signErrorText(e.message));
             return;
