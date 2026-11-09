@@ -102,6 +102,34 @@ const openSignedTransaction = async function (): Promise<string | boolean> {
   return false;
 };
 
+const WALLET_FILE_TOO_BIG = "That file is too big to be a wallet file.";
+const WALLET_FILE_NOT_READ = "That file couldn't be read.";
+
+/**
+ * Opens a multisig wallet file for the Offline Seed-Signer (Coldcard-style text, BSMS, a descriptor or JSON) and
+ * returns its text, or false if the user cancelled. Any file can be picked: .bsms and similar files have no type of
+ * their own. Throws WALLET_FILE_TOO_BIG or WALLET_FILE_NOT_READ.
+ */
+const openWalletFile = async function (): Promise<string | false> {
+  let uri: string;
+  try {
+    const res = await DocumentPicker.pickSingle({ type: [DocumentPicker.types.allFiles] });
+    if (typeof res.size === 'number' && res.size > 64 * 1024) throw new Error(WALLET_FILE_TOO_BIG);
+    uri = res.uri;
+  } catch (err: any) {
+    if (DocumentPicker.isCancel(err)) return false;
+    throw err?.message === WALLET_FILE_TOO_BIG ? err : new Error(WALLET_FILE_NOT_READ);
+  }
+  let text: string;
+  try {
+    text = await RNFS.readFile(pickedFilePath(uri), 'utf8');
+  } catch (_) {
+    throw new Error(WALLET_FILE_NOT_READ);
+  }
+  if (text.length > 64 * 1024) throw new Error(WALLET_FILE_TOO_BIG);
+  return text;
+};
+
 const _readPsbtFileIntoBase64 = async function (uri: string): Promise<string> {
   const base64 = await RNFS.readFile(uri, 'base64');
   const stringData = Buffer.from(base64, 'base64').toString(); // decode from base64
@@ -217,6 +245,7 @@ const readFileOutsideSandbox = (filePath: string) => {
 
 module.exports.writeFileAndExport = writeFileAndExport;
 module.exports.openSignedTransaction = openSignedTransaction;
+module.exports.openWalletFile = openWalletFile;
 module.exports.pickedFilePath = pickedFilePath;
 module.exports.showFilePickerAndReadFile = showFilePickerAndReadFile;
 module.exports.showImagePickerAndReadImage = showImagePickerAndReadImage;

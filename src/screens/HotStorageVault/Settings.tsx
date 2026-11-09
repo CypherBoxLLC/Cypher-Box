@@ -60,7 +60,9 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         coldStorageWalletID,
         hotVaultKeychainBackups,
         setHotVaultKeychainBackup,
+        signerWallets,
     } = useAuthStore();
+    const multisigCount = Object.keys(signerWallets ?? {}).length;
     const [keychainBusy, setKeychainBusy] = useState(false);
     const thisWalletID = wallet?.getID?.();
     const isKeychainBackedUp = thisWalletID
@@ -463,6 +465,9 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
             : []),
         { label: 'Signing Safely', onPress: () => dispatchNavigate('SigningSafetyGuide') },
         { label: 'Sign from a Backup Instead', onPress: () => startSigning() },
+        // one key of a multisig made in Nunchuk, Sparrow or BlueWallet, signed from its SeedQR: the wallets it signs for
+        { label: multisigCount ? `Multisig Wallets (${multisigCount})` : 'Multisig Wallets', onPress: () => dispatchNavigate('SignerWallets') },
+        ...(multisigCount ? [{ label: 'Check an Address', onPress: () => dispatchNavigate('CheckSignerAddress') }] : []),
         { label: 'Info', onPress: rightToLeft },
         { label: 'App Settings', onPress: () => dispatchNavigate('Settings') },
         { label: 'Wipe Seed from This Phone', onPress: handleWipeTapped, danger: true },

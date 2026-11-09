@@ -24,7 +24,8 @@ import SignerButton from "./SignerButton";
  * server answers; no answer proves nothing.
  */
 export default function SigningHome() {
-    const { walletID, vaultTab, setVaultTab } = useAuthStore();
+    const { walletID, vaultTab, setVaultTab, signerWallets } = useAuthStore();
+    const multisigCount = Object.keys(signerWallets ?? {}).length;
     const { wallets, walletsInitialized } = useContext(BlueStorageContext);
     // the app's network switch doesn't count here: the probe itself is how a seed-signer knows it's offline
     const connection = useElectrumConnection(true, false);
@@ -82,6 +83,14 @@ export default function SigningHome() {
             <View style={styles.buttons}>
                 <SignerButton label="Sign with a SeedQR" onPress={() => startSigning()} />
                 <SignerButton label="Show a Seed's Public Key" onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'show' })} />
+                {/* one key of a multisig made in Nunchuk, Sparrow or BlueWallet: the wallets it signs for */}
+                <SignerButton
+                    label={multisigCount ? `Multisig Wallets (${multisigCount})` : 'Multisig Wallets'}
+                    onPress={() => dispatchNavigate('SignerWallets')}
+                />
+                {multisigCount ? (
+                    <SignerButton label="Check an Address" onPress={() => dispatchNavigate('CheckSignerAddress')} />
+                ) : null}
                 <SignerButton label="Signing Safely" onPress={() => dispatchNavigate('SigningSafetyGuide')} />
                 <SignerButton label="App Settings" onPress={() => dispatchNavigate('Settings')} />
             </View>

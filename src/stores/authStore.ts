@@ -4,6 +4,7 @@ import { zustandStorage } from "./index";
 import { isSeedSignerLocked, lockSeedSigner } from "@Cypher/services/seedSignerLock";
 import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
 import type { PendingSignature } from "@Cypher/helpers/pendingSignature";
+import type { SignerWallet } from "@Cypher/helpers/multisigPolicy";
 
 /**
  * Stuck-refresh detection state.
@@ -247,6 +248,13 @@ export type AuthStateType = {
      * helpers/pendingSignature.
      */
     pendingSignatures: Record<string, PendingSignature>;
+    /**
+     * Offline Seed-Signer: the multisig wallets this signer holds a key of, per wallet id (helpers/multisigPolicy),
+     * registered from the wallet file a coordinator exports once a SeedQR showed the seed's key is in it. A multisig
+     * transaction is signed only if it spends from one of these. Public keys only, but they reveal every address of
+     * the wallet, so they live here in the encrypted store.
+     */
+    signerWallets: Record<string, SignerWallet>;
     /** "Signing safely" was shown before this phone's first Hot Vault "Sign a transaction"; it isn't forced again. */
     signingSafetySeen: boolean;
     /**
@@ -421,6 +429,8 @@ export type AuthStateType = {
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setVaultDisplayAddress: (walletID: string, address: string | null) => void;
     setPendingSignature: (walletID: string, pending: PendingSignature | null) => void;
+    addSignerWallet: (wallet: SignerWallet) => void;
+    removeSignerWallet: (id: string) => void;
     setSigningSafetySeen: (seen: boolean) => void;
     hideColdKeyWarning: (walletID: string) => void;
     setSigningMode: (on: boolean) => void;
@@ -710,6 +720,7 @@ const createAuthStore = (
     arkPendingLnReceives: [],
     vaultDisplayAddress: {},
     pendingSignatures: {},
+    signerWallets: {},
     signingSafetySeen: false,
     coldKeyWarningHidden: {},
     signingMode: isSeedSignerLocked(),
@@ -835,6 +846,14 @@ const createAuthStore = (
             if (pending) next[walletID] = pending;
             else delete next[walletID];
             return { pendingSignatures: next };
+        }),
+    addSignerWallet: (wallet: SignerWallet) =>
+        set((state: any) => ({ signerWallets: { ...(state.signerWallets ?? {}), [wallet.id]: wallet } })),
+    removeSignerWallet: (id: string) =>
+        set((state: any) => {
+            const next = { ...(state.signerWallets ?? {}) };
+            delete next[id];
+            return { signerWallets: next };
         }),
     setSigningSafetySeen: (seen: boolean) => set({ signingSafetySeen: seen }),
     // turning it on locks this install for good; turning it off does nothing
