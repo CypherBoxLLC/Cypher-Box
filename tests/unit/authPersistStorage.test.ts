@@ -1,16 +1,14 @@
 /**
- * The auth store's encryption key is WHEN_UNLOCKED_THIS_DEVICE_ONLY, so a
- * background wake while the phone is locked cannot read it. storageService
- * turns that read failure into a null, which zustand cannot tell apart from an
- * empty store, so it hydrates the auth store to its default and a later write
- * persists that default over the real state (silent sign-out, lost exit-fee
- * reserve, lost custom exit destination).
+ * storageService.getItem returns null on any failure, a key-read failure
+ * included, which zustand cannot tell apart from an empty store: it then
+ * hydrates the auth store to its defaults and a later write can persist those
+ * defaults over the real saved state.
  *
  * authPersistStorage closes both halves:
  *   - getItem probes the key and THROWS on a read failure, so zustand's hydrate
  *     takes its error path and does not treat the failure as "no saved state".
  *   - setItem / removeItem are dropped until a hydration read has actually
- *     succeeded, so an unhydrated default can never overwrite real state.
+ *     succeeded, so unhydrated defaults can never overwrite saved state.
  */
 
 const mockGetStorage = jest.fn();

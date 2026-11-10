@@ -972,10 +972,9 @@ const createAuthStore = (
 const useAuthStore = create<AuthStateType>()(
     persist(createAuthStore, {
         name: 'Auth',
-        // Hydration-safe storage: getItem throws on a Keychain read failure so
-        // a locked-phone background wake cannot be mistaken for an empty store,
-        // and writes are blocked until a real read succeeds. See
-        // authPersistStorage.
+        // Hydration-safe storage: getItem throws on a key-read failure so it
+        // cannot be mistaken for an empty store, and writes are held until a
+        // real read succeeds. See authPersistStorage.
         storage: createJSONStorage(() => authPersistStorage),
         // Enable persistence writes only once a hydration read has actually
         // succeeded. On the error path (key unreadable) `error` is set, zustand

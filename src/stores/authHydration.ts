@@ -3,13 +3,12 @@ import useAuthStore from "./authStore";
 
 // Recover the auth store's hydration after a failed first attempt.
 //
-// zustand hydrates the store once at creation. If that happens during a
-// background wake while the phone is locked, the Keychain key is unreadable,
-// authPersistStorage.getItem throws, and the store stays unhydrated with writes
-// blocked (correct: nothing is lost, but the store is still showing defaults).
-// If the process then survives into the foreground, nothing would re-run
-// hydration on its own, so the app would stay "logged out" with writes blocked
-// until the process restarts.
+// zustand hydrates the store once at creation. If that happens before the
+// Keychain key is readable, authPersistStorage.getItem throws and the store
+// stays unhydrated with writes held (correct: nothing is written, but the
+// store is still showing defaults). If the session then continues without the
+// store ever re-reading, it would stay on defaults with writes held until the
+// process restarts.
 //
 // This re-runs hydration whenever the app becomes active, until it succeeds.
 // On a normal foreground launch the first attempt already succeeded and this is

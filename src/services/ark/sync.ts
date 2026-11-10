@@ -123,13 +123,11 @@ export async function syncArkWallet(): Promise<boolean> {
                 boardFeeHeadroomSats: BOARD_FEE_HEADROOM_SATS,
             });
             if (!useAuthStore.persist.hasHydrated()) {
-                // Item 3 guard: never auto-board on an auth store that has not
-                // hydrated. A failed hydrate (e.g. a background wake while the
-                // phone is locked, where the Keychain-held store key is
-                // unreadable) leaves arkExitFeeReserveSats at its default, so
-                // boarding here would read the reserve as 0 and sweep the
-                // user's exit-fee money into a VTXO. Skip until the real
-                // reserve is loaded.
+                // Guard: do not auto-board until the auth store has hydrated.
+                // If hydration has not succeeded (the store key was not
+                // readable yet), arkExitFeeReserveSats reads its default, so
+                // boarding here would act on a default reserve. Skip until the
+                // store has loaded.
                 if (__DEV__) console.log('[Ark sync] auto-board skipped: auth store not hydrated');
             } else if (boardDecision.action === 'board-amount') {
                 console.log(
