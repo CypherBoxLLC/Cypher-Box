@@ -197,6 +197,19 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
             setHotVaultKeychainBackup(thisWalletID, true);
             triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
             SimpleToast.show("Seed backed up to Keychain", SimpleToast.SHORT);
+        } else if (result.kind === "no-biometric-gate") {
+            // Android gave back a cipher not bound to a fingerprint; the helper
+            // removed the un-gated entry instead of storing an unprotected
+            // seed. Do not set the backup flag.
+            console.warn(
+                "[HotVault] Keychain save rejected, no biometric gate (storage=",
+                result.storage,
+                ")",
+            );
+            SimpleToast.show(
+                "This phone has no fingerprint set up, so the backup couldn't be protected. Add one in Settings, then try again.",
+                SimpleToast.LONG,
+            );
         } else {
             console.warn("[HotVault] Keychain save failed:", result.error);
             SimpleToast.show("Keychain save failed", SimpleToast.LONG);
