@@ -1,6 +1,6 @@
 import { create, GetState, SetState } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { zustandStorage } from "./index";
+import { authPersistStorage, enableAuthWrites } from "./authPersistStorage";
 import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
 
 /**
@@ -972,7 +972,18 @@ const createAuthStore = (
 const useAuthStore = create<AuthStateType>()(
     persist(createAuthStore, {
         name: 'Auth',
-        storage: createJSONStorage(() => zustandStorage),
+        // Hydration-safe storage: getItem throws on a Keychain read failure so
+        // a locked-phone background wake cannot be mistaken for an empty store,
+        // and writes are blocked until a real read succeeds. See
+        // authPersistStorage.
+        storage: createJSONStorage(() => authPersistStorage),
+        // Enable persistence writes only once a hydration read has actually
+        // succeeded. On the error path (key unreadable) `error` is set, zustand
+        // leaves the store at its default without writing, and startAuthHydration
+        // retries on the next foreground.
+        onRehydrateStorage: () => (_state, error) => {
+            if (!error) enableAuthWrites();
+        },
         // v1: invalidate the persisted Strike OAuth token + auth slice so
         // any token captured by the prior console.log/Bugsnag-breadcrumb
         // leak is flushed on first launch of the patched build. Users
