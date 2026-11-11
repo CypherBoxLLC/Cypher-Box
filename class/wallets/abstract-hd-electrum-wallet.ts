@@ -8,6 +8,7 @@ import { ECPairInterface } from 'ecpair/src/ecpair';
 import { Psbt, Transaction as BTransaction } from 'bitcoinjs-lib';
 import { CoinSelectReturnInput, CoinSelectTarget } from 'coinselect';
 import ecc from '../../blue_modules/noble_ecc';
+import { assertSignedPsbtSafe } from '../signatureAudit';
 
 import BIP47Factory, { BIP47Interface } from '@spsina/bip47';
 import { ECPairFactory } from 'ecpair';
@@ -1228,6 +1229,7 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
 
     let tx;
     if (!skipSigning) {
+      assertSignedPsbtSafe(psbt, ecc);
       tx = psbt.finalizeAllInputs().extractTransaction();
     }
     return { tx, inputs, outputs, fee, psbt };
@@ -1420,6 +1422,7 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
 
     let tx: BTransaction | false = false;
     if (this.calculateHowManySignaturesWeHaveFromPsbt(psbt) === psbt.inputCount) {
+      assertSignedPsbtSafe(psbt, ecc);
       tx = psbt.finalizeAllInputs().extractTransaction();
     }
 
