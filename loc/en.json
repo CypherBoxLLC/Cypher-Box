@@ -3285,6 +3285,7 @@
       "copied": "Signed transaction copied",
       "not_saved": "Your recovery phrase wasn't saved on this phone.",
       "signed_body": "Scan this with the wallet that made the transaction, to broadcast it.",
+      "step": "Step {n} of {total}",
       "signed_title": "Signed",
       "sign": "Sign",
       "partial": "This key signs {own} of {total} inputs. The others need another signer.",

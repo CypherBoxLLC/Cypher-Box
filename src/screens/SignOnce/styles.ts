@@ -11,6 +11,13 @@ export default StyleSheet.create({
         paddingTop: 48,
         paddingBottom: 40,
     },
+    step: {
+        fontSize: 13,
+        lineHeight: 18,
+        fontFamily: 'Archivo-SemiBold',
+        color: colors.green,
+        marginBottom: 4,
+    },
     title: {
         fontSize: 18,
         lineHeight: 24,
@@ -30,6 +37,9 @@ export default StyleSheet.create({
         marginBottom: 12,
     },
     // the content already has its side padding
+    working: {
+        marginVertical: 16,
+    },
     seedWarning: {
         marginHorizontal: 0,
         marginTop: 0,
@@ -59,7 +69,11 @@ export default StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginTop: 14,
-        backgroundColor: colors.blueText,
+        backgroundColor: colors.green,
+    },
+    // dark text on the green, as on the seed-signer's other screens
+    primaryText: {
+        color: '#000',
     },
     secondary: {
         height: 47,
@@ -68,14 +82,14 @@ export default StyleSheet.create({
         justifyContent: 'center',
         marginTop: 14,
         borderWidth: 1,
-        borderColor: colors.blueText,
+        borderColor: colors.green,
     },
     link: {
         marginTop: 18,
         alignSelf: 'center',
     },
     linkText: {
-        color: colors.blueText,
+        color: colors.green,
         textDecorationLine: 'underline',
         fontSize: 14,
     },

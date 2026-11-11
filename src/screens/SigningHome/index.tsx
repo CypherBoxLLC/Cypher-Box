@@ -80,7 +80,7 @@ export default function SigningHome() {
             </View>
 
             <View style={styles.buttons}>
-                <SignerButton label="Sign with a SeedQR" onPress={() => startSigning()} />
+                <SignerButton label="Sign a Transaction with SeedQR" onPress={() => startSigning()} />
                 <SignerButton label="Show a Seed's Public Key" onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'show' })} />
                 <SignerButton label="Signing Safely" onPress={() => dispatchNavigate('SigningSafetyGuide')} />
                 <SignerButton label="App Settings" onPress={() => dispatchNavigate('Settings')} />
