@@ -1011,7 +1011,7 @@
         "stuck": "This refresh is stuck. You can cancel the refresh and try again later.",
         "cancelling": "Cancelling…",
         "cancel_refresh": "Cancel refresh",
-        "come_back": "PLEASE COME BACK IN 1 HOUR TO MAKE SURE THE REFRESH HAS COMPLETED",
+        "come_back": "Please come back in 1 hour to make sure the refresh has completed",
         "extra_round": "- Refresh {number}: {time}",
         "more": "+{count} more"
       }
