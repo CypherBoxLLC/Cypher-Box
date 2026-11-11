@@ -467,7 +467,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         { label: 'Sign from a Backup Instead', onPress: () => startSigning() },
         // one key of a multisig made in Nunchuk, Sparrow or BlueWallet, signed from its SeedQR: the wallets it signs for
         { label: multisigCount ? `Multisig Wallets (${multisigCount})` : 'Multisig Wallets', onPress: () => dispatchNavigate('SignerWallets') },
-        ...(multisigCount ? [{ label: 'Check an Address', onPress: () => dispatchNavigate('CheckSignerAddress') }] : []),
+        { label: 'Receive - Check Address', onPress: () => dispatchNavigate('CheckSignerAddress') },
         { label: 'Info', onPress: rightToLeft },
         { label: 'App Settings', onPress: () => dispatchNavigate('Settings') },
         { label: 'Wipe Seed from This Phone', onPress: handleWipeTapped, danger: true },

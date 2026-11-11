@@ -3286,6 +3286,7 @@
       "not_saved": "Your recovery phrase wasn't saved on this phone.",
       "signed_body": "Scan this with the wallet that made the transaction, to broadcast it.",
       "signed_body_multisig": "Scan this with your multisig app. It can broadcast the transaction once {m} of the {n} keys have signed.",
+      "step": "Step {n} of {total}",
       "signed_title": "Signed",
       "sign": "Sign",
       "partial": "This key signs {own} of {total} inputs. The others need another signer.",
@@ -3363,7 +3364,7 @@
       "multisig_test_title": "3. Test before you fund it",
       "multisig_test_body": "If your multisig app asks you to sign test transactions, as Nunchuk does, sign them here like any other. Then send a small amount to the wallet and spend part of it, to see this phone sign and the change come back to the wallet.",
       "multisig_check_title": "4. Check receive addresses here",
-      "multisig_check_body": "Before you use a receive address, scan it with Check an Address on this phone. It should be a receive address of the wallet you expect.",
+      "multisig_check_body": "Before you use a receive address, scan it with Receive - Check Address on this phone. It should be a receive address of the wallet you expect.",
       "multisig_crosscheck_title": "Cross-check with EntropyLab",
       "multisig_crosscheck_body": "To check this phone's work with code that shares none of Cypher Box's, run EntropyLab on this offline phone, never on a device that goes online. In its Keys tab, load the seed with the derivation path m/48'/0'/0'/2': the key must match. In its MultiSig tab, paste the wallet's descriptor (public keys only): the first addresses must match too.",
       "title": "Signing safely"

@@ -10,13 +10,17 @@ import renderer, { act } from 'react-test-renderer';
 
 import CreateSignerSeed from '../../src/screens/CreateSignerSeed';
 
+// the screen remembers a shown public key in the persisted store; its storage isn't part of these tests
+jest.mock('../../src/stores/index', () => ({
+    zustandStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+}));
 jest.mock('@Cypher/component-library', () => {
     const { Text } = require('react-native');
     return { ScreenLayout: ({ children }: any) => children, Text };
 });
 jest.mock('@Cypher/components/OfflineSeedWarning', () => () => null);
 jest.mock('@Cypher/components/SeedQRGrid', () => () => null);
-jest.mock('../../components/QRCodeComponent', () => {
+jest.mock('@Cypher/components/ScannableQR', () => {
     const { View } = require('react-native');
     return () => <View />;
 });
@@ -39,17 +43,20 @@ const ZPUB_KEY = `[73c5da0a/84h/0h/0h]${ZPUB}`;
 const textOf = (root: renderer.ReactTestInstance) =>
     root.findAllByType(RNText).map(t => [].concat(t.props.children).filter(c => typeof c === 'string').join('')).join('\n');
 
-const press = (root: renderer.ReactTestInstance, label: RegExp) => {
+// the key is worked out after a frame, so a press waits for whatever it started
+const press = async (root: renderer.ReactTestInstance, label: RegExp) => {
     const button = root.findAllByType(TouchableOpacity).find(b => label.test(textOf(b)));
     if (!button) throw new Error(`no button ${label}`);
-    act(() => button.props.onPress());
+    await act(async () => {
+        await button.props.onPress();
+    });
 };
 
-// what each QR on the screen encodes (the mocked QRCodeComponent, found by its own props)
+// what each QR on the screen encodes (the mocked ScannableQR, found by its type)
 const qrValues = (root: renderer.ReactTestInstance) =>
-    root.findAll(n => typeof n.type !== 'string' && 'value' in n.props && 'isLogoRendered' in n.props).map(n => n.props.value);
+    root.findAllByType(require('@Cypher/components/ScannableQR')).map(n => n.props.value);
 
-const showKey = (words: string, passphrase = '') => {
+const showKey = async (words: string, passphrase = '') => {
     let tree: renderer.ReactTestRenderer;
     act(() => {
         tree = renderer.create(<CreateSignerSeed route={{ params: { mode: 'show' } }} navigation={{ goBack: () => {} }} />);
@@ -59,34 +66,34 @@ const showKey = (words: string, passphrase = '') => {
     const field = (placeholder: RegExp) => inputs.find(i => placeholder.test(i.props.placeholder))!;
     act(() => field(/^Passphrase/).props.onChangeText(passphrase));
     act(() => field(/12 or 24 words/).props.onChangeText(words));
-    press(root, /^Continue$/);
+    await press(root, /^Continue$/);
     return root;
 };
 
 describe("the key screen's multisig key", () => {
-    it('is hidden at first, and the single-key public key is unchanged', () => {
-        const root = showKey(ABANDON);
+    it('is hidden at first, and the single-key public key is unchanged', async () => {
+        const root = await showKey(ABANDON);
         const text = textOf(root);
         expect(text).toContain(ZPUB);
         expect(text).not.toContain(MULTISIG_KEY);
         expect(qrValues(root)).toEqual([ZPUB_KEY]);
     });
 
-    it('shows the m/48 key with its origin as text and as a QR', () => {
-        const root = showKey(ABANDON);
-        press(root, /one key of a multisig\?/);
+    it('shows the m/48 key with its origin as text and as a QR', async () => {
+        const root = await showKey(ABANDON);
+        await press(root, /one key of a multisig\?/);
         const text = textOf(root);
         expect(text).toContain('Multisig key');
         expect(text).toContain('Nunchuk, Sparrow, BlueWallet');
         expect(text).toContain(MULTISIG_KEY);
         expect(qrValues(root)).toEqual([ZPUB_KEY, MULTISIG_KEY]);
-        press(root, /Hide the multisig key/);
+        await press(root, /Hide the multisig key/);
         expect(textOf(root)).not.toContain(MULTISIG_KEY);
     });
 
-    it('uses the passphrase typed for this seed', () => {
-        const root = showKey(ABANDON, 'TREZOR');
-        press(root, /one key of a multisig\?/);
+    it('uses the passphrase typed for this seed', async () => {
+        const root = await showKey(ABANDON, 'TREZOR');
+        await press(root, /one key of a multisig\?/);
         expect(textOf(root)).toContain(MULTISIG_KEY_TREZOR);
         expect(textOf(root)).not.toContain(MULTISIG_KEY);
     });

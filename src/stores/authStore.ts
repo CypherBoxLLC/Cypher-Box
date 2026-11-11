@@ -5,6 +5,7 @@ import { isSeedSignerLocked, lockSeedSigner } from "@Cypher/services/seedSignerL
 import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
 import type { PendingSignature } from "@Cypher/helpers/pendingSignature";
 import type { SignerWallet } from "@Cypher/helpers/multisigPolicy";
+import type { SignerAccount } from "@Cypher/helpers/signerPublicKey";
 
 /**
  * Stuck-refresh detection state.
@@ -255,6 +256,12 @@ export type AuthStateType = {
      * the wallet, so they live here in the encrypted store.
      */
     signerWallets: Record<string, SignerWallet>;
+    /**
+     * Offline Seed-Signer: single-key public keys (m/84'/0'/0') remembered per master fingerprint, so "Receive - Check
+     * Address" can check a seed's addresses without its SeedQR. Remembered by default when a seed's key screen is
+     * shown, never for a seed with a passphrase unless asked; forgotten on request.
+     */
+    signerAccounts: Record<string, SignerAccount>;
     /** "Signing safely" was shown before this phone's first Hot Vault "Sign a transaction"; it isn't forced again. */
     signingSafetySeen: boolean;
     /**
@@ -431,6 +438,8 @@ export type AuthStateType = {
     setPendingSignature: (walletID: string, pending: PendingSignature | null) => void;
     addSignerWallet: (wallet: SignerWallet) => void;
     removeSignerWallet: (id: string) => void;
+    addSignerAccount: (account: SignerAccount) => void;
+    removeSignerAccount: (fingerprint: string) => void;
     setSigningSafetySeen: (seen: boolean) => void;
     hideColdKeyWarning: (walletID: string) => void;
     setSigningMode: (on: boolean) => void;
@@ -721,6 +730,7 @@ const createAuthStore = (
     vaultDisplayAddress: {},
     pendingSignatures: {},
     signerWallets: {},
+    signerAccounts: {},
     signingSafetySeen: false,
     coldKeyWarningHidden: {},
     signingMode: isSeedSignerLocked(),
@@ -854,6 +864,18 @@ const createAuthStore = (
             const next = { ...(state.signerWallets ?? {}) };
             delete next[id];
             return { signerWallets: next };
+        }),
+    // kept from the first time it was remembered
+    addSignerAccount: (account: SignerAccount) =>
+        set((state: any) =>
+            state.signerAccounts?.[account.fingerprint]
+                ? {}
+                : { signerAccounts: { ...(state.signerAccounts ?? {}), [account.fingerprint]: account } }),
+    removeSignerAccount: (fingerprint: string) =>
+        set((state: any) => {
+            const next = { ...(state.signerAccounts ?? {}) };
+            delete next[fingerprint];
+            return { signerAccounts: next };
         }),
     setSigningSafetySeen: (seen: boolean) => set({ signingSafetySeen: seen }),
     // turning it on locks this install for good; turning it off does nothing

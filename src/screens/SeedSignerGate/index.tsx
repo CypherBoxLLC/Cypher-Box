@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     },
     link: {
         fontSize: 14,
-        color: colors.blueText,
+        color: colors.green,
         textDecorationLine: 'underline',
         marginTop: 4,
         marginBottom: 20,

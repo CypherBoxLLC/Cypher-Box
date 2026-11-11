@@ -69,6 +69,12 @@ beforeEach(() => {
 });
 
 describe('signing a multisig spend on the signer', () => {
+    it('numbers the steps, starting with the transaction', () => {
+        const root = open('');
+        expect(textOf(root)).toContain('Step 1 of 3');
+        expect(textOf(root)).toContain('Sign a transaction');
+    });
+
     it("refuses a wallet that isn't registered before asking for the SeedQR", () => {
         const root = open(W1_SPEND);
         expect(textOf(root)).toContain(SIGN_UNKNOWN_MULTISIG);
@@ -78,11 +84,14 @@ describe('signing a multisig spend on the signer', () => {
     it('names the registered wallet, shows the change, and mentions the other keys after signing', async () => {
         act(() => useAuthStore.setState({ signerWallets: { [W1.id]: W1 } }));
         const root = open(W1_SPEND);
+        // a seed-signer without a Hot Vault: the transaction (step 1, done before this screen), the SeedQR, the check
+        expect(textOf(root)).toContain('Step 2 of 3');
         const words = root.findAllByType(TextInput).find(i => /12 or 24 words/.test(i.props.placeholder))!;
         act(() => words.props.onChangeText(ABANDON));
         await press(root, /^Continue$/);
 
         const review = textOf(root);
+        expect(review).toContain('Step 3 of 3');
         expect(review).toContain('From Family vault, a 2 of 3 multisig wallet.');
         expect(review).toContain('Back to your wallet');
         expect(review).toContain(fixtures.wallets.w1.addresses.change5);

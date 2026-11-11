@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Platform, ScrollView, StyleSheet, Text as SelectableText, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useRef, useState } from "react";
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text as SelectableText, TextInput, TouchableOpacity, View } from "react-native";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import OfflineSeedWarning from "@Cypher/components/OfflineSeedWarning";
@@ -7,9 +7,10 @@ import {
     MultisigPolicy,
     PolicyKey,
     confirmOwnKey,
+    nextFrame,
     parseWalletFile,
     policyAddress,
-    rootFromBackup,
+    rootFromBackupAsync,
     shortXpub,
 } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -44,6 +45,9 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
     const [words, setWords] = useState('');
     const [passphrase, setPassphrase] = useState('');
     const [error, setError] = useState<string | null>(null);
+    // making the seed from the SeedQR takes a moment: its spinner, and no second check meanwhile
+    const [working, setWorking] = useState(false);
+    const workingRef = useRef(false);
     const connection = useElectrumConnection(true, false);
     const offline = connection === 'no-answer';
     const onlineNote = connection === 'checking' ? CHECKING : ONLINE;
@@ -94,16 +98,20 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
         }
     };
 
-    const confirm = (backup: string) => {
+    const confirm = async (backup: string) => {
         setError(null);
         if (!offline) {
             setError(onlineNote);
             return;
         }
-        if (!policy) return;
+        if (!policy || workingRef.current) return;
+        workingRef.current = true;
+        setWorking(true);
         try {
+            // the spinner goes up before the seed is made
+            await nextFrame();
             // checked and dropped here: only the wallet's public keys are kept
-            const key = confirmOwnKey(policy, rootFromBackup(backup, passphrase));
+            const key = confirmOwnKey(policy, await rootFromBackupAsync(backup, passphrase));
             addSignerWallet({ ...policy, ownFingerprint: key.fingerprint, addedAt: Date.now() });
             setOwnKey(key);
             setWords('');
@@ -111,6 +119,9 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
             setStep('saved');
         } catch (e: any) {
             setError(e.message);
+        } finally {
+            workingRef.current = false;
+            setWorking(false);
         }
     };
 
@@ -134,7 +145,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
                 seed's multisig key.
             </Text>
             <TouchableOpacity style={signStyles.primary} onPress={() => scan(read)} accessibilityRole="button">
-                <Text h3>Scan QR</Text>
+                <Text h3 style={signStyles.primaryText}>Scan QR</Text>
             </TouchableOpacity>
             <TouchableOpacity style={signStyles.secondary} onPress={openFile} accessibilityRole="button">
                 <Text h3>Open File</Text>
@@ -173,7 +184,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
                 <Text style={signStyles.error}>{`This wallet is already on this phone, as ${existing.name}.`}</Text>
             ) : (
                 <TouchableOpacity style={signStyles.primary} onPress={() => { setError(null); setStep('confirm'); }} accessibilityRole="button">
-                    <Text h3>Confirm with your SeedQR</Text>
+                    <Text h3 style={signStyles.primaryText}>Confirm with your SeedQR</Text>
                 </TouchableOpacity>
             )}
             <TouchableOpacity style={signStyles.secondary} onPress={cancel} accessibilityRole="button">
@@ -192,8 +203,9 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
                 that the wallet's key is really this seed's, and isn't saved.
             </Text>
             <OfflineSeedWarning style={signStyles.seedWarning} />
-            <TouchableOpacity style={signStyles.primary} onPress={() => (offline ? scan(confirm) : setError(onlineNote))} accessibilityRole="button">
-                <Text h3>Scan SeedQR</Text>
+            {working ? <ActivityIndicator size="large" color={colors.green} style={signStyles.working} /> : null}
+            <TouchableOpacity style={signStyles.primary} disabled={working} onPress={() => (offline ? scan(confirm) : setError(onlineNote))} accessibilityRole="button">
+                <Text h3 style={signStyles.primaryText}>Scan SeedQR</Text>
             </TouchableOpacity>
             <TextInput
                 style={[signStyles.input, signStyles.words]}
@@ -224,7 +236,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
                 textContentType="none"
                 importantForAutofill="no"
             />
-            <TouchableOpacity style={signStyles.secondary} onPress={() => confirm(words)} accessibilityRole="button">
+            <TouchableOpacity style={signStyles.secondary} disabled={working} onPress={() => confirm(words)} accessibilityRole="button">
                 <Text h3>Continue</Text>
             </TouchableOpacity>
             <TouchableOpacity style={signStyles.secondary} onPress={cancel} accessibilityRole="button">
@@ -244,7 +256,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
             {renderKeys(p, ownKey)}
             <Text style={signStyles.success}>Your recovery phrase wasn't saved on this phone.</Text>
             <TouchableOpacity style={signStyles.primary} onPress={() => navigation.goBack()} accessibilityRole="button">
-                <Text h3>Done</Text>
+                <Text h3 style={signStyles.primaryText}>Done</Text>
             </TouchableOpacity>
         </>
     );

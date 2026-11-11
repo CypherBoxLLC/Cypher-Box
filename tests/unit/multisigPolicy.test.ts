@@ -245,6 +245,36 @@ describe('reading wallet files', () => {
 
     });
 
+    it("reads Sparrow's descriptor QR: a crypto-output whose keys have a label and no child path", () => {
+        // as Sparrow 2.x's Settings > Descriptor > Show as QR code builds it (SettingsController.getCryptoHDKey):
+        // origin and parent fingerprint, the keystore's label, and no children
+        const hdKey = (k: PolicyKey, label: string) => {
+            const node = require('bip32').BIP32Factory(require('../../blue_modules/noble_ecc').default).fromBase58(k.xpub);
+            return new CryptoHDKey({
+                isMaster: false,
+                key: Buffer.from(node.publicKey),
+                chainCode: Buffer.from(node.chainCode),
+                origin: new CryptoKeypath(
+                    [48, 0, 0, 2].map(index => new PathComponent({ index, hardened: true })),
+                    Buffer.from(k.fingerprint, 'hex'),
+                    4,
+                ),
+                parentFingerprint: Buffer.from(node.parentFingerprint.toString(16).padStart(8, '0'), 'hex'),
+                name: label,
+            } as any);
+        };
+        const output = new CryptoOutput(
+            [ScriptExpressions.WITNESS_SCRIPT_HASH, ScriptExpressions.SORTED_MULTISIG],
+            new MultiKey(2, W1_KEYS.map((k, i) => hdKey(k, i === 0 ? 'SeedSigner' : `Keystore ${i + 1}`))),
+        );
+        const decoder = new BlueURDecoder();
+        const encoder = output.toUREncoder(120);
+        while (!decoder.isComplete()) decoder.receivePart(encoder.nextPart());
+        const scanned = decoder.toString();
+        expect(scanned.startsWith('wsh(sortedmulti(2,')).toBe(true);
+        expectW1(parseWalletFile(scanned));
+    });
+
     it('keeps names readable and short', () => {
         expect(parseWalletFile(textFile(W1_KEYS, { name: '  Savings\u202e  2026\u0007 ' })).name).toBe('Savings 2026');
         expect(parseWalletFile(textFile(W1_KEYS, { name: 'x'.repeat(80) })).name).toHaveLength(40);

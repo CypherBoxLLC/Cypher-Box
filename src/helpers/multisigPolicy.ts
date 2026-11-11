@@ -184,12 +184,13 @@ const policyKey = (fingerprint: string, steps: string, encoded: string, n: numbe
         throw new Error(walletFileBadKey(n));
     }
     if (data.length !== 78) throw new Error(walletFileBadKey(n));
-    const version = data.subarray(0, 4).toString('hex');
+    // Buffer's own toString with a range: on Hermes, subarray() gives a plain Uint8Array, whose toString ignores 'hex'
+    const version = data.toString('hex', 0, 4);
     if (PRIVATE_VERSIONS.includes(version)) throw new Error(WALLET_FILE_PRIVATE);
     if (TESTNET_PUBLIC.includes(version)) throw new Error(WALLET_FILE_TESTNET);
     if (OTHER_MAINNET_PUBLIC.includes(version)) throw new Error(WALLET_FILE_NOT_P2WSH);
     if (version !== XPUB && version !== ZPUB_MULTISIG) throw new Error(walletFileBadKey(n));
-    const standard = b58.encode(Buffer.concat([Buffer.from(XPUB, 'hex'), data.subarray(4)]));
+    const standard = b58.encode(Buffer.concat([Buffer.from(XPUB, 'hex'), Buffer.from(data.subarray(4))]));
     let node: BIP32Interface;
     try {
         node = bip32.fromBase58(standard);
@@ -316,6 +317,12 @@ const branchOf = (xpub: string, branch: number): Branch => {
     return entry;
 };
 
+/** Drops what's kept of a key's child public keys: for a seed's own account, once a search through it is done. */
+export function forgetKeyCache(xpub: string) {
+    branches.delete(`${xpub}/0`);
+    branches.delete(`${xpub}/1`);
+}
+
 /** Public key of one of the wallet's keys at branch/index (receive 0, change 1): BIP32's public child derivation. */
 export function policyKeyPubkey(key: PolicyKey, branch: number, index: number): Buffer {
     if (!Number.isInteger(index) || index < 0 || index >= HARDENED) throw new Error(WALLET_FILE_PATHS);
@@ -326,7 +333,8 @@ export function policyKeyPubkey(key: PolicyKey, branch: number, index: number): 
         entry.pubkey.copy(data, 0);
         data.writeUInt32BE(index, 33);
         const I = createHmac('sha512', Buffer.from(entry.node.chainCode)).update(data).digest();
-        const tweak = BigInt(`0x${I.subarray(0, 32).toString('hex')}`);
+        // a range on Buffer's own toString, not subarray(): on Hermes that gives a plain Uint8Array, which ignores 'hex'
+        const tweak = BigInt(`0x${Buffer.from(I).toString('hex', 0, 32)}`);
         try {
             child = Buffer.from(entry.point.add(necc.Point.BASE.multiply(tweak)).toRawBytes(true));
         } catch (_) {
@@ -586,6 +594,8 @@ export function addressFromText(text: string): { address: string; script: Buffer
 }
 
 export const isP2wshScript = (script: Buffer) => script.length === 34 && script[0] === 0x00 && script[1] === 0x20;
+/** native SegWit single key (bc1q…, 42 characters) */
+export const isP2wpkhScript = (script: Buffer) => script.length === 22 && script[0] === 0x00 && script[1] === 0x14;
 
 export interface AddressMatch {
     wallet: SignerWallet;

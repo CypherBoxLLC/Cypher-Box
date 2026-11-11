@@ -8,6 +8,7 @@ import { SignerWallet, policyAddress, policyDescriptor } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import SignerButton from "../SigningHome/SignerButton";
+import { startSigning } from "../SignOnce/start";
 
 /**
  * The multisig wallets the Offline Seed-Signer holds a key of (helpers/multisigPolicy): each with its quorum, its keys'
@@ -76,10 +77,10 @@ export default function SignerWallets({ navigation }: { navigation: any }) {
                     })
                 )}
                 <View style={styles.buttons}>
+                    {/* the coordinator's transaction is signed in the same screen as from the home */}
+                    {wallets.length ? <SignerButton label="Sign a Multisig Transaction" onPress={() => startSigning()} /> : null}
                     <SignerButton label="Add a Multisig Wallet" onPress={() => navigation.navigate('RegisterSignerWallet')} />
-                    {wallets.length ? (
-                        <SignerButton label="Check an Address" onPress={() => navigation.navigate('CheckSignerAddress')} />
-                    ) : null}
+                    <SignerButton label="Receive - Check Address" onPress={() => navigation.navigate('CheckSignerAddress')} />
                 </View>
             </ScrollView>
         </ScreenLayout>
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
     },
     link: {
         fontSize: 14,
-        color: colors.blueText,
+        color: colors.green,
         textDecorationLine: 'underline',
         marginTop: 10,
     },

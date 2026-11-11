@@ -81,16 +81,16 @@ export default function SigningHome() {
             </View>
 
             <View style={styles.buttons}>
-                <SignerButton label="Sign with a SeedQR" onPress={() => startSigning()} />
+                <SignerButton label="Sign a Transaction with SeedQR" onPress={() => startSigning()} />
                 <SignerButton label="Show a Seed's Public Key" onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'show' })} />
+                {/* a watch-only wallet's or multisig app's receive address, checked before it's used: a single-key one with
+                    the seed's SeedQR, a multisig one against the wallets below */}
+                <SignerButton label="Receive - Check Address" onPress={() => dispatchNavigate('CheckSignerAddress')} />
                 {/* one key of a multisig made in Nunchuk, Sparrow or BlueWallet: the wallets it signs for */}
                 <SignerButton
                     label={multisigCount ? `Multisig Wallets (${multisigCount})` : 'Multisig Wallets'}
                     onPress={() => dispatchNavigate('SignerWallets')}
                 />
-                {multisigCount ? (
-                    <SignerButton label="Check an Address" onPress={() => dispatchNavigate('CheckSignerAddress')} />
-                ) : null}
                 <SignerButton label="Signing Safely" onPress={() => dispatchNavigate('SigningSafetyGuide')} />
                 <SignerButton label="App Settings" onPress={() => dispatchNavigate('Settings')} />
             </View>
