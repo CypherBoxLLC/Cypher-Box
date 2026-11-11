@@ -171,8 +171,9 @@ const Settings = ({ navigation }) => {
             dispatchNavigate('Security');
           }} 
         />
-        {/* Offline Seed-Signer mode can't be turned off, so it isn't a switch: the row opens its setup, the same one-way
-            gate as the welcome screen's, and once the mode is on the row only says so */}
+        {/* Offline Seed-Signer mode can't be turned off, so it isn't a switch: the row opens its one-way setup, the same
+            gate as the Offline Seed-Signer button on the Add a Lightning Wallet screen, and once the mode is on the row
+            only says so */}
         {signingMode ? (
           <ListItem
             title={SEED_SIGNER_MODE}
