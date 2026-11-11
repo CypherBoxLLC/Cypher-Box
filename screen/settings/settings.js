@@ -31,6 +31,11 @@ const styles = StyleSheet.create({
     marginStart: 10,
     backgroundColor: colors.green,
   },
+  signerOn: {
+    color: colors.green,
+    fontSize: 16,
+    fontWeight: '500',
+  },
 });
 
 const Settings = ({ navigation }) => {
@@ -58,11 +63,6 @@ const Settings = ({ navigation }) => {
       return () => clearInterval(timer);
     }, []),
   );
-
-  // Offline Seed-Signer mode is one-way: the switch opens the gate, and once it's on nothing here turns it off
-  const onSigningModeSwitch = value => {
-    if (value && !signingMode) openSeedSignerGate();
-  };
 
   const initialState = useCallback(async () => {
     const isStorageEncryptedSwitchEnabled = await isStorageEncrypted();
@@ -171,12 +171,19 @@ const Settings = ({ navigation }) => {
             dispatchNavigate('Security');
           }} 
         />
-        <ListItem
-          hideChevron
-          title={SEED_SIGNER_MODE}
-          Component={TouchableWithoutFeedback}
-          switch={{ onValueChange: onSigningModeSwitch, value: !!signingMode, disabled: !!signingMode }}
-        />
+        {/* Offline Seed-Signer mode can't be turned off, so it isn't a switch: the row opens its setup, the same one-way
+            gate as the welcome screen's, and once the mode is on the row only says so */}
+        {signingMode ? (
+          <ListItem
+            title={SEED_SIGNER_MODE}
+            rightTitle="On"
+            rightTitleStyle={styles.signerOn}
+            Component={TouchableWithoutFeedback}
+            testID="SeedSignerMode"
+          />
+        ) : (
+          <ListItem title={SEED_SIGNER_MODE} onPress={openSeedSignerGate} testID="SeedSignerMode" chevron />
+        )}
         <ListItem
           title={loc.settings.network}
           titleIcon={
