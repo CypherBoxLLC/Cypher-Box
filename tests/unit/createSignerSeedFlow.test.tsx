@@ -11,6 +11,7 @@ import renderer, { act } from 'react-test-renderer';
 import * as bip39 from 'bip39';
 
 import CreateSignerSeed from '../../src/screens/CreateSignerSeed';
+import { takeSeedBackedUp } from '../../src/screens/SigningHome/seedSigner';
 import useAuthStore from '../../src/stores/authStore';
 import { mnemonicToSeedQR, seedQRGrid } from '../../src/helpers/seedQR';
 import { randomBytes } from '../../class/rng';
@@ -106,7 +107,8 @@ let seedSpy: jest.SpyInstance;
 beforeEach(() => {
     seedSpy = jest.spyOn(bip39, 'mnemonicToSeedSync');
     (randomBytes as jest.Mock).mockClear();
-    act(() => useAuthStore.setState({ signerAccounts: {} }));
+    act(() => useAuthStore.setState({ signerAccounts: {}, signerKeyShown: false }));
+    takeSeedBackedUp();
 });
 afterEach(() => {
     seedSpy.mockRestore();
@@ -302,6 +304,81 @@ describe('Create a Seed, going back', () => {
         await press(root, /^Done$/);
         expect(mockNavigation.goBack).toHaveBeenCalled();
         expect(textOf(root)).not.toContain('abandon');
+    });
+});
+
+describe("Create a Seed, for the signer's home", () => {
+    it('notes only once the copy checks out that a key was shown, and which seed was backed up', async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        type(root, /Type your 12 words/, LEGAL);
+        await press(root, /^Check the words$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(false);
+        expect(takeSeedBackedUp()).toBeNull();
+
+        type(root, /Type your 12 words/, ABANDON);
+        await press(root, /^Check the words$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(true);
+        // for one line on the home, then gone
+        expect(takeSeedBackedUp()).toBe('73C5DA0A');
+        expect(takeSeedBackedUp()).toBeNull();
+    });
+
+    it("tells the user to sign from the home's Sign a Transaction", async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        expect(textOf(root)).toContain("To sign, tap Sign a Transaction on this phone's home");
+    });
+
+    it('notes that a key was shown when a seed is loaded, but not that one was made', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(true);
+        expect(takeSeedBackedUp()).toBeNull();
+        // the public key may be remembered, the seed isn't
+        expect(textOf(root)).toContain("The seed isn't kept on this phone.");
+    });
+});
+
+describe('A remembered public key', () => {
+    const remember = async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        seedSpy.mockClear();
+    };
+
+    it('shows again without the seed, with its first addresses but not the multisig key', async () => {
+        await remember();
+        const root = open({ mode: 'remembered', fingerprint: '73c5da0a' });
+        const text = textOf(root);
+        expect(text).toContain("This seed's public key");
+        expect(text).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        expect(text).toContain(BIP84_RECEIVE_0);
+        expect(text).toContain("The multisig key comes from the seed, so it isn't shown here.");
+        expect(buttonFor(root, /Using this seed as one key of a multisig/)).toBeUndefined();
+        expect(seedSpy).not.toHaveBeenCalled();
+    });
+
+    it('can be forgotten there, and stays on screen until Done', async () => {
+        await remember();
+        const root = open({ mode: 'remembered', fingerprint: '73C5DA0A' });
+        const toggle = root.findAllByType(Switch).find(s => s.props.accessibilityLabel === 'Remember this public key on this phone')!;
+        expect(toggle.props.value).toBe(true);
+        act(() => toggle.props.onValueChange(false));
+        expect(useAuthStore.getState().signerAccounts).toEqual({});
+        expect(textOf(root)).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        await press(root, /^Done$/);
+        expect(mockNavigation.goBack).toHaveBeenCalled();
+    });
+
+    it('asks for the SeedQR when the key is no longer remembered', () => {
+        const root = open({ mode: 'remembered', fingerprint: '73c5da0a' });
+        expect(textOf(root)).toContain("Show a Seed's Public Key");
+        expect(textOf(root)).not.toContain(ZPUB);
     });
 });
 

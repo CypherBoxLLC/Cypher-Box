@@ -12,7 +12,15 @@ import BIP32Factory from 'bip32';
 import ecc from '../../blue_modules/noble_ecc';
 import { HDSegwitBech32Wallet } from '../../class';
 import { multisigKeyExpression } from '../../src/helpers/multisigKey';
-import { SIGNER_KEY_PATH, findSingleKeyAddress, findSingleKeyAddressIn, signerAccountOf, signerPublicKey } from '../../src/helpers/signerPublicKey';
+import {
+    SIGNER_KEY_PATH,
+    findSingleKeyAddress,
+    findSingleKeyAddressIn,
+    signerAccountFromRoot,
+    signerAccountOf,
+    signerPublicKey,
+    signerPublicKeyFromAccount,
+} from '../../src/helpers/signerPublicKey';
 import b58 from 'bs58check';
 import { addressFromText } from '../../src/helpers/multisigPolicy';
 
@@ -80,6 +88,23 @@ describe('signerPublicKey', () => {
             expect(spy).not.toHaveBeenCalled();
         } finally {
             spy.mockRestore();
+        }
+    });
+});
+
+describe('signerPublicKeyFromAccount', () => {
+    it('gives back what the key screen showed from a remembered public key, but for the multisig key', () => {
+        const fromSeed = signerPublicKey(rootOf(ABANDON));
+        const remembered = signerPublicKeyFromAccount(signerAccountOf(fromSeed));
+        expect(remembered).toEqual({ ...fromSeed, multisigKey: '' });
+        expect(remembered.key).toBe(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        expect(remembered.addresses.slice(0, 2)).toEqual(BIP84_RECEIVE);
+    });
+
+    it('does the same for a key remembered by an address check, for random phrases and passphrases', () => {
+        for (const passphrase of ['', 'TREZOR']) {
+            const root = rootOf(bip39.entropyToMnemonic(crypto.randomBytes(16).toString('hex')), passphrase);
+            expect(signerPublicKeyFromAccount(signerAccountFromRoot(root))).toEqual({ ...signerPublicKey(root), multisigKey: '' });
         }
     });
 });

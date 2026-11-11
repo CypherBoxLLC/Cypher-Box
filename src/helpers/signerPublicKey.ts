@@ -22,7 +22,10 @@ export interface SignerPublicKey {
     /** receive addresses 0, 1 and 2 */
     addresses: string[];
     path: string;
-    /** the m/48' key with its origin, for a multisig coordinator such as Nunchuk or Sparrow */
+    /**
+     * the m/48' key with its origin, for a multisig coordinator such as Nunchuk or Sparrow. Empty when only a remembered
+     * public key is at hand (signerPublicKeyFromAccount): it's worked out from the seed.
+     */
     multisigKey: string;
     /** the account key as a plain xpub: what's remembered for address checks */
     accountXpub: string;
@@ -78,6 +81,30 @@ export function signerPublicKey(root: BIP32Interface): SignerPublicKey {
         multisigKey: multisigKeyFromRoot(root),
         accountXpub,
     };
+}
+
+/**
+ * What the key screen shows of a public key remembered on this phone, without the seed: the same key, fingerprint and
+ * first addresses. The multisig key is left empty, as only the seed gives it.
+ */
+export function signerPublicKeyFromAccount(account: Pick<SignerAccount, 'fingerprint' | 'path' | 'xpub'>): SignerPublicKey {
+    const fingerprint = account.fingerprint.toUpperCase();
+    const xpub = b58.encode(Buffer.concat([ZPUB_VERSION, Buffer.from(b58.decode(account.xpub).subarray(4))]));
+    const key: PolicyKey = { fingerprint: account.fingerprint.toLowerCase(), path: account.path, xpub: account.xpub };
+    try {
+        const addresses = [0, 1, 2].map(i => bitcoin.payments.p2wpkh({ pubkey: policyKeyPubkey(key, 0, i) }).address as string);
+        return {
+            xpub,
+            key: keyWithOrigin(fingerprint, account.path, xpub),
+            fingerprint,
+            addresses,
+            path: account.path,
+            multisigKey: '',
+            accountXpub: account.xpub,
+        };
+    } finally {
+        forgetKeyCache(account.xpub);
+    }
 }
 
 export interface SingleKeyMatch {

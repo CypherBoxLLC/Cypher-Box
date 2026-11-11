@@ -1,18 +1,20 @@
-import React, { useContext, useEffect } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { getBuildNumber, getVersion } from "react-native-device-info";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { SignerAccount, dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
-import UnlockHotVaultCard from "../HomeScreen/BottomBar/UnlockHotVaultCard";
 import Settings from "../HotStorageVault/Settings";
 import { startSigning } from "../SignOnce/start";
 import Signer from "./Signer";
-import { SEED_SIGNER } from "./seedSigner";
+import SignerActionCard from "./SignerActionCard";
+import { SEED_SIGNER, takeSeedBackedUp } from "./seedSigner";
 import SignerButton from "./SignerButton";
 
 /**
@@ -22,15 +24,32 @@ import SignerButton from "./SignerButton";
  * to get one, and signing from a backup, which keeps nothing on the phone. Lightning,
  * the Cold Vault, send and receive are out of the way either way. "Connected" is only claimed when the app's Electrum
  * server answers; no answer proves nothing.
+ *
+ * Without a Hot Vault, making a seed comes first until this phone has shown a seed's public key, remembers one, has a
+ * multisig wallet or has signed. After that signing does: the seed is never kept, so a home that still led with making
+ * one would look as if it had been lost. The public keys it remembers are listed, to show again without the SeedQR.
  */
 export default function SigningHome() {
-    const { walletID, vaultTab, setVaultTab, signerWallets } = useAuthStore();
+    const { walletID, vaultTab, setVaultTab, signerWallets, signerAccounts, signedOnThisPhone, signerKeyShown } = useAuthStore();
     const multisigCount = Object.keys(signerWallets ?? {}).length;
+    // oldest first, as Receive - Check Address lists them
+    const remembered: SignerAccount[] = Object.values(signerAccounts ?? {}).sort((a, b) => a.addedAt - b.addedAt);
     const { wallets, walletsInitialized } = useContext(BlueStorageContext);
     // the app's network switch doesn't count here: the probe itself is how a seed-signer knows it's offline
     const connection = useElectrumConnection(true, false);
     const wallet = wallets?.find((w: any) => w.getID() === walletID);
     const canSign = typeof wallet?.cosignPsbt === 'function' && !!wallet?.allowCosignPsbt?.();
+    const signingFirst = !!(signedOnThisPhone || signerKeyShown || remembered.length || multisigCount);
+
+    // a seed just made and backed up is mentioned once, when the home is next shown, and not again after the user moves on
+    const [backedUp, setBackedUp] = useState<string | null>(null);
+    useFocusEffect(
+        useCallback(() => {
+            const fingerprint = takeSeedBackedUp();
+            if (fingerprint) setBackedUp(fingerprint);
+            return () => setBackedUp(null);
+        }, []),
+    );
 
     // the vault's Settings tab reads hot or cold from vaultTab, and a signing phone only has the Hot Vault
     useEffect(() => {
@@ -69,19 +88,56 @@ export default function SigningHome() {
                 <Text style={styles.version}>
                     Cypher Box {getVersion()} (build {getBuildNumber()})
                 </Text>
+                {backedUp ? (
+                    <View style={styles.backedUpRow}>
+                        <MaterialCommunityIcons name="check-circle" size={18} color={colors.green} style={styles.backedUpIcon} />
+                        <Text style={styles.backedUp}>{`Seed ${backedUp} was created and backed up.`}</Text>
+                    </View>
+                ) : null}
                 <Text style={styles.lead}>
-                    Create a seed and back it up as a SeedQR: it's never saved on this phone. To sign, scan the
-                    SeedQR.
+                    {signingFirst
+                        ? "This phone doesn't keep your seed: it lives on your backup. You'll see what a transaction does before anything is signed."
+                        : "Create a seed and back it up as a SeedQR: it's never saved on this phone. To sign, scan the SeedQR."}
                 </Text>
 
-                {/* made in memory and never saved (screens/CreateSignerSeed); there's no Recover, which saves one */}
+                {/* a seed is made in memory and never saved (screens/CreateSignerSeed); there's no Recover, which saves one */}
                 <View style={styles.card}>
-                    <UnlockHotVaultCard label="Create a Seed" onPress={() => dispatchNavigate('CreateSignerSeed')} />
+                    {signingFirst ? (
+                        <SignerActionCard
+                            icon="file-sign"
+                            title="Sign a Transaction (.PSBT)"
+                            subtitle="Scan or open it, check it, then scan your SeedQR"
+                            onPress={() => startSigning()}
+                        />
+                    ) : (
+                        <SignerActionCard
+                            icon="seed-outline"
+                            title="Create a Seed"
+                            subtitle="12 new words, backed up on paper and as a SeedQR"
+                            onPress={() => dispatchNavigate('CreateSignerSeed')}
+                        />
+                    )}
                 </View>
             </View>
 
+            {/* public keys only (signerAccounts): each shows again with its first addresses, without the SeedQR */}
+            {remembered.length ? (
+                <View style={styles.remembered}>
+                    <Text style={styles.sectionTitle}>Public keys this phone remembers</Text>
+                    {remembered.map(account => (
+                        <SignerButton
+                            key={account.fingerprint}
+                            label={account.fingerprint.toUpperCase()}
+                            onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'remembered', fingerprint: account.fingerprint })}
+                        />
+                    ))}
+                </View>
+            ) : null}
+
             <View style={styles.buttons}>
-                <SignerButton label="Sign a Transaction with SeedQR" onPress={() => startSigning()} />
+                {signingFirst ? null : (
+                    <SignerButton label="Sign a Transaction (.PSBT)" onPress={() => startSigning()} />
+                )}
                 <SignerButton label="Show a Seed's Public Key" onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'show' })} />
                 {/* a watch-only wallet's or multisig app's receive address, checked before it's used: a single-key one with
                     the seed's SeedQR, a multisig one against the wallets below */}
@@ -91,6 +147,9 @@ export default function SigningHome() {
                     label={multisigCount ? `Multisig Wallets (${multisigCount})` : 'Multisig Wallets'}
                     onPress={() => dispatchNavigate('SignerWallets')}
                 />
+                {signingFirst ? (
+                    <SignerButton label="Create Another Seed" onPress={() => dispatchNavigate('CreateSignerSeed')} />
+                ) : null}
                 <SignerButton label="Signing Safely" onPress={() => dispatchNavigate('SigningSafetyGuide')} />
                 <SignerButton label="App Settings" onPress={() => dispatchNavigate('Settings')} />
             </View>
@@ -122,6 +181,20 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: colors.gray.light,
     },
+    backedUpRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 20,
+    },
+    backedUpIcon: {
+        marginEnd: 8,
+    },
+    backedUp: {
+        flex: 1,
+        fontSize: 15,
+        lineHeight: 22,
+        color: colors.green,
+    },
     lead: {
         fontSize: 15,
         lineHeight: 22,
@@ -130,6 +203,16 @@ const styles = StyleSheet.create({
     },
     card: {
         marginTop: 28,
+    },
+    remembered: {
+        marginTop: 28,
+    },
+    sectionTitle: {
+        // in line with the buttons, which bring their own 20 at the sides
+        marginHorizontal: 20,
+        marginBottom: 10,
+        fontSize: 14,
+        color: colors.gray.light,
     },
     buttons: {
         // the buttons bring their own 20 at the sides, like the signer's

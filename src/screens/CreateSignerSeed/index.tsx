@@ -32,6 +32,7 @@ import {
     seedQRGrid,
     signerAccountOf,
     signerPublicKey,
+    signerPublicKeyFromAccount,
 } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -40,6 +41,7 @@ import useProtectSecret from "../../custom-hooks/useProtectSecret";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import useSeedQRCheck from "../../custom-hooks/useSeedQRCheck";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
+import { noteSeedBackedUp } from "../SigningHome/seedSigner";
 
 /**
  * intro → backup (the words and the SeedQR, as two tabs of one screen) → created (what's next, the last warnings and
@@ -101,18 +103,28 @@ function Warning({ children }: { children: React.ReactNode }) {
 /**
  * A seed-signer's seed, made and shown without ever being saved: generated in memory (dice rolls optional, mixed with
  * the phone's randomness), backed up as words and a SeedQR, the copy checked, then only the public side shown, for the
- * watch-only wallet. Leaving the screen drops it. Nothing goes to the app's storage or the Keychain, so nothing outlives
- * the app (on iOS the Keychain does) or waits to be wiped. With `mode: 'show'` it loads a SeedQR or typed words to show
- * that seed's public key again, saving nothing either.
+ * watch-only wallet. Leaving the screen drops it. Nothing of the seed goes to the app's storage or the Keychain, so
+ * nothing outlives the app (on iOS the Keychain does) or waits to be wiped; the store notes that a key was shown, which
+ * puts signing first on the signer's home, and remembers the public key unless asked not to. With `mode: 'show'` it
+ * loads a SeedQR or typed words to show that seed's public key again, saving nothing of the seed either; with
+ * `mode: 'remembered'` it shows a public key remembered on this phone, without the seed.
  *
  * Making the words is instant. The public key needs the BIP39 seed, the slow step, so it's worked out once, after the
  * copy is checked, with the native PBKDF2 when the phone has it.
  */
 export default function CreateSignerSeed({ route, navigation }: { route: any; navigation: any }) {
-    const showOnly = route?.params?.mode === 'show';
+    const mode = route?.params?.mode;
+    const showOnly = mode === 'show' || mode === 'remembered';
     useProtectSecret();
 
-    const [step, setStep] = useState<Step>(showOnly ? 'load' : 'intro');
+    // a public key remembered on this phone, read once: it stays on screen if it's forgotten here. If it's gone
+    // already, the SeedQR shows it instead.
+    const [rememberedKey] = useState<SignerPublicKey | null>(() => {
+        const fingerprint = mode === 'remembered' ? String(route?.params?.fingerprint ?? '').toLowerCase() : '';
+        const account = fingerprint ? useAuthStore.getState().signerAccounts?.[fingerprint] : undefined;
+        return account ? signerPublicKeyFromAccount(account) : null;
+    });
+    const [step, setStep] = useState<Step>(rememberedKey ? 'key' : showOnly ? 'load' : 'intro');
     const [dice, setDice] = useState<Buffer | null>(null);
     const [usePassphrase, setUsePassphrase] = useState(false);
     const [passphrase, setPassphrase] = useState('');
@@ -121,7 +133,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     const [revealed, setRevealed] = useState(false);
     const [tab, setTab] = useState<BackupTab>('words');
     const [typed, setTyped] = useState('');
-    const [info, setInfo] = useState<SignerPublicKey | null>(null);
+    const [info, setInfo] = useState<SignerPublicKey | null>(rememberedKey);
     const [deriving, setDeriving] = useState(false);
     // whether the key on screen came with a passphrase: such a key isn't remembered unless asked
     const [keyHasPassphrase, setKeyHasPassphrase] = useState(false);
@@ -198,6 +210,9 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             // remembered for address checks unless there's a passphrase: keeping that key would show this phone holds a
             // passphrase wallet
             if (!pass) addSignerAccount(signerAccountOf(shown));
+            // from now on the signer's home puts signing first, and after a new seed it says once that it's backed up
+            useAuthStore.getState().setSignerKeyShown(true);
+            if (from === 'created') noteSeedBackedUp(shown.fingerprint);
             // its public side is all that's needed from here
             forget();
         } catch (e: any) {
@@ -476,8 +491,8 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             multisig, add the multisig key to your multisig app instead.
                         </Instruction>
                         <Instruction number={3} title="Sign by scanning">
-                            To sign, tap Sign with a SeedQR, scan the transaction your watch-only wallet made, check it,
-                            then scan your SeedQR. The phone signs and forgets the seed again.
+                            To sign, tap Sign a Transaction on this phone's home, scan the transaction your watch-only
+                            wallet made, check it, then scan your SeedQR. The phone signs and forgets the seed again.
                         </Instruction>
 
                         <Text style={styles.sectionTitle}>Before you go</Text>
@@ -557,12 +572,19 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             hasPassphrase={keyHasPassphrase}
                             onChange={on => (on ? addSignerAccount(signerAccountOf(info)) : removeSignerAccount(info.fingerprint.toLowerCase()))}
                         />
-                        <TouchableOpacity onPress={() => setShowMultisigKey(v => !v)} accessibilityRole="button">
-                            <Text style={styles.link}>
-                                {showMultisigKey ? 'Hide the multisig key' : 'Using this seed as one key of a multisig?'}
+                        {info.multisigKey ? (
+                            <TouchableOpacity onPress={() => setShowMultisigKey(v => !v)} accessibilityRole="button">
+                                <Text style={styles.link}>
+                                    {showMultisigKey ? 'Hide the multisig key' : 'Using this seed as one key of a multisig?'}
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <Text style={styles.note}>
+                                The multisig key comes from the seed, so it isn't shown here. To show it, use Show a
+                                Seed's Public Key and scan the SeedQR.
                             </Text>
-                        </TouchableOpacity>
-                        {showMultisigKey ? (
+                        )}
+                        {showMultisigKey && info.multisigKey ? (
                             <View style={styles.multisig}>
                                 <Text style={styles.subtitle}>Multisig key</Text>
                                 <Text style={styles.body}>
@@ -585,8 +607,8 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             </View>
                         ) : null}
                         <Text style={styles.note}>
-                            Nothing is kept on this phone. Still, if it's ever stolen, assume the seed is compromised and
-                            move your coins to a new seed: getting a seed out of a phone is very difficult, but not
+                            The seed isn't kept on this phone. Still, if it's ever stolen, assume the seed is compromised
+                            and move your coins to a new seed: getting a seed out of a phone is very difficult, but not
                             something to bet on.
                         </Text>
                         <TouchableOpacity style={styles.primary} onPress={done} accessibilityRole="button">
