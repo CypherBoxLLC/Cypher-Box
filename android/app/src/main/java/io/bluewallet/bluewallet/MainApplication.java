@@ -27,9 +27,10 @@ public class MainApplication extends Application implements ReactApplication, Co
         @Override
         protected List<ReactPackage> getPackages() {
           List<ReactPackage> packages = new PackageList(this).getPackages();
-          // Hand-registered: not auto-linked because the package lives in
-          // app/src/main/java rather than a published RN module.
+          // Hand-registered: not auto-linked because these packages live in
+          // app/src/main/java rather than in published RN modules.
           packages.add(new ArkSafBackupPackage());
+          packages.add(new CypherRegionSignalsPackage());
           return packages;
         }
 

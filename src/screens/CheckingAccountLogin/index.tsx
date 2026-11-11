@@ -90,10 +90,10 @@ export default function CheckingAccountLogin() {
     // services/featureFlags.
     //
     // This replaces an ipapi.co round-trip that used to run here. The
-    // device region is a better signal than the IP anyway (it follows
-    // the user's account region rather than where they happen to be
-    // standing), it cannot fail offline, and it does not leak an app
-    // launch to a third-party IP service.
+    // gates read what the phone already knows instead (the App Store
+    // country and region on iOS; the language, SIM and mobile network
+    // country on Android), so they cannot fail offline, a proxy cannot
+    // fool them, and no app launch leaks to a third-party IP service.
     setCoinosException(!isCoinosAllowed());
     setStrikeException(!isStrikeAllowed());
     setPageLoading(false);

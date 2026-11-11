@@ -19,14 +19,28 @@
  * country that App Store Availability also uses, read through the
  * CypherStorefront native module. The device region is checked as well,
  * and an EEA or UK region hides both rails even when the storefront says
- * otherwise. Android has no storefront to read, so the device region
- * decides there. The rule is the same on both platforms; only the signal
- * differs.
+ * otherwise.
+ *
+ * Android has no storefront to read. The CypherRegionSignals native
+ * module reports what the phone knows instead: the country of its first
+ * language, Xiaomi's region setting, the SIM provider's country, and the
+ * country of the mobile network in reach (Android reports it even with
+ * no SIM). Any one of them in the EEA or the UK hides both rails, and
+ * Strike shows only when every signal that is known is a Strike country.
+ * So a US visitor in Germany loses both rails while there, and a phone in
+ * Germany set to English (United States) hides both. A SIM or network
+ * country that drops out (airplane mode, no coverage yet, an unreadable
+ * SIM) keeps its last reading, across app restarts too, until the phone
+ * reads a different one; the language is a setting and always current.
+ * react-native-localize is not used on Android: there it reads only
+ * Xiaomi's region and the language, and answers "US" when neither names a
+ * country.
  *
  * --- Unknown country --------------------------------------------------
- * Every gate fails CLOSED. Serving a rail where it should not appear is
- * a regulatory problem; hiding one from a user we cannot place is a
- * support ticket.
+ * Every gate fails CLOSED: no storefront on iOS, or no signal at all on
+ * Android, read now or remembered from an earlier run, hides both rails.
+ * Serving a rail where it should not appear is a regulatory problem;
+ * hiding one from a user we cannot place is a support ticket.
  *
  * --- Dev / test bypass ------------------------------------------------
  * Geo-blocking is bypassed in `__DEV__` builds so testers can verify
@@ -34,8 +48,9 @@
  * builds run the real check.
  */
 
-import { NativeModules, Platform } from 'react-native';
+import { AppState, NativeModules, Platform } from 'react-native';
 import * as RNLocalize from 'react-native-localize';
+import { MMKV } from 'react-native-mmkv';
 
 /** ISO 3166-1 alpha-2 (device region) and alpha-3 (App Store storefront). */
 type CountryCodes = readonly [alpha2: string, alpha3: string];
@@ -103,13 +118,16 @@ const STRIKE_ALPHA3 = alpha3(STRIKE_COUNTRIES);
 const COINOS_DISABLED_GLOBALLY = false;
 
 /**
- * Best-effort ISO 3166-1 alpha-2 for the device.
+ * Best-effort ISO 3166-1 alpha-2 for the device region on iOS.
  *
- * `getCountry()` reads the device region setting on iOS and the
- * SIM/locale on Android. It is the account-region signal rather than an
- * IP lookup, which is what we want: a German user travelling through
- * New York is still a German user, and no network round-trip can be
- * blocked, spoofed by a proxy, or fail offline.
+ * On iOS `getCountry()` reads the Region setting. It is a setting rather
+ * than an IP lookup, which is what we want: a German user travelling
+ * through New York is still a German user, and no network round-trip can
+ * be blocked, spoofed by a proxy, or fail offline.
+ *
+ * Not used on Android, where `getCountry()` reads only Xiaomi's region and
+ * the language, and answers "US" when neither names a country; the Android
+ * gates read getAndroidCountries() instead.
  *
  * Returns null when the region genuinely cannot be determined.
  */
@@ -129,6 +147,10 @@ function getDeviceCountry(): string | null {
     return null;
 }
 
+function normaliseAlpha2(value: unknown): string | null {
+    return typeof value === 'string' && /^[A-Za-z]{2}$/.test(value) ? value.toUpperCase() : null;
+}
+
 function normaliseAlpha3(value: unknown): string | null {
     return typeof value === 'string' && /^[A-Za-z]{3}$/.test(value) ? value.toUpperCase() : null;
 }
@@ -136,16 +158,54 @@ function normaliseAlpha3(value: unknown): string | null {
 /** undefined = not read yet; null = read, but no storefront available. */
 let storefrontCountry: string | null | undefined;
 
+/**
+ * The phone's country signals on Android, as the CypherRegionSignals
+ * native module reports them (CypherRegionSignalsModule.java). Each is an
+ * ISO 3166-1 alpha-2 code, or null when the phone cannot tell.
+ */
+type AndroidSignals = {
+    /** Country of the first language: "English (United States)" gives US. */
+    language: string | null;
+    /** Xiaomi's own region setting; null on other phones. */
+    vendorRegion: string | null;
+    /** Country of the SIM provider; null without a SIM. */
+    sim: string | null;
+    /** Country of the mobile network each modem is on or can see, SIM or not. */
+    network: readonly string[];
+};
+
+/** undefined = not read yet. */
+let androidSignals: AndroidSignals | undefined;
+/** Every country androidSignals names, sorted; empty when none is known. */
+let androidCountries: readonly string[] = [];
+let watchingForeground = false;
+
+/*
+ * The last SIM and network country, kept across restarts in a small MMKV
+ * store of their own, so a cold start without them (airplane mode, no
+ * coverage yet) still knows where the phone was. App data is not backed up
+ * on Android (allowBackup="false"), so this never follows a user to a new
+ * phone. Created on first use, and only on Android.
+ */
+const REMEMBERED_STORE_ID = 'region-signals';
+const REMEMBERED_KEY = 'last';
+/** undefined = not opened yet; null = MMKV unavailable. */
+let rememberedStore: MMKV | null | undefined;
+/** What the store holds, to skip writes that would change nothing. */
+let rememberedJson: string | undefined;
+
 /* --- Region-gate reactivity -------------------------------------------
- * isStrikeAllowed()/isCoinosAllowed() read the storefront synchronously at
- * render. The storefront can be unavailable for a moment after launch, so
- * the first read is null and refreshStorefrontCountry() fills it in shortly
- * after. `storefrontCountry` is a plain module variable, so a component
- * that already rendered with the null answer would keep a rail hidden until
- * some unrelated re-render. These primitives let a component subscribe (see
- * the useRegionGate hook) and re-render when the value actually changes.
- * The gate functions themselves stay plain, so non-React callers are
- * unaffected. */
+ * isStrikeAllowed()/isCoinosAllowed() read their signals synchronously at
+ * render: the storefront on iOS, the phone's country signals on Android.
+ * The storefront can be unavailable for a moment after launch, so the
+ * first read is null and refreshStorefrontCountry() fills it in shortly
+ * after. On Android the network country can arrive after launch too, and
+ * it changes when the phone crosses a border. The cached values are plain
+ * module variables, so a component that already rendered with the first
+ * answer would keep it until some unrelated re-render. These primitives
+ * let a component subscribe (see the useRegionGate hook) and re-render
+ * when a value actually changes. The gate functions themselves stay plain,
+ * so non-React callers are unaffected. */
 const regionGateListeners = new Set<() => void>();
 let regionGateVersion = 0;
 
@@ -173,9 +233,14 @@ function notifyRegionGateChanged(): void {
     });
 }
 
-/** Test-only: clear the cached storefront and every region-gate subscriber. */
+/** Test-only: clear the cached signals and every region-gate subscriber. */
 export function __resetRegionGateForTest(): void {
     storefrontCountry = undefined;
+    androidSignals = undefined;
+    androidCountries = [];
+    watchingForeground = false;
+    rememberedStore = undefined;
+    rememberedJson = undefined;
     regionGateListeners.clear();
     regionGateVersion = 0;
 }
@@ -199,10 +264,10 @@ export function getStorefrontCountry(): string | null {
 }
 
 /**
- * Re-reads the storefront from StoreKit. Call once at startup: the
- * storefront can be unavailable for a moment after launch, and the
- * module constant is fixed for the module's lifetime. A failed or empty
- * read keeps the previous value.
+ * Re-reads the storefront from StoreKit; refreshRegionSignals() calls it
+ * once at startup. The storefront can be unavailable for a moment after
+ * launch, and the module constant is fixed for the module's lifetime. A
+ * failed or empty read keeps the previous value. Does nothing on Android.
  */
 export async function refreshStorefrontCountry(): Promise<void> {
     if (Platform.OS !== 'ios') return;
@@ -219,16 +284,143 @@ export async function refreshStorefrontCountry(): Promise<void> {
     }
 }
 
+function parseAndroidSignals(raw: unknown): AndroidSignals {
+    const fields = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+    const network = Array.isArray(fields.network)
+        ? fields.network.map(normaliseAlpha2).filter((code): code is string => code !== null)
+        : [];
+    return {
+        language: normaliseAlpha2(fields.language),
+        vendorRegion: normaliseAlpha2(fields.vendorRegion),
+        sim: normaliseAlpha2(fields.sim),
+        network: [...new Set(network)],
+    };
+}
+
+/**
+ * A fresh reading, keeping the earlier SIM or network country when the
+ * fresh one has none (airplane mode, no coverage yet, an unreadable SIM),
+ * so losing a signal never loosens the gate. A new country replaces the
+ * earlier one. The language and Xiaomi region are settings, always current.
+ */
+function withEarlier(next: AndroidSignals, earlier: Pick<AndroidSignals, 'sim' | 'network'>): AndroidSignals {
+    return {
+        language: next.language,
+        vendorRegion: next.vendorRegion,
+        sim: next.sim ?? earlier.sim,
+        network: next.network.length > 0 ? next.network : earlier.network,
+    };
+}
+
+function getRememberedStore(): MMKV | null {
+    if (rememberedStore === undefined) {
+        try {
+            rememberedStore = new MMKV({ id: REMEMBERED_STORE_ID });
+        } catch {
+            rememberedStore = null;
+        }
+    }
+    return rememberedStore;
+}
+
+/** The SIM and network country remembered from an earlier run, if any. */
+function readRemembered(): Pick<AndroidSignals, 'sim' | 'network'> {
+    try {
+        rememberedJson = getRememberedStore()?.getString(REMEMBERED_KEY);
+        const { sim, network } = parseAndroidSignals(rememberedJson ? JSON.parse(rememberedJson) : null);
+        return { sim, network };
+    } catch {
+        return { sim: null, network: [] };
+    }
+}
+
+/** Stores the SIM and network country only; never the language. */
+function remember({ sim, network }: AndroidSignals): void {
+    if (sim === null && network.length === 0) return;
+    const json = JSON.stringify({ sim, network });
+    if (json === rememberedJson) return;
+    try {
+        getRememberedStore()?.set(REMEMBERED_KEY, json);
+        rememberedJson = json;
+    } catch {
+        // Not remembered this time; the next reading tries again.
+    }
+}
+
+function setAndroidSignals(signals: AndroidSignals): void {
+    androidSignals = signals;
+    const known = [signals.language, signals.vendorRegion, signals.sim, ...signals.network]
+        .filter((code): code is string => code !== null);
+    androidCountries = [...new Set(known)].sort();
+    remember(signals);
+}
+
+/**
+ * Every country the Android signals name, sorted; empty when none is
+ * known. The first call reads the module's constants, falling back to the
+ * SIM and network country remembered from an earlier run, so render-time
+ * checks stay synchronous; refreshRegionSignals() updates them later.
+ * A build without the native module knows only what was remembered.
+ */
+function getAndroidCountries(): readonly string[] {
+    if (androidSignals === undefined) {
+        let raw: unknown;
+        try {
+            const mod = NativeModules.CypherRegionSignals;
+            raw = typeof mod?.getConstants === 'function' ? mod.getConstants() : mod;
+        } catch {
+            raw = undefined;
+        }
+        setAndroidSignals(withEarlier(parseAndroidSignals(raw), readRemembered()));
+    }
+    return androidCountries;
+}
+
+/** Re-reads the Android signals. A failed read keeps everything. */
+async function refreshAndroidSignals(): Promise<void> {
+    let next: AndroidSignals;
+    try {
+        next = parseAndroidSignals(await NativeModules.CypherRegionSignals?.getSignals?.());
+    } catch {
+        return;
+    }
+    const before = getAndroidCountries().join();
+    setAndroidSignals(withEarlier(next, androidSignals as AndroidSignals)); // set by getAndroidCountries()
+    if (androidCountries.join() !== before) notifyRegionGateChanged();
+}
+
+/**
+ * Re-reads the region signals: the App Store storefront on iOS, the
+ * phone's country signals on Android. Call once at startup. On Android it
+ * also re-reads each time the app comes back to the foreground, since the
+ * network country changes when the phone crosses a border.
+ */
+export async function refreshRegionSignals(): Promise<void> {
+    if (Platform.OS === 'ios') return refreshStorefrontCountry();
+    if (!watchingForeground) {
+        watchingForeground = true;
+        AppState?.addEventListener?.('change', state => {
+            if (state === 'active') refreshAndroidSignals();
+        });
+    }
+    return refreshAndroidSignals();
+}
+
 function inEeaOrUk(storefront: string | null, region: string | null): boolean {
     return (storefront !== null && EEA_UK_ALPHA3.has(storefront))
         || (region !== null && EEA_UK_ALPHA2.has(region));
 }
 
 /**
- * True when the device region is in the EEA, OR when the region cannot
- * be read at all. Kept for callers that only care about the EEA.
+ * True when the device is placed in the EEA, OR when it cannot be placed
+ * at all: the region on iOS, any of the phone's country signals on
+ * Android. Kept for callers that only care about the EEA.
  */
 export function isEeaRegion(): boolean {
+    if (Platform.OS !== 'ios') {
+        const countries = getAndroidCountries();
+        return countries.length === 0 || countries.some(code => EEA_ALPHA2.has(code));
+    }
     const country = getDeviceCountry();
     if (!country) return true;
     return EEA_ALPHA2.has(country);
@@ -246,6 +438,11 @@ export function isEeaRegion(): boolean {
 export function isCoinosAllowed(): boolean {
     if (__DEV__) return true;
     if (COINOS_DISABLED_GLOBALLY) return false;
+    if (Platform.OS !== 'ios') {
+        // Any EEA or UK signal hides CoinOS; no signal at all fails closed.
+        const countries = getAndroidCountries();
+        return countries.length > 0 && !countries.some(code => EEA_UK_ALPHA2.has(code));
+    }
     const storefront = getStorefrontCountry();
     const region = getDeviceCountry();
     if (storefront === null && region === null) return false;
@@ -263,11 +460,14 @@ export function isCoinosAllowed(): boolean {
  */
 export function isStrikeAllowed(): boolean {
     if (__DEV__) return true;
-    const region = getDeviceCountry();
-    if (Platform.OS === 'ios') {
-        const storefront = getStorefrontCountry();
-        if (storefront === null || !STRIKE_ALPHA3.has(storefront)) return false;
-        return !(region !== null && EEA_UK_ALPHA2.has(region));
+    if (Platform.OS !== 'ios') {
+        // STRIKE_COUNTRIES leaves out the EEA, the UK, India and South
+        // Korea, so any signal from one of them hides Strike.
+        const countries = getAndroidCountries();
+        return countries.length > 0 && countries.every(code => STRIKE_ALPHA2.has(code));
     }
-    return region !== null && STRIKE_ALPHA2.has(region);
+    const storefront = getStorefrontCountry();
+    if (storefront === null || !STRIKE_ALPHA3.has(storefront)) return false;
+    const region = getDeviceCountry();
+    return !(region !== null && EEA_UK_ALPHA2.has(region));
 }

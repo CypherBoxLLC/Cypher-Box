@@ -4,7 +4,7 @@ import { AppRegistry } from 'react-native';
 import App from './App';
 import { BlueStorageProvider } from './blue_modules/storage-context';
 import { registerArkNotificationTapHandler } from './src/services/ark/notificationHandler';
-import { refreshStorefrontCountry } from './src/services/featureFlags';
+import { refreshRegionSignals } from './src/services/featureFlags';
 import { isSeedSignerLocked, noteLockForNativeStartUp } from './src/services/seedSignerLock';
 import { watchStorefrontCountry } from './src/services/storefrontWatch';
 
@@ -19,12 +19,14 @@ if (!Error.captureStackTrace) {
 // is ready.
 registerArkNotificationTapHandler();
 
-// Read the App Store storefront early. The region gates read it
-// synchronously at render time, and it can be unavailable for a moment
-// right after launch. Fire and forget: the gates fail closed until it
-// arrives.
+// Read the region signals early: the App Store storefront on iOS, the
+// phone's language, SIM and network country on Android. The region gates
+// read them synchronously at render time, and they can arrive a moment
+// after launch. Fire and forget: the gates fail closed until a signal
+// arrives. On Android this also re-reads whenever the app returns to the
+// foreground.
 // A seed-signer has no Lightning providers to gate, so it doesn't ask.
-if (!isSeedSignerLocked()) refreshStorefrontCountry();
+if (!isSeedSignerLocked()) refreshRegionSignals();
 // and it makes sure native start-up knows to skip crash reporting next time
 else noteLockForNativeStartUp();
 

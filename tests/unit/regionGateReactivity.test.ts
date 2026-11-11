@@ -8,7 +8,8 @@
  * getRegionGateVersion back the useRegionGate hook that re-renders those
  * components when the storefront actually resolves. These tests pin that a
  * change notifies subscribers exactly once, and that a no-op refresh does
- * not.
+ * not. The Android signals wake the same subscribers; that is covered in
+ * androidRegionGate.test.ts.
  */
 
 export {};
@@ -92,7 +93,7 @@ describe('region-gate reactivity', () => {
         expect(gate.getRegionGateVersion()).toBe(1);
     });
 
-    it('never fires on Android, which has no storefront to refresh', async () => {
+    it('refreshStorefrontCountry() never fires on Android, which has no storefront', async () => {
         const gate = loadGate({ os: 'android', storefront: 'USA', refreshed: 'USA' });
         let calls = 0;
         gate.subscribeRegionGate(() => { calls += 1; });
