@@ -10,6 +10,7 @@ import SeedQRGrid from "@Cypher/components/SeedQRGrid";
 import { backupToMnemonic, dispatchNavigate, mnemonicToSeedQR, seedQRGrid } from "@Cypher/helpers";
 import { colors, widths } from "@Cypher/style-guide";
 import { HDSegwitBech32Wallet } from "../../../class";
+import { assertMnemonicHealthy } from "../../../class/seedHealth";
 import QRCodeComponent from "../../../components/QRCodeComponent";
 import useProtectSecret from "../../custom-hooks/useProtectSecret";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
@@ -98,6 +99,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             if (dice && dice.length >= 16) w.setSecret(bip39.entropyToMnemonic(dice.slice(0, 16).toString('hex')));
             else await w.generate();
             const phrase = w.getSecret();
+            assertMnemonicHealthy(phrase);
             setInfo(publicInfo(phrase, usePassphrase ? passphrase : ''));
             setMnemonic(phrase);
             setStep('words');

@@ -1,5 +1,5 @@
 import React, {useContext, useReducer, useState, useRef, useEffect} from "react";
-import { View, Image, InteractionManager, Switch, TouchableOpacity, Animated, Keyboard, KeyboardEvent, Platform } from "react-native";
+import { Alert, View, Image, InteractionManager, Switch, TouchableOpacity, Animated, Keyboard, KeyboardEvent, Platform } from "react-native";
 import * as bip39 from 'bip39';
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
@@ -7,6 +7,7 @@ import { Button, Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
 import { HDSegwitBech32Wallet } from "../../../class";
+import { assertMnemonicHealthy } from "../../../class/seedHealth";
 import loc from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -204,6 +205,15 @@ export default function SavingVaultIntro() {
         w.setSecret(bip39.entropyToMnemonic(diceEntropy.slice(0, 16).toString('hex')));
       } else {
         await w.generate();   // BIP39 mnemonic — ~5ms on device
+      }
+      // Validate the freshly minted seed before it becomes a wallet: a broken
+      // entropy source (dice or RNG) is caught here rather than stored.
+      try {
+        assertMnemonicHealthy(w.getSecret());
+      } catch (e: any) {
+        setIsLoading(false);
+        Alert.alert('Could not create wallet', e?.message ?? 'Secure randomness failed. Please try again.');
+        return;
       }
       // MUST run before getID()/addWallet(): the wallet ID hash includes the
       // passphrase, so setting it later would silently change the vault's

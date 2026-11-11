@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Switch, TouchableOpacity, View } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
+import { generateCheckedArkMnemonic } from "../../../../class/seedHealth";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { HeaderWithLine } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -233,7 +234,14 @@ export default function CreateArkScreen() {
             return;
         }
 
-        const mnemonic = barkGenerateMnemonic();
+        let mnemonic: string;
+        try {
+            mnemonic = generateCheckedArkMnemonic(barkGenerateMnemonic);
+        } catch (e: any) {
+            setLoading(false);
+            Alert.alert('Could not create wallet', e?.message ?? 'Secure randomness failed. Please try again.');
+            return;
+        }
         setLoading(false);
         dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });
     };

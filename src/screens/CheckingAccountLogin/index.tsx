@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
-import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
+import { Alert, Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
+import { generateCheckedArkMnemonic } from "../../../class/seedHealth";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
@@ -109,7 +110,13 @@ export default function CheckingAccountLogin() {
     // Skip the CreateArkScreen intro (experimental warning + hot-vault
     // seed-source toggle) and go straight to the seed-phrase reveal.
     // Mirrors the fresh-seed branch of the old CreateArkScreen.handleCreate.
-    const mnemonic = barkGenerateMnemonic();
+    let mnemonic: string;
+    try {
+      mnemonic = generateCheckedArkMnemonic(barkGenerateMnemonic);
+    } catch (e: any) {
+      Alert.alert('Could not create wallet', e?.message ?? 'Secure randomness failed. Please try again.');
+      return;
+    }
     dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });
   };
 
