@@ -10,7 +10,7 @@ import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags"
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Animated, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
 import { useFocusEffect } from "@react-navigation/native";
@@ -140,12 +140,11 @@ export default function BottomBar({
         return 0;
     };
     const [index, setIndex] = useState(getInitialIndex());
-    // In RTL the horizontal pager lays its pages out right-to-left, with the last tab on the left. scrollToIndex takes
-    // the tab index, but the offset in scroll events is measured from the left on both platforms, so map it back to
-    // the tab, and iOS's initialScrollIndex counts from the left too. Without this, iOS showed the Cold Vault card on
-    // the Hot tab, and the card opened the Hot Vault.
+    // In RTL the horizontal pager lays its pages out right-to-left, with the last tab on the left. initialScrollIndex and
+    // scrollToIndex take the tab index on both platforms; FlatList finds the page. The offset in scroll events is measured
+    // from the left, though, so map that back to the tab. Without this, iOS showed the Cold Vault card on the Hot tab, and
+    // the card opened the Hot Vault. Mapping initialScrollIndex as well opened the Hot Vault card under the Cold tab.
     const pageToTab = (page: number) => (I18nManager.isRTL ? tabs.length - 1 - page : page);
-    const initialPage = (tab: number) => (I18nManager.isRTL && Platform.OS === 'ios' ? tabs.length - 1 - tab : tab);
 
     useEffect(() => {
         if (!hasSavingVault && hasColdStorage && !vaultTab) {
@@ -474,7 +473,7 @@ export default function BottomBar({
                     snapToInterval={screenWidth}
                     decelerationRate="fast"
                     disableIntervalMomentum
-                    initialScrollIndex={initialPage(index)}
+                    initialScrollIndex={index}
                     getItemLayout={(_, i) => ({ length: screenWidth, offset: screenWidth * i, index: i })}
                     onMomentumScrollEnd={onMomentumScrollEnd}
                 />
