@@ -11,9 +11,19 @@ import renderer, { act } from 'react-test-renderer';
 import * as bip39 from 'bip39';
 
 import CreateSignerSeed from '../../src/screens/CreateSignerSeed';
+import { takeSeedBackedUp } from '../../src/screens/SigningHome/seedSigner';
 import { mnemonicToSeedQR, seedQRGrid } from '../../src/helpers/seedQR';
+import useAuthStore from '../../src/stores/authStore';
 import { randomBytes } from '../../class/rng';
 
+jest.mock('../../src/stores/index', () => ({
+    __esModule: true,
+    zustandStorage: {
+        getItem: jest.fn().mockResolvedValue(null),
+        setItem: jest.fn().mockResolvedValue(undefined),
+        removeItem: jest.fn().mockResolvedValue(undefined),
+    },
+}));
 jest.mock('@Cypher/component-library', () => {
     const { Text } = require('react-native');
     return { ScreenLayout: ({ children }: any) => children, Text };
@@ -101,6 +111,8 @@ let seedSpy: jest.SpyInstance;
 beforeEach(() => {
     seedSpy = jest.spyOn(bip39, 'mnemonicToSeedSync');
     (randomBytes as jest.Mock).mockClear();
+    useAuthStore.setState({ signerKeyShown: false });
+    takeSeedBackedUp();
 });
 afterEach(() => {
     seedSpy.mockRestore();
@@ -299,6 +311,40 @@ describe('Create a Seed, going back', () => {
     });
 });
 
+describe("Create a Seed, for the signer's home", () => {
+    it('notes only once the copy checks out that a key was shown, and which seed was backed up', async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        type(root, /Type your 12 words/, LEGAL);
+        await press(root, /^Check the words$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(false);
+        expect(takeSeedBackedUp()).toBeNull();
+
+        type(root, /Type your 12 words/, ABANDON);
+        await press(root, /^Check the words$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(true);
+        // for one line on the home, then gone
+        expect(takeSeedBackedUp()).toBe('73C5DA0A');
+        expect(takeSeedBackedUp()).toBeNull();
+    });
+
+    it("tells the user to sign from the home's Sign a Transaction", async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        expect(textOf(root)).toContain("To sign, tap Sign a Transaction on this phone's home");
+    });
+
+    it('notes that a key was shown when a seed is loaded, but not that one was made', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(true);
+        expect(takeSeedBackedUp()).toBeNull();
+    });
+});
+
 describe('Show a Seed\'s Public Key', () => {
     it('works out the key once from typed words', async () => {
         const root = open({ mode: 'show' });
@@ -318,7 +364,7 @@ describe('Show a Seed\'s Public Key', () => {
         expect(textOf(root)).toContain("This seed's public key");
         expect(textOf(root)).not.toContain(ZPUB);
         // nothing of it is kept for later
-        expect(textOf(root)).toContain('Nothing is kept on this phone.');
+        expect(textOf(root)).toContain("The seed isn't kept on this phone.");
     });
 
     it('stays on the form with the reason when the words are wrong', async () => {

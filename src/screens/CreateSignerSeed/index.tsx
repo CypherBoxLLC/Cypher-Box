@@ -32,12 +32,14 @@ import {
     seedQRGrid,
     signerPublicKey,
 } from "@Cypher/helpers";
+import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import { randomBytes } from "../../../class/rng";
 import useProtectSecret from "../../custom-hooks/useProtectSecret";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import useSeedQRCheck from "../../custom-hooks/useSeedQRCheck";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
+import { noteSeedBackedUp } from "../SigningHome/seedSigner";
 
 /**
  * intro → backup (the words and the SeedQR, as two tabs of one screen) → created (what's next, the last warnings and
@@ -72,9 +74,10 @@ function Warning({ children }: { children: React.ReactNode }) {
 /**
  * A seed-signer's seed, made and shown without ever being saved: generated in memory (dice rolls optional, mixed with
  * the phone's randomness), backed up as words and a SeedQR, the copy checked, then only the public side shown, for the
- * watch-only wallet. Leaving the screen drops it. Nothing goes to the app's storage or the Keychain, so nothing outlives
- * the app (on iOS the Keychain does) or waits to be wiped. With `mode: 'show'` it loads a SeedQR or typed words to show
- * that seed's public key again, saving nothing either.
+ * watch-only wallet. Leaving the screen drops it. Nothing of the seed goes to the app's storage or the Keychain, so
+ * nothing outlives the app (on iOS the Keychain does) or waits to be wiped; the store only notes that a key was shown,
+ * which puts signing first on the signer's home. With `mode: 'show'` it loads a SeedQR or typed words to show that
+ * seed's public key again, saving nothing of it either.
  *
  * Making the words is instant. The public key needs the BIP39 seed, the slow step, so it's worked out once, after the
  * copy is checked, with the native PBKDF2 when the phone has it.
@@ -159,7 +162,11 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
         setStep('key');
         try {
             await nextFrame();
-            setInfo(signerPublicKey(await rootFromMnemonic(phrase, pass)));
+            const shown = signerPublicKey(await rootFromMnemonic(phrase, pass));
+            setInfo(shown);
+            // from now on the signer's home puts signing first, and after a new seed it says once that it's backed up
+            useAuthStore.getState().setSignerKeyShown(true);
+            if (from === 'created') noteSeedBackedUp(shown.fingerprint);
             // its public side is all that's needed from here
             forget();
         } catch (e: any) {
@@ -437,8 +444,8 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             Box Cold Vault, Sparrow or another app), and check its first addresses match.
                         </Instruction>
                         <Instruction number={3} title="Sign by scanning">
-                            To sign, tap Sign a Transaction with SeedQR, scan the transaction your watch-only wallet
-                            made, check it, then scan your SeedQR. The phone signs and forgets the seed again.
+                            To sign, tap Sign a Transaction on this phone's home, scan the transaction your watch-only
+                            wallet made, check it, then scan your SeedQR. The phone signs and forgets the seed again.
                         </Instruction>
 
                         <Text style={styles.sectionTitle}>Before you go</Text>
@@ -514,8 +521,8 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             ))}
                         </View>
                         <Text style={styles.note}>
-                            Nothing is kept on this phone. Still, if it's ever stolen, assume the seed is compromised and
-                            move your coins to a new seed: getting a seed out of a phone is very difficult, but not
+                            The seed isn't kept on this phone. Still, if it's ever stolen, assume the seed is compromised
+                            and move your coins to a new seed: getting a seed out of a phone is very difficult, but not
                             something to bet on.
                         </Text>
                         <TouchableOpacity style={styles.primary} onPress={done} accessibilityRole="button">

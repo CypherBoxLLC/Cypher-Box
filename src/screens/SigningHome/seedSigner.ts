@@ -11,3 +11,17 @@ export const SEED_SIGNER_MODE = 'Offline Seed-Signer mode';
 export function openSeedSignerGate() {
     dispatchNavigate('SeedSignerGate');
 }
+
+// The fingerprint of a seed just made and backed up, for one line on the signer's home when it's next shown. Only in
+// memory: the home takes it once, and nothing about the seed is saved.
+let backedUpFingerprint: string | null = null;
+
+export function noteSeedBackedUp(fingerprint: string) {
+    backedUpFingerprint = fingerprint;
+}
+
+export function takeSeedBackedUp(): string | null {
+    const fingerprint = backedUpFingerprint;
+    backedUpFingerprint = null;
+    return fingerprint;
+}
