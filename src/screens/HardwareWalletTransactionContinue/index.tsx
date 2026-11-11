@@ -42,6 +42,13 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
         return fromWallet.combinePsbt(psbt, receivedPSBT);
       };
     
+    // a signed transaction that checks out goes straight to the last screen (what it pays, the broadcast, the
+    // cross-check advice); the hex and Next stay here for a return visit
+    const confirm = (hex: string) => {
+        setTxHex(hex);
+        navigation.navigate("ConfirmHardwareTransaction", { walletID, isCustomFee, fromWallet, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, fee, memo, tx, psbt, to, txHex: hex });
+    };
+
     const onBarScanned = ret => {
         if (ret && !ret.data) ret = { data: ret };
         if (ret.data.toUpperCase().startsWith('UR')) {
@@ -51,7 +58,7 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
           // a finished transaction instead of a signed PSBT: only accept it if it is the one the user reviewed
           try {
             assertSignedTxMatchesPsbt(ret.data, psbt);
-            setTxHex(ret.data.trim());
+            confirm(ret.data.trim());
           } catch (Err: any) {
             alert(Err.message);
           }
@@ -59,7 +66,7 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
         }
         try {
           const Tx = _combinePSBT(ret.data);
-          setTxHex(Tx.toHex());
+          confirm(Tx.toHex());
         //   if (launchedBy) {
         //     // we must navigate back to the screen who requested psbt (instead of broadcasting it ourselves)
         //     // most likely for LN channel opening

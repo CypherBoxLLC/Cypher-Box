@@ -1,7 +1,7 @@
 /* eslint react/prop-types: "off", react-native/no-inline-styles: "off" */
 import React, { Component } from 'react';
 import { Text } from 'react-native-elements';
-import { Dimensions, LayoutAnimation, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, LayoutAnimation, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { encodeUR } from '../blue_modules/ur';
 import QRCodeComponent from './QRCodeComponent';
 import { BlueCurrentTheme } from '../components/themes';
@@ -95,9 +95,11 @@ export class DynamicQRCode extends Component {
     const currentFragment = this.fragments[this.state.index];
 
     if (!currentFragment && this.state.displayQRCode) {
+      // the size of the code that replaces it, so the screen doesn't jump, and plainly busy
       return (
-        <View>
-          <Text>{loc.send.dynamic_init}</Text>
+        <View style={[animatedQRCodeStyle.placeholder, { height: this.state.qrCodeHeight }]}>
+          <ActivityIndicator size="large" />
+          <Text style={animatedQRCodeStyle.placeholderText}>{loc.send.dynamic_init}</Text>
         </View>
       );
     }
@@ -117,7 +119,9 @@ export class DynamicQRCode extends Component {
               <QRCodeComponent
                 isLogoRendered={false}
                 value={currentFragment.toUpperCase()}
-                size={this.state.qrCodeHeight}
+                // a quiet zone, when asked for, comes out of the same overall size
+                size={this.state.qrCodeHeight - 2 * (this.props.quietZone ?? 0)}
+                quietZone={this.props.quietZone ?? 0}
                 isMenuAvailable={false}
                 ecl="L"
                 onError={this.onError}
@@ -166,6 +170,15 @@ export class DynamicQRCode extends Component {
 }
 
 const animatedQRCodeStyle = StyleSheet.create({
+  placeholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: BlueCurrentTheme.colors.foregroundColor,
+  },
   container: {
     flex: 1,
     flexDirection: 'column',

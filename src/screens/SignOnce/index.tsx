@@ -1,28 +1,34 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Platform, ScrollView, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Platform, ScrollView, TextInput, TouchableOpacity, View } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
 import SimpleToast from "react-native-simple-toast";
 import type { BIP32Interface } from "bip32";
 import type * as bitcoin from "bitcoinjs-lib";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
+import { colors } from "@Cypher/style-guide";
 import SigningPhoneStatus from "@Cypher/components/SigningPhoneStatus";
 import {
     SIGN_NO_KEY_INFO,
     SIGN_NOTHING_SIGNED,
     SIGN_ON_SIGNING_DEVICE,
     SIGN_VAULT_MISMATCH,
+    SignerWallet,
     SigningKey,
     TransactionReview,
     assertBackupMatches,
     assertKeyOwns,
+    assertMultisigRegistered,
+    assertSingleKeyOnly,
     formatSignSats,
     inputFingerprints,
     isForKey,
+    isMultisigTransaction,
+    nextFrame,
     parseUnsignedPsbt,
     reviewWithRoot,
     reviewWithWallet,
-    rootFromBackup,
+    rootFromBackupAsync,
     signWithRoot,
     signingKeyForWallet,
 } from "@Cypher/helpers";
@@ -53,11 +59,17 @@ type Mode = 'vault' | 'backup';
  * against the transaction, and the key made from it is dropped once the transaction is signed or the screen closes.
  * Keeping every step in one screen is what makes that true; navigation params would keep it in history.
  *
+ * A multisig spend (one key of a wallet made in Nunchuk, Sparrow or BlueWallet) is only signed from a backup, in
+ * Offline Seed-Signer mode, and only for a wallet registered under Multisig Wallets: one that isn't is refused when it's
+ * scanned, before any SeedQR. The review then names the wallet, and change is checked against it.
+ *
  * Params: `psbt` to start from a transaction already scanned, `mode: 'vault'` to sign with the Hot Vault straight away.
  */
 export default function SignOnce({ route, navigation }: { route: any; navigation: any }) {
     const { wallets } = useContext(BlueStorageContext);
-    const { walletID: hotVaultID, signingMode, setSignedOnThisPhone } = useAuthStore();
+    const { walletID: hotVaultID, signingMode, setSignedOnThisPhone, signerWallets } = useAuthStore();
+    // multisig wallets this signer holds a key of; a multisig spend from any other is refused
+    const multisigWallets: SignerWallet[] = Object.values(signerWallets ?? {});
     const hotVault = (wallets ?? []).find(
         (w: any) => w.getID() === hotVaultID && typeof w.cosignPsbt === 'function' && w.allowCosignPsbt?.(),
     );
@@ -68,6 +80,9 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
     const [words, setWords] = useState('');
     const [passphrase, setPassphrase] = useState('');
     const [error, setError] = useState<string | null>(null);
+    // the seed from a backup takes a moment: its spinner, and no second load meanwhile
+    const [working, setWorking] = useState(false);
+    const workingRef = useRef(false);
     const [review, setReview] = useState<TransactionReview | null>(null);
     // a recovery phrase is only loaded, and a transaction only signed, while no server answers: the same lock as the
     // Hot Vault's sign button, here for signing from a backup too, which used to work on a phone that was online
@@ -77,6 +92,8 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         ? loc.cypherbox.sign_once.checking_offline
         : loc.cypherbox.sign_once.online_note;
     const [signed, setSigned] = useState<bitcoin.Psbt | null>(null);
+    // what the signed screen says about the other keys of a multisig
+    const [signedMultisig, setSignedMultisig] = useState<TransactionReview['multisig'] | null>(null);
     const rootRef = useRef<BIP32Interface | null>(null);
 
     // a recovery phrase or a key made from one can be on this screen: hide it from the app switcher, block screenshots
@@ -124,6 +141,11 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 // signing, so here it signs with the Hot Vault it already holds, or not at all.
                 if (!forHotVault) throw new Error(SIGN_ON_SIGNING_DEVICE);
                 reviewWithHotVault(tx);
+            } else if (isMultisigTransaction(tx)) {
+                // the Hot Vault never signs multisig, and nobody scans a SeedQR for a wallet that isn't registered
+                assertMultisigRegistered(tx, multisigWallets);
+                setMode('backup');
+                setStep('backup');
             } else if (forHotVault) {
                 setStep('choose');
             } else {
@@ -161,16 +183,21 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         if (data) accept(data);
     };
 
-    const loadBackup = (backup: string) => {
+    const loadBackup = async (backup: string) => {
         setError(null);
         if (!offline) {
             setError(onlineNote);
             return;
         }
+        if (workingRef.current) return;
+        workingRef.current = true;
+        setWorking(true);
         try {
-            const root = rootFromBackup(backup, passphrase);
+            // the spinner goes up before the seed is made
+            await nextFrame();
+            const root = await rootFromBackupAsync(backup, passphrase);
             assertBackupMatches(psbt as bitcoin.Psbt, root);
-            setReview(reviewWithRoot(psbt as bitcoin.Psbt, root));
+            setReview(reviewWithRoot(psbt as bitcoin.Psbt, root, multisigWallets));
             rootRef.current = root;
             // the phrase has done its job: only the key made from it stays, until signing
             setWords('');
@@ -178,6 +205,9 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             setStep('review');
         } catch (e: any) {
             setError(signErrorText(e.message));
+        } finally {
+            workingRef.current = false;
+            setWorking(false);
         }
     };
 
@@ -190,9 +220,11 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         try {
             if (mode === 'backup') {
                 if (!rootRef.current) throw new Error(SIGN_NOTHING_SIGNED);
-                setSigned(signWithRoot(psbt as bitcoin.Psbt, rootRef.current).psbt);
+                setSigned(signWithRoot(psbt as bitcoin.Psbt, rootRef.current, multisigWallets).psbt);
                 rootRef.current = null;
             } else {
+                // the review refused these already; the Hot Vault's own cosigning would sign any script with its key
+                assertSingleKeyOnly(psbt as bitcoin.Psbt);
                 const copy = bitcoinjs.Psbt.fromBase64((psbt as bitcoin.Psbt).toBase64());
                 const count = (p: bitcoin.Psbt) =>
                     p.data.inputs.filter(i => (i.partialSig?.length ?? 0) > 0 || !!i.finalScriptWitness || !!i.finalScriptSig).length;
@@ -201,6 +233,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 if (count(copy) <= before) throw new Error(SIGN_NOTHING_SIGNED);
                 setSigned(copy);
             }
+            setSignedMultisig(review?.multisig ?? null);
             setReview(null);
             setSignedOnThisPhone(true);
             setStep('signed');
@@ -218,14 +251,21 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const renderError = () => (error ? <Text style={styles.error}>{error}</Text> : null);
 
+    // A seed-signer without a Hot Vault always goes the same way: the transaction, the SeedQR, then the check and the
+    // signature. Numbered there; other phones choose a key, so their steps aren't fixed.
+    const numbered = signingMode && !hotVault;
+    const stepLabel = (n: number) =>
+        numbered ? <Text style={styles.step}>{String(loc.formatString(loc.cypherbox.sign_once.step, { n, total: 3 }))}</Text> : null;
+
     const renderScan = () => (
         <>
+            {stepLabel(1)}
             <Text style={styles.title}>{loc.cypherbox.sign_once.scan_title}</Text>
             <Text style={styles.body}>
                 {loc.cypherbox.sign_once.scan_body}
             </Text>
             <TouchableOpacity style={styles.primary} onPress={() => scan(accept)} accessibilityRole="button">
-                <Text h3>{loc.cypherbox.sign_once.scan_qr}</Text>
+                <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.scan_qr}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondary} onPress={openFile} accessibilityRole="button">
                 <Text h3>{loc.cypherbox.sign_once.open_file}</Text>
@@ -245,7 +285,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                     setError(signErrorText(e.message));
                 }
             }} accessibilityRole="button">
-                <Text h3>{signingMode ? loc.cypherbox.sign_once.sign_with_seed : loc.cypherbox.sign_once.sign_with_hot_vault}</Text>
+                <Text h3 style={styles.primaryText}>{signingMode ? loc.cypherbox.sign_once.sign_with_seed : loc.cypherbox.sign_once.sign_with_hot_vault}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondary} onPress={() => { setMode('backup'); setStep('backup'); }} accessibilityRole="button">
                 <Text h3>{loc.cypherbox.sign_once.sign_from_backup}</Text>
@@ -261,14 +301,16 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const renderBackup = () => (
         <>
+            {stepLabel(2)}
             <Text style={styles.title}>{loc.cypherbox.sign_once.backup_title}</Text>
             {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
             <Text style={styles.body}>
                 {loc.cypherbox.sign_once.backup_body}
             </Text>
             {signingMode ? <OfflineSeedWarning style={styles.seedWarning} /> : null}
-            <TouchableOpacity style={styles.primary} onPress={() => (offline ? scan(loadBackup) : setError(onlineNote))} accessibilityRole="button">
-                <Text h3>{loc.cypherbox.sign_once.scan_seedqr}</Text>
+            {working ? <ActivityIndicator size="large" color={colors.green} style={styles.working} /> : null}
+            <TouchableOpacity style={styles.primary} disabled={working} onPress={() => (offline ? scan(loadBackup) : setError(onlineNote))} accessibilityRole="button">
+                <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.scan_seedqr}</Text>
             </TouchableOpacity>
             <TextInput
                 style={[styles.input, styles.words]}
@@ -299,7 +341,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 textContentType="none"
                 importantForAutofill="no"
             />
-            <TouchableOpacity style={styles.secondary} onPress={() => loadBackup(words)} accessibilityRole="button">
+            <TouchableOpacity style={styles.secondary} disabled={working} onPress={() => loadBackup(words)} accessibilityRole="button">
                 <Text h3>{loc._.continue}</Text>
             </TouchableOpacity>
             {renderError()}
@@ -308,8 +350,18 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const renderReview = () => (
         <>
+            {mode === 'backup' ? stepLabel(3) : null}
             <Text style={styles.title}>{loc.cypherbox.sign_once.review_title}</Text>
             {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
+            {review?.multisig ? (
+                <Text style={styles.body}>
+                    {String(loc.formatString(loc.cypherbox.sign_once.multisig_wallet, {
+                        name: review.multisig.name,
+                        m: review.multisig.m,
+                        n: review.multisig.n,
+                    }))}
+                </Text>
+            ) : null}
             {review?.outputs.map((output, i) => (
                 <View key={i} style={styles.row}>
                     <Text style={styles.rowLabel}>{output.change ? loc.cypherbox.sign_once.back_to_wallet : loc.cypherbox.sign_once.to}</Text>
@@ -329,7 +381,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 </Text>
             ) : null}
             <TouchableOpacity style={styles.primary} onPress={sign} accessibilityRole="button">
-                <Text h3>{loc.cypherbox.sign_once.sign}</Text>
+                <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.sign}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondary} onPress={cancel} accessibilityRole="button">
                 <Text h3>{loc._.cancel}</Text>
@@ -342,9 +394,14 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         <>
             <Text style={styles.title}>{loc.cypherbox.sign_once.signed_title}</Text>
             <View style={styles.qr}>
-                <DynamicQRCode value={(signed as bitcoin.Psbt).toHex()} />
+                {/* a white margin around it: a laptop webcam (Sparrow) doesn't find the code against the dark screen without one */}
+                <DynamicQRCode value={(signed as bitcoin.Psbt).toHex()} quietZone={24} />
             </View>
-            <Text style={styles.body}>{loc.cypherbox.sign_once.signed_body}</Text>
+            <Text style={styles.body}>
+                {signedMultisig
+                    ? String(loc.formatString(loc.cypherbox.sign_once.signed_body_multisig, { m: signedMultisig.m, n: signedMultisig.n }))
+                    : loc.cypherbox.sign_once.signed_body}
+            </Text>
             {mode === 'backup' ? <Text style={styles.success}>{loc.cypherbox.sign_once.not_saved}</Text> : null}
             <TouchableOpacity
                 style={styles.secondary}
@@ -364,7 +421,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 <Text h3>{loc.cypherbox.sign_once.save_file}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.primary} onPress={() => navigation.goBack()} accessibilityRole="button">
-                <Text h3>{loc.cypherbox.sign_once.done}</Text>
+                <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.done}</Text>
             </TouchableOpacity>
             <SigningPhoneStatus />
             {mode === 'backup' && !signingMode ? (

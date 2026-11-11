@@ -4,6 +4,8 @@ import { zustandStorage } from "./index";
 import { isSeedSignerLocked, lockSeedSigner } from "@Cypher/services/seedSignerLock";
 import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
 import type { PendingSignature } from "@Cypher/helpers/pendingSignature";
+import type { SignerWallet } from "@Cypher/helpers/multisigPolicy";
+import type { SignerAccount } from "@Cypher/helpers/signerPublicKey";
 
 /**
  * Stuck-refresh detection state.
@@ -247,6 +249,19 @@ export type AuthStateType = {
      * helpers/pendingSignature.
      */
     pendingSignatures: Record<string, PendingSignature>;
+    /**
+     * Offline Seed-Signer: the multisig wallets this signer holds a key of, per wallet id (helpers/multisigPolicy),
+     * registered from the wallet file a coordinator exports once a SeedQR showed the seed's key is in it. A multisig
+     * transaction is signed only if it spends from one of these. Public keys only, but they reveal every address of
+     * the wallet, so they live here in the encrypted store.
+     */
+    signerWallets: Record<string, SignerWallet>;
+    /**
+     * Offline Seed-Signer: single-key public keys (m/84'/0'/0') remembered per master fingerprint, so "Receive - Check
+     * Address" can check a seed's addresses without its SeedQR. Remembered by default when a seed's key screen is
+     * shown, never for a seed with a passphrase unless asked; forgotten on request.
+     */
+    signerAccounts: Record<string, SignerAccount>;
     /** "Signing safely" was shown before this phone's first Hot Vault "Sign a transaction"; it isn't forced again. */
     signingSafetySeen: boolean;
     /**
@@ -265,6 +280,12 @@ export type AuthStateType = {
      * mode, it puts "Sign a transaction" on the Hot Vault tab: phones that never sign keep the tab as it was.
      */
     signedOnThisPhone: boolean;
+    /**
+     * Offline Seed-Signer mode: a seed's public key was shown on this phone, once the seed was made here and its backup
+     * checked, or loaded to show it. Only that it happened is kept, nothing of the seed or its key. With
+     * signedOnThisPhone, it puts signing first on the signer's home.
+     */
+    signerKeyShown: boolean;
     arkChainTipHeight: number | null;
     // Epoch ms the tip above was read. The tip is PERSISTED, so a cold launch
     // offline rehydrates one that may be days old, and
@@ -421,10 +442,15 @@ export type AuthStateType = {
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setVaultDisplayAddress: (walletID: string, address: string | null) => void;
     setPendingSignature: (walletID: string, pending: PendingSignature | null) => void;
+    addSignerWallet: (wallet: SignerWallet) => void;
+    removeSignerWallet: (id: string) => void;
+    addSignerAccount: (account: SignerAccount) => void;
+    removeSignerAccount: (fingerprint: string) => void;
     setSigningSafetySeen: (seen: boolean) => void;
     hideColdKeyWarning: (walletID: string) => void;
     setSigningMode: (on: boolean) => void;
     setSignedOnThisPhone: (signed: boolean) => void;
+    setSignerKeyShown: (shown: boolean) => void;
     /** `at` is when the tip was READ FROM THE NETWORK. Pass
      *  getChainTipFetchedAt() when the value may have come from the tip cache:
      *  chainTipFreshness derives FRESH/DEGRADED/STALE from this stamp, so
@@ -710,10 +736,13 @@ const createAuthStore = (
     arkPendingLnReceives: [],
     vaultDisplayAddress: {},
     pendingSignatures: {},
+    signerWallets: {},
+    signerAccounts: {},
     signingSafetySeen: false,
     coldKeyWarningHidden: {},
     signingMode: isSeedSignerLocked(),
     signedOnThisPhone: false,
+    signerKeyShown: false,
     arkChainTipHeight: null,
     arkChainTipHeightAt: null,
     arkLastSyncedAt: null,
@@ -836,6 +865,26 @@ const createAuthStore = (
             else delete next[walletID];
             return { pendingSignatures: next };
         }),
+    addSignerWallet: (wallet: SignerWallet) =>
+        set((state: any) => ({ signerWallets: { ...(state.signerWallets ?? {}), [wallet.id]: wallet } })),
+    removeSignerWallet: (id: string) =>
+        set((state: any) => {
+            const next = { ...(state.signerWallets ?? {}) };
+            delete next[id];
+            return { signerWallets: next };
+        }),
+    // kept from the first time it was remembered
+    addSignerAccount: (account: SignerAccount) =>
+        set((state: any) =>
+            state.signerAccounts?.[account.fingerprint]
+                ? {}
+                : { signerAccounts: { ...(state.signerAccounts ?? {}), [account.fingerprint]: account } }),
+    removeSignerAccount: (fingerprint: string) =>
+        set((state: any) => {
+            const next = { ...(state.signerAccounts ?? {}) };
+            delete next[fingerprint];
+            return { signerAccounts: next };
+        }),
     setSigningSafetySeen: (seen: boolean) => set({ signingSafetySeen: seen }),
     // turning it on locks this install for good; turning it off does nothing
     setSigningMode: (on: boolean) => {
@@ -843,6 +892,7 @@ const createAuthStore = (
         set({ signingMode: isSeedSignerLocked() });
     },
     setSignedOnThisPhone: (signed: boolean) => set({ signedOnThisPhone: signed }),
+    setSignerKeyShown: (shown: boolean) => set({ signerKeyShown: shown }),
     hideColdKeyWarning: (walletID: string) =>
         set((state: any) => ({ coldKeyWarningHidden: { ...(state.coldKeyWarningHidden ?? {}), [walletID]: true } })),
     // Stamps the read time with the value, so the two can never drift apart.

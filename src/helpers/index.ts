@@ -13,3 +13,7 @@ export * from './pendingSignature';
 export * from './accountKey';
 export * from './signOnce';
 export * from './seedQR';
+export * from './multisigKey';
+export * from './multisigPolicy';
+export * from './seedFromWords';
+export * from './signerPublicKey';

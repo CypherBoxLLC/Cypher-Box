@@ -102,6 +102,9 @@ import SignOnce from '@Cypher/screens/SignOnce';
 import SeedQRBackup from '@Cypher/screens/SeedQRBackup';
 import SeedSignerGate from '@Cypher/screens/SeedSignerGate';
 import CreateSignerSeed from '@Cypher/screens/CreateSignerSeed';
+import SignerWallets from '@Cypher/screens/SignerWallets';
+import RegisterSignerWallet from '@Cypher/screens/RegisterSignerWallet';
+import CheckSignerAddress from '@Cypher/screens/CheckSignerAddress';
 import ColdVaultIntro from '@Cypher/screens/ColdVaultIntro';
 import ColdVaultIntro2 from '@Cypher/screens/ColdVaultIntro2';
 import CheckingAccountIntro from '@Cypher/screens/CheckingAccountIntro';
@@ -322,6 +325,9 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="SeedQRBackup" component={SeedQRBackup} options={{ headerShown: false }} />
       <WalletsStack.Screen name="SeedSignerGate" component={SeedSignerGate} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CreateSignerSeed" component={CreateSignerSeed} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="SignerWallets" component={SignerWallets} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="RegisterSignerWallet" component={RegisterSignerWallet} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="CheckSignerAddress" component={CheckSignerAddress} options={{ headerShown: false }} />
       {/* The dice screen again, for CreateSignerSeed's "Add your own dice rolls": the copy in HotVaultFlow can't be
           reached from here, so without this the button did nothing. The back title is set because CreateSignerSeed has
           none, and its route name would show instead. */}

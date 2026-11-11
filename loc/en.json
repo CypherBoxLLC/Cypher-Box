@@ -3285,6 +3285,8 @@
       "copied": "Signed transaction copied",
       "not_saved": "Your recovery phrase wasn't saved on this phone.",
       "signed_body": "Scan this with the wallet that made the transaction, to broadcast it.",
+      "signed_body_multisig": "Scan this with your multisig app. It can broadcast the transaction once {m} of the {n} keys have signed.",
+      "step": "Step {n} of {total}",
       "signed_title": "Signed",
       "sign": "Sign",
       "partial": "This key signs {own} of {total} inputs. The others need another signer.",
@@ -3293,6 +3295,7 @@
       "back_to_wallet": "Back to your wallet",
       "to": "To",
       "review_title": "You're about to sign",
+      "multisig_wallet": "From {name}, a {m} of {n} multisig wallet.",
       "passphrase_placeholder": "Passphrase (only if you use one)",
       "words_placeholder": "Or type your 12 or 24 words",
       "scan_seedqr": "Scan SeedQR",
@@ -3321,7 +3324,12 @@
         "false_change": "An amount marked as coming back to your wallet goes to an address that isn't yours. Don't sign this transaction.",
         "nothing_signed": "Nothing in this transaction could be signed with this key.",
         "unknown_word": "\"{word}\" isn't a recovery phrase word. Check its spelling.",
-        "word_count": "That's {count} words. A recovery phrase has 12 or 24."
+        "word_count": "That's {count} words. A recovery phrase has 12 or 24.",
+        "unknown_multisig": "This transaction spends from a multisig wallet that isn't registered on this signer. Add the wallet's file under Multisig Wallets first, then sign again.",
+        "unsupported_multisig": "This transaction spends from a kind of multisig the signer doesn't sign. It only signs native SegWit (P2WSH) multisig wallets.",
+        "mixed_wallets": "This transaction spends from more than one wallet. Sign one wallet's transactions at a time.",
+        "multisig_hot_vault": "The Hot Vault doesn't sign multisig transactions. Sign this one on an offline phone in Offline Seed-Signer mode, with your SeedQR.",
+        "input_details": "This transaction's details about the coins it spends are missing or don't agree. Don't sign it: export it again from your wallet."
       }
     },
     "signing_safety": {
@@ -3346,6 +3354,19 @@
       "everyday_body": "You send and receive with the Hot Vault on this phone. Nothing to do here.",
       "everyday_title": "Hot Vault as your everyday wallet",
       "for_you_title": "Is this for you?",
+      "multisig_title": "One key of a multisig",
+      "multisig_coordinator_title": "Your multisig app holds the wallet",
+      "multisig_coordinator_body": "Nunchuk, Sparrow, BlueWallet or another multisig app makes the wallet, shows its balance and prepares its transactions. Cypher Box has no multisig wallet of its own: this phone is one of the wallet's keys and signs for it, from your SeedQR.",
+      "multisig_add_title": "1. Add this seed's multisig key",
+      "multisig_add_body": "On this phone, open Show a Seed's Public Key (or the key step when you create a seed) and tap Using this seed as one key of a multisig. In your multisig app, add a key from an air-gapped device and scan that QR. It's the m/48'/0'/0'/2' key, not the single-key one.",
+      "multisig_register_title": "2. Register the wallet on this phone",
+      "multisig_register_body": "Once the wallet is made, export it for a signing device (its wallet file, BSMS file or descriptor) and add it under Multisig Wallets. Check each key's fingerprint against the device that holds that key, and the first address against your multisig app, then scan your SeedQR to confirm your key is in it. Multisig transactions from any other wallet are refused.",
+      "multisig_test_title": "3. Test before you fund it",
+      "multisig_test_body": "If your multisig app asks you to sign test transactions, as Nunchuk does, sign them here like any other. Then send a small amount to the wallet and spend part of it, to see this phone sign and the change come back to the wallet.",
+      "multisig_check_title": "4. Check receive addresses here",
+      "multisig_check_body": "Before you use a receive address, scan it with Receive - Check Address on this phone. It should be a receive address of the wallet you expect.",
+      "multisig_crosscheck_title": "Cross-check with EntropyLab",
+      "multisig_crosscheck_body": "To check this phone's work with code that shares none of Cypher Box's, run EntropyLab on this offline phone, never on a device that goes online. In its Keys tab, load the seed with the derivation path m/48'/0'/0'/2': the key must match. In its MultiSig tab, paste the wallet's descriptor (public keys only): the first addresses must match too.",
       "title": "Signing safely"
     },
     "verify_tx_guide": {

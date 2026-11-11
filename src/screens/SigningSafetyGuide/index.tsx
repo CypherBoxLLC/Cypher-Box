@@ -15,7 +15,8 @@ import loc from "../../../loc";
  *
  * The phone checklist is for one setup only: a Hot Vault on an offline phone signing for a watch-only wallet on an
  * online phone, which may be a Cypher Box Cold Vault or another app. Everyday Hot Vault users and hardware-wallet users can reach the guide too (the export screen line
- * is shown to every Cold Vault), so it opens by telling each of them whether it applies.
+ * is shown to every Cold Vault), so it opens by telling each of them whether it applies. It ends with using the
+ * Offline Seed-Signer as one key of a multisig made in Nunchuk, Sparrow or BlueWallet.
  */
 export default function SigningSafetyGuide({ route, navigation }: { route: any; navigation: any }) {
     const onContinue = route?.params?.onContinue;
@@ -68,10 +69,30 @@ export default function SigningSafetyGuide({ route, navigation }: { route: any; 
                         body={loc.cypherbox.signing_safety.official_body}
                     />
                 </Section>
+
+                {/* Offline Seed-Signer as one key of a multisig made in Nunchuk, Sparrow or BlueWallet: the steps in
+                    the order they're done, then a check with independent code */}
+                <Section title={loc.cypherbox.signing_safety.multisig_title}>
+                    <Row
+                        title={loc.cypherbox.signing_safety.multisig_coordinator_title}
+                        body={loc.cypherbox.signing_safety.multisig_coordinator_body}
+                    />
+                    <Row title={loc.cypherbox.signing_safety.multisig_add_title} body={loc.cypherbox.signing_safety.multisig_add_body} />
+                    <Row
+                        title={loc.cypherbox.signing_safety.multisig_register_title}
+                        body={loc.cypherbox.signing_safety.multisig_register_body}
+                    />
+                    <Row title={loc.cypherbox.signing_safety.multisig_test_title} body={loc.cypherbox.signing_safety.multisig_test_body} />
+                    <Row title={loc.cypherbox.signing_safety.multisig_check_title} body={loc.cypherbox.signing_safety.multisig_check_body} />
+                    <Row
+                        title={loc.cypherbox.signing_safety.multisig_crosscheck_title}
+                        body={loc.cypherbox.signing_safety.multisig_crosscheck_body}
+                    />
+                </Section>
             </ScrollView>
             {onContinue ? (
                 <View style={styles.footer}>
-                    <Button text={loc.cypherbox.signing_safety.got_it} onPress={carryOn} style={styles.button} />
+                    <Button text={loc.cypherbox.signing_safety.got_it} onPress={carryOn} style={styles.button} textStyle={styles.buttonText} />
                 </View>
             ) : null}
         </ScreenLayout>
@@ -92,6 +113,9 @@ const styles = StyleSheet.create({
         paddingBottom: 24,
     },
     button: {
-        backgroundColor: colors.blueText,
+        backgroundColor: colors.green,
+    },
+    buttonText: {
+        color: '#000',
     },
 });
