@@ -22,6 +22,7 @@ import {
 } from "@Cypher/assets/images";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import withdrawStyles from "../WithdrawList/styles";
@@ -47,6 +48,9 @@ export default function TopupList({ refRBSheet, wallet, coldStorageWallet, match
   const { vaultTab, setVaultTab, isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, walletID, coldStorageWalletID, strikeUser } = useAuthStore();
   // Region gates (services/featureFlags): a connected rail that is not
   // offered in this region is treated as unavailable on this surface.
+  // Re-render when the App Store storefront resolves after launch, so the
+  // region gates below reflect the real region.
+  useRegionGate();
   const isAuth = isCoinosConnected && isCoinosAllowed();
   const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
   const { sleep } = useContext(BlueStorageContext);

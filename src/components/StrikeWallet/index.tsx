@@ -4,6 +4,7 @@ import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } fro
 import { formatNumber, formatSats, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { colors } from "@Cypher/style-guide";
 import React, { useContext, useRef } from "react";
 import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
@@ -57,6 +58,8 @@ export default function StrikeWallet({
     // with its balance, but goes read-only: no send, no receive, and
     // tapping it no longer opens the account screen. The balance is held
     // by Strike either way; removing the card would read as lost funds.
+    // Re-render when the App Store storefront resolves after launch.
+    useRegionGate();
     const strikeAllowed = isStrikeAllowed();
 
     // Strike + Ark (no CoinOS): the Strike Lightning card sits a bit

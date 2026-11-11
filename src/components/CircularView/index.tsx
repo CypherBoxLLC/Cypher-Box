@@ -9,6 +9,7 @@ import CircleTimer from "../CircleTimer";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { SATS, formatSats, getStrikeCurrency, btc } from "@Cypher/helpers/coinosHelper";
 
 interface Props {
@@ -30,6 +31,8 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
     // Region gates (services/featureFlags): a circle whose rail is not
     // offered here keeps showing its balance but no longer opens the
     // account screen, and the swap between the two needs both rails.
+    // Re-render when the App Store storefront resolves after launch.
+    useRegionGate();
     const strikeAllowed = isStrikeAllowed();
     const coinosAllowed = isCoinosAllowed();
     const swapAllowed = strikeAllowed && coinosAllowed;

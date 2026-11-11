@@ -8,4 +8,5 @@ export {default as useArkPushTokenBackfill} from './useArkPushTokenBackfill';
 export {default as useArkoorReceivePrompt} from './useArkoorReceivePrompt';
 export {default as useEasedProgress} from './useEasedProgress';
 export {default as useKeyboardLift} from './useKeyboardLift';
+export {default as useRegionGate} from './useRegionGate';
 export {CarouselPageVisibilityContext} from './carouselPageVisibility';

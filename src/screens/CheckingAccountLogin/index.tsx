@@ -5,6 +5,7 @@ import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -76,6 +77,9 @@ export default function CheckingAccountLogin() {
   const [StrikeException, setStrikeException] = React.useState(false);
   const [pageLoading, setPageLoading] = React.useState(true);
   const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
+  // The storefront can be unavailable at mount; re-run the region check when
+  // it resolves so Strike and CoinOS stop being hidden on a false read.
+  const regionGateVersion = useRegionGate();
 
   useEffect(() => {
     // CoinOS is hidden in the EEA and the UK. Strike is shown only in the
@@ -90,7 +94,9 @@ export default function CheckingAccountLogin() {
     setCoinosException(!isCoinosAllowed());
     setStrikeException(!isStrikeAllowed());
     setPageLoading(false);
-  }, []);
+    // regionGateVersion bumps once the storefront resolves after launch, so
+    // the exception flags are recomputed instead of staying fail-closed.
+  }, [regionGateVersion]);
 
   const createCheckingAccountClickHandler = () => {
     openInAppBrowser("https://coinos.io/register");
