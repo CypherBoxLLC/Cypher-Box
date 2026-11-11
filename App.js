@@ -18,6 +18,7 @@ import { navigationRef } from './NavigationService';
 import * as NavigationService from './NavigationService';
 import { Chain } from './models/bitcoinUnits';
 import DeeplinkSchemaMatch from './class/deeplink-schema-match';
+import { assertNativeRngHealthy } from './class/rngHealth';
 import loc from './loc';
 import { BlueDefaultTheme, BlueDarkTheme } from './components/themes';
 import InitRoot from './Navigation';
@@ -66,6 +67,14 @@ const App = () => {
   const appState = useRef(AppState.currentState);
   // const colorScheme = useColorScheme();
   const colorScheme = 'dark';
+
+  // Early, loud secure-randomness check. Logs only here; the hard refusal to
+  // mint a key happens at generation time (see class/rngHealth).
+  useEffect(() => {
+    assertNativeRngHealthy().catch(e =>
+      console.error('[RNG] startup check:', e?.reason ?? e?.message ?? e),
+    );
+  }, []);
 
   const onNotificationReceived = async notification => {
     const payload = Object.assign({}, notification, notification.data);
