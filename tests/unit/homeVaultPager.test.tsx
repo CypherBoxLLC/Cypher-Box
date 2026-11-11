@@ -30,7 +30,13 @@ jest.mock('@Cypher/components', () => {
 });
 jest.mock('@Cypher/helpers', () => ({ dispatchNavigate: jest.fn() }));
 jest.mock('@Cypher/helpers/coinosHelper', () => ({ btc: (sats: number) => sats, SATS: 100000000 }));
-jest.mock('@Cypher/services/featureFlags', () => ({ isCoinosAllowed: () => true, isStrikeAllowed: () => true }));
+jest.mock('@Cypher/services/featureFlags', () => ({
+  isCoinosAllowed: () => true,
+  isStrikeAllowed: () => true,
+  // useRegionGate() subscribes through these two
+  subscribeRegionGate: () => () => {},
+  getRegionGateVersion: () => 0,
+}));
 jest.mock('@Cypher/style-guide/screenWidth', () => ({ __esModule: true, default: 400 }));
 jest.mock('react-native-linear-gradient', () => ({ __esModule: true, default: 'LinearGradient' }));
 jest.mock('react-native-simple-toast', () => ({ show: jest.fn(), SHORT: 0 }));
