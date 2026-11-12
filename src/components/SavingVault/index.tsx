@@ -34,9 +34,12 @@ interface Props extends TouchableOpacityProps {
     bitcoinValue?: string | false | undefined;
     inDollars?: any;
     isColorable?: boolean;
+    /** The "Bitcoin Network" label beside the title. Off inside a vault's own menu, where the screen already says
+     *  which vault it is and long titles such as "Watch-&-Broadcast-Only" need the row. */
+    showNetwork?: boolean;
 }
 
-export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = loc.cypherbox.components.saving_vault.savings_vault, titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
+export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = loc.cypherbox.components.saving_vault.savings_vault, titleStyle, bitcoinValue, inDollars, isColorable = false, showNetwork = true }: Props) {
     const { wallets } = useContext(BlueStorageContext);
     // Per-field selectors, NOT a whole-store destructure. The bare
     // `useAuthStore()` re-rendered this card on EVERY store change (the Ark
@@ -134,16 +137,18 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                         }
                         <Text h3 bold style={titleStyle}>{title}</Text>
                         </View>
-                        <View style={styles.row}>
-                            <Text h4 bold style={StyleSheet.flatten([styles.bitcointext, bitcoinText])}>
-                                {loc.cypherbox.components.saving_vault.bitcoin_network}
-                            </Text>
-                            <Image
-                                style={[styles.bitcoinimg, imageStyle]}
-                                resizeMode="contain"
-                                source={require("../../../img/bitcoin.png")}
-                            />
-                        </View>
+                        {showNetwork ? (
+                            <View style={styles.row}>
+                                <Text h4 bold style={StyleSheet.flatten([styles.bitcointext, bitcoinText])}>
+                                    {loc.cypherbox.components.saving_vault.bitcoin_network}
+                                </Text>
+                                <Image
+                                    style={[styles.bitcoinimg, imageStyle]}
+                                    resizeMode="contain"
+                                    source={require("../../../img/bitcoin.png")}
+                                />
+                            </View>
+                        ) : null}
                     </View>
                     {bitcoinValue &&
                         <View style={[styles.bitcoin, { marginTop: 11, marginLeft: 6 }]}>

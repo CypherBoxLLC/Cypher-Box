@@ -238,10 +238,9 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                 innerContainer={styles.savingVault}
                 shadowTopBottom={styles.savingVault}
                 shadowBottomBottom={styles.savingVault}
-                bitcoinText={styles.bitcoinText}
-                imageStyle={styles.bitcoinImage}
                 titleStyle={styles.title}
                 title={vaultTab ? loc.cypherbox.vault.storage_vault.vault.cold_savings : loc.cypherbox.vault.storage_vault.vault.hot_savings}
+                showNetwork={false}
                 bitcoinValue={balance}
                 inDollars={`$${(Number(balanceWithoutSuffix) * Number(matchedRate || 0)).toFixed(2)}`}
             />

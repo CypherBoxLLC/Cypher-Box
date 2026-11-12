@@ -6,8 +6,6 @@ interface Style {
     main: ViewStyle;
     flex: ViewStyle;
     savingVault: ViewStyle;
-    bitcoinText: TextStyle;
-    bitcoinImage: ImageStyle;
     title: TextStyle;
     innerShadowStyle: any;
     outerShadowStyle: any;
@@ -121,13 +119,6 @@ export default StyleSheet.create<Style>({
     savingVault: {
         width: widths - 40,
         height: 130,
-    },
-    bitcoinText: {
-        fontSize: 16,
-    },
-    bitcoinImage: {
-        width: 37,
-        height: 33,
     },
     title: {
         fontSize: 18,
