@@ -31,6 +31,8 @@ import HandoffComponent from './components/handoff';
 import Privacy from './blue_modules/Privacy';
 import MenuElements from './components/MenuElements';
 import PaymentNotification from './src/components/PaymentNotification';
+import CapsuleReceivedPopup from './src/components/CapsuleReceivedPopup';
+import { requestCapsuleCheck } from './src/services/capsuleReceived';
 import { updateExchangeRate } from './blue_modules/currency';
 import { isSeedSignerLocked } from './src/services/seedSignerLock';
 // Side-effect import: configures the Google Drive OAuth client at app
@@ -177,11 +179,10 @@ const App = () => {
         const walletID = wallet.getID();
         fetchAndSaveWalletTransactions(walletID);
 
-        // Show in-app banner for on-chain payments (hot/cold vault)
+        // On-chain payments into the Hot or Cold Vault show the capsule-received
+        // popup once they confirm; the push only makes the app look now.
         if (payload.sat && payload.sat > 0) {
-          const { triggerPaymentNotification } = require('./src/components/PaymentNotification');
-          const isCold = wallet.type === 'HDsegwitBech32' && walletID === require('./src/stores/authStore').default.getState().coldStorageWalletID;
-          triggerPaymentNotification(payload.sat, true, isCold ? 'cold' : 'hot', isCold ? 'Cold Storage' : 'Hot Vault');
+          requestCapsuleCheck();
         }
 
         if (wasTapped) {
@@ -271,6 +272,8 @@ const App = () => {
           {/* push set-up registers with the push servers on start-up, which a seed-signer never does */}
           {isSeedSignerLocked() ? null : <Notifications onProcessNotifications={processPushNotifications} />}
           <PaymentNotification />
+          {/* a seed-signer has no vaults to receive into */}
+          {isSeedSignerLocked() ? null : <CapsuleReceivedPopup />}
           <MenuElements />
           <DeviceQuickActions />
         </NavigationContainer>

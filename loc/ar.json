@@ -3139,6 +3139,26 @@
         "received": "تم الاستلام",
         "incoming": "وارد"
       },
+      "capsule_received": {
+        "title": "تم استلام كبسولة",
+        "in_hot_vault": "في خزنتك الساخنة",
+        "in_cold_vault": "في خزنتك الباردة",
+        "count": "{index} من {count}",
+        "label_placeholder": "اكتب وسمًا أو اختر واحدًا أدناه",
+        "label_separator": "، ",
+        "presets": {
+          "kyc": "KYC",
+          "kyc_free": "دون هوية",
+          "p2p": "P2P",
+          "exchange": "منصة تداول",
+          "income": "دخل",
+          "gift": "هدية"
+        },
+        "save": "حفظ الوسم",
+        "ignore": "تجاهل",
+        "ignore_all": "تجاهل الكل",
+        "save_failed": "تعذّر حفظ الوسم. حاول مرة أخرى."
+      },
       "private_key_generator": {
         "tap_to_reveal": "انقر لإظهار عبارة الاسترداد الخاصة بك",
         "no_one_watching": "تأكد من أن لا أحد يراقب شاشتك.",

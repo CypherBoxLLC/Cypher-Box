@@ -3141,6 +3141,26 @@
         "received": "Received",
         "incoming": "Incoming"
       },
+      "capsule_received": {
+        "title": "Capsule received",
+        "in_hot_vault": "In your Hot Vault",
+        "in_cold_vault": "In your Cold Vault",
+        "count": "{index} of {count}",
+        "label_placeholder": "Write a label or pick one below",
+        "label_separator": ", ",
+        "presets": {
+          "kyc": "KYC",
+          "kyc_free": "KYC-free",
+          "p2p": "P2P",
+          "exchange": "Exchange",
+          "income": "Income",
+          "gift": "Gift"
+        },
+        "save": "Save label",
+        "ignore": "Ignore",
+        "ignore_all": "Ignore all",
+        "save_failed": "Could not save the label. Try again."
+      },
       "private_key_generator": {
         "tap_to_reveal": "Tap to reveal your seed phrase",
         "no_one_watching": "Make sure no one is watching your screen.",
