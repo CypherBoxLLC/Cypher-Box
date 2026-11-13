@@ -3,6 +3,7 @@ import {
   markWithdrawIndeterminate,
 } from '@Cypher/services/coinos/withdrawGuard';
 import useAuthStore from '@Cypher/stores/authStore';
+import { expireCoinosSession } from '../services/sessionExpiry';
 import SimpleToast from "react-native-simple-toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -543,8 +544,7 @@ export const getMe = async () => {
     }));
 if (__DEV__) console.log('response: ', response?.status)
     if(response?.status === 401){
-      SimpleToast.show(loc.cypherbox.services.coinos_api.authorization_expired, SimpleToast.SHORT)
-      useAuthStore.getState().clearAuth();
+      expireCoinosSession();
       return null;
     }
     const result = await response.json()
