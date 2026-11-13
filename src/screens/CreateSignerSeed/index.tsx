@@ -35,6 +35,7 @@ import {
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import { randomBytes } from "../../../class/rng";
+import { assertMnemonicHealthy } from "../../../class/seedHealth";
 import useProtectSecret from "../../custom-hooks/useProtectSecret";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import useSeedQRCheck from "../../custom-hooks/useSeedQRCheck";
@@ -203,6 +204,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                 // each runs an elliptic-curve self-test, seconds in all on a slow phone
                 phrase = bip39.entropyToMnemonic((await randomBytes(16)).toString('hex'));
             }
+            assertMnemonicHealthy(phrase);
             setMnemonic(phrase);
             setRevealed(false);
             setTab('words');
