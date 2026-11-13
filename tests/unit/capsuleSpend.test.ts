@@ -17,7 +17,9 @@ import {
     describeBuiltSpend,
     estimatedVbytes,
     inputScriptHint,
+    normalizeDestination,
     planCapsuleSpend,
+    scannedVaultSend,
     typedAmountSats,
 } from '../../src/helpers/capsuleSpend';
 import { outpointKey, selectCapsules, selectedTotalSats, withoutFrozen } from '../../src/helpers/capsuleSelection';
@@ -111,7 +113,8 @@ describe('Consolidate and the moves: every selected capsule, one output', () => 
 
     it('charges size x rate, with segwit inputs at 68 vB', () => {
         const { plan } = planCapsuleSpend({ mode: 'max', utxos, destination: DESTINATION, feeRate: RATE, firstAddress });
-        expect(plan!.vbytes).toBe(10 + 79 * 68 + 34);
+        // 1 vB for the segwit marker and flag
+        expect(plan!.vbytes).toBe(10 + 1 + 79 * 68 + 34);
         expect(Math.abs(plan!.feeSats - plan!.vbytes * RATE)).toBeLessThanOrEqual(1);
     });
 
@@ -234,7 +237,7 @@ describe('a wrapped segwit (ypub) Cold Vault', () => {
             address: cold._getExternalAddressByIndex(i % 5),
         }));
         const { plan } = planCapsuleSpend({ mode: 'max', utxos, destination: DESTINATION, feeRate: RATE, firstAddress });
-        expect(plan!.vbytes).toBe(10 + 10 * 91 + 34);
+        expect(plan!.vbytes).toBe(10 + 1 + 10 * 91 + 34);
         const { psbt, fee } = cold.createTransaction(utxos, plan!.targets, RATE, cold._getInternalAddressByIndex(0), HDSegwitBech32Wallet.defaultRBFSequence);
         expect(psbt.txInputs).toHaveLength(10);
         expect(fee).toBe(plan!.feeSats);
@@ -430,5 +433,133 @@ describe('typedAmountSats', () => {
         expect(typedAmountSats('', '', 95_000)).toBeNull();
         expect(typedAmountSats('0', '0', 95_000)).toBeNull();
         expect(typedAmountSats('abc', '10', 0)).toBeNull();
+    });
+});
+
+describe('low fee rates: no dust change, and the rate is paid', () => {
+    const w = hotVault();
+    const firstAddress = w._getExternalAddressByIndex(0);
+    const change = w._getInternalAddressByIndex(12);
+    const LEGACY = '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2';
+    const TAPROOT = 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr';
+
+    it('pays a few hundred sats left over at 1 sat/vB to the fee instead of a change output nodes refuse', () => {
+        // 100,000 to 99,700 at 1 sat/vB left 153 sats of change, under the 294-sat dust limit of a bc1 output
+        const one = capsulesFor(w, [100_000]);
+        for (const mode of ['exact', 'pool'] as const) {
+            const { plan } = planCapsuleSpend({ mode, utxos: one, destination: DESTINATION, amountSats: 99_700, feeRate: 1, firstAddress });
+            expect(plan!.changeSats).toBe(0);
+            expect(plan!.feeSats).toBe(300);
+            const built = w.createTransaction(one, plan!.targets, 1, change);
+            expect(built.tx.outs.map((o: any) => o.value)).toEqual([99_700]);
+            expect(built.fee).toBe(300);
+        }
+    });
+
+    it('builds what the review quotes, change of at least 546 sats, and at least the rate, for every kind of destination', () => {
+        const sizes = [50_000, 20_000, 3_000, 900, 600];
+        const utxos = capsulesFor(w, sizes);
+        const total = sizes.reduce((a, b) => a + b, 0);
+        // the size coinselect counts with a change output: 10 + 1 marker, 5 inputs, the destination, the change
+        const withChange = (destinationVb: number) => 10 + 1 + 5 * 68 + destinationVb + 34;
+        for (const rate of [1, 2, 3]) {
+            for (const [destination, destinationVb] of [[DESTINATION, 34], [TAPROOT, 46], [LEGACY, 34]] as const) {
+                const asks = [
+                    { mode: 'max' as const },
+                    { mode: 'exact' as const, amountSats: 30_000 },
+                    { mode: 'pool' as const, amountSats: 30_000 },
+                    // leaves 300 sats over: change coinselect would keep at 1 and 2 sat/vB, and nodes refuse
+                    { mode: 'exact' as const, amountSats: total - rate * withChange(destinationVb) - 300 },
+                ];
+                for (const ask of asks) {
+                    const { plan } = planCapsuleSpend({ ...ask, utxos, destination, feeRate: rate, firstAddress });
+                    const built = w.createTransaction(utxos.map(u => ({ ...u })), plan!.targets, rate, change);
+                    expect(built.fee).toBe(plan!.feeSats);
+                    expect(describeBuiltSpend(built, destination).changeSats).toBe(plan!.changeSats);
+                    expect(built.fee).toBeGreaterThanOrEqual(rate * built.tx.virtualSize());
+                    for (const out of built.outputs) if (out.address === change) expect(out.value).toBeGreaterThanOrEqual(546);
+                }
+            }
+        }
+    });
+});
+
+describe('a destination written in capitals', () => {
+    const cold = coldVault();
+    const utxos = capsulesFor(cold, [400_000, 300_000]);
+    const firstAddress = cold._getExternalAddressByIndex(0);
+    const change = cold._getInternalAddressByIndex(12);
+    const UPPER = DESTINATION.toUpperCase();
+
+    it('is the payment on the signing screen, not change', () => {
+        // the screen compared the address text with the lower case read back from the PSBT
+        expect(cold.isAddressValid(UPPER)).toBe(true);
+        for (const ask of [{ mode: 'max' as const }, { mode: 'exact' as const, amountSats: 250_000 }]) {
+            const { plan } = planCapsuleSpend({ ...ask, utxos, destination: UPPER, feeRate: 5, firstAddress });
+            const { psbt } = cold.createTransaction(utxos, plan!.targets, 5, change, HDSegwitBech32Wallet.defaultRBFSequence);
+            const shown = { amountSats: plan!.amountSats, changeSats: plan!.changeSats, fee: plan!.feeSats, inputs: 2 };
+            expect(summarizePsbt(psbt, UPPER)).toEqual(shown);
+            expect(summarizePsbt(psbt, DESTINATION)).toEqual(shown);
+            // nothing is paid to what isn't an address
+            expect(summarizePsbt(psbt, 'not an address').amountSats).toBe(0);
+        }
+    });
+
+    it('is sized as the same address, a taproot one included', () => {
+        const TAPROOT = 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr';
+        const lower = planCapsuleSpend({ mode: 'max', utxos, destination: TAPROOT, feeRate: 5, firstAddress }).plan!;
+        const upper = planCapsuleSpend({ mode: 'max', utxos, destination: TAPROOT.toUpperCase(), feeRate: 5, firstAddress }).plan!;
+        // a 43 vB output, sized 46 like every bc1 output (coinselect's default would be 34)
+        expect(upper.vbytes).toBe(10 + 1 + 2 * 68 + 46);
+        expect(upper).toEqual({ ...lower, targets: [{ address: TAPROOT.toUpperCase() }] });
+    });
+
+    it('is kept in lower case by the screens; base58 addresses keep their case', () => {
+        expect(normalizeDestination(UPPER)).toBe(DESTINATION);
+        expect(normalizeDestination(`  ${DESTINATION}\n`)).toBe(DESTINATION);
+        expect(normalizeDestination('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')).toBe('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2');
+        expect(normalizeDestination('3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy')).toBe('3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy');
+        // mixed case is not a valid bech32 address, and is not made into one
+        const mixed = 'BC1Q' + DESTINATION.slice(4);
+        expect(normalizeDestination(mixed)).toBe(mixed);
+        expect(normalizeDestination(undefined)).toBe('');
+    });
+});
+
+describe('scannedVaultSend (the Home scan, for EditAmount)', () => {
+    const SPENDABLE = 1_500_000;
+    const UPPER_DESTINATION = DESTINATION.toUpperCase();
+
+    it('gives the vault total as the maximum, in BTC as a number like every other caller', () => {
+        const send = scannedVaultSend({ address: DESTINATION, amount: '' }, SPENDABLE, 95_000);
+        expect(send).toEqual({ to: DESTINATION, maxUSD: 0.015, isEdit: false, total: '', inUSD: '' });
+        // what EditAmount does with it: an amount under the maximum leaves Next on
+        expect(Number('0.01') > Number(send.maxUSD)).toBe(false);
+        expect(Number('0.02') > Number(send.maxUSD)).toBe(true);
+    });
+
+    it('fills in the amount a bitcoin: link asks for, in BTC digits rounded to the sat', () => {
+        expect(scannedVaultSend({ address: UPPER_DESTINATION, amount: 0.001 }, SPENDABLE, 95_000)).toEqual({
+            to: DESTINATION,
+            maxUSD: 0.015,
+            isEdit: true,
+            total: '0.001',
+            inUSD: '95.00',
+        });
+        expect(scannedVaultSend({ address: DESTINATION, amount: 6e-7 }, SPENDABLE, 95_000).total).toBe('0.0000006');
+        expect(scannedVaultSend({ address: DESTINATION, amount: 0.123456789 }, SPENDABLE, 0).total).toBe('0.12345679');
+        expect(scannedVaultSend({ address: DESTINATION, amount: 0.001 }, SPENDABLE, 0).inUSD).toBe('0.00');
+    });
+
+    it('asks for no amount when the link has none, or zero', () => {
+        expect(scannedVaultSend({ address: DESTINATION, amount: 0 }, SPENDABLE, 95_000).isEdit).toBe(false);
+        expect(scannedVaultSend(null, SPENDABLE, 95_000)).toEqual({ to: '', maxUSD: 0.015, isEdit: false, total: '', inUSD: '' });
+    });
+
+    it('keeps the address of a link it could not decode, and leaves the amount to the user', () => {
+        // decodeBitcoinUri returns the whole text when the amount is not a number
+        const send = scannedVaultSend({ address: `BITCOIN://${UPPER_DESTINATION}?amount=abc`, amount: '' }, SPENDABLE, 95_000);
+        expect(send.to).toBe(DESTINATION);
+        expect(send.isEdit).toBe(false);
     });
 });

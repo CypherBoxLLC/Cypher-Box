@@ -10,8 +10,8 @@ import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
 import { colors, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate, formatSats, formatUsd, groupThousands } from "@Cypher/helpers";
 import { selectCapsules, withoutFrozen } from "@Cypher/helpers/capsuleSelection";
-import { CapsuleSpendError, capsulesBeyondNeed, describeBuiltSpend, planCapsuleSpend, SpendMode, typedAmountSats } from "@Cypher/helpers/capsuleSpend";
-import { reviewLabels, vaultSendKind } from "@Cypher/helpers/vaultSendKind";
+import { CapsuleSpendError, capsulesBeyondNeed, describeBuiltSpend, normalizeDestination, planCapsuleSpend, SpendMode, typedAmountSats } from "@Cypher/helpers/capsuleSpend";
+import { offersChangeSweep, reviewLabels, vaultSendKind } from "@Cypher/helpers/vaultSendKind";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import Clipboard from '@react-native-clipboard/clipboard'
 import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
@@ -845,7 +845,8 @@ export default function ColdStorage({ route, navigation }: Props) {
     const pasteClickHandler = async () => {
         const text = await Clipboard.getString();
         console.log("🚀 ~ pasteClickHandler ~ text:", text)
-        setDestinationAddress(text);
+        // a bech32 address in capitals is kept in lower case (normalizeDestination)
+        setDestinationAddress(normalizeDestination(text));
     }
 
     const processAddressData = data => {
@@ -860,7 +861,8 @@ export default function ColdStorage({ route, navigation }: Props) {
         const dataWithoutSchema = data.replace('bitcoin:', '').replace('BITCOIN:', '');
         if (wallet.isAddressValid(dataWithoutSchema)) {
             console.log('dataWithoutSchema: ', dataWithoutSchema)
-            setDestinationAddress(dataWithoutSchema)
+            // a QR code often carries a bech32 address in capitals: kept in lower case
+            setDestinationAddress(normalizeDestination(dataWithoutSchema))
             //   setIsLoading(false);
             return;
         }
@@ -882,7 +884,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     
         console.log('options', options);
         if (btcAddressRx.test(address) || address.startsWith('bc1') || address.startsWith('BC1')) {
-            setDestinationAddress(address);
+            setDestinationAddress(normalizeDestination(address));
             console.log('addresss: ', address)
             setTransactionMemo(options.label || options.message);
             setAmountUnit(BitcoinUnit.BTC);
@@ -1069,10 +1071,11 @@ export default function ColdStorage({ route, navigation }: Props) {
                           </TouchableOpacity>
                       </View>                    
                     }
-                    {capsuleTotal > 0 && !isBatch &&
+                    {capsuleTotal > 0 &&
                         (() => {
                             // changeSats is the planned change output: none for Max, and none when
-                            // what is left is too small for one
+                            // what is left is too small for one. A Consolidate edited to a smaller
+                            // capsule has one too, so this shows for every flow.
                             const hotVaultWallet = walletID ? wallets.find(w => w.getID() === walletID) : null;
                             const isSourceHotVault = wallet?.getID() === walletID;
                             const showHotVault = !!hotVaultWallet && !isSourceHotVault;
@@ -1103,7 +1106,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                 </View>
                                             </View>
                                         </View>
-                                        {(isStrikeAuth || isAuth || showHotVault) && (
+                                        {offersChangeSweep(sendKind) && (isStrikeAuth || isAuth || showHotVault) && (
                                             <View style={{marginTop: 10}}>
                                                 <View style={{flexDirection: 'row', alignItems: 'center'}}>
                                                     <Text style={{fontSize: 13, color: '#AAAAAA', marginRight: 8}}>{loc.cypherbox.vault.cold_storage.sweep_change_to}</Text>

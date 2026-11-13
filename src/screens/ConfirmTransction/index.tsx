@@ -6,7 +6,7 @@ import { Icon } from 'react-native-elements';
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SavingVault, SwipeButton, VaultCapsules } from "@Cypher/components";
-import { colors, rtl } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate, formatSats, formatUsd } from "@Cypher/helpers";
 import { confirmLabels, vaultSendKind } from "@Cypher/helpers/vaultSendKind";
 import { shortenAddress } from "../ColdStorage";
@@ -211,7 +211,8 @@ export default function ConfirmTransction({ route }: Props) {
                                 </View>
                             ))}
                             {moreCapsules > 0 &&
-                                <Text style={[styles.moreCapsules, rtl.ltrText]}>{'+' + moreCapsules}</Text>
+                                // ltr(): with no Latin letter in it, Android lays "+N" out right to left, as "N+"
+                                <Text style={[styles.moreCapsules, rtl.ltrText]}>{ltr('+' + moreCapsules)}</Text>
                             }
                         </View>
                     ) : !isBatch && (
@@ -237,7 +238,8 @@ export default function ConfirmTransction({ route }: Props) {
                             <Text>Edit amount</Text>
                         </TouchableOpacity> */}
                     </View>
-                    {!isBatch && changeSats > 0 &&
+                    {/* a Consolidate edited to a smaller capsule has change too */}
+                    {changeSats > 0 &&
                         <View style={[styles.priceView, {marginTop: 5}]}>
                             <View>
                                 <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.change}</Text>
