@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, RefreshControl, SectionList, View } from "react-native";
 import dayjs from "dayjs";
 
@@ -12,6 +12,23 @@ import screenHeight from "@Cypher/style-guide/screenHeight";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { detectCpfpRelations } from "./cpfpDetection";
 import loc from "../../../loc";
+
+// One transaction fetch per wallet at a time, kept outside the screen: pulling to refresh while one runs, or opening
+// History again, waits for that fetch instead of starting another next to it. A fetch resolves with whether anything
+// changed.
+const fetchesInFlight = new WeakMap<object, Promise<boolean>>();
+
+function shareFetch(wallet: object, start: () => Promise<boolean>): Promise<boolean> {
+    const running = fetchesInFlight.get(wallet);
+    if (running) return running;
+    const started = start();
+    fetchesInFlight.set(wallet, started);
+    const done = () => {
+        if (fetchesInFlight.get(wallet) === started) fetchesInFlight.delete(wallet);
+    };
+    started.then(done, done);
+    return started;
+}
 
 export default function History({ wallet, matchedRate, vaultTab }: any) {
 
@@ -69,27 +86,28 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
         refreshTransactions();
       }, [wallet]);
 
+    // the wallet and page size on screen now, for a fetch that lands later
+    const walletRef = useRef(wallet);
+    walletRef.current = wallet;
+    const limitRef = useRef(limit);
+    limitRef.current = limit;
+
     const refreshTransactions = async () => {
         if (isElectrumDisabled) return setIsLoading(false);
         if (isLoading) return;
         setIsLoading(true);
-        let noErr = true;
-        let smthChanged = false;
-        // 20s ceiling on the whole fetch pipeline. The deep slowness is
+        // 20s ceiling on waiting for the fetch pipeline. The deep slowness is
         // BlueWallet's Electrum address-discovery; we can't speed it up
         // here, but we can stop the UI from getting stuck in `isLoading`
         // forever when Electrum is unreachable. Hitting the timeout
         // surfaces a "Network slow" hint via `didTimeout` so the user
         // knows their pull-to-refresh actually ran but couldn't complete.
+        // The fetch itself goes on: a heavy wallet's first load can take
+        // longer than this, and what it brings is saved and shown when it
+        // lands.
         const FETCH_TIMEOUT_MS = 20000;
-        let timedOut = false;
-        const timeout = new Promise<void>((_, reject) =>
-          setTimeout(() => {
-            timedOut = true;
-            reject(new Error('fetch timeout'));
-          }, FETCH_TIMEOUT_MS),
-        );
-        const fetchPipeline = (async () => {
+        const fetchPipeline = shareFetch(wallet, async () => {
+          let smthChanged = false;
           // await BlueElectrum.ping();
           if (wallet.allowBIP47() && wallet.isBIP47Enabled()) {
             const pcStart = +new Date();
@@ -126,23 +144,42 @@ export default function History({ wallet, matchedRate, vaultTab }: any) {
           }
           const end = +new Date();
           console.log(wallet.getLabel(), 'fetch tx took', (end - start) / 1000, 'sec');
-        })();
+          if (smthChanged) {
+            console.log('saving to disk');
+            try {
+              await saveToDisk(); // caching
+            } catch (err) {
+              // what was fetched is still shown
+              console.log(wallet.getLabel(), 'saving fetched transactions failed', err);
+            }
+          }
+          return smthChanged;
+        });
+        // shown whenever it lands, after the cutoff below too
+        fetchPipeline.then(
+          smthChanged => {
+            if (walletRef.current !== wallet) return;
+            setDidTimeout(false);
+            if (smthChanged) setDataSource([...getTransactionsSliced(limitRef.current)]);
+          },
+          () => {},
+        );
+        let cutoffTimer: ReturnType<typeof setTimeout> | undefined;
+        const cutoff = new Promise<'cutoff'>(resolve => {
+          cutoffTimer = setTimeout(() => resolve('cutoff'), FETCH_TIMEOUT_MS);
+        });
         try {
-          await Promise.race([fetchPipeline, timeout]);
-          setDidTimeout(false);
-        } catch (err) {
-          noErr = false;
-          if (timedOut) {
+          if ((await Promise.race([fetchPipeline, cutoff])) === 'cutoff') {
             console.log(wallet.getLabel(), 'fetch tx timed out after', FETCH_TIMEOUT_MS, 'ms');
             setDidTimeout(true);
           }
-          setIsLoading(false);
-          setTimeElapsed(prev => prev + 1);
-        }
-        if (noErr && smthChanged) {
-          console.log('saving to disk');
-          await saveToDisk(); // caching
-          setDataSource([...getTransactionsSliced(limit)]);
+        } catch (err) {
+          // e.g. the connection dropped: the same hint, rather than an empty
+          // list that says the wallet has no history
+          console.log(wallet.getLabel(), 'fetch tx failed', err);
+          setDidTimeout(true);
+        } finally {
+          clearTimeout(cutoffTimer);
         }
         setIsLoading(false);
         setTimeElapsed(prev => prev + 1);
