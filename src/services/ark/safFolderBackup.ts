@@ -1,5 +1,11 @@
 import { NativeModules, Platform } from 'react-native';
 
+import { buildArkBackupFilename } from './backupInstance';
+import {
+    pickBestBackupCandidate,
+    type BackupCandidate,
+} from './backupCandidates';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DocumentPicker from 'react-native-document-picker';
 
@@ -274,8 +280,11 @@ export async function probeSafBackupFolder(): Promise<SafFolderStatus> {
  * filename. Two wallets sharing the same SAF folder write to distinct
  * files — neither overwrites the other.
  */
-export function getSafBackupFilename(fingerprint: string | null): string {
-    return fingerprint ? `ark-backup-${fingerprint}.cbark` : 'ark-backup.cbark';
+export function getSafBackupFilename(
+    fingerprint: string | null,
+    instance?: string | null,
+): string {
+    return buildArkBackupFilename(fingerprint, instance);
 }
 
 /**
@@ -289,7 +298,11 @@ export function getSafBackupFilename(fingerprint: string | null): string {
  *
  * Returns the file URI on success.
  */
-export async function writeArkBackupToSaf(blob: string, fingerprint: string): Promise<string> {
+export async function writeArkBackupToSaf(
+    blob: string,
+    fingerprint: string,
+    instance?: string | null,
+): Promise<string> {
     if (Platform.OS !== 'android') {
         throw Object.assign(new Error('SAF backup only on Android'), { code: 'NATIVE_NOT_LOADED' });
     }
@@ -301,30 +314,37 @@ export async function writeArkBackupToSaf(blob: string, fingerprint: string): Pr
     if (!saved) {
         throw Object.assign(new Error('No SAF folder configured'), { code: 'NOT_CONFIGURED' });
     }
-    const filename = getSafBackupFilename(fingerprint);
+    // Per-wallet AND per-device. A SAF folder can be a synced folder shared
+    // by two devices holding the same wallet, in which case both resolved the
+    // same filename and the later write replaced the earlier device's file.
+    const filename = getSafBackupFilename(fingerprint, instance);
     return native.writeBackupNamed(saved, filename, blob);
 }
 
 /**
- * Read the per-wallet `.cbark` file from the SAF folder by exact
- * filename (`ark-backup-{fingerprint}.cbark`). Resolves to null if the
- * folder isn't configured or no file with that name exists.
+ * Read one `.cbark` file from the SAF folder by exact filename. Resolves
+ * to null if the folder isn't configured or no file with that name exists.
  *
- * Used by the verify-roundtrip step in `writeAndVerifyArkBackup` —
- * after a write of fingerprint X, we know the file's name is exactly
- * `ark-backup-X.cbark`, so the fast path-by-name read is correct here.
+ * Used by the verify-roundtrip step in `writeAndVerifyArkBackup`, which
+ * passes the instance it just wrote under, so the read finds
+ * `ark-backup-{fingerprint}-{instance}.cbark`. Without the instance this
+ * resolves the fingerprint-only name, which is not the file that was
+ * written.
  *
  * Recovery flow uses `findSafBackupByFingerprint` instead — it scans
  * the folder so a file the user manually renamed is still found by
  * its header.
  */
-export async function readSafBackupByFingerprint(fingerprint: string): Promise<string | null> {
+export async function readSafBackupByFingerprint(
+    fingerprint: string,
+    instance: string | null = null,
+): Promise<string | null> {
     if (Platform.OS !== 'android') return null;
     const native = loadNative();
     if (!native) return null;
     const saved = await getSavedSafBackupFolder();
     if (!saved) return null;
-    const filename = getSafBackupFilename(fingerprint);
+    const filename = getSafBackupFilename(fingerprint, instance);
     return native.readBackupNamed(saved, filename);
 }
 
@@ -373,21 +393,27 @@ export async function listSafBackupFilenames(): Promise<string[]> {
 }
 
 /**
- * Delete the per-wallet `.cbark` file (`ark-backup-{fingerprint}.cbark`)
- * from the configured SAF folder. Wallet-scoped: only this wallet's
- * file is removed; other wallets' files in the same folder survive.
- * Idempotent (no-op if no folder is configured or the file doesn't
- * exist). Best-effort errors logged in __DEV__ but don't propagate —
- * the caller (`resetArkWalletState` cleanup or auto-migration) treats
- * SAF cleanup as opportunistic.
+ * Delete THIS device's file for a wallet
+ * (`ark-backup-{fingerprint}-{instance}.cbark`) from the configured SAF
+ * folder. Other wallets' files, other devices' files for the same wallet
+ * (a synced folder can hold both), and fingerprint-only files from before
+ * per-device names all survive. Idempotent (no-op if no folder is
+ * configured or the file doesn't exist). Best-effort errors logged in
+ * __DEV__ but don't propagate — the caller (`resetArkWalletState`
+ * cleanup) treats SAF cleanup as opportunistic.
  */
-export async function deleteSafBackupByFingerprint(fingerprint: string): Promise<void> {
+export async function deleteSafBackupByFingerprint(
+    fingerprint: string,
+    instance: string | null,
+): Promise<void> {
     if (Platform.OS !== 'android') return;
+    // No instance, no file this device can show it wrote.
+    if (!instance) return;
     const native = loadNative();
     if (!native) return;
     const saved = await getSavedSafBackupFolder();
     if (!saved) return;
-    const filename = getSafBackupFilename(fingerprint);
+    const filename = getSafBackupFilename(fingerprint, instance);
     try {
         await native.deleteBackupNamed(saved, filename);
     } catch (err) {
@@ -449,6 +475,12 @@ export async function findSafBackupByFingerprint(fingerprint: string): Promise<s
         return null;
     }
 
+    // Collect every match and rank, as the local, iCloud and Drive scans do.
+    // A synced folder shared by two devices holding one wallet has one
+    // `ark-backup-<fp>-<instance>.cbark` per device, plus possibly the
+    // fingerprint-only file from before per-device names, and listing order
+    // is not a preference. See ./backupCandidates.
+    const candidates: BackupCandidate<string>[] = [];
     for (const name of names) {
         let blob: string | null;
         try {
@@ -464,8 +496,15 @@ export async function findSafBackupByFingerprint(fingerprint: string): Promise<s
             continue;
         }
         if (header.fingerprint && header.fingerprint === fingerprint) {
-            return blob;
+            candidates.push({ name, header, payload: blob });
         }
+    }
+    const best = pickBestBackupCandidate(candidates);
+    if (best) {
+        if (__DEV__ && candidates.length > 1) {
+            console.log(`[Ark/SAF] ${candidates.length} backups match this seed; using`, best.name);
+        }
+        return best.payload;
     }
     return null;
 }
@@ -479,13 +518,17 @@ export async function findSafBackupByFingerprint(fingerprint: string): Promise<s
  * Caller is responsible for the decrypt/sanity-check step on the
  * returned blob — that needs the mnemonic which lives one level up.
  */
-export async function writeAndReadbackSafBackup(blob: string, fingerprint: string): Promise<{
+export async function writeAndReadbackSafBackup(
+    blob: string,
+    fingerprint: string,
+    instance?: string | null,
+): Promise<{
     written: { ok: true; uri: string } | { ok: false; classification: SafErrorClass; error: string };
     readback: string | null;
 }> {
     let writtenUri: string;
     try {
-        writtenUri = await writeArkBackupToSaf(blob, fingerprint);
+        writtenUri = await writeArkBackupToSaf(blob, fingerprint, instance);
     } catch (err: any) {
         return {
             written: {
@@ -499,11 +542,11 @@ export async function writeAndReadbackSafBackup(blob: string, fingerprint: strin
 
     let readback: string | null = null;
     try {
-        // Fast path: read by exact per-wallet name we just wrote. The
+        // Read back by the exact name just written, instance included. The
         // recovery flow uses `findSafBackupByFingerprint` (scan + header
         // match) instead — but here we already know the filename, so
         // the scan would just be wasted work.
-        readback = await readSafBackupByFingerprint(fingerprint);
+        readback = await readSafBackupByFingerprint(fingerprint, instance ?? null);
     } catch {
         // Read-back failure handled by the caller (it'll see readback=null
         // alongside written.ok=true and classify as verify-failed).

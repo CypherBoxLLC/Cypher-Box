@@ -65,6 +65,7 @@ import {
   isActiveExit,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
+  loadArkBackupInstanceId,
   probeAspReachable,
   readArkSeedPhrase,
   resetArkWalletState,
@@ -621,7 +622,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       // something, and the polling loop below keeps trying until the
       // first auto-backup tick fires (~30s after wallet open).
       const fp = getCachedArkBackupFingerprint();
-      const localPath = fp ? getAutoBackupPath(fp) : AUTO_BACKUP_PATH;
+      // This device writes `ark-backup-{fp}-{instance}.cbark`. The
+      // fingerprint-only name is a file from before per-device names that
+      // nothing writes any more, so probing it would show a date that
+      // never moves on every upgraded device.
+      const instance = fp ? await loadArkBackupInstanceId() : null;
+      if (cancelled) return { cacheWarm: !!fp };
+      const localPath = fp ? getAutoBackupPath(fp, instance) : AUTO_BACKUP_PATH;
 
       // Local — RNFS.stat throws if the file doesn't exist; treat as
       // "no backup yet" rather than an error.
@@ -670,7 +677,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             setICloudBackup(undefined);
           } else {
             const iCloudPath = fp
-              ? await getICloudBackupPathForFingerprint(fp)
+              ? await getICloudBackupPathForFingerprint(fp, instance)
               : await getICloudBackupPath();
             if (cancelled) return { cacheWarm: !!fp };
             if (!iCloudPath) {
@@ -729,7 +736,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         if (cancelled) return { cacheWarm: !!fp };
         setDriveConnected(connected);
         if (connected) {
-          const info = await getDriveBackupInfo(fp);
+          const info = await getDriveBackupInfo(fp, instance);
           if (cancelled) return { cacheWarm: !!fp };
           setDriveBackup(info ?? undefined);
         } else {

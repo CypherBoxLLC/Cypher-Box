@@ -1,5 +1,11 @@
 import { Platform } from 'react-native';
 
+import { buildArkBackupFilename } from './backupInstance';
+import {
+    pickBestBackupCandidate,
+    type BackupCandidate,
+} from './backupCandidates';
+
 import { peekBackupHeader } from './backup';
 
 /**
@@ -76,8 +82,11 @@ const LEGACY_V0_DRIVE_FILE_NAME = 'cypher-box-ark-backup.cbark';
  * filename — used only by the back-compat lookup path that finds
  * pre-multi-wallet backups still living under the old shared name.
  */
-function getDriveBackupName(fingerprint: string | null): string {
-    return fingerprint ? `ark-backup-${fingerprint}.cbark` : LEGACY_V1_DRIVE_FILE_NAME;
+function getDriveBackupName(
+    fingerprint: string | null,
+    instance?: string | null,
+): string {
+    return buildArkBackupFilename(fingerprint, instance);
 }
 
 /** OAuth scopes — minimal: app-scoped Drive folder only. */
@@ -418,11 +427,16 @@ async function downloadDriveFileById(id: string): Promise<string> {
  *
  * @param fingerprint - active wallet fingerprint, or null to look up
  *   the legacy single-file entry (back-compat).
+ * @param instance - this device's backup instance id. Pass it: this
+ *   device uploads `ark-backup-{fingerprint}-{instance}.cbark`, and the
+ *   fingerprint-only name is a file from before per-device names that
+ *   nothing writes any more, so its date would never move.
  */
 export async function getDriveBackupInfo(
     fingerprint: string | null = null,
+    instance: string | null = null,
 ): Promise<{ modifiedAt: number; sizeBytes: number } | null> {
-    const meta = await findDriveBackupMetaByName(getDriveBackupName(fingerprint));
+    const meta = await findDriveBackupMetaByName(getDriveBackupName(fingerprint, instance));
     if (!meta) return null;
     const modifiedAt = meta.modifiedTime ? Date.parse(meta.modifiedTime) : NaN;
     const sizeBytes = meta.size ? Number(meta.size) : NaN;
@@ -455,13 +469,23 @@ export async function getDriveBackupInfo(
 export async function uploadArkBackupToDrive(
     blob: string,
     fingerprint: string,
+    instance?: string | null,
 ): Promise<string> {
     const token = await getAccessToken();
-    const filename = getDriveBackupName(fingerprint);
-    // Look up by exact per-wallet name so wallet B's upload never PATCHes
-    // wallet A's existing entry. The check is lookup-by-exact-name only —
-    // legacy `ark-backup.cbark` files belonging to other wallets stay
-    // untouched until their owning seed migrates them.
+    const filename = getDriveBackupName(fingerprint, instance);
+    // Look up by exact per-wallet, per-device name so this upload can only
+    // ever PATCH a file this device wrote.
+    //
+    // The per-wallet half stops wallet B PATCHing wallet A. The per-device
+    // half is what was missing: two Android phones holding the SAME wallet
+    // derive the same fingerprint, resolved the same filename, found each
+    // other's file here, and PATCHed it. On a shared Google account that made
+    // the second phone's upload silently replace the first phone's backup on
+    // every sync tick. With the instance in the name the lookup cannot find
+    // another device's file, so the upload falls through to a POST and the
+    // two coexist.
+    //
+    // Legacy `ark-backup.cbark` entries are still never touched.
     const existingId = await findDriveBackupIdByName(filename);
 
     // Drive multipart upload boundary. The body is:
@@ -516,17 +540,22 @@ export async function uploadArkBackupToDrive(
 }
 
 /**
- * Fast-path read by exact per-wallet name. Used by the verify-after-
- * upload step in `writeAndVerifyArkBackup` — we just uploaded as
- * `ark-backup-{fingerprint}.cbark`, so reading back by that exact
- * name avoids a full appDataFolder scan.
+ * Read one file back by its exact name. Used by the verify-after-upload
+ * step in `writeAndVerifyArkBackup`, which passes the instance it just
+ * uploaded under, so the read finds `ark-backup-{fingerprint}-{instance}.cbark`.
  *
- * Returns null when no entry exists for this fingerprint.
+ * Without the instance this resolves the fingerprint-only name, which is
+ * not the file that was uploaded: on a new wallet nothing has that name
+ * and the verify fails, and on an upgraded device it is the file from
+ * before the upgrade, so the verify checks a file the upload never touched.
+ *
+ * Returns null when no entry has that name.
  */
 export async function downloadDriveBackupByFingerprint(
     fingerprint: string,
+    instance: string | null = null,
 ): Promise<string | null> {
-    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint));
+    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint, instance));
     if (!id) return null;
     return downloadDriveFileById(id);
 }
@@ -559,6 +588,13 @@ export async function findDriveBackupByFingerprint(
         throw err;
     }
 
+    // Collect every match and rank, rather than returning the first one the
+    // listing happened to yield. Two Android devices on one Google account
+    // each upload their own `ark-backup-<fp>-<instance>.cbark`, so more than
+    // one entry can legitimately match a seed. Listing order is Drive's, not
+    // a preference. See ./backupCandidates, which also documents why size and
+    // recency are not evidence of a more complete backup.
+    const candidates: BackupCandidate<string>[] = [];
     for (const f of files) {
         let blob: string;
         try {
@@ -573,8 +609,18 @@ export async function findDriveBackupByFingerprint(
             continue;
         }
         if (header.fingerprint && header.fingerprint === fingerprint) {
-            return blob;
+            candidates.push({ name: f.name, header, payload: blob });
         }
+    }
+    const best = pickBestBackupCandidate(candidates);
+    if (best) {
+        if (__DEV__ && candidates.length > 1) {
+            console.log(
+                `[Ark/Drive] ${candidates.length} backups match this seed; using`,
+                best.name,
+            );
+        }
+        return best.payload;
     }
     return null;
 }
@@ -599,15 +645,22 @@ async function deleteDriveFileById(id: string): Promise<void> {
 }
 
 /**
- * Delete the per-wallet entry (`ark-backup-{fingerprint}.cbark`) from
- * the Drive appDataFolder. Wallet-scoped: only this wallet's entry is
- * removed; other wallets' entries survive. Idempotent — resolves
- * cleanly when no entry exists for this fingerprint.
+ * Delete THIS device's entry for a wallet
+ * (`ark-backup-{fingerprint}-{instance}.cbark`) from the Drive
+ * appDataFolder. Other wallets' entries, other devices' entries for the
+ * same wallet, and fingerprint-only files from before per-device names
+ * all survive: a fingerprint says which seed a file holds, never which
+ * device wrote it. Idempotent — resolves cleanly when no entry exists.
  *
  * iOS callers: short-circuits with no-op (Drive is Android-only).
  */
-export async function deleteDriveBackupByFingerprint(fingerprint: string): Promise<void> {
+export async function deleteDriveBackupByFingerprint(
+    fingerprint: string,
+    instance: string | null,
+): Promise<void> {
     if (Platform.OS !== 'android') return;
+    // No instance, no file this device can show it wrote.
+    if (!instance) return;
     let connected = false;
     try {
         connected = await isGoogleDriveConnected();
@@ -615,7 +668,7 @@ export async function deleteDriveBackupByFingerprint(fingerprint: string): Promi
         // Sign-in lib hiccup — nothing to delete if we can't reach Drive.
     }
     if (!connected) return;
-    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint));
+    const id = await findDriveBackupIdByName(getDriveBackupName(fingerprint, instance));
     if (!id) return;
     await deleteDriveFileById(id);
 }

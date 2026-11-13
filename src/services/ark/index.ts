@@ -99,6 +99,7 @@ export {
     clearArkKeyCache,
 } from './backup';
 export { deriveBackupFingerprint, normalizeMnemonic } from './backupFingerprint';
+export { loadArkBackupInstanceId } from './backupInstance';
 export type { VerifiedBackupResult, VerifiedBackupDriveOutcome } from './backup';
 
 export {
