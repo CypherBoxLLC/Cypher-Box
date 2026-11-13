@@ -136,6 +136,50 @@ function normaliseAlpha3(value: unknown): string | null {
 /** undefined = not read yet; null = read, but no storefront available. */
 let storefrontCountry: string | null | undefined;
 
+/* --- Region-gate reactivity -------------------------------------------
+ * isStrikeAllowed()/isCoinosAllowed() read the storefront synchronously at
+ * render. The storefront can be unavailable for a moment after launch, so
+ * the first read is null and refreshStorefrontCountry() fills it in shortly
+ * after. `storefrontCountry` is a plain module variable, so a component
+ * that already rendered with the null answer would keep a rail hidden until
+ * some unrelated re-render. These primitives let a component subscribe (see
+ * the useRegionGate hook) and re-render when the value actually changes.
+ * The gate functions themselves stay plain, so non-React callers are
+ * unaffected. */
+const regionGateListeners = new Set<() => void>();
+let regionGateVersion = 0;
+
+/** Subscribe to region-gate changes; returns an unsubscribe. */
+export function subscribeRegionGate(listener: () => void): () => void {
+    regionGateListeners.add(listener);
+    return () => {
+        regionGateListeners.delete(listener);
+    };
+}
+
+/** Monotonic counter bumped on every gate change, for useSyncExternalStore. */
+export function getRegionGateVersion(): number {
+    return regionGateVersion;
+}
+
+function notifyRegionGateChanged(): void {
+    regionGateVersion += 1;
+    regionGateListeners.forEach(listener => {
+        try {
+            listener();
+        } catch {
+            // One bad listener must not stop the others from updating.
+        }
+    });
+}
+
+/** Test-only: clear the cached storefront and every region-gate subscriber. */
+export function __resetRegionGateForTest(): void {
+    storefrontCountry = undefined;
+    regionGateListeners.clear();
+    regionGateVersion = 0;
+}
+
 /**
  * App Store storefront country (alpha-3) on iOS, null elsewhere or when
  * no storefront is available. The first call reads the native module's
@@ -164,7 +208,12 @@ export async function refreshStorefrontCountry(): Promise<void> {
     if (Platform.OS !== 'ios') return;
     try {
         const next = normaliseAlpha3(await NativeModules.CypherStorefront?.getCountryCode?.());
-        if (next !== null) storefrontCountry = next;
+        if (next !== null && next !== storefrontCountry) {
+            storefrontCountry = next;
+            // Wake any gated surface that already rendered with the first
+            // (null) read so it re-evaluates with the real storefront.
+            notifyRegionGateChanged();
+        }
     } catch {
         // Keep whatever we had. The gates fail closed on null.
     }

@@ -11,6 +11,7 @@ import { dispatchNavigate, formatStrikeNumber } from '@Cypher/helpers'
 import { btc, getStrikeCurrency, SATS } from '@Cypher/helpers/coinosHelper'
 import useAuthStore from '@Cypher/stores/authStore'
 import { isStrikeAllowed } from '@Cypher/services/featureFlags'
+import useRegionGate from '@Cypher/custom-hooks/useRegionGate'
 import SimpleToast from "react-native-simple-toast";
 import { useNavigation } from '@react-navigation/native'
 import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout, revokeStrikeToken } from '@Cypher/api/strikeAPIs'
@@ -36,6 +37,9 @@ function StrikeView({ showLogo = false, isShowButtons = false,
     // Validate currency is a valid ISO 4217 code, fallback to USD
     const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
     const { strikeUser, clearStrikeAuth } = useAuthStore();
+    // Re-render when the App Store storefront resolves after launch, so the
+    // region gate below is re-evaluated with the real value.
+    useRegionGate();
     // Buy and sell are exchange features: where Strike is not offered
     // (services/featureFlags) the card keeps its balances and drops them.
     const strikeAllowed = isStrikeAllowed();

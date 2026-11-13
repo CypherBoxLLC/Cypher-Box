@@ -4,6 +4,7 @@ import { calculateBalancePercentage, dispatchNavigate, openInAppBrowser } from "
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import { rtl } from "@Cypher/style-guide";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
@@ -49,6 +50,8 @@ export default function CoinosWallet({
      * Removing the card outright would read as "Cypher Box lost my
      * money" for a balance that is, and always was, held by CoinOS.
      */
+    // Re-render when the App Store storefront resolves after launch.
+    useRegionGate();
     const coinosAllowed = isCoinosAllowed();
 
     const receiveClickHandler = (type: boolean) => {

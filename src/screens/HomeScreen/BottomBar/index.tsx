@@ -7,6 +7,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -73,6 +74,9 @@ export default function BottomBar({
     // the fields we use confines re-renders to real changes to them.
     // Region gates (services/featureFlags): a connected rail that is not
     // offered in this region is treated as unavailable on this surface.
+    // Re-render when the App Store storefront resolves after launch, so the
+    // region gates below reflect the real region.
+    useRegionGate();
     const isAuth = useAuthStore(s => s.isAuth) && isCoinosAllowed();
     const isStrikeAuth = useAuthStore(s => s.isStrikeAuth) && isStrikeAllowed();
     const isArkAuth = useAuthStore(s => s.isArkAuth);

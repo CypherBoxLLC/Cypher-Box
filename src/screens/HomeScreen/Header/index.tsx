@@ -12,6 +12,7 @@ import { arabicFont } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import usePaymentLinkStore from "@Cypher/stores/paymentLinkStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 
@@ -72,6 +73,9 @@ export default React.memo(function Header({
     const { isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, walletID, coldStorageWalletID } = useAuthStore();
     // Region gates (services/featureFlags): a connected rail that is not
     // offered in this region is treated as unavailable on this surface.
+    // Re-render when the App Store storefront resolves after launch, so the
+    // region gates below reflect the real region.
+    useRegionGate();
     const isAuth = isCoinosConnected && isCoinosAllowed();
     const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
 

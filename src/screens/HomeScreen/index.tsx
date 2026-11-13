@@ -34,7 +34,7 @@ import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
-import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkPushTokenBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
+import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkPushTokenBackfill, useArkoorReceivePrompt, useRegionGate } from "@Cypher/custom-hooks";
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
@@ -201,6 +201,9 @@ export default function HomeScreen({ route }: Props) {
   // surface as expiryHeight) and shows a one-time educational popup +
   // schedules a 24h-before-expiry OS push. Opt-out via Vault tab toggle.
   useArkoorReceivePrompt();
+  // Re-render when the App Store storefront resolves after launch, so the
+  // Strike/CoinOS gates read later in render reflect the real region.
+  useRegionGate();
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [carouselPage, setCarouselPage] = useState(0);
