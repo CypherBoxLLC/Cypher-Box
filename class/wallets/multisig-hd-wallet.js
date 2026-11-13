@@ -25,6 +25,14 @@ const electrumStandart = passphrase => ({
 
 const ELECTRUM_SEED_PREFIX = 'electrumseed:';
 
+/*
+ * HD roots and xpubs of each wallet's cosigners that are words (BIP39, or Electrum when prefixed), worked out once per
+ * wallet per session: the seed is PBKDF2, seconds in JS, and building and signing a transaction redid it for every
+ * input and every cosigner. Kept outside the wallet object, so they're never serialized with the wallet and go when the
+ * wallet does, and redone if a cosigner or its passphrase change.
+ */
+const cosignerSeedRoots = new WeakMap();
+
 export class MultisigHDWallet extends AbstractHDElectrumWallet {
   static type = 'HDmultisig';
   static typeReadable = 'Multisig Vault';
@@ -237,11 +245,12 @@ export class MultisigHDWallet extends AbstractHDElectrumWallet {
     let xpub = cosigner;
     if (!MultisigHDWallet.isXpubString(cosigner)) {
       const index = this._cosigners.indexOf(cosigner);
-      xpub = MultisigHDWallet.seedToXpub(
-        cosigner,
-        this._cosignersCustomPaths[index] || this._derivationPath,
-        this._cosignersPassphrases[index],
-      );
+      const path = this._cosignersCustomPaths[index] || this._derivationPath;
+      // same xpub as MultisigHDWallet.seedToXpub(cosigner, path, passphrase), without the seed's PBKDF2 for every input
+      xpub =
+        index === -1
+          ? MultisigHDWallet.seedToXpub(cosigner, path, this._cosignersPassphrases[index])
+          : this._getCosignerSeedXpub(index, path);
     }
     return this._zpubToXpub(xpub);
   }
@@ -895,13 +904,7 @@ export class MultisigHDWallet extends AbstractHDElectrumWallet {
             // dont sign more than we need, otherwise there will be "Too many signatures" error
             continue;
           }
-          const passphrase = this._cosignersPassphrases[cosignerIndex];
-          let seed = bip39.mnemonicToSeedSync(cosigner, passphrase);
-          if (cosigner.startsWith(ELECTRUM_SEED_PREFIX)) {
-            seed = MultisigHDWallet.convertElectrumMnemonicToSeed(cosigner, passphrase);
-          }
-
-          const hdRoot = bip32.fromSeed(seed);
+          const hdRoot = this._getCosignerSeedRoot(cosignerIndex);
           psbt.signInputHD(cc, hdRoot);
           signaturesMade++;
         }
@@ -913,6 +916,56 @@ export class MultisigHDWallet extends AbstractHDElectrumWallet {
       tx = psbt.finalizeAllInputs().extractTransaction();
     }
     return { tx, inputs, outputs, fee, psbt };
+  }
+
+  /**
+   * HD root of the cosigner at `cosignerIndex` from its words (BIP39, or Electrum when prefixed), from the per-session
+   * cache. Same root as `bip32.fromSeed(bip39.mnemonicToSeedSync(cosigner, passphrase))`, or the Electrum seed.
+   *
+   * @param cosignerIndex {number} Index in `this._cosigners`
+   * @returns {BIP32Interface}
+   * @private
+   */
+  _getCosignerSeedRoot(cosignerIndex) {
+    return this._getCosignerSeedEntry(cosignerIndex).root;
+  }
+
+  /**
+   * Xpub at `path` of the cosigner at `cosignerIndex` (words), from the per-session cache. Same as
+   * `MultisigHDWallet.seedToXpub(cosigner, path, passphrase)`.
+   *
+   * @param cosignerIndex {number} Index in `this._cosigners`
+   * @param path {string} Derivation path
+   * @returns {string}
+   * @private
+   */
+  _getCosignerSeedXpub(cosignerIndex, path) {
+    const entry = this._getCosignerSeedEntry(cosignerIndex);
+    let xpub = entry.xpubs.get(path);
+    if (!xpub) {
+      xpub = entry.root.derivePath(path).neutered().toBase58();
+      entry.xpubs.set(path, xpub);
+    }
+    return xpub;
+  }
+
+  _getCosignerSeedEntry(cosignerIndex) {
+    const cosigner = this._cosigners[cosignerIndex];
+    const passphrase = this._cosignersPassphrases[cosignerIndex];
+    let entries = cosignerSeedRoots.get(this);
+    if (!entries) {
+      entries = new Map();
+      cosignerSeedRoots.set(this, entries);
+    }
+    const cached = entries.get(cosignerIndex);
+    if (cached && cached.cosigner === cosigner && cached.passphrase === passphrase) return cached;
+
+    const seed = cosigner.startsWith(ELECTRUM_SEED_PREFIX)
+      ? MultisigHDWallet.convertElectrumMnemonicToSeed(cosigner, passphrase)
+      : bip39.mnemonicToSeedSync(cosigner, passphrase);
+    const entry = { cosigner, passphrase, root: bip32.fromSeed(seed), xpubs: new Map() };
+    entries.set(cosignerIndex, entry);
+    return entry;
   }
 
   static convertElectrumMnemonicToSeed(cosigner, passphrase) {
@@ -1048,11 +1101,7 @@ export class MultisigHDWallet extends AbstractHDElectrumWallet {
           const xprv = MultisigHDWallet.convertMultisigXprvToRegularXprv(cosigner);
           hdRoot = bip32.fromBase58(xprv);
         } else {
-          const passphrase = this._cosignersPassphrases[cosignerIndex];
-          const seed = cosigner.startsWith(ELECTRUM_SEED_PREFIX)
-            ? MultisigHDWallet.convertElectrumMnemonicToSeed(cosigner, passphrase)
-            : bip39.mnemonicToSeedSync(cosigner, passphrase);
-          hdRoot = bip32.fromSeed(seed);
+          hdRoot = this._getCosignerSeedRoot(cosignerIndex);
         }
 
         try {
