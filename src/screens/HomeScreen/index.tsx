@@ -213,9 +213,17 @@ export default function HomeScreen({ route }: Props) {
   // choppy. Opacity 0→1 + a small upward drift gives an iOS-style fade-in
   // that takes the edge off the layout settle.
   //
-  // Uses native driver — opacity + transform are both supported on the
-  // native side, so the animation runs off the JS thread and stays smooth
-  // even while the snap-carousels mount their internal animated values.
+  // JS driver, not the native one. Under Fabric (RN 0.77, iOS) a natively
+  // driven opacity belongs to the animation: React's later commits no longer
+  // reach the view, yet a size change of that view still repaints it with
+  // React's last committed opacity (RCTViewComponentView invalidateLayer),
+  // which mid-fade is a stale 0. On a cold launch the Lightning/Bark carousel
+  // receives its cards just after the fade's last native frame, its wrapper
+  // grows, gets repainted at opacity 0 and stays invisible: a blank gap
+  // where the Bark Vault card should be. Transform has the same flaw on a
+  // size change (updateLayoutMetrics). With the JS driver React is the only
+  // writer of both, so a resize always repaints the current value. The
+  // trade-off: the 320ms fade can stutter while the JS thread is busy.
   const enterAnim = useRef(new Animated.Value(0)).current;
   const enterTranslate = enterAnim.interpolate({
     inputRange: [0, 1],
@@ -229,7 +237,8 @@ export default function HomeScreen({ route }: Props) {
         toValue: 1,
         duration: 320,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
+        // See the comment above enterAnim before switching this back.
+        useNativeDriver: false,
       }).start();
     }, [enterAnim])
   );
