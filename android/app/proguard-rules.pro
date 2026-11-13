@@ -48,3 +48,7 @@
 # the client ID compiled into the JS. This is the rule react-native-config
 # documents.
 -keep class io.cypherbox.btc.BuildConfig { *; }
+# react-native-device-info looks up Google's install-referrer client by name (InstallReferrerClient.newBuilder) when
+# its module starts. R8 renamed the class, so the lookup failed (caught, logged at every start). The app doesn't read
+# the install referrer, but keeping the class keeps the library working as documented.
+-keep class com.android.installreferrer.api.** { *; }
