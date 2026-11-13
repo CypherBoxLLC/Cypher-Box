@@ -453,6 +453,36 @@ export async function resetHotVaultMeta(walletID: string): Promise<boolean> {
 }
 
 /**
+ * Android: removes Hot Vault seed copies that open without the fingerprint, and returns their wallet IDs.
+ *
+ * Before backupHotVaultSeed checked the cipher (0.1.12 and earlier), a phone without a strong biometric stored the
+ * copy with KeystoreAESCBC, which the app reads back with no prompt, so anyone holding the unlocked phone could bring
+ * the seed back, even after the vault was deleted in the app. Those copies still showed as saved. The cipher is read
+ * from the entry's record without opening it (hasInternetCredentials reads the same record a generic password writes,
+ * keyed by the service), so this never prompts. A copy whose cipher can't be read is left alone. iOS has nothing to
+ * do: its Keychain items carry their access control.
+ */
+export async function dropUnprotectedHotVaultBackups(): Promise<string[]> {
+    if (Platform.OS !== 'android') return [];
+    const dropped: string[] = [];
+    for (const walletID of await listHotVaultKeychainBackups()) {
+        let storage: string | null = null;
+        try {
+            const found = await Keychain.hasInternetCredentials(serviceFor(walletID));
+            storage = found && typeof found === 'object' && typeof (found as { storage?: unknown }).storage === 'string'
+                ? (found as { storage: string }).storage
+                : null;
+        } catch {
+            storage = null;
+        }
+        if (storage === null || storage === RSA_STORAGE) continue;
+        console.warn('[HotVault] removing a Keychain copy not bound to a fingerprint (storage=', storage, ')');
+        if (await resetHotVaultBackupFully(walletID)) dropped.push(walletID);
+    }
+    return dropped;
+}
+
+/**
  * Remove BOTH the mnemonic and its meta sidecar for a wallet.
  *
  * This is the "delete this backup" user action. Returns `true` only if both

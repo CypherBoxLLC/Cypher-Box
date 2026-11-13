@@ -2717,6 +2717,7 @@
           "keychain_save_failed": "فشل الحفظ في Keychain",
           "keychain_save_failed_android": "فشل الحفظ في Keystore",
           "keychain_no_fingerprint": "لا توجد بصمة إصبع مُعدّة على هذا الهاتف، لذا تعذّرت حماية النسخة الاحتياطية. أضف بصمة من الإعدادات، ثم حاول مرة أخرى.",
+          "keychain_unprotected_removed": "كانت نسخة خزنتك الساخنة في Android Keystore تُفتح دون بصمة إصبعك، لذا أُزيلت. انسخها احتياطيًا مرة أخرى من إعدادات الخزنة الساخنة للاحتفاظ بنسخة محمية.",
           "keychain_saved": "تم نسخ عبارة الاسترداد احتياطيًا إلى Keychain",
           "keychain_saved_android": "تم نسخ عبارة الاسترداد احتياطيًا إلى Keystore",
           "seed_read_failed": "تعذّرت قراءة عبارة استرداد الخزنة"
