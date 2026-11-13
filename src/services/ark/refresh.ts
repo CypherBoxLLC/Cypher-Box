@@ -3,7 +3,7 @@ import { computeRefreshingSweep } from './refreshingStaleness';
 import { ensureArkWalletHandleReady } from './restore';
 import { assertNoActiveArkExitAsync } from './exit';
 import { fetchArkBalance } from './balance';
-import { fetchArkVtxos } from './vtxos';
+import { fetchArkVtxos, recordServerSpentFromError } from './vtxos';
 import { writeArkAutoBackup } from './backup';
 import { scheduleArkRefreshReminder } from './backgroundNotifications';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
@@ -55,6 +55,29 @@ export class ArkRefreshInFlightError extends Error {
         this.pendingCount = pendingCount;
     }
     readonly pendingCount: number;
+}
+
+/**
+ * Record a capsule the server refused as already spent, for every refresh
+ * path at once: several of them (arkoor auto-refresh, change fold-in,
+ * background maintenance) have no screen to do it.
+ *
+ * Returns true when the server named the capsule, so it is now recorded and
+ * left out of every refresh that picks ids. That refusal is a correction, not
+ * a failing refresh, so callers keep it out of arkRefreshFailStreak; counting
+ * it would raise the "refreshes keep failing" alert for a wallet whose next
+ * refresh goes through. An unnamed one cannot be left out next time, so it
+ * still counts.
+ *
+ * Never throws, so the caller's catch still rethrows the original error.
+ */
+async function recordRefusedSpentCapsule(err: unknown): Promise<boolean> {
+    try {
+        const parsed = await recordServerSpentFromError(err);
+        return parsed?.state === 'spent' && !!parsed.vtxoId;
+    } catch {
+        return false;
+    }
 }
 
 // In-process gate. `refreshVtxos()` blocks for the round's full duration
@@ -179,10 +202,14 @@ export async function refreshArkVtxos(
         // (Capsules tab, notification tap, background sweep all land
         // here). The pre-submission ArkRefreshInFlightError guard above
         // doesn't reach this catch, so "already running" rejections
-        // don't inflate the streak. useArkSync escalates once the streak
-        // crosses its threshold while a VTXO is near expiry.
-        const store = useAuthStore.getState();
-        store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        // don't inflate the streak, and neither does a capsule the server
+        // named as already spent (see recordRefusedSpentCapsule).
+        // useArkSync escalates once the streak crosses its threshold while
+        // a VTXO is near expiry.
+        if (!(await recordRefusedSpentCapsule(err))) {
+            const store = useAuthStore.getState();
+            store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        }
         throw err;
     } finally {
         refreshSubmissionInFlight = false;
@@ -356,8 +383,11 @@ export async function refreshArkVtxosDelegated(
             result: 'failure',
             durationMs: Date.now() - t0,
         });
-        const store = useAuthStore.getState();
-        store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        // Same streak rule as the self-signed path above.
+        if (!(await recordRefusedSpentCapsule(err))) {
+            const store = useAuthStore.getState();
+            store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        }
         throw err;
     } finally {
         // Held only across the submit (seconds, until accept). Once accepted
@@ -468,6 +498,10 @@ export async function maintenanceArkDelegated(): Promise<void> {
             Math.round((Date.now() - t0) / 1000),
             's: tag=', tag, 'inner=', inner, 'message=', err?.message ?? String(err),
         );
+        // Recorded so the balance stops counting it. bark picks these capsules
+        // itself, so it may pick the same one on the next wake: this stays a
+        // real failure for the background caller, which keeps counting it.
+        await recordRefusedSpentCapsule(err);
         throw err;
     } finally {
         refreshSubmissionInFlight = false;

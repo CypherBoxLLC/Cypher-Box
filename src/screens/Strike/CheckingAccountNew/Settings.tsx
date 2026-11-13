@@ -79,6 +79,7 @@ import {
 import type { ExitEconomicPolicy, ExitFeeConvertEstimate, ExitTriageResult, ExitPhaseSummary } from "@Cypher/services/ark";
 import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
 import { buildArkBackupFilename } from "@Cypher/services/ark/backupInstance";
+import { recordAndDescribeNotSpendable } from "@Cypher/services/ark/vtxos";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -1498,6 +1499,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         SimpleToast.LONG,
       );
     } catch (e: any) {
+      // The server refused a capsule, for example one already spent from
+      // another device. A spent one is recorded so the balance stops counting
+      // it, and the user reads the app's words, not the raw server string. A
+      // dropped connection arrives as the flagged indeterminate error, whose
+      // text names no capsule, so it still takes the branch below.
+      const notSpendable = await recordAndDescribeNotSpendable(e);
+      if (notSpendable) {
+        Alert.alert(notSpendable.title, notSpendable.body);
+        return;
+      }
       // "Could not convert" is kept: the tab the user is on says "Convert from
       // balance", so it matches. What was wrong is the body. "Offboard" is
       // bark's word and appears nowhere in this UI, and "Your Ark funds are
