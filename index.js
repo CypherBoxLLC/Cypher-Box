@@ -6,6 +6,7 @@ import { BlueStorageProvider } from './blue_modules/storage-context';
 import { registerArkNotificationTapHandler } from './src/services/ark/notificationHandler';
 import { refreshStorefrontCountry } from './src/services/featureFlags';
 import { isSeedSignerLocked, noteLockForNativeStartUp } from './src/services/seedSignerLock';
+import { watchStorefrontCountry } from './src/services/storefrontWatch';
 
 const A = require('./blue_modules/analytics');
 if (!Error.captureStackTrace) {
@@ -26,6 +27,13 @@ registerArkNotificationTapHandler();
 if (!isSeedSignerLocked()) refreshStorefrontCountry();
 // and it makes sure native start-up knows to skip crash reporting next time
 else noteLockForNativeStartUp();
+
+// That read can come back empty (offline, a background launch from a silent
+// push, StoreKit not ready yet), which would hide Strike for the whole run.
+// So on iOS it is read again on every return to the foreground, and retried
+// for a while until it answers. The lock is checked before each read, as the
+// app can be turned into a seed-signer while it runs.
+if (!isSeedSignerLocked()) watchStorefrontCountry(isSeedSignerLocked);
 
 const BlueAppComponent = () => {
   useEffect(() => {

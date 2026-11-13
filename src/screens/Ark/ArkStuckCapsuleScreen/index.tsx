@@ -17,6 +17,7 @@ import {
     syncArkWallet,
 } from "@Cypher/services/ark";
 import { estimateSwapFee, listLightningSwapProviders, swap } from "@Cypher/services/lightningSwap";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, rtl } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -121,15 +122,23 @@ export default function ArkStuckCapsuleScreen() {
         return { ids, sats };
     }, [arkVtxos, tip]);
 
-    const strikeMe = useAuthStore((s) => s.strikeMe);
-    const coinosUser = useAuthStore((s) => s.user);
+    // isAvailable() reads the Strike and CoinOS sign-in flags and the region
+    // gates. This screen can open at cold launch from its notification,
+    // before the auth store has loaded or the storefront has been read, so
+    // recompute when any of them changes rather than keeping the rails
+    // disabled for the screen's whole life.
+    const isStrikeAuth = useAuthStore((s) => s.isStrikeAuth);
+    const isCoinosAuth = useAuthStore((s) => s.isAuth);
+    const regionGateVersion = useRegionGate();
     const swapAvail = useMemo(() => {
         const providers = listLightningSwapProviders();
         return {
             strike: providers.find((p) => p.id === "strike")?.isAvailable() ?? false,
             coinos: providers.find((p) => p.id === "coinos")?.isAvailable() ?? false,
         };
-    }, []);
+        // isAvailable() reads these through getState(), out of the linter's sight.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isStrikeAuth, isCoinosAuth, regionGateVersion]);
 
     const resolveVaultAddress = (id?: string): string | null => {
         if (!id) return null;
