@@ -15,6 +15,7 @@ import {
     recoverArkOnchainBoard,
 } from "@Cypher/services/ark";
 import { deriveVaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
+import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
@@ -538,6 +539,11 @@ export default function ArkWallet({
         return () => { cancelled = true; sub.remove(); };
     }, [isArkAuth, setArkExitRecommendedReserveSats]);
 
+    // Where the Bark backup lives, for branch 7 of the chain below.
+    const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
+    const arkLastOffDeviceBackupAt = useAuthStore((s) => s.arkLastOffDeviceBackupAt);
+    const arkBackupThisPhoneOnly = arkBackupCoverage(arkLastBackupAt, arkLastOffDeviceBackupAt) === 'this-phone';
+
     const bgRefreshStatus = useMemo(() => {
         // 0. OFFLINE, ahead of everything below.
         //
@@ -647,7 +653,22 @@ export default function ArkWallet({
             };
         }
 
-        // 7. All clear — no pill. Bam's call: the homescreen stays quiet
+        // 7. Backups are written, but only inside the app, which a lost phone
+        //    or a deleted app takes with it. Stays until a copy reaches iCloud
+        //    Drive, Google Drive or the chosen folder (see backupCoverage.ts).
+        //    Taps to the Settings tab, where the backup rows and the fix are.
+        //    Same branch as WalletsView's, for the shared-button layouts.
+        if (arkBackupThisPhoneOnly) {
+            return {
+                text: Platform.OS === 'ios'
+                    ? loc.cypherbox.ark.wallet.backup_this_phone_ios
+                    : loc.cypherbox.ark.wallet.backup_this_phone_android,
+                error: true,
+                tapTab: 3, // Settings tab: the Bark backup file rows
+            };
+        }
+
+        // 8. All clear — no pill. Bam's call: the homescreen stays quiet
         //    when there's nothing the user needs to act on. The Card's
         //    own balance line + the in-card refreshing animation (when
         //    a round is in flight) are signal enough.
@@ -657,6 +678,7 @@ export default function ArkWallet({
         dustCapsuleCount,
         notificationsEnabled,
         arkIosBackupReminderActive,
+        arkBackupThisPhoneOnly,
         arkExitRecommendedReserveSats,
         arkBalanceDetail,
         pendingRoundCount,

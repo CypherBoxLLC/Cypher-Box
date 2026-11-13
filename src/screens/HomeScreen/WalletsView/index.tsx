@@ -5,6 +5,7 @@ import { Refresh } from "@Cypher/assets/images";
 import { ARK_REFRESH_MIN_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { deriveVaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
+import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -290,6 +291,12 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         return () => { cancelled = true; sub.remove(); };
     }, []);
 
+    // Where the Bark backup lives, for the "only on this phone" reminder at
+    // the end of the chain below.
+    const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
+    const arkLastOffDeviceBackupAt = useAuthStore((s) => s.arkLastOffDeviceBackupAt);
+    const arkBackupThisPhoneOnly = arkBackupCoverage(arkLastBackupAt, arkLastOffDeviceBackupAt) === 'this-phone';
+
     const bgRefreshStatus = useMemo(() => {
         // OFFLINE FIRST, ahead of everything below including an in-flight
         // refresh.
@@ -418,6 +425,21 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             };
         }
 
+        // Backups are written, but only inside the app, which a lost phone or
+        // a deleted app takes with it. Stays until a copy reaches iCloud
+        // Drive, Google Drive or the chosen folder (see backupCoverage.ts).
+        // Taps to the Settings tab, where the backup rows and the fix are.
+        // Same branch as ArkWallet's, for the Bark-alone layout.
+        if (arkBackupThisPhoneOnly) {
+            return {
+                text: Platform.OS === 'ios'
+                    ? loc.cypherbox.home_lists.wallets_view.backup_this_phone_ios
+                    : loc.cypherbox.home_lists.wallets_view.backup_this_phone_android,
+                error: true,
+                tapTab: 3,
+            };
+        }
+
         return null;
     }, [
         arkExitRecommendedReserveSats,
@@ -425,6 +447,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         dustCapsules,
         notificationsEnabled,
         arkIosBackupReminderActive,
+        arkBackupThisPhoneOnly,
         pendingRound,
         arkBalanceDetail,
         // Without this the offline branch never re-evaluates and the row keeps
@@ -1106,7 +1129,10 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 stuck is the escalation of this very condition, so the two must
                 never appear together. Cancel is not wired here: the recovery
                 actions live on the Capsules tab, so the banner's stuck state
-                routes there rather than duplicating the cancel path. */}
+                routes there rather than duplicating the cancel path.
+                `compact`: this slot is absolutely positioned over the gap
+                above Top-up and Withdraw, so the stuck state is one tappable
+                line here instead of the boxed Cancel the Capsules tab shows. */}
             {useSharedButtons && !arkRefreshStuck && arkRefreshInFlight && (
                 <Animated.View
                     pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
@@ -1120,12 +1146,17 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     }}
                 >
                     <RefreshWaitBanner
+                        compact
                         roundStarts={arkRoundStarts}
                         cancelling={false}
+                        // The Bark vault's Capsules tab, where Cancel lives. It
+                        // took `initialTab: 'capsules'` without the Ark account
+                        // type, which opened the Lightning account screen.
                         onCancel={() => dispatchNavigate('CheckingAccountNew', {
                             wallet: arkWallet,
                             matchedRate,
-                            initialTab: 'capsules',
+                            accountType: 'ark',
+                            initialTab: 0,
                         })}
                     />
                 </Animated.View>

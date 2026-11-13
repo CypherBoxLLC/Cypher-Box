@@ -54,6 +54,7 @@ import {
 } from "@Cypher/services/ark/chainTipFreshness";
 import { buildRefreshBatch } from "@Cypher/services/ark/refreshBatch";
 import { buildDeferredVtxoIds } from "@Cypher/services/ark/refreshDeferral";
+import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import RefreshWaitBanner from '@Cypher/components/RefreshWaitBanner';
@@ -88,6 +89,9 @@ import loc from "../../../../loc";
 const VTXO_MAX_DAYS = 28;
 const VTXO_MAX_BLOCKS = Math.round((VTXO_MAX_DAYS * 24 * 60) / AVG_BLOCK_MINUTES);
 
+/** See VtxoRowData.recoverability. */
+type CapsuleRecoverability = 'backed-up' | 'this-phone-only' | 'needs-backup' | 'in-flight';
+
 /**
  * Expired = past its expiry height and not mid-round. The funds can no
  * longer be refreshed, sent, or swept (the ASP can claim them at any
@@ -100,7 +104,7 @@ const VTXO_MAX_BLOCKS = Math.round((VTXO_MAX_DAYS * 24 * 60) / AVG_BLOCK_MINUTES
 function isExpiredCapsule(r: {
     daysLeft: number;
     pendingRound: boolean;
-    recoverability: 'backed-up' | 'needs-backup' | 'in-flight';
+    recoverability: CapsuleRecoverability;
 }): boolean {
     return r.daysLeft <= 0 && !r.pendingRound && r.recoverability !== 'in-flight';
 }
@@ -242,19 +246,23 @@ interface VtxoRowData {
      *        taken right now, the in-flight state is non-deterministic
      *        and a restore may land you in a stuck round.
      *
-     *   2. Is there actually a recent backup that captures it?
-     *      - `arkLastBackupAt` is set, AND it postdates this VTXO's
-     *        appearance (we approximate this by "any backup at all"
-     *        since we don't track per-VTXO creation timestamps).
+     *   2. Is there actually a recent backup that captures it, and where?
+     *      - A backup postdates this VTXO's appearance (we approximate this
+     *        by "any backup at all" since we don't track per-VTXO creation
+     *        timestamps).
+     *      - Only a copy outside the app (iCloud Drive, Google Drive, the
+     *        chosen folder) survives losing the phone or deleting the app,
+     *        so only that one is "Backed up". See backupCoverage.ts.
      *      - Otherwise → user must back up before they can recover.
      *
      * Resulting buckets:
-     *   - `'backed-up'`     — Pubkey/Spendable AND `arkLastBackupAt != null`
-     *   - `'needs-backup'`  — Pubkey/Spendable but no backup yet
-     *   - `'in-flight'`     — Locked / Server HTLC / Board / Exit (not
-     *                          backable in this state)
+     *   - `'backed-up'`       — Pubkey/Spendable AND `arkLastOffDeviceBackupAt != null`
+     *   - `'this-phone-only'` — Pubkey/Spendable, backed up inside the app only
+     *   - `'needs-backup'`    — Pubkey/Spendable but no backup yet
+     *   - `'in-flight'`       — Locked / Server HTLC / Board / Exit (not
+     *                            backable in this state)
      */
-    recoverability: 'backed-up' | 'needs-backup' | 'in-flight';
+    recoverability: CapsuleRecoverability;
 }
 
 interface VtxoRowProps {
@@ -490,16 +498,24 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
     // a second colored span separated by " - ". Three states drive both
     // the icon and the message; see VtxoRowData.recoverability for the
     // full classification rationale.
-    //   ✓ Backed up         — Pubkey/Spendable + recent .cbark exists (green)
-    //   ⚠ Back up first     — Pubkey/Spendable but no backup recorded (orange)
-    //   ⚠ In-flight         — Locked / HTLC / Board / Exit (yellow, can't
-    //                          be reliably backed up in this state)
+    //   ✓ Backed up          — Pubkey/Spendable + a copy outside the app (green)
+    //   ⚠ On this phone only — Pubkey/Spendable, .cbark inside the app only (orange)
+    //   ⚠ Back up first      — Pubkey/Spendable but no backup recorded (orange)
+    //   ⚠ In-flight          — Locked / HTLC / Board / Exit (yellow, can't
+    //                           be reliably backed up in this state)
     let recoverabilityText: string;
     let recoverabilityColor: string;
     switch (vtxo.recoverability) {
         case 'backed-up':
             recoverabilityText = loc.cypherbox.strike.ark_capsules.backed_up;
             recoverabilityColor = "#4ADE80";
+            break;
+        case 'this-phone-only':
+            // Same orange as "Back up to recover": the file is lost with the
+            // phone or the app, which the reminders on Home and in Settings
+            // ask the user to fix.
+            recoverabilityText = loc.cypherbox.strike.ark_capsules.this_phone_only;
+            recoverabilityColor = "#FB923C";
             break;
         case 'needs-backup':
             recoverabilityText = loc.cypherbox.strike.ark_capsules.needs_backup;
@@ -1125,6 +1141,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // countdowns trusted a tip of any age.
     const arkChainTipHeightAt = useAuthStore((s) => s.arkChainTipHeightAt);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
+    const arkLastOffDeviceBackupAt = useAuthStore((s) => s.arkLastOffDeviceBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
     // Read-only on this screen — the toggle lives on the Ark Settings
     // tab. Surfaced as a small on/off status above the explainer tagline
@@ -1369,6 +1386,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // no misleading time estimate.
     const rows: VtxoRowData[] = useMemo(() => {
         const refreshingSet = new Set(arkRefreshingVtxoIds);
+        const coverage = arkBackupCoverage(arkLastBackupAt, arkLastOffDeviceBackupAt);
         const mapped = arkVtxos.map((v) => {
             const stateLower = v.state.toLowerCase();
             const kindLower = v.kind.toLowerCase();
@@ -1377,23 +1395,25 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // tracked ids too (see isVtxoMidRound).
             const pendingRound = isVtxoMidRound(v, refreshingSet);
 
-            // Tri-state recoverability — see VtxoRowData.recoverability
-            // for the full reasoning. Quick summary: a Pubkey/Spendable
-            // VTXO can be safely backed up (and therefore recovered);
-            // anything in flight cannot. The user-facing distinction
-            // between "Backed up" and "Back up first" is whether
-            // arkLastBackupAt is set — not whether it postdates this
-            // specific VTXO (we don't track per-VTXO mtime). That's
-            // slightly optimistic when a fresh VTXO appears AFTER the
-            // last backup, but the existence of any backup is the
-            // dominant signal users care about.
+            // Recoverability — see VtxoRowData.recoverability for the full
+            // reasoning. Quick summary: a Pubkey/Spendable VTXO can be
+            // safely backed up (and therefore recovered); anything in
+            // flight cannot. Which label it gets depends on where the last
+            // backups went, not on whether one postdates this specific VTXO
+            // (we don't track per-VTXO mtime). That's slightly optimistic
+            // when a fresh VTXO appears AFTER the last backup, but where the
+            // file lives is the signal users care about: "Backed up" only
+            // when a copy is outside the app, since the app's own folder
+            // goes with the phone.
             const isStablyOwned = kindLower === 'pubkey' && stateLower === 'spendable';
-            const recoverability: 'backed-up' | 'needs-backup' | 'in-flight' =
+            const recoverability: CapsuleRecoverability =
                 !isStablyOwned
                     ? 'in-flight'
-                    : arkLastBackupAt
+                    : coverage === 'off-device'
                         ? 'backed-up'
-                        : 'needs-backup';
+                        : coverage === 'this-phone'
+                            ? 'this-phone-only'
+                            : 'needs-backup';
 
             // expiryHeight === 0 happens for arkoor VTXOs that inherit their
             // parent's expiry rather than declaring their own.
@@ -1433,7 +1453,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             if (aDead !== bDead) return aDead ? 1 : -1;
             return 0;
         });
-    }, [arkVtxos, chainTipHeight, arkLastBackupAt, arkRefreshingVtxoIds]);
+    }, [arkVtxos, chainTipHeight, arkLastBackupAt, arkLastOffDeviceBackupAt, arkRefreshingVtxoIds]);
 
     // Auto-refresh when the user landed here from a tapped expiry-warning
     // notification. The scheduler's tap handler set arkPendingTapRefresh
@@ -2907,10 +2927,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 de-clutters the screen. No Emergency Exit here — that's
                 the global Withdraw button's job, see the file docblock. */}
             <View style={vaultStyles.bottomViewNew}>
-                {/* Green pulsing "come back in 3 hours" reminder while a
-                    refresh round is in flight (or being submitted), with a
-                    live 3h countdown per in-flight round. Flips to a stuck
-                    state with a Cancel action once a round's 3h elapses. */}
+                {/* Pulsing "come back in 1 hour" reminder while a refresh
+                    round is in flight (or being submitted), with a live 1h
+                    countdown per in-flight round. Flips to a stuck state with
+                    a Cancel action once a round has been pending for twice
+                    the round interval, the same point useArkSync calls it
+                    stuck (arkStuckRoundThresholdMs). */}
                 {refreshInFlight && (
                     <RefreshWaitBanner
                         roundStarts={roundStarts}

@@ -235,3 +235,86 @@ describe('writeArkAutoBackup when at least one destination succeeds', () => {
         expect(typeof res.createdAt).toBe('number');
     });
 });
+
+/**
+ * Resolving says something was stored. It does not say the copy survives the
+ * phone: a write to the app's own folder alone resolves too, and that folder
+ * goes with the app or the phone. `offDevice` is what decides "Backed up"
+ * versus "On this phone only", so it must follow what each write reached.
+ */
+describe('writeArkAutoBackup reports what reached a copy outside the app', () => {
+    /** Writes into the iCloud container fail; the app's own folder works. */
+    function iCloudWritesFail() {
+        mockRNFS.writeFile.mockImplementation(async (p: string) => {
+            if (String(p).startsWith('/icloud')) throw new Error('iCloud container write failed');
+        });
+        mockRNFS.moveFile.mockResolvedValue(undefined);
+    }
+
+    it('is none when the app folder is the only destination (created without a backup file)', async () => {
+        localWriteSucceeds();
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(expect.objectContaining({ offDevice: 'none' }));
+    });
+
+    it('is none on Android with no Drive and no folder', async () => {
+        localWriteSucceeds();
+        mockPlatform.OS = 'android';
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(expect.objectContaining({ offDevice: 'none' }));
+    });
+
+    it('is written when iCloud Drive takes the snapshot', async () => {
+        localWriteSucceeds();
+        mockGetICloudDocumentsPath.mockResolvedValue('/icloud');
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(
+            expect.objectContaining({ offDevice: 'written', iCloudPath: expect.stringMatching(/^\/icloud\//) }),
+        );
+    });
+
+    it('is failed when iCloud Drive is on but its write throws', async () => {
+        iCloudWritesFail();
+        mockGetICloudDocumentsPath.mockResolvedValue('/icloud');
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(expect.objectContaining({ offDevice: 'failed' }));
+    });
+
+    it('is written when Google Drive takes the snapshot', async () => {
+        localWriteSucceeds();
+        mockPlatform.OS = 'android';
+        mockIsGoogleDriveConnected.mockResolvedValue(true);
+        mockUploadArkBackupToDrive.mockResolvedValue('file-id');
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(expect.objectContaining({ offDevice: 'written' }));
+    });
+
+    it('is failed when Drive is connected but the upload throws', async () => {
+        localWriteSucceeds();
+        mockPlatform.OS = 'android';
+        mockIsGoogleDriveConnected.mockResolvedValue(true);
+        mockUploadArkBackupToDrive.mockRejectedValue(new Error('Network request failed'));
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(expect.objectContaining({ offDevice: 'failed' }));
+    });
+
+    it('is written when the chosen folder takes the snapshot', async () => {
+        localWriteSucceeds();
+        mockPlatform.OS = 'android';
+        mockGetSavedSafBackupFolder.mockResolvedValue('content://tree/backups');
+        mockWriteArkBackupToSaf.mockResolvedValue('content://tree/backups/file');
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(expect.objectContaining({ offDevice: 'written' }));
+    });
+
+    it('is failed when a folder is chosen but the write throws', async () => {
+        localWriteSucceeds();
+        mockPlatform.OS = 'android';
+        mockGetSavedSafBackupFolder.mockResolvedValue('content://tree/backups');
+        mockWriteArkBackupToSaf.mockRejectedValue(Object.assign(new Error('revoked'), { code: 'E_PERMISSION_REVOKED' }));
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(expect.objectContaining({ offDevice: 'failed' }));
+    });
+
+    it('is written when one destination takes it and another fails', async () => {
+        localWriteSucceeds();
+        mockPlatform.OS = 'android';
+        mockIsGoogleDriveConnected.mockResolvedValue(true);
+        mockUploadArkBackupToDrive.mockRejectedValue(new Error('503'));
+        mockGetSavedSafBackupFolder.mockResolvedValue('content://tree/backups');
+        mockWriteArkBackupToSaf.mockResolvedValue('content://tree/backups/file');
+        await expect(writeArkAutoBackup(MNEMONIC)).resolves.toEqual(expect.objectContaining({ offDevice: 'written' }));
+    });
+});

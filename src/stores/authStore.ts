@@ -3,6 +3,8 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { isSeedSignerLocked, lockSeedSigner } from "@Cypher/services/seedSignerLock";
 import { authPersistStorage, enableAuthWrites } from "./authPersistStorage";
 import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
+import { legacyArkOffDeviceBackupAt, nextOffDeviceBackupState } from "@Cypher/services/ark/backupCoverage";
+import type { ArkOffDeviceOutcome } from "@Cypher/services/ark/backupCoverage";
 import type { PendingSignature } from "@Cypher/helpers/pendingSignature";
 
 /**
@@ -291,8 +293,25 @@ export type AuthStateType = {
      * `null` = never backed up. Cleared on reset / disconnect so a stale
      * timestamp from a previous wallet doesn't grant false confidence to
      * the next one.
+     *
+     * Any write counts here, including one to the app's own folder only,
+     * which goes with the app or the phone. Only `arkLastOffDeviceBackupAt`
+     * may show a capsule as "Backed up".
      */
     arkLastBackupAt: number | null;
+    /**
+     * Timestamp (ms) of the last backup that also reached a copy outside the
+     * app: the iCloud Drive container on iOS, Google Drive or the chosen
+     * folder on Android. `null` = there is none being kept current: none was
+     * ever written, none is set up any more, or the set-up one has failed
+     * ARK_OFF_DEVICE_FAIL_LIMIT writes in a row. Drives "Backed up" versus
+     * "On this phone only" on the Capsules tab and the matching reminders on
+     * Home and in Settings. Maintained by `recordArkBackupWrite`; see
+     * services/ark/backupCoverage.ts.
+     */
+    arkLastOffDeviceBackupAt: number | null;
+    /** Failed off-device writes in a row, for `recordArkBackupWrite`. */
+    arkOffDeviceBackupFailStreak: number;
     /**
      * Round-cadence in seconds, from the ASP's static config (wallet.arkInfo()).
      * Mainnet ≈ 3600, signet ≈ 300. Used to surface an upper-bound ETA on
@@ -440,6 +459,13 @@ export type AuthStateType = {
     setArkChainTipHeight: (state: number | null, at?: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
+    /**
+     * Record a successful `writeArkAutoBackup`: stamps `arkLastBackupAt` and
+     * folds what the write reached outside the app into
+     * `arkLastOffDeviceBackupAt`. Every caller of the auto-backup goes through
+     * this, so the two can never be stamped by different rules.
+     */
+    recordArkBackupWrite: (createdAt: number, offDevice: ArkOffDeviceOutcome) => void;
     setArkRoundIntervalSecs: (state: number | null) => void;
     setArkExitFeeDeadlineHeight: (state: number | null) => void;
     setArkExitParams: (state: {
@@ -726,6 +752,8 @@ const createAuthStore = (
     arkChainTipHeightAt: null,
     arkLastSyncedAt: null,
     arkLastBackupAt: null,
+    arkLastOffDeviceBackupAt: null,
+    arkOffDeviceBackupFailStreak: 0,
     arkRoundIntervalSecs: null,
     arkVtxoExitDeltaBlocks: null,
     arkMaxVtxoExitDepth: null,
@@ -862,6 +890,22 @@ const createAuthStore = (
         }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
+    recordArkBackupWrite: (createdAt: number, offDevice: ArkOffDeviceOutcome) =>
+        set((s) => {
+            const next = nextOffDeviceBackupState(
+                { at: s.arkLastOffDeviceBackupAt ?? null, failStreak: s.arkOffDeviceBackupFailStreak ?? 0 },
+                offDevice,
+                createdAt,
+            );
+            return {
+                arkLastBackupAt: createdAt,
+                arkLastOffDeviceBackupAt: next.at,
+                arkOffDeviceBackupFailStreak: next.failStreak,
+                // The iOS snapshot reminder waits for a copy that keeps itself
+                // current, which is what a write outside the app just was.
+                ...(offDevice === 'written' ? { arkIosBackupReminderActive: false } : {}),
+            };
+        }),
     setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
     setArkExitFeeDeadlineHeight: (state: number | null) => set({ arkExitFeeDeadlineHeight: state }),
     setArkExitParams: (state) => set({
@@ -920,6 +964,8 @@ const createAuthStore = (
             arkChainTipHeightAt: null,
             arkLastSyncedAt: null,
             arkLastBackupAt: null,
+            arkLastOffDeviceBackupAt: null,
+            arkOffDeviceBackupFailStreak: 0,
             arkRoundIntervalSecs: null,
             // arkVtxoExitDeltaBlocks / arkMaxVtxoExitDepth are deliberately NOT
             // reset. They are the server's protocol constants, not wallet
@@ -1053,11 +1099,21 @@ const useAuthStore = create<AuthStateType>()(
         // preferences, not auth state).
         version: 1,
         // the lock decides signing mode, whatever was saved before it existed
-        merge: (persistedState, currentState) => ({
-            ...currentState,
-            ...(persistedState as Partial<AuthStateType>),
-            signingMode: isSeedSignerLocked(),
-        }),
+        merge: (persistedState, currentState) => {
+            const persisted = (persistedState ?? {}) as Partial<AuthStateType>;
+            return {
+                ...currentState,
+                ...persisted,
+                signingMode: isSeedSignerLocked(),
+                // Saved before the off-device backup was tracked (0.1.12 and
+                // earlier): start from what the saved vault says about its
+                // iCloud, Drive or folder copy, until the next backup write
+                // decides it. Only when the key is missing, so this runs once.
+                ...(persisted.arkLastOffDeviceBackupAt === undefined
+                    ? { arkLastOffDeviceBackupAt: legacyArkOffDeviceBackupAt(persisted) }
+                    : {}),
+            };
+        },
         migrate: (persistedState, version) => {
             const state = (persistedState ?? {}) as Record<string, unknown>;
             if (version < 1) {
