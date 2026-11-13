@@ -12,7 +12,7 @@ import loc from "../../../loc";
 import Biometric from "../../../class/biometrics";
 import Notifications from "../../../blue_modules/notifications";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
-import { assertSignedTxMatchesPsbt, dispatchNavigate, spendsPendingInputs, summarizeSignedTx } from "@Cypher/helpers";
+import { assertSignedTxMatchesPsbt, dispatchNavigate, formatSats, spendsPendingInputs, summarizeSignedTx } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 
 const BlueElectrum = require('../../../blue_modules/BlueElectrum');
@@ -123,7 +123,7 @@ export default function ConfirmHardwareTransaction({ route, navigation }: Props)
                                 <View key={i} style={styles.priceView}>
                                     <View style={styles.summaryItem}>
                                         <Text style={styles.recipientTitle}>{isOwnAddress(output.address) ? loc.cypherbox.payments.confirm_hardware_transaction.back_to_wallet : loc.cypherbox.payments.confirm_hardware_transaction.to}</Text>
-                                        <Text bold style={styles.value}>{output.value + ' sats'}</Text>
+                                        <Text bold style={[styles.value, rtl.ltrText]}>{formatSats(output.value)}</Text>
                                         <Text style={[styles.fees, rtl.ltrText]}>{output.address ?? loc.cypherbox.payments.confirm_hardware_transaction.unknown_output}</Text>
                                     </View>
                                 </View>
@@ -132,7 +132,7 @@ export default function ConfirmHardwareTransaction({ route, navigation }: Props)
                                 <View style={styles.priceView}>
                                     <View style={styles.summaryItem}>
                                         <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_hardware_transaction.network_fee}</Text>
-                                        <Text style={styles.fees}>{signedTx.summary.fee + ' sats'}</Text>
+                                        <Text style={[styles.fees, rtl.ltrText]}>{formatSats(signedTx.summary.fee)}</Text>
                                     </View>
                                 </View>
                             ) : null}

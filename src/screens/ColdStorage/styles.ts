@@ -14,6 +14,10 @@ interface Style {
     priceView: ViewStyle;
     value: TextStyle;
     fees: TextStyle;
+    capsulesNotNeeded: TextStyle;
+    showAllCapsules: ViewStyle;
+    showAllCapsulesText: TextStyle;
+    spendError: TextStyle;
     recipientView: ViewStyle;
     recipientTitle: TextStyle;
     nextBtn: ViewStyle;
@@ -99,6 +103,25 @@ export default StyleSheet.create<Style>({
     fees: {
         fontSize: 18,
         marginTop: 5,
+    },
+    capsulesNotNeeded: {
+        fontSize: 12,
+        color: '#AAAAAA',
+        marginTop: 4,
+    },
+    showAllCapsules: {
+        alignSelf: 'flex-start',
+        paddingVertical: 6,
+    },
+    showAllCapsulesText: {
+        fontSize: 13,
+        color: colors.white,
+        textDecorationLine: 'underline',
+    },
+    spendError: {
+        fontSize: 14,
+        color: colors.redLight,
+        marginTop: 6,
     },
     tabs: {
         flexDirection: 'row',

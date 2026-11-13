@@ -173,7 +173,9 @@ export default React.memo(function Header({
         } catch (e) {
             if (__DEV__) console.log('[Home/scan] vault fetchUtxo failed', e);
         }
-        const utxoList = vaultWallet.getUtxo(true).sort(
+        // getUtxo() without `true` leaves frozen capsules out: nobody picked
+        // these for this send, and frozen ones are only spent when ticked
+        const utxoList = vaultWallet.getUtxo().sort(
             (a: any, b: any) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout,
         );
         if (!utxoList || utxoList.length === 0) {
@@ -216,6 +218,8 @@ export default React.memo(function Header({
             matchedRate: matchedRateBTC,
             capsulesData,
             capsuleTotal,
+            // a pool for coinselect to pick from, not a selection to spend whole
+            autoSelected: true,
         });
     }, [wallet, coldStorageWallet, sleep, currency, matchedRateBTC]);
 

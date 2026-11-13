@@ -133,3 +133,36 @@ export function summarizeSignedTx(txHex: string, psbt?: bitcoin.Psbt | string): 
     }
     return { outputs, fee };
 }
+
+export interface PsbtSpendSummary {
+    /** sats paid to the destination */
+    amountSats: number;
+    /** every other output: change to the vault, or where the user swept it */
+    changeSats: number;
+    /** null when the PSBT doesn't carry the input amounts */
+    fee: number | null;
+    inputs: number;
+}
+
+/**
+ * What an unsigned PSBT pays, read from the PSBT itself, for the screen that shows it for signing: the figures the
+ * signing device will show, whatever the screen before it computed.
+ */
+export function summarizePsbt(psbt: bitcoin.Psbt | string, destination?: string | null): PsbtSpendSummary {
+    const p = toPsbt(psbt);
+    let amountSats = 0;
+    let totalOut = 0;
+    for (const output of p.txOutputs) {
+        totalOut += output.value;
+        let address: string | null = null;
+        try {
+            address = bitcoin.address.fromOutputScript(output.script);
+        } catch (_) {
+            // not an address: never the destination
+        }
+        if (destination && address === destination) amountSats += output.value;
+    }
+    const values = p.txInputs.map((_, i) => inputValue(p, i));
+    const fee = values.every(v => v !== null) ? values.reduce((sum: number, v) => sum + (v as number), 0) - totalOut : null;
+    return { amountSats, changeSats: totalOut - amountSats, fee, inputs: p.txInputs.length };
+}
