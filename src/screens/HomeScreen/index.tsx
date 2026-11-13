@@ -31,6 +31,8 @@ import { Shadow } from "react-native-neomorph-shadows";
 import { colors, heights, shadow } from "@Cypher/style-guide";
 import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { homeTopGap } from './topGap';
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
@@ -66,6 +68,9 @@ import WithdrawList from "./WithdrawList";
 import SwapSheet from "./SwapSheet";
 import { FiatUnit, FiatUnitType } from "models/fiatUnit";
 import untypedFiatUnit from '../../../models/fiatUnits.json';
+
+// iOS: ScreenLayout pads only the sides; Home's top padding comes from homeTopGap (see topGap.ts).
+const HOME_IOS_EDGES = ['right', 'left'];
 
 interface Props {
   route: any;
@@ -172,6 +177,8 @@ function findOrphanHotVaultWallet(
 export default function HomeScreen({ route }: Props) {
   const { navigate } = useNavigation();
   const routeName = useRoute().name;
+  // iOS: the gap under the status bar and notch, never below the one measured at launch (see topGap.ts)
+  const iosTopGap = homeTopGap(useSafeAreaInsets().top);
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
@@ -1059,7 +1066,8 @@ export default function HomeScreen({ route }: Props) {
 
   return (
     <ScreenLayout
-      
+      edges={Platform.OS === 'ios' ? HOME_IOS_EDGES : undefined}
+      style={Platform.OS === 'ios' ? { paddingTop: iosTopGap } : undefined}
       RefreshControl={
         <RefreshControl
           refreshing={refreshing}
