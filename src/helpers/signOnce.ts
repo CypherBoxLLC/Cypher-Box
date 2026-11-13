@@ -3,6 +3,7 @@ import * as bip39 from 'bip39';
 import BIP32Factory, { BIP32Interface } from 'bip32';
 
 import ecc from '../../blue_modules/noble_ecc';
+import { rootFromMnemonic } from './seedFromWords';
 
 /**
  * Signing an unsigned transaction (PSBT) made by a watch-only wallet: a Cypher Box Cold Vault, Sparrow or any other
@@ -90,6 +91,11 @@ export function backupToMnemonic(text: string): string {
 
 export function rootFromBackup(text: string, passphrase = ''): BIP32Interface {
     return bip32.fromSeed(bip39.mnemonicToSeedSync(backupToMnemonic(text), passphrase));
+}
+
+/** The same root, with the seed made natively when the phone can: seconds faster on a slow phone. */
+export function rootFromBackupAsync(text: string, passphrase = ''): Promise<BIP32Interface> {
+    return rootFromMnemonic(backupToMnemonic(text), passphrase);
 }
 
 const fingerprintHex = (root: BIP32Interface) => Buffer.from(root.fingerprint).toString('hex');

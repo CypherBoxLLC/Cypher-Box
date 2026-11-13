@@ -71,7 +71,7 @@ export default function SigningSafetyGuide({ route, navigation }: { route: any; 
             </ScrollView>
             {onContinue ? (
                 <View style={styles.footer}>
-                    <Button text={loc.cypherbox.signing_safety.got_it} onPress={carryOn} style={styles.button} />
+                    <Button text={loc.cypherbox.signing_safety.got_it} onPress={carryOn} style={styles.button} textStyle={styles.buttonText} />
                 </View>
             ) : null}
         </ScreenLayout>
@@ -92,6 +92,9 @@ const styles = StyleSheet.create({
         paddingBottom: 24,
     },
     button: {
-        backgroundColor: colors.blueText,
+        backgroundColor: colors.green,
+    },
+    buttonText: {
+        color: '#000',
     },
 });

@@ -265,6 +265,12 @@ export type AuthStateType = {
      * mode, it puts "Sign a transaction" on the Hot Vault tab: phones that never sign keep the tab as it was.
      */
     signedOnThisPhone: boolean;
+    /**
+     * Offline Seed-Signer mode: a seed's public key was shown on this phone, once the seed was made here and its backup
+     * checked, or loaded to show it. Only that it happened is kept, nothing of the seed or its key. With
+     * signedOnThisPhone, it puts signing first on the signer's home.
+     */
+    signerKeyShown: boolean;
     arkChainTipHeight: number | null;
     // Epoch ms the tip above was read. The tip is PERSISTED, so a cold launch
     // offline rehydrates one that may be days old, and
@@ -425,6 +431,7 @@ export type AuthStateType = {
     hideColdKeyWarning: (walletID: string) => void;
     setSigningMode: (on: boolean) => void;
     setSignedOnThisPhone: (signed: boolean) => void;
+    setSignerKeyShown: (shown: boolean) => void;
     /** `at` is when the tip was READ FROM THE NETWORK. Pass
      *  getChainTipFetchedAt() when the value may have come from the tip cache:
      *  chainTipFreshness derives FRESH/DEGRADED/STALE from this stamp, so
@@ -714,6 +721,7 @@ const createAuthStore = (
     coldKeyWarningHidden: {},
     signingMode: isSeedSignerLocked(),
     signedOnThisPhone: false,
+    signerKeyShown: false,
     arkChainTipHeight: null,
     arkChainTipHeightAt: null,
     arkLastSyncedAt: null,
@@ -843,6 +851,7 @@ const createAuthStore = (
         set({ signingMode: isSeedSignerLocked() });
     },
     setSignedOnThisPhone: (signed: boolean) => set({ signedOnThisPhone: signed }),
+    setSignerKeyShown: (shown: boolean) => set({ signerKeyShown: shown }),
     hideColdKeyWarning: (walletID: string) =>
         set((state: any) => ({ coldKeyWarningHidden: { ...(state.coldKeyWarningHidden ?? {}), [walletID]: true } })),
     // Stamps the read time with the value, so the two can never drift apart.

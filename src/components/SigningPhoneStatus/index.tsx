@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
         color: colors.gray.light,
     },
     link: {
-        color: colors.blueText,
+        color: colors.green,
         textDecorationLine: 'underline',
     },
 });
