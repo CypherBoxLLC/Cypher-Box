@@ -7,6 +7,7 @@ import {
 } from './backupCandidates';
 
 import { peekBackupHeader } from './backup';
+import loc from '../../../loc';
 
 /**
  * Google Drive integration for the Android off-device .cbark backup path.
@@ -165,20 +166,20 @@ export function classifyDriveError(err: unknown): DriveErrorClass {
 export function messageForDriveError(cls: DriveErrorClass): string {
     switch (cls) {
         case 'auth-not-configured':
-            return "Google Drive isn't authorized for this build (the app's signing certificate isn't registered with Google). Save the backup file manually below, then continue.";
+            return loc.cypherbox.services.google_drive.auth_not_configured;
         case 'auth-cancelled':
-            return 'Google Drive sign-in was cancelled. Tap Connect again to retry, or save the backup file manually.';
+            return loc.cypherbox.services.google_drive.auth_cancelled;
         case 'auth-token-missing':
-            return 'Google Drive session expired. Tap Connect again to sign in.';
+            return loc.cypherbox.services.google_drive.auth_token_missing;
         case 'network':
-            return "Couldn't reach Google Drive. Check your internet connection and retry, or save the backup file manually.";
+            return loc.cypherbox.services.google_drive.network;
         case 'quota':
-            return 'Google Drive rejected the upload (quota or permission). Save the backup file manually instead.';
+            return loc.cypherbox.services.google_drive.quota;
         case 'server':
-            return 'Google Drive is having issues right now. Retry in a moment, or save the backup file manually.';
+            return loc.cypherbox.services.google_drive.server;
         case 'unknown':
         default:
-            return 'Google Drive backup failed. Save the backup file manually below.';
+            return loc.cypherbox.services.google_drive.unknown;
     }
 }
 
@@ -319,7 +320,7 @@ async function getAccessToken(): Promise<string> {
     if (!GoogleSignin) throw new Error('GoogleSignin module not loaded');
     const tokens = await GoogleSignin.getTokens();
     if (!tokens?.accessToken) {
-        throw new Error('Google Drive access has expired. Reconnect Google Drive and try again.');
+        throw new Error(loc.cypherbox.services.google_drive.access_expired);
     }
     return tokens.accessToken as string;
 }

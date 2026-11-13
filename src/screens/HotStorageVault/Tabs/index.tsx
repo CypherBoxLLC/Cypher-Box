@@ -4,6 +4,7 @@ import { Text } from "@Cypher/component-library";
 import { CoinOs, Key, Settings, Time } from "@Cypher/assets/images";
 import { colors } from "@Cypher/style-guide";
 import styles from "./styles";
+import loc from "../../../../loc";
 
 interface Props {
     onChangeSelectedTab(id: number): void;
@@ -13,10 +14,10 @@ interface Props {
 
 export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab }: Props) {
     const tabs = useMemo(() => [
-        { id: 0, name: 'Vault', icon: Key },
-        { id: 1, name: 'Capsules', icon: CoinOs },
-        { id: 2, name: 'History', icon: Time },
-        { id: 3, name: 'Settings', icon: Settings },
+        { id: 0, name: loc.cypherbox.vault.storage_vault.tabs.vault, icon: Key },
+        { id: 1, name: loc.cypherbox.vault.storage_vault.tabs.capsules, icon: CoinOs },
+        { id: 2, name: loc.cypherbox.vault.storage_vault.tabs.history, icon: Time },
+        { id: 3, name: loc.cypherbox.vault.storage_vault.tabs.settings, icon: Settings },
     ], []);
 
 

@@ -7,6 +7,7 @@ import type {
     ExitFundingSource,
     ExitFundingSourceId,
 } from '@Cypher/services/ark/exitFundingSources';
+import loc from '../../../loc';
 
 /**
  * "Fund exit fees from another wallet" picker.
@@ -35,7 +36,7 @@ function balanceLine(source: ExitFundingSource, shortfallSats?: number): string 
     // Say up front whether this one finishes the job, so the user does not pick
     // a wallet, walk through a confirm screen and only then discover it is
     // short.
-    return source.balanceSats >= shortfallSats ? `${bal} · covers it` : `${bal} · partial`;
+    return source.balanceSats >= shortfallSats ? `${bal} · ${loc.cypherbox.components.exit_funding_source_list.covers_it}` : `${bal} · ${loc.cypherbox.components.exit_funding_source_list.partial}`;
 }
 
 export default function ExitFundingSourceList({ sources, onSelect, shortfallSats }: Props) {
@@ -82,7 +83,7 @@ export default function ExitFundingSourceList({ sources, onSelect, shortfallSats
                             hardware-wallet round-trip mid-exit. */}
                         {source.slow && source.available && (
                             <Text style={{ fontSize: 11, color: colors.gray?.thin ?? '#888' }}>
-                                needs your signing device
+                                {loc.cypherbox.components.exit_funding_source_list.needs_signing_device}
                             </Text>
                         )}
                     </TouchableOpacity>

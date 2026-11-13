@@ -9,6 +9,7 @@ import { colors } from "@Cypher/style-guide";
 import { ElectrumConnection } from "../../custom-hooks/useElectrumConnection";
 import styles from "./styles";
 import useSignTransaction from "./useSignTransaction";
+import loc from "../../../loc";
 
 /**
  * The broadcast pill's twin on the Hot Vault: open a transaction to sign from a file, or scan it. Until the phone is
@@ -22,11 +23,11 @@ export default function SignButton({ wallet, connection }: { wallet: any; connec
     const signUnlocked = connection === 'no-answer';
     const explainSignLock = () =>
         Alert.alert(
-            'Only on an offline phone',
-            "Signing here unlocks once this phone is offline: Airplane Mode on, Wi-Fi off. It's meant for a phone kept offline as a signing device.",
+            loc.cypherbox.vault.storage_vault.sign.offline_only_title,
+            loc.cypherbox.vault.storage_vault.sign.offline_only_body,
             [
-                { text: 'Signing safely', onPress: () => dispatchNavigate('SigningSafetyGuide') },
-                { text: 'OK', style: 'cancel' },
+                { text: loc.cypherbox.vault.storage_vault.sign.signing_safely, onPress: () => dispatchNavigate('SigningSafetyGuide') },
+                { text: loc._.ok, style: 'cancel' },
             ],
         );
 
@@ -50,12 +51,12 @@ export default function SignButton({ wallet, connection }: { wallet: any; connec
                             style={styles.broadcastImport}
                             onPress={signUnlocked ? signFromFile : explainSignLock}
                             accessibilityRole="button"
-                            accessibilityLabel="Sign a transaction from a file"
-                            accessibilityHint={signUnlocked ? undefined : 'Works only while this phone is offline'}
+                            accessibilityLabel={loc.cypherbox.vault.storage_vault.sign.from_file_a11y}
+                            accessibilityHint={signUnlocked ? undefined : loc.cypherbox.vault.storage_vault.sign.offline_hint}
                         >
                             <MaterialCommunityIcons name="file-sign" size={20} color={colors.green} />
                             <Text h4 numberOfLines={1} adjustsFontSizeToFit style={styles.broadcastLabel}>
-                                Sign a transaction (.PSBT)
+                                {loc.cypherbox.vault.storage_vault.sign.button}
                             </Text>
                         </TouchableOpacity>
                         <View style={styles.broadcastDivider} />
@@ -63,8 +64,8 @@ export default function SignButton({ wallet, connection }: { wallet: any; connec
                             style={styles.broadcastScan}
                             onPress={signUnlocked ? signFromQr : explainSignLock}
                             accessibilityRole="button"
-                            accessibilityLabel="Scan a transaction to sign"
-                            accessibilityHint={signUnlocked ? undefined : 'Works only while this phone is offline'}
+                            accessibilityLabel={loc.cypherbox.vault.storage_vault.sign.scan_a11y}
+                            accessibilityHint={signUnlocked ? undefined : loc.cypherbox.vault.storage_vault.sign.offline_hint}
                         >
                             <MaterialCommunityIcons name="qrcode-scan" size={20} color={colors.white} />
                         </TouchableOpacity>
@@ -80,9 +81,9 @@ export default function SignButton({ wallet, connection }: { wallet: any; connec
                     style={styles.signStatus}
                 >
                     <Text style={styles.signStatusText}>
-                        {connection === 'connected' ? 'This phone is online. ' : ''}
-                        This is only for signing on an offline phone used as a signing device.{' '}
-                        <Text style={styles.signStatusLink}>Signing safely</Text>
+                        {connection === 'connected' ? loc.cypherbox.vault.storage_vault.sign.online : ''}
+                        {loc.cypherbox.vault.storage_vault.sign.offline_device_only}{' '}
+                        <Text style={styles.signStatusLink}>{loc.cypherbox.vault.storage_vault.sign.signing_safely}</Text>
                     </Text>
                 </TouchableOpacity>
             }

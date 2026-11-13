@@ -36,6 +36,7 @@ import type {
 } from '../types';
 import { register } from '../registry';
 import bolt11 from 'bolt11';
+import loc from '../../../../loc';
 
 /**
  * Decode the sat amount encoded in an amount-bearing BOLT11, or null if the
@@ -202,7 +203,7 @@ const arkProvider: LightningSwapProvider = {
             );
             return {
                 feeSats: Number(fee.feeSats || 0),
-                note: 'Ark routing fee',
+                note: loc.cypherbox.services.lightning_swap.ark_routing_fee,
             };
         } catch (err) {
             if (__DEV__) console.warn('[lightningSwap/ark] estimateFee failed:', err);

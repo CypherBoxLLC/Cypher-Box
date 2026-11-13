@@ -29,8 +29,10 @@ import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import { DynamicQRCode } from "../../../components/DynamicQRCode";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
 import OfflineSeedWarning from "@Cypher/components/OfflineSeedWarning";
-import { SEED_SIGNER_MODE, openSeedSignerGate } from "../SigningHome/seedSigner";
+import { openSeedSignerGate } from "../SigningHome/seedSigner";
 import styles from "./styles";
+import signErrorText from "./errorText";
+import loc from "../../../loc";
 
 const bitcoinjs = require('bitcoinjs-lib');
 const fs = require('../../../blue_modules/fs');
@@ -68,8 +70,8 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
     const connection = useElectrumConnection(true, false);
     const offline = connection === 'no-answer';
     const onlineNote = connection === 'checking'
-        ? 'Checking this phone is offline…'
-        : "This phone is online. Signing unlocks once it's offline: Airplane Mode on, Wi-Fi and Bluetooth off.";
+        ? loc.cypherbox.sign_once.checking_offline
+        : loc.cypherbox.sign_once.online_note;
     const [signed, setSigned] = useState<bitcoin.Psbt | null>(null);
     const rootRef = useRef<BIP32Interface | null>(null);
 
@@ -95,7 +97,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const reviewWithHotVault = (tx: bitcoin.Psbt) => {
         const fingerprint = hotVaultFingerprint();
-        if (!fingerprint) throw new Error("There's no Hot Vault on this phone to sign with.");
+        if (!fingerprint) throw new Error(loc.cypherbox.sign_once.no_hot_vault);
         assertKeyMatches(tx, fingerprint, SIGN_VAULT_MISMATCH);
         setReview(reviewWithWallet(tx, (address: string) => !!hotVault.weOwnAddress(address), fingerprint));
         setMode('vault');
@@ -119,7 +121,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             }
         } catch (e: any) {
             setStep('scan');
-            setError(e.message);
+            setError(signErrorText(e.message));
         }
     };
 
@@ -164,7 +166,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             setPassphrase('');
             setStep('review');
         } catch (e: any) {
-            setError(e.message);
+            setError(signErrorText(e.message));
         }
     };
 
@@ -192,7 +194,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             setSignedOnThisPhone(true);
             setStep('signed');
         } catch (e: any) {
-            setError(e.message);
+            setError(signErrorText(e.message));
         }
     };
 
@@ -207,16 +209,15 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const renderScan = () => (
         <>
-            <Text style={styles.title}>Sign a transaction</Text>
+            <Text style={styles.title}>{loc.cypherbox.sign_once.scan_title}</Text>
             <Text style={styles.body}>
-                Scan the unsigned transaction (PSBT) from your watch & broadcast only wallet: a Cypher Box Cold Vault, Sparrow or
-                another app.
+                {loc.cypherbox.sign_once.scan_body}
             </Text>
             <TouchableOpacity style={styles.primary} onPress={() => scan(accept)} accessibilityRole="button">
-                <Text h3>Scan QR</Text>
+                <Text h3>{loc.cypherbox.sign_once.scan_qr}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondary} onPress={openFile} accessibilityRole="button">
-                <Text h3>Open file</Text>
+                <Text h3>{loc.cypherbox.sign_once.open_file}</Text>
             </TouchableOpacity>
             {renderError()}
         </>
@@ -224,24 +225,23 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const renderChoose = () => (
         <>
-            <Text style={styles.title}>How do you want to sign?</Text>
-            <Text style={styles.body}>This transaction belongs to the Hot Vault on this phone.</Text>
+            <Text style={styles.title}>{loc.cypherbox.sign_once.choose_title}</Text>
+            <Text style={styles.body}>{loc.cypherbox.sign_once.choose_body}</Text>
             <TouchableOpacity style={styles.primary} onPress={() => {
                 try {
                     reviewWithHotVault(psbt as bitcoin.Psbt);
                 } catch (e: any) {
-                    setError(e.message);
+                    setError(signErrorText(e.message));
                 }
             }} accessibilityRole="button">
-                <Text h3>{signingMode ? 'Sign with the seed on this phone' : 'Sign with your Hot Vault'}</Text>
+                <Text h3>{signingMode ? loc.cypherbox.sign_once.sign_with_seed : loc.cypherbox.sign_once.sign_with_hot_vault}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondary} onPress={() => { setMode('backup'); setStep('backup'); }} accessibilityRole="button">
-                <Text h3>Sign from a backup instead</Text>
+                <Text h3>{loc.cypherbox.sign_once.sign_from_backup}</Text>
             </TouchableOpacity>
             {signingMode ? (
                 <Text style={styles.note}>
-                    On a signing phone, signing from a backup is safer: then the phone needn't keep the recovery phrase
-                    at all.
+                    {loc.cypherbox.sign_once.backup_safer}
                 </Text>
             ) : null}
             {renderError()}
@@ -250,20 +250,20 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const renderBackup = () => (
         <>
-            <Text style={styles.title}>Load your backup</Text>
+            <Text style={styles.title}>{loc.cypherbox.sign_once.backup_title}</Text>
             {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
             <Text style={styles.body}>
-                Your recovery phrase is only held while you sign, and is never saved on this phone.
+                {loc.cypherbox.sign_once.backup_body}
             </Text>
             {signingMode ? <OfflineSeedWarning style={styles.seedWarning} /> : null}
             <TouchableOpacity style={styles.primary} onPress={() => (offline ? scan(loadBackup) : setError(onlineNote))} accessibilityRole="button">
-                <Text h3>Scan SeedQR</Text>
+                <Text h3>{loc.cypherbox.sign_once.scan_seedqr}</Text>
             </TouchableOpacity>
             <TextInput
                 style={[styles.input, styles.words]}
                 value={words}
                 onChangeText={setWords}
-                placeholder="Or type your 12 or 24 words"
+                placeholder={loc.cypherbox.sign_once.words_placeholder}
                 placeholderTextColor="#777"
                 multiline
                 autoCapitalize="none"
@@ -279,7 +279,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 style={styles.input}
                 value={passphrase}
                 onChangeText={setPassphrase}
-                placeholder="Passphrase (only if you use one)"
+                placeholder={loc.cypherbox.sign_once.passphrase_placeholder}
                 placeholderTextColor="#777"
                 secureTextEntry
                 autoCapitalize="none"
@@ -289,7 +289,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 importantForAutofill="no"
             />
             <TouchableOpacity style={styles.secondary} onPress={() => loadBackup(words)} accessibilityRole="button">
-                <Text h3>Continue</Text>
+                <Text h3>{loc._.continue}</Text>
             </TouchableOpacity>
             {renderError()}
         </>
@@ -297,31 +297,31 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const renderReview = () => (
         <>
-            <Text style={styles.title}>You're about to sign</Text>
+            <Text style={styles.title}>{loc.cypherbox.sign_once.review_title}</Text>
             {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
             {review?.outputs.map((output, i) => (
                 <View key={i} style={styles.row}>
-                    <Text style={styles.rowLabel}>{output.change ? 'Back to your wallet' : 'To'}</Text>
-                    <Text style={styles.rowAddress}>{output.address ?? 'Unknown output script'}</Text>
+                    <Text style={styles.rowLabel}>{output.change ? loc.cypherbox.sign_once.back_to_wallet : loc.cypherbox.sign_once.to}</Text>
+                    <Text style={styles.rowAddress}>{output.address ?? loc.cypherbox.sign_once.unknown_script}</Text>
                     <Text bold style={styles.rowValue}>{formatSignSats(output.value)}</Text>
                 </View>
             ))}
             {review?.fee != null ? (
                 <View style={styles.row}>
-                    <Text style={styles.rowLabel}>Network fee</Text>
+                    <Text style={styles.rowLabel}>{loc.cypherbox.sign_once.network_fee}</Text>
                     <Text style={styles.rowValue}>{formatSignSats(review.fee)}</Text>
                 </View>
             ) : null}
             {review && review.ownInputs < review.inputCount ? (
                 <Text style={styles.note}>
-                    This key signs {review.ownInputs} of {review.inputCount} inputs. The others need another signer.
+                    {loc.formatString(loc.cypherbox.sign_once.partial, { own: review.ownInputs, total: review.inputCount })}
                 </Text>
             ) : null}
             <TouchableOpacity style={styles.primary} onPress={sign} accessibilityRole="button">
-                <Text h3>Sign</Text>
+                <Text h3>{loc.cypherbox.sign_once.sign}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondary} onPress={cancel} accessibilityRole="button">
-                <Text h3>Cancel</Text>
+                <Text h3>{loc._.cancel}</Text>
             </TouchableOpacity>
             {renderError()}
         </>
@@ -329,36 +329,36 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
 
     const renderSigned = () => (
         <>
-            <Text style={styles.title}>Signed</Text>
+            <Text style={styles.title}>{loc.cypherbox.sign_once.signed_title}</Text>
             <View style={styles.qr}>
                 <DynamicQRCode value={(signed as bitcoin.Psbt).toHex()} />
             </View>
-            <Text style={styles.body}>Scan this with the wallet that made the transaction, to broadcast it.</Text>
-            {mode === 'backup' ? <Text style={styles.success}>Your recovery phrase wasn't saved on this phone.</Text> : null}
+            <Text style={styles.body}>{loc.cypherbox.sign_once.signed_body}</Text>
+            {mode === 'backup' ? <Text style={styles.success}>{loc.cypherbox.sign_once.not_saved}</Text> : null}
             <TouchableOpacity
                 style={styles.secondary}
                 onPress={() => {
                     Clipboard.setString((signed as bitcoin.Psbt).toBase64());
-                    SimpleToast.show('Signed transaction copied', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.sign_once.copied, SimpleToast.SHORT);
                 }}
                 accessibilityRole="button"
             >
-                <Text h3>Copy</Text>
+                <Text h3>{loc.cypherbox.sign_once.copy}</Text>
             </TouchableOpacity>
             <TouchableOpacity
                 style={styles.secondary}
                 onPress={() => fs.writeFileAndExport(`signed-${Date.now()}.psbt`, (signed as bitcoin.Psbt).toBase64())}
                 accessibilityRole="button"
             >
-                <Text h3>Save file</Text>
+                <Text h3>{loc.cypherbox.sign_once.save_file}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.primary} onPress={() => navigation.goBack()} accessibilityRole="button">
-                <Text h3>Done</Text>
+                <Text h3>{loc.cypherbox.sign_once.done}</Text>
             </TouchableOpacity>
             <SigningPhoneStatus />
             {mode === 'backup' && !signingMode ? (
                 <TouchableOpacity style={styles.link} onPress={useForSigningOnly} accessibilityRole="button">
-                    <Text style={styles.linkText}>Turn on {SEED_SIGNER_MODE}</Text>
+                    <Text style={styles.linkText}>{loc.cypherbox.sign_once.turn_on_signer}</Text>
                 </TouchableOpacity>
             ) : null}
         </>

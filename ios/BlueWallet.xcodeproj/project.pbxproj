@@ -11,6 +11,10 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
 		1E1B9ECD55534497A70E526D /* Lato-Thin.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F3DF7D7ECF364161BF6B22BE /* Lato-Thin.ttf */; };
+		9A7844593C4BF31014ECEF28 /* Tajawal-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3DCC82C1CAFDA1677A44B11A /* Tajawal-Bold.ttf */; };
+		69C0EB71B29D3041894D14B0 /* Tajawal-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 426250C376EDAE478B740C0D /* Tajawal-Light.ttf */; };
+		8C970DA8D9361B9375AD234E /* Tajawal-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DBE84FCFB1229700A30B6A70 /* Tajawal-Medium.ttf */; };
+		4B0EDBD37B612609BD5F0E18 /* Tajawal-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1CB7579BE8CF1F2295B4FACD /* Tajawal-Regular.ttf */; };
 		32B5A32A2334450100F8D608 /* Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32B5A3292334450100F8D608 /* Bridge.swift */; };
 		34ACAC5F5E7BDFF4B63BA1E9 /* libPods-BlueWallet.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F24A4F061306AF47E704FA54 /* libPods-BlueWallet.a */; };
 		6D32C5C62596CE3A008C077C /* EventEmitter.m in Sources */ = {isa = PBXBuildFile; fileRef = 6D32C5C52596CE3A008C077C /* EventEmitter.m */; };
@@ -285,6 +289,10 @@
 		ED2971642150620600B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS12.0.sdk/System/Library/Frameworks/JavaScriptCore.framework; sourceTree = DEVELOPER_DIR; };
 		F24A4F061306AF47E704FA54 /* libPods-BlueWallet.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-BlueWallet.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F3DF7D7ECF364161BF6B22BE /* Lato-Thin.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Lato-Thin.ttf"; path = "../src/assets/fonts/Lato-Thin.ttf"; sourceTree = "<group>"; };
+		3DCC82C1CAFDA1677A44B11A /* Tajawal-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Tajawal-Bold.ttf"; path = "../src/assets/fonts/Tajawal-Bold.ttf"; sourceTree = "<group>"; };
+		426250C376EDAE478B740C0D /* Tajawal-Light.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Tajawal-Light.ttf"; path = "../src/assets/fonts/Tajawal-Light.ttf"; sourceTree = "<group>"; };
+		DBE84FCFB1229700A30B6A70 /* Tajawal-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Tajawal-Medium.ttf"; path = "../src/assets/fonts/Tajawal-Medium.ttf"; sourceTree = "<group>"; };
+		1CB7579BE8CF1F2295B4FACD /* Tajawal-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Tajawal-Regular.ttf"; path = "../src/assets/fonts/Tajawal-Regular.ttf"; sourceTree = "<group>"; };
 		F63BBFC2D18F851E32EA656E /* Pods-BlueWallet-NoLDK.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BlueWallet-NoLDK.release.xcconfig"; path = "Target Support Files/Pods-BlueWallet-NoLDK/Pods-BlueWallet-NoLDK.release.xcconfig"; sourceTree = "<group>"; };
 		F6F3F7A9DFB74923B662A1B9 /* BootSplash.storyboard */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = BootSplash.storyboard; path = BlueWallet/BootSplash.storyboard; sourceTree = "<group>"; };
 		F6F53AFC25FB422485CB22D6 /* SystemConfiguration.framework */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
@@ -420,6 +428,10 @@
 				071766184CB84657AE1D4F51 /* Lato-Italic.ttf */,
 				088FFD9EFF664454A6F4C12E /* Archivo-Regular.ttf */,
 				F3DF7D7ECF364161BF6B22BE /* Lato-Thin.ttf */,
+				3DCC82C1CAFDA1677A44B11A /* Tajawal-Bold.ttf */,
+				426250C376EDAE478B740C0D /* Tajawal-Light.ttf */,
+				DBE84FCFB1229700A30B6A70 /* Tajawal-Medium.ttf */,
+				1CB7579BE8CF1F2295B4FACD /* Tajawal-Regular.ttf */,
 			);
 			name = Resources;
 			sourceTree = "<group>";
@@ -822,6 +834,10 @@
 				C1ECBEBE9F2D4DF795D8F16D /* Lato-Italic.ttf in Resources */,
 				C289370B1DA44734A86648F1 /* Archivo-Regular.ttf in Resources */,
 				1E1B9ECD55534497A70E526D /* Lato-Thin.ttf in Resources */,
+				9A7844593C4BF31014ECEF28 /* Tajawal-Bold.ttf in Resources */,
+				69C0EB71B29D3041894D14B0 /* Tajawal-Light.ttf in Resources */,
+				8C970DA8D9361B9375AD234E /* Tajawal-Medium.ttf in Resources */,
+				4B0EDBD37B612609BD5F0E18 /* Tajawal-Regular.ttf in Resources */,
 				BE5BBA7C52E3E8CA70EBDDDF /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

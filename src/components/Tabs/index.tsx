@@ -9,6 +9,7 @@ import GradientCard from "../GradientCard";
 import LinearGradient from "react-native-linear-gradient";
 import GradientText from "../GradientText";
 import GradientButton from "./GradientButton";
+import loc from "../../../loc";
 
 interface Props {
     onChangeSelectedTab(id: number): void;
@@ -43,18 +44,18 @@ export default function Tabs({ onChangeSelectedTab, selectedTab, vaultTab, accou
     const tabs: TabDef[] = useMemo(() => [
         {
             id: 0,
-            name: isArk ? 'Capsules' : 'Account',
+            name: isArk ? loc.cypherbox.components.tabs.capsules : loc.cypherbox.components.tabs.account,
             icon: isArk ? Electricity : Bank,
         },
         isArk
             ? {
                 id: 1,
-                name: 'Vault',
+                name: loc.cypherbox.components.tabs.vault,
                 ionicon: 'boat-outline',
             }
-            : { id: 1, name: 'Threshold', icon: Threshold },
-        { id: 2, name: 'History', icon: Time },
-        { id: 3, name: 'Settings', icon: Settings },
+            : { id: 1, name: loc.cypherbox.components.tabs.threshold, icon: Threshold },
+        { id: 2, name: loc.cypherbox.components.tabs.history, icon: Time },
+        { id: 3, name: loc.cypherbox.components.tabs.settings, icon: Settings },
     ], [isArk]);
 
 

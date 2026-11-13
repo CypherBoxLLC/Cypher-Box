@@ -5,7 +5,7 @@ import Reanimated, { useAnimatedProps } from 'react-native-reanimated';
 import { useIsFocused } from '@react-navigation/native';
 import { Text } from '@Cypher/component-library';
 import styles from './styles';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
 import { calculateBalancePercentage, calculatePercentage } from '@Cypher/helpers';
 import { CarouselPageVisibilityContext, useEasedProgress } from '@Cypher/custom-hooks';
@@ -168,8 +168,8 @@ const CircleTimer = ({
       </View>
 
       <View style={styles.textContainer}>
-        <Text bold style={styles.mainText}>{value}</Text>
-        <Text h3 semibold>{convertedValue}</Text>
+        <Text bold style={[styles.mainText, rtl.ltrText]}>{value}</Text>
+        <Text h3 semibold style={rtl.ltrText}>{convertedValue}</Text>
       </View>
 
       {image && (

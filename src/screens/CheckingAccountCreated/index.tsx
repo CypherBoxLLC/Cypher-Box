@@ -4,7 +4,7 @@ import * as Keychain from "react-native-keychain";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import SimpleToast from "react-native-simple-toast";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { Card, SavingVault } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchReset } from "@Cypher/helpers/navigation";
@@ -15,6 +15,7 @@ import { useRoute } from "@react-navigation/native";
 import { ensureBgNotificationPermission, setArkBackgroundRefreshEnabled } from "@Cypher/services/ark";
 import styles from "./styles";
 import LightningVaultCreate from "@Cypher/components/LightningVaultCreate/LightningVaultCreate";
+import loc from "../../../loc";
 
 const thresholdOptions = [
     100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000,
@@ -50,7 +51,7 @@ export default function CheckingAccountCreated() {
         } catch (err: any) {
             console.warn("[Ark vault created] bg-refresh toggle failed:", err);
             SimpleToast.show(
-                `Toggle failed: ${err?.message ?? "unknown error"}`,
+                String(loc.formatString(loc.cypherbox.account.checking_created.toggle_failed, { error: err?.message ?? loc.cypherbox.account.common.unknown_error })),
                 SimpleToast.LONG,
             );
         } finally {
@@ -66,8 +67,8 @@ export default function CheckingAccountCreated() {
         ? colors.ark.light
         : colors.pink.light;
     const titleText = isArk
-        ? 'Bark Vault Created!'
-        : 'Lightning Account Created!';
+        ? loc.cypherbox.account.checking_created.bark_vault_created
+        : loc.cypherbox.account.common.lightning_account_created;
 
     const initialThreshold = isArk
         ? (Number(withdrawArkThreshold) || 500000)
@@ -123,11 +124,11 @@ export default function CheckingAccountCreated() {
         if (isArk && arkBgRefreshEnabled) {
             const wantsReminders = await new Promise<boolean>(resolve => {
                 Alert.alert(
-                    'Enable bark notifications to get VTXO capsule refresh reminders?',
-                    'Cypher Box sends 6 reminders before any capsule expires (7 days, 4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box, see what the refresh costs, and confirm it. Without a refresh, recovery is not guaranteed once a capsule expires.',
+                    loc.cypherbox.account.checking_created.reminders_alert_title,
+                    loc.cypherbox.account.checking_created.reminders_alert_body,
                     [
-                        { text: 'No', style: 'cancel', onPress: () => resolve(false) },
-                        { text: 'Yes', onPress: () => resolve(true) },
+                        { text: loc._.no, style: 'cancel', onPress: () => resolve(false) },
+                        { text: loc._.yes, onPress: () => resolve(true) },
                     ],
                     { cancelable: false },
                 );
@@ -171,7 +172,7 @@ export default function CheckingAccountCreated() {
                             <View style={{ marginTop: 8, alignItems: 'center' }}>
                                 <Card
                                     wallet="ARK"
-                                    title="Bark Vault"
+                                    title={loc.cypherbox.account.checking_created.bark_vault}
                                     balance={0}
                                     currency="USD"
                                     matchedRate={0}
@@ -198,10 +199,10 @@ export default function CheckingAccountCreated() {
                                 {/* The capsules-must-be-refreshed contract — the most
                                     important thing for newbies to internalize. */}
                                 <Text bold style={{ fontSize: 15, marginTop: 18, marginHorizontal: 10, color: accentColor }}>
-                                    Capsules must be refreshed
+                                    {loc.cypherbox.account.checking_created.capsules_must_be_refreshed}
                                 </Text>
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 6 }]}>
-                                    To keep your balance available and self-custodial, your lightning capsules (VTXOs) need to be refreshed.
+                                    {loc.cypherbox.account.checking_created.capsules_refresh_desc}
                                 </Text>
 
                                 {/* Toggle. Default ON (armed during create);
@@ -210,7 +211,7 @@ export default function CheckingAccountCreated() {
                                 <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, padding: 14, marginTop: 12, marginHorizontal: 10 }}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <RNText style={{ fontSize: 14, fontWeight: '700', color: colors.white, flex: 1, marginRight: 12 }}>
-                                            Capsule expiry reminders
+                                            {loc.cypherbox.account.checking_created.capsule_expiry_reminders}
                                         </RNText>
                                         <Switch
                                             value={arkBgRefreshEnabled}
@@ -222,39 +223,39 @@ export default function CheckingAccountCreated() {
                                     </View>
                                     <Text style={{ fontSize: 12, color: arkBgRefreshEnabled ? '#888' : colors.redLight, marginTop: 6, lineHeight: 16 }}>
                                         {arkBgRefreshEnabled
-                                            ? 'Recommended. Cypher Box sends 6 reminders before any capsule expires (7 days, 4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Tap a reminder to open Cypher Box, see what the refresh costs, and confirm it. Without a refresh, recovery is not guaranteed once a capsule expires.'
-                                            : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
+                                            ? loc.cypherbox.account.checking_created.reminders_on
+                                            : loc.cypherbox.account.checking_created.reminders_off}
                                     </Text>
                                 </View>
 
                                 {/* Long-term safety reminders */}
                                 <Text bold style={{ fontSize: 15, marginTop: 22, marginHorizontal: 10, color: accentColor }}>
-                                    Keep these safe
+                                    {loc.cypherbox.account.checking_created.keep_these_safe}
                                 </Text>
                                 <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 6 }]}>
-                                    • Your 12-word seed phrase. Write it down somewhere only you can access.
+                                    {loc.cypherbox.account.checking_created.seed_bullet}
                                 </Text>
                             </ScrollView>
                         </>
                     ) : (
                         <>
-                            <LightningVaultCreate title="Lightning Account" />
+                            <LightningVaultCreate title={loc.cypherbox.account.common.lightning_account} />
                             <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-                                <Text h4 style={[styles.descption, { fontSize: 16, marginTop: 16, fontWeight: 'bold', textAlign: 'center' }]}>Set Withdraw Threshold</Text>
+                                <Text h4 style={[styles.descption, { fontSize: 16, marginTop: 16, fontWeight: 'bold', textAlign: 'center' }]}>{loc.cypherbox.account.checking_created.set_withdraw_threshold}</Text>
                                 <TouchableOpacity
                                     onPress={() => setPickerVisible(true)}
                                     activeOpacity={0.7}
                                     style={{ backgroundColor: colors.gray.dark, borderRadius: 14, padding: 14, marginTop: 8, marginHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#3A3A3A' }}>
-                                    <Text bold style={{ fontSize: 16 }}>{formatNumber(selectedThreshold)} sats</Text>
-                                    <Text style={{ fontSize: 13, color: '#AAAAAA' }}>Tap to change</Text>
+                                    <Text bold style={[{ fontSize: 16 }, rtl.ltrText]}>{formatNumber(selectedThreshold)} sats</Text>
+                                    <Text style={{ fontSize: 13, color: '#AAAAAA' }}>{loc.cypherbox.account.checking_created.tap_to_change}</Text>
                                 </TouchableOpacity>
 
                                 {isStrike && strikeMe?.username ? (
-                                    <Text style={{ width: '100%', fontSize: 20, paddingTop: 16, fontWeight: 'bold', textAlign: 'center' }}>{strikeMe.username + '@strike.me'}</Text>
+                                    <Text style={[{ width: '100%', fontSize: 20, paddingTop: 16, fontWeight: 'bold', textAlign: 'center' }, rtl.ltrText]}>{strikeMe.username + '@strike.me'}</Text>
                                 ) : null}
 
-                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 16 }]}>The interactive bar display helps you visualize your Lightning Account's balance, showing a threshold above which storing bitcoin in an exchange carries increased counter-party risk. This threshold will also determine the size of the withdrawn UTXO coin.</Text>
-                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 12 }]}>Note: You can deposit money beyond the threshold. It will just give you a reminder message if your balance reaches it. It won't withdraw automatically.</Text>
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 16 }]}>{loc.cypherbox.account.checking_created.bar_desc}</Text>
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 12 }]}>{loc.cypherbox.account.checking_created.deposit_note}</Text>
 
                                 <Modal isVisible={pickerVisible} onBackdropPress={() => setPickerVisible(false)}>
                                     <View style={{ backgroundColor: colors.gray.dark, borderRadius: 20, padding: 16 }}>
@@ -282,7 +283,7 @@ export default function CheckingAccountCreated() {
                     )}
                 </View>
             </View>
-            <Button text="Home"
+            <Button text={loc.cypherbox.account.common.home}
                 onPress={nextClickHandler}
                 style={{...styles.button, ...{ backgroundColor: accentColor, marginTop: vaultTab ? 30 : 0 , marginBottom: 15} }}
                 // Ark's accent moved yellow -> white, so white btnText blends

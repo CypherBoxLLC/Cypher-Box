@@ -3,22 +3,36 @@ import { GradientText } from '@Cypher/components';
 import { colors } from '@Cypher/style-guide';
 import React from 'react';
 import { View, StyleSheet, ScrollView, Linking } from 'react-native';
+import loc from '../../../loc';
+import TermsArabic from './TermsArabic';
 
 const ASP_TERMS_URL = 'https://second.tech/terms';
 
 const TermsOfService = () => {
+    // Arabic shows its translation first, then the English text below it.
+    const isArabic = loc.getLanguage() === 'ar';
+
     const openAspTerms = () => {
         Linking.openURL(ASP_TERMS_URL);
     };
 
     return (
         <ScreenLayout showToolbar disableScroll>
-            <GradientText style={styles.title} center>Terms of Service & Privacy Policy</GradientText>
-            <Text style={styles.lastUpdated} center>Last Updated: September 2026</Text>
+            <GradientText style={styles.title} center>{loc.cypherbox.tos.title}</GradientText>
+            <Text style={styles.lastUpdated} center>{loc.cypherbox.tos.last_updated}</Text>
             <View style={styles.divider} />
-            <ScrollView style={styles.container} showsVerticalScrollIndicator={true}
+            {/* the padding goes on the content: on the scroll view itself, right-to-left layout shifted the text by it */}
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={true}
                 indicatorStyle='white'
             >
+                {isArabic && (
+                    <>
+                        <TermsArabic styles={styles} aspTermsUrl={ASP_TERMS_URL} onAspTermsPress={openAspTerms} />
+                        <View style={styles.divider} />
+                        <Text style={styles.sectionTitle}>{loc.cypherbox.tos.english_version}</Text>
+                    </>
+                )}
+                <View style={isArabic ? styles.ltr : undefined}>
                 {/* ===== TERMS OF SERVICE ===== */}
                 <Text style={styles.sectionTitle}>TERMS OF SERVICE</Text>
 
@@ -521,8 +535,9 @@ const TermsOfService = () => {
 
                 <View style={styles.section}>
                     <Text style={[styles.paragraph, { fontStyle: 'italic' }]}>
-                        This Agreement and Privacy Policy were last updated in August 2026.
+                        This Agreement and Privacy Policy were last updated in September 2026.
                     </Text>
+                </View>
                 </View>
 
                 <View style={{ height: 40 }} />
@@ -532,8 +547,10 @@ const TermsOfService = () => {
 };
 
 const styles = StyleSheet.create({
-    container: {
+    scroll: {
         flex: 1,
+    },
+    container: {
         padding: 20,
         paddingHorizontal: 40
     },
@@ -549,8 +566,10 @@ const styles = StyleSheet.create({
         color: '#888',
         marginBottom: 12,
     },
+    // headings set their own line height: the shared 18pt one cut off the dots above Arabic letters at this size
     sectionTitle: {
         fontSize: 20,
+        lineHeight: 30,
         fontWeight: 'bold',
         color: '#fff',
         marginTop: 16,
@@ -562,6 +581,7 @@ const styles = StyleSheet.create({
     },
     subHeader: {
         fontSize: 18,
+        lineHeight: 27,
         fontWeight: 'bold',
         marginBottom: 8,
         color: '#fff',
@@ -595,6 +615,9 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#A3A3A3',
         marginVertical: 8,
+    },
+    ltr: {
+        direction: 'ltr',
     },
 });
 

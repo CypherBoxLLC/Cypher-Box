@@ -27,6 +27,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlueCurrentTheme, useTheme } from './components/themes';
 import PlusIcon from './components/icons/PlusIcon';
 import loc, { formatStringAddTwoWhiteSpaces } from './loc';
+import arabicFont from './src/style-guide/arabicFont';
 
 const { height, width } = Dimensions.get('window');
 const aspectRatio = height / width;
@@ -413,12 +414,15 @@ export const BlueHeaderDefaultSub = props => {
         leftComponent={
           <Text
             adjustsFontSizeToFit
-            style={{
-              fontWeight: 'bold',
-              fontSize: 30,
-              color: colors.foregroundColor,
-              marginLeft: Platform.OS === 'android' ? 40 : 0,
-            }}
+            style={[
+              {
+                fontWeight: 'bold',
+                fontSize: 30,
+                color: colors.foregroundColor,
+                marginLeft: Platform.OS === 'android' ? 40 : 0,
+              },
+              arabicFont({ fontWeight: 'bold' }),
+            ]}
           >
             {props.leftText}
           </Text>

@@ -4,7 +4,7 @@ import { StyleSheet, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SwipeButton } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { assertSignedTxMatchesPsbt, createPendingSignature, isRawTransactionHex, sameUnsignedTransaction } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
@@ -189,41 +189,41 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
     return (
         <ScreenLayout showToolbar>
             <View style={styles.container}>
-                <Text style={styles.title} center>Transaction signing</Text>
+                <Text style={styles.title} center>{loc.cypherbox.payments.common.transaction_signing}</Text>
                 <View style={styles.recipientView}>
-                    <Text h4 style={{marginBottom: 12}}>Scan or export this unsigned transaction (PSBT) with your signing device (a hardware wallet, or the signing wallet on your offline phone) and sign it there. Tap 'Next' when you're done.</Text>
-                    <Text h4 style={styles.leaveNote}>You can leave Cypher Box while you sign. This transaction waits on your Cold Vault's Vault tab until you send it or discard it.</Text>
+                    <Text h4 style={{marginBottom: 12}}>{loc.cypherbox.payments.hardware_wallet_transaction.instructions}</Text>
+                    <Text h4 style={styles.leaveNote}>{loc.cypherbox.payments.hardware_wallet_transaction.leave_note}</Text>
                     <TouchableOpacity
                         onPress={() => navigation.navigate('SigningSafetyGuide')}
                         style={styles.signerRow}
                         accessibilityRole="button"
-                        accessibilityLabel="Signing safely"
+                        accessibilityLabel={loc.cypherbox.payments.hardware_wallet_transaction.signing_safely_a11y}
                     >
-                        <Text h4 style={styles.signerText}>Sign only with a device or app you installed from its official source: a tampered signer can hide your recovery phrase inside the signature, even offline.</Text>
+                        <Text h4 style={styles.signerText}>{loc.cypherbox.payments.hardware_wallet_transaction.signer_warning}</Text>
                         <View style={styles.signerHelp}>
                             <Text bold style={styles.signerHelpText}>?</Text>
                         </View>
                     </TouchableOpacity>
                     <DynamicPSBTQRCode value={psbt.toHex()} ref={dynamicQRCode} />
                     <TouchableOpacity onPress={exportPSBT} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
-                        <Text h3>Export</Text>
+                        <Text h3>{loc.cypherbox.payments.hardware_wallet_transaction.export}</Text>
                     </TouchableOpacity>
 
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to ? "Top-up amount:" : "Recipient will get:"}</Text>
-                            <Text bold style={[styles.value, {color: colors.blueText}]}>{sats + ' sats ~$'+ inUSD}</Text>
+                            <Text style={styles.recipientTitle}>{to ? loc.cypherbox.payments.common.top_up_amount : loc.cypherbox.payments.common.recipient_will_get}</Text>
+                            <Text bold style={[styles.value, {color: colors.blueText}, rtl.ltrText]}>{sats + ' sats ~$'+ inUSD}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to ? "To Coinos Bitcoin address" : "To:"}</Text>
-                            <Text style={StyleSheet.flatten([styles.fees, { color: colors.blueText }])}>Bitcoin Address: {shortenAddress(destinationAddress)}</Text>
+                            <Text style={styles.recipientTitle}>{to ? loc.cypherbox.payments.common.to_coinos_bitcoin_address : loc.cypherbox.payments.common.to_colon}</Text>
+                            <Text style={StyleSheet.flatten([styles.fees, { color: colors.blueText }])}>{loc.cypherbox.payments.common.bitcoin_address_label}{shortenAddress(destinationAddress)}</Text>
                         </View>
                     </View>
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, {backgroundColor: colors.blueText}]}>
-                    <Text h3>Next</Text>
+                    <Text h3>{loc.cypherbox.payments.common.next}</Text>
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

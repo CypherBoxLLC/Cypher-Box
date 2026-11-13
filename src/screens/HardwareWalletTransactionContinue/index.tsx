@@ -4,7 +4,7 @@ import { StyleSheet, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SwipeButton } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { assertSignedTxMatchesPsbt, isRawTransactionHex } from "@Cypher/helpers";
 import { shortenAddress } from "../ColdStorage";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -168,14 +168,14 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
-                <Text style={styles.title} center>Transaction signing</Text>
+                <Text style={styles.title} center>{loc.cypherbox.payments.common.transaction_signing}</Text>
                 <View style={styles.recipientView}>
-                    <Text h4 style={{marginBottom: 20}}>Signed it on your signing device? Scan or import the signed transaction.</Text>
+                    <Text h4 style={{marginBottom: 20}}>{loc.cypherbox.payments.hardware_wallet_transaction_continue.instructions}</Text>
                     <TouchableOpacity onPress={openScanner} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
-                        <Text h3>Scan</Text>
+                        <Text h3>{loc.cypherbox.payments.common.scan}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={openSignedTransaction} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
-                        <Text h3>Import</Text>
+                        <Text h3>{loc.cypherbox.payments.hardware_wallet_transaction_continue.import}</Text>
                     </TouchableOpacity>
                     {/* resuming from the vault tab lands here; the device may still need the unsigned one */}
                     <TouchableOpacity
@@ -183,12 +183,12 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
                         accessibilityRole="button"
                         style={styles.showAgain}
                     >
-                        <Text h4 style={styles.showAgainText}>Need the unsigned transaction again? Show it</Text>
+                        <Text h4 style={styles.showAgainText}>{loc.cypherbox.payments.hardware_wallet_transaction_continue.show_again}</Text>
                     </TouchableOpacity>
-                    <Text h4 style={{marginTop: 20}}>{txHex}</Text>
+                    <Text h4 style={[{marginTop: 20}, rtl.ltrText]}>{txHex}</Text>
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} disabled={!txHex} style={[styles.nextBtn , {backgroundColor: txHex ? colors.blueText : colors.gray.default}]}>
-                    <Text h3>Next</Text>
+                    <Text h3>{loc.cypherbox.payments.common.next}</Text>
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

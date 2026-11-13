@@ -340,6 +340,5 @@ Selftest.propTypes = {
   }),
 };
 
-Selftest.navigationOptions = navigationStyle({
-  title: loc.settings.selfTest,
-});
+// the title is read when the screen is drawn: this file loads before the saved language is applied
+Selftest.navigationOptions = navigationStyle({}, opts => ({ ...opts, title: loc.settings.selfTest }));

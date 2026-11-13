@@ -11,12 +11,13 @@ import {
 } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Text } from "@Cypher/component-library";
 import { ProgressBar5, ProgressBarColdStorage } from "@Cypher/assets/images";
 import ProgressBar from "../ProgressBar";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, ltr } from "@Cypher/style-guide";
 import VaultCapsules from "../VaultCapsules";
 
 interface Props extends TouchableOpacityProps {
@@ -35,7 +36,7 @@ interface Props extends TouchableOpacityProps {
     isColorable?: boolean;
 }
 
-export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = 'Savings Vault', titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
+export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = loc.cypherbox.components.saving_vault.savings_vault, titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
     const { wallets } = useContext(BlueStorageContext);
     // Per-field selectors, NOT a whole-store destructure. The bare
     // `useAuthStore()` re-rendered this card on EVERY store change (the Ark
@@ -49,6 +50,9 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
     const vaultTab = useAuthStore(s => s.vaultTab);
     const vaultTabCheck = isVault === false || isVault === true ? isVault : vaultTab;
     const wallet = vaultTabCheck ? wallets.find(w => w.getID() === coldStorageWalletID) : wallets.find(w => w.getID() === walletID);
+    // the flame for the Hot Vault's card, the snowflake for the Cold Vault's: the same choice as the wallet above, so
+    // it holds in any language and for titles like "Hot Savings"
+    const isHotCard = !vaultTabCheck;
     const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];
     // const inDollar = '6500';
     const emptyUTXO = !utxo ? 5 : utxo.length <= 5 ? 5 - utxo.length : utxo.length > 5 && 0;
@@ -98,7 +102,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                         background gradient and the foreground content. */}
                     <Image
                         source={
-                            title === 'Hot Vault'
+                            isHotCard
                                 ? require('@Cypher/assets/images/fireShield.png')
                                 : require('@Cypher/assets/images/coldShield.png')
                         }
@@ -116,7 +120,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                     />
                     <View style={styles.bottominner}>
                         <View style={{flexDirection: "row", flex:1, justifyContent: "flex-start", alignItems: "center"}}>
-                        {title === 'Hot Vault' ?
+                        {isHotCard ?
                             <Image
                             source={require('@Cypher/assets/images/fireShield.png')}
                             style={{width:25, height: 25, marginRight:8}}
@@ -132,7 +136,7 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                         </View>
                         <View style={styles.row}>
                             <Text h4 bold style={StyleSheet.flatten([styles.bitcointext, bitcoinText])}>
-                                Bitcoin Network
+                                {loc.cypherbox.components.saving_vault.bitcoin_network}
                             </Text>
                             <Image
                                 style={[styles.bitcoinimg, imageStyle]}
@@ -144,7 +148,8 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                     {bitcoinValue &&
                         <View style={[styles.bitcoin, { marginTop: 11, marginLeft: 6 }]}>
                             <Text h2 bold style={{ fontSize: 18 }}>{bitcoinValue} </Text>
-                            <Text h3>~ {inDollars}</Text>
+                            {/* The no-break space keeps a gap to the BTC amount when the row flips in RTL. */}
+                            <Text h3>{ltr(`~ ${inDollars}\u00A0`)}</Text>
                         </View>
                     }
 

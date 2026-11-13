@@ -5,6 +5,7 @@ import { getBuildNumber, getVersion } from "react-native-device-info";
 
 import { Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
 
 const BlueElectrum = require('../../../blue_modules/BlueElectrum');
 
@@ -42,15 +43,14 @@ export default function SigningPhoneStatus() {
         >
             {connected ? (
                 <Text h4 style={[styles.line, styles.alert]}>
-                    This phone is connected to the internet. A phone you sign with should stay offline.
+                    {loc.cypherbox.components.signing_phone_status.connected}
                 </Text>
             ) : null}
             <Text h4 style={styles.line}>
-                Keep this phone offline with automatic updates off. Update Cypher Box here only on purpose, to a version that
-                has been out for a few weeks. If your other phone runs Cypher Box too, keep both on the same version.
+                {loc.cypherbox.components.signing_phone_status.keep_offline}
             </Text>
             <Text h4 style={styles.version}>
-                This phone: Cypher Box {getVersion()} (build {getBuildNumber()}) · <Text h4 style={styles.link}>Signing safely</Text>
+                {loc.formatString(loc.cypherbox.components.signing_phone_status.this_phone, { version: `${getVersion()} (build ${getBuildNumber()})` })} · <Text h4 style={styles.link}>{loc.cypherbox.components.signing_phone_status.signing_safely}</Text>
             </Text>
         </TouchableOpacity>
     );

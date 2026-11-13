@@ -5,6 +5,7 @@ import RBSheet from "react-native-raw-bottom-sheet";
 import { Button, Text } from "@Cypher/component-library";
 import { openInAppBrowser } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
 
 // Strike app store listings (verified via the iTunes Search API and a
 // Play Store search 2026-06-13). URLs are region-agnostic; iOS / Android
@@ -75,25 +76,24 @@ const StrikeSignupSheet = forwardRef<StrikeSignupSheetRef>((_, ref) => {
                     message, and three button labels with the wording you
                     want before merging. */}
                 <Text bold center style={styles.title}>
-                    Sign up for Strike
+                    {loc.cypherbox.components.strike_signup_sheet.title}
                 </Text>
                 <Text center style={styles.message}>
-                    Strike's mobile sign-up works best in their app. How would
-                    you like to continue?
+                    {loc.cypherbox.components.strike_signup_sheet.message}
                 </Text>
                 <Button
-                    text="Get the Strike app"
+                    text={loc.cypherbox.components.strike_signup_sheet.get_app}
                     onPress={handleInstall}
                     style={styles.primaryBtn}
                 />
                 <Button
-                    text="Continue in browser"
+                    text={loc.cypherbox.components.strike_signup_sheet.continue_in_browser}
                     onPress={handleWeb}
                     style={styles.secondaryBtn}
                     textStyle={styles.secondaryBtnText}
                 />
                 <Button
-                    text="Cancel"
+                    text={loc._.cancel}
                     onPress={handleCancel}
                     style={styles.cancelBtn}
                     textStyle={styles.cancelBtnText}

@@ -1,9 +1,10 @@
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, shadow, widths } from "@Cypher/style-guide";
 import React from "react";
-import { Pressable, StyleSheet, TouchableOpacity, View } from "react-native";
+import { I18nManager, Pressable, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Icon } from "react-native-elements";
 import styles from "../styles";
 import { GradientView } from "@Cypher/components";
@@ -50,7 +51,7 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
                     // button visibly depresses (slight scale-down + dim
                     // bg + shrunk shadow) while the user's thumb is on
                     // it, then springs back on release. Tactile feel.
-                    <View style={{ alignItems: 'flex-end', paddingRight: 15, paddingTop: 6, zIndex: 10 }}>
+                    <View style={I18nManager.isRTL ? addWalletStyles.rowRtl : addWalletStyles.row}>
                         <Pressable
                             onPress={onAddAccount}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -85,7 +86,7 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
                                         containerStyle={{ marginRight: 4 }}
                                     />
                                     <Text bold style={{ color: pressed ? '#FFFFFF' : '#000000', fontSize: 12, letterSpacing: 0.3 }}>
-                                        Add wallet
+                                        {loc.cypherbox.home.add_wallet}
                                     </Text>
                                 </>
                             )}
@@ -134,3 +135,19 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
         </View>
     )
 })
+
+const addWalletStyles = StyleSheet.create({
+    row: {
+        alignItems: 'flex-end',
+        paddingRight: 15,
+        paddingTop: 6,
+        zIndex: 10,
+    },
+    // on the right in Arabic too, under the balance, which starts on the right there (flex-end would be the left)
+    rowRtl: {
+        alignItems: 'flex-start',
+        paddingStart: 15,
+        paddingTop: 6,
+        zIndex: 10,
+    },
+});

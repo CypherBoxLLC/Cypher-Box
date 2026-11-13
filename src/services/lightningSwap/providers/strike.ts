@@ -32,6 +32,7 @@ import type {
 } from '../types';
 import { PaymentPendingError } from '../types';
 import { register } from '../registry';
+import loc from '../../../../loc';
 
 /**
  * Format an integer sats amount as a BTC decimal string for Strike's
@@ -101,7 +102,7 @@ const strikeProvider: LightningSwapProvider = {
             const msg =
                 response?.data?.message ??
                 response?.message ??
-                'Strike returned no invoice';
+                loc.cypherbox.services.lightning_swap.strike_no_invoice;
             throw new Error(msg);
         }
         return bolt11;
@@ -182,8 +183,7 @@ const strikeProvider: LightningSwapProvider = {
                 }
                 throw new PaymentPendingError(
                     'strike',
-                    `Strike accepted your payment (id ${pidShort}) but it's still settling on Lightning and the app can't confirm the result. ` +
-                    `Do NOT retry. Open the Strike app to check: it will either complete or refund automatically within a few hours.`,
+                    String(loc.formatString(loc.cypherbox.services.lightning_swap.strike_pending_unconfirmed, { id: pidShort })),
                     String(paymentId),
                 );
             }
@@ -197,8 +197,7 @@ const strikeProvider: LightningSwapProvider = {
             if (finalState === 'PENDING' || finalState === 'NEW' || finalState === '') {
                 throw new PaymentPendingError(
                     'strike',
-                    `Strike payment ${pidShort} is still settling on Lightning. ` +
-                    `Do NOT retry. Open the Strike app to check. It will complete or refund automatically within a few hours.`,
+                    String(loc.formatString(loc.cypherbox.services.lightning_swap.strike_pending_settling, { id: pidShort })),
                     String(paymentId ?? ''),
                 );
             }

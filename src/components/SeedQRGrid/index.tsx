@@ -5,16 +5,17 @@ import Svg, { Line, Rect } from "react-native-svg";
 import { Text } from "@Cypher/component-library";
 import type { SeedQRGrid as Grid } from "@Cypher/helpers/seedQR";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
 
 type Zoom = 'all' | 0 | 1 | 2 | 3;
 
-const ZOOMS: { key: Zoom; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 0, label: 'Top left' },
-    { key: 1, label: 'Top right' },
-    { key: 2, label: 'Bottom left' },
-    { key: 3, label: 'Bottom right' },
-];
+const ZOOMS: Zoom[] = ['all', 0, 1, 2, 3];
+
+// read when drawn: this file loads before the saved language is applied
+const zoomLabel = (zoom: Zoom) => {
+    const labels = loc.cypherbox.components.seedqr_grid;
+    return zoom === 'all' ? labels.all : [labels.top_left, labels.top_right, labels.bottom_left, labels.bottom_right][zoom];
+};
 
 const LABEL = 18;
 
@@ -58,17 +59,19 @@ export default function SeedQRGrid({ grid, width, zoomable = true }: { grid: Gri
     const numbers = (from: number) => Array.from({ length: count }, (_, i) => from + i + 1);
 
     return (
-        <View>
+        // left-to-right in every language: the numbers have to count across the drawing the way they do on the paper
+        // and steel templates, and right-to-left put the column numbers backwards and out of line with the squares
+        <View style={styles.ltr}>
             {zoomable ? (
             <View style={styles.zooms}>
                 {ZOOMS.map(z => (
                     <TouchableOpacity
-                        key={String(z.key)}
-                        onPress={() => setZoom(z.key)}
-                        style={[styles.zoom, zoom === z.key && styles.zoomOn]}
+                        key={String(z)}
+                        onPress={() => setZoom(z)}
+                        style={[styles.zoom, zoom === z && styles.zoomOn]}
                         accessibilityRole="button"
                     >
-                        <Text style={styles.zoomText}>{z.label}</Text>
+                        <Text style={styles.zoomText}>{zoomLabel(z)}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
@@ -99,6 +102,9 @@ export default function SeedQRGrid({ grid, width, zoomable = true }: { grid: Gri
 }
 
 const styles = StyleSheet.create({
+    ltr: {
+        direction: 'ltr',
+    },
     zooms: {
         flexDirection: 'row',
         flexWrap: 'wrap',

@@ -5,6 +5,7 @@ import styles from "./styles"
 import { Text } from "@Cypher/component-library";
 import { Bitcoin, Socked } from "@Cypher/assets/images";
 import { btc } from "@Cypher/helpers/coinosHelper";
+import loc from "../../../../loc";
 
 interface CpfpChildInfo {
     childTxid: string;
@@ -48,9 +49,9 @@ export default function Items({ wallet, item, matchedRate, vaultTab, onPressHand
                     <Text bold h4 style={styles.des}>                    
                         {item.confirmations > 0
                         ? amountSign == '+'
-                          ? "Received"
-                          : "Sent"
-                        : "Pending"}
+                          ? loc.cypherbox.vault.storage_vault.items.received
+                          : loc.cypherbox.vault.storage_vault.items.sent
+                        : loc.cypherbox.vault.storage_vault.items.pending}
                     </Text>
                     <Text h3 style={{ color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }}>{amountSign+BTCAmount}</Text>
                     {/* <Text h3 style={{ color: item?.sats?.includes('+') ? '#4FBF67' : '#FF7A68' }}>{item?.sats}</Text> */}
@@ -58,7 +59,7 @@ export default function Items({ wallet, item, matchedRate, vaultTab, onPressHand
                 <Text style={StyleSheet.flatten([styles.text, { color: amountSign == '+' ? '#4FBF67' : '#FF7A68' }])}>{'$'+dollarAmount.toFixed(2)}</Text>
                 {cpfpChildInfo && (
                     <Text style={{ marginTop: 4, fontSize: 11, opacity: 0.75, color: '#FFD54F' }}>
-                        {'⚡ Accelerated · +' + cpfpChildInfo.childFeeSats.toLocaleString() + ' sats fee'}
+                        {String(loc.formatString(loc.cypherbox.vault.storage_vault.items.accelerated_fee, { fee: cpfpChildInfo.childFeeSats.toLocaleString() }))}
                     </Text>
                 )}
                 {/* <Text style={StyleSheet.flatten([styles.text, { color: item?.sats?.includes('+') ? '#4FBF67' : '#FF7A68' }])}>{item?.usd}</Text> */}

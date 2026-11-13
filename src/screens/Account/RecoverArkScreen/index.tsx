@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Platform, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import DocumentPicker, { types as DocTypes } from "react-native-document-picker";
 import RNFS from "react-native-fs";
 import * as Keychain from "react-native-keychain";
@@ -33,9 +33,10 @@ import type { ChannelLookupResult } from "@Cypher/services/ark";
 import { validateMnemonic } from "@secondts/bark-react-native";
 import useAuthStore from "@Cypher/stores/authStore";
 import { useKeyboardLift } from "@Cypher/custom-hooks";
-import { colors } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
 
 import styles from "./styles";
+import loc from "../../../../loc";
 
 /**
  * Keychain convention: MUST match seedKeychain.ts / recover.ts / reset.ts.
@@ -58,7 +59,7 @@ const BIOMETRIC_LABEL = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
 // seed" errors quote it verbatim, so the words in the error are the words on
 // the button. Only TypeSeedView renders it, so only TypeSeedView's errors may
 // name it (see noBackupMatchError).
-const SEED_ONLY_CTA_LABEL = "Continue without a backup file";
+const getSeedOnlyCtaLabel = () => loc.cypherbox.account.recover_ark.seed_only_cta;
 
 /**
  * RecoverArkScreen — manual 12-word recovery for an Ark wallet.
@@ -184,8 +185,8 @@ export default function RecoverArkScreen() {
         if (mnemonic.split(/\s+/).length !== 12) {
             setErrorMsg(
                 keychainHasSeed
-                    ? `Tap "Unlock with ${BIOMETRIC_LABEL}" first, or type all 12 words manually.`
-                    : "Type all 12 seed words first, then choose your backup file.",
+                    ? String(loc.formatString(loc.cypherbox.account.recover_ark.tap_unlock_first, { biometric: BIOMETRIC_LABEL }))
+                    : loc.cypherbox.account.recover_ark.type_all_first,
             );
             return null;
         }
@@ -193,12 +194,12 @@ export default function RecoverArkScreen() {
         try {
             valid = validateMnemonic(mnemonic);
         } catch {
-            setErrorMsg("Couldn't validate seed phrase. Check the words and try again.");
+            setErrorMsg(loc.cypherbox.account.recover_ark.validate_failed);
             return null;
         }
         if (!valid) {
             setErrorMsg(
-                "Invalid seed phrase. Double-check spelling. Each word must be a BIP39 word.",
+                loc.cypherbox.account.recover_ark.invalid_seed,
             );
             return null;
         }
@@ -217,13 +218,13 @@ export default function RecoverArkScreen() {
                 setUnlockedMnemonic(creds.password);
             } else {
                 setErrorMsg(
-                    "Keychain returned no seed. Tap \"Type seed manually\" below.",
+                    loc.cypherbox.account.recover_ark.keychain_no_seed,
                 );
             }
         } catch (err: any) {
             console.warn('[Ark restore] Keychain read declined:', err?.message ?? err);
             setErrorMsg(
-                `${BIOMETRIC_LABEL} was declined. Tap unlock again, or type your 12 words manually.`,
+                String(loc.formatString(loc.cypherbox.account.recover_ark.biometric_declined, { biometric: BIOMETRIC_LABEL })),
             );
         } finally {
             setUnlocking(false);
@@ -245,11 +246,11 @@ export default function RecoverArkScreen() {
         if (!liveWallet) return true;
         return new Promise<boolean>((resolve) => {
             Alert.alert(
-                "Replace existing Ark wallet?",
-                `Restoring ${sourceLabel} replaces the current Ark wallet with the backup file. Any incoming Lightning payments still being settled won't carry over.`,
+                loc.cypherbox.account.recover_ark.replace_existing_title,
+                String(loc.formatString(loc.cypherbox.account.recover_ark.replace_existing_body, { source: sourceLabel })),
                 [
-                    { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                    { text: "Replace", style: "destructive", onPress: () => resolve(true) },
+                    { text: loc._.cancel, style: "cancel", onPress: () => resolve(false) },
+                    { text: loc.cypherbox.account.recover_ark.replace, style: "destructive", onPress: () => resolve(true) },
                 ],
                 { cancelable: true, onDismiss: () => resolve(false) },
             );
@@ -275,14 +276,14 @@ export default function RecoverArkScreen() {
                 const keychainLabel = Platform.OS === 'ios' ? 'Keychain' : 'Keystore';
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? `A saved seed already exists on this device's ${keychainLabel} behind ${BIOMETRIC_LABEL} for wallet ${conflict.existingFingerprint}.\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe.`
-                        : `A saved seed already exists on this device's ${keychainLabel} but couldn't be read to compare (${conflict.reason}).\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe. It may otherwise be lost.`;
+                        ? String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_different, { keychain: keychainLabel, biometric: BIOMETRIC_LABEL, fingerprint: conflict.existingFingerprint }))
+                        : String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_unreadable, { keychain: keychainLabel, reason: conflict.reason }));
                 Alert.alert(
-                    "Replace keychain-saved seed?",
+                    loc.cypherbox.account.common.replace_keychain_seed_title,
                     message,
                     [
-                        { text: `Keep old seed in ${keychainLabel}`, style: "cancel", onPress: () => resolve(false) },
-                        { text: `Save new seed in ${keychainLabel}`, onPress: () => resolve(true) },
+                        { text: String(loc.formatString(loc.cypherbox.account.common.keep_old_seed_in, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
+                        { text: String(loc.formatString(loc.cypherbox.account.common.save_new_seed_in, { keychain: keychainLabel })), onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -305,8 +306,8 @@ export default function RecoverArkScreen() {
                     saved.storage,
                 );
                 Alert.alert(
-                    "Seed not saved on this device",
-                    "This device has no fingerprint set up, so the seed was not stored behind one and nothing was saved. Keep your 12 words safe, you will need them next time.",
+                    loc.cypherbox.account.common.seed_not_saved_title,
+                    loc.cypherbox.account.recover_ark.seed_not_saved_body,
                 );
             } else {
                 console.warn(`[Ark restore] Keychain save failed (${label}):`, saved.reason);
@@ -398,9 +399,7 @@ export default function RecoverArkScreen() {
                     console.warn('[Ark restore] apply/open failed after decrypt (file intact):', err);
                     setRestoring(false);
                     setErrorMsg(
-                        "Your backup file is intact, but the wallet couldn't reach the Ark server right now. " +
-                        "This is usually temporary. Check your internet connection and try again in a moment. " +
-                        "Your funds and seed are safe; no need to pick a different backup file.",
+                        loc.cypherbox.account.recover_ark.server_unreachable_intact,
                     );
                     return true;
                 }
@@ -419,9 +418,7 @@ export default function RecoverArkScreen() {
                     console.warn('[Ark restore] post-decrypt network failure (file is intact, server unreachable):', err);
                     setRestoring(false);
                     setErrorMsg(
-                        "Your backup file is intact, but the wallet couldn't reach the Ark server right now. " +
-                        "This is usually temporary. Check your internet connection and try again in a moment. " +
-                        "Your funds and seed are safe; no need to pick a different backup file.",
+                        loc.cypherbox.account.recover_ark.server_unreachable_intact,
                     );
                     return true;
                 }
@@ -429,8 +426,7 @@ export default function RecoverArkScreen() {
                 console.warn('[Ark restore] decrypt of fingerprint-matched blob failed:', err);
                 setRestoring(false);
                 setErrorMsg(
-                    `Backup file is corrupt: ${err?.message ?? 'decryption failed'}. ` +
-                    `Try a different backup source: Drive, iCloud, or pick a manually-exported file.`,
+                    String(loc.formatString(loc.cypherbox.account.recover_ark.backup_corrupt, { error: err?.message ?? loc.cypherbox.account.recover_ark.decryption_failed })),
                 );
                 return true; // handled (with error); don't keep scanning
             }
@@ -459,10 +455,8 @@ export default function RecoverArkScreen() {
     // that branch stays generic.
     const noBackupMatchError = () =>
         showTypeView
-            ? "No backup matches this seed phrase. " +
-              `Check the seed, or tap "${SEED_ONLY_CTA_LABEL}" below if you don't have one.`
-            : "No backup matches this seed phrase. " +
-              "Check that you picked the right file, or try your other backup source.";
+            ? String(loc.formatString(loc.cypherbox.account.recover_ark.no_match_type, { cta: getSeedOnlyCtaLabel() }))
+            : loc.cypherbox.account.recover_ark.no_match_choose;
 
     // forcePicker bypasses the local-first read so the user can restore from
     // some other .cbark — e.g. an older manually-exported snapshot. Wired to
@@ -473,7 +467,7 @@ export default function RecoverArkScreen() {
         if (!resolved) return;
         const { mnemonic } = resolved;
 
-        if (!(await confirmReplaceDatadir("from this backup file"))) return;
+        if (!(await confirmReplaceDatadir(loc.cypherbox.account.recover_ark.from_this_backup_file))) return;
 
         setRestoring(true);
         setErrorMsg(null);
@@ -488,7 +482,7 @@ export default function RecoverArkScreen() {
         } catch (err: any) {
             console.warn('[Ark restore] fingerprint derive failed:', err);
             setRestoring(false);
-            setErrorMsg(`Couldn't process the seed phrase: ${err?.message ?? 'unknown error'}.`);
+            setErrorMsg(String(loc.formatString(loc.cypherbox.account.recover_ark.process_seed_failed, { error: err?.message ?? loc.cypherbox.account.common.unknown_error })));
             return;
         }
 
@@ -534,7 +528,7 @@ export default function RecoverArkScreen() {
             const pickedUri = result.fileCopyUri ?? result.uri;
             if (!pickedUri) {
                 setRestoring(false);
-                setErrorMsg("Couldn't read picked file (no path returned)");
+                setErrorMsg(loc.cypherbox.account.recover_ark.picked_no_path);
                 return;
             }
             const cleanPath = pickedUri.replace(/^file:\/\//, "");
@@ -547,7 +541,7 @@ export default function RecoverArkScreen() {
             }
             console.warn('[Ark restore] picker threw:', err);
             setRestoring(false);
-            setErrorMsg(`Couldn't open file picker: ${err?.message ?? "unknown error"}`);
+            setErrorMsg(String(loc.formatString(loc.cypherbox.account.recover_ark.picker_failed, { error: err?.message ?? loc.cypherbox.account.common.unknown_error })));
             return;
         }
 
@@ -555,8 +549,7 @@ export default function RecoverArkScreen() {
         if (picked.kind === 'not-found') {
             setRestoring(false);
             setErrorMsg(
-                "This file isn't a backup for the seed phrase you entered. " +
-                "Pick a different file, or check your seed.",
+                loc.cypherbox.account.recover_ark.not_backup_for_seed,
             );
             return;
         }
@@ -572,7 +565,7 @@ export default function RecoverArkScreen() {
         if (!resolved) return;
         const { mnemonic } = resolved;
 
-        if (!(await confirmReplaceDatadir("from Google Drive"))) return;
+        if (!(await confirmReplaceDatadir(loc.cypherbox.account.recover_ark.from_google_drive))) return;
 
         setRestoring(true);
         setErrorMsg(null);
@@ -583,7 +576,7 @@ export default function RecoverArkScreen() {
         } catch (err: any) {
             console.warn('[Ark restore] fingerprint derive failed:', err);
             setRestoring(false);
-            setErrorMsg(`Couldn't process the seed phrase: ${err?.message ?? 'unknown error'}.`);
+            setErrorMsg(String(loc.formatString(loc.cypherbox.account.recover_ark.process_seed_failed, { error: err?.message ?? loc.cypherbox.account.common.unknown_error })));
             return;
         }
 
@@ -593,7 +586,7 @@ export default function RecoverArkScreen() {
                 const ok = await connectGoogleDrive();
                 if (!ok) {
                     setRestoring(false);
-                    setErrorMsg("Google Sign-In was declined.");
+                    setErrorMsg(loc.cypherbox.account.recover_ark.google_signin_declined);
                     return;
                 }
             }
@@ -608,16 +601,14 @@ export default function RecoverArkScreen() {
             }
             setRestoring(false);
             setErrorMsg(
-                "No backup matches this seed phrase in Google Drive. " +
-                "Check that you're signed in with the right Google account, or pick a backup file manually." +
-                (showTypeView ? ` If you don't have one, tap "${SEED_ONLY_CTA_LABEL}" below.` : ""),
+                loc.cypherbox.account.recover_ark.drive_no_match +
+                (showTypeView ? String(loc.formatString(loc.cypherbox.account.recover_ark.drive_no_match_seed_only, { cta: getSeedOnlyCtaLabel() })) : ""),
             );
         } catch (err: any) {
             console.warn('[Ark restore] Drive flow failed:', err);
             setRestoring(false);
             setErrorMsg(
-                `Couldn't reach Google Drive: ${err?.message ?? "unknown error"}. ` +
-                `Try again, or pick a backup file manually.`,
+                String(loc.formatString(loc.cypherbox.account.recover_ark.drive_unreachable, { error: err?.message ?? loc.cypherbox.account.common.unknown_error })),
             );
         }
     };
@@ -628,7 +619,7 @@ export default function RecoverArkScreen() {
         if (!resolved) return;
         const { mnemonic } = resolved;
 
-        if (!(await confirmReplaceDatadir("from iCloud Drive"))) return;
+        if (!(await confirmReplaceDatadir(loc.cypherbox.account.recover_ark.from_icloud_drive))) return;
 
         setRestoring(true);
         setErrorMsg(null);
@@ -639,7 +630,7 @@ export default function RecoverArkScreen() {
         } catch (err: any) {
             console.warn('[Ark restore] fingerprint derive failed:', err);
             setRestoring(false);
-            setErrorMsg(`Couldn't process the seed phrase: ${err?.message ?? 'unknown error'}.`);
+            setErrorMsg(String(loc.formatString(loc.cypherbox.account.recover_ark.process_seed_failed, { error: err?.message ?? loc.cypherbox.account.common.unknown_error })));
             return;
         }
 
@@ -666,7 +657,7 @@ export default function RecoverArkScreen() {
             const pickedUri = result.fileCopyUri ?? result.uri;
             if (!pickedUri) {
                 setRestoring(false);
-                setErrorMsg("Couldn't read picked file (no path returned)");
+                setErrorMsg(loc.cypherbox.account.recover_ark.picked_no_path);
                 return;
             }
             const cleanPath = pickedUri.replace(/^file:\/\//, '');
@@ -679,9 +670,7 @@ export default function RecoverArkScreen() {
             console.warn('[Ark restore] iCloud picker threw:', err);
             setRestoring(false);
             setErrorMsg(
-                `Couldn't read backup from iCloud Drive: ${err?.message ?? 'unknown error'}. ` +
-                `Make sure iCloud Drive is enabled for Cypher Box, then tap again. ` +
-                `the picker should show "iCloud Drive → Cypher Box → ark-backup-{fingerprint}.cbark".`,
+                String(loc.formatString(loc.cypherbox.account.recover_ark.icloud_read_failed, { error: err?.message ?? loc.cypherbox.account.common.unknown_error, fingerprint: '{fingerprint}' })),
             );
             return;
         }
@@ -690,8 +679,7 @@ export default function RecoverArkScreen() {
         if (picked.kind === 'not-found') {
             setRestoring(false);
             setErrorMsg(
-                "This file isn't a backup for the seed phrase you entered. " +
-                "Pick a different file, or check your seed.",
+                loc.cypherbox.account.recover_ark.not_backup_for_seed,
             );
             return;
         }
@@ -742,35 +730,35 @@ export default function RecoverArkScreen() {
         let title: string;
         let message: string;
         if (!report) {
-            title = "Wallet recovered";
+            title = loc.cypherbox.account.recover_ark.recovered_title;
             message =
-                "Your wallet is back, but the capsule scan didn't report a result, so this isn't proof that nothing is missing. Keep your 12 words safe and don't reset this wallet. If you have an ark-backup file, restoring from it is the way to be sure.";
+                loc.cypherbox.account.recover_ark.no_report_body;
         } else if (incomplete) {
             // MUST precede the recovered === 0 test. `isComplete` false means
             // the scan left ids in `failed` or `foreign`, and the SDK documents
             // both as "funds may be missing". Telling this user "no capsules
             // found" states the opposite of the fund state, which is the exact
             // failure this function exists to prevent.
-            title = "Wallet recovered, some capsules unresolved";
+            title = loc.cypherbox.account.recover_ark.unresolved_title;
             message =
                 (recoveredCount === 0
-                    ? "The Ark server listed capsules for this seed, but none of them could be resolved. "
-                    : `Brought back ${recoveredCount} capsule${recoveredCount === 1 ? "" : "s"} worth ${recoveredSats} sats, but the scan couldn't account for everything. `) +
-                "Some funds may still be missing. Keep your 12 words safe and don't reset this wallet. If you have an ark-backup file, restore from it as well.";
+                    ? loc.cypherbox.account.recover_ark.unresolved_none
+                    : String(loc.formatString(recoveredCount === 1 ? loc.cypherbox.account.recover_ark.unresolved_some_one : loc.cypherbox.account.recover_ark.unresolved_some_other, { count: recoveredCount, sats: recoveredSats }))) +
+                loc.cypherbox.account.recover_ark.unresolved_tail;
         } else if (bucketsTouched === 0) {
-            title = "Wallet recovered, no capsules found";
+            title = loc.cypherbox.account.recover_ark.no_capsules_title;
             message =
-                "The Ark server had no capsules linked to this seed. Your wallet is open and usable. If you expected a balance, check that you typed the right seed phrase.";
+                loc.cypherbox.account.recover_ark.no_capsules_body;
         } else if (recoveredCount === 0) {
             // Complete scan, nothing to bring back: every id was already spent,
             // exited on-chain, or reported non-spendable. That is a definite
             // answer, unlike the branches above.
-            title = "Wallet recovered, nothing left to restore";
+            title = loc.cypherbox.account.recover_ark.nothing_left_title;
             message =
-                "The Ark server's capsules for this seed were already spent or exited on-chain, so there was nothing to bring back. Your wallet is open and usable.";
+                loc.cypherbox.account.recover_ark.nothing_left_body;
         } else {
-            title = "Wallet recovered";
-            message = `Brought back ${recoveredCount} capsule${recoveredCount === 1 ? "" : "s"} worth ${recoveredSats} sats.`;
+            title = loc.cypherbox.account.recover_ark.recovered_title;
+            message = String(loc.formatString(recoveredCount === 1 ? loc.cypherbox.account.recover_ark.recovered_one : loc.cypherbox.account.recover_ark.recovered_other, { count: recoveredCount, sats: recoveredSats }));
         }
 
         // Resolve on dismiss as well as on the button. This promise gates
@@ -779,7 +767,7 @@ export default function RecoverArkScreen() {
         // screen with a wallet that is already open. Dismissing just means
         // "continue", so there is nothing to lose by treating it as the button.
         await new Promise<void>((resolve) => {
-            Alert.alert(title, message, [{ text: "Continue", onPress: () => resolve() }], {
+            Alert.alert(title, message, [{ text: loc._.continue, onPress: () => resolve() }], {
                 cancelable: true,
                 onDismiss: () => resolve(),
             });
@@ -809,11 +797,11 @@ export default function RecoverArkScreen() {
         // A live wallet is left strictly alone.
         if (datadirOnDisk && (!!getArkWalletHandle() || isArkAuth)) {
             Alert.alert(
-                "An Ark wallet is already open",
-                "There's a live Ark wallet on this device. Open the setup screen and reset it there first, then recover from your seed. Nothing has been changed.",
+                loc.cypherbox.account.recover_ark.already_open_title,
+                loc.cypherbox.account.recover_ark.already_open_body,
                 [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Open setup", onPress: () => dispatchNavigate("CreateArkScreen") },
+                    { text: loc._.cancel, style: "cancel" },
+                    { text: loc.cypherbox.account.recover_ark.open_setup, onPress: () => dispatchNavigate("CreateArkScreen") },
                 ],
             );
             return;
@@ -864,9 +852,9 @@ export default function RecoverArkScreen() {
                 setSubmitting(false);
                 await new Promise<void>((resolve) => {
                     Alert.alert(
-                        "Wallet reopened",
-                        "This device already had this wallet's data, so it was reopened as it was. Nothing was deleted and nothing was re-downloaded.",
-                        [{ text: "Continue", onPress: () => resolve() }],
+                        loc.cypherbox.account.recover_ark.reopened_title,
+                        loc.cypherbox.account.recover_ark.reopened_body,
+                        [{ text: loc._.continue, onPress: () => resolve() }],
                         { cancelable: true, onDismiss: () => resolve() },
                     );
                 });
@@ -881,7 +869,7 @@ export default function RecoverArkScreen() {
                 await clearArkWalletHandle();
                 setSubmitting(false);
                 setErrorMsg(
-                    "Couldn't reach the Ark server to check the wallet data already on this device, so nothing was changed. Check your connection and try again in a moment.",
+                    loc.cypherbox.account.recover_ark.server_unreachable_check,
                 );
                 return;
             }
@@ -893,11 +881,11 @@ export default function RecoverArkScreen() {
             await clearArkWalletHandle();
             const proceed = await new Promise<boolean>((resolve) => {
                 Alert.alert(
-                    "Different wallet data on this device",
-                    "The Ark data on this device belongs to a different seed phrase, so it can't be reopened with the words you typed. Recovering replaces it. If that other wallet still holds funds, make sure its seed phrase is written down before you continue.",
+                    loc.cypherbox.account.recover_ark.different_data_title,
+                    loc.cypherbox.account.recover_ark.different_data_body,
                     [
-                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                        { text: "Replace it", style: "destructive", onPress: () => resolve(true) },
+                        { text: loc._.cancel, style: "cancel", onPress: () => resolve(false) },
+                        { text: loc.cypherbox.account.recover_ark.replace_it, style: "destructive", onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -912,7 +900,7 @@ export default function RecoverArkScreen() {
                 console.warn('[Ark recover] datadir delete failed:', err?.message ?? err);
                 setSubmitting(false);
                 setErrorMsg(
-                    "Couldn't clear the other wallet's data on this device. Open the setup screen and tap Reset, then try again.",
+                    loc.cypherbox.account.recover_ark.clear_failed,
                 );
                 return;
             }
@@ -928,14 +916,14 @@ export default function RecoverArkScreen() {
                 const keychainLabel = Platform.OS === 'ios' ? 'Keychain' : 'Keystore';
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? `A saved seed already exists on this device's ${keychainLabel} behind ${BIOMETRIC_LABEL} for wallet ${conflict.existingFingerprint}.\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe.`
-                        : `A saved seed already exists on this device's ${keychainLabel} but couldn't be read to compare (${conflict.reason}).\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe. It may otherwise be lost.`;
+                        ? String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_different, { keychain: keychainLabel, biometric: BIOMETRIC_LABEL, fingerprint: conflict.existingFingerprint }))
+                        : String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_unreadable, { keychain: keychainLabel, reason: conflict.reason }));
                 Alert.alert(
-                    "Replace keychain-saved seed?",
+                    loc.cypherbox.account.common.replace_keychain_seed_title,
                     message,
                     [
-                        { text: `Keep old seed in ${keychainLabel}`, style: "cancel", onPress: () => resolve(false) },
-                        { text: `Save new seed in ${keychainLabel}`, onPress: () => resolve(true) },
+                        { text: String(loc.formatString(loc.cypherbox.account.common.keep_old_seed_in, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
+                        { text: String(loc.formatString(loc.cypherbox.account.common.save_new_seed_in, { keychain: keychainLabel })), onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -954,8 +942,8 @@ export default function RecoverArkScreen() {
             setSubmitting(false);
             setErrorMsg(
                 /Internal/i.test(msg)
-                    ? "Couldn't open or create the Ark wallet. Local state may be stale. Open the setup screen and tap Reset, then try again."
-                    : `Recovery failed: ${msg}`,
+                    ? loc.cypherbox.account.recover_ark.open_create_failed
+                    : String(loc.formatString(loc.cypherbox.account.recover_ark.recovery_failed, { error: msg })),
             );
             return;
         }
@@ -979,8 +967,8 @@ export default function RecoverArkScreen() {
             // never reads.
             const body =
                 savedSeed.kind === 'no-biometric-gate'
-                    ? "This device has no fingerprint set up, so the seed was not stored behind one. Recovery continues. Keep your 12 words safe, you will need them next time."
-                    : `The seed couldn't be saved to this device (${savedSeed.reason}). Your wallet is recovered and usable. Keep your 12 words safe, you will need them next time.`;
+                    ? loc.cypherbox.account.recover_ark.seed_not_saved_continue
+                    : String(loc.formatString(loc.cypherbox.account.recover_ark.seed_not_saved_reason, { reason: savedSeed.reason }));
             if (savedSeed.kind === 'no-biometric-gate') {
                 console.warn(
                     '[Ark recover] seed not saved: no biometric gate, storage=',
@@ -990,7 +978,7 @@ export default function RecoverArkScreen() {
                 console.warn("[Ark recover] Keychain save failed:", savedSeed.reason);
             }
             await new Promise<void>((resolve) => {
-                Alert.alert("Seed not saved on this device", body, [{ text: "OK", onPress: () => resolve() }], {
+                Alert.alert(loc.cypherbox.account.common.seed_not_saved_title, body, [{ text: loc._.ok, onPress: () => resolve() }], {
                     cancelable: true,
                     onDismiss: () => resolve(),
                 });
@@ -1020,7 +1008,7 @@ export default function RecoverArkScreen() {
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={colors.ark.light} />
                     <Text style={styles.loadingText}>
-                        {restoring ? "Restoring from backup file…" : "Recovering Ark wallet…"}
+                        {restoring ? loc.cypherbox.account.recover_ark.restoring : loc.cypherbox.account.recover_ark.recovering}
                     </Text>
                 </View>
             </ScreenLayout>
@@ -1028,7 +1016,7 @@ export default function RecoverArkScreen() {
     }
 
     return (
-        <ScreenLayout title="Recover Ark Wallet" showToolbar isBackButton disableScroll>
+        <ScreenLayout title={loc.cypherbox.account.recover_ark.screen_title} showToolbar isBackButton disableScroll>
             <View style={styles.container}>
                 {probing ? (
                     <View style={styles.loadingContainer}>
@@ -1105,15 +1093,15 @@ function ChooseView({
     return (
         <>
             <Text bold style={styles.introTitle}>
-                Restore your Ark wallet
+                {loc.cypherbox.account.recover_ark.choose_title}
             </Text>
             <Text style={styles.introBody}>
-                {`Your Ark seed phrase is in this device's Keychain, so you don't need to type it. Tap unlock below to load the seed via ${BIOMETRIC_LABEL} / passcode.\n\nRestoring from your ark-backup file, from ${cloudLabel} (if you connected it earlier) or a manual export, is the most complete option.`}
+                {loc.formatString(loc.cypherbox.account.recover_ark.choose_body, { biometric: BIOMETRIC_LABEL, cloud: cloudLabel })}
             </Text>
 
             {!unlockedMnemonic && (
                 <Button
-                    text={unlocking ? "Unlocking…" : `Unlock with ${BIOMETRIC_LABEL}`}
+                    text={unlocking ? loc.cypherbox.account.recover_ark.unlocking : String(loc.formatString(loc.cypherbox.account.recover_ark.unlock_with, { biometric: BIOMETRIC_LABEL }))}
                     onPress={onUnlockFaceId}
                     style={styles.button}
                     textStyle={styles.btnText}
@@ -1136,14 +1124,14 @@ function ChooseView({
                     }}
                 >
                     <Text style={{ color: colors.green, fontSize: 12 }}>
-                        ✓ Seed unlocked, ready to restore
+                        {loc.cypherbox.account.recover_ark.seed_unlocked}
                     </Text>
                 </View>
             )}
 
             {unlockedMnemonic && (
                 <Button
-                    text="Restore from backup file"
+                    text={loc.cypherbox.account.recover_ark.restore_from_file}
                     onPress={onRestoreFile}
                     style={styles.button}
                     textStyle={styles.btnText}
@@ -1166,7 +1154,7 @@ function ChooseView({
                     }}
                 >
                     <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 14 }}>
-                        Restore from {cloudLabel}
+                        {loc.formatString(loc.cypherbox.account.recover_ark.restore_from_cloud, { cloud: cloudLabel })}
                     </Text>
                 </TouchableOpacity>
             )}
@@ -1178,7 +1166,7 @@ function ChooseView({
                 file paths and had no way forward at all. */}
             {unlockedMnemonic && (
                 <TouchableOpacity onPress={onRecoverSeedOnly} style={styles.seedOnlyLink}>
-                    <Text style={styles.seedOnlyLinkText}>{SEED_ONLY_CTA_LABEL}</Text>
+                    <Text style={styles.seedOnlyLinkText}>{getSeedOnlyCtaLabel()}</Text>
                 </TouchableOpacity>
             )}
 
@@ -1196,7 +1184,7 @@ function ChooseView({
                             textDecorationLine: "underline",
                         }}
                     >
-                        Pick a different .cbark file instead
+                        {loc.cypherbox.account.recover_ark.pick_different_file}
                     </Text>
                 </TouchableOpacity>
             )}
@@ -1218,7 +1206,7 @@ function ChooseView({
                             textDecorationLine: "underline",
                         }}
                     >
-                        Type seed manually instead
+                        {loc.cypherbox.account.recover_ark.type_manually}
                     </Text>
                 </TouchableOpacity>
             )}
@@ -1261,25 +1249,25 @@ function TypeSeedView({
     return (
         <Animated.View style={{ transform: [{ translateY: keyboardLift }] }}>
             <Text bold style={styles.introTitle}>
-                Type your 12-word Ark seed phrase
+                {loc.cypherbox.account.recover_ark.type_title}
             </Text>
             <Text style={styles.introBody}>
-                Enter the words exactly as you wrote them down. Order matters. Tap space or return to jump to the next box.
+                {loc.cypherbox.account.recover_ark.type_body_1}
                 {"\n\n"}
-                Your ark-backup file restores the most, so use the buttons below if you have one. Without it you can continue with the seed alone. Cypher Box checks the Ark server for capsules linked to your seed and brings back what it finds: all of them, some, or none.
+                {loc.cypherbox.account.recover_ark.type_body_2}
             </Text>
 
             <View style={styles.inputsContainer}>
                 <View style={styles.inputColumn}>
                     {inputs.slice(0, 6).map((label, index) => (
                         <View key={label} style={styles.inputContainer}>
-                            <Text h2 style={styles.labelText}>{label}.</Text>
+                            <Text h2 style={[styles.labelText, rtl.ltrText]}>{ltr(`${label}.`)}</Text>
                             <Input
                                 ref={(el: any) => (inputRefs.current[index] = el)}
                                 style={styles.inputStyle}
                                 onChange={(value: string) => onWordChange(index, value)}
                                 value={secretWords[index]}
-                                textInputStyle={styles.textInputStyle}
+                                textInputStyle={StyleSheet.flatten([styles.textInputStyle, rtl.ltrText])}
                                 autoCapitalize="none"
                                 onKeyPress={(event: any) => onKeyPress(event, index)}
                                 onSubmitEditing={() => {
@@ -1294,13 +1282,13 @@ function TypeSeedView({
                 <View style={styles.inputColumn}>
                     {inputs.slice(6).map((label, index) => (
                         <View key={label} style={styles.inputContainer}>
-                            <Text h2 style={styles.labelText}>{label}.</Text>
+                            <Text h2 style={[styles.labelText, rtl.ltrText]}>{ltr(`${label}.`)}</Text>
                             <Input
                                 ref={(el: any) => (inputRefs.current[index + 6] = el)}
                                 style={styles.inputStyle}
                                 onChange={(value: string) => onWordChange(index + 6, value)}
                                 value={secretWords[index + 6]}
-                                textInputStyle={styles.textInputStyle}
+                                textInputStyle={StyleSheet.flatten([styles.textInputStyle, rtl.ltrText])}
                                 autoCapitalize="none"
                                 onKeyPress={(event: any) => onKeyPress(event, index + 6)}
                                 onSubmitEditing={() => {
@@ -1317,7 +1305,7 @@ function TypeSeedView({
             {errorMsg && <Text style={styles.error}>{errorMsg}</Text>}
 
             <Button
-                text="Restore from backup file"
+                text={loc.cypherbox.account.recover_ark.restore_from_file}
                 onPress={onRestoreFile}
                 style={styles.button}
                 textStyle={styles.btnText}
@@ -1336,7 +1324,7 @@ function TypeSeedView({
                 }}
             >
                 <Text bold style={{ color: colors.ark?.light ?? colors.pink.default, fontSize: 14 }}>
-                    Restore from {cloudLabel}
+                    {loc.formatString(loc.cypherbox.account.recover_ark.restore_from_cloud, { cloud: cloudLabel })}
                 </Text>
             </TouchableOpacity>
 
@@ -1350,7 +1338,7 @@ function TypeSeedView({
                 Ark-coloured rather than gray because it is a real branch, not
                 a refinement of the backup-file group above it. */}
             <TouchableOpacity onPress={onRecover} style={styles.seedOnlyLink}>
-                <Text style={styles.seedOnlyLinkText}>{SEED_ONLY_CTA_LABEL}</Text>
+                <Text style={styles.seedOnlyLinkText}>{getSeedOnlyCtaLabel()}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1364,7 +1352,7 @@ function TypeSeedView({
                         textDecorationLine: "underline",
                     }}
                 >
-                    Pick a different .cbark file instead
+                    {loc.cypherbox.account.recover_ark.pick_different_file}
                 </Text>
             </TouchableOpacity>
 
@@ -1373,7 +1361,7 @@ function TypeSeedView({
                     onPress={onBack}
                     style={{ alignSelf: "center", marginTop: 8, paddingVertical: 8 }}
                 >
-                    <Text style={{ color: colors.gray.light, fontSize: 12 }}>{`← Back to ${BIOMETRIC_LABEL} unlock`}</Text>
+                    <Text style={{ color: colors.gray.light, fontSize: 12 }}>{loc.formatString(loc.cypherbox.account.recover_ark.back_to_unlock, { biometric: BIOMETRIC_LABEL })}</Text>
                 </TouchableOpacity>
             )}
         </Animated.View>

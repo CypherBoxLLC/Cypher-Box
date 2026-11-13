@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View, Vibration } from 'react-native';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
+import loc from '../../../loc';
+import { rtl } from '@Cypher/style-guide';
 
 type WalletType = 'coinos' | 'hot' | 'cold' | 'lightning';
 
@@ -22,19 +24,19 @@ const WALLET_THEMES: Record<WalletType, { bg: string; border: string; accent: st
     bg: '#2a1225',
     border: '#e84393',
     accent: '#e84393',
-    label: 'Lightning',
+    get label() { return loc.cypherbox.components.payment_notification.lightning; },
   },
   hot: {
     bg: '#0d2818',
     border: '#00b894',
     accent: '#00b894',
-    label: 'Hot Vault',
+    get label() { return loc.cypherbox.components.payment_notification.hot_vault; },
   },
   cold: {
     bg: '#0d1f2b',
     border: '#00cec9',
     accent: '#00cec9',
-    label: 'Cold Storage',
+    get label() { return loc.cypherbox.components.payment_notification.cold_storage; },
   },
 };
 
@@ -135,7 +137,7 @@ const PaymentNotification: React.FC = () => {
 
   const theme = WALLET_THEMES[data.walletType] || WALLET_THEMES.coinos;
   const formatted = formatSats(data.amount);
-  const label = data.confirmed ? 'Received' : 'Incoming';
+  const label = data.confirmed ? loc.cypherbox.components.payment_notification.received : loc.cypherbox.components.payment_notification.incoming;
   const walletLabel = data.walletName || theme.label;
 
   return (
@@ -152,7 +154,7 @@ const PaymentNotification: React.FC = () => {
         <Text style={styles.icon}>⚡️</Text>
         <View style={styles.textContainer}>
           <Text style={[styles.title, { color: theme.accent }]}>{label} · {walletLabel}</Text>
-          <Text style={styles.amount}>{formatted}</Text>
+          <Text style={[styles.amount, rtl.ltrText]}>{formatted}</Text>
         </View>
       </View>
     </Animated.View>

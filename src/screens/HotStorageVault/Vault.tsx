@@ -11,7 +11,7 @@ import Clipboard from "@react-native-clipboard/clipboard";
 import { GradientView, SavingVault } from "@Cypher/components";
 import styles from "./styles";
 
-import { colors, heights, widths } from "@Cypher/style-guide";
+import { colors, heights, rtl, widths } from "@Cypher/style-guide";
 import RBSheet from "react-native-raw-bottom-sheet";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import LinearGradient from "react-native-linear-gradient";
@@ -19,7 +19,7 @@ import ReceivedList from "../HomeScreen/ReceivedList";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { Copy, InformationNew, QrCode, Share as Share2, ShareNew } from "@Cypher/assets/images";
 import { btc } from "@Cypher/helpers/coinosHelper";
-import { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
+import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
 import { describePending, dispatchNavigate, formatAge, formatSats, pendingInputsSpent, resumeParams, sameAccountKey } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { WatchOnlyWallet } from "../../../class";
@@ -58,17 +58,17 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
             const done = describePending(pending, (a: string) => !!wallet?.weOwnAddress?.(a));
             const hotVault = wallets?.find((w: any) => w.getID() === hotVaultID);
             const to = done.kind === 'send' && done.address
-                ? (hotVault?.weOwnAddress?.(done.address) ? 'your Hot Vault' : `${done.address.slice(0, 8)}…${done.address.slice(-6)}`)
-                : 'an unknown script';
+                ? (hotVault?.weOwnAddress?.(done.address) ? loc.cypherbox.vault.storage_vault.vault.to_hot_vault : `${done.address.slice(0, 8)}…${done.address.slice(-6)}`)
+                : loc.cypherbox.vault.storage_vault.vault.unknown_script;
             return {
                 what: done.kind === 'consolidate'
-                    ? `Consolidate ${done.capsules} capsule${done.capsules === 1 ? '' : 's'} into one`
-                    : `${formatSats(done.sats)} to ${to}`,
+                    ? String(loc.formatString(done.capsules === 1 ? loc.cypherbox.vault.storage_vault.vault.pending_consolidate_one : loc.cypherbox.vault.storage_vault.vault.pending_consolidate_many, { count: done.capsules }))
+                    : String(loc.formatString(loc.cypherbox.vault.storage_vault.vault.pending_send, { amount: formatSats(done.sats), to })),
                 // getUtxo(true) includes frozen capsules, which it can still spend
                 spent: pendingInputsSpent(pending, wallet?.getUtxo?.(true) ?? []),
             };
         } catch (_) {
-            return { what: 'A transaction you prepared', spent: false };
+            return { what: loc.cypherbox.vault.storage_vault.vault.pending_unknown, spent: false };
         }
     }, [pending, wallet, wallets, hotVaultID]);
 
@@ -86,13 +86,13 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
             }
         });
         if (!holder) return null;
-        return holder.getID() === hotVaultID ? 'in your Hot Vault' : 'in another wallet';
+        return holder.getID() === hotVaultID ? loc.cypherbox.vault.storage_vault.vault.key_in_hot_vault : loc.cypherbox.vault.storage_vault.vault.key_in_other_wallet;
     }, [canImport, wallet, wallets, coldKeyWarningHidden, hotVaultID]);
 
     const hideKeyWarning = () =>
-        Alert.alert('Hide this warning?', "Only if you're testing, or this vault doesn't hold savings you need to protect.", [
-            { text: 'Keep it', style: 'cancel' },
-            { text: 'Hide', style: 'destructive', onPress: () => hideColdKeyWarning(wallet.getID()) },
+        Alert.alert(loc.cypherbox.vault.storage_vault.vault.hide_warning_title, loc.cypherbox.vault.storage_vault.vault.hide_warning_body, [
+            { text: loc.cypherbox.vault.storage_vault.vault.keep, style: 'cancel' },
+            { text: loc.cypherbox.vault.storage_vault.vault.hide, style: 'destructive', onPress: () => hideColdKeyWarning(wallet.getID()) },
         ]);
 
     const resumePending = () => {
@@ -105,9 +105,9 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
             discard();
             return;
         }
-        Alert.alert('Discard this transaction?', "It hasn't been sent. You can prepare it again from Capsules any time.", [
-            { text: 'Keep it', style: 'cancel' },
-            { text: 'Discard', style: 'destructive', onPress: discard },
+        Alert.alert(loc.cypherbox.vault.storage_vault.vault.discard_title, loc.cypherbox.vault.storage_vault.vault.discard_body, [
+            { text: loc.cypherbox.vault.storage_vault.vault.keep, style: 'cancel' },
+            { text: loc.cypherbox.vault.storage_vault.vault.discard, style: 'destructive', onPress: discard },
         ]);
     };
     // const base64QrCodeRef = useRef(''); // disabled: toDataURL broken under Fabric/New Arch
@@ -174,7 +174,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
 
     const copyToClipboard = (text: string) => {
         Clipboard.setString(text);
-        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.vault.storage_vault.vault.copied, SimpleToast.SHORT);
     };
 
     // The "Vault Addresses" button on this tab. Same picker as
@@ -241,7 +241,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                 bitcoinText={styles.bitcoinText}
                 imageStyle={styles.bitcoinImage}
                 titleStyle={styles.title}
-                title={vaultTab ? "Cold Savings" : "Hot Savings"}
+                title={vaultTab ? loc.cypherbox.vault.storage_vault.vault.cold_savings : loc.cypherbox.vault.storage_vault.vault.hot_savings}
                 bitcoinValue={balance}
                 inDollars={`$${(Number(balanceWithoutSuffix) * Number(matchedRate || 0)).toFixed(2)}`}
             />
@@ -251,10 +251,10 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                 {keyOnThisPhone &&
                     <View style={styles.keyWarning}>
                         <Text h4 style={styles.keyWarningText}>
-                            Your Cold Vault's key is on this phone, {keyOnThisPhone}, so it isn't cold storage.
+                            {loc.formatString(loc.cypherbox.vault.storage_vault.vault.cold_key_on_phone, { place: keyOnThisPhone })}
                         </Text>
                         <TouchableOpacity onPress={hideKeyWarning} accessibilityRole="button" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                            <Text h4 style={styles.keyWarningHide}>Hide</Text>
+                            <Text h4 style={styles.keyWarningHide}>{loc.cypherbox.vault.storage_vault.vault.hide}</Text>
                         </TouchableOpacity>
                     </View>
                 }
@@ -262,21 +262,21 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     <View style={styles.pendingCard}>
                         <View style={styles.pendingHeader}>
                             <MaterialCommunityIcons name="timer-sand" size={18} color={colors.coldGreen} />
-                            <Text semibold style={styles.pendingTitle}>Waiting for signature</Text>
+                            <Text semibold style={styles.pendingTitle}>{loc.cypherbox.vault.storage_vault.vault.waiting_for_signature}</Text>
                             <Text style={styles.pendingAge}>{formatAge(Date.now() - pending.createdAt)}</Text>
                         </View>
                         <Text style={styles.pendingWhat}>{pendingView.what}</Text>
                         {pendingView.spent &&
-                            <Text style={styles.pendingNote}>Its capsules have been spent since, so it can no longer be sent.</Text>
+                            <Text style={styles.pendingNote}>{loc.cypherbox.vault.storage_vault.vault.capsules_spent}</Text>
                         }
                         <View style={styles.pendingActions}>
                             {!pendingView.spent &&
                                 <TouchableOpacity style={styles.pendingResume} onPress={resumePending} accessibilityRole="button">
-                                    <Text semibold style={styles.pendingResumeText}>Resume signing</Text>
+                                    <Text semibold style={styles.pendingResumeText}>{loc.cypherbox.vault.storage_vault.vault.resume_signing}</Text>
                                 </TouchableOpacity>
                             }
                             <TouchableOpacity style={styles.pendingDiscard} onPress={discardPending} accessibilityRole="button">
-                                <Text style={styles.pendingDiscardText}>Discard</Text>
+                                <Text style={styles.pendingDiscardText}>{loc.cypherbox.vault.storage_vault.vault.discard}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -296,12 +296,12 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                                     style={styles.broadcastImport}
                                     onPress={importFromFile}
                                     accessibilityRole="button"
-                                    accessibilityLabel="Broadcast a signed transaction from a file"
+                                    accessibilityLabel={loc.cypherbox.vault.storage_vault.vault.broadcast_file_a11y}
                                 >
                                     <MaterialCommunityIcons name="satellite-uplink" size={20} color={colors.coldGreen} />
                                     {/* one line: a phone narrower than an XR shrinks it a little rather than wrapping */}
                                     <Text h4 numberOfLines={1} adjustsFontSizeToFit style={styles.broadcastLabel}>
-                                        Broadcast a signed transaction (.PSBT)
+                                        {loc.cypherbox.vault.storage_vault.vault.broadcast_button}
                                     </Text>
                                 </TouchableOpacity>
                                 <View style={styles.broadcastDivider} />
@@ -309,7 +309,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                                     style={styles.broadcastScan}
                                     onPress={importFromQr}
                                     accessibilityRole="button"
-                                    accessibilityLabel="Scan a signed transaction QR code"
+                                    accessibilityLabel={loc.cypherbox.vault.storage_vault.vault.broadcast_scan_a11y}
                                 >
                                     <MaterialCommunityIcons name="qrcode-scan" size={20} color={colors.white} />
                                 </TouchableOpacity>
@@ -326,11 +326,11 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     bottomShadowStyle={[styles.innerShadowStyle, vaultTab && { shadowColor: colors.coldGreen }]}
                     linearGradientStyleMain={styles.linearGradientStyleMain}
                 >
-                    <Text h3 center>Vault Addresses</Text>
+                    <Text h3 center>{loc.cypherbox.vault.storage_vault.vault.addresses}</Text>
                 </GradientView>
                 {vaultTab &&
                     <Text style={{paddingRight: 20, paddingLeft:30, paddingTop: 20, fontSize: 15}}>
-                        ⚠️ DO NOT use these addresses to receive funds without checking them on your signing device!
+                        {loc.cypherbox.vault.storage_vault.vault.verify_warning}
                     </Text>
                 }
                 {/* <GradientView
@@ -380,12 +380,12 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                         {vaultTab ? (
                             <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15, height: 44, width: widths - 80 }}>
                                 <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
-                                <Text semibold style={{ fontSize: 15, color: colors.white, marginStart: 10 }}>{address || 'Loading...'}</Text>
+                                <Text semibold style={[{ fontSize: 15, color: colors.white, marginStart: 10 }, address ? rtl.ltrText : {}]}>{address || loc.cypherbox.vault.storage_vault.vault.address_loading}</Text>
                             </TouchableOpacity>
                         ) : (
                             <TouchableOpacity style={styles.codeView} onPress={() => copyToClipboard(address)}>
                                 <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
-                                <Text semibold style={styles.address}>{shortenAddress(address)}</Text>
+                                <Text semibold style={[styles.address, rtl.ltrText]}>{shortenAddress(address)}</Text>
                             </TouchableOpacity>
                         )}
                         {/* <TouchableOpacity onPress={shareQRCode}>
@@ -401,12 +401,12 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                         <TouchableOpacity
                             onPress={() => {
                                 setVaultDisplayAddress(wallet?.getID?.(), null);
-                                SimpleToast.show('Back to a fresh address', SimpleToast.SHORT);
+                                SimpleToast.show(loc.cypherbox.vault.storage_vault.vault.fresh_address, SimpleToast.SHORT);
                             }}
                             style={{ paddingHorizontal: 30, paddingTop: 10 }}
                         >
                             <Text style={{ fontSize: 13, color: colors.green, textAlign: 'center' }}>
-                                You chose this address. Tap to go back to a fresh one.
+                                {loc.cypherbox.vault.storage_vault.vault.chosen_address}
                             </Text>
                         </TouchableOpacity>
                     ) : null}

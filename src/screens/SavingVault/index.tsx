@@ -11,6 +11,7 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { backupHotVaultSeedWithMeta } from "@Cypher/services/hotVaultKeychain";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
+import loc from "../../../loc";
 
 /**
  * SavingVault — the second screen of the hot-vault creation flow.
@@ -71,7 +72,7 @@ export default function SavingVault() {
                 );
                 setKeychainStatus("err");
                 SimpleToast.show(
-                    "Keychain save skipped. You can enable it later in vault settings",
+                    loc.cypherbox.vault.saving_vault.keychain_skipped,
                     SimpleToast.LONG,
                 );
             } else {
@@ -120,7 +121,7 @@ export default function SavingVault() {
                         result.error,
                     );
                     SimpleToast.show(
-                        "Keychain save failed. Please back up the 12 words manually",
+                        loc.cypherbox.vault.saving_vault.keychain_failed_toast,
                         SimpleToast.LONG,
                     );
                     // Intentional: we do NOT abort the flow here. The seed
@@ -149,10 +150,10 @@ export default function SavingVault() {
         >
             <View style={styles.container}>
                 <Text style={styles.title} center>
-                    Private Key Generated
+                    {loc.cypherbox.vault.saving_vault.title}
                 </Text>
                 <Text h4 style={styles.descption} center>
-                    Write this backup copy on a piece of paper
+                    {loc.cypherbox.vault.saving_vault.write_backup}
                 </Text>
                 {/* Passphrase vaults: the words alone are NOT the full
                     backup. Remind here, at the moment the paper backup is
@@ -161,7 +162,7 @@ export default function SavingVault() {
                     passphrase itself is never displayed. */}
                 {!!(wallets.find((w: any) => w.getID() === walletID)?.getPassphrase?.()) && (
                     <Text center style={{ color: '#FFD54F', fontSize: 12, lineHeight: 17, marginTop: 6, marginHorizontal: 16 }}>
-                        ⚠ This vault has a passphrase. Recovery needs these 12 words AND your passphrase. Write both on your paper backup.
+                        {loc.cypherbox.vault.saving_vault.passphrase_reminder}
                     </Text>
                 )}
                 <PrivateKeyGenerater callNext={nextClickInitiate} />
@@ -177,12 +178,10 @@ export default function SavingVault() {
                 {!signingMode && <View style={styles.keychainRow}>
                     <View style={styles.keychainTextWrap}>
                         <Text bold style={styles.keychainLabel}>
-                            Also save to iPhone Keychain
+                            {loc.cypherbox.vault.saving_vault.keychain_label}
                         </Text>
                         <Text style={styles.keychainSub}>
-                            Encrypted on this device, unlocked by FaceID /
-                            passcode. Survives app reinstall. Does not sync to
-                            iCloud.
+                            {loc.cypherbox.vault.saving_vault.keychain_sub}
                         </Text>
                     </View>
                     <Switch
@@ -198,17 +197,17 @@ export default function SavingVault() {
 
                 {keychainStatus === "ok" && (
                     <Text style={styles.keychainStatusOk}>
-                        ✓ Saved to Keychain
+                        {loc.cypherbox.vault.saving_vault.keychain_saved}
                     </Text>
                 )}
                 {keychainStatus === "err" && (
                     <Text style={styles.keychainStatusErr}>
-                        ✗ Keychain save failed. Paper backup still required
+                        {loc.cypherbox.vault.saving_vault.keychain_failed}
                     </Text>
                 )}
 
                 <Button
-                    text={submitting ? "Saving…" : "Ok, I wrote it down!"}
+                    text={submitting ? loc.cypherbox.vault.saving_vault.saving : loc.cypherbox.vault.saving_vault.wrote_it_down}
                     onPress={nextClickHandler}
                     style={styles.button}
                     textStyle={styles.btnText}

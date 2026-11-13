@@ -13,6 +13,7 @@ import { matchKeyAndValue } from '@Cypher/helpers/coinosHelper';
 import Svg, { SvgProps, Path } from 'react-native-svg';
 import { ProgressBar } from '@Cypher/components';
 import { mostRecentFetchedRate } from '../../../blue_modules/currency';
+import loc from '../../../loc';
 
 const { width } = Dimensions.get('screen');
 
@@ -116,13 +117,13 @@ export default function WithdrawToSavingsVault({ route }: Props) {
     };
 
     return (
-        <ScreenLayout title="Coin Withdrawal" showToolbar isBackButton disableScroll>
+        <ScreenLayout title={loc.cypherbox.vault.withdraw_to_savings_vault.title} showToolbar isBackButton disableScroll>
             <View style={styles.container}>
                 <TouchableOpacity style={styles.shadowView} onPress={checkingAccountClickHandler}>
                     <Shadow style={StyleSheet.flatten([styles.shadowTop, { shadowColor: colors.pink.shadowTop, padding: 0 }])} inner useArt>
                         <View style={styles.view}>
                             <Text h2 bold style={styles.check}>
-                                Lightning Account
+                                {loc.cypherbox.vault.withdraw_to_savings_vault.lightning_account}
                             </Text>
                             <Image source={CoinOSSmall} style={styles.blink} resizeMode="contain" />
                         </View>
@@ -162,11 +163,11 @@ export default function WithdrawToSavingsVault({ route }: Props) {
                     >
                         <View style={styles.bottominner}>
                             <Text h2 bold>
-                                Savings Vault
+                                {loc.cypherbox.vault.withdraw_to_savings_vault.savings_vault}
                             </Text>
                             <View style={styles.row}>
                                 <Text h3 bold style={styles.bitcointext}>
-                                    Bitcoin Network
+                                    {loc.cypherbox.vault.withdraw_to_savings_vault.bitcoin_network}
                                 </Text>
                                 <Image style={styles.bitcoinimg} resizeMode="contain" source={require('../../../img/bitcoin.png')} />
                             </View>
@@ -187,16 +188,14 @@ export default function WithdrawToSavingsVault({ route }: Props) {
 
                 <View style={styles.textContainer}>
                     <Text>
-                        The full pink bar represents the funds accumulated inside the Lightning Account. By clicking ‘Withdraw’ it will convert most of
-                        the funds into a real verifiable bitcoin ‘capsule’ (also known as a UTXO) filling one of the five slots in your Hot Vault, and
-                        leaving a small amount as pocket money for quick spending (Reserve Amount).
+                        {loc.cypherbox.vault.withdraw_to_savings_vault.explanation}
                     </Text>
                 </View>
 
                 <TouchableOpacity style={styles.nextButton} onPress={nextClickHandler}>
                     <LinearGradient start={{ x: 0, y: 1 }} end={{ x: 1, y: 1 }} colors={['#FF65D4', '#D617A1']} style={styles.nextButton}>
                         <Text bold style={styles.textStyle}>
-                            Next
+                            {loc.cypherbox.vault.withdraw_to_savings_vault.next}
                         </Text>
                     </LinearGradient>
                 </TouchableOpacity>

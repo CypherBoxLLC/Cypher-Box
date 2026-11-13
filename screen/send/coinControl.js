@@ -227,7 +227,7 @@ export const OutputModalContent = ({ output, wallet, onUseCoin, frozen, setFroze
       {/* <ListItem title={loc.cc.freezeLabel} Component={TouchableWithoutFeedback} switch={switchValue} /> */}
       <BlueSpacing20 />
       <View style={mStyles.buttonContainer}>
-        <Button testID="UseCoin" title="Label capsule" backgroundColor={vaultTab ? '#21C7FB' : '#23C47F'} onPress={() => onUseCoin([output])} />
+        <Button testID="UseCoin" title={loc.cypherbox.legacy.coin_control.label_capsule} backgroundColor={vaultTab ? '#21C7FB' : '#23C47F'} onPress={() => onUseCoin([output])} />
       </View>
       <BlueSpacing20 />
     </>

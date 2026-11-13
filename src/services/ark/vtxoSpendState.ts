@@ -33,6 +33,8 @@
  */
 
 /** Mirrors the server's VtxoSpendState enum, minus SPENDABLE/UNSPECIFIED. */
+import loc from '../../../loc';
+
 export type NotSpendableState =
     | 'spent'
     | 'unregistered'
@@ -118,24 +120,24 @@ export function notSpendableMessage(v: NotSpendableVtxo): { title: string; body:
     switch (v.state) {
         case 'spent':
             return {
-                title: 'Those sats are already gone',
-                body: 'The Ark server reports this capsule as already spent, so the balance shown was out of date. Your wallet has been corrected. This happens when the same seed phrase is used on another device, or after restoring an old backup file.',
+                title: loc.cypherbox.services.vtxo_spend_state.spent_title,
+                body: loc.cypherbox.services.vtxo_spend_state.spent_body,
             };
         case 'unregistered':
             return {
-                title: 'A capsule is stuck',
-                body: "One of your capsules is in a state the Ark server won't spend, so payments from Bark Vault keep failing. Try sending from a different wallet for now.",
+                title: loc.cypherbox.services.vtxo_spend_state.unregistered_title,
+                body: loc.cypherbox.services.vtxo_spend_state.unregistered_body,
             };
         case 'unclaimed':
         case 'htlc_recv_unclaimed':
             return {
-                title: 'A capsule is not ready yet',
-                body: 'One of your capsules is still being finalised by the Ark server and cannot be spent yet. Wait a few minutes and try again.',
+                title: loc.cypherbox.services.vtxo_spend_state.unclaimed_title,
+                body: loc.cypherbox.services.vtxo_spend_state.unclaimed_body,
             };
         default:
             return {
-                title: 'That capsule cannot be spent',
-                body: 'The Ark server refused to spend one of your capsules. Try again in a few minutes, or send from a different wallet.',
+                title: loc.cypherbox.services.vtxo_spend_state.default_title,
+                body: loc.cypherbox.services.vtxo_spend_state.default_body,
             };
     }
 }

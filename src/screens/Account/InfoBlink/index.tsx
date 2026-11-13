@@ -7,6 +7,7 @@ import Description from "./Description";
 import { ScreenLayout, Text, TextLink } from "@Cypher/component-library";
 import { dispatchNavigate, openUrl } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../../loc";
 
 export default function InfoBlink() {
 
@@ -38,30 +39,30 @@ export default function InfoBlink() {
         <ScreenLayout showToolbar progress={0}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <GradientText>Lightning Account</GradientText>
-                    <Text h4 style={styles.descption}>The first bitcoin custodian bank you’re about to use is called Coinos. Here are some useful things you may want to know about it:</Text>
+                    <GradientText>{loc.cypherbox.account.common.lightning_account}</GradientText>
+                    <Text h4 style={styles.descption}>{loc.cypherbox.account.info_blink.desc}</Text>
 
 
-                    <Text h4 bold style={styles.alertText2}>Regulated in Canada 🇨🇦</Text>
-                    <Description text="Requirements: email and password only" />
-                    <Description text="Non-KYC" />
-                    <Description text="Intraledger (between Coinos users): free" />
-                    <Description text="Send and receive fees: free" />
-                    <Description text="Settlement and Top-up fees: 0.1%" />
-                    <Description text="Node security: unknown" />
+                    <Text h4 bold style={styles.alertText2}>{loc.cypherbox.account.info_blink.regulated}</Text>
+                    <Description text={loc.cypherbox.account.info_blink.requirements} />
+                    <Description text={loc.cypherbox.account.info_blink.non_kyc} />
+                    <Description text={loc.cypherbox.account.info_blink.intraledger} />
+                    <Description text={loc.cypherbox.account.info_blink.send_receive_fees} />
+                    <Description text={loc.cypherbox.account.info_blink.settlement_fees} />
+                    <Description text={loc.cypherbox.account.info_blink.node_security} />
                     <View style={{ flexDirection: 'row',alignSelf:'flex-start' }}>
-                        <Description text="Audit node " />
-                        <TextLink text="here" style={{borderColor:colors.pink.light}} textStyle={styles.link} onPress={() => websiteClickHandler('here')} />
+                        <Description text={loc.cypherbox.account.info_blink.audit_node} />
+                        <TextLink text={loc.cypherbox.account.info_blink.here} style={{borderColor:colors.pink.light}} textStyle={styles.link} onPress={() => websiteClickHandler('here')} />
                     </View>
                     <View style={{ marginVertical: 20, alignSelf: 'flex-start' }}>
-                        <TextLink text="Website" onPress={() => websiteClickHandler('website')} />
+                        <TextLink text={loc.cypherbox.account.info_blink.website} onPress={() => websiteClickHandler('website')} />
                         <TextLink text="Telegram" onPress={() => websiteClickHandler('telegram')} />
-                        <TextLink text="X account" onPress={() => websiteClickHandler('xaccount')} />
-                        <TextLink text="Email" onPress={() => websiteClickHandler('email')} />
+                        <TextLink text={loc.cypherbox.account.info_blink.x_account} onPress={() => websiteClickHandler('xaccount')} />
+                        <TextLink text={loc.cypherbox.account.common.email} onPress={() => websiteClickHandler('email')} />
                     </View>
                 </View>
                 <Image source={CoinOS} style={styles.image} resizeMode="contain" />
-                <GradientButton title="Next" onPress={nextClickHandler} />
+                <GradientButton title={loc.cypherbox.account.common.next} onPress={nextClickHandler} />
             </View>
         </ScreenLayout>
     )

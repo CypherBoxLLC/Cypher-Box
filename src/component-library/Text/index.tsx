@@ -1,7 +1,18 @@
 import React, { ReactNode } from 'react';
-import { LayoutChangeEvent, Text as RNText, TextStyle } from 'react-native';
+import { I18nManager, LayoutChangeEvent, Text as RNText, StyleProp, StyleSheet, TextStyle } from 'react-native';
 
+import { arabicFont } from '@Cypher/style-guide';
 import styles from './styles';
+
+// iOS lines up text with no textAlign by the app's localization, which is English only, so right-to-left paragraphs
+// stayed on the left. 'left' is the start edge: right-to-left swaps it to the right on both platforms, as Android
+// already did without it. Text with its own textAlign, and text marked left-to-right (addresses, amounts), is left
+// as it was.
+const startAligned = (style: StyleProp<TextStyle>): TextStyle | null => {
+  if (!I18nManager.isRTL) return null;
+  const { textAlign, writingDirection } = StyleSheet.flatten(style) ?? {};
+  return textAlign || writingDirection === 'ltr' ? null : { textAlign: 'left' };
+};
 
 export interface Props {
   testID?: string;
@@ -71,6 +82,23 @@ function Text({
   style,
   onLayout,
 }: Props) {
+  const composed = [
+    styles.default,
+    headline && styles.headline,
+    h1 && styles.h1,
+    h2 && styles.h2,
+    h3 && styles.h3,
+    h4 && styles.h4,
+    header && styles.header,
+    subHeader && styles.subHeader,
+    bold && styles.bold,
+    semibold && styles.semibold,
+    italic && styles.italic,
+    center && styles.center,
+    white && styles.white,
+    blue && styles.blue,
+    style && style,
+  ];
   return (
     <RNText
       textBreakStrategy="simple"
@@ -81,23 +109,8 @@ function Text({
       onPress={onPress}
       onLayout={onLayout}
       allowFontScaling={false}
-      style={[
-        styles.default,
-        headline && styles.headline,
-        h1 && styles.h1,
-        h2 && styles.h2,
-        h3 && styles.h3,
-        h4 && styles.h4,
-        header && styles.header,
-        subHeader && styles.subHeader,
-        bold && styles.bold,
-        semibold && styles.semibold,
-        italic && styles.italic,
-        center && styles.center,
-        white && styles.white,
-        blue && styles.blue,
-        style && style,
-      ]}>
+      style={[...composed, startAligned(composed), arabicFont(composed)]}
+    >
       {children}
     </RNText>
   );

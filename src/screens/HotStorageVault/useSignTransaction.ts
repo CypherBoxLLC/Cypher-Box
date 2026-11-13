@@ -5,6 +5,7 @@ import { SIGN_VAULT_MISMATCH, assertKeyMatches, parseUnsignedPsbt } from "@Cyphe
 import loc from "../../../loc";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
 import { afterSigningGuide, startSigning } from "../SignOnce/start";
+import signErrorText from "../SignOnce/errorText";
 
 const fs = require('../../../blue_modules/fs');
 
@@ -22,7 +23,7 @@ export default function useSignTransaction(wallet: any) {
             // the wallet reports its fingerprint in capitals, transactions in lower case
             assertKeyMatches(parseUnsignedPsbt(data), String(wallet.getMasterFingerprintHex()).toLowerCase(), SIGN_VAULT_MISMATCH);
         } catch (e: any) {
-            Alert.alert(loc.errors.error, e.message);
+            Alert.alert(loc.errors.error, signErrorText(e.message));
             return;
         }
         startSigning({ psbt: data, mode: 'vault' });

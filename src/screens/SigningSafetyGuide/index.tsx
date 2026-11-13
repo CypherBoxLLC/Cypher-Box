@@ -5,6 +5,7 @@ import { getBuildNumber, getVersion } from "react-native-device-info";
 import { Button, ScreenLayout } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
 import { Body, Row, Section } from "../VerifyTransactionGuide";
+import loc from "../../../loc";
 
 /**
  * "Signing safely": what a tampered signer can leak through its signatures, and how to keep a phone that signs for a
@@ -26,54 +27,51 @@ export default function SigningSafetyGuide({ route, navigation }: { route: any; 
 
     return (
         // disableScroll: the guide scrolls itself, so the button below stays on screen instead of scrolling away
-        <ScreenLayout showToolbar isBackButton disableScroll title="Signing safely">
+        <ScreenLayout showToolbar isBackButton disableScroll title={loc.cypherbox.signing_safety.title}>
             <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
                 {/* who it is for comes first: most readers use the Hot Vault day to day or sign with a hardware
                     wallet, and the phone checklist below is not for them */}
-                <Section title="Is this for you?">
+                <Section title={loc.cypherbox.signing_safety.for_you_title}>
                     <Row
-                        title="Hot Vault as your everyday wallet"
-                        body="You send and receive with the Hot Vault on this phone. Nothing to do here."
+                        title={loc.cypherbox.signing_safety.everyday_title}
+                        body={loc.cypherbox.signing_safety.everyday_body}
                     />
                     <Row
-                        title="Cold Vault signed by a hardware wallet"
-                        body="A device like a Coldcard or Jade signs, not a phone. The phone checklist below isn't for you. Just install the device's firmware only from its maker, through their own app or website."
+                        title={loc.cypherbox.signing_safety.hardware_title}
+                        body={loc.cypherbox.signing_safety.hardware_body}
                     />
                     <Row
-                        title="Signing on an offline phone with Cypher Box"
-                        body="This is for you. Example: an old phone, kept offline, runs Cypher Box in Offline Seed-Signer mode as your signing device: the seed lives on your SeedQR backups and is scanned in to sign. Your everyday phone holds a watch & broadcast only wallet made from the seed's public key: a Cypher Box Cold Vault, or another app such as Sparrow. It shows your balance, prepares transactions and broadcasts them once signed, but can't sign them."
+                        title={loc.cypherbox.signing_safety.offline_phone_title}
+                        body={loc.cypherbox.signing_safety.offline_phone_body}
                     />
                 </Section>
 
-                <Section title="Why it matters">
+                <Section title={loc.cypherbox.signing_safety.why_title}>
                     <Body>
-                        A signature becomes public once the transaction is sent. A tampered signing app can hide pieces of
-                        your recovery phrase inside its signatures, and someone watching the blockchain can put them back
-                        together, sometimes from a single transaction. Keeping the signing phone offline doesn't stop this:
-                        the signature itself carries the leak.
+                        {loc.cypherbox.signing_safety.why_body}
                     </Body>
                 </Section>
 
-                <Section title="Checklist for the signing wallet's phone">
-                    <Row title="Use a dedicated phone" body="Factory-reset it and install nothing else on it." />
-                    <Row title="Keep it offline" body="Wi-Fi, mobile data and Bluetooth off, for good." />
+                <Section title={loc.cypherbox.signing_safety.checklist_title}>
+                    <Row title={loc.cypherbox.signing_safety.dedicated_title} body={loc.cypherbox.signing_safety.dedicated_body} />
+                    <Row title={loc.cypherbox.signing_safety.offline_title} body={loc.cypherbox.signing_safety.offline_body} />
                     <Row
-                        title="Keep automatic updates off"
-                        body="Update Cypher Box here only on purpose, to a version that has been out for a few weeks."
+                        title={loc.cypherbox.signing_safety.updates_title}
+                        body={loc.cypherbox.signing_safety.updates_body}
                     />
                     <Row
-                        title="Same Cypher Box version on both phones"
-                        body={`If your other phone runs Cypher Box too. This phone runs Cypher Box ${getVersion()} (build ${getBuildNumber()}); the other phone shows its version under Settings > Info in either vault.`}
+                        title={loc.cypherbox.signing_safety.same_version_title}
+                        body={String(loc.formatString(loc.cypherbox.signing_safety.same_version_body, { version: `${getVersion()} (build ${getBuildNumber()})` }))}
                     />
                     <Row
-                        title="Official source only"
-                        body="Install from the App Store or Google Play, never from a link someone sends you."
+                        title={loc.cypherbox.signing_safety.official_title}
+                        body={loc.cypherbox.signing_safety.official_body}
                     />
                 </Section>
             </ScrollView>
             {onContinue ? (
                 <View style={styles.footer}>
-                    <Button text="Got it, continue" onPress={carryOn} style={styles.button} />
+                    <Button text={loc.cypherbox.signing_safety.got_it} onPress={carryOn} style={styles.button} />
                 </View>
             ) : null}
         </ScreenLayout>

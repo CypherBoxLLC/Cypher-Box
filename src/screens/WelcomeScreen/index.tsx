@@ -8,6 +8,8 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { MiddleImage, TitleImage } from "../../../img";
 import { Start, Title } from "@Cypher/assets/images";
 import { ScreenLayout } from "@Cypher/component-library";
+import loc from "../../../loc";
+import { GoodLuckWords, StartWord, welcomeArtFits } from "@Cypher/components/WelcomeWords";
 
 export default function WelcomeScreen() {
     const { setWalletsInitialized, startAndDecrypt } = useContext(BlueStorageContext);
@@ -42,15 +44,19 @@ export default function WelcomeScreen() {
                     style={styles.logoImage}
                 />
                 <View style={{ alignSelf: 'center' }}>
-                    <Description text="A 'sat' is a tiny fraction of a Bitcoin" />
-                    <Description text="100M sats equal 1 Bitcoin" />
-                    <Description text="There will olny ever be 21M Bitcoin" />
+                    <Description text={loc.cypherbox.welcome.sat_fraction} />
+                    <Description text={loc.cypherbox.welcome.sats_per_bitcoin} />
+                    <Description text={loc.cypherbox.welcome.max_supply} />
                 </View>
-                <Image source={MiddleImage} style={styles.middle}
-                    resizeMode="contain" />
-                <TouchableOpacity onPress={startClickHandler}>
-                    <Image source={Start} style={styles.start}
+                {welcomeArtFits() ?
+                    <Image source={MiddleImage} style={styles.middle}
                         resizeMode="contain" />
+                    : <GoodLuckWords />}
+                <TouchableOpacity onPress={startClickHandler}>
+                    {welcomeArtFits() ?
+                        <Image source={Start} style={styles.start}
+                            resizeMode="contain" />
+                        : <StartWord active />}
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

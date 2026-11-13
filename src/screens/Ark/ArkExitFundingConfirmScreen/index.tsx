@@ -19,6 +19,7 @@ import {
     sendBitcoinPayment,
 } from '@Cypher/api/coinOSApis';
 import { getFiatRate } from '../../../../models/fiatUnit';
+import loc from '../../../../loc';
 
 /**
  * Preparing the deposit needs bark's on-chain (BDK) wallet, and spawning that
@@ -34,7 +35,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
         p,
         new Promise<T>((_, reject) =>
             setTimeout(
-                () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+                () => reject(new Error(String(loc.formatString(loc.cypherbox.ark.exit_funding.timed_out, { label, seconds: Math.round(ms / 1000) })))),
                 ms,
             ),
         ),
@@ -135,7 +136,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                 const addr = await withTimeout(
                     getArkOnchainAddress(),
                     PREPARE_TIMEOUT_MS,
-                    'Preparing the deposit address',
+                    loc.cypherbox.ark.exit_funding.preparing_address_step,
                 );
                 if (cancelled) return;
                 setAddress(addr);
@@ -143,7 +144,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                     const raw = await withTimeout(
                         bitcoinSendFee(shortfallSats, addr, 0),
                         PREPARE_TIMEOUT_MS,
-                        'Estimating the network fee',
+                        loc.cypherbox.ark.exit_funding.estimating_fee_step,
                     );
                     const parsed =
                         typeof raw === 'string' && raw.trim().startsWith('{')
@@ -157,13 +158,13 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                 }
             } catch (err: any) {
                 if (!cancelled) {
-                    const msg = err?.message ?? 'unknown error';
+                    const msg = err?.message ?? loc.cypherbox.ark.common.unknown_error;
                     // Show it ON the screen, not only as a toast that vanishes.
                     // The deposit address comes from the on-chain wallet, so the
                     // usual cause is the chain source being unreachable, which
                     // the user can often fix by changing network.
                     setPrepError(msg);
-                    SimpleToast.show(`Could not prepare the top-up: ${msg}`, SimpleToast.LONG);
+                    SimpleToast.show(String(loc.formatString(loc.cypherbox.ark.exit_funding.prepare_failed_toast, { message: msg })), SimpleToast.LONG);
                 }
             } finally {
                 if (!cancelled) setLoading(false);
@@ -212,7 +213,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                     const raw = await withTimeout(
                         bitcoinSendFee(amountSats, address, 0),
                         PREPARE_TIMEOUT_MS,
-                        'Estimating the network fee',
+                        loc.cypherbox.ark.exit_funding.estimating_fee_step,
                     );
                     const parsed =
                         typeof raw === 'string' && raw.trim().startsWith('{')
@@ -236,13 +237,13 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
     const blockedReason: string | null = loading
         ? null
         : indeterminate
-          ? `This top-up may already have been sent. Check your ${sourceLabel} history before trying again.`
+          ? String(loc.formatString(loc.cypherbox.ark.exit_funding.blocked_indeterminate, { source: sourceLabel }))
           : prepError
-            ? 'Cannot continue until the deposit address is available.'
+            ? loc.cypherbox.ark.exit_funding.blocked_no_address
             : sourceId !== 'coinos'
-              ? `Funding from ${sourceLabel} is not available yet.`
+              ? String(loc.formatString(loc.cypherbox.ark.exit_funding.blocked_source_unavailable, { source: sourceLabel }))
               : amountSats <= 0
-                ? 'Enter an amount to send.'
+                ? loc.cypherbox.ark.exit_funding.blocked_enter_amount
                 : !plan.ok
                   ? plan.reason
                   : null;
@@ -286,7 +287,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
 
             if (res.ok) {
                 navigation.replace('ArkSendSuccessScreen', {
-                    title: 'Exit fees funded',
+                    title: loc.cypherbox.ark.exit_funding.success_title,
                     // These three were never passed, so the success screen fell
                     // back to its defaults and reported "0 sats" for a real
                     // deposit. It reads them; send them.
@@ -299,13 +300,13 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                     // On-chain, not Lightning. The default rail label and the
                     // bolt both said otherwise.
                     isOnchain: true,
-                    networkLabel: 'Bitcoin Network',
+                    networkLabel: loc.cypherbox.ark.exit_funding.bitcoin_network,
                     // The deposit is worthless until it confirms, and saying so
                     // here is what stops "nothing happened" a minute later. The
                     // amount is displayed above now, so it is not repeated.
                     note: res.partial
-                        ? 'That is less than the full shortfall, so top up again if the exit still reports a gap. Emergency Exit unlocks once it confirms on-chain.'
-                        : 'Emergency Exit unlocks once it confirms on-chain.',
+                        ? loc.cypherbox.ark.exit_funding.success_note_partial
+                        : loc.cypherbox.ark.exit_funding.success_note,
                     txid: res.txid ?? undefined,
                 });
                 return;
@@ -344,7 +345,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
     );
 
     return (
-        <ScreenLayout disableScroll showToolbar isBackButton title="Fund exit fees">
+        <ScreenLayout disableScroll showToolbar isBackButton title={loc.cypherbox.ark.exit_funding.title}>
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 16 }}
@@ -366,15 +367,13 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                                 }}
                             >
                                 <Text bold style={{ fontSize: 14, color: '#FF8A80', marginBottom: 6 }}>
-                                    Could not prepare the top-up
+                                    {loc.cypherbox.ark.exit_funding.prepare_failed_title}
                                 </Text>
                                 <Text style={{ fontSize: 12, color: '#DDD', lineHeight: 17 }}>
                                     {prepError}
                                 </Text>
                                 <Text style={{ fontSize: 12, color: '#888', lineHeight: 17, marginTop: 8 }}>
-                                    The deposit address comes from the on-chain wallet, which needs a
-                                    reachable chain source. Changing network often clears this. Go back
-                                    and reopen this screen to retry.
+                                    {loc.cypherbox.ark.exit_funding.prepare_failed_help}
                                 </Text>
                             </View>
                         )}
@@ -405,7 +404,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                                 value={amountText}
                                 onChange={(t: string) => setAmountText(t.replace(/[^0-9]/g, ''))}
                                 keyboardType="number-pad"
-                                label="Amount in sats"
+                                label={loc.cypherbox.ark.exit_funding.amount_in_sats}
                                 maxLength={12}
                             />
                         </GradientCard>
@@ -420,8 +419,8 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                                 }}
                             >
                                 {underSuggested
-                                    ? `Suggested ${formatNumber(shortfallSats)} sats. Less than that still helps: the exit runs as far as these fees allow.`
-                                    : `Suggested ${formatNumber(shortfallSats)} sats, which is what the exit is short by.`}
+                                    ? loc.formatString(loc.cypherbox.ark.exit_funding.suggested_under, { amount: formatNumber(shortfallSats) })
+                                    : loc.formatString(loc.cypherbox.ark.exit_funding.suggested, { amount: formatNumber(shortfallSats) })}
                             </Text>
                         )}
 
@@ -435,23 +434,23 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                             }}
                         >
                             <View style={{ padding: 16 }}>
-                                <Row label="From" value={sourceLabel} />
-                                <Row label="To" value="Bark on-chain wallet" />
+                                <Row label={loc.cypherbox.ark.exit_funding.row_from} value={sourceLabel} />
+                                <Row label={loc.cypherbox.ark.exit_funding.row_to} value={loc.cypherbox.ark.exit_funding.bark_onchain_wallet} />
                                 <Row
                                     wrap
-                                    label="Address"
-                                    value={address ?? 'Preparing...'}
-                                    hint={address ? 'Deposit lands here and stays on-chain' : undefined}
+                                    label={loc.cypherbox.ark.exit_funding.row_address}
+                                    value={address ?? loc.cypherbox.ark.exit_funding.preparing}
+                                    hint={address ? loc.cypherbox.ark.exit_funding.address_hint : undefined}
                                 />
                                 {plan.ok ? (
                                     <>
                                         <Row
-                                            label="Amount"
+                                            label={loc.cypherbox.ark.exit_funding.row_amount}
                                             value={`${formatNumber(plan.sendSats)} sats`}
                                             hint={fiat(plan.sendSats) || undefined}
                                         />
                                         <Row
-                                            label="Network fee"
+                                            label={loc.cypherbox.ark.exit_funding.row_network_fee}
                                             value={`${formatNumber(feeSats ?? 0)} sats`}
                                             hint={
                                                 feePct
@@ -460,7 +459,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                                             }
                                         />
                                         <Row
-                                            label="Leaves your wallet"
+                                            label={loc.cypherbox.ark.exit_funding.row_leaves_wallet}
                                             value={`${formatNumber(plan.totalCostSats)} sats`}
                                             hint={fiat(plan.totalCostSats) || undefined}
                                         />
@@ -475,14 +474,12 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
 
                         {plan.ok && plan.partial && (
                             <Text style={{ fontSize: 12, color: '#FFD54F', marginTop: 12, lineHeight: 17 }}>
-                                This does not cover the whole shortfall. It still helps: the exit
-                                resumes as far as these fees allow.
+                                {loc.cypherbox.ark.exit_funding.partial_notice}
                             </Text>
                         )}
 
                         <Text style={{ fontSize: 12, color: '#888', marginTop: 12, lineHeight: 17 }}>
-                            These sats stay on-chain to pay miner fees and are not moved into Ark.
-                            Emergency Exit unlocks once the deposit confirms.
+                            {loc.cypherbox.ark.exit_funding.footer_notice}
                         </Text>
 
                     </>
@@ -513,7 +510,7 @@ export default function ArkExitFundingConfirmScreen({ route }: Props) {
                     </View>
                 ) : (
                     <SwipeButton
-                        title="Slide to Fund"
+                        title={loc.cypherbox.ark.exit_funding.slide_to_fund}
                         ref={swipeRef}
                         onToggle={onConfirm}
                         isLoading={sending || loading}

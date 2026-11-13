@@ -9,6 +9,7 @@ import SavingVault from "../SavingVault";
 import { Shadow } from "react-native-neomorph-shadows";
 import { Back } from "@Cypher/assets/images";
 import LinearGradientButton from "./LinearGradientButton";
+import loc from "../../../loc";
 
 export default function CreateVault() {
 
@@ -20,9 +21,9 @@ export default function CreateVault() {
         <ScreenLayout showToolbar>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text bold subHeader style={styles.title}>Hot Storage Threshold</Text>
-                    <LinearGradientButton warningText='⚠  Intermediate' text='Create Hot Vault' onPress={hotVaultClickHandler} />
-                    <LinearGradientButton warningText='⚠  Advanced' text='Create Cold Vault' onPress={hotVaultClickHandler} />
+                    <Text bold subHeader style={styles.title}>{loc.cypherbox.vault.create_vault.title}</Text>
+                    <LinearGradientButton warningText={loc.cypherbox.vault.create_vault.intermediate} text={loc.cypherbox.vault.create_vault.create_hot_vault} onPress={hotVaultClickHandler} />
+                    <LinearGradientButton warningText={loc.cypherbox.vault.create_vault.advanced} text={loc.cypherbox.vault.create_vault.create_cold_vault} onPress={hotVaultClickHandler} />
                 </View>
             </View>
         </ScreenLayout>

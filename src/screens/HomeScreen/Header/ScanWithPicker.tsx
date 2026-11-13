@@ -16,6 +16,7 @@ import {
 } from '@Cypher/assets/images';
 import { colors } from '@Cypher/style-guide';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import loc from '../../../../loc';
 
 /**
  * Stable wallet keys — used by the parent's onSelect to dispatch the right
@@ -68,7 +69,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
         {
             key: 'strike',
             label: 'Strike',
-            subtitle: 'Lightning · custodial',
+            subtitle: loc.cypherbox.scan_with.lightning_custodial,
             icon: StrikeFull,
             isLogo: true,
             accent: colors.pink.default,
@@ -76,38 +77,38 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
         {
             key: 'coinos',
             label: 'CoinOS',
-            subtitle: 'Lightning · custodial',
+            subtitle: loc.cypherbox.scan_with.lightning_custodial,
             icon: CoinOSIcon,
             isLogo: true,
             accent: '#ffd166',
         },
         {
             key: 'ark',
-            label: 'Bark Vault',
-            subtitle: 'Lightning · self-custodial',
+            label: loc.cypherbox.scan_with.bark_vault,
+            subtitle: loc.cypherbox.scan_with.lightning_self_custodial,
             icon: null,
             textLabel: 'ARK',
             accent: colors.ark?.light ?? '#7DD3FC',
         },
         {
             key: 'hotVault',
-            label: 'Hot Vault',
-            subtitle: 'Bitcoin on-chain',
+            label: loc.cypherbox.home.hot_vault,
+            subtitle: loc.cypherbox.scan_with.bitcoin_onchain,
             icon: HotIcon,
             accent: '#ff9a3c',
         },
         {
             key: 'coldVault',
-            label: 'Cold Vault',
-            subtitle: 'Bitcoin on-chain',
+            label: loc.cypherbox.home.cold_vault,
+            subtitle: loc.cypherbox.scan_with.bitcoin_onchain,
             icon: ColdIcon,
             accent: '#7fb3ff',
         },
         {
             // not a payment: an unsigned transaction from a watch-only wallet, signed on this phone
             key: 'sign',
-            label: 'Sign a transaction',
-            subtitle: 'From a watch & broadcast only wallet',
+            label: loc.cypherbox.scan_with.sign_label,
+            subtitle: loc.cypherbox.scan_with.sign_subtitle,
             icon: null,
             vectorIcon: 'signature-freehand',
             accent: colors.blueText,
@@ -126,10 +127,10 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                     backdrop dismiss only fires when tapping outside. */}
                 <Pressable style={modalStyles.sheet} onPress={() => {}}>
                     <Text bold style={modalStyles.title}>
-                        Scan with
+                        {loc.cypherbox.scan_with.title}
                     </Text>
                     <Text style={modalStyles.subtitle}>
-                        Choose which wallet pays the scanned address or invoice, or sign a transaction.
+                        {loc.cypherbox.scan_with.subtitle}
                     </Text>
 
                     {rows.map((row) => {
@@ -171,7 +172,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                                         {row.label}
                                     </Text>
                                     <Text style={modalStyles.rowSubtitle}>
-                                        {enabled ? row.subtitle : `${row.subtitle} · not connected`}
+                                        {enabled ? row.subtitle : `${row.subtitle} · ${loc.cypherbox.scan_with.not_connected}`}
                                     </Text>
                                 </View>
                             </TouchableOpacity>
@@ -179,7 +180,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                     })}
 
                     <TouchableOpacity onPress={onClose} style={modalStyles.cancel}>
-                        <Text bold style={modalStyles.cancelText}>Cancel</Text>
+                        <Text bold style={modalStyles.cancelText}>{loc._.cancel}</Text>
                     </TouchableOpacity>
                 </Pressable>
             </Pressable>

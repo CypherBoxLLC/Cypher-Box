@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { ScreenLayout, Text } from '@Cypher/component-library';
 import { GradientButton } from '@Cypher/components';
@@ -19,11 +19,12 @@ import {
     type ArkDestination,
     type ArkSendFeeView,
 } from '@Cypher/services/ark';
-import { colors } from '@Cypher/style-guide';
+import { colors, rtl } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
 
 import TextViewV2 from '../../Invoice/TextView';
 import reviewStyles from '../../ReviewPayment/styles';
+import loc from '../../../../loc';
 
 /**
  * ArkSendReviewScreen — the dedicated "Review Payment" step for the Ark
@@ -118,7 +119,7 @@ export default function ArkSendReviewScreen({ route }: Props) {
                 if (cancelled) return;
                 setFee(null);
                 setErrorMsg(
-                    describeArkFailure(err, 'Fee estimate failed', { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }),
+                    describeArkFailure(err, loc.cypherbox.ark.common.fee_estimate_failed, { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }),
                 );
             } finally {
                 if (!cancelled) setIsEstimating(false);
@@ -192,7 +193,7 @@ export default function ArkSendReviewScreen({ route }: Props) {
                         ? destination.value
                         : `${destinationRaw.slice(0, 12)}…${destinationRaw.slice(-8)}`)
                     : undefined,
-                fromLabel: isLightning ? 'Bark Vault' : undefined,
+                fromLabel: isLightning ? loc.cypherbox.ark.common.bark_vault : undefined,
             });
         } catch (err: any) {
             console.error('[ArkSendReview] send failed:', err);
@@ -201,14 +202,14 @@ export default function ArkSendReviewScreen({ route }: Props) {
                 // re-arm Send: the payment may still settle, and a retry to an
                 // ln-address would mint a new invoice and pay twice.
                 setSendIndeterminate(true);
-                setErrorMsg(err?.message ?? 'This payment may still be in flight. Do not send it again.');
+                setErrorMsg(err?.message ?? loc.cypherbox.ark.send_review.payment_in_flight);
             } else {
                 // Only reached once isArkSendIndeterminate has ruled out the
                 // ambiguous case above, so "not moved" is still a safe claim.
                 // Kept verbatim: the network sentence explains WHY, it does not
                 // replace the fund-safety assertion.
                 setErrorMsg(
-                    `${describeArkFailure(err, 'Send failed', { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL })} Your funds were not moved.`,
+                    String(loc.formatString(loc.cypherbox.ark.send_review.send_failed_not_moved, { reason: describeArkFailure(err, loc.cypherbox.ark.send_review.send_failed, { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }) })),
                 );
             }
         } finally {
@@ -231,17 +232,17 @@ export default function ArkSendReviewScreen({ route }: Props) {
         destination.kind === 'ln-invoice' ||
         destination.kind === 'ln-offer' ||
         destination.kind === 'ln-address'
-            ? 'Fee (Lightning routing + Ark)'
+            ? loc.cypherbox.ark.send_review.fee_lightning
             : destination.kind === 'onchain'
-                ? 'Fee (on-chain network + Ark)'
+                ? loc.cypherbox.ark.send_review.fee_onchain
                 : destination.kind === 'ark'
-                    ? 'Fee (Ark server)'
-                    : 'Fee';
+                    ? loc.cypherbox.ark.send_review.fee_ark
+                    : loc.cypherbox.ark.send_review.fee;
 
     const cur = getStrikeCurrency(currency);
 
     return (
-        <ScreenLayout showToolbar isBackButton title="Review Payment">
+        <ScreenLayout showToolbar isBackButton title={loc.cypherbox.ark.send_review.title}>
             <ScrollView
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingBottom: 12 }}
@@ -252,17 +253,17 @@ export default function ArkSendReviewScreen({ route }: Props) {
                     <View style={reviewStyles.middle}>
                         {/* Amount to recipient */}
                         <TextViewV2
-                            keytext="You'll send: "
+                            keytext={loc.cypherbox.ark.send_review.you_will_send}
                             text={`${amountSats.toLocaleString()} sats ~ ${cur}${amountFiat}`}
-                            textStyle={reviewStyles.price}
+                            textStyle={StyleSheet.flatten([reviewStyles.price, rtl.ltrText])}
                         />
 
-                        <TextViewV2 keytext="Sent from: " text="Bark Vault" />
+                        <TextViewV2 keytext={loc.cypherbox.ark.common.sent_from} text={loc.cypherbox.ark.common.bark_vault} />
 
                         {/* Destination */}
                         <View style={{ marginStart: 15, marginEnd: 10, marginBottom: 24 }}>
                             <Text bold style={{ fontSize: 18 }}>
-                                {'To: '}
+                                {loc.cypherbox.ark.common.to}
                             </Text>
                             <Text style={{ color: colors.ark.light, fontSize: 13, marginTop: 4 }}>
                                 {labelForDestinationKind(destination.kind)}
@@ -280,18 +281,18 @@ export default function ArkSendReviewScreen({ route }: Props) {
                             >
                                 <Text
                                     italic
-                                    style={{
+                                    style={[{
                                         fontSize: 12,
                                         fontFamily: 'monospace',
                                         color: colors.ark.light,
-                                    }}
+                                    }, rtl.ltrText]}
                                 >
                                     {destinationRaw}
                                 </Text>
                             </View>
                             {!destinationValid && (
                                 <Text style={{ color: '#FF7A68', fontSize: 12, marginTop: 6 }}>
-                                    Destination is not a recognised address or invoice.
+                                    {loc.cypherbox.ark.send_review.invalid_destination}
                                 </Text>
                             )}
                         </View>
@@ -310,7 +311,7 @@ export default function ArkSendReviewScreen({ route }: Props) {
                                 <Text
                                     style={{ color: colors.gray.light, marginLeft: 8, fontSize: 13 }}
                                 >
-                                    Estimating fee…
+                                    {loc.cypherbox.ark.common.estimating_fee}
                                 </Text>
                             </View>
                         ) : fee ? (
@@ -326,14 +327,16 @@ export default function ArkSendReviewScreen({ route }: Props) {
                                               }%)`
                                             : ''
                                     }`}
+                                    textStyle={rtl.ltrText}
                                 />
                                 <TextViewV2
-                                    keytext="Total debited: "
+                                    keytext={loc.cypherbox.ark.send_review.total_debited}
                                     text={`${fee.grossAmountSats.toLocaleString()} sats ~ ${cur}${grossFiat}`}
+                                    textStyle={rtl.ltrText}
                                 />
                                 {fee.vtxosSpent.length > 0 && (
                                     <TextViewV2
-                                        keytext="Capsules used: "
+                                        keytext={loc.cypherbox.ark.send_review.capsules_used}
                                         text={`${fee.vtxosSpent.length}`}
                                     />
                                 )}
@@ -365,20 +368,21 @@ export default function ArkSendReviewScreen({ route }: Props) {
                             marginTop: 8,
                         }}
                     >
-                        Not enough balance to cover fees. Need{' '}
-                        {fee.grossAmountSats.toLocaleString()} sats total (
-                        {fee.feeSats.toLocaleString()} sats fee), but only{' '}
-                        {spendableSats.toLocaleString()} sats available.
+                        {loc.formatString(loc.cypherbox.ark.send_review.not_enough_balance, {
+                            total: fee.grossAmountSats.toLocaleString(),
+                            fee: fee.feeSats.toLocaleString(),
+                            available: spendableSats.toLocaleString(),
+                        })}
                     </Text>
                 )}
 
                 {wouldStrandDust && fee && sendAllAmount !== null && sendAllAmount > 0 && (
                     <View style={{ marginHorizontal: 25, marginTop: 10 }}>
                         <Text style={{ color: '#FF7A68', fontSize: 13, lineHeight: 18 }}>
-                            This send leaves {changeIfSent} sats of change as a sub-dust
-                            capsule (below the {ARK_VTXO_DUST_SATS}-sat limit). To keep it
-                            spendable, use Send all, or consolidate it later from the
-                            Capsules tab. Otherwise it expires and the ASP sweeps it.
+                            {loc.formatString(loc.cypherbox.ark.send_review.dust_change_warning, {
+                                change: changeIfSent,
+                                limit: ARK_VTXO_DUST_SATS,
+                            })}
                         </Text>
                         <TouchableOpacity
                             onPress={handleSendAll}
@@ -394,8 +398,10 @@ export default function ArkSendReviewScreen({ route }: Props) {
                             }}
                         >
                             <Text bold style={{ color: colors.ark.light, fontSize: 13 }}>
-                                Send all {sendAllAmount.toLocaleString()} sats instead (
-                                {fee.feeSats} sat fee)
+                                {loc.formatString(loc.cypherbox.ark.send_review.send_all_instead, {
+                                    amount: sendAllAmount.toLocaleString(),
+                                    fee: fee.feeSats,
+                                })}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -414,10 +420,13 @@ export default function ArkSendReviewScreen({ route }: Props) {
                     marginHorizontal: 30,
                 }}
             >
-                <Text style={{ color: colors.white, fontSize: 15, fontWeight: 'bold' }}>
-                    Caution:
-                </Text>{' '}
-                Bitcoin transactions are irreversible
+                {loc.formatString(loc.cypherbox.ark.common.caution_irreversible, {
+                    caution: (
+                        <Text style={{ color: colors.white, fontSize: 15, fontWeight: 'bold' }}>
+                            {loc.cypherbox.ark.common.caution}
+                        </Text>
+                    ),
+                })}
             </Text>
             {isSending && slowSend && (
                 <Text
@@ -429,13 +438,13 @@ export default function ArkSendReviewScreen({ route }: Props) {
                         marginHorizontal: 30,
                     }}
                 >
-                    It's taking longer than expected...
+                    {loc.cypherbox.ark.send_review.taking_longer}
                 </Text>
             )}
             <View style={reviewStyles.container}>
                 <GradientButton
                     style={reviewStyles.invoiceButton}
-                    title={isSending ? 'Sending…' : 'Send'}
+                    title={isSending ? loc.cypherbox.ark.send_review.sending : loc.cypherbox.ark.send_review.send}
                     disabled={!canSend}
                     onPress={runSend}
                     colors_={[colors.ark.gradient1, colors.ark.gradient2]}

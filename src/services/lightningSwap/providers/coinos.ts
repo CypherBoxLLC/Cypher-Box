@@ -23,6 +23,7 @@ import type {
 } from '../types';
 import { PaymentPendingError } from '../types';
 import { register } from '../registry';
+import loc from '../../../../loc';
 
 /**
  * Parse Coinos's `sendLightningPayment` response. The helper returns raw
@@ -45,9 +46,9 @@ function parsePayResponse(raw: unknown): { ok: boolean; id?: string; message?: s
         if (r.confirmed || r.id || r.hash) {
             return { ok: true, id: String(r.id ?? r.hash ?? '(no id)') };
         }
-        return { ok: false, message: r.message ?? 'Coinos payment failed' };
+        return { ok: false, message: r.message ?? loc.cypherbox.services.lightning_swap.coinos_payment_failed };
     }
-    return { ok: false, message: 'Coinos payment failed' };
+    return { ok: false, message: loc.cypherbox.services.lightning_swap.coinos_payment_failed };
 }
 
 const coinosProvider: LightningSwapProvider = {
@@ -82,8 +83,8 @@ const coinosProvider: LightningSwapProvider = {
         if (!bolt11 || typeof bolt11 !== 'string') {
             throw new Error(
                 response?.message
-                    ? `Coinos invoice error: ${response.message}`
-                    : 'Coinos returned no invoice',
+                    ? String(loc.formatString(loc.cypherbox.services.lightning_swap.coinos_invoice_error, { message: response.message }))
+                    : loc.cypherbox.services.lightning_swap.coinos_no_invoice,
             );
         }
         return bolt11;
@@ -104,7 +105,7 @@ const coinosProvider: LightningSwapProvider = {
             if ((err as any)?.name === 'AbortError') {
                 throw new PaymentPendingError(
                     'coinos',
-                    "Coinos didn't confirm the payment in time. It may still complete. Check your Coinos balance in a moment before retrying.",
+                    loc.cypherbox.services.lightning_swap.coinos_pending,
                 );
             }
             throw err;
@@ -117,7 +118,7 @@ const coinosProvider: LightningSwapProvider = {
             if (parsed.message && /error code:\s*(502|503|504|524)/i.test(parsed.message)) {
                 throw new PaymentPendingError(
                     'coinos',
-                    "Coinos didn't confirm the payment in time. It may still complete. Check your Coinos balance in a moment before retrying.",
+                    loc.cypherbox.services.lightning_swap.coinos_pending,
                 );
             }
             // Coinos returns the literal string `"Insufficient funds ⚡️X / Y"`
@@ -136,12 +137,10 @@ const coinosProvider: LightningSwapProvider = {
                 const fee = Math.max(0, required - amountSats);
                 const safeMax = Math.max(0, balance - fee);
                 throw new Error(
-                    `Coinos balance is short by ${required - balance} sats ` +
-                    `(needs ${amountSats} + ${fee} routing fee = ${required}, you have ${balance}). ` +
-                    `Try swapping ${safeMax} sats.`,
+                    String(loc.formatString(loc.cypherbox.services.lightning_swap.coinos_insufficient, { short: required - balance, amount: amountSats, fee, required, balance, safe: safeMax })),
                 );
             }
-            throw new Error(parsed.message ?? 'Coinos payment failed');
+            throw new Error(parsed.message ?? loc.cypherbox.services.lightning_swap.coinos_payment_failed);
         }
         recordEvent({ kind: 'ln-sent', wallet: 'coinos', sats: amountSats });
         return {

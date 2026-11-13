@@ -9,6 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { updateExchangeRate, EXCHANGE_RATES_STORAGE_KEY } from "../../blue_modules/currency";
 import { getFiatRate } from "../../models/fiatUnit";
 import { assertLnurlPayCallbackUrl, assertAmountWithinSendable, buildCallbackUrl, verifyLnurlPayInvoice } from "./lnurlPayValidation";
+import loc from "../../loc";
 
 const BASE_URL = 'https://coinos.io/api';
 
@@ -94,11 +95,11 @@ if (__DEV__) console.log('Response status:', response.status);
       if (errorText === '2fa required' || errorText.includes('2fa')) {
         throw new Error('2fa required');
       }
-      throw new Error('Invalid username or password');
+      throw new Error(loc.cypherbox.services.coinos_api.invalid_credentials);
     }
     
     if (response.status === 429) {
-      throw new Error('Too many login attempts. Please wait and try again later.');
+      throw new Error(loc.cypherbox.services.coinos_api.too_many_attempts);
     }
 
     // 502/503/504 are transient gateway errors from CoinOS's own
@@ -106,11 +107,11 @@ if (__DEV__) console.log('Response status:', response.status);
     // credential problem. Give the user a retry hint instead of a raw
     // "status 502". Observed intermittently 2026-07-08.
     if (response.status === 502 || response.status === 503 || response.status === 504) {
-      throw new Error('Coinos is temporarily unavailable. Please try again in a moment.');
+      throw new Error(loc.cypherbox.services.coinos_api.temporarily_unavailable);
     }
 
     if (!response.ok) {
-      throw new Error(`Login failed with status ${response.status}`);
+      throw new Error(String(loc.formatString(loc.cypherbox.services.coinos_api.login_failed_status, { status: response.status })));
     }
     
     return await response.json();
@@ -140,7 +141,7 @@ export const refreshCoinOSToken = async (): Promise<string | null> => {
     const Keychain = require('react-native-keychain');
     const credentials = await Keychain.getGenericPassword({
       service: 'coinos-login',
-      authenticationPrompt: { title: 'Authenticate to refresh CoinOS session' },
+      authenticationPrompt: { title: loc.cypherbox.services.coinos_api.auth_prompt_refresh_session },
     });
 
     if (!credentials || !credentials.username || !credentials.password) {
@@ -310,8 +311,8 @@ export const sendCoinsViaUsername = async (address: string, amount: number, memo
     const user = useAuthStore.getState().user;
 
     if(user?.toLowerCase() === name?.toLowerCase()){
-      SimpleToast.show("Cannot send to self", SimpleToast.SHORT);
-      throw new Error("Cannot send to self");
+      SimpleToast.show(loc.cypherbox.services.coinos_api.cannot_send_to_self, SimpleToast.SHORT);
+      throw new Error(loc.cypherbox.services.coinos_api.cannot_send_to_self);
     }
 
     let url = `https://${domain}/.well-known/lnurlp/${name}`;
@@ -367,7 +368,7 @@ if (__DEV__) console.log('sendToUser: ' ,sendToUser)
         throw paymentResult?.reason;
       }
     } else {
-      SimpleToast.show("Invalid LNURL-Pay response", SimpleToast.SHORT)
+      SimpleToast.show(loc.cypherbox.services.coinos_api.invalid_lnurl_pay_response, SimpleToast.SHORT)
       throw new Error("Invalid LNURL-pay response");
     }
   } catch (error) {
@@ -525,7 +526,7 @@ export const sendBitcoinPayment = async (
     // callers can branch on a marker instead of guessing from the text.
     if (isNetworkShapedFailure(error)) {
       throw markWithdrawIndeterminate(
-        'This withdrawal may already have been sent. Check your CoinOS history before trying again.',
+        loc.cypherbox.services.coinos_api.withdrawal_may_have_been_sent,
       );
     }
     throw error;
@@ -542,7 +543,7 @@ export const getMe = async () => {
     }));
 if (__DEV__) console.log('response: ', response?.status)
     if(response?.status === 401){
-      SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
+      SimpleToast.show(loc.cypherbox.services.coinos_api.authorization_expired, SimpleToast.SHORT)
       useAuthStore.getState().clearAuth();
       return null;
     }
@@ -679,9 +680,9 @@ export const getOTPsecret = async () => {
     if (!response.ok) {
       const errorText = await response.text();
       if (response.status === 401 && errorText.includes('pin')) {
-        throw new Error('PIN required. Please set a PIN in your CoinOS account first.');
+        throw new Error(loc.cypherbox.services.coinos_api.pin_required);
       }
-      throw new Error(`Failed to get OTP secret: ${response.status}`);
+      throw new Error(String(loc.formatString(loc.cypherbox.services.coinos_api.otp_secret_failed, { status: response.status })));
     }
 
     return await response.json();
@@ -708,9 +709,9 @@ export const enableTwoFA = async (token: string) => {
     if (!response.ok) {
       const errorText = await response.text();
       if (response.status === 401) {
-        throw new Error('Invalid TOTP code. Please try again.');
+        throw new Error(loc.cypherbox.services.coinos_api.invalid_totp);
       }
-      throw new Error(`Failed to enable 2FA: ${errorText}`);
+      throw new Error(String(loc.formatString(loc.cypherbox.services.coinos_api.enable_2fa_failed, { error: errorText })));
     }
 
 if (__DEV__) console.log('[CoinOS] 2FA enabled successfully');
@@ -738,9 +739,9 @@ export const disableTwoFA = async (token: string) => {
     if (!response.ok) {
       const errorText = await response.text();
       if (response.status === 401) {
-        throw new Error('Invalid TOTP code. Please try again.');
+        throw new Error(loc.cypherbox.services.coinos_api.invalid_totp);
       }
-      throw new Error(`Failed to disable 2FA: ${errorText}`);
+      throw new Error(String(loc.formatString(loc.cypherbox.services.coinos_api.disable_2fa_failed, { error: errorText })));
     }
 
 if (__DEV__) console.log('[CoinOS] 2FA disabled successfully');
@@ -785,14 +786,14 @@ if (__DEV__) console.log('[2FA] Response status:', response.status, 'body:', res
     if (!response.ok) {
       if (response.status === 401) {
         if (responseText.includes('captcha')) {
-          throw new Error('Captcha verification failed. Please try again.');
+          throw new Error(loc.cypherbox.services.coinos_api.captcha_failed);
         }
         if (responseText.includes('2fa')) {
-          throw new Error('Invalid 2FA code. Please try again.');
+          throw new Error(loc.cypherbox.services.coinos_api.invalid_2fa);
         }
-        throw new Error(responseText || 'Invalid 2FA code. Please try again.');
+        throw new Error(responseText || loc.cypherbox.services.coinos_api.invalid_2fa);
       }
-      throw new Error(`2FA verification failed: ${responseText}`);
+      throw new Error(String(loc.formatString(loc.cypherbox.services.coinos_api.verify_2fa_failed, { error: responseText })));
     }
 
     // Returns updated user object with full session

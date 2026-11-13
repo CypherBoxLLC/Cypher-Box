@@ -15,7 +15,8 @@ import SimpleToast from "react-native-simple-toast";
 import { useNavigation } from '@react-navigation/native'
 import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout, revokeStrikeToken } from '@Cypher/api/strikeAPIs'
 import { bitcoinRecommendedFee } from '@Cypher/api/coinOSApis'
-import { colors } from '@Cypher/style-guide'
+import { colors, rtl } from '@Cypher/style-guide'
+import loc from '../../../loc'
 
 interface Props {
     showLogo?: boolean;
@@ -194,11 +195,11 @@ function StrikeView({ showLogo = false, isShowButtons = false,
       const amt = Number(dollarStrikeText * (Number(matchedRate) || 0) * btc(1))
       console.log('amt: ', amt, strikeUser?.[1]?.available)
       if(strikeUser?.[1]?.available == 0){
-        SimpleToast.show('Fiat balance is empty, please add cash to buy BTC', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.components.strike_view.fiat_balance_empty, SimpleToast.SHORT);
         return
       }
       if(amt == 0){
-        SimpleToast.show('Amount cannot be 0', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.components.strike_view.amount_cannot_be_zero, SimpleToast.SHORT);
         return
       }
       if(Number(strikeUser?.[1]?.available) < amt){
@@ -227,11 +228,11 @@ function StrikeView({ showLogo = false, isShowButtons = false,
         const amt = Number(dollarStrikeText * (Number(matchedRate) || 0) * btc(1))
         console.log('strikeUser?.[0]?.available: ', strikeUser?.[0]?.available * SATS, dollarStrikeText)
         if(strikeUser?.[0]?.available == 0){
-            SimpleToast.show('Bitcoin balance is empty, please add cash to buy Fiat', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.components.strike_view.bitcoin_balance_empty, SimpleToast.SHORT);
             return
         }
         if(dollarStrikeText == 0){
-            SimpleToast.show('Amount cannot be 0', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.components.strike_view.amount_cannot_be_zero, SimpleToast.SHORT);
             return
         }
         // `available` is BTC, `dollarStrikeText` is sats, so this compared
@@ -284,8 +285,8 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 linearFirstColors={[colors.black.default, colors.black.default]}
                             >
                                 <CustomProgressBar value={dollarStrikeText} />
-                                <Text h3 bold >{dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} BTC` : `${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
-                                <Text h4 semibold>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
+                                <Text h3 bold style={rtl.ltrText}>{dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} BTC` : `${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
+                                <Text h4 semibold style={rtl.ltrText}>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
                             </BlackBGView>
                             {/* BUY sits 5pt lower than SELL by default —
                                 the capsule's marginTop:45 (vs fiatBalanceBox's
@@ -301,7 +302,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 linearGradientStyleMain={styles.linearGradientStyleMain}
                                 onPress={buyClickHandler}
                             >
-                                <Text h3 bold center>₿UY</Text>
+                                <Text h3 bold center>{loc.cypherbox.components.strike_view.buy}</Text>
                             </GradientView>
                             )}
                         </View>
@@ -312,8 +313,8 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 {/* Slightly smaller than h2 (20pt) — 17pt
                                     matches the trimmed visual weight Bam
                                     asked for after the 10pt up nudge. */}
-                                <Text h2 bold style={{ fontSize: 17 }}>Fiat Balance</Text>
-                                <Text h2 bold style={{ fontSize: 17 }}>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
+                                <Text h2 bold style={{ fontSize: 17 }}>{loc.cypherbox.components.strike_view.fiat_balance}</Text>
+                                <Text h2 bold style={[{ fontSize: 17 }, rtl.ltrText]}>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
                             </View>
                             {/* fiatBalanceBox.marginTop went 40 → 30 (Fiat
                                 Balance up 10pt), which dragged SELL up 10pt
@@ -328,7 +329,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 linearGradientStyleMain={styles.linearGradientStyleMain}
                                 onPress={sellClickHandler}
                             >
-                                <Text h3 bold center>SELL</Text>
+                                <Text h3 bold center>{loc.cypherbox.components.strike_view.sell}</Text>
                             </GradientView>
                             )}
                         </View>
@@ -387,7 +388,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 alignItems: 'center',
                             }}
                         >
-                            <Text bold style={{ color: fiatMode === 'DEPOSIT' ? '#FFF' : '#888', fontSize: 14 }}>Deposit</Text>
+                            <Text bold style={{ color: fiatMode === 'DEPOSIT' ? '#FFF' : '#888', fontSize: 14 }}>{loc.cypherbox.components.strike_view.deposit}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => { setFiatMode('WITHDRAW'); setFiatAmount(''); }}
@@ -398,7 +399,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 alignItems: 'center',
                             }}
                         >
-                            <Text bold style={{ color: fiatMode === 'WITHDRAW' ? '#FFF' : '#888', fontSize: 14 }}>Withdraw</Text>
+                            <Text bold style={{ color: fiatMode === 'WITHDRAW' ? '#FFF' : '#888', fontSize: 14 }}>{loc.cypherbox.components.strike_view.withdraw}</Text>
                         </TouchableOpacity>
                     </View>
 
@@ -408,13 +409,13 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                     ) : bankMethods.length === 0 ? (
                         <View style={{ paddingVertical: 12, alignItems: 'center' }}>
                             <Text style={{ color: '#888', fontSize: 13, textAlign: 'center' }}>
-                                No bank accounts linked.{'\n'}Connect a bank account in the Strike app first.
+                                {loc.cypherbox.components.strike_view.no_bank_accounts}
                             </Text>
                         </View>
                     ) : (
                         <>
                             <Text style={{ color: '#AAA', fontSize: 12, marginBottom: 6 }}>
-                                {fiatMode === 'DEPOSIT' ? 'Deposit from:' : 'Withdraw to:'}
+                                {fiatMode === 'DEPOSIT' ? loc.cypherbox.components.strike_view.deposit_from : loc.cypherbox.components.strike_view.withdraw_to}
                             </Text>
                             {bankMethods.map((bank: any) => (
                                 <TouchableOpacity
@@ -434,7 +435,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                     }}
                                 >
                                     <View>
-                                        <Text bold style={{ fontSize: 14 }}>{bank.bankName || 'Bank'}</Text>
+                                        <Text bold style={{ fontSize: 14 }}>{bank.bankName || loc.cypherbox.components.strike_view.bank}</Text>
                                         <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                                             ****{bank.accountNumber?.slice(-4) || '????'} {bank.transferType ? `(${bank.transferType})` : ''}
                                         </Text>
@@ -447,7 +448,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
 
                             {/* Amount Input */}
                             <View style={{ marginTop: 12 }}>
-                                <Text style={{ color: '#AAA', fontSize: 12, marginBottom: 6 }}>Amount ({safeCurrency})</Text>
+                                <Text style={{ color: '#AAA', fontSize: 12, marginBottom: 6 }}>{loc.formatString(loc.cypherbox.components.strike_view.amount_currency, { currency: safeCurrency })}</Text>
                                 <View style={{
                                     flexDirection: 'row',
                                     alignItems: 'center',
@@ -478,7 +479,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 </View>
                                 {fiatMode === 'WITHDRAW' && (
                                     <Text style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                                        Available: {getStrikeCurrency(safeCurrency)}{Number(strikeUser?.[1]?.available || 0).toFixed(2)}
+                                        {loc.formatString(loc.cypherbox.components.strike_view.available, { amount: `${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}` })}
                                     </Text>
                                 )}
                             </View>
@@ -489,20 +490,20 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 onPress={() => {
                                     const amt = Number(fiatAmount);
                                     if (!amt || amt <= 0) {
-                                        SimpleToast.show('Enter a valid amount', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.components.strike_view.enter_valid_amount, SimpleToast.SHORT);
                                         return;
                                     }
                                     if (fiatMode === 'WITHDRAW' && amt > Number(strikeUser?.[1]?.available || 0)) {
-                                        SimpleToast.show('Amount exceeds available balance', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.components.strike_view.amount_exceeds_balance, SimpleToast.SHORT);
                                         return;
                                     }
                                     Alert.alert(
-                                        `Confirm ${fiatMode === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'}`,
-                                        `${fiatMode === 'DEPOSIT' ? 'Deposit' : 'Withdraw'} ${getStrikeCurrency(safeCurrency)}${amt.toFixed(2)} ${fiatMode === 'DEPOSIT' ? 'from' : 'to'} ${selectedBank?.bankName || 'bank'} (****${selectedBank?.accountNumber?.slice(-4) || '????'})?`,
+                                        fiatMode === 'DEPOSIT' ? loc.cypherbox.components.strike_view.confirm_deposit_title : loc.cypherbox.components.strike_view.confirm_withdrawal_title,
+                                        String(loc.formatString(fiatMode === 'DEPOSIT' ? loc.cypherbox.components.strike_view.confirm_deposit_message : loc.cypherbox.components.strike_view.confirm_withdraw_message, { amount: `${getStrikeCurrency(safeCurrency)}${amt.toFixed(2)}`, bank: selectedBank?.bankName || loc.cypherbox.components.strike_view.bank_lowercase, last4: selectedBank?.accountNumber?.slice(-4) || '????' })),
                                         [
-                                            { text: 'Cancel', style: 'cancel' },
+                                            { text: loc._.cancel, style: 'cancel' },
                                             {
-                                                text: 'Confirm',
+                                                text: loc.cypherbox.components.strike_view.confirm,
                                                 onPress: async () => {
                                                     setFiatLoading(true);
                                                     try {
@@ -510,11 +511,11 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                                             const result = await initiateDeposit(amt.toFixed(2), selectedBank.id);
                                                             console.log('Deposit result:', result);
                                                             if (result?.id) {
-                                                                SimpleToast.show('Deposit initiated! Settlement may take 1-5 business days.', SimpleToast.LONG);
+                                                                SimpleToast.show(loc.cypherbox.components.strike_view.deposit_initiated, SimpleToast.LONG);
                                                                 setFiatAmount('');
                                                                 setShowFiatPanel(false);
                                                             } else {
-                                                                SimpleToast.show(result?.message || result?.data?.message || 'Deposit failed. Check Strike app for details.', SimpleToast.LONG);
+                                                                SimpleToast.show(result?.message || result?.data?.message || loc.cypherbox.components.strike_view.deposit_failed, SimpleToast.LONG);
                                                             }
                                                         } else {
                                                             // Withdraw: create payout then initiate
@@ -524,19 +525,19 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                                                 const initiated = await initiatePayout(payout.id);
                                                                 console.log('Payout initiated:', initiated);
                                                                 if (initiated?.state === 'INITIATED' || initiated?.state === 'COMPLETED') {
-                                                                    SimpleToast.show('Withdrawal initiated! Funds will arrive in 1-5 business days.', SimpleToast.LONG);
+                                                                    SimpleToast.show(loc.cypherbox.components.strike_view.withdrawal_initiated, SimpleToast.LONG);
                                                                     setFiatAmount('');
                                                                     setShowFiatPanel(false);
                                                                 } else {
-                                                                    SimpleToast.show(initiated?.message || 'Withdrawal initiation failed.', SimpleToast.LONG);
+                                                                    SimpleToast.show(initiated?.message || loc.cypherbox.components.strike_view.withdrawal_failed, SimpleToast.LONG);
                                                                 }
                                                             } else {
-                                                                SimpleToast.show(payout?.message || payout?.data?.message || 'Payout creation failed. Check Strike app.', SimpleToast.LONG);
+                                                                SimpleToast.show(payout?.message || payout?.data?.message || loc.cypherbox.components.strike_view.payout_failed, SimpleToast.LONG);
                                                             }
                                                         }
                                                     } catch (err: any) {
                                                         console.error('Fiat operation error:', err);
-                                                        SimpleToast.show('Error: ' + (err?.message || 'Unknown error'), SimpleToast.LONG);
+                                                        SimpleToast.show(String(loc.formatString(loc.cypherbox.components.strike_view.error_with_message, { message: err?.message || loc.cypherbox.components.strike_view.unknown_error })), SimpleToast.LONG);
                                                     } finally {
                                                         setFiatLoading(false);
                                                     }
@@ -559,7 +560,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                     <ActivityIndicator size="small" color="#FFF" />
                                 ) : (
                                     <Text bold style={{ color: '#FFF', fontSize: 15 }}>
-                                        {fiatMode === 'DEPOSIT' ? 'Deposit' : 'Withdraw'} {fiatAmount ? `${getStrikeCurrency(safeCurrency)}${Number(fiatAmount).toFixed(2)}` : ''}
+                                        {fiatMode === 'DEPOSIT' ? loc.cypherbox.components.strike_view.deposit : loc.cypherbox.components.strike_view.withdraw} {fiatAmount ? `${getStrikeCurrency(safeCurrency)}${Number(fiatAmount).toFixed(2)}` : ''}
                                     </Text>
                                 )}
                             </TouchableOpacity>
@@ -572,7 +573,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                 linearSecondStyle={styles.bitcoinPriceContainerInner}
                 linearFirstColors={[colors.black.default, colors.black.default]}
             >
-                <Text bold style={[styles.bitcoinPriceText, { color: rateColor }]}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
+                <Text bold style={[styles.bitcoinPriceText, { color: rateColor }, rtl.ltrText]}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
             </BlackBGView>
             {isShowButtons &&
                 <GradientView
@@ -583,7 +584,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                     linearGradientStyleMain={styles.linearGradientStyleMain4}
                     onPress={handleStrikeLogout}
                 >
-                    <Text h3 bold center>Logout</Text>
+                    <Text h3 bold center>{loc.cypherbox.components.strike_view.logout}</Text>
                 </GradientView>
             }
             {showLogo &&

@@ -3,6 +3,7 @@ import { Animated, Easing, TouchableOpacity, View } from 'react-native';
 
 import { Text } from '@Cypher/component-library';
 import { colors } from '@Cypher/style-guide';
+import loc from '../../../loc';
 
 /**
  * Extracted from ArkCapsules so the home screen can show the same banner.
@@ -120,21 +121,21 @@ export default function RefreshWaitBanner({
             {isStuck ? (
                 <>
                     <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
-                        This refresh is stuck. You can cancel the refresh and try again later.
+                        {loc.cypherbox.ark.refresh_banner.stuck}
                     </Text>
                     <TouchableOpacity
                         onPress={cancelling ? undefined : onCancel}
                         style={{ marginTop: 10, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: accent }}
                     >
                         <Text bold style={{ fontSize: 12, color: accent }}>
-                            {cancelling ? 'Cancelling…' : 'Cancel refresh'}
+                            {cancelling ? loc.cypherbox.ark.refresh_banner.cancelling : loc.cypherbox.ark.refresh_banner.cancel_refresh}
                         </Text>
                     </TouchableOpacity>
                 </>
             ) : (
                 <>
                     <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
-                        {`PLEASE COME BACK IN 1 HOUR TO MAKE SURE THE REFRESH HAS COMPLETED${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
+                        {`${loc.cypherbox.ark.refresh_banner.come_back}${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
                     </Text>
                     {extras.slice(0, MAX_EXTRA_REFRESH_LINES).map((x, i) => (
                         <Text
@@ -142,12 +143,12 @@ export default function RefreshWaitBanner({
                             center
                             style={{ fontSize: 11, color: accent, marginTop: 4 }}
                         >
-                            {`- Refresh ${i + 2}: ${formatCountdown(x.remaining)}`}
+                            {loc.formatString(loc.cypherbox.ark.refresh_banner.extra_round, { number: i + 2, time: formatCountdown(x.remaining) })}
                         </Text>
                     ))}
                     {extras.length > MAX_EXTRA_REFRESH_LINES && (
                         <Text center style={{ fontSize: 11, color: accent, marginTop: 4 }}>
-                            {`+${extras.length - MAX_EXTRA_REFRESH_LINES} more`}
+                            {loc.formatString(loc.cypherbox.ark.refresh_banner.more, { count: extras.length - MAX_EXTRA_REFRESH_LINES })}
                         </Text>
                     )}
                 </>

@@ -1,4 +1,5 @@
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { colors } from "@Cypher/style-guide";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
@@ -117,7 +118,7 @@ export default function CreateLightningAccount({ onPress }: Props) {
                                     resizeMode="contain"
                                 />
                                 <Text h2 style={[styles.shadow, { fontSize: 16 }]} center>
-                                    Unlock Lightning Wallet
+                                    {loc.cypherbox.home.unlock_lightning_wallet}
                                 </Text>
                             </View>
                             {/* Provider tiles, pink-bordered pills

@@ -36,16 +36,16 @@ export default function ColdVaultIntro() {
       <ScreenLayout showToolbar color={[colors.green, colors.green]}>
         <View style={styles.container}>
           <View style={styles.innerView}>
-            <Text style={styles.title}>Cold Storage</Text>
-            <Text h4 style={styles.descption}>For enhanced security, we recommend setting up the Cold Storage Vault where the cryptographic keys that secure it are isolated from internet.
+            <Text style={styles.title}>{loc.cypherbox.vault.cold_vault_intro.title}</Text>
+            <Text h4 style={styles.descption}>{loc.cypherbox.vault.cold_vault_intro.para_1}
               {'\n\n'}
-              The Hot Vault offers moderate security  suitable for medium-term savings, while the Cold Vault is much more robust and is used for long term savings.
+              {loc.cypherbox.vault.cold_vault_intro.para_2}
               {'\n\n'}
-              Your Hot and Cold Vaults can work in conjunction. You can use your Hot Vault as a heating funnel that melts your small capsules and transfer them to your Cold Vault as a single large consolidated cold capsule thereby reducing future fee costs (UTXO consolidation).
+              {loc.cypherbox.vault.cold_vault_intro.para_3}
             </Text>
             <Image source={Cold1} style={{ marginTop: 25, width: 165, height: 150, resizeMode: 'contain'}} />
           </View>
-          <Button text="Explore Cold Storage" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
+          <Button text={loc.cypherbox.vault.cold_vault_intro.explore_button} onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
         </View>
       </ScreenLayout>
     )

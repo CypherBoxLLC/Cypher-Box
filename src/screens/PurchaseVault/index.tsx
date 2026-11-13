@@ -7,6 +7,7 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SavingVault, SwipeButton } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
+import loc from "../../../loc";
 
 interface Props {
     route: any;
@@ -107,7 +108,7 @@ export default function PurchaseVault({ route }: Props) {
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
-                <Text style={styles.title} center>Purchase a vault</Text>
+                <Text style={styles.title} center>{loc.cypherbox.vault.purchase_vault.title}</Text>
                 <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -116,45 +117,45 @@ export default function PurchaseVault({ route }: Props) {
                     bitcoinText={styles.bitcoinText}
                     imageStyle={styles.bitcoinImage}
                     titleStyle={styles.titleVault}
-                    title="Hot Savings"
+                    title={loc.cypherbox.vault.purchase_vault.hot_savings}
                     bitcoinValue='0.1 BTC ~ $6500'
                 // onPress={savingVaultClickHandler}
                 />
                 <View style={styles.recipientView}>
-                    <Text bold style={styles.text}>One-time purchase: <Text bold style={{ color: colors.green }}>30,000 sats  ~$5</Text></Text>
-                    <Text style={styles.text2}>(Deducted from your Lightning Account)</Text>
-                    <Text style={styles.header}>Features:</Text>
+                    <Text bold style={styles.text}>{loc.formatString(loc.cypherbox.vault.purchase_vault.one_time_purchase, { price: <Text bold style={{ color: colors.green }}>30,000 sats  ~$5</Text> })}</Text>
+                    <Text style={styles.text2}>{loc.cypherbox.vault.purchase_vault.deducted}</Text>
+                    <Text style={styles.header}>{loc.cypherbox.vault.purchase_vault.features}</Text>
                     <View style={styles.flexView}>
                         <View style={styles.dot} />
-                        <Text style={styles.desc}>Withdraw/top-up from custodian</Text>
+                        <Text style={styles.desc}>{loc.cypherbox.vault.purchase_vault.feature_withdraw_topup}</Text>
                     </View>
                     <View style={styles.flexView}>
                         <View style={styles.dot} />
-                        <Text style={styles.desc}>Send/receive Bitcoin Network Transactions</Text>
+                        <Text style={styles.desc}>{loc.cypherbox.vault.purchase_vault.feature_send_receive}</Text>
                     </View>
                     <View style={styles.flexView}>
                         <View style={styles.dot} />
-                        <Text style={styles.desc}>Coin control</Text>
+                        <Text style={styles.desc}>{loc.cypherbox.vault.purchase_vault.feature_coin_control}</Text>
                     </View>
                     <View style={styles.flexView}>
                         <View style={styles.dot} />
-                        <Text style={styles.desc}>Percentage fee estimator</Text>
+                        <Text style={styles.desc}>{loc.cypherbox.vault.purchase_vault.feature_fee_estimator}</Text>
                     </View>
                     <View style={styles.flexView}>
                         <View style={styles.dot} />
-                        <Text style={styles.desc}>Transfer to Cold Vault</Text>
+                        <Text style={styles.desc}>{loc.cypherbox.vault.purchase_vault.feature_transfer_cold}</Text>
                     </View>
                     <View style={styles.flexView}>
                         <View style={styles.dot} />
-                        <Text style={styles.desc}>Connect you own node</Text>
+                        <Text style={styles.desc}>{loc.cypherbox.vault.purchase_vault.feature_own_node}</Text>
                     </View>
                     <View style={styles.flexView}>
                         <View style={styles.dot} />
-                        <Text style={styles.desc}>Send to multiple addresses</Text>
+                        <Text style={styles.desc}>{loc.cypherbox.vault.purchase_vault.feature_multiple_addresses}</Text>
                     </View>
                     <View style={styles.flexView}>
                         <View style={styles.dot} />
-                        <Text style={styles.desc}>BIP 39 HD wallet</Text>
+                        <Text style={styles.desc}>{loc.cypherbox.vault.purchase_vault.feature_bip39}</Text>
                     </View>
                 </View>
                 <View style={{ alignSelf: 'center' }}>

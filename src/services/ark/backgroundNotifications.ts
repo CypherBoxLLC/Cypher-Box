@@ -2,6 +2,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import PushNotification from 'react-native-push-notification';
 
 import useAuthStore from '@Cypher/stores/authStore';
+import loc from '../../../loc';
 
 /**
  * Local OS-level notifications for the background-refresh feature.
@@ -21,9 +22,9 @@ function ensureInit(): void {
         PushNotification.createChannel(
             {
                 channelId: CHANNEL_ID,
-                channelName: 'Lightning capsule reminders',
+                channelName: loc.cypherbox.services.background_notifications.channel_name,
                 channelDescription:
-                    'Reminders to refresh your lightning capsules (VTXOs) before they expire.',
+                    loc.cypherbox.services.background_notifications.channel_description,
                 importance: 4, // HIGH — covers both high- and low-priority notifications
                 vibrate: true,
             },
@@ -123,16 +124,16 @@ function fire(
 
 export function notifyConsecutiveFailures(): void {
     fire(
-        'Auto-refresh trouble',
-        "Couldn't auto-refresh. Tap to refresh manually.",
+        loc.cypherbox.services.background_notifications.auto_refresh_trouble_title,
+        loc.cypherbox.services.background_notifications.auto_refresh_trouble_body,
         'low',
     );
 }
 
 export function notifyFeeGated(feeSats: number, maxSats: number): void {
     fire(
-        'Refresh fee unusually high',
-        `Estimated ${feeSats} sats (limit ${maxSats}). Open Cypher Box to review.`,
+        loc.cypherbox.services.background_notifications.fee_high_title,
+        String(loc.formatString(loc.cypherbox.services.background_notifications.fee_high_body, { fee: feeSats, max: maxSats })),
         'high',
         { feeSats, maxSats },
     );
@@ -147,7 +148,7 @@ export function notifyFeeGated(feeSats: number, maxSats: number): void {
  */
 function fmtSatsSubject(satsAmount: number | undefined): string {
     if (satsAmount == null || !Number.isFinite(satsAmount) || satsAmount <= 0) {
-        return 'your Bark Vault balance';
+        return loc.cypherbox.services.background_notifications.subject_vault_balance;
     }
     return `${Math.round(satsAmount).toLocaleString()} sats`;
 }
@@ -160,11 +161,11 @@ function fmtSatsSubject(satsAmount: number | undefined): string {
  */
 function fmtBody(urgent: boolean, satsKnown: boolean): string {
     if (urgent) {
-        return 'Tap to refresh. Refresh takes up to 3 hours.';
+        return loc.cypherbox.services.background_notifications.body_urgent;
     }
     return satsKnown
-        ? 'Tap to refresh, or these sats may be lost.'
-        : 'Tap to refresh, or these funds may be lost.';
+        ? loc.cypherbox.services.background_notifications.body_sats_lost
+        : loc.cypherbox.services.background_notifications.body_funds_lost;
 }
 
 export function notifyExpiryWarning24h(satsAmount?: number): void {
@@ -172,7 +173,7 @@ export function notifyExpiryWarning24h(satsAmount?: number): void {
     // the scheduled warnings: ArkCapsules tab + auto-refresh on arrival.
     const subject = fmtSatsSubject(satsAmount);
     fire(
-        `24 hours left to refresh ${subject} ⚠️`,
+        String(loc.formatString(loc.cypherbox.services.background_notifications.left_to_refresh_title, { time: loc.cypherbox.services.background_notifications.label_24_hours, subject, suffix: ' ⚠️' })),
         fmtBody(true, satsAmount != null && satsAmount > 0),
         'high',
         { source: 'ark-vtxo-expiry-warn24h' },
@@ -182,7 +183,7 @@ export function notifyExpiryWarning24h(satsAmount?: number): void {
 export function notifyExpiryWarning6h(satsAmount?: number): void {
     const subject = fmtSatsSubject(satsAmount);
     fire(
-        `6 hours left to refresh ${subject} 🚨`,
+        String(loc.formatString(loc.cypherbox.services.background_notifications.left_to_refresh_title, { time: loc.cypherbox.services.background_notifications.label_6_hours, subject, suffix: ' 🚨' })),
         fmtBody(true, satsAmount != null && satsAmount > 0),
         'high',
         { source: 'ark-vtxo-expiry-warn6h' },
@@ -295,7 +296,7 @@ export const WARN_SCHEDULE: ReadonlyArray<{
         kind: 'warn168h',
         source: 'ark-vtxo-expiry-warn168h',
         offsetMs: 168 * 60 * 60 * 1000,
-        label: '7 days',
+        get label() { return loc.cypherbox.services.background_notifications.label_7_days; },
         suffix: '',
         urgent: false,
     },
@@ -303,7 +304,7 @@ export const WARN_SCHEDULE: ReadonlyArray<{
         kind: 'warn96h',
         source: 'ark-vtxo-expiry-warn96h',
         offsetMs: 96 * 60 * 60 * 1000,
-        label: '4 days',
+        get label() { return loc.cypherbox.services.background_notifications.label_4_days; },
         suffix: '',
         urgent: false,
     },
@@ -311,7 +312,7 @@ export const WARN_SCHEDULE: ReadonlyArray<{
         kind: 'warn48h',
         source: 'ark-vtxo-expiry-warn48h',
         offsetMs: 48 * 60 * 60 * 1000,
-        label: '2 days',
+        get label() { return loc.cypherbox.services.background_notifications.label_2_days; },
         suffix: '',
         urgent: false,
     },
@@ -319,7 +320,7 @@ export const WARN_SCHEDULE: ReadonlyArray<{
         kind: 'warn24h',
         source: 'ark-vtxo-expiry-warn24h',
         offsetMs: 24 * 60 * 60 * 1000,
-        label: '24 hours',
+        get label() { return loc.cypherbox.services.background_notifications.label_24_hours; },
         suffix: ' ⚠️',
         urgent: true,
     },
@@ -327,7 +328,7 @@ export const WARN_SCHEDULE: ReadonlyArray<{
         kind: 'warn12h',
         source: 'ark-vtxo-expiry-warn12h',
         offsetMs: 12 * 60 * 60 * 1000,
-        label: '12 hours',
+        get label() { return loc.cypherbox.services.background_notifications.label_12_hours; },
         suffix: ' ⚠️',
         urgent: true,
     },
@@ -335,7 +336,7 @@ export const WARN_SCHEDULE: ReadonlyArray<{
         kind: 'warn6h',
         source: 'ark-vtxo-expiry-warn6h',
         offsetMs: 6 * 60 * 60 * 1000,
-        label: '6 hours',
+        get label() { return loc.cypherbox.services.background_notifications.label_6_hours; },
         suffix: ' 🚨',
         urgent: true,
     },
@@ -384,21 +385,21 @@ const STUCK_SWAP_SCHEDULE: ReadonlyArray<{
         kind: 'swap12h',
         source: 'ark-vtxo-stuck-swap12h',
         offsetMs: 12 * 60 * 60 * 1000,
-        label: '12 hours',
+        get label() { return loc.cypherbox.services.background_notifications.label_12_hours; },
         suffix: ' ⚠️',
     },
     {
         kind: 'swap6h',
         source: 'ark-vtxo-stuck-swap6h',
         offsetMs: 6 * 60 * 60 * 1000,
-        label: '6 hours',
+        get label() { return loc.cypherbox.services.background_notifications.label_6_hours; },
         suffix: ' 🚨',
     },
     {
         kind: 'swap3h',
         source: 'ark-vtxo-stuck-swap3h',
         offsetMs: 3 * 60 * 60 * 1000,
-        label: '3 hours',
+        get label() { return loc.cypherbox.services.background_notifications.label_3_hours; },
         suffix: ' 🚨',
     },
 ];
@@ -509,7 +510,7 @@ export function scheduleVtxoExpiryWarnings(
         PushNotification.localNotificationSchedule({
             id: notificationIdFor(vtxoId, w.kind),
             channelId: CHANNEL_ID,
-            title: `${w.label} left to refresh ${subject}${w.suffix}`,
+            title: String(loc.formatString(loc.cypherbox.services.background_notifications.left_to_refresh_title, { time: w.label, subject, suffix: w.suffix })),
             message: fmtBody(w.urgent, satsKnown),
             date: new Date(at),
             priority: 'high',
@@ -559,8 +560,8 @@ export function scheduleVtxoStuckSwapWarnings(
         PushNotification.localNotificationSchedule({
             id: notificationIdFor(vtxoId, w.kind),
             channelId: CHANNEL_ID,
-            title: `Refresh stuck: move ${subject} out${w.suffix}`,
-            message: `${w.label} left before expiry. Tap to move your funds to another wallet.`,
+            title: String(loc.formatString(loc.cypherbox.services.background_notifications.stuck_move_out_title, { subject, suffix: w.suffix })),
+            message: String(loc.formatString(loc.cypherbox.services.background_notifications.stuck_left_before_expiry, { time: w.label })),
             date: new Date(at),
             priority: 'high',
             importance: 'high',
@@ -609,10 +610,10 @@ export function scheduleArkExitReadyNotice(fireAtMs: number, satsAmount?: number
     PushNotification.localNotificationSchedule({
         id: EXIT_READY_NOTIFICATION_ID,
         channelId: CHANNEL_ID,
-        title: 'Your exit is ready to finish',
+        title: loc.cypherbox.services.background_notifications.exit_ready_title,
         message: satsKnown
-            ? `Open Cypher Box to collect ${Math.round(satsAmount as number).toLocaleString()} sats to your Bitcoin wallet.`
-            : 'Open Cypher Box to collect your funds to your Bitcoin wallet.',
+            ? String(loc.formatString(loc.cypherbox.services.background_notifications.exit_ready_body_sats, { amount: Math.round(satsAmount as number).toLocaleString() }))
+            : loc.cypherbox.services.background_notifications.exit_ready_body,
         date: new Date(fireAtMs),
         priority: 'high',
         importance: 'high',
@@ -639,8 +640,8 @@ export function notifyDustUneconomic(
     vtxoCount: number,
 ): void {
     fire(
-        'Tiny capsules at risk',
-        `${vtxoCount} capsule${vtxoCount === 1 ? '' : 's'} totalling ${totalSats} sats will expire. The refresh fee (${feeSats} sats) exceeds their value.`,
+        loc.cypherbox.services.background_notifications.dust_uneconomic_title,
+        String(loc.formatString(vtxoCount === 1 ? loc.cypherbox.services.background_notifications.dust_uneconomic_body_one : loc.cypherbox.services.background_notifications.dust_uneconomic_body_other, { count: vtxoCount, total: totalSats, fee: feeSats })),
         'low',
         { feeSats, totalSats, vtxoCount },
     );
@@ -652,8 +653,8 @@ export function notifyDustStranded(
     vtxoCount: number,
 ): void {
     fire(
-        'Spend your tiny capsules',
-        `${vtxoCount} capsule${vtxoCount === 1 ? '' : 's'} totalling ${totalSats} sats ${vtxoCount === 1 ? 'is' : 'are'} below the ${minRequired}-sat refresh minimum, so ${vtxoCount === 1 ? "it can't" : "they can't"} auto-refresh. Spend ${vtxoCount === 1 ? 'it' : 'them'} in a payment before ${vtxoCount === 1 ? 'it expires' : 'they expire'}.`,
+        loc.cypherbox.services.background_notifications.dust_stranded_title,
+        String(loc.formatString(vtxoCount === 1 ? loc.cypherbox.services.background_notifications.dust_stranded_body_one : loc.cypherbox.services.background_notifications.dust_stranded_body_other, { count: vtxoCount, total: totalSats, min: minRequired })),
         'high',
         { totalSats, minRequired, vtxoCount },
     );
@@ -668,12 +669,12 @@ export function notifyDustStranded(
 export function notifyArkReceived(sats?: number): void {
     const body =
         typeof sats === 'number' && sats > 0
-            ? `You received ${sats.toLocaleString()} sats in your Bark Vault.`
-            : 'You received a payment in your Bark Vault.';
+            ? String(loc.formatString(loc.cypherbox.services.background_notifications.received_body_sats, { amount: sats.toLocaleString() }))
+            : loc.cypherbox.services.background_notifications.received_body;
     // Dedicated source so the tap deep-links to the Capsules tab (see
     // isArkCapsuleTapSource); the default 'ark-bg-refresh' source is
     // ignored by the tap handler.
-    fire('Payment received', body, 'high', { source: 'ark-received', sats });
+    fire(loc.cypherbox.services.background_notifications.received_title, body, 'high', { source: 'ark-received', sats });
 }
 
 /**
@@ -687,11 +688,11 @@ export function notifyArkReceived(sats?: number): void {
 export function notifyArkRefreshComplete(capsuleCount?: number): void {
     const subject =
         typeof capsuleCount === 'number' && capsuleCount > 0
-            ? `${capsuleCount} capsule${capsuleCount === 1 ? '' : 's'}`
-            : 'Your capsules';
+            ? String(loc.formatString(capsuleCount === 1 ? loc.cypherbox.services.background_notifications.capsule_count_one : loc.cypherbox.services.background_notifications.capsule_count_other, { count: capsuleCount }))
+            : loc.cypherbox.services.background_notifications.your_capsules;
     fire(
-        'Refresh complete',
-        `${subject} refreshed successfully. Fresh expiry is locked in.`,
+        loc.cypherbox.services.background_notifications.refresh_complete_title,
+        String(loc.formatString(loc.cypherbox.services.background_notifications.refresh_complete_body, { subject })),
         'low',
         { source: 'ark-refresh-complete', capsuleCount },
     );
@@ -741,8 +742,8 @@ export function scheduleArkRefreshReminder(capsuleCount?: number): void {
     ensureInit();
     const subject =
         typeof capsuleCount === 'number' && capsuleCount > 0
-            ? `${capsuleCount} capsule${capsuleCount === 1 ? '' : 's'}`
-            : 'Your capsules';
+            ? String(loc.formatString(capsuleCount === 1 ? loc.cypherbox.services.background_notifications.capsule_count_one : loc.cypherbox.services.background_notifications.capsule_count_other, { count: capsuleCount }))
+            : loc.cypherbox.services.background_notifications.your_capsules;
     try {
         // Cast as the permission check above does: this library's types are
         // stale and omit the scheduling methods it ships. Casting only the new
@@ -750,10 +751,10 @@ export function scheduleArkRefreshReminder(capsuleCount?: number): void {
         (PushNotification as any).localNotificationSchedule({
             id: REFRESH_REMINDER_ID,
             channelId: CHANNEL_ID,
-            title: 'Refresh should be done',
+            title: loc.cypherbox.services.background_notifications.refresh_reminder_title,
             // Deliberately not "is done". See the docstring: this alarm was set
             // an hour ago and has observed nothing since.
-            message: `${subject} were refreshing. Tap to check they went through.`,
+            message: String(loc.formatString(loc.cypherbox.services.background_notifications.refresh_reminder_body, { subject })),
             date: new Date(Date.now() + REFRESH_REMINDER_DELAY_MS),
             priority: 'low',
             importance: 'low',
@@ -786,8 +787,8 @@ export function notifyStuckRefresh(sats?: number): void {
     const amount =
         typeof sats === 'number' && sats > 0 ? ` (${sats.toLocaleString()} sats)` : '';
     fire(
-        'Refresh stuck',
-        `A capsule refresh got stuck${amount}. Open Cypher Box to recover it.`,
+        loc.cypherbox.services.background_notifications.stuck_refresh_title,
+        String(loc.formatString(loc.cypherbox.services.background_notifications.stuck_refresh_body, { amount })),
         'high',
     );
 }
@@ -801,8 +802,8 @@ export function notifyStuckRefresh(sats?: number): void {
 export function notifyStuckSwapNow(satsAmount?: number): void {
     const subject = fmtSatsSubject(satsAmount);
     fire(
-        `Refresh stuck: move ${subject} out ⚠️`,
-        '12 hours left before expiry. Tap to move your funds to another wallet.',
+        String(loc.formatString(loc.cypherbox.services.background_notifications.stuck_move_out_title, { subject, suffix: ' ⚠️' })),
+        String(loc.formatString(loc.cypherbox.services.background_notifications.stuck_left_before_expiry, { time: loc.cypherbox.services.background_notifications.label_12_hours })),
         'high',
         { source: 'ark-vtxo-stuck-swap12h' },
     );

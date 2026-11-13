@@ -5,6 +5,7 @@ import { Text } from "@Cypher/component-library";
 import useEvents from "@Cypher/custom-hooks/useEvents";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { Row } from "@Cypher/screens/Activity";
+import loc from "../../../loc";
 
 interface Props {
     visible: boolean;
@@ -71,7 +72,7 @@ export default function ActivityDropdown({ visible, onClose }: Props) {
                 <Pressable style={styles.card} onPress={() => {}}>
                     {events.length === 0 ? (
                         <View style={styles.empty}>
-                            <Text style={styles.emptyText}>No activity yet.</Text>
+                            <Text style={styles.emptyText}>{loc.cypherbox.components.activity_dropdown.no_activity}</Text>
                         </View>
                     ) : (
                         <View style={styles.list}>
@@ -88,9 +89,9 @@ export default function ActivityDropdown({ visible, onClose }: Props) {
                     <Pressable
                         style={styles.showMore}
                         onPress={handleShowMore}
-                        accessibilityLabel="Show all activity"
+                        accessibilityLabel={loc.cypherbox.components.activity_dropdown.show_all_a11y}
                     >
-                        <Text style={styles.showMoreText}>Show more</Text>
+                        <Text style={styles.showMoreText}>{loc.cypherbox.components.activity_dropdown.show_more}</Text>
                     </Pressable>
                 </Pressable>
             </Pressable>

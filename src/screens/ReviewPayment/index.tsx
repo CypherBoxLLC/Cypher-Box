@@ -5,11 +5,12 @@ import { Icon } from "react-native-elements";
 import ReactNativeModal from "react-native-modal";
 import QRCode from 'react-native-qrcode-svg';
 import styles from "./styles";
+import loc from "../../../loc";
 import { Input, LoadingSpinner, ScreenLayout, Text } from "@Cypher/component-library";
 import { Check, CoinOS, CoinOSSmall, Cold1, Edit, Electricity, Hot, StrikeFull } from "@Cypher/assets/images";
 import { GradientButton, GradientCard, GradientCardWithShadow, GradientText, ImageText, SwipeButton } from "@Cypher/components";
 import CustomProgressBar from "@Cypher/components/CustomProgressBar";
-import { colors } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate, dispatchReset, isIOS } from "@Cypher/helpers";
 import LinearGradient from "react-native-linear-gradient";
 import TextView from "./TextView";
@@ -316,10 +317,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 }
                 const labeled = (Array.isArray(fees) ? fees : []).map((tier: any) => {
                     switch (tier.id) {
-                        case 'tier_fast': tier.label = 'Fast'; break;
-                        case 'tier_standard': tier.label = 'Standard'; break;
-                        case 'tier_free': tier.label = 'Free'; break;
-                        default: tier.label = 'Unknown';
+                        case 'tier_fast': tier.label = loc.cypherbox.payments.common.fee_fast; break;
+                        case 'tier_standard': tier.label = loc.cypherbox.payments.common.fee_standard; break;
+                        case 'tier_free': tier.label = loc.cypherbox.payments.common.fee_free; break;
+                        default: tier.label = loc.cypherbox.payments.common.fee_unknown;
                     }
                     return tier;
                 });
@@ -346,7 +347,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
     const [isStartLoading, setIsStartLoading] = useState(false)
     const [showAddressQR, setShowAddressQR] = useState(false)
     const [selectedFee, setSelectedFee] = useState<number | null>(null);
-    const [selectedFeeName, setSelectedFeeName] = useState<string>("Select Fee");
+    const [selectedFeeName, setSelectedFeeName] = useState<string>(loc.cypherbox.payments.common.select_fee);
     const [estimatedFee, setEstimatedFee] = useState<number>(0);
     const [networkFee, setNetworkFee] = useState<number>(0);
     const [bamskiiFee, setBamskiiFee] = useState<number>(0);
@@ -410,10 +411,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     const swipeButtonRef = useRef(null);
     const feeNames: Record<Fee, string> = {
-        fastestFee: "Fastest",
-        halfHourFee: "Fast",
-        hourFee: "Medium",
-        economyFee: "Slow",
+        fastestFee: loc.cypherbox.payments.common.fee_fastest,
+        halfHourFee: loc.cypherbox.payments.common.fee_fast,
+        hourFee: loc.cypherbox.payments.common.fee_medium,
+        economyFee: loc.cypherbox.payments.common.fee_slow,
     };
 
     useEffect(() => {
@@ -604,7 +605,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
             console.log('response getPaymentQoute: ', response)
         } catch (error) {
             console.error('Error handlePaymentQuote:', error);
-            SimpleToast.show('Failed to Send. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.review_payment.send_failed, SimpleToast.SHORT);
         } finally {
             setFeeLoading(false);
         }
@@ -639,16 +640,16 @@ export default function ReviewPayment({ navigation, route }: Props) {
             const labeledTiers = fees.map((tier: any) => {
                 switch (tier.id) {
                     case 'tier_fast':
-                        tier.label = 'Fast';
+                        tier.label = loc.cypherbox.payments.common.fee_fast;
                         break;
                     case 'tier_standard':
-                        tier.label = 'Standard';
+                        tier.label = loc.cypherbox.payments.common.fee_standard;
                         break;
                     case 'tier_free':
-                        tier.label = 'Free';
+                        tier.label = loc.cypherbox.payments.common.fee_free;
                         break;
                     default:
-                        tier.label = 'Unknown';
+                        tier.label = loc.cypherbox.payments.common.fee_unknown;
                 }
                 return tier;
             });
@@ -691,7 +692,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
         // failed (offline, mempool.space down) it can still be nullish here.
         // Bail with a toast instead of indexing into undefined.
         if (recommendedFee?.[fee] == null) {
-            SimpleToast.show('Network fees unavailable. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.network_fees_unavailable, SimpleToast.SHORT);
             setFeeLoading(false);
             return;
         }
@@ -704,7 +705,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
             console.log('feeForBamskki: ', feeForBamskki)
             console.log('remainingAmount: ', remainingAmount)
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setFeeLoading(false);
                 return;
             }
@@ -728,14 +729,14 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 console.log('jsonObject: ', jsonObject);
             } catch (error) {
                 console.error('Error Send to bitcoin:', error);
-                SimpleToast.show(error?.message ? error?.message : 'Failed to estimate bitcoin fee. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(error?.message ? error?.message : loc.cypherbox.payments.common.fee_estimate_bitcoin_failed, SimpleToast.SHORT);
             } finally {
                 setModalVisible(false)
                 setFeeLoading(false);
             }
         } else { //liquid address
             if (amount == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setFeeLoading(false);
                 return;
             }
@@ -744,7 +745,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
             console.log('feeForBamskki: ', feeForBamskki)
             console.log('remainingAmount: ', remainingAmount)
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setFeeLoading(false);
                 return;
             }
@@ -766,7 +767,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 }
             } catch (error) {
                 console.error('Error Send to liquid:', error);
-                SimpleToast.show(error?.message ? error?.message : 'Failed to estimate liquid fee. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(error?.message ? error?.message : loc.cypherbox.payments.common.fee_estimate_liquid_failed, SimpleToast.SHORT);
             } finally {
                 setModalVisible(false)
                 setFeeLoading(false);
@@ -870,24 +871,24 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 // ought to poll the quote-status endpoint instead;
                 // doing that as follow-on work.
                 if (__DEV__) console.log(`[BUY → ${dest}] waiting 6s for Strike trade to settle`);
-                buyStepStart('Waiting for Strike to settle the trade…');
+                buyStepStart(loc.cypherbox.payments.review_payment.waiting_strike_settle);
                 await new Promise(resolve => setTimeout(resolve, 6000));
 
                 if (__DEV__) console.log(`[BUY → ${dest}] starting swap`);
-                const destLabel = dest === 'coinos' ? 'CoinOS' : 'Bark Vault';
-                buyStepStart(`Swapping ${purchasedSats.toLocaleString()} sats to ${destLabel}…`);
+                const destLabel = dest === 'coinos' ? 'CoinOS' : loc.cypherbox.payments.common.bark_vault;
+                buyStepStart(String(loc.formatString(loc.cypherbox.payments.review_payment.swapping_sats_to, { sats: purchasedSats.toLocaleString(), destination: destLabel })));
                 // Amber "taking longer" treatment if the swap hasn't
                 // resolved after 15s (invoice creation + LN routing can
                 // stall without failing outright).
                 swapSlowTimerRef.current = setTimeout(() => {
-                    buyStepSlow(`Swapping to ${destLabel} is taking longer than usual…`);
+                    buyStepSlow(String(loc.formatString(loc.cypherbox.payments.review_payment.swapping_slow, { destination: destLabel })));
                 }, 15_000);
                 const result = await runLightningSwap('strike', dest, purchasedSats, {
                     memo: `Buy → ${dest}`,
                 });
                 if (swapSlowTimerRef.current) clearTimeout(swapSlowTimerRef.current);
                 swapSlowTimerRef.current = null;
-                buyStepFinish('done', `${purchasedSats.toLocaleString()} sats swapped to ${destLabel}`);
+                buyStepFinish('done', String(loc.formatString(loc.cypherbox.payments.review_payment.sats_swapped_to, { sats: purchasedSats.toLocaleString(), destination: destLabel })));
                 // User already tapped "Home" during the slow swap — the swap
                 // just landed in the background; leave them on Home (their
                 // balance updates from the claim watchers) instead of pushing
@@ -915,20 +916,20 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 if (swapSlowTimerRef.current) clearTimeout(swapSlowTimerRef.current);
                 swapSlowTimerRef.current = null;
                 buyStepFinish('failed',
-                    `Failed to swap to ${dest === 'coinos' ? 'CoinOS' : 'Bark Vault'}. Your sats are safe in Strike.`);
+                    String(loc.formatString(loc.cypherbox.payments.review_payment.swap_failed_safe, { destination: dest === 'coinos' ? 'CoinOS' : loc.cypherbox.payments.common.bark_vault })));
                 console.error(`[BUY → ${dest}] swap failed:`, error);
-                let message = 'Swap failed. Your purchase succeeded. Try again from Home → Swap.';
+                let message = loc.cypherbox.payments.review_payment.swap_failed_purchase_ok;
                 if (error instanceof InvoiceCreationFailedError) {
-                    message = `${dest === 'coinos' ? 'CoinOS' : 'Ark'} couldn't create an invoice: ${(error.cause as Error)?.message ?? error.message}`;
+                    message = String(loc.formatString(loc.cypherbox.payments.common.provider_invoice_failed, { provider: dest === 'coinos' ? 'CoinOS' : 'Ark', error: (error.cause as Error)?.message ?? error.message }));
                 } else if (error instanceof PaymentFailedError) {
                     const causeMsg = (error.cause as Error)?.message ?? error.message;
                     // Strike's BALANCE_TOO_LOW response means the trade
                     // hasn't fully settled yet. Tell the user instead of
                     // surfacing the raw 422 trace.
                     if (/BALANCE_TOO_LOW|Insufficient funds/i.test(causeMsg)) {
-                        message = 'Your purchase succeeded but Strike\'s balance hasn\'t settled yet. Try the swap from Home → Swap in a few seconds.';
+                        message = loc.cypherbox.payments.review_payment.strike_balance_not_settled;
                     } else {
-                        message = `Strike payment failed: ${causeMsg}`;
+                        message = String(loc.formatString(loc.cypherbox.payments.review_payment.strike_payment_failed, { error: causeMsg }));
                     }
                 } else if (error instanceof LightningSwapError) {
                     message = error.message;
@@ -1012,9 +1013,9 @@ export default function ReviewPayment({ navigation, route }: Props) {
             if (__DEV__) console.log(`[BUY → ${dest}] inline withdrawal: address=${address} tier=${tier?.id} sats=${purchasedSats}`);
             // Mirror the swap path: 6s settle window so Strike's BUY
             // lands in the BTC sub-balance before we reference it.
-            buyStepStart('Waiting for Strike to settle the trade…');
+            buyStepStart(loc.cypherbox.payments.review_payment.waiting_strike_settle);
             await new Promise(resolve => setTimeout(resolve, 6000));
-            buyStepStart(`Sending ${purchasedSats.toLocaleString()} sats on-chain to ${dest === 'cold' ? 'Cold Vault' : 'Hot Vault'}…`);
+            buyStepStart(String(loc.formatString(loc.cypherbox.payments.review_payment.sending_onchain_to, { sats: purchasedSats.toLocaleString(), destination: dest === 'cold' ? loc.cypherbox.payments.common.cold_vault : loc.cypherbox.payments.common.hot_vault })));
 
             // Fresh on-chain quote for the just-purchased sats. INCLUSIVE
             // fee policy means Strike subtracts the tier fee from the
@@ -1034,14 +1035,14 @@ export default function ReviewPayment({ navigation, route }: Props) {
             };
             const quote = await getPaymentQoute('onchain', quotePayload);
             if (!quote?.paymentQuoteId) {
-                throw new Error(quote?.data?.message || 'Failed to create on-chain quote');
+                throw new Error(quote?.data?.message || loc.cypherbox.payments.review_payment.onchain_quote_failed);
             }
             const result = await getPaymentQouteByOnChain(quotePayload, quote.paymentQuoteId);
             if (result?.data?.message && !result?.id) {
                 throw new Error(result?.data?.message);
             }
             buyStepFinish('done',
-                `${purchasedSats.toLocaleString()} sats sent to ${dest === 'cold' ? 'Cold Vault' : 'Hot Vault'}`);
+                String(loc.formatString(loc.cypherbox.payments.review_payment.sats_sent_to, { sats: purchasedSats.toLocaleString(), destination: dest === 'cold' ? loc.cypherbox.payments.common.cold_vault : loc.cypherbox.payments.common.hot_vault })));
             // Match the coinos/ark swap success UX: Transaction screen
             // with type='BUY' renders "Purchase Complete", and the
             // swappedTo subtitle adds the "→ Swapped to <vault>" note
@@ -1059,10 +1060,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 swappedTo: dest === 'cold' ? 'Cold Vault' : 'Hot Vault',
             });
         } catch (e) {
-            buyStepFinish('failed', 'Purchase succeeded but the withdrawal failed. Your sats are safe in Strike.');
+            buyStepFinish('failed', loc.cypherbox.payments.review_payment.withdrawal_failed_safe);
             if (__DEV__) console.error(`[BUY → ${dest}] inline withdrawal failed:`, e);
-            const message = e instanceof Error ? e.message : 'Withdrawal failed';
-            SimpleToast.show(`Purchase succeeded but withdrawal failed (${message}). Find the BTC in Strike → use Home → Send to retry.`, SimpleToast.LONG);
+            const message = e instanceof Error ? e.message : loc.cypherbox.payments.review_payment.withdrawal_failed;
+            SimpleToast.show(String(loc.formatString(loc.cypherbox.payments.review_payment.withdrawal_failed_retry, { error: message })), SimpleToast.LONG);
             dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: paymentQuoteData });
         }
     };
@@ -1078,7 +1079,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
             // purchase + on-chain payout fires. Mirrors the same gate
             // the standalone vault-withdraw flow uses (see line ~887).
             if (type === 'BUY' && purchaseDest === 'cold' && !isCheck) {
-                SimpleToast.show("Please verify the destination address", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.verify_destination_address, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -1088,7 +1089,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
             const intendedSats = Math.round(isSats ? Number(value) || 0 : Number(converted) || 0);
             clearBuyProgress();
             if (type === 'BUY') {
-                buyStepStart(`Purchasing ${intendedSats.toLocaleString()} sats from Strike…`);
+                buyStepStart(String(loc.formatString(loc.cypherbox.payments.review_payment.purchasing_sats, { sats: intendedSats.toLocaleString() })));
             }
             try {
                 console.log('paymentQuoteData: ', paymentQuoteData)
@@ -1100,7 +1101,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         const boughtBtc = Number(paymentQuoteData?.target?.amount) || 0;
                         const boughtSats = Math.floor(boughtBtc * SATS);
                         buyStepFinish('done',
-                            `${(boughtSats > 0 ? boughtSats : intendedSats).toLocaleString()} sats purchased from Strike`);
+                            String(loc.formatString(loc.cypherbox.payments.review_payment.sats_purchased, { sats: (boughtSats > 0 ? boughtSats : intendedSats).toLocaleString() })));
                     }
                     // BUY routes by destination. SELL keeps the legacy
                     // single-screen flow (sale completes → Transaction
@@ -1111,18 +1112,18 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: paymentQuoteData });
                     }
                 } else {
-                    if (type === 'BUY') buyStepFinish('failed', 'Purchase failed. Please try again.');
-                    SimpleToast.show(response?.data?.message ? response?.data?.message + " Please Try again" : 'Failed to execute payment. Please try again.', SimpleToast.SHORT)
+                    if (type === 'BUY') buyStepFinish('failed', loc.cypherbox.payments.review_payment.purchase_failed);
+                    SimpleToast.show(response?.data?.message ? response?.data?.message + loc.cypherbox.payments.review_payment.please_try_again_suffix : loc.cypherbox.payments.review_payment.execute_payment_failed, SimpleToast.SHORT)
                     handleFiatPayment()
                 }
             } catch (error) {
-                if (type === 'BUY') buyStepFinish('failed', 'Purchase failed. Check your connection and try again.');
+                if (type === 'BUY') buyStepFinish('failed', loc.cypherbox.payments.review_payment.purchase_failed_connection);
                 console.error('Error execute payment Strike:', error);
             } finally {
                 setIsSendLoading(false);
             }
         } else if (to == '') {
-            SimpleToast.show('Please enter an address or username', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.enter_address_or_username, SimpleToast.SHORT);
             setIsSendLoading(false);
             return;
         } else if (startsWithLn(to)) { //lightening invoice
@@ -1139,7 +1140,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
                 } catch (error) {
                     console.error('Error handleSendSats:', error);
-                    SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.payments.common.send_lightning_failed, SimpleToast.SHORT);
                 } finally {
                     setIsSendLoading(false);
                 }
@@ -1171,7 +1172,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         console.log('responserresponse: ', response)
                         dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: response });
                     } else {
-                        SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT)
+                        SimpleToast.show(loc.cypherbox.payments.common.send_lightning_failed, SimpleToast.SHORT)
                     }
                 } catch (error) {
                     console.error('Error Send Lightening Strike:', error);
@@ -1181,18 +1182,18 @@ export default function ReviewPayment({ navigation, route }: Props) {
             }
         } else if (to.startsWith('bc')) { //bitcoin onchain
             if (amount == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
             if(!isCheck && isWithdrawal && vaultTab){
-                SimpleToast.show("Please verify the destination address", SimpleToast.SHORT)
+                SimpleToast.show(loc.cypherbox.payments.common.verify_destination_address, SimpleToast.SHORT)
                 setIsSendLoading(false);
                 return;
             }
             if(receiveType){
                 if (selectedFee == null) {
-                    SimpleToast.show('Please select fee rate', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.payments.common.select_fee_rate, SimpleToast.SHORT);
                     setIsSendLoading(false);
                     return;
                 }
@@ -1202,7 +1203,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 console.log('feeForBamskki: ', feeForBamskki)
                 console.log('remainingAmount: ', remainingAmount)
                 if (remainingAmount <= 0) {
-                    SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                     setIsSendLoading(false);
                     return;
                 }
@@ -1228,13 +1229,13 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     }
                 } catch (error) {
                     console.error('Error Send to bitcoin:', error);
-                    SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.payments.common.send_bitcoin_failed, SimpleToast.SHORT);
                 } finally {
                     setIsSendLoading(false);
                 }
             } else {
                 if (selectedStrikeFee == null) {
-                    SimpleToast.show('Please select fee rate', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.payments.common.select_fee_rate, SimpleToast.SHORT);
                     setIsSendLoading(false);
                     return;
                 }
@@ -1258,11 +1259,11 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     } else if(response?.data?.message) {
                         SimpleToast.show(response?.data?.message, SimpleToast.SHORT)
                     } else {
-                        SimpleToast.show('Failed to Send Bitcoin. Please try again.', SimpleToast.SHORT)
+                        SimpleToast.show(loc.cypherbox.payments.review_payment.send_bitcoin_failed, SimpleToast.SHORT)
                     }
                 } catch (error) {
                     console.error('Error Send to bitcoin:', error);
-                    SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.payments.common.send_bitcoin_failed, SimpleToast.SHORT);
                 } finally {
                     setIsSendLoading(false);
                 }
@@ -1270,7 +1271,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
         } else if (to.includes("@")) { //username
             if (amount == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -1305,7 +1306,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             console.log('responserresponse: ', response, to)
                             dispatchNavigate('Transaction', { matchedRate, currency, type, value, converted, receiveType, isSats, to, item: response });
                         } else {
-                            SimpleToast.show('Failed to Send Lightening. Please try again.', SimpleToast.SHORT)
+                            SimpleToast.show(loc.cypherbox.payments.common.send_lightning_failed, SimpleToast.SHORT)
                         }
                     } catch (error) {
                         console.error('Error Send Lightening Strike:', error);
@@ -1315,18 +1316,18 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 }
             } catch (error) {
                 console.error('Error handleSendSats:', error);
-                SimpleToast.show('Failed Send to User. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.review_payment.send_user_failed, SimpleToast.SHORT);
             } finally {
                 setIsSendLoading(false);
             }
         } else { //liquid address
             if (amount == '') {
-                SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
             if (selectedFee == null) {
-                SimpleToast.show('Please select fee rate', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.select_fee_rate, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -1336,7 +1337,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
             console.log('feeForBamskki: ', feeForBamskki)
             console.log('remainingAmount: ', remainingAmount)
             if (remainingAmount <= 0) {
-                SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.not_enough_balance, SimpleToast.SHORT);
                 setIsSendLoading(false);
                 return;
             }
@@ -1359,7 +1360,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 }
             } catch (error) {
                 console.error('Error Send to liquid:', error);
-                SimpleToast.show('Failed to Send to Liquid. Please try again.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.send_liquid_failed, SimpleToast.SHORT);
             } finally {
                 setIsSendLoading(false);
             }
@@ -1368,10 +1369,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     const increaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
-        const currentIndex = feeKeys.indexOf(selectedFeeName !== "Select Fee" ? selectedFeeName : '');
+        const currentIndex = feeKeys.indexOf(selectedFeeName !== loc.cypherbox.payments.common.select_fee ? selectedFeeName : '');
         const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === feeKeys.length - 1) {
-            SimpleToast.show('You have reached the end of the fee list.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.end_of_fee_list, SimpleToast.SHORT);
             return;
         }
         const newIndex = (currentIndex + 1) % feeKeys.length;
@@ -1381,10 +1382,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     const decreaseClickHandler = () => {
         const feeKeys = Object.values(feeNames);
-        const currentIndex = feeKeys.indexOf(selectedFeeName !== "Select Fee" ? selectedFeeName : '');
+        const currentIndex = feeKeys.indexOf(selectedFeeName !== loc.cypherbox.payments.common.select_fee ? selectedFeeName : '');
         const fromFeeKeys = Object.keys(recommendedFee ?? {});
         if (currentIndex === 0) {
-            SimpleToast.show('You have reached the start of the fee list.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.start_of_fee_list, SimpleToast.SHORT);
             return;
         }
         const newIndex = (currentIndex - 1 + feeKeys.length) % feeKeys.length;
@@ -1403,7 +1404,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 selectedFee = strikeFees[currentIndex + 1];
                 setSelectedStrikeFee(selectedFee)
             } else {
-                SimpleToast.show('You have reached the end of the fee list.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.end_of_fee_list, SimpleToast.SHORT);
             }
         }
 
@@ -1420,7 +1421,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 selectedFee = strikeFees[currentIndex - 1];
                 setSelectedStrikeFee(selectedFee)
             } else {
-                SimpleToast.show('You have reached the start of the fee list.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.payments.common.start_of_fee_list, SimpleToast.SHORT);
             }
         }
 
@@ -1492,7 +1493,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
     console.log('strikeFees: ', value, to, type, recommendedFee)
     return (
-        <ScreenLayout showToolbar isBackButton title={isWithdrawal ? "Review Withdrawal" : type === 'BUY' ? "Review Purchase Order" : type === 'SELL' ? "Review Sell Order" : "Review Payment"}>
+        <ScreenLayout showToolbar isBackButton title={isWithdrawal ? loc.cypherbox.payments.review_payment.title_withdrawal : type === 'BUY' ? loc.cypherbox.payments.review_payment.title_purchase : type === 'SELL' ? loc.cypherbox.payments.review_payment.title_sell : loc.cypherbox.payments.review_payment.title_payment}>
             <View style={styles.topView}>
                 {/* {isStartLoading ?
                     <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />
@@ -1531,7 +1532,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
 
                 <View style={styles.middle}>
                     {balance < withdrawThreshold && isWithdrawal &&
-                        <Text style={{ color: colors.yellow2, marginLeft: 15, marginBottom: 25 }}>You haven't reached your withdrawal threshold yet.</Text>
+                        <Text style={{ color: colors.yellow2, marginLeft: 15, marginBottom: 25 }}>{loc.cypherbox.payments.review_payment.threshold_not_reached}</Text>
                     }
                     {/* `marginTop: 10` pushes amount + spent-from + trading-fees
                         rows down 10pt as a group. The DEPOSIT TO block
@@ -1539,7 +1540,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         so its position stays put relative to the screen. */}
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginRight: 15, marginTop: 10 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1 }}>
-                            <TextViewV2 keytext={type == 'SELL' ? "You will sell: " : type == 'BUY' ? "You will receive: " : "Recipient will get: "} text={isSats ? `${value} sats ~ ${getStrikeCurrency(currency || 'USD')}${converted}` : `${getStrikeCurrency(currency || 'USD')}${value} ~ ${converted} sats`} textStyle={styles.price} containerStyle={{ marginBottom: 10 }} />
+                            <TextViewV2 keytext={type == 'SELL' ? loc.cypherbox.payments.review_payment.you_will_sell : type == 'BUY' ? loc.cypherbox.payments.review_payment.you_will_receive : loc.cypherbox.payments.review_payment.recipient_will_get} text={isSats ? `${value} sats ~ ${getStrikeCurrency(currency || 'USD')}${converted}` : `${getStrikeCurrency(currency || 'USD')}${value} ~ ${converted} sats`} textStyle={StyleSheet.flatten([styles.price, rtl.ltrText])} containerStyle={{ marginBottom: 10 }} />
                         </View>
                         {(isWithdrawal || type === 'BUY' || type === 'SELL') &&
                             <TouchableOpacity activeOpacity={0.7} onPress={editAmountClickHandler} style={{
@@ -1551,7 +1552,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 alignItems: 'center',
                                 justifyContent: 'center'
                             }}>
-                                <Text style={{ fontSize: 14, color: isEditAmount ? colors.green : colors.white }}>Edit Amount</Text>
+                                <Text style={{ fontSize: 14, color: isEditAmount ? colors.green : colors.white }}>{loc.cypherbox.payments.review_payment.edit_amount}</Text>
                             </TouchableOpacity>
                         }
                     </View>
@@ -1566,14 +1567,14 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             <CustomProgressBar value={Number(isSats ? value : converted) || 0} />
                         </View>
                     )}
-                    <TextViewV2 keytext={type === 'BUY' ? "Spent from: " : "Sent from: "} text={receiveType ? "Coinos Lightning Account" : type == 'SELL' || type == 'BUY' ? "Strike Fiat Account" : "Strike Lightning Account"} containerStyle={{ marginBottom: 10 }} />
+                    <TextViewV2 keytext={type === 'BUY' ? loc.cypherbox.payments.review_payment.spent_from : loc.cypherbox.payments.common.sent_from_label} text={receiveType ? loc.cypherbox.payments.review_payment.coinos_lightning_account : type == 'SELL' || type == 'BUY' ? loc.cypherbox.payments.review_payment.strike_fiat_account : loc.cypherbox.payments.review_payment.strike_lightning_account} containerStyle={{ marginBottom: 10 }} />
                     {isWithdrawal && to.length > 0 ?
                         <View style={{
                             marginBottom:30,
                             marginStart:15,
                             marginEnd: 10,
                         }}>
-                            <Text bold style={{fontSize: 18}}>{"To: "}</Text>
+                            <Text bold style={{fontSize: 18}}>{loc.cypherbox.payments.common.to_label}</Text>
                             <TouchableOpacity activeOpacity={0.7} onPress={addressHandler} style={{
                                 flexDirection: 'row', 
                                 alignItems: 'center', 
@@ -1591,7 +1592,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                     marginTop: 3,
                                     fontFamily: 'monospace',
                                     color: vaultTab ? colors.blueText : colors.greenShadow
-                                })}>{"Vault Address: "}{to}</Text>
+                                })}>{loc.cypherbox.payments.review_payment.vault_address_label}{to}</Text>
                                 <TouchableOpacity onPress={() => setShowAddressQR(true)} style={{ marginRight: 8 }}>
                                     <Icon name="qrcode" type="font-awesome" color={vaultTab ? colors.blueText : colors.greenShadow} size={20} />
                                 </TouchableOpacity>
@@ -1600,9 +1601,9 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         </View>
                     : to.length > 0 &&
                         <View style={{ marginHorizontal: 12, marginBottom: 10 }}>
-                            <Text bold style={{fontSize: 18}}>{"To: "}</Text>
+                            <Text bold style={{fontSize: 18}}>{loc.cypherbox.payments.common.to_label}</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                                <Text style={{ flex: 1, fontSize: 12, fontFamily: 'monospace', color: '#CCC' }}>{to}</Text>
+                                <Text style={[{ flex: 1, fontSize: 12, fontFamily: 'monospace', color: '#CCC' }, rtl.ltrText]}>{to}</Text>
                                 {!to.includes('@') && to.length > 20 && (
                                     <TouchableOpacity onPress={() => setShowAddressQR(true)} style={{ marginLeft: 8 }}>
                                         <Icon name="qrcode" type="font-awesome" color="#CCC" size={22} />
@@ -1618,12 +1619,12 @@ export default function ReviewPayment({ navigation, route }: Props) {
                     } */}
                     {vaultTab && isWithdrawal &&
                         <>
-                            <Text style={[{marginHorizontal: 12, fontSize: 14, width: isIOS ? '90%' : '80%', marginTop: -10}]}>⚠️ DO NOT transfer to any of these addresses without checking them on your signing device!</Text>
+                            <Text style={[{marginHorizontal: 12, fontSize: 14, width: isIOS ? '90%' : '80%', marginTop: -10}]}>{loc.cypherbox.payments.review_payment.verify_hardware_warning_list}</Text>
                             <TouchableOpacity activeOpacity={0.7} onPress={() => setIsCheck(!isCheck)} style={{flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 25, marginHorizontal: 12 , alignSelf: 'flex-start' }}>
                                 <View style={styles.checkView}>
                                     {isCheck && <Image source={Check} style={styles.checkImage} resizeMode='contain' /> }
                                 </View>
-                                <Text style={{color: colors.white, marginLeft: 10, fontSize: 16}} italic>I verified this address</Text>
+                                <Text style={{color: colors.white, marginLeft: 10, fontSize: 16}} italic>{loc.cypherbox.payments.common.i_verified_address}</Text>
                             </TouchableOpacity>
                         </>
                     }
@@ -1633,7 +1634,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             {receiveType ?
                                 <View style={{ zIndex: 100, elevation: 100 }}>
                                     <View style={[styles.feesView, { zIndex: 100, elevation: 100 }]}>
-                                        <TextViewV2 keytext="Network Fee:  " text={` ~   ${estimatedFee} sats`} />
+                                        <TextViewV2 keytext={loc.cypherbox.payments.common.network_fee_label} text={` ~   ${estimatedFee} sats`} textStyle={rtl.ltrText} />
                                         <View style={{ marginLeft: 10, marginTop: -10, width: 160, zIndex: 100, elevation: 100 }}>
                                             <TouchableOpacity
                                                 onPress={() => setModalVisible(!isModalVisible)}
@@ -1690,7 +1691,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                             {isModalVisible && (
                                                 <View style={{ backgroundColor: colors.gray.dark, borderWidth: 1, borderTopWidth: 0, borderColor: '#333', borderBottomLeftRadius: 10, borderBottomRightRadius: 10, overflow: 'hidden', position: 'absolute', top: 40, left: 0, right: 0, zIndex: 30, elevation: 10 }}>
                                                     {strikeFees && strikeFees.map((item: any, index: number) => {
-                                                        const isDisabled = item?.label == 'Free' && item?.minimumAmount && item?.minimumAmount?.amount > (isSats ? value / SATS : converted / SATS);
+                                                        const isDisabled = item?.label == loc.cypherbox.payments.common.fee_free && item?.minimumAmount && item?.minimumAmount?.amount > (isSats ? value / SATS : converted / SATS);
                                                         return (
                                                             <TouchableOpacity
                                                                 key={item.id || index}
@@ -1698,7 +1699,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                                                 style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: index < strikeFees.length - 1 ? 1 : 0, borderBottomColor: '#333', backgroundColor: selectedStrikeFee?.id === item.id ? colors.primary : 'transparent', opacity: isDisabled ? 0.5 : 1 }}
                                                                 onPress={() => handleStrikeFeeSelect(item)}>
                                                                 <Text bold style={{ fontSize: 13 }}>{item.label}</Text>
-                                                                {isDisabled && <Text style={{ fontSize: 9, color: '#999' }}>Min: {item.minimumAmount?.amount} BTC</Text>}
+                                                                {isDisabled && <Text style={{ fontSize: 9, color: '#999' }}>{loc.formatString(loc.cypherbox.payments.review_payment.min_amount_btc, { amount: item.minimumAmount?.amount })}</Text>}
                                                             </TouchableOpacity>
                                                         );
                                                     })}
@@ -1718,18 +1719,18 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 const pct = amountSats > 0 ? ((feeSats / amountSats) * 100).toFixed(1) : '0';
                                 const usdAmt = (Number(selectedStrikeFee?.estimatedFee?.amount || 0) * (matchedRate || 0)).toFixed(2);
                                 return (
-                                    <Text bold style={{ fontSize: 18 }}>Fee: <Text italic style={{ fontSize: 16, fontWeight: 'normal' }}>{`~ ${feeSats.toFixed(0)} sats (~${getStrikeCurrency(currency || 'USD')}${usdAmt}) (${pct}%)`}</Text></Text>
+                                    <Text bold style={{ fontSize: 18 }}>{loc.cypherbox.payments.review_payment.fee_label}<Text italic style={[{ fontSize: 16, fontWeight: 'normal' }, rtl.ltrText]}>{`~ ${feeSats.toFixed(0)} sats (~${getStrikeCurrency(currency || 'USD')}${usdAmt}) (${pct}%)`}</Text></Text>
                                 );
                             })()}
                                     </View>
                                 </View>
                             }
                             {/* <TextViewV2 keytext="Coinos Fee + Service Fee:  " text={` ~   ${(networkFee || 0) + (bamskiiFee || 0)} sats`} /> */}
-                            {receiveType && <TextViewV2 keytext="Coinos Fee:  " text={` ~   ${(networkFee || 0)} sats`} /> }
-                            {receiveType && <TextViewV2 keytext="Total Fee:  " text={isWithdrawal ? ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~${handleWithdrawalFee((networkFee || 0) + (estimatedFee || 0)).toFixed(0)}%)` : ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~0.2%)`} />}
+                            {receiveType && <TextViewV2 keytext={loc.cypherbox.payments.common.coinos_fee_label} text={` ~   ${(networkFee || 0)} sats`} textStyle={rtl.ltrText} /> }
+                            {receiveType && <TextViewV2 keytext={loc.cypherbox.payments.common.total_fee_label} text={isWithdrawal ? ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~${handleWithdrawalFee((networkFee || 0) + (estimatedFee || 0)).toFixed(0)}%)` : ` ~   ${(networkFee || 0) + (estimatedFee || 0)} sats (~0.2%)`} textStyle={rtl.ltrText} />}
                             {!receiveType && !selectedStrikeFee && paymentQuoteData && (
                                 <TextViewV2
-                                    keytext="Trading fees:  "
+                                    keytext={loc.cypherbox.payments.review_payment.trading_fees_label}
                                     text={buildTradingFeeText(
                                         paymentQuoteData,
                                         value,
@@ -1740,6 +1741,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                         route?.params?.matchedRate,
                                     )}
                                     containerStyle={{ marginBottom: 10 }}
+                                    textStyle={rtl.ltrText}
                                 />
                             )}
                         </>
@@ -1753,7 +1755,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         // the quote resolves.
                         (type === 'BUY' || type === 'SELL') ?
                             <TextViewV2
-                                keytext="Trading fees:  "
+                                keytext={loc.cypherbox.payments.review_payment.trading_fees_label}
                                 text={buildTradingFeeText(
                                     paymentQuoteData,
                                     value,
@@ -1763,9 +1765,10 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                     matchedRate,
                                     route?.params?.matchedRate,
                                 )}
+                                textStyle={rtl.ltrText}
                             />
                         :
-                        <TextView keytext="Fees:  " text={` ~   ${receiveType ? estimatedFee : paymentQuoteData && to?.length > 0 ? usdToSats(paymentQuoteData?.totalFee?.amount || 0, (matchedRate || 0)) : paymentQuoteData && to.length == 0 ? usdToSats(paymentQuoteData?.fee?.amount || 0, (matchedRate || 0)) : 0} sats`} />
+                        <TextView keytext={loc.cypherbox.payments.common.fees_label} text={` ~   ${receiveType ? estimatedFee : paymentQuoteData && to?.length > 0 ? usdToSats(paymentQuoteData?.totalFee?.amount || 0, (matchedRate || 0)) : paymentQuoteData && to.length == 0 ? usdToSats(paymentQuoteData?.fee?.amount || 0, (matchedRate || 0)) : 0} sats`} />
                     }
                     {/* Post-purchase destination picker (BUY-only). Sits
                         directly below the trading-fees rows so the user
@@ -1776,7 +1779,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                         (Hot/Cold) once the trade clears. */}
                     {type === 'BUY' && (canDestCoinos || canDestArk || canDestHot || canDestCold) && (
                         <View style={destPicker.container}>
-                            <Text bold style={destPicker.label}>DEPOSIT TO</Text>
+                            <Text bold style={destPicker.label}>{loc.cypherbox.payments.review_payment.deposit_to}</Text>
                             {/* Lightning rails on row 1 (Strike default,
                                 CoinOS, Ark) and on-chain vaults on row 2
                                 (Hot, Cold). Two separate Views with no
@@ -1804,7 +1807,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 )}
                                 {canDestArk && (
                                     <DestPickerTile
-                                        label="Bark Vault"
+                                        label={loc.cypherbox.payments.common.bark_vault}
                                         arkBolt
                                         // Gray ring when unselected, bright
                                         // yellow when selected — matches the
@@ -1834,7 +1837,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 <View style={destPicker.row}>
                                     {canDestHot && (
                                         <DestPickerTile
-                                            label="Hot Vault"
+                                            label={loc.cypherbox.payments.common.hot_vault}
                                             iconSource={Hot}
                                             iconStyle={{ width: 22, height: 30 }}
                                             outlineColor={colors.green}
@@ -1844,7 +1847,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                     )}
                                     {canDestCold && (
                                         <DestPickerTile
-                                            label="Cold Vault"
+                                            label={loc.cypherbox.payments.common.cold_vault}
                                             iconSource={Cold1}
                                             iconStyle={{ width: 30, height: 22 }}
                                             outlineColor={colors.blueText}
@@ -1873,7 +1876,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                 review. */}
                             {(purchaseDest === 'hot' || purchaseDest === 'cold') && (
                                 <View style={{ marginTop: 14 }}>
-                                    <Text bold style={destPicker.label}>WITHDRAW ADDRESS</Text>
+                                    <Text bold style={destPicker.label}>{loc.cypherbox.payments.review_payment.withdraw_address}</Text>
                                     {/* Tap to open the wallet's full
                                         address list — same picker the
                                         regular Strike→vault withdraw
@@ -1912,30 +1915,30 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                         }}
                                     >
                                         <Text
-                                            style={{
+                                            style={[{
                                                 color: '#ddd',
                                                 fontSize: 12,
                                                 flex: 1,
                                                 marginRight: 8,
-                                            }}
+                                            }, rtl.ltrText]}
                                             numberOfLines={1}
                                             ellipsizeMode="middle"
                                         >
-                                            {vaultDepositAddress || 'Resolving address…'}
+                                            {vaultDepositAddress || loc.cypherbox.payments.review_payment.resolving_address}
                                         </Text>
-                                        <Text style={{ color: '#888', fontSize: 11 }}>change ›</Text>
+                                        <Text style={{ color: '#888', fontSize: 11 }}>{loc.cypherbox.payments.review_payment.change_address}</Text>
                                     </TouchableOpacity>
 
-                                    <Text bold style={destPicker.label}>NETWORK FEE</Text>
+                                    <Text bold style={destPicker.label}>{loc.cypherbox.payments.review_payment.network_fee_heading}</Text>
                                     {vaultDepositTiersLoading && (
                                         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
                                             <ActivityIndicator size="small" color={colors.gray.light} />
-                                            <Text style={{ color: '#888', marginLeft: 8, fontSize: 12 }}>Fetching fee options…</Text>
+                                            <Text style={{ color: '#888', marginLeft: 8, fontSize: 12 }}>{loc.cypherbox.payments.review_payment.fetching_fee_options}</Text>
                                         </View>
                                     )}
                                     {!vaultDepositTiersLoading && vaultDepositTiers.length === 0 && vaultDepositAddress.length > 0 && (
                                         <Text style={{ color: '#888', fontSize: 12, paddingHorizontal: 4 }}>
-                                            No fee options yet. Make sure your purchase amount is above Strike's minimum.
+                                            {loc.cypherbox.payments.review_payment.no_fee_options}
                                         </Text>
                                     )}
                                     {!vaultDepositTiersLoading && vaultDepositTiers.length > 0 && (
@@ -1972,9 +1975,9 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                                         }}
                                                     >
                                                         <Text bold style={{ fontSize: 13, color: '#fff' }}>{tier.label}</Text>
-                                                        <Text style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{tierSats} sats</Text>
-                                                        <Text style={{ fontSize: 10, color: '#bbb' }}>~{getStrikeCurrency(currency || 'USD')}{tierFiat}</Text>
-                                                        <Text style={{ fontSize: 10, color: '#bbb' }}>{tierPctStr}</Text>
+                                                        <Text style={[{ fontSize: 10, color: '#bbb', marginTop: 2 }, rtl.ltrText]}>{tierSats} sats</Text>
+                                                        <Text style={[{ fontSize: 10, color: '#bbb' }, rtl.ltrText]}>{ltr(`~${getStrikeCurrency(currency || 'USD')}${tierFiat}`)}</Text>
+                                                        <Text style={[{ fontSize: 10, color: '#bbb' }, rtl.ltrText]}>{tierPctStr}</Text>
                                                     </TouchableOpacity>
                                                 );
                                             })}
@@ -1995,7 +1998,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                     {purchaseDest === 'cold' && (
                                         <View style={{ marginTop: 14 }}>
                                             <Text style={{ fontSize: 13, color: '#FFFFFF', marginBottom: 6, paddingHorizontal: 4 }}>
-                                                ⚠️ DO NOT transfer to this address without checking it on your signing device!
+                                                {loc.cypherbox.payments.review_payment.verify_hardware_warning_single}
                                             </Text>
                                             <TouchableOpacity
                                                 activeOpacity={0.7}
@@ -2006,7 +2009,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                                                     {isCheck && <Image source={Check} style={styles.checkImage} resizeMode="contain" />}
                                                 </View>
                                                 <Text italic style={{ color: colors.white, marginLeft: 10, fontSize: 14 }}>
-                                                    I verified this address
+                                                    {loc.cypherbox.payments.common.i_verified_address}
                                                 </Text>
                                             </TouchableOpacity>
                                         </View>
@@ -2028,12 +2031,12 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             onChange={setNote}
                             value={note}
                             textInputStyle={styles.heigth2}
-                            label="Add note"
+                            label={loc.cypherbox.payments.common.add_note}
                         />
                     </GradientCard>
                 }
             </View>
-            {(type === 'bitcoin' || type === 'liquid') && <Text style={{ color: '#FFFFFF', fontSize: 15, textAlign: 'center', marginBottom: 10 }}><Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 'bold' }}>Caution:</Text> Bitcoin transactions are irreversible</Text>}
+            {(type === 'bitcoin' || type === 'liquid') && <Text style={{ color: '#FFFFFF', fontSize: 15, textAlign: 'center', marginBottom: 10 }}>{loc.formatString(loc.cypherbox.payments.review_payment.caution_irreversible, { caution: <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 'bold' }}>{loc.cypherbox.payments.review_payment.caution}</Text> })}</Text>}
             {/* BUY progress narration — fills the multi-step loading window
                 (purchase → settle → swap/withdraw) with live status lines.
                 Persists after a failure (cleared on the next slide) so the
@@ -2066,7 +2069,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
             {isSendLoading && buyProgress.some(s => s.state === 'slow') && (
                 <View style={{ marginHorizontal: 24, marginBottom: 14, alignItems: 'center' }}>
                     <Text style={{ color: '#AAAAAA', fontSize: 13, lineHeight: 18, textAlign: 'center', marginBottom: 12 }}>
-                        This is taking longer than usual. The swap keeps confirming in the background. It's safe to go Home, your balance updates when it lands.
+                        {loc.cypherbox.payments.review_payment.slow_swap_notice}
                     </Text>
                     <TouchableOpacity
                         onPress={() => {
@@ -2082,17 +2085,17 @@ export default function ReviewPayment({ navigation, route }: Props) {
                             colors={[colors.pink.extralight, colors.pink.default]}
                             style={{ borderRadius: 25, height: 50, alignItems: 'center', justifyContent: 'center' }}
                         >
-                            <Text bold style={{ fontSize: 18, color: '#FFFFFF' }}>Home</Text>
+                            <Text bold style={{ fontSize: 18, color: '#FFFFFF' }}>{loc.cypherbox.payments.common.home}</Text>
                         </LinearGradient>
                     </TouchableOpacity>
                 </View>
             )}
             <View style={styles.container}>
                 {type === 'bitcoin' || type == "SELL" || type == "BUY" ?
-                    <SwipeButton title={isWithdrawal ? 'Slide to Withdraw' : type === 'BUY' ? 'Slide to Purchase' : type === 'SELL' ? 'Slide to Sell' : 'Slide to Send'} ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
+                    <SwipeButton title={isWithdrawal ? loc.cypherbox.payments.review_payment.slide_to_withdraw : type === 'BUY' ? loc.cypherbox.payments.review_payment.slide_to_purchase : type === 'SELL' ? loc.cypherbox.payments.review_payment.slide_to_sell : loc.cypherbox.payments.review_payment.slide_to_send} ref={swipeButtonRef} onToggle={handleToggle} isLoading={isSendLoading} />
                     :
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
-                        title={'Send'}
+                        title={loc.cypherbox.payments.review_payment.send}
                         disabled={isSendLoading || feeLoading}
                         onPress={handleSendSats}
                     />
@@ -2108,21 +2111,21 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 style={{ alignItems: 'center', justifyContent: 'center' }}
             >
                 <View style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 24, alignItems: 'center', width: '85%' }}>
-                    <Text bold style={{ fontSize: 16, marginBottom: 4 }}>Verify Address</Text>
+                    <Text bold style={{ fontSize: 16, marginBottom: 4 }}>{loc.cypherbox.payments.review_payment.verify_address}</Text>
                     <Text style={{ fontSize: 12, color: '#888', marginBottom: 16, textAlign: 'center' }}>
-                        Scan it with your hardware wallet, or compare it with Hot Vault → Show Addresses on your offline phone
+                        {loc.cypherbox.payments.review_payment.scan_hardware_to_confirm}
                     </Text>
                     <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 12 }}>
                         <QRCode value={to} size={200} color="black" backgroundColor="white" />
                     </View>
-                    <Text style={{ fontSize: 11, fontFamily: 'monospace', color: '#CCC', marginTop: 16, textAlign: 'center', lineHeight: 18 }}>
+                    <Text style={[{ fontSize: 11, fontFamily: 'monospace', color: '#CCC', marginTop: 16, textAlign: 'center', lineHeight: 18 }, rtl.ltrText]}>
                         {to}
                     </Text>
                     <TouchableOpacity
                         onPress={() => setShowAddressQR(false)}
                         style={{ marginTop: 20, paddingVertical: 10, paddingHorizontal: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' }}
                     >
-                        <Text style={{ fontSize: 14, color: '#FFF' }}>Close</Text>
+                        <Text style={{ fontSize: 14, color: '#FFF' }}>{loc._.close}</Text>
                     </TouchableOpacity>
                 </View>
             </ReactNativeModal>
