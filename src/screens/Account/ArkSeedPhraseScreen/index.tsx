@@ -33,6 +33,7 @@ import { recordEvent } from "@Cypher/stores/eventLogStore";
 
 import styles from "./styles";
 import loc from "../../../../loc";
+import { arkSeedKeychainText } from "@Cypher/helpers/arkSeedKeychainText";
 
 /**
  * Ark Keychain storage convention.
@@ -41,7 +42,9 @@ import loc from "../../../../loc";
  * username slot: 'ark' — fixed identifier; one Ark wallet per device.
  * password slot: the BIP39 mnemonic (space-separated).
  *
- * Access control: BIOMETRY_ANY_OR_DEVICE_PASSCODE — FaceID/TouchID OR passcode.
+ * Access control: BIOMETRY_ANY_OR_DEVICE_PASSCODE — FaceID/TouchID OR passcode
+ *   on iOS. On Android react-native-keychain's read prompt allows a strong biometric
+ *   only (a fingerprint on most phones), with no PIN or passcode fallback.
  * Accessibility: WHEN_PASSCODE_SET_THIS_DEVICE_ONLY — never synced anywhere,
  *   readable only when device is unlocked.
  *
@@ -56,9 +59,10 @@ import loc from "../../../../loc";
  *     of which live inside the app's UID-scoped sandbox. When the
  *     user uninstalls, the package manager assigns a fresh UID on the
  *     next install and the OS wipes everything keyed to the old UID,
- *     including the Keystore entry. NO recovery property. The
- *     onboarding copy in the keychain row says so explicitly so users
- *     don't think the toggle gives them more than it actually does.
+ *     including the Keystore entry. NO recovery property. The keychain
+ *     row only names the Android Keystore and the fingerprint, and no
+ *     Android text may claim the copy outlives an uninstall (see
+ *     helpers/arkSeedKeychainText.ts).
  *     This is the gap that contributed to the 2026-05-05 loss-event
  *     scenario — see project_play_signing_oauth.md memory.
  *
@@ -140,6 +144,7 @@ export default function ArkSeedPhraseScreen() {
     } = useAuthStore();
 
     const words: string[] = (mnemonic || "").trim().split(/\s+/).filter(Boolean);
+    const keychainText = arkSeedKeychainText();
 
     const [revealed, setRevealed] = useState(false);
     const [revealing, setRevealing] = useState(false);
@@ -538,18 +543,18 @@ export default function ArkSeedPhraseScreen() {
         const conflict = await checkArkSeedKeychainConflict(mnemonic || "");
         if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
             const ok = await new Promise<boolean>(resolve => {
-                const keychainLabel = isIOS ? 'Keychain' : 'Keystore';
-                const biometricLabel = isIOS ? 'Face ID' : loc.cypherbox.account.common.fingerprint;
+                const keychainLabel = keychainText.keychain;
+                const biometricLabel = keychainText.biometric;
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_different, { keychain: keychainLabel, biometric: biometricLabel, fingerprint: conflict.existingFingerprint }))
-                        : String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_unreadable, { keychain: keychainLabel, reason: conflict.reason }));
+                        ? String(loc.formatString(keychainText.conflict.different, { keychain: keychainLabel, biometric: biometricLabel, fingerprint: conflict.existingFingerprint }))
+                        : String(loc.formatString(keychainText.conflict.unreadable, { keychain: keychainLabel, reason: conflict.reason }));
                 Alert.alert(
-                    loc.cypherbox.account.common.replace_keychain_seed_title,
+                    keychainText.conflict.title,
                     message,
                     [
-                        { text: String(loc.formatString(loc.cypherbox.account.common.keep_old_seed_in, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
-                        { text: String(loc.formatString(loc.cypherbox.account.common.save_new_seed_in, { keychain: keychainLabel })), onPress: () => resolve(true) },
+                        { text: String(loc.formatString(keychainText.conflict.keepOld, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
+                        { text: String(loc.formatString(keychainText.conflict.saveNew, { keychain: keychainLabel })), onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -760,7 +765,7 @@ export default function ArkSeedPhraseScreen() {
         if (saveToKeychain) {
             const result = await persistToKeychain();
             if (result === 'error') {
-                SimpleToast.show(loc.cypherbox.account.ark_seed.keychain_save_failed, SimpleToast.LONG);
+                SimpleToast.show(keychainText.seed.failedToast, SimpleToast.LONG);
             }
             // 'cancelled' = user kept the existing keychain seed by
             // choice. Silent, not a failure.
@@ -873,7 +878,7 @@ export default function ArkSeedPhraseScreen() {
 
                         <View style={styles.keychainRow}>
                             <Text bold style={[styles.keychainLabel, { flex: 1 }]}>
-                                {loc.formatString(loc.cypherbox.account.ark_seed.save_to, { store: isIOS ? 'iPhone Keychain' : 'Android Keystore', biometric: isIOS ? 'Face ID' : loc.cypherbox.account.common.fingerprint })}
+                                {loc.formatString(keychainText.seed.saveTo, { store: keychainText.store, biometric: keychainText.biometric })}
                             </Text>
                             <Switch
                                 value={saveToKeychain}
@@ -884,11 +889,11 @@ export default function ArkSeedPhraseScreen() {
                         </View>
 
                         {keychainStatus === "ok" && (
-                            <Text style={styles.statusOk}>{loc.cypherbox.account.ark_seed.saved_keychain}</Text>
+                            <Text style={styles.statusOk}>{keychainText.seed.saved}</Text>
                         )}
                         {keychainStatus === "err" && (
                             <Text style={styles.statusErr}>
-                                {loc.cypherbox.account.ark_seed.keychain_failed_manual}
+                                {keychainText.seed.failed}
                             </Text>
                         )}
 
