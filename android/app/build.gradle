@@ -72,9 +72,14 @@ react {
 }
 
 /**
- * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
+ * Runs R8 on release builds: shrinks, optimizes and obfuscates the Java/Kotlin bytecode.
+ * Google Play rates DEX code optimization and warns below 25% obfuscation (it was 1%).
+ * Code that is reached only by reflection or from native code needs a keep rule in
+ * proguard-rules.pro; most libraries ship their own (consumer rules). R8 writes
+ * build/outputs/mapping/release/mapping.txt; Play reads it from the bundle, and it is
+ * what turns an obfuscated Java stack trace back into names.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -159,7 +164,9 @@ android {
             if (keystorePropertiesFile.exists()) {
                 signingConfig signingConfigs.release
             }
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            // The -optimize defaults: plain proguard-android.txt turns R8's optimization off
+            // (-dontoptimize), which is what Play's optimization score reads.
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             proguardFile "${rootProject.projectDir}/../node_modules/detox/android/detox/proguard-rules-app.pro"
         }
     }
