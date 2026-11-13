@@ -16,7 +16,11 @@ jest.mock('react-native-keychain', () => ({
   setGenericPassword: mockSetGenericPassword,
   resetGenericPassword: jest.fn(),
   getAllGenericPasswordServices: jest.fn(async () => []),
-  ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'whenUnlockedThisDeviceOnly' },
+  ACCESSIBLE: {
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'whenUnlockedThisDeviceOnly',
+    AFTER_FIRST_UNLOCK: 'afterFirstUnlock',
+    AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 'afterFirstUnlockThisDeviceOnly',
+  },
 }));
 
 jest.mock('../../blue_modules/BlueElectrum', () => ({ connectMain: jest.fn() }));
@@ -31,7 +35,7 @@ beforeEach(() => {
 });
 
 describe('getDefaultRealmSecret (wallettransactions.realm key)', () => {
-  it('mints a device-random 64-hex key on genuine absence, scoped THIS_DEVICE_ONLY', async () => {
+  it('mints a device-random 64-hex key on genuine absence, readable after first unlock on this device only', async () => {
     mockGetGenericPassword.mockResolvedValue(false); // no entry
     const app = new AppStorage();
 
@@ -41,7 +45,8 @@ describe('getDefaultRealmSecret (wallettransactions.realm key)', () => {
     expect(mockSetGenericPassword).toHaveBeenCalledTimes(1);
     const opts = mockSetGenericPassword.mock.calls[0][2];
     expect(opts.service).toBe('wallettransactions_realm_key');
-    expect(opts.accessible).toBe('whenUnlockedThisDeviceOnly');
+    // a background launch on a locked phone has to read it
+    expect(opts.accessible).toBe('afterFirstUnlockThisDeviceOnly');
   });
 
   it('returns an existing key without minting', async () => {
@@ -69,6 +74,39 @@ describe('getDefaultRealmSecret (wallettransactions.realm key)', () => {
     const app = new AppStorage();
 
     await expect(app.getDefaultRealmSecret()).rejects.toThrow(/refusing to mint/);
+    expect(mockSetGenericPassword).not.toHaveBeenCalled();
+  });
+});
+
+describe('openRealmKeyValue (keyvalue.realm, the fallback copy of the wallet list)', () => {
+  it('mints its key readable after first unlock, as before, so a locked background launch can still load the wallets', async () => {
+    mockGetGenericPassword.mockResolvedValue(false); // fresh install
+    const app = new AppStorage();
+
+    await app.openRealmKeyValue();
+
+    expect(mockSetGenericPassword).toHaveBeenCalledTimes(1);
+    const [user, password, opts] = mockSetGenericPassword.mock.calls[0];
+    expect(user).toBe('realm_encryption_key');
+    expect(password).toMatch(/^[0-9a-f]{128}$/);
+    expect(opts.service).toBe('realm_encryption_key');
+    expect(opts.accessible).toBe('afterFirstUnlock');
+  });
+
+  it('opens an existing key without minting', async () => {
+    mockGetGenericPassword.mockResolvedValue({ password: 'ef'.repeat(64) });
+    const app = new AppStorage();
+
+    await app.openRealmKeyValue();
+
+    expect(mockSetGenericPassword).not.toHaveBeenCalled();
+  });
+
+  it('refuses to mint on a keychain READ error, which would orphan the existing copy', async () => {
+    mockGetGenericPassword.mockRejectedValue(new Error('keychain locked'));
+    const app = new AppStorage();
+
+    await expect(app.openRealmKeyValue()).rejects.toThrow(/refusing to mint/);
     expect(mockSetGenericPassword).not.toHaveBeenCalled();
   });
 });

@@ -251,9 +251,13 @@ class AppStorage {
       return this._defaultRealmSecret;
     }
     const secret = (await randomBytes(32)).toString('hex');
+    // After first unlock, not when unlocked: iOS launches the app in the
+    // background (silent pushes, background fetch) while the phone is locked,
+    // and the wallets' transaction history has to load then too. This device
+    // only, since it's a cache that a new phone rebuilds.
     await Keychain.setGenericPassword(service, secret, {
       service,
-      accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
     });
     this._defaultRealmSecret = secret;
     return secret;
@@ -309,9 +313,16 @@ class AppStorage {
     } else {
       const buf = await randomBytes(64);
       password = buf.toString('hex');
+      // The same accessibility this key has always had (react-native-keychain's
+      // iOS default). keyvalue.realm is the copy of the wallet list that
+      // getItemWithFallbackToRealm reads when the secure store can't be read,
+      // which is exactly what happens on a background launch while the phone
+      // is locked: a "when unlocked" key would fail there too and the app would
+      // start with no wallets. It also keeps restoring an encrypted iPhone
+      // backup onto a new phone working, as it did in 0.1.12.
       await Keychain.setGenericPassword(service, password, {
         service,
-        accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
       });
     }
 
