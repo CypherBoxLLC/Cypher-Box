@@ -100,14 +100,15 @@ jobs:
           diff -rq /tmp/ref /tmp/realx || true
           # The BuildConfig-bearing dex is not always classes2: dex numbering
           # shifts as the app grows, so config injection can land in classesN.
-          # Match any classesN.dex rather than pinning a number.
-          UNEXPECTED="$(diff -rq /tmp/ref /tmp/realx | grep -vE 'index\.android\.bundle|classes[0-9]+\.dex|resources\.pb|baseline\.prof' || true)"
+          # With R8 on there is a single dex, named classes.dex with no number.
+          # Match classes.dex and any classesN.dex rather than pinning a number.
+          UNEXPECTED="$(diff -rq /tmp/ref /tmp/realx | grep -vE 'index\.android\.bundle|classes[0-9]*\.dex|resources\.pb|baseline\.prof' || true)"
           if [ -n "$UNEXPECTED" ]; then
             echo "REJECT: differences beyond the 4 config-injection entries:" >&2
             echo "$UNEXPECTED" >&2
             exit 1
           fi
-          echo "OK: only index.android.bundle, classesN.dex, resources.pb, baseline.prof differ."
+          echo "OK: only index.android.bundle, classes(N).dex, resources.pb, baseline.prof differ."
 
       - name: Assemble artifacts + checksums
         run: |

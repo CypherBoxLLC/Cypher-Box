@@ -42,3 +42,9 @@
 # is used by the inspector.
 -keep class com.facebook.react.views.modal.** { *; }
 -keep class com.facebook.react.devsupport.CxxInspectorPackagerConnection** { *; }
+# react-native-config reads the values injected from .env (GOOGLE_WEB_CLIENT_ID
+# for the Bark Vault's Drive backup) from BuildConfig by reflection. Nothing
+# else refers to the class, so R8 removed it and the app quietly fell back to
+# the client ID compiled into the JS. This is the rule react-native-config
+# documents.
+-keep class io.cypherbox.btc.BuildConfig { *; }
