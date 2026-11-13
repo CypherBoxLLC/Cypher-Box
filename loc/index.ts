@@ -7,7 +7,7 @@ import * as RNLocalize from 'react-native-localize';
 import BigNumber from 'bignumber.js';
 
 import { BitcoinUnit } from '../models/bitcoinUnits';
-import { AvailableLanguages } from './languages';
+import { AvailableLanguages, OfferedLanguages } from './languages';
 import { I18nManager } from 'react-native';
 import { satoshiToLocalCurrency } from '../blue_modules/currency';
 
@@ -168,9 +168,16 @@ const setDateTimeLocale = async () => {
   }
 };
 
+// Only what Settings offers (English and Arabic). A language an older build saved from the phone, or a fresh install
+// would take from it (Spanish, Persian and so on), showed BlueWallet's partial translation, right-to-left for some,
+// with no matching choice in Settings: it becomes English.
+const offeredOrEnglish = (lang: string | null | undefined): string =>
+  lang && OfferedLanguages.some(language => language.value === lang) ? lang : 'en';
+
 const init = async () => {
   // finding out whether lang preference was saved
-  const lang = await AsyncStorage.getItem(STORAGE_KEY);
+  const saved = await AsyncStorage.getItem(STORAGE_KEY);
+  const lang = saved ? offeredOrEnglish(saved) : null;
   if (lang) {
     await saveLanguage(lang);
     await loc.setLanguage(lang);
@@ -182,12 +189,14 @@ const init = async () => {
     await setDateTimeLocale();
   } else {
     const locales = RNLocalize.getLocales();
-    if (Object.values(AvailableLanguages).some(language => language.value === locales[0].languageCode)) {
-      await saveLanguage(locales[0].languageCode);
-      await loc.setLanguage(locales[0].languageCode);
+    const fromPhone = offeredOrEnglish(locales[0]?.languageCode);
+    if (fromPhone !== 'en') {
+      await saveLanguage(fromPhone);
+      await loc.setLanguage(fromPhone);
       if (process.env.JEST_WORKER_ID === undefined) {
-        I18nManager.allowRTL(locales[0].isRTL ?? false);
-        I18nManager.forceRTL(locales[0].isRTL ?? false);
+        const foundLang = AvailableLanguages.find(language => language.value === fromPhone);
+        I18nManager.allowRTL(foundLang?.isRTL ?? false);
+        I18nManager.forceRTL(foundLang?.isRTL ?? false);
       }
     } else {
       await saveLanguage('en');
