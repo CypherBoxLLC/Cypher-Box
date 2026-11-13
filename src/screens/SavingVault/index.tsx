@@ -97,6 +97,22 @@ export default function SavingVault() {
                 if (result.ok) {
                     setKeychainStatus("ok");
                     setHotVaultKeychainBackup(walletID, true);
+                } else if (result.kind === "no-biometric-gate") {
+                    // Android only: the OS handed back a cipher that is NOT
+                    // bound to a fingerprint, so the helper deleted the
+                    // un-gated entry instead of leaving the seed readable with
+                    // no prompt. Tell the truth, and do NOT flip the backup
+                    // flag, so the UI never claims a protection that is absent.
+                    setKeychainStatus("err");
+                    console.warn(
+                        "[HotVault] Keychain save rejected, no biometric gate (storage=",
+                        result.storage,
+                        ")",
+                    );
+                    SimpleToast.show(
+                        "This phone has no fingerprint set up, so the backup couldn't be protected and nothing was saved. Add a fingerprint in Settings, then try again.",
+                        SimpleToast.LONG,
+                    );
                 } else {
                     setKeychainStatus("err");
                     console.warn(
