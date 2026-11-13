@@ -17,8 +17,12 @@ import {
 //
 // First-sync suppression: when no cursor exists (fresh install / first time
 // the activity log has ever looked at this wallet), we record every current
-// txid as "seen" without emitting events. Without this, opening the app
-// after a long absence would dump the full wallet history into Activity.
+// confirmed txid as "seen" without emitting events. Without this, opening the
+// app after a long absence would dump the full wallet history into Activity.
+//
+// Only confirmed txids go into the cursor. A receive is logged once it has a
+// confirmation, so one that is still pending must stay unseen until then;
+// one that is dropped or replaced before confirming is never logged.
 
 type HotVaultLikeWallet = {
     getTransactions: () => Array<{
@@ -31,6 +35,10 @@ type HotVaultLikeWallet = {
 
 const MIN_CONFIRMATIONS_TO_EMIT = 1;
 
+type HotVaultTx = ReturnType<HotVaultLikeWallet["getTransactions"]>[number];
+
+const isConfirmed = (tx: HotVaultTx) => (tx.confirmations ?? 0) >= MIN_CONFIRMATIONS_TO_EMIT;
+
 export async function processHotVaultTxsForActivity(wallet: HotVaultLikeWallet | null | undefined): Promise<void> {
     if (!wallet || typeof wallet.getTransactions !== "function") return;
 
@@ -42,12 +50,15 @@ export async function processHotVaultTxsForActivity(wallet: HotVaultLikeWallet |
     }
     if (!Array.isArray(txs) || txs.length === 0) return;
 
-    const allTxids = txs.map((t) => t.txid).filter((id): id is string => typeof id === "string" && id.length > 0);
+    const confirmedTxids = txs
+        .filter(isConfirmed)
+        .map((t) => t.txid)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
     const cursor = await getHotVaultSeenTxids();
 
-    // First-sync: snapshot the world without emitting.
+    // First-sync: snapshot the confirmed world without emitting.
     if (cursor === null) {
-        await setHotVaultSeenTxids(allTxids);
+        await setHotVaultSeenTxids(confirmedTxids);
         return;
     }
 
@@ -56,11 +67,11 @@ export async function processHotVaultTxsForActivity(wallet: HotVaultLikeWallet |
 
     for (const tx of txs) {
         if (!tx.txid || seen.has(tx.txid)) continue;
-        // Skip outgoing txs (already emitted by the broadcast path) and
-        // unconfirmed receives (avoid emitting then unwinding on a
-        // mempool-eviction / RBF replacement).
+        // Unconfirmed: look again once it confirms (avoids emitting then
+        // unwinding on a mempool eviction or RBF replacement).
+        if (!isConfirmed(tx)) continue;
+        // Outgoing: already emitted by the broadcast path.
         if (tx.value <= 0) continue;
-        if ((tx.confirmations ?? 0) < MIN_CONFIRMATIONS_TO_EMIT) continue;
         newReceives.push({
             txid: tx.txid,
             sats: tx.value,
@@ -74,8 +85,8 @@ export async function processHotVaultTxsForActivity(wallet: HotVaultLikeWallet |
         recordEvent({ kind: "onchain-received", wallet: "hot-vault", sats: r.sats });
     }
 
-    // Persist the union of (cursor + everything currently visible). Pending
-    // unconfirmed txs go into the cursor too — once they confirm on a
-    // future tick they're already "seen" and won't re-emit.
-    await setHotVaultSeenTxids([...new Set([...cursor, ...allTxids])]);
+    // Persist the union of (cursor + everything confirmed now). Pending txs
+    // stay out, so a receive first seen pending is logged on the tick after
+    // it confirms, once.
+    await setHotVaultSeenTxids([...new Set([...cursor, ...confirmedTxids])]);
 }
