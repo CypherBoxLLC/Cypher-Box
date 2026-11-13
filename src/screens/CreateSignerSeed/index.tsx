@@ -7,7 +7,7 @@ import * as bip39 from "bip39";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import OfflineSeedWarning from "@Cypher/components/OfflineSeedWarning";
 import SeedQRGrid from "@Cypher/components/SeedQRGrid";
-import { backupToMnemonic, dispatchNavigate, mnemonicToSeedQR, seedQRGrid } from "@Cypher/helpers";
+import { backupToMnemonic, dispatchNavigate, keyWithOrigin, mnemonicToSeedQR, seedQRGrid } from "@Cypher/helpers";
 import { colors, widths } from "@Cypher/style-guide";
 import { HDSegwitBech32Wallet } from "../../../class";
 import QRCodeComponent from "../../../components/QRCodeComponent";
@@ -20,6 +20,8 @@ type Step = 'intro' | 'load' | 'words' | 'seedqr' | 'check' | 'key';
 
 interface PublicInfo {
     xpub: string;
+    /** the xpub with its origin, `[fingerprint/84h/0h/0h]zpub…`: what the watch-only wallet is given */
+    key: string;
     fingerprint: string;
     addresses: string[];
     path: string;
@@ -74,11 +76,16 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
         const w = new HDSegwitBech32Wallet();
         w.setSecret(phrase);
         if (pass) w.setPassphrase(pass);
+        const xpub = w.getXpub();
+        const fingerprint = String(w.getMasterFingerprintHex()).toUpperCase();
+        const path = w.getDerivationPath() ?? "m/84'/0'/0'";
         return {
-            xpub: w.getXpub(),
-            fingerprint: String(w.getMasterFingerprintHex()).toUpperCase(),
+            xpub,
+            // a bare xpub leaves the watch-only wallet without the master fingerprint
+            key: keyWithOrigin(fingerprint, path, xpub),
+            fingerprint,
             addresses: [0, 1, 2].map(i => w._getExternalAddressByIndex(i)),
-            path: w.getDerivationPath() ?? "m/84'/0'/0'",
+            path,
         };
     };
 
@@ -320,14 +327,15 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                         <Text style={styles.title}>{showOnly ? "This seed's public key" : 'Your seed is backed up'}</Text>
                         <Text style={styles.body}>
                             Add this public key to your watch & broadcast only wallet (a Cypher Box Cold Vault, Sparrow or
-                            another app), then check its first addresses match these.
+                            another app), then check its first addresses match these. The part in brackets is the key
+                            fingerprint and path, which your wallet needs to make transactions this seed can sign.
                         </Text>
                         <View style={styles.qr}>
-                            <QRCodeComponent value={info.xpub} isLogoRendered={false} isMenuAvailable={false} size={widths - 96} />
+                            <QRCodeComponent value={info.key} isLogoRendered={false} isMenuAvailable={false} size={widths - 96} />
                         </View>
-                        <SelectableText selectable style={styles.mono}>{info.xpub}</SelectableText>
+                        <SelectableText selectable style={styles.mono}>{info.key}</SelectableText>
                         <TouchableOpacity style={styles.secondary} onPress={() => {
-                            Clipboard.setString(info.xpub);
+                            Clipboard.setString(info.key);
                             SimpleToast.show('Public key copied', SimpleToast.SHORT);
                         }} accessibilityRole="button">
                             <Text h3>Copy public key</Text>
