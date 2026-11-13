@@ -19,6 +19,7 @@ import * as NavigationService from './NavigationService';
 import DeeplinkSchemaMatch from './class/deeplink-schema-match';
 import { startAuthHydration } from './src/stores/authHydration';
 import { assertNativeRngHealthy } from './class/rngHealth';
+import { startHotVaultKeychainCheck } from './src/services/hotVaultKeychainUpgrade';
 import loc from './loc';
 import { BlueDefaultTheme, BlueDarkTheme } from './components/themes';
 import InitRoot from './Navigation';
@@ -79,6 +80,12 @@ const App = () => {
     assertNativeRngHealthy().catch(e =>
       console.error('[RNG] startup check:', e?.reason ?? e?.message ?? e),
     );
+  }, []);
+
+  // Android: Hot Vault seed copies saved without the fingerprint by older builds are removed, once the auth store
+  // has loaded. See src/services/hotVaultKeychainUpgrade.
+  useEffect(() => {
+    startHotVaultKeychainCheck();
   }, []);
 
   const onNotificationReceived = async notification => {

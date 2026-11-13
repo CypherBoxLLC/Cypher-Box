@@ -2719,6 +2719,7 @@
           "keychain_save_failed": "Keychain save failed",
           "keychain_save_failed_android": "Keystore save failed",
           "keychain_no_fingerprint": "This phone has no fingerprint set up, so the backup couldn't be protected. Add one in Settings, then try again.",
+          "keychain_unprotected_removed": "Your Hot Vault's copy in the Android Keystore opened without your fingerprint, so it was removed. Back it up again in the Hot Vault's settings to keep a protected copy.",
           "keychain_saved": "Seed backed up to Keychain",
           "keychain_saved_android": "Seed backed up to Keystore",
           "seed_read_failed": "Could not read vault seed"
