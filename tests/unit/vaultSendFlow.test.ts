@@ -12,7 +12,7 @@ import fs from 'fs';
 import path from 'path';
 
 import loc from '../../loc';
-import { confirmLabels, reviewLabels, vaultSendKind } from '../../src/helpers/vaultSendKind';
+import { confirmLabels, offersChangeSweep, reviewLabels, vaultSendKind } from '../../src/helpers/vaultSendKind';
 
 const cs = loc.cypherbox.vault.cold_storage;
 const common = loc.cypherbox.payments.common;
@@ -200,5 +200,37 @@ describe('params that decide what is spent survive each hop', () => {
         for (const key of ['kind', 'changeSats', 'networkFees', 'to']) expect(signing).toMatch(new RegExp(`\\b${key}\\b`));
         const [onward] = paramsOf(read('src/screens/HardwareWalletTransaction/index.tsx'), 'navigation.navigate("HardwareWalletTransactionContinue"');
         for (const key of ['kind', 'changeSats', 'networkFees']) expect(onward).toMatch(new RegExp(`\\b${key}\\b`));
+    });
+});
+
+/**
+ * A Consolidate edited to a smaller capsule than the selection leaves change, and the review and the confirm screen
+ * left it out: both drew the change only when the flow was not a batch.
+ */
+describe('the change of a consolidation', () => {
+    const REPO = path.resolve(__dirname, '../..');
+    const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), 'utf8');
+
+    it('is shown on the review and the confirm screen, as for every flow', () => {
+        const review = read('src/screens/ColdStorage/index.tsx');
+        expect(review).toMatch(/\{capsuleTotal > 0 &&\s*\n\s*\(\(\) => \{/);
+        expect(review).not.toMatch(/capsuleTotal > 0 && !isBatch/);
+        const confirm = read('src/screens/ConfirmTransction/index.tsx');
+        expect(confirm).toMatch(/\{changeSats > 0 &&\s*\n\s*<View/);
+        expect(confirm).not.toMatch(/!isBatch && changeSats > 0/);
+    });
+
+    it('stays in the vault: only the other flows offer to send the change elsewhere', () => {
+        expect(offersChangeSweep(vaultSendKind(HOT_CONSOLIDATE))).toBe(false);
+        expect(offersChangeSweep(vaultSendKind(COLD_CONSOLIDATE))).toBe(false);
+        for (const flow of [MOVE_TO_COLD, MOVE_TO_HOT, TOP_UP, SEND, HOME_SCAN]) expect(offersChangeSweep(vaultSendKind(flow))).toBe(true);
+        expect(read('src/screens/ColdStorage/index.tsx')).toMatch(/\{offersChangeSweep\(sendKind\) && \(isStrikeAuth \|\| isAuth \|\| showHotVault\) && \(/);
+    });
+});
+
+describe('the confirm screen in Arabic', () => {
+    it('keeps "+N" (capsules beyond the grid) reading left to right', () => {
+        const src = fs.readFileSync(path.resolve(__dirname, '../../src/screens/ConfirmTransction/index.tsx'), 'utf8');
+        expect(src).toMatch(/\{ltr\('\+' \+ moreCapsules\)\}/);
     });
 });

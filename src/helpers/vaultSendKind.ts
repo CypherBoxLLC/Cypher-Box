@@ -30,6 +30,16 @@ export function vaultSendKind(p: {
     return 'send';
 }
 
+/**
+ * Whether the review offers to send the change somewhere else (Strike, CoinOS,
+ * the other vault). Not for a consolidation: it is labelled from and to the
+ * same vault, so its change, when the user edited it to a smaller capsule, stays
+ * there too.
+ */
+export function offersChangeSweep(kind: VaultSendKind): boolean {
+    return kind !== 'consolidate';
+}
+
 /** The review screen's title and the label over the amount (Consolidate has its own block). */
 export function reviewLabels(kind: VaultSendKind): { title: string; amount: string } {
     const t = loc.cypherbox.vault.cold_storage;

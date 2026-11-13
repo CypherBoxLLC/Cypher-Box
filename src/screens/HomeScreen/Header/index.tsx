@@ -6,6 +6,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { Text } from "@Cypher/component-library";
 import { dispatchNavigate, looksLikePsbt } from "@Cypher/helpers";
+import { scannedVaultSend } from "@Cypher/helpers/capsuleSpend";
 import { startSigning } from "../../SignOnce/start";
 import loc from "../../../../loc";
 import { arabicFont } from "@Cypher/style-guide";
@@ -15,6 +16,7 @@ import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags"
 import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import DeeplinkSchemaMatch from "../../../../class/deeplink-schema-match";
 
 import styles from "../styles";
 import ScanWithPicker, { ScanTargetKey } from "./ScanWithPicker";
@@ -193,13 +195,16 @@ export default React.memo(function Header({
         // set to choose from.
         const allIds = capsulesData.map((c: any) => c.id);
         const isVault = which === 'cold';
+        // A bitcoin: link (scanned, or one the phone opened) carries the
+        // address and maybe an amount; a bare address comes through as it
+        // is. The most the vault can send goes in `maxUSD`, in BTC as
+        // SendListNew passes it: without it EditAmount kept Next off.
+        const send = scannedVaultSend(DeeplinkSchemaMatch.decodeBitcoinUri(scannedAddress), capsuleTotal, matchedRateBTC);
         // matchedRateBTC is BTC-per-fiat (dollar/BTC); the vault flow
-        // uses it directly. `total` and `inUSD` shapes mirror the values
-        // SendListNew.handleSend passes when the user picks capsules
-        // manually — keeping them identical lets the rest of the pipe
-        // (EditAmount → ColdStorage) work without a special-case branch.
+        // uses it directly.
         dispatchNavigate('EditAmount', {
-            isEdit: false,
+            // an amount the link asks for opens the screen filled in, as editing an amount does
+            isEdit: send.isEdit,
             currency,
             vaultTab: isVault,
             wallet: vaultWallet,
@@ -207,14 +212,10 @@ export default React.memo(function Header({
             ids: allIds,
             // Pre-fill the recipient from the QR scan. EditAmount reads
             // params.to and forwards it through the rest of the pipeline.
-            to: scannedAddress,
-            // No fiat conversion at the entry point — let EditAmount
-            // compute it once it has matchedRate. We pass 0/'' rather
-            // than guessing, same as the manual flow when no capsule
-            // is selected yet.
-            maxUSD: '',
-            inUSD: '',
-            total: '',
+            to: send.to,
+            maxUSD: send.maxUSD,
+            inUSD: send.inUSD,
+            total: send.total,
             matchedRate: matchedRateBTC,
             capsulesData,
             capsuleTotal,

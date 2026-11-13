@@ -18,6 +18,7 @@
 import BigNumber from 'bignumber.js';
 
 import { inputScriptHint, outputScriptHint, selectCoins } from '../../class/wallets/coin-selection';
+import { btc, SATS } from './bitcoinUnits';
 import { outpointKey } from './capsuleSelection';
 
 export { inputScriptHint } from '../../class/wallets/coin-selection';
@@ -201,4 +202,47 @@ export function typedAmountSats(btc: unknown, fiat: unknown, fiatPerBtc: unknown
         .integerValue(BigNumber.ROUND_HALF_UP);
     if (fromFiat.isFinite() && fromFiat.gt(0)) return fromFiat.toNumber();
     return null;
+}
+
+/**
+ * A destination as the vault screens keep it: trimmed, and a bech32 address in
+ * lower case. A QR code often carries one in capitals (BC1...), the same
+ * address, while the PSBT and the screens after the review read it back in
+ * lower case. Base58 addresses (1..., 3...) are case-sensitive and stay as they
+ * are, as does mixed case, which is not a valid bech32 address.
+ */
+export function normalizeDestination(address: unknown): string {
+    const trimmed = String(address ?? '').trim();
+    return trimmed.startsWith('BC1') && trimmed === trimmed.toUpperCase() ? trimmed.toLowerCase() : trimmed;
+}
+
+/**
+ * What the Home scan hands the amount screen (EditAmount) for a vault send,
+ * from DeeplinkSchemaMatch.decodeBitcoinUri() of what was scanned or opened: a
+ * bare address, or a bitcoin: link that may ask for an amount.
+ *
+ * `maxUSD` is the most the vault can send, in BTC whatever the name says, as
+ * every other caller passes it: EditAmount keeps Next off above it, and an
+ * empty one kept Next off for any amount. An amount the link asks for opens
+ * the screen filled in, the way editing an amount does, in BTC as plain digits
+ * ("0.0000006", not "6e-7") rounded to the sat.
+ */
+export function scannedVaultSend(
+    decoded: { address?: unknown; amount?: unknown } | null | undefined,
+    spendableSats: number,
+    fiatPerBtc: unknown,
+) {
+    let address = String(decoded?.address ?? '').trim();
+    // decodeBitcoinUri hands back the whole text when it can't decode it (an
+    // amount that isn't a number, say): keep the address, the amount is typed
+    if (/^bitcoin:/i.test(address)) address = address.replace(/^bitcoin:(\/\/)?/i, '').split('?')[0];
+    const sats = typedAmountSats(decoded?.amount, null, null);
+    const amountBtc = sats === null ? null : new BigNumber(sats).div(SATS).toFixed();
+    return {
+        to: normalizeDestination(address),
+        maxUSD: btc(spendableSats),
+        isEdit: amountBtc !== null,
+        total: amountBtc ?? '',
+        inUSD: amountBtc === null ? '' : (Number(amountBtc) * (Number(fiatPerBtc) || 0)).toFixed(2),
+    };
 }

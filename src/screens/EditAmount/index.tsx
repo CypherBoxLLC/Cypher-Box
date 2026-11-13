@@ -85,6 +85,11 @@ export default function SendScreen({ route, navigation }: Props) {
         }
     }, [sats, usd, isSats, matchedRate]);
 
+    // The typed amount in BTC (the fiat field keeps its BTC figure in `usd`) over
+    // the most this can send, `maxUSD`, which callers pass in BTC. Compared as
+    // numbers, so a maximum passed as text still compares by value.
+    const overMax = Number(isSats ? sats : usd) > Number(maxUSD);
+
     // Total of selected capsules in BTC and USD
     const totalSelectedSats = useMemo(() => {
         if (!capsulesData) return 0;
@@ -250,7 +255,7 @@ export default function SendScreen({ route, navigation }: Props) {
                 onPress={nextClickHandler}
                 prevSats={sats}
                 isEdit={isEdit}
-                disabled={!sats.length || Number(sats) == 0 || (isSats ? sats > maxUSD : usd > maxUSD)}
+                disabled={!sats.length || Number(sats) == 0 || overMax}
                 setSATS={setSats}
                 setUSD={setUSD}
                 setIsSATS={setIsSats}
