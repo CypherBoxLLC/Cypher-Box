@@ -8,8 +8,10 @@ import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientView, SavingVault, VaultCapsules } from "@Cypher/components";
 import { colors, rtl } from "@Cypher/style-guide";
-import { dispatchNavigate } from "@Cypher/helpers";
-import { selectCapsules } from "@Cypher/helpers/capsuleSelection";
+import { dispatchNavigate, formatSats, formatUsd, groupThousands } from "@Cypher/helpers";
+import { selectCapsules, withoutFrozen } from "@Cypher/helpers/capsuleSelection";
+import { CapsuleSpendError, capsulesBeyondNeed, describeBuiltSpend, planCapsuleSpend, SpendMode, typedAmountSats } from "@Cypher/helpers/capsuleSpend";
+import { reviewLabels, vaultSendKind } from "@Cypher/helpers/vaultSendKind";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import Clipboard from '@react-native-clipboard/clipboard'
 import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
@@ -20,7 +22,6 @@ import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_module
 import { HDSegwitBech32Wallet, MultisigHDWallet, WatchOnlyWallet } from "../../../class";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { AbstractHDElectrumWallet } from "../../../class/wallets/abstract-hd-electrum-wallet";
-import { btcToSatoshi } from "../../../blue_modules/currency";
 import BigNumber from "bignumber.js";
 import useAuthStore from "@Cypher/stores/authStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -34,6 +35,27 @@ import { createInvoice as createInvoiceCoinos } from "@Cypher/api/coinOSApis";
 
 const prompt = require('../../../helpers/prompt');
 const btcAddressRx = /^[a-zA-Z0-9]{26,35}$/;
+// stands in for the destination in the fee quote until there is one; its
+// output is the size of a typical P2WPKH or P2SH one
+const FEE_QUOTE_ADDRESS = '36JxaUrpDzkEerkTf1FzwHNE1Hb7cCjgJV';
+// a long selection lists this many capsules until "Show all" is tapped, so the
+// amount, fee and Next stay near the top
+const COLLAPSED_CAPSULES = 6;
+
+const spendErrorText = (error?: CapsuleSpendError) => {
+    switch (error) {
+        case 'no_capsules':
+            return loc.cypherbox.vault.cold_storage.no_capsules_message;
+        case 'fee_rate':
+            return loc.send.details_fee_field_is_not_valid;
+        case 'amount':
+            return loc.send.details_amount_field_is_not_valid;
+        case 'destination':
+            return loc.send.details_address_field_is_not_valid;
+        default:
+            return loc.send.details_total_exceeds_balance;
+    }
+};
 
 interface Props {
     route: any;
@@ -47,10 +69,8 @@ export const shortenAddress = (address: string) => {
 
 
 export default function ColdStorage({ route, navigation }: Props) {
-    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, toArk = null, vaultSend, title, type, isBatch, capsuleTotal} = route?.params;
-    const [feePrecalc, setFeePrecalc] = useState({ current: null, slowFee: null, mediumFee: null, fastestFee: null });
-    const [usd, setUSD] = useState(inUSD);
-    const [sats, setSats] = useState('100K sats  ~$' + usd);
+    // autoSelected: the app pre-selected every capsule (Home scan) rather than the user ticking them
+    const {wallet, vaultTab, utxo, ids, maxUSD, inUSD, total, currency, isMaxEdit, matchedRate, capsulesData = null, to = null, toStrike = null, toArk = null, vaultSend, title, type, isBatch, capsuleTotal, autoSelected = false} = route?.params;
     const [address, setAddress] = useState();
     const [networkFees, setNetworkFees] = useState(5000);
     const [serviceFees, setServiceFees] = useState('~ 400 sats');
@@ -65,12 +85,13 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [showFeeInfo, setShowFeeInfo] = useState(false);
     const [showChangeInfo, setShowChangeInfo] = useState(false);
     const [showChangeMenu, setShowChangeMenu] = useState(false);
+    const [showAllCapsules, setShowAllCapsules] = useState(false);
     const [showFirePopup, setShowFirePopup] = useState(false);
     // style = { styles.pasteAddress }
     const [visibleSelection, setVisibleSelection] = useState(false);
     const [selectedFees, setSelectedFees] = useState(1);
     // const [feeSats, setFeeSats] = useState(5000);
-    const [networkFee, setNetworkFee] = useState(null);
+    const [networkFee, setNetworkFee] = useState<number | null>(null);
     const [customFee, setCustomFee] = useState(null);
     const [isCustomFee, setIsCustomFee] = useState(false);
     const [networkTransactionFees, setNetworkTransactionFees] = useState(new NetworkTransactionFee(3, 2, 1));
@@ -95,21 +116,18 @@ export default function ColdStorage({ route, navigation }: Props) {
     const isAuth = isCoinosConnected && isCoinosAllowed();
     const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
     const { navigate } = useNavigation();
-    console.log('inUSDinUSD: ', usd, inUSD)
 
 
     const [feeUSD, setFeeUSD] = useState(1);
     const [feesEditable, setFeesEditable] = useState(false);
     const [satsEditable, setSatsEditable] = useState(false);
-    const fUtxo = selectCapsules(utxo, ids);
-    const balance = fUtxo ? fUtxo.reduce((prev, curr) => prev + curr.value, 0) : wallet?.getBalance();
     // The capsules the user picked, and the ONLY coins this screen may spend.
     //
     // Selecting capsules is mandatory in Cypher Box: you cannot send from a
     // vault without choosing coins first. Every entry point into this screen
     // passes both `utxo` and `ids`, and Capsules gates each of its four send
-    // paths on `ids.length > 0`. So `fUtxo` is always the full picture of what
-    // the user chose.
+    // paths on `ids.length > 0`. So `selectedUtxo` is always the full picture
+    // of what the user chose.
     //
     // Previously the unfiltered `utxo` was handed to createTransaction, so
     // coinselect (which sorts descending and takes the largest) spent whatever
@@ -119,7 +137,14 @@ export default function ColdStorage({ route, navigation }: Props) {
     // There is deliberately NO whole-wallet fallback here. If the selection is
     // ever empty that is a bug in the caller, and quietly spending the rest of
     // the vault is the worst available response to it.
-    const selectedUtxo = fUtxo;
+    //
+    // Frozen capsules are spent only when the user ticked them: a pre-selection
+    // the app made (autoSelected) leaves them out, like BlueWallet's send screen.
+    const selectedUtxo = useMemo(() => {
+        const picked = selectCapsules<any>(utxo, ids);
+        return autoSelected ? withoutFrozen(picked, (u: any) => !!wallet?.getUTXOMetadata?.(u.txid, u.vout)?.frozen) : picked;
+    }, [utxo, ids, autoSelected, wallet]);
+    const balance = selectedUtxo.reduce((prev, curr) => prev + curr.value, 0);
     const allBalance = formatBalanceWithoutSuffix(balance, BitcoinUnit.BTC, true);
     const balanceWallet = !wallet?.hideBalance && formatBalance(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const balanceWithoutSuffix = !wallet?.hideBalance && formatBalanceWithoutSuffix(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
@@ -205,30 +230,73 @@ export default function ColdStorage({ route, navigation }: Props) {
       },
     ]);
 
-    useEffect(() => {
-      if(feePrecalc?.current && isMaxEdit){
-        setUSD(inUSD - ((Number(feePrecalc?.current || 0) / SATS) * matchedRate))
-      } else {
-        setUSD(inUSD)
-      }
-    }, [inUSD, feePrecalc?.current, isMaxEdit])
-
     const formatFee = fee => formatBalance(fee, feeUnit, true);
+
+    // What this send spends, through the same helper the build below uses, so
+    // the amount, change and fee on this screen are the transaction's. Max
+    // (Consolidate, the moves, the Max button) sends everything selected; a
+    // typed amount spends every capsule the user ticked, or lets coinselect
+    // pick from a pre-selection the app made.
+    const spendMode: SpendMode = isMaxEdit ? 'max' : autoSelected ? 'pool' : 'exact';
+    const typedSats = useMemo(() => (isMaxEdit ? null : typedAmountSats(total, inUSD, matchedRate)), [isMaxEdit, total, inUSD, matchedRate]);
+    // createTransaction sizes inputs by the wallet's first receive address;
+    // a capsule's own address is the same type if that can't be read yet
+    const firstAddress = useMemo(() => {
+        try {
+            return wallet?._getExternalAddressByIndex?.(0) || selectedUtxo[0]?.address;
+        } catch (_) {
+            return selectedUtxo[0]?.address;
+        }
+    }, [wallet, selectedUtxo]);
+    const quoteDestination = destinationAddress && wallet?.isAddressValid?.(destinationAddress) ? destinationAddress : FEE_QUOTE_ADDRESS;
+    const planAt = useCallback(
+        (rate: number, destination: string = quoteDestination) =>
+            planCapsuleSpend({ mode: spendMode, utxos: selectedUtxo, destination, amountSats: typedSats, feeRate: rate, firstAddress }),
+        [spendMode, selectedUtxo, typedSats, firstAddress, quoteDestination],
+    );
+    const nf = networkTransactionFees;
+    const feeAtRate = useMemo(
+        () => ({
+            fastestFee: planAt(Number(nf.fastestFee)).plan?.feeSats ?? null,
+            mediumFee: planAt(Number(nf.mediumFee)).plan?.feeSats ?? null,
+            slowFee: planAt(Number(nf.slowFee)).plan?.feeSats ?? null,
+        }),
+        [planAt, nf],
+    );
 
     const feeRate = useMemo(() => {
         if (customFee) return customFee;
-        if (feePrecalc.slowFee === null) return '1'; // wait for precalculated fees
-        let initialFee;
-        if (feePrecalc.fastestFee !== null) {
-          initialFee = String(networkTransactionFees.fastestFee);
-        } else if (feePrecalc.mediumFee !== null) {
-          initialFee = String(networkTransactionFees.mediumFee);
-        } else {
-          initialFee = String(networkTransactionFees.slowFee);
-        }
-        return initialFee;
-    }, [customFee, feePrecalc, networkTransactionFees]);
-    
+        // the fastest rate the selection can pay
+        if (feeAtRate.fastestFee !== null) return String(nf.fastestFee);
+        if (feeAtRate.mediumFee !== null) return String(nf.mediumFee);
+        return String(nf.slowFee);
+    }, [customFee, feeAtRate, nf]);
+
+    // recomputed whenever the rate changes, including when the network's
+    // rates replace the placeholder ones
+    const spend = useMemo(() => planAt(Number(feeRate)), [planAt, feeRate]);
+    const plan = spend.plan;
+    const amountSats = plan ? plan.amountSats : spendMode === 'max' ? 0 : typedSats ?? 0;
+    const usd = (amountSats / SATS) * Number(matchedRate || 0);
+    const feeSats = plan ? plan.feeSats : null;
+    const changeSats = plan ? plan.changeSats : 0;
+    // what the review lists: the capsules this spends, out of those selected
+    const spentIds = useMemo(() => new Set(plan ? plan.inputs.map(i => `${i.txid}:${i.vout}`) : []), [plan]);
+    const shownCapsules = plan && capsulesData ? capsulesData.filter((c: any) => spentIds.has(c.id)) : capsulesData;
+    const capsulesNotNeeded = plan && capsulesData ? capsulesData.length - shownCapsules.length : 0;
+    // a typed amount spends every ticked capsule: say so when fewer would cover it
+    const beyondNeed = useMemo(
+        () =>
+            spendMode === 'exact'
+                ? capsulesBeyondNeed(plan, { mode: spendMode, utxos: selectedUtxo, destination: quoteDestination, amountSats: typedSats, feeRate: Number(feeRate), firstAddress })
+                : null,
+        [spendMode, plan, selectedUtxo, quoteDestination, typedSats, feeRate, firstAddress],
+    );
+    const listedCapsules = shownCapsules && !showAllCapsules && shownCapsules.length > COLLAPSED_CAPSULES + 2 ? shownCapsules.slice(0, COLLAPSED_CAPSULES) : shownCapsules;
+    // by flow and in the app's language (the `title` param is an English flag)
+    const sendKind = vaultSendKind({ isBatch, vaultSend, vaultTab, to, toStrike, toArk, autoSelected });
+    const labels = reviewLabels(sendKind);
+
     useEffect(() => {
       if(isBatch){
         setTransactionMemo('Batching Transaction')
@@ -307,154 +375,55 @@ export default function ColdStorage({ route, navigation }: Props) {
         });
   }, [vaultTab, coldStorageWalletID, walletID, type]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const getChangeAddressFast = () => {
-      if (changeAddress) return changeAddress; // cache
-  
-      let change;
-      if (WatchOnlyWallet.type === wallet.type && !wallet.isHd()) {
-        // plain watchonly - just get the address
-        change = wallet.getAddress();
-      } else if (WatchOnlyWallet.type === wallet.type || wallet instanceof AbstractHDElectrumWallet) {
-        change = wallet._getInternalAddressByIndex(wallet.getNextFreeChangeAddressIndex());
-      } else {
-        // legacy wallets
-        change = wallet.getAddress();
-      }
-  
-      return change;
-  };
-  
-  useEffect(() => {
-      if (!wallet) return; // wait for it
-      const fees = networkTransactionFees;
-      const change = getChangeAddressFast();
-      const requestedSatPerByte = Number(feeRate);
-      // Estimate against the SAME inputs the send will really use, otherwise the
-      // quoted fee is for a different transaction than the one built below.
-      if (!selectedUtxo || selectedUtxo.length === 0) return; // nothing selected: nothing to quote
-      const lutxo = selectedUtxo;
-      let frozen = 0;
-      if (!utxo) {
-        // if utxo is not limited search for frozen outputs and calc it's balance
-        frozen = wallet
-          .getUtxo(true)
-          .filter(o => !lutxo.some(i => i.txid === o.txid && i.vout === o.vout))
-          .reduce((prev, curr) => prev + curr.value, 0);
-      }
-  
-      const options = [
-        { key: 'current', fee: requestedSatPerByte },
-        { key: 'slowFee', fee: fees.slowFee },
-        { key: 'mediumFee', fee: fees.mediumFee },
-        { key: 'fastestFee', fee: fees.fastestFee },
-      ];
-  
-      const newFeePrecalc = { ...feePrecalc };
-  
-      for (const opt of options) {
-        let targets = [];
-        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: Number(usd).toFixed(4), amountSats: parseInt(Number(usd) / Number(matchedRate) * 100000000) }]
-        for (const transaction of addresses) {
-          if (transaction.amount === BitcoinUnit.MAX) {
-            // single output with MAX
-            targets = [{ address: transaction.address }];
-            break;
-          }
-          const value = parseInt(transaction.amountSats, 10);
-          if (value > 0) {
-            targets.push({ address: transaction.address, value });
-          } else if (transaction.amount) {
-            if (btcToSatoshi(transaction.amount) > 0) {
-              targets.push({ address: transaction.address, value: btcToSatoshi(transaction.amount) });
-            }
-          }
-        }
-  
-        // if targets is empty, insert dust
-        if (targets.length === 0) {
-          targets.push({ address: '36JxaUrpDzkEerkTf1FzwHNE1Hb7cCjgJV', value: 546 });
-        }
-  
-        // replace wrong addresses with dump
-        targets = targets.map(t => {
-          if (!wallet.isAddressValid(t.address)) {
-            return { ...t, address: '36JxaUrpDzkEerkTf1FzwHNE1Hb7cCjgJV' };
-          } else {
-            return t;
-          }
-        });
-  
-        let flag = false;
-        while (true) {
-          try {
-            const { fee } = wallet.coinselect(lutxo, targets, opt.fee, change);
-  
-            newFeePrecalc[opt.key] = fee;
-            break;
-          } catch (e) {
-            if (e.message.includes('Not enough') && !flag) {
-              flag = true;
-              // if we don't have enough funds, construct maximum possible transaction
-              targets = targets.map((t, index) => (index > 0 ? { ...t, value: 546 } : { address: t.address }));
-              continue;
-            }
-  
-            newFeePrecalc[opt.key] = null;
-            break;
-          }
-        }
-      }
-  
-      setFeePrecalc(newFeePrecalc);
-    }, [wallet, networkTransactionFees, utxo, destinationAddress, feeRate, dumb]); // eslint-disable-line react-hooks/exhaustive-deps
-
     const createTransaction = async () => {
         Keyboard.dismiss();
         setIsLoading(true);
         const requestedSatPerByte = feeRate;
-        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: usd == 0 ? 0 : Number(usd || 0).toFixed(4), amountSats: parseInt(Number(usd || 0) / Number(matchedRate || 0) * 100000000) }]
-        for (const [index, transaction] of addresses.entries()) {
-          console.log('balance: ', balance, ', usd: ', usd, ', transaction.amountSats: ', transaction.amountSats, parseInt(Number(usd) / Number(matchedRate) * 100000000))
-          let error;
-          if (!transaction.amount || transaction.amount < 0 || parseFloat(transaction.amount) === 0) {
-            error = loc.send.details_amount_field_is_not_valid;
-            console.log('validation error');
-          } else if (parseFloat(transaction.amountSats) <= 500) {
-            error = loc.send.details_amount_field_is_less_than_minimum_amount_sat;
-            console.log('validation error');
-          } else if (!requestedSatPerByte || parseFloat(requestedSatPerByte) < 1) {
-            error = loc.send.details_fee_field_is_not_valid;
-            console.log('validation error');
-          } else if (!transaction.address) {
-            error = loc.send.details_address_field_is_not_valid;
-            console.log('validation error');
-          } else if (balance - transaction.amountSats < 0) {
-            // first sanity check is that sending amount is not bigger than available balance
-            error = loc.send.details_total_exceeds_balance;
-            console.log('validation error');
-          } else if (transaction.address) {
-            const address = transaction.address.trim().toLowerCase();
-            if (address.startsWith('lnb') || address.startsWith('lightning:lnb')) {
-              error = loc.send.provided_address_is_invoice;
-              console.log('validation error');
-            }
-          }
-    
-          if (!error) {
-            if (!wallet.isAddressValid(transaction.address)) {
-              console.log('validation error');
-              error = loc.send.details_address_field_is_not_valid;
-            }
-          }
-    
-          if (error) {
-            setIsLoading(false);
-            Alert.alert(loc.errors.error, error);
-            triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
-            return;
+        if (!selectedUtxo || selectedUtxo.length === 0) {
+          setIsLoading(false);
+          Alert.alert(
+            loc.cypherbox.vault.cold_storage.no_capsules_title,
+            loc.cypherbox.vault.cold_storage.no_capsules_message,
+          );
+          return;
+        }
+        // checked in sats, against the amount the review shows (for Max, what
+        // is left after the fee)
+        const transaction = { address: destinationAddress, amountSats };
+        let error;
+        if (!requestedSatPerByte || parseFloat(requestedSatPerByte) < 1 || spend.error === 'fee_rate') {
+          error = loc.send.details_fee_field_is_not_valid;
+        } else if (spend.error === 'insufficient') {
+          // the selection can't pay this amount and its fee (for Max: not even the fee)
+          error = loc.send.details_total_exceeds_balance;
+        } else if (!transaction.amountSats || transaction.amountSats < 0) {
+          error = loc.send.details_amount_field_is_not_valid;
+        } else if (transaction.amountSats <= 500) {
+          error = loc.send.details_amount_field_is_less_than_minimum_amount_sat;
+        } else if (!transaction.address) {
+          error = loc.send.details_address_field_is_not_valid;
+        } else if (balance - transaction.amountSats < 0) {
+          // first sanity check is that sending amount is not bigger than available balance
+          error = loc.send.details_total_exceeds_balance;
+        } else {
+          const address = transaction.address.trim().toLowerCase();
+          if (address.startsWith('lnb') || address.startsWith('lightning:lnb')) {
+            error = loc.send.provided_address_is_invoice;
           }
         }
-    
+
+        if (!error && !wallet.isAddressValid(transaction.address)) {
+          error = loc.send.details_address_field_is_not_valid;
+        }
+
+        if (error) {
+          console.log('validation error');
+          setIsLoading(false);
+          Alert.alert(loc.errors.error, error);
+          triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
+          return;
+        }
+
         if (changeDestination !== 'SELF' && !changeDepositAddress) {
           setIsLoading(false);
           SimpleToast.show(loc.cypherbox.vault.cold_storage.waiting_change_address, SimpleToast.SHORT);
@@ -577,6 +546,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         // `selectedUtxo` above for why there is no whole-wallet fallback.
         const lutxo = selectedUtxo;
         if (!lutxo || lutxo.length === 0) {
+            setIsLoading(false);
             Alert.alert(
                 loc.cypherbox.vault.cold_storage.no_capsules_title,
                 loc.cypherbox.vault.cold_storage.no_capsules_message,
@@ -585,37 +555,33 @@ export default function ColdStorage({ route, navigation }: Props) {
         }
         console.log({ requestedSatPerByte, lutxo: lutxo.length });
 
-        const targets = [];
-        let addresses = [{ address: destinationAddress, key: String(Math.random()), amount: Number(usd).toFixed(4), amountSats: parseInt(Number(usd) / Number(matchedRate) * 100000000) }]
-        for (const transaction of addresses) {
-          if (transaction.amount === BitcoinUnit.MAX) {
-            // output with MAX
-            targets.push({ address: transaction.address });
-            continue;
-          }
-          const value = parseInt(transaction.amountSats, 10);
-          if (value > 0) {
-            targets.push({ address: transaction.address, value });
-          } else if (transaction.amount) {
-            if (btcToSatoshi(transaction.amount) > 0) {
-              targets.push({ address: transaction.address, value: btcToSatoshi(transaction.amount) });
-            }
-          }
+        // the plan the review shows, for the real destination: a Max send asks
+        // for no amount (coinselect/split), so every selected capsule goes in
+        const { plan: spendPlan, error: planError } = planAt(requestedSatPerByte, destinationAddress);
+        if (!spendPlan) {
+            setIsLoading(false);
+            Alert.alert(loc.errors.error, spendErrorText(planError));
+            return;
         }
-    
+        const targets = spendPlan.targets;
+
         console.log('targets: ', targets)
         console.log('requestedSatPerByte: ', requestedSatPerByte)
         console.log('change: ' ,change)
 
         // coinThresholdClickHandler.log('lutxo: ', lutxo)
-        const { tx, outputs, psbt, fee } = wallet.createTransaction(
+        const { tx, outputs, psbt, fee, inputs } = wallet.createTransaction(
           lutxo,
           targets,
           requestedSatPerByte,
           change,
           isTransactionReplaceable ? HDSegwitBech32Wallet.defaultRBFSequence : HDSegwitBech32Wallet.finalRBFSequence,
         );
-    
+        // the amount, change and fee every later screen shows: the built transaction's
+        const sent = describeBuiltSpend({ inputs, outputs, fee }, destinationAddress);
+        const sentUSD = ((sent.amountSats / SATS) * Number(matchedRate || 0)).toFixed(2);
+        const spentCapsules = capsulesData ? capsulesData.filter((c: any) => sent.spentIds.includes(c.id)) : capsulesData;
+
         // if (tx && routeParams.launchedBy && psbt) {
         //   console.warn('navigating back to ', routeParams.launchedBy);
         //   navigation.navigate(routeParams.launchedBy, { psbt });
@@ -625,16 +591,20 @@ export default function ColdStorage({ route, navigation }: Props) {
           // watch-only wallets with enabled HW wallet support have different flow. we have to show PSBT to user as QR code
           // so he can scan it and sign it. then we have to scan it back from user (via camera and QR code), and ask
           // user whether he wants to broadcast it
-          const selectedFee = options.find(item => item.active);
           navigation.navigate('HardwareWalletTransaction', {
             memo: transactionMemo,
             fromWallet: wallet,
             psbt,
-            sats: parseInt(Number(usd) / Number(matchedRate) * 100000000),
-            inUSD: Number(usd).toFixed(4),
+            sats: sent.amountSats,
+            inUSD: sentUSD,
             sentFrom: address,
             destinationAddress: destinationAddress,
-            networkFees: isCustomFee ? customFee : selectedFee?.fee,
+            networkFees: sent.feeSats,
+            changeSats: sent.changeSats,
+            // which flow this is, for the signing screen's labels (kept with the pending signature)
+            kind: sendKind,
+            // the CoinOS deposit address on a top-up (the other vault's address on a move)
+            to,
             serviceFees: serviceFees,
             totalFees: totalFees,
             isCustomFee: isCustomFee,
@@ -667,22 +637,23 @@ export default function ColdStorage({ route, navigation }: Props) {
           // (ez can be the case for single-address wallet when doing self-payment for consolidation)
           recipients = outputs;
         }
-        const selectedFee = options.find(item => item.active);
 
         let data = {
-            sats: parseInt(Number(usd) / Number(matchedRate) * 100000000),
-            coinsSelected: ids.length,
-            inUSD: Number(usd).toFixed(4),
+            sats: sent.amountSats,
+            coinsSelected: sent.spentIds.length,
+            inUSD: sentUSD,
             sentFrom: address,
             destinationAddress: destinationAddress,
-            networkFees: isCustomFee ? customFee : selectedFee?.fee,
+            // in sats, whichever way the rate was chosen
+            networkFees: sent.feeSats,
+            changeSats: sent.changeSats,
             serviceFees: serviceFees,
             isCustomFee: isCustomFee,
             totalFees: totalFees,
             note: transactionMemo,
             createTransaction: createTransaction,
             memo: transactionMemo,
-            targets: [{ address, value: parseInt(Number(usd) / Number(matchedRate) * 100000000) }],
+            targets: [{ address, value: sent.amountSats }],
             walletID: wallet.getID(),
             vaultTab: vaultTab,
             satoshiPerByte: requestedSatPerByte,
@@ -690,9 +661,13 @@ export default function ColdStorage({ route, navigation }: Props) {
             tx: tx.toHex(),
             recipients,
             psbt,
-            capsulesData,
+            // the capsules this spends, for the confirm screen's list
+            capsulesData: spentCapsules,
             to,
             toStrike,
+            // with autoSelected, for the confirm screen's labels (vaultSendKind)
+            toArk,
+            autoSelected,
             vaultSend,
             capsuleTotal,
             isBatch,
@@ -768,7 +743,8 @@ export default function ColdStorage({ route, navigation }: Props) {
     }
 
     const editAmountClickHandler = () => {
-        navigation.push('EditAmount', {isEdit: true, currency, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData, to, toStrike, vaultSend, setSatsEdit: setSats_, title, capsuleTotal, isBatch });
+        // EditAmount comes back with exactly these, so the Bark destination and how the capsules were chosen ride along
+        navigation.push('EditAmount', {isEdit: true, currency, vaultTab, wallet, utxo, ids, maxUSD, inUSD, total, matchedRate, capsulesData, to, toStrike, toArk, vaultSend, setSatsEdit: setSats_, title, capsuleTotal, isBatch, autoSelected });
     }
 
     const editFeesClickHandler = () => {
@@ -919,19 +895,18 @@ export default function ColdStorage({ route, navigation }: Props) {
     };
     
 
-    const nf = networkTransactionFees;
     const options = [
         {
             label: loc.send.fee_fast,
             time: loc.send.fee_10m,
-            fee: feePrecalc.fastestFee,
+            fee: feeAtRate.fastestFee,
             rate: nf.fastestFee,
             active: Number(feeRate) === nf.fastestFee,
         },
         {
             label: loc.send.fee_medium,
             time: loc.send.fee_3h,
-            fee: feePrecalc.mediumFee,
+            fee: feeAtRate.mediumFee,
             rate: nf.mediumFee,
             active: Number(feeRate) === nf.mediumFee,
             disabled: nf.mediumFee === nf.fastestFee,
@@ -939,7 +914,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         {
             label: loc.send.fee_slow,
             time: loc.send.fee_1d,
-            fee: feePrecalc.slowFee,
+            fee: feeAtRate.slowFee,
             rate: nf.slowFee,
             active: Number(feeRate) === nf.slowFee,
             disabled: nf.slowFee === nf.mediumFee || nf.slowFee === nf.fastestFee,
@@ -956,7 +931,9 @@ export default function ColdStorage({ route, navigation }: Props) {
         utxo, 
         ids, 
         maxUSD, 
-        usd, 
+        // handed back when the new address is picked, so a Max consolidation stays Max
+        inUSD,
+        isMaxEdit,
         total, 
         matchedRate, 
         capsulesData, 
@@ -976,7 +953,7 @@ export default function ColdStorage({ route, navigation }: Props) {
         <ScreenLayout showToolbar>
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
-                <Text style={styles.title} center>{title ? title : isBatch ? loc.cypherbox.vault.cold_storage.batch_capsules : to || toStrike || toArk ? loc.cypherbox.vault.cold_storage.topup_transaction : vaultSend ? (vaultTab ? loc.cypherbox.vault.cold_storage.move_to_hot_vault : loc.cypherbox.vault.cold_storage.move_to_cold_vault) : loc.cypherbox.vault.cold_storage.construct_transaction}</Text>
+                <Text style={styles.title} center>{labels.title}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -996,17 +973,29 @@ export default function ColdStorage({ route, navigation }: Props) {
                         <Text bold style={styles.coinselected}>{loc.cypherbox.vault.cold_storage.capsules_selected}</Text>
                         {capsulesData && capsulesData.length > 0 ? (
                           <View style={{ marginTop: 10, marginBottom: 10 }}>
-                            {capsulesData.map((item: any, i: number) => (
+                            {/* the capsules this transaction spends */}
+                            {listedCapsules.map((item: any, i: number) => (
                               <View key={item.id || i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                                 <View style={styles.tabs}>
                                   <VaultCapsules item={item.value} />
                                 </View>
-                                <Text style={{ fontSize: 11, color: vaultTab ? '#87CEEB' : '#4CAF50', marginLeft: 8 }}>
-                                  {item.value?.toLocaleString()} sats
+                                <Text style={[{ fontSize: 11, color: vaultTab ? '#87CEEB' : '#4CAF50', marginLeft: 8 }, rtl.ltrText]}>
+                                  {formatSats(item.value || 0)}
                                 </Text>
                               </View>
                             ))}
-                            {(to || toStrike || toArk) && capsuleTotal > 0 && (
+                            {listedCapsules.length < shownCapsules.length && (
+                              <TouchableOpacity onPress={() => setShowAllCapsules(true)} accessibilityRole="button" style={styles.showAllCapsules}>
+                                <Text style={styles.showAllCapsulesText}>{loc.formatString(loc.cypherbox.vault.cold_storage.show_all_capsules, { count: shownCapsules.length })}</Text>
+                              </TouchableOpacity>
+                            )}
+                            {capsulesNotNeeded > 0 && (
+                              <Text style={styles.capsulesNotNeeded}>{loc.formatString(loc.cypherbox.vault.cold_storage.capsules_not_needed, { count: capsulesNotNeeded })}</Text>
+                            )}
+                            {!!beyondNeed && (
+                              <Text style={styles.capsulesNotNeeded}>{loc.formatString(loc.cypherbox.vault.cold_storage.capsules_beyond_need, { count: shownCapsules.length, needed: beyondNeed.needed, fee: groupThousands(beyondNeed.extraFeeSats) })}</Text>
+                            )}
+                            {sendKind === 'top_up' && capsuleTotal > 0 && (
                               <Text bold style={[styles.coinselected, { fontSize: 12, marginTop: 4 }]}>{loc.formatString(loc.cypherbox.vault.cold_storage.total, { amount: formatBalance(capsuleTotal, BitcoinUnit.BTC, true) })}</Text>
                             )}
                           </View>
@@ -1047,7 +1036,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                               marginTop: 3,
                               marginRight: 15,
                               color: colors.white
-                            })}>{((Number(usd || 0) / Number(matchedRate || 0) || 0).toFixed(8)) + ' BTC'}</Text>
+                            })}>{formatSats(amountSats)}</Text>
                             <Image source={Edit} style={styles.editImage} resizeMode='contain' />
                           </TouchableOpacity>
                           <Text style={{
@@ -1055,23 +1044,23 @@ export default function ColdStorage({ route, navigation }: Props) {
                               marginTop: 10,
                               marginLeft: 15,
                           }}>
-                            {'~$' + Number(usd).toFixed(2)}
+                            {'~' + formatUsd(usd)}
                           </Text>
                         </View>
                         <View style={{flexDirection: 'row', marginTop: 8}}>
                           <View style={styles.tabs}>
-                            <VaultCapsules item={((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000)} />
+                            <VaultCapsules item={amountSats} />
                           </View>
                         </View>
                       </View>
                     :
                       <View style={styles.priceView}>
                           <View>
-                              <Text style={styles.recipientTitle}>{title == "Transfer To Cold Vault" ? loc.cypherbox.vault.cold_storage.transfer_amount : to || toStrike || toArk ? loc.cypherbox.vault.cold_storage.topup_amount : vaultSend ? loc.cypherbox.vault.cold_storage.amount_moved : loc.cypherbox.vault.cold_storage.recipient_will_get}</Text>
-                              <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000).toFixed(2) + ' sats ~$' + Number(usd).toFixed(2)}</Text>
+                              <Text style={styles.recipientTitle}>{labels.amount}</Text>
+                              <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{formatSats(amountSats) + ' ~' + formatUsd(usd)}</Text>
                               <View style={{flexDirection: 'row', marginTop: 8}}>
                                   <View style={styles.tabs}>
-                                      <VaultCapsules item={((Number(usd || 0) / Number(matchedRate || 0) || 0) * 100000000)} />
+                                      <VaultCapsules item={amountSats} />
                                   </View>
                               </View>
                           </View>
@@ -1082,9 +1071,8 @@ export default function ColdStorage({ route, navigation }: Props) {
                     }
                     {capsuleTotal > 0 && !isBatch &&
                         (() => {
-                            const sendAmountSats = (Number(usd || 0) / Number(matchedRate || 0)) * 100000000;
-                            const feeSats = feePrecalc.current || 0;
-                            const changeSats = capsuleTotal - sendAmountSats - feeSats;
+                            // changeSats is the planned change output: none for Max, and none when
+                            // what is left is too small for one
                             const hotVaultWallet = walletID ? wallets.find(w => w.getID() === walletID) : null;
                             const isSourceHotVault = wallet?.getID() === walletID;
                             const showHotVault = !!hotVaultWallet && !isSourceHotVault;
@@ -1107,7 +1095,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                                         <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16 }}>{loc.cypherbox.vault.cold_storage.change_capsule_info}</Text>
                                                     </View>
                                                 )}
-                                                <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{changeSats.toFixed(0) + ' sats ~$' + (changeSats / 100000000 * Number(matchedRate)).toFixed(2)}</Text>
+                                                <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{formatSats(changeSats) + ' ~' + formatUsd(changeSats / SATS * Number(matchedRate))}</Text>
                                                 <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 8}}>
                                                     <View style={styles.tabs}>
                                                         <VaultCapsules item={changeSats} />
@@ -1197,7 +1185,8 @@ export default function ColdStorage({ route, navigation }: Props) {
                         })()
                     }
                     {/* Send-from address removed — now shown per-capsule below */}
-                    {to || toStrike || toArk ?
+                    {/* a top-up or a move to a known address; a send (the Home scan's included) takes any address */}
+                    {(to || toStrike || toArk) && !autoSelected ?
                         <View style={[styles.priceView, { marginTop: 0 }]}>
                           <View>
                               {!isBatch &&
@@ -1499,7 +1488,11 @@ export default function ColdStorage({ route, navigation }: Props) {
                         */}
                         <Text style={[styles.recipientTitle, { marginTop: 20 }]}>{loc.cypherbox.vault.cold_storage.network_fee}</Text>
                             
-                            <Text bold style={[styles.fees, { marginTop: 8 }, rtl.ltrText]}>~ {feePrecalc.current ? feePrecalc.current + ' sats' : feeRate + " sats/vByte"}{feePrecalc.current ? ` (~$${(feePrecalc.current / 100000000 * Number(matchedRate)).toFixed(2)}) (${(feePrecalc.current / (Number(usd) / Number(matchedRate) * 100000000) * 100).toFixed(1)}%)` : ''}</Text>
+                            <Text bold style={[styles.fees, { marginTop: 8 }, rtl.ltrText]}>~ {feeSats !== null ? formatSats(feeSats) : feeRate + " sats/vByte"}{feeSats !== null ? ` (~${formatUsd(feeSats / SATS * Number(matchedRate))})${amountSats > 0 ? ` (${(feeSats / amountSats * 100).toFixed(1)}%)` : ''}` : ''}</Text>
+                            {/* say why there is no amount or fee yet, e.g. capsules too small to pay their own fee */}
+                            {!plan && !!spend.error && (
+                                <Text style={styles.spendError}>{spendErrorText(spend.error)}</Text>
+                            )}
                             {/* <Text bold style={styles.fees}>~ {isCustomFee ? customFee + " sats/vByte" :  getCurrentFee().fee + " sats"}</Text> */}
                         </View>
                         {visibleSelection &&
@@ -1511,7 +1504,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     if(item?.fee){
                                         return(
                                             <TouchableOpacity disabled={item.disabled} style={[index % 2 === 0 ? styles.first : styles.second, item.disabled && {opacity: 0.8} ]} onPress={() => {
-                                                setFeePrecalc(fp => ({ ...fp, current: item.fee }));
                                                 setCustomFee(item?.rate.toString());
                                                 setVisibleSelection(false);
                                                 setFeesEditable(true);
@@ -1524,7 +1516,6 @@ export default function ColdStorage({ route, navigation }: Props) {
                                     } else {
                                         return(
                                             <TouchableOpacity disabled={item.disabled} style={[index % 2 === 0 ? styles.first : styles.second]} onPress={() => {
-                                                setFeePrecalc(fp => ({ ...fp, current: item.fee }));
                                                 setCustomFee(item?.rate.toString());
                                                 setVisibleSelection(false);
                                                 setFeesEditable(true);

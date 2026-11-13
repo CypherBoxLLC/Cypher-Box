@@ -1,12 +1,13 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SwipeButton } from "@Cypher/components";
 import { colors, rtl } from "@Cypher/style-guide";
-import { assertSignedTxMatchesPsbt, createPendingSignature, isRawTransactionHex, sameUnsignedTransaction } from "@Cypher/helpers";
+import { assertSignedTxMatchesPsbt, createPendingSignature, formatSats, formatUsd, isRawTransactionHex, sameUnsignedTransaction, summarizePsbt } from "@Cypher/helpers";
 import signedTxErrorText from "@Cypher/helpers/signedTxErrorText";
+import { confirmLabels, VaultSendKind } from "@Cypher/helpers/vaultSendKind";
 import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -33,8 +34,31 @@ interface Props {
 }
 
 export default function HardwareWalletTransaction({ route, navigation }: Props) {
-    const { walletID = null, isCustomFee, fromWallet, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, fee, memo, tx, psbt, to = null } = route?.params;
+    const { walletID = null, isCustomFee, fromWallet, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, fee, memo, tx, psbt, to = null, kind = null, changeSats = 0 } = route?.params;
     const { txMetadata, fetchAndSaveWalletTransactions, isElectrumDisabled } = useContext(BlueStorageContext);
+    // A Cold Vault spend, labelled by the flow that built it. A signing saved by an
+    // older version has no `kind`: it keeps the labels it had.
+    const sendKind: VaultSendKind = kind || (to ? 'top_up' : 'send');
+    const labels = confirmLabels(sendKind, { vaultTab: true, toCoinos: sendKind === 'top_up' && !!to && destinationAddress === to });
+    // The figures shown are read from the PSBT the device will sign. A signing saved by an
+    // older version carries the review's estimate in its params, which could be far off.
+    const shown = useMemo(() => {
+        let built = null;
+        try {
+            built = summarizePsbt(psbt, destinationAddress);
+        } catch (_) {
+            // fall back to what the review passed
+        }
+        const amount = built && built.amountSats > 0 ? built.amountSats : Number(sats) || 0;
+        // fiat at the rate the review used
+        const usdPerSat = Number(sats) > 0 && Number(inUSD) > 0 ? Number(inUSD) / Number(sats) : null;
+        return {
+            amount,
+            usd: usdPerSat !== null ? amount * usdPerSat : null,
+            change: built ? built.changeSats : Number(changeSats) || 0,
+            fee: built && built.fee !== null ? built.fee : kind ? Number(networkFees) || null : null,
+        };
+    }, [psbt, destinationAddress, sats, inUSD, changeSats, networkFees, kind]);
     const openScannerButton = useRef();
     const dynamicQRCode = useRef();
     const isFocused = useIsFocused();
@@ -186,7 +210,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
     };
 
     const nextClickHandler = async () => {
-        navigation.navigate("HardwareWalletTransactionContinue", { walletID, isCustomFee, fromWallet, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, fee, memo, tx, psbt, to })
+        navigation.navigate("HardwareWalletTransactionContinue", { walletID, isCustomFee, fromWallet, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, fee, memo, tx, psbt, to, kind, changeSats })
     };
 
     return (
@@ -212,18 +236,35 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
                         <Text h3>{loc.cypherbox.payments.hardware_wallet_transaction.export}</Text>
                     </TouchableOpacity>
 
+                    {/* the built transaction's amount, change and fee: the same figures the review showed */}
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to ? loc.cypherbox.payments.common.top_up_amount : loc.cypherbox.payments.common.recipient_will_get}</Text>
-                            <Text bold style={[styles.value, {color: colors.blueText}, rtl.ltrText]}>{sats + ' sats ~$'+ inUSD}</Text>
+                            <Text style={styles.recipientTitle}>{labels.amount}</Text>
+                            <Text bold style={[styles.value, {color: colors.blueText}, rtl.ltrText]}>{formatSats(shown.amount) + (shown.usd !== null ? ' ~' + formatUsd(shown.usd) : '')}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to ? loc.cypherbox.payments.common.to_coinos_bitcoin_address : loc.cypherbox.payments.common.to_colon}</Text>
-                            <Text style={StyleSheet.flatten([styles.fees, { color: colors.blueText }])}>{loc.cypherbox.payments.common.bitcoin_address_label}{shortenAddress(destinationAddress)}</Text>
+                            <Text style={styles.recipientTitle}>{labels.toTitle}</Text>
+                            <Text style={StyleSheet.flatten([styles.fees, { color: colors.blueText }])}>{labels.to}{shortenAddress(destinationAddress)}</Text>
                         </View>
                     </View>
+                    {shown.change > 0 &&
+                        <View style={styles.priceView}>
+                            <View>
+                                <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.change}</Text>
+                                <Text style={StyleSheet.flatten([styles.fees, rtl.ltrText])}>{formatSats(shown.change)}</Text>
+                            </View>
+                        </View>
+                    }
+                    {shown.fee !== null &&
+                        <View style={styles.priceView}>
+                            <View>
+                                <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.network_fee}</Text>
+                                <Text style={StyleSheet.flatten([styles.fees, rtl.ltrText])}>{formatSats(shown.fee)}</Text>
+                            </View>
+                        </View>
+                    }
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} style={[styles.nextBtn, {backgroundColor: colors.blueText}]}>
                     <Text h3>{loc.cypherbox.payments.common.next}</Text>

@@ -7,7 +7,8 @@ import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SavingVault, SwipeButton, VaultCapsules } from "@Cypher/components";
 import { colors, rtl } from "@Cypher/style-guide";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { dispatchNavigate, formatSats, formatUsd } from "@Cypher/helpers";
+import { confirmLabels, vaultSendKind } from "@Cypher/helpers/vaultSendKind";
 import { shortenAddress } from "../ColdStorage";
 import PayjoinTransaction from "../../../class/payjoin-transaction";
 import { PayjoinClient } from "payjoin-client";
@@ -25,6 +26,9 @@ import { sendStrikeLightningPayment } from "@Cypher/api/strikeAPIs";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 const bitcoin = require('bitcoinjs-lib');
 
+// three rows of capsules, then "+N": a 79-capsule grid drew over the amounts
+const MAX_GRID_CAPSULES = 15;
+
 interface Props {
     route: any;
 }
@@ -32,6 +36,19 @@ interface Props {
 export default function ConfirmTransction({ route }: Props) {
     const { data } = route?.params;
     const { recipients = [], walletID, vaultTab, fee, memo, tx, satoshiPerByte, psbt, capsulesData = null, to = null, vaultSend, capsuleTotal, isBatch } = data;
+    // by flow: a consolidation here is from and to Hot Vault addresses, a move goes
+    // to the Cold Vault. `to` is the CoinOS deposit address even when the top-up
+    // went to Strike or Bark.
+    const labels = confirmLabels(vaultSendKind({ isBatch, vaultSend, vaultTab, to, toStrike: data?.toStrike, toArk: data?.toArk, autoSelected: data?.autoSelected }), {
+        vaultTab,
+        toCoinos: !!to && data?.destinationAddress === to,
+    });
+    // the change the transaction really has (in sats, from the built transaction)
+    const changeSats = typeof data?.changeSats === 'number' ? data.changeSats : (data?.capsuleTotal || 0) - (data?.sats || 0) - (data?.networkFees || 0);
+    // a long selection is summarised instead of pushing the amounts off screen
+    const capsuleCount = capsulesData ? capsulesData.length : (data?.coinsSelected || 0);
+    const gridCapsules = capsulesData ? capsulesData.slice(0, MAX_GRID_CAPSULES) : [];
+    const moreCapsules = capsulesData ? capsulesData.length - gridCapsules.length : 0;
 
     const [usd, setUSD] = useState('40');
     const [sats, setSats] = useState('100K sats  ~$' + usd);
@@ -181,22 +198,26 @@ export default function ConfirmTransction({ route }: Props) {
                     bitcoinValue='0.1 BTC ~ $6500'
                 // onPress={savingVaultClickHandler}
                 /> */}
-                <View style={styles.recipientView}>
+                {/* scrolls, so nothing is drawn over the amounts or the slider */}
+                <ScrollView style={styles.details} contentContainerStyle={styles.recipientView}>
                     {!isBatch &&
-                        <Text bold style={styles.coinselected}>{loc.cypherbox.payments.confirm_transaction.capsules_selected}</Text>
+                        <Text bold style={styles.coinselected}>{loc.cypherbox.payments.confirm_transaction.capsules_selected + ' ' + capsuleCount}</Text>
                     }
                     {capsulesData && capsulesData.length > 0 ? (
-                        <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
-                            {capsulesData.map((item: any, i: number) => (
-                                <View key={item.id || i} style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                        <View style={styles.capsuleGrid}>
+                            {gridCapsules.map((item: any, i: number) => (
+                                <View key={item.id || i} style={styles.capsuleCell}>
                                     <VaultCapsules item={item.value} />
                                 </View>
                             ))}
+                            {moreCapsules > 0 &&
+                                <Text style={[styles.moreCapsules, rtl.ltrText]}>{'+' + moreCapsules}</Text>
+                            }
                         </View>
                     ) : !isBatch && (
-                        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
-                            {Array(data?.coinsSelected || 0).fill(0).map((_, i) => (
-                                <View key={i} style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                        <View style={styles.capsuleGrid}>
+                            {Array(Math.min(data?.coinsSelected || 0, MAX_GRID_CAPSULES)).fill(0).map((_, i) => (
+                                <View key={i} style={styles.capsuleCell}>
                                     <VaultCapsules item={0} />
                                 </View>
                             ))}
@@ -204,10 +225,10 @@ export default function ConfirmTransction({ route }: Props) {
                     )}
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{isBatch ? loc.cypherbox.payments.confirm_transaction.amount_to_batch : to ? loc.cypherbox.payments.common.top_up_amount : loc.cypherbox.payments.common.recipient_will_get}</Text>
-                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{data?.sats + ' sats ~$'+ data?.inUSD}</Text>
-                            <View style={{flexDirection: 'row', marginTop: 8}}>
-                                <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                            <Text style={styles.recipientTitle}>{labels.amount}</Text>
+                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{formatSats(Number(data?.sats) || 0) + ' ~' + formatUsd(data?.inUSD)}</Text>
+                            <View style={styles.capsuleRow}>
+                                <View style={styles.capsuleCell}>
                                     <VaultCapsules item={data?.sats || 0} />
                                 </View>
                             </View>
@@ -216,43 +237,36 @@ export default function ConfirmTransction({ route }: Props) {
                             <Text>Edit amount</Text>
                         </TouchableOpacity> */}
                     </View>
-                    {data?.capsuleTotal > 0 && data?.networkFees > 0 && !isBatch &&
-                        (() => {
-                            const changeSats = data.capsuleTotal - data.sats - data.networkFees;
-                            if (changeSats > 0) {
-                                return (
-                                    <View style={[styles.priceView, {marginTop: 5}]}>
-                                        <View>
-                                            <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.change}</Text>
-                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{changeSats.toFixed(0) + ' sats' + (data?.matchedRate ? ' ~$' + (changeSats / 100000000 * Number(data.matchedRate)).toFixed(2) : '')}</Text>
-                                            <View style={{flexDirection: 'row', marginTop: 8}}>
-                                                <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
-                                                    <VaultCapsules item={changeSats} />
-                                                </View>
-                                            </View>
-                                        </View>
+                    {!isBatch && changeSats > 0 &&
+                        <View style={[styles.priceView, {marginTop: 5}]}>
+                            <View>
+                                <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.change}</Text>
+                                <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{formatSats(changeSats) + (data?.matchedRate ? ' ~' + formatUsd(changeSats / 100000000 * Number(data.matchedRate)) : '')}</Text>
+                                <View style={styles.capsuleRow}>
+                                    <View style={styles.capsuleCell}>
+                                        <VaultCapsules item={changeSats} />
                                     </View>
-                                );
-                            }
-                            return null;
-                        })()
+                                </View>
+                            </View>
+                        </View>
                     }
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.sent_from}</Text>
-                            <Text style={styles.fees}>{isBatch ? loc.cypherbox.payments.common.cold_vault_address_label : loc.cypherbox.payments.common.vault_address_label}{shortenAddress(data.sentFrom)}</Text>
+                            <Text style={styles.fees}>{labels.from}{shortenAddress(data.sentFrom)}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to && !vaultSend ? loc.cypherbox.payments.common.to_coinos_bitcoin_address : loc.cypherbox.payments.common.to_colon}</Text>
-                            <Text style={StyleSheet.flatten([styles.fees, { color: vaultTab ? colors.coldGreen : colors.green }])}>{isBatch ? loc.cypherbox.payments.common.cold_vault_address_label : loc.cypherbox.payments.common.bitcoin_address_label}{shortenAddress(data?.destinationAddress)}</Text>
+                            <Text style={styles.recipientTitle}>{labels.toTitle}</Text>
+                            <Text style={StyleSheet.flatten([styles.fees, { color: vaultTab ? colors.coldGreen : colors.green }])}>{labels.to}{shortenAddress(data?.destinationAddress)}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
                             <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.network_fee}</Text>
-                            <Text style={StyleSheet.flatten([styles.fees, rtl.ltrText])}>~ {data?.isCustomFee ? data.networkFees + " sats/vByte" :  data?.networkFees + " sats"}{!data?.isCustomFee && data?.networkFees && data?.matchedRate ? ` (~$${(data.networkFees / 100000000 * Number(data.matchedRate)).toFixed(2)}) (${(data.networkFees / data.sats * 100).toFixed(1)}%)` : ''}</Text>
+                            {/* the built transaction's fee in sats, also when a custom rate was picked */}
+                            <Text style={StyleSheet.flatten([styles.fees, rtl.ltrText])}>~ {formatSats(Number(data?.networkFees) || 0)}{data?.networkFees && data?.matchedRate ? ` (~${formatUsd(data.networkFees / 100000000 * Number(data.matchedRate))})${data?.sats > 0 ? ` (${(data.networkFees / data.sats * 100).toFixed(1)}%)` : ''}` : ''}</Text>
                             {/* <Text style={StyleSheet.flatten(styles.fees)}>~ {btcToSatoshi(data?.fee)}</Text> */}
                         </View>
                     </View>
@@ -271,7 +285,7 @@ export default function ConfirmTransction({ route }: Props) {
                     {data?.note &&
                         <Text h4>{loc.formatString(loc.cypherbox.payments.confirm_transaction.note, { note: data?.note })}</Text>                        
                     }
-                </View>
+                </ScrollView>
                 <View style={styles.swipeview}>
                     <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isLoading} />
                 </View>

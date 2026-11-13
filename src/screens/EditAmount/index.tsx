@@ -21,7 +21,7 @@ interface Props {
 }
 
 export default function SendScreen({ route, navigation }: Props) {
-    const { isEdit, vaultTab, currency, wallet, utxo, ids, maxUSD, inUSD, total, toStrike, toArk = null, matchedRate, setSatsEdit, capsulesData = null, to = null, vaultSend, isBatch, capsuleTotal, title } = route?.params;
+    const { isEdit, vaultTab, currency, wallet, utxo, ids, maxUSD, inUSD, total, toStrike, toArk = null, matchedRate, setSatsEdit, capsulesData = null, to = null, vaultSend, isBatch, capsuleTotal, title, autoSelected } = route?.params;
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState('0');
     const [usd, setUSD] = useState('0');
@@ -60,7 +60,8 @@ export default function SendScreen({ route, navigation }: Props) {
             return;
         }
         setSatsEdit && setSatsEdit();
-        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, toStrike, toArk, to, title, isBatch, capsuleTotal });
+        // ColdStorage gets exactly these params: autoSelected keeps a pre-selection the app made from being spent whole
+        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, toStrike, toArk, to, title, isBatch, capsuleTotal, autoSelected });
     }
 
     const maxSendClickHandler = () => {
@@ -69,7 +70,7 @@ export default function SendScreen({ route, navigation }: Props) {
             return;
         }
         setSatsEdit && setSatsEdit();
-        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, isMaxEdit: true, matchedRate, capsulesData, vaultSend, to, toStrike, toArk, title, isBatch, capsuleTotal });
+        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, isMaxEdit: true, matchedRate, capsulesData, vaultSend, to, toStrike, toArk, title, isBatch, capsuleTotal, autoSelected });
     }
 
     // Convert current typed amount to sats for the dynamic capsule

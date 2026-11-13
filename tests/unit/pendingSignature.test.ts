@@ -10,6 +10,8 @@ import {
     describePending,
     formatAge,
     formatSats,
+    formatUsd,
+    groupThousands,
     pendingInputsSpent,
     resumeParams,
     sameUnsignedTransaction,
@@ -56,6 +58,14 @@ describe('createPendingSignature', () => {
         expect(entry.sats).toBe(60_000);
         expect(entry).not.toHaveProperty('fromWallet');
         expect(JSON.parse(JSON.stringify(entry))).toEqual(entry);
+    });
+
+    it('keeps the flow and the change, so a resumed signing is labelled and shows the same figures', () => {
+        const entry = createPendingSignature({ psbt: unsignedPsbt(), sats: 60_000, networkFees: 1_000, changeSats: 39_000, kind: 'move_to_hot', to: 'bc1qhot' }, 1_000);
+        const stored = JSON.parse(JSON.stringify(entry));
+        expect(stored).toEqual(expect.objectContaining({ kind: 'move_to_hot', changeSats: 39_000, networkFees: 1_000, to: 'bc1qhot' }));
+        const params = resumeParams(stored, { getID: () => 'cold-1' });
+        expect(params).toEqual(expect.objectContaining({ kind: 'move_to_hot', changeSats: 39_000 }));
     });
 });
 
@@ -134,6 +144,19 @@ describe('formatting', () => {
     it('groups sats', () => {
         expect(formatSats(1234567)).toBe('1,234,567 sats');
         expect(formatSats(999)).toBe('999 sats');
+        // the 79-capsule Move to Cold Vault from the heavy-wallet test
+        expect(formatSats(16_701_463_464)).toBe('16,701,463,464 sats');
+        expect(groupThousands(30_706)).toBe('30,706');
+    });
+
+    it('writes fiat with separators and two decimals', () => {
+        expect(formatUsd(11_942_124.2474)).toBe('$11,942,124.25');
+        expect(formatUsd('58.7')).toBe('$58.70');
+        expect(formatUsd(0.004)).toBe('$0.00');
+        expect(formatUsd(-1234.5)).toBe('-$1,234.50');
+        expect(formatUsd(undefined)).toBe('$0.00');
+        expect(formatUsd('')).toBe('$0.00');
+        expect(formatUsd('abc')).toBe('$0.00');
     });
 
     it('says how long ago', () => {

@@ -16,6 +16,7 @@ import { ECPairFactory } from 'ecpair';
 
 import { randomBytes } from '../rng';
 import { AbstractHDWallet } from './abstract-hd-wallet';
+import { inputScriptHint, outputScriptHint } from './coin-selection';
 import { CreateTransactionResult, CreateTransactionUtxo, Transaction, Utxo } from './types';
 import { ElectrumHistory } from '../../blue_modules/BlueElectrum';
 import type BlueElectrumNs from '../../blue_modules/BlueElectrum';
@@ -1179,22 +1180,17 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     masterFingerprint: number,
   ): CreateTransactionResult {
     if (targets.length === 0) throw new Error('No destination provided');
-    // compensating for coinselect inability to deal with segwit inputs, and overriding script length for proper vbytes calculation
+    // compensating for coinselect inability to deal with segwit inputs, and overriding script length for proper vbytes
+    // calculation. The hints live in coin-selection.ts so a fee quote made before building sizes the same way.
+    const inputScript = inputScriptHint(this._getExternalAddressByIndex(0));
     for (const u of utxos) {
-      // this is a hacky way to distinguish native/wrapped segwit, but its good enough for our case since we have only
-      // those 2 wallet types
-      if (this._getExternalAddressByIndex(0).startsWith('bc1')) {
-        u.script = { length: 27 };
-      } else if (this._getExternalAddressByIndex(0).startsWith('3')) {
-        u.script = { length: 50 };
-      }
+      if (inputScript) u.script = { ...inputScript };
     }
 
     for (const t of targets) {
-      if (t.address.startsWith('bc1')) {
-        // in case address is non-typical and takes more bytes than coinselect library anticipates by default
-        t.script = { length: bitcoin.address.toOutputScript(t.address).length + 3 };
-      }
+      // in case address is non-typical and takes more bytes than coinselect library anticipates by default
+      const outputScript = outputScriptHint(t.address);
+      if (outputScript) t.script = outputScript;
     }
 
     const { inputs, outputs, fee } = this.coinselect(utxos, targets, feeRate, changeAddress);

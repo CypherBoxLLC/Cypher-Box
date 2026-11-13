@@ -6,6 +6,7 @@ import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput, GradientText } from "@Cypher/components";
 import { colors, widths, rtl } from "@Cypher/style-guide";
 import { dispatchReset } from "@Cypher/helpers/navigation";
+import { formatSats, formatUsd } from "@Cypher/helpers/pendingSignature";
 import { Bitcoin, BitcoinTower, Electrik, Socked, Tower } from "@Cypher/assets/images";
 import * as Progress from 'react-native-progress';
 import Ring from "@Cypher/components/RingEffect";
@@ -82,9 +83,9 @@ export default function TransactionBroadCastNew({navigation, route}: any) {
                             <Text h1 bold center style={styles.title}>{loc.cypherbox.payments.common.transaction_broadcasted}</Text>
                             {sats &&
                                 <Animated.View style={animatedStyle}>
-                                    <Text semibold center style={[styles.sats, rtl.ltrText]}>{sats} sats</Text>
+                                    <Text semibold center style={[styles.sats, rtl.ltrText]}>{formatSats(Number(sats) || 0)}</Text>
                                     <View style={styles.extra} />
-                                    <Text subHeader bold center style={rtl.ltrText}>${inUSD}</Text>
+                                    <Text subHeader bold center style={rtl.ltrText}>{formatUsd(inUSD)}</Text>
                                     <View style={styles.extra} />
                                     <Text h2 bold center>{to}</Text>
                                     {/* <GradientText style={styles.gradientText}>Estimated time: ~2hr</GradientText> */}
