@@ -6,7 +6,8 @@ import loc from '../loc';
 import WidgetCommunication from './WidgetCommunication';
 import alert from '../components/Alert';
 const bitcoin = require('bitcoinjs-lib');
-const ElectrumClient = require('electrum-client');
+// electrum-client, with every request settling: see GuardedElectrumClient.js
+const ElectrumClient = require('./GuardedElectrumClient');
 const reverse = require('buffer-reverse');
 const BigNumber = require('bignumber.js');
 
@@ -474,6 +475,108 @@ module.exports.getTransactionsFullByAddress = async function (address) {
   return ret;
 };
 
+// A batch the server refused (an error for the whole batch, or no reply in time: see GuardedElectrumClient.js) is asked
+// again in batches of RETRY_BATCH_SIZE, and if one of those is refused too, one item per request, ONE_BY_ONE_AT_ONCE
+// requests at a time. In the heavy-wallet test (2026-11-12) mainnet.foundationdevices.com refused verbose transaction
+// batches of 30 and 100 but took 10, and electrum.bitaroo.net refused batches of 45 only when busy.
+const RETRY_BATCH_SIZE = 10;
+const ONE_BY_ONE_AT_ONCE = 10;
+
+// How each connection's server has taken each kind of request: in the caller's batches, in batches of RETRY_BATCH_SIZE,
+// or one by one. A refusal moves that kind down for the rest of the connection, so later batches go out at a size that
+// worked instead of being refused first. A new connection starts with the caller's batches again.
+const CALLER_BATCHES = 0;
+const SMALLER_BATCHES = 1;
+const ONE_BY_ONE = 2;
+const batchModes = new WeakMap();
+
+function batchModeOf(client, kind) {
+  return batchModes.get(client)?.[kind] ?? CALLER_BATCHES;
+}
+
+function lowerBatchMode(client, kind, mode, error) {
+  const modes = batchModes.get(client) ?? {};
+  modes[kind] = Math.max(modes[kind] ?? CALLER_BATCHES, mode);
+  batchModes.set(client, modes);
+  const next = modes[kind] === ONE_BY_ONE ? 'asking one by one' : `asking in batches of ${RETRY_BATCH_SIZE}`;
+  console.log('Electrum', kind, 'batch failed:', error?.message ?? JSON.stringify(error), '-', next);
+  return modes[kind];
+}
+
+// Calls ask(item) for each item, at most `atOnce` waiting at a time, and resolves with the answers in order. The first
+// failure rejects the lot, and nothing more is sent after it.
+async function askAtMost(atOnce, items, ask) {
+  const answers = new Array(items.length);
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const index = next++;
+      try {
+        answers[index] = await ask(items[index]);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  };
+  const workers = [];
+  for (let w = 0; w < Math.min(atOnce, items.length); w++) workers.push(worker());
+  await Promise.all(workers);
+  return answers;
+}
+
+/**
+ * Sends a batch the way the multiGet functions always have, and resolves the way the client does for one:
+ * [{ param, result, error }]. A server that takes the batch gets exactly the request it always got. One that refuses it
+ * gets its items again in smaller batches and then one by one (see RETRY_BATCH_SIZE). A connection that went down while
+ * the batch waited isn't a refusal: that error goes to the caller as before, without asking again.
+ *
+ * @param kind {String} the kind of request, as batchModes keeps it
+ * @param params {Array} one item per request
+ * @param ask {{batch: Function, one: Function}} batch(client, params) sends a batch of the same request,
+ * one(client, param) a single request for one item
+ * @returns {Promise<Array>}
+ */
+async function batchWithRetries(kind, params, ask) {
+  const client = mainClient;
+  let mode = batchModeOf(client, kind);
+
+  if (mode === CALLER_BATCHES) {
+    try {
+      return await ask.batch(client, params);
+    } catch (error) {
+      if (client.status === 0) throw error;
+      // a batch no bigger than the retry size would only be asked the same way again
+      mode = lowerBatchMode(client, kind, params.length > RETRY_BATCH_SIZE ? SMALLER_BATCHES : ONE_BY_ONE, error);
+    }
+  }
+
+  const results = [];
+  let next = 0;
+  if (mode === SMALLER_BATCHES) {
+    for (; next < params.length; next += RETRY_BATCH_SIZE) {
+      let reply;
+      try {
+        reply = await ask.batch(client, params.slice(next, next + RETRY_BATCH_SIZE));
+      } catch (error) {
+        if (client.status === 0) throw error;
+        mode = lowerBatchMode(client, kind, ONE_BY_ONE, error);
+        break;
+      }
+      results.push(...reply);
+    }
+  }
+
+  if (mode === ONE_BY_ONE) {
+    const rest = params.slice(next);
+    const answers = await askAtMost(ONE_BY_ONE_AT_ONCE, rest, param => ask.one(client, param));
+    rest.forEach((param, index) => results.push({ param, result: answers[index] }));
+  }
+
+  return results;
+}
+
 /**
  *
  * @param addresses {Array}
@@ -512,7 +615,10 @@ module.exports.multiGetBalanceByAddress = async function (addresses, batchsize) 
         balances.push({ result: promiseResults[resultIndex], param: index2scripthash[resultIndex] });
       }
     } else {
-      balances = await mainClient.blockchainScripthash_getBalanceBatch(scripthashes);
+      balances = await batchWithRetries('blockchain.scripthash.get_balance', scripthashes, {
+        batch: (client, hashes) => client.blockchainScripthash_getBalanceBatch(hashes),
+        one: (client, hash) => client.blockchainScripthash_getBalance(hash),
+      });
     }
 
     for (const bal of balances) {
@@ -551,7 +657,10 @@ module.exports.multiGetUtxoByAddress = async function (addresses, batchsize) {
       // electrs OTOH supports it, but we dont know it we are currently connected to it or to EPS
       // so it is pretty safe to do nothing, as caller can derive UTXO from stored transactions
     } else {
-      results = await mainClient.blockchainScripthash_listunspentBatch(scripthashes);
+      results = await batchWithRetries('blockchain.scripthash.listunspent', scripthashes, {
+        batch: (client, hashes) => client.blockchainScripthash_listunspentBatch(hashes),
+        one: (client, hash) => client.blockchainScripthash_listunspent(hash),
+      });
     }
 
     for (const utxos of results) {
@@ -601,7 +710,10 @@ module.exports.multiGetHistoryByAddress = async function (addresses, batchsize) 
         results.push({ result: histories[historyIndex], param: index2scripthash[historyIndex] });
       }
     } else {
-      results = await mainClient.blockchainScripthash_getHistoryBatch(scripthashes);
+      results = await batchWithRetries('blockchain.scripthash.get_history', scripthashes, {
+        batch: (client, hashes) => client.blockchainScripthash_getHistoryBatch(hashes),
+        one: (client, hash) => client.blockchainScripthash_getHistory(hash),
+      });
     }
 
     for (const history of results) {
@@ -711,17 +823,24 @@ module.exports.multiGetTransactionByTxid = async function (txids, batchsize, ver
         }
       }
     } else {
-      results = await mainClient.blockchainTransaction_getBatch(chunk, verbose);
+      results = await batchWithRetries(verbose ? 'blockchain.transaction.get verbose' : 'blockchain.transaction.get', chunk, {
+        batch: (client, ids) => client.blockchainTransaction_getBatch(ids, verbose),
+        one: (client, id) => getTransactionAlone(client, id, verbose),
+      });
     }
 
+    // Items the server couldn't fit in its reply: "response too large (over 1,000,000 bytes" (electrum.acinq.co, for the
+    // items after a batch's reply passes 1 MB). Each is asked again on its own and raw, as before, but a few at a time
+    // instead of one after another. Raw is about a tenth of the size, which matters to ElectrumX servers that slow down
+    // a connection by the bytes it pulls, and some of these don't fit a reply even alone when verbose. A verbose one is
+    // decoded here, as before; a raw one stays hex, as raw callers take it.
+    const tooLarge = results.filter(txdata => txdata.error && txdata.error.code === -32600);
+    const hexes = await askAtMost(ONE_BY_ONE_AT_ONCE, tooLarge, txdata => mainClient.blockchainTransaction_get(txdata.param, false));
+    tooLarge.forEach((txdata, index) => {
+      txdata.result = verbose ? txhexToElectrumTransaction(hexes[index]) : hexes[index];
+    });
+
     for (const txdata of results) {
-      if (txdata.error && txdata.error.code === -32600) {
-        // response too large
-        // lets do single call, that should go through okay:
-        txdata.result = await mainClient.blockchainTransaction_get(txdata.param, false);
-        // since we used VERBOSE=false, server sent us plain txhex which we must decode on our end:
-        txdata.result = txhexToElectrumTransaction(txdata.result);
-      }
       ret[txdata.param] = txdata.result;
       if (ret[txdata.param]) delete ret[txdata.param].hex; // compact
     }
@@ -753,6 +872,21 @@ module.exports.multiGetTransactionByTxid = async function (txids, batchsize, ver
 
   return ret;
 };
+
+// One transaction asked on its own, for a batch the server refused. Still verbose when asked verbose, so its
+// confirmations and times come from the server and it's cached as before. Only one too large to send verbose even alone
+// is asked raw and decoded here, with confirmations and times estimated from the height its address history gave.
+async function getTransactionAlone(client, txid, verbose) {
+  let tx;
+  try {
+    tx = await client.blockchainTransaction_get(txid, verbose);
+  } catch (error) {
+    if (!verbose || error?.code !== -32600) throw error;
+    return txhexToElectrumTransaction(await client.blockchainTransaction_get(txid, false));
+  }
+  // a server that can't do verbose sends the hex
+  return verbose && typeof tx === 'string' ? txhexToElectrumTransaction(tx) : tx;
+}
 
 /**
  * Simple waiter till `mainConnected` becomes true (which means
@@ -1083,7 +1217,9 @@ function txhexToElectrumTransaction(txhex) {
     blocktime: 0,
   };
 
-  if (txhashHeightCache[ret.txid]) {
+  // An address history gives a pending transaction height 0, or -1 while a parent is pending too. Neither is a block, so
+  // -1 mustn't count as hundreds of thousands of confirmations (which also had it cached as final).
+  if (txhashHeightCache[ret.txid] > 0) {
     // got blockheight where this tx was confirmed
     ret.confirmations = module.exports.estimateCurrentBlockheight() - txhashHeightCache[ret.txid];
     if (ret.confirmations < 0) {
