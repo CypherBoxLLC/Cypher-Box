@@ -104,19 +104,28 @@ export default function RefreshWaitBanner({
 
     return (
         <Animated.View
-            style={{
-                // Steady (no pulse) once stuck so the amber warning reads as a
-                // fixed alert and the Cancel button stays easy to tap.
-                opacity: isStuck ? 1 : pulse,
-                marginHorizontal: 24,
-                marginBottom: 12,
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                backgroundColor: tint,
-                borderWidth: 1,
-                borderColor: accent,
-            }}
+            style={[
+                {
+                    // Steady (no pulse) once stuck so the amber warning reads as a
+                    // fixed alert and the Cancel button stays easy to tap.
+                    opacity: isStuck ? 1 : pulse,
+                    marginHorizontal: 24,
+                    marginBottom: 12,
+                },
+                // While counting down it is one plain line in the size of the
+                // wallet card's "+ Refreshing" status: a boxed, capitalised
+                // banner ran over the Top-up and Withdraw buttons on the home
+                // screen. Only the stuck state, which carries a Cancel button,
+                // keeps the box.
+                isStuck && {
+                    paddingVertical: 12,
+                    paddingHorizontal: 14,
+                    borderRadius: 10,
+                    backgroundColor: tint,
+                    borderWidth: 1,
+                    borderColor: accent,
+                },
+            ]}
         >
             {isStuck ? (
                 <>
@@ -134,7 +143,7 @@ export default function RefreshWaitBanner({
                 </>
             ) : (
                 <>
-                    <Text bold center style={{ fontSize: 12, color: accent, letterSpacing: 0.5, lineHeight: 17 }}>
+                    <Text h4 bold center style={{ color: accent }}>
                         {`${loc.cypherbox.ark.refresh_banner.come_back}${primary ? ` (${formatCountdown(primary.remaining)})` : ''}`}
                     </Text>
                     {extras.slice(0, MAX_EXTRA_REFRESH_LINES).map((x, i) => (
