@@ -16,7 +16,6 @@ import { NavigationContainer, CommonActions } from '@react-navigation/native';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { navigationRef } from './NavigationService';
 import * as NavigationService from './NavigationService';
-import { Chain } from './models/bitcoinUnits';
 import DeeplinkSchemaMatch from './class/deeplink-schema-match';
 import { startAuthHydration } from './src/stores/authHydration';
 import loc from './loc';
@@ -58,11 +57,8 @@ const App = () => {
   const {
     walletsInitialized,
     wallets,
-    addWallet,
-    saveToDisk,
     fetchAndSaveWalletTransactions,
     refreshAllWalletTransactions,
-    setSharedCosigner,
   } = useContext(BlueStorageContext);
   const appState = useRef(AppState.currentState);
   // const colorScheme = useColorScheme();
@@ -194,26 +190,10 @@ const App = () => {
         }
 
         if (wasTapped) {
-          if (payload.type !== 3 || wallet.chain === Chain.OFFCHAIN) {
-            NavigationService.dispatch(
-              CommonActions.navigate({
-                name: 'WalletTransactions',
-                params: {
-                  walletID,
-                  walletType: wallet.type,
-                },
-              }),
-            );
-          } else {
-            NavigationService.navigate('ReceiveDetailsRoot', {
-              screen: 'ReceiveDetails',
-              params: {
-                walletID,
-                address: payload.address,
-              },
-            });
-          }
-
+          // Cypher Box's home screen, where the banner above shows the payment, not BlueWallet's wallet or receive
+          // screen. The Hot/Cold tab is left alone: the home pager only reads it when it first mounts, so setting it
+          // here could leave the store on one vault while the screen shows the other.
+          NavigationService.dispatch(CommonActions.navigate({ name: 'HomeScreen' }));
           return true;
         }
       } else {
@@ -253,12 +233,7 @@ const App = () => {
   };
 
   const handleOpenURL = event => {
-    DeeplinkSchemaMatch.navigationRouteFor(event, value => NavigationService.navigate(...value), {
-      wallets,
-      addWallet,
-      saveToDisk,
-      setSharedCosigner,
-    });
+    DeeplinkSchemaMatch.navigationRouteFor(event, value => NavigationService.navigate(...value));
   };
 
   useEffect(() => {

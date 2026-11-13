@@ -15,7 +15,6 @@ import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
 import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
-import { startSigning } from "../../SignOnce/start";
 import TabBar from "../TabBar";
 import UnlockHotVaultCard from "./UnlockHotVaultCard";
 // createInvoiceStrike moved to TopupList
@@ -304,17 +303,6 @@ export default function BottomBar({
                             </TouchableOpacity>
                         </View>
                         <UnlockHotVaultCard onPress={handleCreateVault} />
-                        {/* for a phone that only signs for a watch-only wallet: it needn't keep a Hot Vault at all */}
-                        <View style={[styles.alreadyView, signOnceStyles.row]}>
-                            <Text bold style={[styles.text, signOnceStyles.text]}>
-                                {loc.cypherbox.home.only_signing}
-                            </Text>
-                            <TouchableOpacity onPress={() => startSigning()} accessibilityRole="button">
-                                <Text bold style={[styles.login, signOnceStyles.text, signOnceStyles.link]}>
-                                    {loc.cypherbox.home.sign_once}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
                     </View>
                 )}
         </View>
@@ -482,15 +470,3 @@ export default function BottomBar({
         </>
     )
 }
-
-const signOnceStyles = StyleSheet.create({
-    row: {
-        marginTop: 12,
-    },
-    text: {
-        fontSize: 16,
-    },
-    link: {
-        color: colors.green,
-    },
-});

@@ -667,20 +667,18 @@
       "withdraw": "السحب",
       "activity_a11y": "النشاط",
       "address_failed_bitcoin": "تعذّر إنشاء عنوان بيتكوين. يُرجى المحاولة مرة أخرى.",
-      "address_failed_liquid": "تعذّر إنشاء عنوان Liquid. يُرجى المحاولة مرة أخرى.",
-      "only_signing": "للتوقيع فقط؟",
-      "sign_once": "وقّع مرة واحدة من نسخة احتياطية"
+      "address_failed_liquid": "تعذّر إنشاء عنوان Liquid. يُرجى المحاولة مرة أخرى."
     },
     "scan_with": {
       "title": "المسح باستخدام",
-      "subtitle": "اختر المحفظة التي ستدفع إلى العنوان أو الفاتورة الممسوحة، أو وقّع معاملة.",
+      "subtitle": "اختر المحفظة التي ستدفع إلى العنوان أو الفاتورة الممسوحة.",
+      "link_title": "الدفع باستخدام",
+      "link_subtitle": "اختر المحفظة التي ستدفع الطلب الموجود في الرابط الذي فتحته.",
       "lightning_custodial": "البرق · وصائية",
       "lightning_self_custodial": "البرق · لاوصائية",
       "bitcoin_onchain": "بيتكوين على السلسلة",
       "bark_vault": "خزنة Bark",
-      "not_connected": "غير متصلة",
-      "sign_label": "توقيع معاملة",
-      "sign_subtitle": "من محفظة للمراقبة والبث فقط"
+      "not_connected": "غير متصلة"
     },
     "settings": {
       "set_recovery_email": "تعيين بريد الاسترداد (CoinOS)",

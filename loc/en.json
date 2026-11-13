@@ -669,20 +669,18 @@
       "withdraw": "Withdraw",
       "activity_a11y": "Activity",
       "address_failed_bitcoin": "Failed to generate bitcoin address. Please try again.",
-      "address_failed_liquid": "Failed to generate liquid address. Please try again.",
-      "only_signing": "Only signing?",
-      "sign_once": "Sign once from a backup"
+      "address_failed_liquid": "Failed to generate liquid address. Please try again."
     },
     "scan_with": {
       "title": "Scan with",
-      "subtitle": "Choose which wallet pays the scanned address or invoice, or sign a transaction.",
+      "subtitle": "Choose which wallet pays the scanned address or invoice.",
+      "link_title": "Pay with",
+      "link_subtitle": "Choose which wallet pays the request in the link you opened.",
       "lightning_custodial": "Lightning · custodial",
       "lightning_self_custodial": "Lightning · self-custodial",
       "bitcoin_onchain": "Bitcoin on-chain",
       "bark_vault": "Bark Vault",
-      "not_connected": "not connected",
-      "sign_label": "Sign a transaction",
-      "sign_subtitle": "From a watch & broadcast only wallet"
+      "not_connected": "not connected"
     },
     "settings": {
       "set_recovery_email": "Set Recovery Email (CoinOS)",

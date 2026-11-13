@@ -1,11 +1,17 @@
 import assert from 'assert';
 import DeeplinkSchemaMatch from '../../class/deeplink-schema-match';
+import usePaymentLinkStore from '../../src/stores/paymentLinkStore';
+import { isSeedSignerLocked } from '../../src/services/seedSignerLock';
 
 jest.mock('../../blue_modules/BlueElectrum', () => {
   return {
     connectMain: jest.fn(),
   };
 });
+
+jest.mock('../../src/services/seedSignerLock', () => ({
+  isSeedSignerLocked: jest.fn(() => false),
+}));
 
 describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
   it('hasSchema', () => {
@@ -109,240 +115,94 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
   });
 
   it('navigationForRoute', async () => {
-    const events = [
-      {
-        argument: { url: `12eQ9m4sgAwTSQoNXkRABKhCXCsjm2jdVG` },
-        expected: ['SendDetailsRoot', { screen: 'SendDetails', params: { uri: '12eQ9m4sgAwTSQoNXkRABKhCXCsjm2jdVG' } }],
-      },
-      {
-        argument: { url: `bitcoin:${suffix}12eQ9m4sgAwTSQoNXkRABKhCXCsjm2jdVG` },
-        expected: ['SendDetailsRoot', { screen: 'SendDetails', params: { uri: 'bitcoin:12eQ9m4sgAwTSQoNXkRABKhCXCsjm2jdVG' } }],
-      },
-      {
-        argument: { url: `BITCOIN:${suffix}BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo` },
-        expected: [
-          'SendDetailsRoot',
-          { screen: 'SendDetails', params: { uri: 'BITCOIN:BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo' } },
-        ],
-      },
-      {
-        argument: { url: `cypherbox:BITCOIN:${suffix}BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo` },
-        expected: [
-          'SendDetailsRoot',
-          { screen: 'SendDetails', params: { uri: 'BITCOIN:BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo' } },
-        ],
-      },
-      {
-        argument: {
-          url: `lightning:${suffix}lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde`,
-        },
-        expected: [
-          'ScanLndInvoiceRoot',
-          {
-            screen: 'ScanLndInvoice',
-            params: {
-              uri: 'lightning:lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde',
-            },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: `cypherbox:lightning:${suffix}lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde`,
-        },
-        expected: [
-          'ScanLndInvoiceRoot',
-          {
-            screen: 'ScanLndInvoice',
-            params: {
-              uri: 'lightning:lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde',
-            },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: 'https://azte.co/?c1=3062&c2=2586&c3=5053&c4=5261',
-        },
-        expected: [
-          'AztecoRedeemRoot',
-          {
-            screen: 'AztecoRedeem',
-            params: { c1: '3062', c2: '2586', c3: '5053', c4: '5261', uri: 'https://azte.co/?c1=3062&c2=2586&c3=5053&c4=5261' },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: 'https://azte.co/redeem?code=1111222233334444',
-        },
-        expected: [
-          'AztecoRedeemRoot',
-          {
-            screen: 'AztecoRedeem',
-            params: { c1: '1111', c2: '2222', c3: '3333', c4: '4444', uri: 'https://azte.co/redeem?code=1111222233334444' },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: 'https://azte.co/?c1=3062&c2=2586&c3=5053&c4=5261',
-        },
-        expected: [
-          'AztecoRedeemRoot',
-          {
-            screen: 'AztecoRedeem',
-            params: { c1: '3062', c2: '2586', c3: '5053', c4: '5261', uri: 'https://azte.co/?c1=3062&c2=2586&c3=5053&c4=5261' },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: 'cypherbox:setelectrumserver?server=electrum1.bluewallet.io%3A443%3As',
-        },
-        expected: [
-          'ElectrumSettings',
-          {
-            server: 'electrum1.bluewallet.io:443:s',
-          },
-        ],
-      },
-      {
-        argument: {
-          url: 'cypherbox:setlndhuburl?url=https%3A%2F%2Flndhub.herokuapp.com',
-        },
-        expected: [
-          'LightningSettings',
-          {
-            url: 'https://lndhub.herokuapp.com',
-          },
-        ],
-      },
-      {
-        argument: {
-          url: 'https://lnbits.com/?lightning=LNURL1DP68GURN8GHJ7MRWVF5HGUEWVDHK6TMHD96XSERJV9MJ7CTSDYHHVVF0D3H82UNV9UM9JDENFPN5SMMK2359J5RKWVMKZ5ZVWAV4VJD63TM',
-        },
-        expected: [
-          'LNDCreateInvoiceRoot',
-          {
-            screen: 'LNDCreateInvoice',
-            params: {
-              uri: 'https://lnbits.com/?lightning=LNURL1DP68GURN8GHJ7MRWVF5HGUEWVDHK6TMHD96XSERJV9MJ7CTSDYHHVVF0D3H82UNV9UM9JDENFPN5SMMK2359J5RKWVMKZ5ZVWAV4VJD63TM',
-            },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: 'lnaddress@zbd.gg',
-        },
-        expected: [
-          'ScanLndInvoiceRoot',
-          {
-            screen: 'ScanLndInvoice',
-            params: {
-              uri: 'lnaddress@zbd.gg',
-            },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: require('fs').readFileSync('./tests/unit/fixtures/skeleton-cobo.txt', 'ascii'),
-        },
-        expected: [
-          'AddWalletRoot',
-          {
-            screen: 'ImportWallet',
-            params: {
-              triggerImport: true,
-              label: require('fs').readFileSync('./tests/unit/fixtures/skeleton-cobo.txt', 'ascii'),
-            },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: require('fs').readFileSync('./tests/unit/fixtures/skeleton-coldcard.txt', 'ascii'),
-        },
-        expected: [
-          'AddWalletRoot',
-          {
-            screen: 'ImportWallet',
-            params: {
-              triggerImport: true,
-              label: require('fs').readFileSync('./tests/unit/fixtures/skeleton-coldcard.txt', 'ascii'),
-            },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: require('fs').readFileSync('./tests/unit/fixtures/skeleton-electrum.txt', 'ascii'),
-        },
-        expected: [
-          'AddWalletRoot',
-          {
-            screen: 'ImportWallet',
-            params: {
-              triggerImport: true,
-              label: require('fs').readFileSync('./tests/unit/fixtures/skeleton-electrum.txt', 'ascii'),
-            },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: require('fs').readFileSync('./tests/unit/fixtures/skeleton-walletdescriptor.txt', 'ascii'),
-        },
-        expected: [
-          'AddWalletRoot',
-          {
-            screen: 'ImportWallet',
-            params: {
-              triggerImport: true,
-              label: require('fs').readFileSync('./tests/unit/fixtures/skeleton-walletdescriptor.txt', 'ascii'),
-            },
-          },
-        ],
-      },
-      {
-        argument: {
-          url: 'zpub6rFDtF1nuXZ9PUL4XzKURh3vJBW6Kj6TUrYL4qPtFNtDXtcTVfiqjQDyrZNwjwzt5HS14qdqo3Co2282Lv3Re6Y5wFZxAVuMEpeygnnDwfx',
-        },
-        expected: [
-          'AddWalletRoot',
-          {
-            screen: 'ImportWallet',
-            params: {
-              triggerImport: true,
-              label: 'zpub6rFDtF1nuXZ9PUL4XzKURh3vJBW6Kj6TUrYL4qPtFNtDXtcTVfiqjQDyrZNwjwzt5HS14qdqo3Co2282Lv3Re6Y5wFZxAVuMEpeygnnDwfx',
-            },
-          },
-        ],
-      },
+    // a payment link opens the home screen, whose picker gets the link to pay
+    const payments = [
+      [`bitcoin:${suffix}12eQ9m4sgAwTSQoNXkRABKhCXCsjm2jdVG`, 'bitcoin:12eQ9m4sgAwTSQoNXkRABKhCXCsjm2jdVG'],
+      [
+        `BITCOIN:${suffix}BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo`,
+        'BITCOIN:BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo',
+      ],
+      [
+        `cypherbox:BITCOIN:${suffix}BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo`,
+        'BITCOIN:BC1Q3RL0MKYK0ZRTXFMQN9WPCD3GNAZ00YV9YP0HXE?amount=666&label=Yo',
+      ],
+      // only the scheme's slashes go: a payjoin endpoint keeps its own
+      [
+        `bitcoin:${suffix}bc1qh6tf004ty7z7un2v5ntu4mkf630545gvhs45u7?amount=0.001&pj=https://example.com/pj`,
+        'bitcoin:bc1qh6tf004ty7z7un2v5ntu4mkf630545gvhs45u7?amount=0.001&pj=https://example.com/pj',
+      ],
+      [
+        `bitcoin:${suffix}1DamianM2k8WfNEeJmyqSe2YW1upB7UATx?amount=0.000001&lightning=lnbc1u1pwry044pp53xlmkghmzjzm3cljl6729cwwqz5hhnhevwfajpkln850n7clft4sdqlgfy4qv33ypmj7sj0f32rzvfqw3jhxaqcqzysxq97zvuq5zy8ge6q70prnvgwtade0g2k5h2r76ws7j2926xdjj2pjaq6q3r4awsxtm6k5prqcul73p3atveljkn6wxdkrcy69t6k5edhtc6q7lgpe4m5k4`,
+        'bitcoin:1DamianM2k8WfNEeJmyqSe2YW1upB7UATx?amount=0.000001&lightning=lnbc1u1pwry044pp53xlmkghmzjzm3cljl6729cwwqz5hhnhevwfajpkln850n7clft4sdqlgfy4qv33ypmj7sj0f32rzvfqw3jhxaqcqzysxq97zvuq5zy8ge6q70prnvgwtade0g2k5h2r76ws7j2926xdjj2pjaq6q3r4awsxtm6k5prqcul73p3atveljkn6wxdkrcy69t6k5edhtc6q7lgpe4m5k4',
+      ],
+      [
+        `lightning:${suffix}lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde`,
+        'lightning:lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde',
+      ],
+      [
+        `cypherbox:lightning:${suffix}lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde`,
+        'lightning:lnbc10u1pwjqwkkpp5vlc3tttdzhpk9fwzkkue0sf2pumtza7qyw9vucxyyeh0yaqq66yqdq5f38z6mmwd3ujqar9wd6qcqzpgxq97zvuqrzjqvgptfurj3528snx6e3dtwepafxw5fpzdymw9pj20jj09sunnqmwqz9hx5qqtmgqqqqqqqlgqqqqqqgqjq5duu3fs9xq9vn89qk3ezwpygecu4p3n69wm3tnl28rpgn2gmk5hjaznemw0gy32wrslpn3g24khcgnpua9q04fttm2y8pnhmhhc2gncplz0zde',
+      ],
+      [
+        `lightning:${suffix}LNURL1DP68GURN8GHJ7UM9WFMXJCM99E3K7MF0V9CXJ0M385EKVCENXC6R2C35XVUKXEFCV5MKVV34X5EKZD3EV56NYD3HXQURZEPEXEJXXEPNXSCRVWFNV9NXZCN9XQ6XYEFHVGCXXCMYXYMNSERXFQ5FNS`,
+        'lightning:LNURL1DP68GURN8GHJ7UM9WFMXJCM99E3K7MF0V9CXJ0M385EKVCENXC6R2C35XVUKXEFCV5MKVV34X5EKZD3EV56NYD3HXQURZEPEXEJXXEPNXSCRVWFNV9NXZCN9XQ6XYEFHVGCXXCMYXYMNSERXFQ5FNS',
+      ],
+      [`lightning:${suffix}lnaddress@zbd.gg`, 'lightning:lnaddress@zbd.gg'],
     ];
 
-    const asyncNavigationRouteFor = async function (event) {
-      return new Promise(function (resolve) {
-        DeeplinkSchemaMatch.navigationRouteFor(event, navValue => {
-          resolve(navValue);
-        });
-      });
+    // BlueWallet's other links, and anything that is not a link, open nothing
+    const ignored = [
+      '12eQ9m4sgAwTSQoNXkRABKhCXCsjm2jdVG',
+      'lnaddress@zbd.gg',
+      `bitcoin:${suffix}notanaddress`,
+      `lightning:${suffix}notaninvoice`,
+      'cypherbox:setelectrumserver?server=electrum1.bluewallet.io%3A443%3As',
+      'cypherbox:setlndhuburl?url=https%3A%2F%2Flndhub.herokuapp.com',
+      'cypherbox://openlappbrowser?url=https%3A%2F%2Fexample.com',
+      'lapp://openlappbrowser?url=https%3A%2F%2Fexample.com',
+      'blue:setelectrumserver?server=electrum1.bluewallet.io%3A443%3As',
+      'cypherbox://widget?action=openSend',
+      'cypherbox://widget?action=openReceive',
+      'https://lnbits.com/?lightning=LNURL1DP68GURN8GHJ7MRWVF5HGUEWVDHK6TMHD96XSERJV9MJ7CTSDYHHVVF0D3H82UNV9UM9JDENFPN5SMMK2359J5RKWVMKZ5ZVWAV4VJD63TM',
+      'zpub6rFDtF1nuXZ9PUL4XzKURh3vJBW6Kj6TUrYL4qPtFNtDXtcTVfiqjQDyrZNwjwzt5HS14qdqo3Co2282Lv3Re6Y5wFZxAVuMEpeygnnDwfx',
+      require('fs').readFileSync('./tests/unit/fixtures/skeleton-walletdescriptor.txt', 'ascii'),
+      'cypherbox://oauth/callback?code=abc&state=def',
+      // files go in through Cypher Box's own "open file" buttons
+      'file:///private/var/mobile/Library/Mobile%20Documents/com~apple~CloudDocs/tx-signed.psbt',
+      'content://com.android.externalstorage.documents/document/081D-1403%3Atxhex-signed.psbt',
+      'file:///private/var/mobile/Containers/Data/Application/x/Documents/tx.psbt',
+      'file:///private/var/mobile/Containers/Data/Application/x/Documents/key.bwcosigner',
+    ];
+
+    const routesFor = url => {
+      const routes = [];
+      DeeplinkSchemaMatch.navigationRouteFor({ url }, route => routes.push(route));
+      return routes;
     };
 
-    for (const event of events) {
-      const navValue = await asyncNavigationRouteFor(event.argument);
-      assert.deepStrictEqual(navValue, event.expected);
+    for (const [url, link] of payments) {
+      usePaymentLinkStore.getState().clearLink();
+      assert.deepStrictEqual(routesFor(url), [['HomeScreen']], url);
+      assert.strictEqual(usePaymentLinkStore.getState().link, link);
     }
 
-    // BIP21 w/BOLT11 support
-    const rez = await asyncNavigationRouteFor({
-      url: `bitcoin:${suffix}1DamianM2k8WfNEeJmyqSe2YW1upB7UATx?amount=0.000001&lightning=lnbc1u1pwry044pp53xlmkghmzjzm3cljl6729cwwqz5hhnhevwfajpkln850n7clft4sdqlgfy4qv33ypmj7sj0f32rzvfqw3jhxaqcqzysxq97zvuq5zy8ge6q70prnvgwtade0g2k5h2r76ws7j2926xdjj2pjaq6q3r4awsxtm6k5prqcul73p3atveljkn6wxdkrcy69t6k5edhtc6q7lgpe4m5k4`,
-    });
-    assert.strictEqual(rez[0], 'SelectWallet');
-    assert.ok(rez[1].onWalletSelect);
-    assert.ok(typeof rez[1].onWalletSelect === 'function');
+    for (const url of ignored) {
+      usePaymentLinkStore.getState().clearLink();
+      assert.deepStrictEqual(routesFor(url), [], url);
+      assert.strictEqual(usePaymentLinkStore.getState().link, null, url);
+    }
+    // nothing was left running that could still navigate
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // a seed-signer pays nothing
+    isSeedSignerLocked.mockReturnValue(true);
+    try {
+      usePaymentLinkStore.getState().clearLink();
+      assert.deepStrictEqual(routesFor(`bitcoin:${suffix}12eQ9m4sgAwTSQoNXkRABKhCXCsjm2jdVG`), []);
+      assert.strictEqual(usePaymentLinkStore.getState().link, null);
+    } finally {
+      isSeedSignerLocked.mockReturnValue(false);
+    }
   });
 
   it('decodes bip21', () => {
@@ -494,23 +354,5 @@ describe.each(['', '//'])('unit - DeepLinkSchemaMatch', function (suffix) {
     );
     assert.strictEqual(DeeplinkSchemaMatch.getUrlFromSetLndhubUrlAction('gsom?url=https%3A%2F%2Flndhub.herokuapp.com%3A443'), false);
     assert.strictEqual(DeeplinkSchemaMatch.getUrlFromSetLndhubUrlAction('sdfhserhsthsd'), false);
-  });
-
-  it('should accept only the one valid format', function () {
-    // has all the necessary json keys
-    const isAllowed1 = '{"xfp":"ffffffff", "path":"m/84\'/0\'/0\'", "xpub":"Zpubsnkjansdjnjnekjwcnwkjnc"}';
-    // has all the necessary json keys, different order
-    const isAllowed2 = '{"path":"m/84\'/0\'/0\'", "xpub":"Zpubsnkjansdjnjnekjwcnwkjnc", "xfp":"ffffffff"}';
-
-    //
-
-    assert.strictEqual(DeeplinkSchemaMatch.hasNeededJsonKeysForMultiSigSharing(isAllowed1), true);
-    assert.strictEqual(DeeplinkSchemaMatch.hasNeededJsonKeysForMultiSigSharing(isAllowed2), true);
-
-    const isNotAllowed1 = '{"path":"m/84\'/0\'/0\'", "xpub":"Zpubsnkjansdjnjnekjwcnwkjnc"}';
-    const isNotAllowed2 = '{"path":1233, "xpub":"Zpubsnkjansdjnjnekjwcnwkjnc", "xfp":"ffffffff"}';
-
-    assert.strictEqual(DeeplinkSchemaMatch.hasNeededJsonKeysForMultiSigSharing(isNotAllowed1), false);
-    assert.strictEqual(DeeplinkSchemaMatch.hasNeededJsonKeysForMultiSigSharing(isNotAllowed2), false);
   });
 });

@@ -10,6 +10,7 @@ import SigningPhoneStatus from "@Cypher/components/SigningPhoneStatus";
 import {
     SIGN_NO_KEY_INFO,
     SIGN_NOTHING_SIGNED,
+    SIGN_ON_SIGNING_DEVICE,
     SIGN_VAULT_MISMATCH,
     TransactionReview,
     assertBackupMatches,
@@ -44,8 +45,8 @@ type Mode = 'vault' | 'backup';
  * Sign a transaction made by a watch-only wallet (a Cypher Box Cold Vault, Sparrow or any other app), in one screen:
  * scan it, choose the key, check what it does, sign, show the result.
  *
- * The key is either the Hot Vault on this phone or a backup (12 or 24 words, or a SeedQR) loaded just for this
- * signature. A backup is never saved: it lives in this screen's state, is dropped as soon as it has been checked
+ * The key is either the Hot Vault on this phone or, in Offline Seed-Signer mode only, a backup (12 or 24 words, or a
+ * SeedQR) loaded just for this signature. A backup is never saved: it lives in this screen's state, is dropped as soon as it has been checked
  * against the transaction, and the key made from it is dropped once the transaction is signed or the screen closes.
  * Keeping every step in one screen is what makes that true; navigation params would keep it in history.
  *
@@ -111,9 +112,15 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             if (!inputFingerprints(tx).length) throw new Error(SIGN_NO_KEY_INFO);
             setPsbt(tx);
             const fingerprint = hotVaultFingerprint();
+            const forHotVault = !!fingerprint && inputFingerprints(tx).includes(fingerprint);
             if (route?.params?.mode === 'vault') {
                 reviewWithHotVault(tx);
-            } else if (fingerprint && inputFingerprints(tx).includes(fingerprint)) {
+            } else if (!signingMode) {
+                // A recovery phrase is only loaded in Offline Seed-Signer mode. An everyday phone goes back online after
+                // signing, so here it signs with the Hot Vault it already holds, or not at all.
+                if (!forHotVault) throw new Error(SIGN_ON_SIGNING_DEVICE);
+                reviewWithHotVault(tx);
+            } else if (forHotVault) {
                 setStep('choose');
             } else {
                 setMode('backup');

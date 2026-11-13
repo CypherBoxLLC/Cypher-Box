@@ -1,35 +1,27 @@
 import React, { useContext, useEffect } from 'react';
 import QuickActions from 'react-native-quick-actions';
 import { DeviceEventEmitter, Linking, Platform } from 'react-native';
-import { formatBalance } from '../loc';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlueStorageContext } from '../blue_modules/storage-context';
 import DeeplinkSchemaMatch from './deeplink-schema-match';
-import OnAppLaunch from './on-app-launch';
 import * as NavigationService from '../NavigationService';
 import { CommonActions } from '@react-navigation/native';
-import { AbstractWallet } from './wallets/abstract-wallet';
 
 const DeviceQuickActionsStorageKey = 'DeviceQuickActionsEnabled';
 
+/**
+ * Cypher Box puts no wallet shortcuts on the app icon. BlueWallet listed each wallet there, with its balance, and a
+ * tap opened BlueWallet's own wallet screen. Every launch now clears them, which also removes the ones an earlier
+ * version left on the phone, and a tap on one that is still there opens Cypher Box's home screen.
+ *
+ * Still mounted for the link the app was opened with: it is handled here once the wallets are loaded.
+ */
 function DeviceQuickActions(): JSX.Element | null {
-  const { wallets, walletsInitialized, isStorageEncrypted, preferredFiatCurrency, addWallet, saveToDisk, setSharedCosigner } =
-    useContext(BlueStorageContext);
+  const { walletsInitialized } = useContext(BlueStorageContext);
 
   useEffect(() => {
-    if (walletsInitialized) {
-      isStorageEncrypted()
-        .then((value: boolean | undefined | null) => {
-          if (value) {
-            removeShortcuts();
-          } else {
-            setQuickActions();
-          }
-        })
-        .catch(() => removeShortcuts());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wallets, walletsInitialized, preferredFiatCurrency, isStorageEncrypted]);
+    if (walletsInitialized) removeShortcuts();
+  }, [walletsInitialized]);
 
   useEffect(() => {
     if (walletsInitialized) {
@@ -43,11 +35,7 @@ function DeviceQuickActions(): JSX.Element | null {
   // @ts-ignore: Fix later
   DeviceQuickActions.setEnabled = async (enabled: boolean = true): Promise<void> => {
     await AsyncStorage.setItem(DeviceQuickActionsStorageKey, JSON.stringify(enabled));
-    if (!enabled) {
-      removeShortcuts();
-    } else {
-      setQuickActions();
-    }
+    removeShortcuts();
   };
 
   const popInitialShortcutAction = async (): Promise<any> => {
@@ -55,123 +43,40 @@ function DeviceQuickActions(): JSX.Element | null {
     return data;
   };
 
+  // the shortcuts are never shown, whatever BlueWallet's privacy switch says
   // @ts-ignore: Fix later
-  DeviceQuickActions.getEnabled = async (): Promise<boolean> => {
-    try {
-      const isEnabled = await AsyncStorage.getItem(DeviceQuickActionsStorageKey);
-      if (isEnabled === null) {
-        // @ts-ignore: Fix later
-        await DeviceQuickActions.setEnabled(true);
-        return true;
-      }
-      return !!JSON.parse(isEnabled);
-    } catch {
-      return true;
-    }
+  DeviceQuickActions.getEnabled = async (): Promise<boolean> => false;
+
+  // the home screen, not the vault: the vault screen takes the fiat rate and more from the home screen that opens it
+  const openHome = (): void => {
+    NavigationService.dispatch(CommonActions.navigate({ name: 'HomeScreen' }));
   };
 
+  // BlueWallet's "open this wallet on launch" setting is gone too: Cypher Box always starts on its home screen
   const popInitialAction = async (data: any): Promise<void> => {
     if (data) {
-      const wallet = wallets.find((w: { getID: () => any }) => w.getID() === data.userInfo.url.split('wallet/')[1]);
-      if (wallet) {
-        NavigationService.dispatch(
-          CommonActions.navigate({
-            name: 'WalletTransactions',
-            params: {
-              walletID: wallet.getID(),
-              walletType: wallet.type,
-            },
-          }),
-        );
-      }
+      openHome();
     } else {
       const url = await Linking.getInitialURL();
-      if (url) {
-        if (DeeplinkSchemaMatch.hasSchema(url)) {
-          handleOpenURL({ url });
-        }
-      } else {
-        const isViewAllWalletsEnabled = await OnAppLaunch.isViewAllWalletsEnabled();
-        if (!isViewAllWalletsEnabled) {
-          const selectedDefaultWallet: AbstractWallet = (await OnAppLaunch.getSelectedDefaultWallet()) as AbstractWallet;
-          if (selectedDefaultWallet) {
-            const wallet = wallets.find((w: AbstractWallet) => w.getID() === selectedDefaultWallet.getID());
-            if (wallet) {
-              NavigationService.dispatch(
-                CommonActions.navigate({
-                  name: 'WalletTransactions',
-                  params: {
-                    walletID: wallet.getID(),
-                    walletType: wallet.type,
-                  },
-                }),
-              );
-            }
-          }
-        }
+      if (url && DeeplinkSchemaMatch.hasSchema(url)) {
+        handleOpenURL({ url });
       }
     }
   };
 
   const handleOpenURL = (event: { url: string }): void => {
-    DeeplinkSchemaMatch.navigationRouteFor(event, (value: [string, any]) => NavigationService.navigate(...value), {
-      wallets,
-      addWallet,
-      saveToDisk,
-      setSharedCosigner,
-    });
+    DeeplinkSchemaMatch.navigationRouteFor(event, (value: [string, any]) => NavigationService.navigate(...value));
   };
 
-  const walletQuickActions = (data: any): void => {
-    const wallet = wallets.find((w: { getID: () => any }) => w.getID() === data.userInfo.url.split('wallet/')[1]);
-    if (wallet) {
-      NavigationService.dispatch(
-        CommonActions.navigate({
-          name: 'WalletTransactions',
-          params: {
-            walletID: wallet.getID(),
-            walletType: wallet.type,
-          },
-        }),
-      );
-    }
-  };
+  // a shortcut an earlier version left on the icon, tapped while the app runs
+  const walletQuickActions = (): void => openHome();
 
   const removeShortcuts = async (): Promise<void> => {
     if (Platform.OS === 'android') {
       QuickActions.clearShortcutItems();
     } else {
-      // @ts-ignore: Fix later
-      QuickActions.setShortcutItems([{ type: 'EmptyWallets', title: '' }]);
-    }
-  };
-
-  const setQuickActions = async (): Promise<void> => {
-    // @ts-ignore: Fix later
-    if (await DeviceQuickActions.getEnabled()) {
-      QuickActions.isSupported((error: null, _supported: any) => {
-        if (error === null) {
-          const shortcutItems = [];
-          for (const wallet of wallets.slice(0, 4)) {
-            shortcutItems.push({
-              type: 'Wallets', // Required
-              title: wallet.getLabel(), // Optional, if empty, `type` will be used instead
-              subtitle:
-                wallet.hideBalance || wallet.getBalance() <= 0
-                  ? ''
-                  : formatBalance(Number(wallet.getBalance()), wallet.getPreferredBalanceUnit(), true),
-              userInfo: {
-                url: `cypherbox://wallet/${wallet.getID()}`, // Provide any custom data like deep linking URL
-              },
-              icon: Platform.select({ android: 'quickactions', ios: 'bookmark' }),
-            });
-          }
-          // @ts-ignore: Fix later
-          QuickActions.setShortcutItems(shortcutItems);
-        }
-      });
-    } else {
-      removeShortcuts();
+      // an empty list, not clearShortcutItems: on iOS only setShortcutItems runs on the main thread, as UIKit needs
+      QuickActions.setShortcutItems([]);
     }
   };
 

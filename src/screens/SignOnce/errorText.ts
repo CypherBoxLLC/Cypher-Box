@@ -5,6 +5,7 @@ import {
   SIGN_NOT_A_TRANSACTION,
   SIGN_NOTHING_SIGNED,
   SIGN_NO_KEY_INFO,
+  SIGN_ON_SIGNING_DEVICE,
   SIGN_VAULT_MISMATCH,
 } from '@Cypher/helpers';
 import loc from '../../../loc';
@@ -23,6 +24,7 @@ export default function signErrorText(message: string): string {
     [SIGN_VAULT_MISMATCH]: errors.vault_mismatch,
     [SIGN_FALSE_CHANGE]: errors.false_change,
     [SIGN_NOTHING_SIGNED]: errors.nothing_signed,
+    [SIGN_ON_SIGNING_DEVICE]: errors.on_signing_device,
   };
   if (known[message]) return known[message];
   const word = /^"(.+)" isn't a recovery phrase word\. Check its spelling\.$/.exec(message);
