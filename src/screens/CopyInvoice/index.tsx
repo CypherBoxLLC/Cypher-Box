@@ -12,11 +12,14 @@ import { Copy, QrCode, Second, Share2 } from "@Cypher/assets/images";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton, ImageTextVertical } from "@Cypher/components";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { colors, rtl } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
 
 interface Props {
     route: any;
 }
+
+// Arabic or Hebrew letters: text in a right-to-left language, which has to keep its own direction
+const RTL_LETTERS = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 
 export default function CopyInvoice({ route }: Props) {
     const { value, converted, hash } = route?.params
@@ -94,8 +97,12 @@ export default function CopyInvoice({ route }: Props) {
                             </Text>
                         </View>
                     )}
-                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1} style={rtl.ltrText}>{route?.params?.value}</Text>
-                    <Text bold style={[styles.usd, rtl.ltrText]}>{route?.params?.converted}</Text>
+                    {/* `value` is a translated line ("Receive 5 USD") and follows the language: forced left-to-right,
+                        iOS put the number first in Arabic. `converted` is one too on the on-chain address; otherwise
+                        it's an amount ("$ 0.01"), which has no letter to set its direction, so it's marked
+                        left-to-right. */}
+                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1}>{value}</Text>
+                    <Text bold style={styles.usd}>{converted && !RTL_LETTERS.test(converted) ? ltr(converted) : converted}</Text>
                     {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
                     <View style={{ margin: 20, padding: 30, backgroundColor: 'white', borderRadius: 30 }}>
                         <QRCode

@@ -24,6 +24,9 @@ interface Style {
 
 export default StyleSheet.create<Style>({
     container: {
+        // the words read left to right in every language: right-to-left put word 1 top right, so copying the rows
+        // from left to right wrote 2, 1, 4, 3
+        direction: 'ltr',
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'center',

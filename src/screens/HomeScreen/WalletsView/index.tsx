@@ -10,7 +10,7 @@ import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { CarouselPageVisibilityContext } from "@Cypher/custom-hooks";
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Animated, AppState, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
+import { Animated, AppState, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import loc from "../../../../loc";
@@ -40,6 +40,20 @@ interface Props {
 // this can never board into a VTXO (see ArkOnchainRecoverSection). Mirrors
 // MIN_BOARD_SATS there; kept as a local const to avoid a store read here.
 const STUCK_BOARD_MIN_SATS = 50000;
+
+// In RTL the carousel lays its pages out right-to-left, with the last tab on the left. initialScrollIndex and
+// scrollToIndex take the tab index (FlatList finds the page), but scroll offsets, in scroll events and so in scrollX,
+// are measured from the left on both platforms. Map them back to the tab, as BottomBar's vault pager does; without it,
+// Arabic lit the wrong dot and put the shared row and the Bark nudges on the wrong card. The mapping is its own inverse.
+const pageToTab = (page: number, count: number) => (I18nManager.isRTL ? count - 1 - page : page);
+// the scroll offset at which this tab's card fills the screen
+const tabOffset = (tab: number, count: number) => Math.max(0, pageToTab(tab, count)) * screenWidth;
+// A clamped scroll-driven transition from one card's offset to another's. Animated wants an ascending inputRange, and
+// in RTL the later card sits at the smaller offset, so the two ends are put in offset order.
+const between = (fromOffset: number, toOffset: number, from: number, to: number) =>
+    fromOffset <= toOffset
+        ? { inputRange: [fromOffset, toOffset], outputRange: [from, to], extrapolate: 'clamp' as const }
+        : { inputRange: [toOffset, fromOffset], outputRange: [to, from], extrapolate: 'clamp' as const };
 
 // Imperative handle exposed to HomeScreen so the page-indicator dots in
 // BalanceView can drive the carousel (tap dot 0 → fiat, dot 1 → lightning,
@@ -734,7 +748,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // this, scrollX starts at 0 (fiat-offset) even when the FlatList is
     // restored to lightning via initialScrollIndex, causing the
     // native-driven translateX/opacity to lag the actual scroll position.
-    const scrollX = useRef(new Animated.Value(indexStrike * screenWidth)).current;
+    const scrollX = useRef(new Animated.Value(tabOffset(indexStrike, wTabs.length))).current;
     const scrollHandler = useRef(
         Animated.event(
             [{ nativeEvent: { contentOffset: { x: scrollX } } }],
@@ -761,8 +775,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // rewrite scrollX, which is why the workaround (swipe away and back)
     // works.
     useFocusEffect(useCallback(() => {
-        scrollX.setValue(indexStrike * screenWidth);
-    }, [indexStrike, scrollX]));
+        scrollX.setValue(tabOffset(indexStrike, wTabs.length));
+    }, [indexStrike, wTabs.length, scrollX]));
 
     // Find the fiat slide and the lightning slide in `wTabs`. The
     // interpolation is anchored on the fiat → lightning transition; ark is
@@ -777,25 +791,24 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     const fiatIdx = wTabs.findIndex((t: any) => kindFromTab(t) === 'fiat');
     const lightningIdx = wTabs.findIndex((t: any) => kindFromTab(t) === 'lightning');
     const hasFiatTransition = fiatIdx >= 0 && lightningIdx >= 0 && lightningIdx > fiatIdx;
-    const fiatOffset = hasFiatTransition ? fiatIdx * screenWidth : 0;
-    const lightningOffset = hasFiatTransition ? lightningIdx * screenWidth : screenWidth;
+    const fiatOffset = hasFiatTransition ? tabOffset(fiatIdx, wTabs.length) : 0;
+    const lightningOffset = hasFiatTransition ? tabOffset(lightningIdx, wTabs.length) : screenWidth;
+    // where the lightning card sits while fiat is centered: one screen to the right, or to the left in RTL, where the
+    // pages run the other way
+    const lightningSideX = I18nManager.isRTL ? -screenWidth : screenWidth;
 
-    const buttonsTranslateX = scrollX.interpolate({
-        inputRange: [fiatOffset, lightningOffset],
-        // When fiat is centered (scrollX = fiatOffset): row sits at
-        // +screenWidth, off the right edge — same place the lightning
-        // card sits at that moment. As scrollX grows toward
-        // lightningOffset, both card and row glide leftward to 0 in
-        // lockstep. Past lightning (toward ark), `extrapolate:'clamp'`
-        // pins the row at 0.
-        outputRange: hasFiatTransition ? [screenWidth, 0] : [0, 0],
-        extrapolate: 'clamp',
-    });
-    const buttonsOpacity = scrollX.interpolate({
-        inputRange: [fiatOffset, lightningOffset],
-        outputRange: hasFiatTransition ? [0, 1] : [1, 1],
-        extrapolate: 'clamp',
-    });
+    // When fiat is centered (scrollX = fiatOffset): row sits at
+    // lightningSideX, off the edge — same place the lightning
+    // card sits at that moment. As scrollX moves toward
+    // lightningOffset, both card and row glide in to 0 in
+    // lockstep. Past lightning (toward ark), `extrapolate:'clamp'`
+    // pins the row at 0.
+    const buttonsTranslateX = scrollX.interpolate(
+        between(fiatOffset, lightningOffset, hasFiatTransition ? lightningSideX : 0, 0),
+    );
+    const buttonsOpacity = scrollX.interpolate(
+        between(fiatOffset, lightningOffset, hasFiatTransition ? 0 : 1, 1),
+    );
 
     // Ark-anchored opacity for the Ark-specific reminders/warnings that
     // sit below the shared Send/Receive row (iOS backup pill,
@@ -808,25 +821,15 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // outside so the row sits fully invisible past the leftward edge of
     // the Ark slide.
     const arkIdxForFade = wTabs.findIndex((t: any) => kindFromTab(t) === 'ark');
-    const arkOffsetForFade = arkIdxForFade >= 0 ? arkIdxForFade * screenWidth : 0;
+    const arkOffsetForFade = arkIdxForFade >= 0 ? tabOffset(arkIdxForFade, wTabs.length) : 0;
     const prevArkOffsetForFade = arkIdxForFade > 0
-        ? (arkIdxForFade - 1) * screenWidth
+        ? tabOffset(arkIdxForFade - 1, wTabs.length)
         : arkOffsetForFade;
-    const arkReminderOpacity = scrollX.interpolate({
-        inputRange: arkIdxForFade > 0
-            ? [prevArkOffsetForFade, arkOffsetForFade]
-            : [arkOffsetForFade, arkOffsetForFade + 1],
-        outputRange: arkIdxForFade > 0 ? [0, 1] : [1, 1],
-        extrapolate: 'clamp',
-    });
-
-    const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
-        if (next !== indexStrike) {
-            setIndexStrike(next);
-            setWalletTab(next === 1);
-        }
-    };
+    const arkReminderOpacity = scrollX.interpolate(
+        arkIdxForFade > 0
+            ? between(prevArkOffsetForFade, arkOffsetForFade, 0, 1)
+            : { inputRange: [arkOffsetForFade, arkOffsetForFade + 1], outputRange: [1, 1], extrapolate: 'clamp' },
+    );
 
     if (__DEV__) console.log('allBTCWallets: ', allBTCWallets, wTabs)
     // BUTTON_ROW_HEIGHT ≈ GradientButtonWithShadow's rendered height (47).
@@ -942,7 +945,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 // mid-gesture commit hook; onMomentumScrollEnd is the
                 // closest equivalent and fires once per page commit.
                 onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
-                    const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+                    const next = pageToTab(Math.round(e.nativeEvent.contentOffset.x / screenWidth), wTabs.length);
                     if (next === indexStrike) return;
                     setIndexStrike(next);
                     setWalletTab(next === 1);

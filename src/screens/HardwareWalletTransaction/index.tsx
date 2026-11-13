@@ -6,11 +6,14 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SwipeButton } from "@Cypher/components";
 import { colors, rtl } from "@Cypher/style-guide";
 import { assertSignedTxMatchesPsbt, createPendingSignature, isRawTransactionHex, sameUnsignedTransaction } from "@Cypher/helpers";
+import signedTxErrorText from "@Cypher/helpers/signedTxErrorText";
 import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { useIsFocused } from "@react-navigation/native";
 import loc from "../../../loc";
+// with its title and button in the app's language (the global alert() titles it "Alert" in English)
+import alert from "../../../components/Alert";
 import Biometric from "../../../class/biometrics";
 import Notifications from "../../../blue_modules/notifications";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
@@ -54,7 +57,7 @@ export default function HardwareWalletTransaction({ route, navigation }: Props) 
             assertSignedTxMatchesPsbt(ret.data, psbt);
             setTxHex(ret.data.trim());
           } catch (Err: any) {
-            alert(Err.message);
+            alert(signedTxErrorText(Err.message));
           }
           return;
         }

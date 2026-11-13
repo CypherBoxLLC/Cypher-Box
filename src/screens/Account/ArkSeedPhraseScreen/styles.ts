@@ -1,4 +1,4 @@
-import { StyleSheet, TextStyle, ViewStyle } from "react-native";
+import { I18nManager, StyleSheet, TextStyle, ViewStyle } from "react-native";
 import { colors } from "@Cypher/style-guide";
 
 interface Style {
@@ -92,6 +92,9 @@ export default StyleSheet.create<Style>({
         marginBottom: 14,
     },
     grid: {
+        // the words read left to right in every language: right-to-left put word 1 top right, so copying the rows
+        // from left to right wrote 2, 1, 4, 3
+        direction: "ltr",
         flexDirection: "row",
         flexWrap: "wrap",
         justifyContent: "center",
@@ -143,6 +146,8 @@ export default StyleSheet.create<Style>({
         height: GRID_H,
         alignItems: "center",
         justifyContent: "center",
+        // it sits inside the left-to-right grid, but its button follows the language like the rest of the screen
+        direction: I18nManager.isRTL ? "rtl" : "ltr",
     },
     revealCenter: {
         justifyContent: "center",

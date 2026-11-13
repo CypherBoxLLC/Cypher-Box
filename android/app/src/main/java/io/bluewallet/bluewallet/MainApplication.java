@@ -15,7 +15,6 @@ import com.facebook.react.defaults.DefaultReactHost;
 import com.facebook.react.defaults.DefaultReactNativeHost;
 import com.facebook.react.soloader.OpenSourceMergedSoMapping;
 import com.facebook.soloader.SoLoader;
-import com.facebook.react.modules.i18nmanager.I18nUtil;
 import java.util.List;
 import com.bugsnag.android.Bugsnag;
 
@@ -73,8 +72,8 @@ public class MainApplication extends Application implements ReactApplication, Co
       Bugsnag.start(this);
     }
 
-    I18nUtil sharedI18nUtilInstance = I18nUtil.getInstance();
-    sharedI18nUtilInstance.allowRTL(getApplicationContext(), true);
+    // No I18nUtil.allowRTL here: loc/index.ts stores the direction for the chosen language on every launch, and
+    // allowing right-to-left from here as well mirrored English on a phone set to Arabic, Hebrew or Persian.
 
     try {
       SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);

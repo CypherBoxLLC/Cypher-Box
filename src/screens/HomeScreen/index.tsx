@@ -1025,10 +1025,10 @@ export default function HomeScreen({ route }: Props) {
 
     // Priority 1: Threshold met
     if (anyThresholdMet && hasVault) {
-      return "Your balance is large enough to withdraw to self-custody!";
+      return loc.cypherbox.home.threshold_met_withdraw;
     }
     if (anyThresholdMet && !hasVault) {
-      return "Threshold met! Create a vault to withdraw to self-custody.";
+      return loc.cypherbox.home.threshold_met_create_vault;
     }
 
     // Priority 2: UTXO management
