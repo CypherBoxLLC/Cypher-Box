@@ -884,6 +884,17 @@ export async function buildArkBackupBlob(mnemonic: string): Promise<string> {
     return blob;
 }
 
+// What reading a backup throws, in English for the logs. The recovery screen shows them in the app's language
+// (RecoverArkScreen/backupErrorText.ts).
+export const ARK_BACKUP_MALFORMED = 'Backup file is malformed';
+export const ARK_BACKUP_NO_CIPHERTEXT = 'Backup envelope missing iv/ct';
+export const ARK_BACKUP_DECRYPT_FAILED = 'Decryption failed. The seed may not match this backup.';
+export const ARK_BACKUP_NO_FILES = 'Decrypted manifest is missing the files array';
+export const ARK_BACKUP_ENTRY_WRONG_SHAPE = 'Manifest entry has wrong shape';
+export const arkBackupUnsupportedVersion = (version: unknown) =>
+    `Unsupported backup version ${version}; this build understands v${FORMAT_VERSION_LEGACY}-v${FORMAT_VERSION}`;
+export const arkBackupUnsafePath = (path: string) => `Manifest contains unsafe path: ${path}`;
+
 /**
  * Decrypt a backup blob produced by `buildArkBackupBlob`.
  *
@@ -903,7 +914,7 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
         throw new Error(loc.cypherbox.services.ark_backup.not_valid_json);
     }
     if (typeof envelope !== 'object' || envelope === null) {
-        throw new Error('Backup file is malformed');
+        throw new Error(ARK_BACKUP_MALFORMED);
     }
     // Accept v1 (legacy single-wallet, no fingerprint header) and v2
     // (multi-wallet, fingerprint-keyed). v1 files in the wild stay readable
@@ -913,12 +924,10 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
         envelope.v !== FORMAT_VERSION_V2 &&
         envelope.v !== FORMAT_VERSION_LEGACY
     ) {
-        throw new Error(
-            `Unsupported backup version ${envelope.v}; this build understands v${FORMAT_VERSION_LEGACY}-v${FORMAT_VERSION}`,
-        );
+        throw new Error(arkBackupUnsupportedVersion(envelope.v));
     }
     if (typeof envelope.iv !== 'string' || typeof envelope.ct !== 'string') {
-        throw new Error('Backup envelope missing iv/ct');
+        throw new Error(ARK_BACKUP_NO_CIPHERTEXT);
     }
 
     // Using deriveAesKey directly (not the cache) so a restore-from-file
@@ -932,7 +941,7 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
     try {
         plaintext = await Aes.decrypt(envelope.ct, keyHex, envelope.iv, 'aes-256-cbc');
     } catch (err) {
-        throw new Error('Decryption failed. The seed may not match this backup.');
+        throw new Error(ARK_BACKUP_DECRYPT_FAILED);
     }
 
     if (!plaintext) {
@@ -949,7 +958,7 @@ async function decryptBackupBlob(blob: string, mnemonic: string): Promise<Backup
     }
 
     if (!manifest || !Array.isArray(manifest.files)) {
-        throw new Error('Decrypted manifest is missing the files array');
+        throw new Error(ARK_BACKUP_NO_FILES);
     }
 
     return manifest;
@@ -1013,10 +1022,10 @@ export async function restoreArkBackupBlob(
     // happily write to `../../private/var/…` if a malicious backup told it to.
     for (const f of manifest.files) {
         if (typeof f.path !== 'string' || typeof f.b64 !== 'string') {
-            throw new Error('Manifest entry has wrong shape');
+            throw new Error(ARK_BACKUP_ENTRY_WRONG_SHAPE);
         }
         if (f.path.includes('..') || f.path.startsWith('/')) {
-            throw new Error(`Manifest contains unsafe path: ${f.path}`);
+            throw new Error(arkBackupUnsafePath(f.path));
         }
     }
 

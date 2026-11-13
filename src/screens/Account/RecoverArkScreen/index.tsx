@@ -38,6 +38,7 @@ import { useKeyboardLift } from "@Cypher/custom-hooks";
 import { colors, ltr, rtl } from "@Cypher/style-guide";
 
 import styles from "./styles";
+import backupErrorText from "./backupErrorText";
 import loc from "../../../../loc";
 
 /**
@@ -480,8 +481,10 @@ export default function RecoverArkScreen() {
 
                 console.warn('[Ark restore] decrypt of fingerprint-matched blob failed:', err);
                 setRestoring(false);
+                // in the app's language, and without its own closing full stop: the message adds one after it
+                const reason = backupErrorText(String(err?.message ?? loc.cypherbox.account.recover_ark.decryption_failed)).replace(/\.$/, '');
                 setErrorMsg(
-                    String(loc.formatString(loc.cypherbox.account.recover_ark.backup_corrupt, { error: err?.message ?? loc.cypherbox.account.recover_ark.decryption_failed })),
+                    String(loc.formatString(loc.cypherbox.account.recover_ark.backup_corrupt, { error: reason })),
                 );
                 return true; // handled (with error); don't keep scanning
             }

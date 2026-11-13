@@ -107,7 +107,7 @@ export async function refreshArkVtxos(
     // still spend them"), and the lock/unlock API they suggest is not exposed
     // in bark-react-native 0.16.1, so the client is the only thing standing
     // here.
-    await assertNoActiveArkExitAsync('Refreshing capsules');
+    await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.refreshing_capsules);
 
     // Serialize rounds: one refresh at a time, per wallet. The in-process
     // flag catches same-process races; the pendingRoundStates probe catches
@@ -267,7 +267,7 @@ export async function refreshArkVtxosDelegated(
 
     // Same exit guard as the self-signed path: a delegated round is still a
     // cooperative spend of the VTXO. See refreshArkVtxos.
-    await assertNoActiveArkExitAsync('Refreshing capsules');
+    await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.refreshing_capsules);
 
     // Cross-caller submission guard. `refreshSubmissionInFlight` is shared
     // with the self-signed path and now also with delegated maintenance, so
@@ -425,7 +425,7 @@ export async function maintenanceArkDelegated(): Promise<void> {
     // silent-push wake, outside useArkSync's exit early-return, which is why
     // the guard is the async one that asks bark's DB rather than trusting a
     // possibly-unhydrated store.
-    await assertNoActiveArkExitAsync('Background refresh');
+    await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.background_refresh);
 
     // Same cross-caller guard as refreshArkVtxosDelegated: the background wake
     // must not submit a maintenance round while another submission is mid-

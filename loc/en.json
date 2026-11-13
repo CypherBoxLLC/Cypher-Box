@@ -648,6 +648,8 @@
       "cold_vault": "Cold Vault",
       "hot_storage": "Hot Storage",
       "cold_storage": "Cold Storage",
+      "threshold_met_withdraw": "Your balance is large enough to withdraw to self-custody!",
+      "threshold_met_create_vault": "Threshold met! Create a vault to withdraw to self-custody.",
       "utxo_upgrade_cold": "You have more than 5 UTXOs. Consider upgrading to Cold Storage to consolidate and improve security.",
       "utxo_consolidate": "Fees are low, a good time to consolidate your small UTXOs to save on future transaction costs.",
       "strike_auth_expired": "Authorization expired. Please login again to strike account",
@@ -1619,6 +1621,8 @@
         "transaction_signed": "Transaction Signed!",
         "tx_copied": "Transaction copied",
         "check_matches": "Check this matches what you approved on your device:",
+        "signed_tx_mismatch": "The signed transaction doesn't match the one you reviewed, so it was not accepted. Sign it again on your device.",
+        "signed_tx_invalid": "This doesn't look like a signed transaction.",
         "back_to_wallet": "Back to your wallet:",
         "to": "To:",
         "unknown_output": "Unknown output script",
@@ -1644,6 +1648,7 @@
         "pending_ack": "OK, I will check",
         "swap_failed": "Swap failed. Please try again.",
         "not_enough_balance_title": "Not enough balance",
+        "not_enough_ark_balance": "Not enough Ark balance, need {required} sats ({amount} + {fee} routing fee) but only {spendable} spendable. Try swapping {suggested} sats.",
         "provider_payment_failed": "{provider} payment failed, {error}",
         "swap_sent": "Swap Sent ⚡",
         "title_dust_topup": "Dust Top-up",
@@ -3001,6 +3006,10 @@
       "ark_exit": {
         "destination_required": "Destination address is required",
         "exit_in_progress": "Emergency Exit is in progress. Sending from the Bark vault is disabled until the exit completes on-chain.",
+        "unavailable_during_exit": "{action} is unavailable while an Emergency Exit is in progress.",
+        "this_action": "This action",
+        "refreshing_capsules": "Refreshing capsules",
+        "background_refresh": "Background refresh",
         "vault_not_open": "The vault is not open yet. It needs a connection to open, so check yours and reopen the vault, then try again.",
         "no_capsules_exitable": "No capsules can be exited right now.",
         "vault_could_not_open": "The vault could not be opened. It needs a connection, so check yours, or switch between Wi-Fi and mobile data, then try again."
@@ -3065,8 +3074,15 @@
       },
       "ark_backup": {
         "not_valid_json": "That backup file is not valid JSON. Is it the right file?",
+        "malformed": "Backup file is malformed",
+        "unsupported_version": "Unsupported backup version {version}; this build understands v{oldest}-v{newest}",
+        "missing_ciphertext": "Backup envelope missing iv/ct",
+        "decrypt_failed": "Decryption failed. The seed may not match this backup.",
         "seed_mismatch": "Decryption produced nothing. That seed does not match this backup.",
-        "manifest_corrupted": "The decrypted manifest is not valid JSON. The backup may be corrupted."
+        "manifest_corrupted": "The decrypted manifest is not valid JSON. The backup may be corrupted.",
+        "no_files": "Decrypted manifest is missing the files array",
+        "entry_wrong_shape": "Manifest entry has wrong shape",
+        "unsafe_path": "Manifest contains unsafe path: {path}"
       },
       "google_drive": {
         "auth_not_configured": "Google Drive isn't authorized for this build (the app's signing certificate isn't registered with Google). Save the backup file manually below, then continue.",
@@ -3167,6 +3183,7 @@
         "tap_to_reveal": "Tap to reveal your seed phrase",
         "no_one_watching": "Make sure no one is watching your screen.",
         "view": "View",
+        "words_tab": "{count} words",
         "no_screenshot": "Don't take a screenshot of this.",
         "seedqr_note": "Optional. With a SeedQR you can sign by scanning instead of typing your words.",
         "copy_square": "Copy it square by square"

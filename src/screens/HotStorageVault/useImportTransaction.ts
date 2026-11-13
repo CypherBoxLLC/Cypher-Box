@@ -8,6 +8,7 @@ import {
     signedTxMatchesPending,
     spendsPendingInputs,
 } from "@Cypher/helpers";
+import signedTxErrorText from "@Cypher/helpers/signedTxErrorText";
 import useAuthStore from "@Cypher/stores/authStore";
 import loc from "../../../loc";
 import { WatchOnlyWallet } from "../../../class";
@@ -49,7 +50,7 @@ export default function useImportTransaction(wallet: any, memo = '') {
         try {
             imported = parseImportedTransaction(data);
         } catch (e: any) {
-            Alert.alert(loc.errors.error, e.message);
+            Alert.alert(loc.errors.error, signedTxErrorText(e.message));
             return;
         }
         const pending = useAuthStore.getState().pendingSignatures?.[wallet?.getID?.()];
