@@ -1,7 +1,10 @@
 import { AppState, AppStateStatus } from "react-native";
 import useAuthStore from "./authStore";
+import useEventLogStore from "./eventLogStore";
 
-// Recover the auth store's hydration after a failed first attempt.
+// Recover the auth store's hydration after a failed first attempt, and the
+// Activity history's (eventLogStore), which is kept in the same encrypted
+// store behind the same key and fails and recovers the same way.
 //
 // zustand hydrates the store once at creation. If that happens before the
 // Keychain key is readable, authPersistStorage.getItem throws and the store
@@ -17,11 +20,11 @@ import useAuthStore from "./authStore";
 let wired = false;
 
 function tryRehydrate(): void {
-    if (useAuthStore.persist.hasHydrated()) return;
-    // rehydrate() re-reads through authPersistStorage; on success the store's
-    // onRehydrateStorage enables writes. On another read failure it stays
-    // unhydrated and we try again on the next foreground.
-    void useAuthStore.persist.rehydrate();
+    // rehydrate() re-reads through the store's hydration-gated storage; on
+    // success the store's onRehydrateStorage enables writes. On another read
+    // failure it stays unhydrated and we try again on the next foreground.
+    if (!useAuthStore.persist.hasHydrated()) void useAuthStore.persist.rehydrate();
+    if (!useEventLogStore.persist.hasHydrated()) void useEventLogStore.persist.rehydrate();
 }
 
 export function startAuthHydration(): void {

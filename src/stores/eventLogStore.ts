@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-import { zustandStorage } from "./index";
+import { persist, createJSONStorage, StateStorage } from "zustand/middleware";
+import { getItem, getStorage, removeItem, setItem } from "./storageService";
 
 export type EventWallet = "coinos" | "strike" | "hot-vault" | "ark";
 
@@ -201,6 +201,52 @@ type EventLogState = {
 const makeId = () =>
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 
+// Hydration-safe persistence, the same as authPersistStorage gives the auth
+// store. The Activity history is kept in the same encrypted store, behind the
+// same Keychain key, and storageService.getItem turns a key-read failure into
+// null, which zustand takes for an empty store. After a background wake on a
+// locked iPhone the history therefore loaded as an empty list, and the next
+// recordEvent in that process wrote the new list over the saved one. Here a
+// read failure throws, so zustand leaves the store unloaded instead of empty,
+// and writes are held until a load has succeeded. startAuthHydration
+// (authHydration.ts) loads it again each time the app comes to the
+// foreground.
+let writesEnabled = false;
+
+const eventLogStorage: StateStorage = {
+    getItem: async (name: string) => {
+        // getStorage() rejects when the key cannot be read.
+        await getStorage();
+        return getItem(name);
+    },
+    setItem: async (name: string, value: string) => {
+        if (!writesEnabled) return;
+        await setItem(name, value);
+    },
+    removeItem: async (name: string) => {
+        if (!writesEnabled) return;
+        await removeItem(name);
+    },
+};
+
+/** Set by mergeSaved when events recorded before the load are not saved yet. */
+let unsavedAtLoad = false;
+
+/**
+ * Events recorded before the load succeeded (on a locked background wake, or
+ * in the moment before a normal load finishes) exist only in memory. Keep
+ * them ahead of the saved history instead of letting the saved list replace
+ * them.
+ */
+function mergeSaved(persisted: unknown, current: EventLogState): EventLogState {
+    const saved = (persisted as Partial<EventLogState> | undefined)?.events;
+    const savedEvents = Array.isArray(saved) ? saved : [];
+    const savedIds = new Set(savedEvents.map(e => e.id));
+    const unsaved = current.events.filter(e => !savedIds.has(e.id));
+    unsavedAtLoad = unsaved.length > 0;
+    return { ...current, events: [...unsaved, ...savedEvents].slice(0, MAX_EVENTS) };
+}
+
 const useEventLogStore = create<EventLogState>()(
     persist(
         (set, get) => ({
@@ -218,7 +264,19 @@ const useEventLogStore = create<EventLogState>()(
         }),
         {
             name: "event-log-store",
-            storage: createJSONStorage(() => zustandStorage),
+            storage: createJSONStorage(() => eventLogStorage),
+            merge: mergeSaved,
+            // On a failed load zustand leaves the store as it is and writes
+            // nothing; writes stay held until a load succeeds.
+            onRehydrateStorage: () => (_state, error) => {
+                if (error) return;
+                writesEnabled = true;
+                if (unsavedAtLoad) {
+                    unsavedAtLoad = false;
+                    // Save what mergeSaved kept from before the load.
+                    useEventLogStore.setState(state => ({ events: state.events }));
+                }
+            },
         }
     )
 );
