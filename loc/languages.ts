@@ -50,6 +50,14 @@ export const AvailableLanguages: Readonly<TLanguage[]> = Object.freeze([
   { label: 'Xhosa (XHO)', value: 'zar_xho' },
 ]);
 
+/**
+ * The languages the app offers in Settings and takes from the phone. BlueWallet's other translations still ship,
+ * but they're partial and miss every Cypher Box screen, so they aren't offered.
+ */
+export const OfferedLanguages: Readonly<TLanguage[]> = Object.freeze(
+  AvailableLanguages.filter(language => language.value === 'en' || language.value === 'ar'),
+);
+
 export type TLanguage = {
   label: string;
   value: string;

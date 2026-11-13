@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import navigationStyle from '../../components/navigationStyle';
 import loc, { saveLanguage } from '../../loc';
-import { AvailableLanguages, TLanguage } from '../../loc/languages';
+import { AvailableLanguages, OfferedLanguages, TLanguage } from '../../loc/languages';
 import { BlueStorageContext } from '../../blue_modules/storage-context';
 import alert from '../../components/Alert';
 import { useTheme } from '../../components/themes';
@@ -13,7 +13,7 @@ import ListItem from '../../components/ListItem';
 
 // Cypher Box ships English and Arabic; the other BlueWallet languages have no
 // Cypher Box text and would show mostly English.
-const SUPPORTED_LANGUAGES = AvailableLanguages.filter(l => l.value === 'en' || l.value === 'ar');
+const SUPPORTED_LANGUAGES = OfferedLanguages;
 
 const styles = StyleSheet.create({
   flex: {
