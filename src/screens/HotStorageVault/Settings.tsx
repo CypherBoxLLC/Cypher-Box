@@ -67,7 +67,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
     const isKeychainBackedUp = thisWalletID
         ? !!hotVaultKeychainBackups?.[thisWalletID]
         : false;
-    // iPhone Keychain or Android Keystore wording for the backup tile, in the current language
+    // iPhone Keychain or Android Keystore wording for the backup tile and a signing phone's row, in the current language
     const keychainText = hotVaultKeychainText().settings;
     // On a signing phone, whether the Keychain really holds a copy of this vault's seed, from listing the Keychain
     // (which doesn't open anything): the hint above can be out of date, and a copy nobody can see is the one thing a
@@ -223,9 +223,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         if (keychainBusy || !thisWalletID) return;
         Alert.alert(
             keychainText.removeTitle,
-            header
-                ? "The copy of this seed in this phone's secure storage is removed. The seed on this phone and your paper or SeedQR backup aren't affected. A seed-signer doesn't keep this second copy, so it can't be made again here."
-                : keychainText.removeBody,
+            header ? loc.cypherbox.seed_signer.vault.remove_copy_body : keychainText.removeBody,
             [
                 { text: loc._.cancel, style: "cancel" },
                 {
@@ -377,7 +375,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                 true,
                 'plain-text',
                 true,
-                "Delete"
+                loc.cypherbox.vault.storage_vault.settings.delete
             );
             if (Number(walletBalanceConfirmation) === wallet.getBalance()) {
                 navigateToOverviewAndDeleteWallet();
@@ -435,8 +433,8 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
             !(await listHotVaultKeychainBackups()).includes(thisWalletID);
         if (!keychainCleared) {
             Alert.alert(
-                'The seed is still on this phone',
-                "Its backup in this phone's secure storage couldn't be removed, so the seed was left in the app too. Try again.",
+                loc.cypherbox.seed_signer.vault.wipe_failed_title,
+                loc.cypherbox.seed_signer.vault.wipe_failed_body,
             );
             return;
         }
@@ -444,17 +442,17 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         await resetHotVaultMeta(thisWalletID);
         setHotVaultKeychainBackup(thisWalletID, false);
         navigateToOverviewAndDeleteWallet();
-        SimpleToast.show('Seed wiped from this phone', SimpleToast.LONG);
+        SimpleToast.show(loc.cypherbox.seed_signer.vault.wiped, SimpleToast.LONG);
     };
 
     const handleWipeTapped = () => {
         triggerHapticFeedback(HapticFeedbackTypes.NotificationWarning);
         Alert.alert(
-            'Wipe the seed from this phone?',
-            "This seed is removed from the app and from this phone's secure storage. After that only a backup kept elsewhere, on paper or as a SeedQR, can bring it back, so check you have one. Your coins aren't affected.\n\nIf this phone is ever stolen, getting a seed out of it is very difficult, but assume it's compromised and move your coins to a new seed.",
+            loc.cypherbox.seed_signer.vault.wipe_title,
+            loc.cypherbox.seed_signer.vault.wipe_body,
             [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Wipe', style: 'destructive', onPress: wipeSeed },
+                { text: loc._.cancel, style: 'cancel' },
+                { text: loc.cypherbox.seed_signer.vault.wipe_confirm, style: 'destructive', onPress: wipeSeed },
             ],
         );
     };
@@ -464,24 +462,27 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
     // that wallet's, then help and other ways to sign, and last the wipe. There's no way out of the mode: it's one-way
     // (services/seedSignerLock). The same actions as the rows of an everyday Hot Vault, without signing (it's above).
     const signerButtons: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }[] = [
-        { label: 'Seed’s Public Key (xpub)', onPress: navigateToXPub },
-        { label: 'Make a SeedQR Backup', onPress: () => dispatchNavigate('SeedQRBackup', { walletID: wallet.getID() }) },
-        { label: 'Show Addresses', onPress: navigateToAddresses },
-        { label: 'Backup Seed Phrase', onPress: backupSeedPhraseClickHandler },
+        { label: loc.cypherbox.seed_signer.vault.public_key, onPress: navigateToXPub },
+        {
+            label: loc.cypherbox.seed_signer.vault.seedqr_backup,
+            onPress: () => dispatchNavigate('SeedQRBackup', { walletID: wallet.getID() }),
+        },
+        { label: loc.cypherbox.vault.storage_vault.settings.show_addresses, onPress: navigateToAddresses },
+        { label: loc.cypherbox.vault.storage_vault.settings.backup_seed, onPress: backupSeedPhraseClickHandler },
         // No backing up to the Keychain here: a signing phone keeps no second copy of the seed, one that outlives
         // deleting the vault or the app. A copy made before, in normal mode or by an earlier version, can be removed.
         ...(keychainCopy || isKeychainBackedUp
             ? [{
-                label: keychainBusy ? 'Removing Keychain Copy…' : 'Remove Seed Copy from Keychain',
+                label: keychainBusy ? keychainText.signerRemoving : keychainText.signerRemove,
                 onPress: handleKeychainRemove,
                 disabled: keychainBusy,
             }]
             : []),
-        { label: 'Signing Safely', onPress: () => dispatchNavigate('SigningSafetyGuide') },
-        { label: 'Sign from a Backup Instead', onPress: () => startSigning() },
-        { label: 'Info', onPress: rightToLeft },
-        { label: 'App Settings', onPress: () => dispatchNavigate('Settings') },
-        { label: 'Wipe Seed from This Phone', onPress: handleWipeTapped, danger: true },
+        { label: loc.cypherbox.seed_signer.signing_safely, onPress: () => dispatchNavigate('SigningSafetyGuide') },
+        { label: loc.cypherbox.seed_signer.vault.sign_from_backup, onPress: () => startSigning() },
+        { label: loc.cypherbox.vault.storage_vault.settings.info, onPress: rightToLeft },
+        { label: loc.cypherbox.seed_signer.app_settings, onPress: () => dispatchNavigate('Settings') },
+        { label: loc.cypherbox.seed_signer.vault.wipe, onPress: handleWipeTapped, danger: true },
     ];
 
     return (

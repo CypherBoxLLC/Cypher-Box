@@ -15,7 +15,7 @@ import { authorize } from "react-native-app-auth";
 import { jwtDecode } from "jwt-decode";
 import { Buffer } from "buffer";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { SEED_SIGNER, openSeedSignerGate } from "../SigningHome/seedSigner";
+import { openSeedSignerGate } from "../SigningHome/seedSigner";
 import {
   LoginOption,
   RegisterPrompt,
@@ -397,7 +397,7 @@ export default function CheckingAccountLogin() {
             {loc.cypherbox.account.checking_login.cold_signing_subtitle}
           </Text>
           <LoginOption
-            label={SEED_SIGNER}
+            label={loc.cypherbox.seed_signer.title}
             labelColor={colors.green}
             iconPrefixIonicon="qr-code-outline"
             iconPrefixTint={colors.green}

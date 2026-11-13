@@ -3,6 +3,10 @@ import { dispatchNavigate } from "@Cypher/helpers";
 /**
  * Offline Seed-Signer mode ("signingMode" in the store): an isolated phone that stays offline, used as a cold signing
  * device for a watch-only wallet. Its seed lives on SeedQR backups and is scanned in to sign, so it isn't a vault.
+ *
+ * Its names as English has them, for code that matches on the English, such as tests. Screens show
+ * loc.cypherbox.seed_signer.title and loc.cypherbox.seed_signer.mode instead, read while they render, so they're in the
+ * app's language.
  */
 export const SEED_SIGNER = 'Offline Seed-Signer';
 export const SEED_SIGNER_MODE = 'Offline Seed-Signer mode';
