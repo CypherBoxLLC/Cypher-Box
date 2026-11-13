@@ -18,6 +18,7 @@ import { navigationRef } from './NavigationService';
 import * as NavigationService from './NavigationService';
 import DeeplinkSchemaMatch from './class/deeplink-schema-match';
 import { startAuthHydration } from './src/stores/authHydration';
+import { assertNativeRngHealthy } from './class/rngHealth';
 import loc from './loc';
 import { BlueDefaultTheme, BlueDarkTheme } from './components/themes';
 import InitRoot from './Navigation';
@@ -70,6 +71,14 @@ const App = () => {
   // a normal launch. See src/stores/authHydration.
   useEffect(() => {
     startAuthHydration();
+  }, []);
+
+  // Early, loud secure-randomness check. Logs only here; the hard refusal to
+  // mint a key happens at generation time (see class/rngHealth).
+  useEffect(() => {
+    assertNativeRngHealthy().catch(e =>
+      console.error('[RNG] startup check:', e?.reason ?? e?.message ?? e),
+    );
   }, []);
 
   const onNotificationReceived = async notification => {

@@ -8,6 +8,7 @@ import { ECPairInterface } from 'ecpair/src/ecpair';
 import { Psbt, Transaction as BTransaction } from 'bitcoinjs-lib';
 import { CoinSelectReturnInput, CoinSelectTarget } from 'coinselect';
 import ecc from '../../blue_modules/noble_ecc';
+import { assertNativeRngHealthy } from '../rngHealth';
 
 import BIP47Factory, { BIP47Interface } from '@spsina/bip47';
 import { ECPairFactory } from 'ecpair';
@@ -115,6 +116,7 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
   }
 
   async generate() {
+    await assertNativeRngHealthy();
     const buf = await randomBytes(16);
     this.secret = bip39.entropyToMnemonic(buf.toString('hex'));
   }
