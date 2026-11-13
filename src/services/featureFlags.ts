@@ -186,7 +186,7 @@ export function __resetRegionGateForTest(): void {
  * constant so render-time checks stay synchronous;
  * refreshStorefrontCountry() updates it later.
  */
-function getStorefrontCountry(): string | null {
+export function getStorefrontCountry(): string | null {
     if (Platform.OS !== 'ios') return null;
     if (storefrontCountry !== undefined) return storefrontCountry;
     try {
