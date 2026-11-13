@@ -18,6 +18,7 @@ import { navigationRef } from './NavigationService';
 import * as NavigationService from './NavigationService';
 import { Chain } from './models/bitcoinUnits';
 import DeeplinkSchemaMatch from './class/deeplink-schema-match';
+import { startAuthHydration } from './src/stores/authHydration';
 import loc from './loc';
 import { BlueDefaultTheme, BlueDarkTheme } from './components/themes';
 import InitRoot from './Navigation';
@@ -66,6 +67,14 @@ const App = () => {
   const appState = useRef(AppState.currentState);
   // const colorScheme = useColorScheme();
   const colorScheme = 'dark';
+
+  // Recover auth-store hydration if the first (creation-time) attempt failed
+  // because the Keychain key was unreadable (e.g. a background wake while the
+  // phone was locked). Re-runs on each foreground until it succeeds; a no-op on
+  // a normal launch. See src/stores/authHydration.
+  useEffect(() => {
+    startAuthHydration();
+  }, []);
 
   const onNotificationReceived = async notification => {
     const payload = Object.assign({}, notification, notification.data);

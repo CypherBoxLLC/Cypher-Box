@@ -122,7 +122,14 @@ export async function syncArkWallet(): Promise<boolean> {
                 minBoardSats: MIN_BOARD_SATS,
                 boardFeeHeadroomSats: BOARD_FEE_HEADROOM_SATS,
             });
-            if (boardDecision.action === 'board-amount') {
+            if (!useAuthStore.persist.hasHydrated()) {
+                // Guard: do not auto-board until the auth store has hydrated.
+                // If hydration has not succeeded (the store key was not
+                // readable yet), arkExitFeeReserveSats reads its default, so
+                // boarding here would act on a default reserve. Skip until the
+                // store has loaded.
+                if (__DEV__) console.log('[Ark sync] auto-board skipped: auth store not hydrated');
+            } else if (boardDecision.action === 'board-amount') {
                 console.log(
                     '[Ark sync] auto-board: boarding surplus', boardDecision.sats,
                     'sats; keeping', boardDecision.holdSats, 'on-chain for exit fees',
