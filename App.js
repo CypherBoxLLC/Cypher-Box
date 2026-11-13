@@ -82,11 +82,15 @@ const App = () => {
     );
   }, []);
 
-  // Android: Hot Vault seed copies saved without the fingerprint by older builds are removed, once the auth store
-  // has loaded. See src/services/hotVaultKeychainUpgrade.
+  // Android: the seed copies of Hot Vaults in the app that older builds saved without the fingerprint are removed,
+  // once the wallets and the auth store have loaded. Copies of vaults no longer in the app stay (Recover offers them).
+  // See src/services/hotVaultKeychainUpgrade.
   useEffect(() => {
-    startHotVaultKeychainCheck();
-  }, []);
+    if (!walletsInitialized) return;
+    startHotVaultKeychainCheck(wallets.map(wallet => wallet.getID()));
+    // once per launch, when the wallets have loaded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletsInitialized]);
 
   const onNotificationReceived = async notification => {
     const payload = Object.assign({}, notification, notification.data);
