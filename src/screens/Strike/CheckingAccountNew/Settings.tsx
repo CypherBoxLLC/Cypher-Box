@@ -20,6 +20,7 @@ import {
   Animated as RNAnimated,
   Text as RNText,
   ScrollView,
+  StyleSheet,
   Switch,
   TextInput,
   TouchableOpacity,
@@ -76,6 +77,8 @@ import {
   buildExitFundingSources,
 } from "@Cypher/services/ark";
 import type { ExitEconomicPolicy, ExitFeeConvertEstimate, ExitTriageResult, ExitPhaseSummary } from "@Cypher/services/ark";
+import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
+import { buildArkBackupFilename } from "@Cypher/services/ark/backupInstance";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
@@ -389,34 +392,48 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   } = useAuthStore() as any;
   const arkIosBackupReminderActive = useAuthStore((s) => s.arkIosBackupReminderActive);
   const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
+  // Backups are written, but none reached iCloud Drive, Google Drive or the
+  // chosen folder: the only copy is inside the app. Drives the reminder card
+  // in the backup section (see backupCoverage.ts).
+  const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
+  const arkLastOffDeviceBackupAt = useAuthStore((s) => s.arkLastOffDeviceBackupAt);
+  const backupThisPhoneOnly = arkBackupCoverage(arkLastBackupAt, arkLastOffDeviceBackupAt) === 'this-phone';
   const { wallets } = useContext(BlueStorageContext) as any;
   const navigation = useNavigation();
 
-  // Find the most recent `ark-backup-*.cbark` in a directory. Used as a
-  // fallback after the per-fingerprint stat probe to (a) survive RN 0.77
-  // Fabric / RNFS interop quirks where exists() can return false for a
-  // present file, and (b) display ANY existing backup even when the
-  // fingerprint cache is cold or mismatched (legacy v1 backup, recovered-
-  // with-new-seed flow). The user's safety perception depends on the UI
-  // truthfully reflecting "a backup exists at this rail" — surfacing the
-  // wrong "Not yet" while a real backup sits next to it in Files is the
-  // bug this fixes.
-  const findLatestArkBackup = async (dirPath: string) => {
+  // Find THIS wallet's backup in a directory by listing it. Used as a
+  // fallback after the per-device stat probe, to survive RN 0.77 Fabric /
+  // RNFS interop quirks where exists() can return false for a present file.
+  // The user's safety perception depends on the UI truthfully reflecting "a
+  // backup exists at this rail", so surfacing the wrong "Not yet" while the
+  // file sits next to it in Files is one bug this guards against.
+  //
+  // Showing another wallet's or another phone's file as this one's is the
+  // other. Two iPhones on one Apple ID share the iCloud folder, so "the
+  // newest ark-backup-*.cbark" there can be the other phone's, and read as
+  // "backed up 1 min ago" for a phone that has no copy at all. So only the
+  // name this phone writes counts (`ark-backup-<fingerprint>-<instance>`),
+  // and failing that the same fingerprint's name from before per-device
+  // names. With the fingerprint cache cold there is no name to look for yet;
+  // the panel polls until it warms.
+  const findOwnArkBackup = async (dirPath: string, fp: string | null, instance: string | null) => {
+    if (!fp) return null;
+    const names = [buildArkBackupFilename(fp, instance), buildArkBackupFilename(fp)];
     try {
       const entries = await RNFS.readDir(dirPath);
-      const matches = entries
-        .filter((e: any) => e.isFile() && /^ark-backup-.*\.cbark$/.test(e.name))
-        .map((e: any) => ({
-          name: e.name,
-          mtime: e.mtime ? new Date(e.mtime as any).getTime() : 0,
-          size: Number(e.size) || 0,
-        }))
-        .sort((a: any, b: any) => b.mtime - a.mtime);
-      if (matches.length === 0) return null;
-      const top = matches[0];
-      return { modifiedAt: top.mtime, sizeBytes: top.size, filename: top.name };
+      for (const name of names) {
+        const e: any = entries.find((x: any) => x.isFile() && x.name === name);
+        if (e) {
+          return {
+            modifiedAt: e.mtime ? new Date(e.mtime as any).getTime() : 0,
+            sizeBytes: Number(e.size) || 0,
+            filename: e.name as string,
+          };
+        }
+      }
+      return null;
     } catch (e: any) {
-      if (__DEV__) console.log('[Ark settings] findLatestArkBackup failed:', e?.message ?? e);
+      if (__DEV__) console.log('[Ark settings] findOwnArkBackup failed:', e?.message ?? e);
       return null;
     }
   };
@@ -652,15 +669,17 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             filename: localPath.split('/').pop(),
           });
         } else {
-          // Fallback: enumerate Documents and pick the latest
-          // `ark-backup-*.cbark`. Under RN 0.77 Fabric, RNFS.exists has
-          // occasionally returned false for an actually-present file
-          // (interop quirk + iCloud-evicted local copies). Without this
-          // fallback the UI says "Not yet" while the user can see the
-          // file in Files app, which scares them about funds safety.
-          const found = await findLatestArkBackup(RNFS.DocumentDirectoryPath);
+          // Fallback: list Documents for this wallet's own file. Under RN
+          // 0.77 Fabric, RNFS.exists has occasionally returned false for an
+          // actually-present file (interop quirk + iCloud-evicted local
+          // copies). Without this fallback the UI says "Not yet" while the
+          // user can see the file in Files app, which scares them about
+          // funds safety.
+          const found = await findOwnArkBackup(RNFS.DocumentDirectoryPath, fp, instance);
           if (cancelled) return { cacheWarm: !!fp };
-          setLocalBackup(found ?? undefined);
+          // A cold cache means no name to look for yet, not "no backup":
+          // leave the spinner up while the poll below waits for it.
+          if (fp) setLocalBackup(found ?? undefined);
         }
       } catch (e: any) {
         if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
@@ -708,16 +727,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   filename: iCloudPath.split('/').pop(),
                 });
               } else {
-                // Same fallback rationale as the local probe — enumerate
-                // the iCloud Documents directory and pick the latest
-                // ark-backup-*.cbark. This catches both the
-                // wrong-fingerprint case (cache cold or wallet recovered
-                // with a new seed) and the RNFS.exists-returns-false-on-
-                // iCloud-evicted-files case.
+                // Same fallback rationale as the local probe: list the
+                // iCloud Documents directory for this wallet's own file,
+                // which catches the RNFS.exists-returns-false-on-iCloud-
+                // evicted-files case. Never another phone's file: this
+                // folder is shared by every device on the Apple ID.
                 const iCloudDir = iCloudPath.substring(0, iCloudPath.lastIndexOf('/'));
-                const found = await findLatestArkBackup(iCloudDir);
+                const found = await findOwnArkBackup(iCloudDir, fp, instance);
                 if (cancelled) return { cacheWarm: !!fp };
-                setICloudBackup(found ?? undefined);
+                if (fp) setICloudBackup(found ?? undefined);
               }
             }
           }
@@ -783,6 +801,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             clearInterval(intervalHandle);
             intervalHandle = null;
           }
+          // Gave up waiting for the cache: settle any row still spinning for
+          // the lack of a name to "Not yet", the cold-cache display.
+          if (!cancelled && !r.cacheWarm) {
+            setLocalBackup((prev) => (prev === null ? undefined : prev));
+            setICloudBackup((prev) => (prev === null ? undefined : prev));
+          }
         }
       }, 3000);
     })();
@@ -828,7 +852,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       const connected = await isGoogleDriveConnected();
       setDriveConnected(connected);
       if (connected) {
-        const info = await getDriveBackupInfo();
+        // The same file the panel's own probe asks for: this device's
+        // per-device upload. With no arguments this asked Drive for the
+        // pre-per-wallet name, which nothing writes, so the row read "No
+        // copy yet" after every Connect until the screen was reopened.
+        const fp = getCachedArkBackupFingerprint();
+        const instance = fp ? await loadArkBackupInstanceId() : null;
+        const info = await getDriveBackupInfo(fp, instance);
         setDriveBackup(info ?? undefined);
       } else {
         setDriveBackup(undefined);
@@ -2175,7 +2205,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             </Text>
             {words ? (
               <>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                {/* direction: the words read 1, 2, 3 left to right in every
+                    language. Without it the row flipped in Arabic and word 1
+                    sat top right. */}
+                <View style={{ direction: 'ltr', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   {words.map((word, i) => (
                     <View
                       key={`${i}-${word}`}
@@ -2340,6 +2373,43 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   </Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          )}
+          {/* "Only on this phone" reminder, both platforms: the lasting
+              form of the create screen's one-time "Create without it"
+              warning. Backups are written, but only inside the app, which a
+              lost phone or a deleted app takes along. Shown until a write
+              reaches iCloud Drive, Google Drive or the chosen folder; Home's
+              status line taps through to here. Stays out of the way of the
+              iOS snapshot card above, which covers share-sheet vaults. The
+              button adds that copy: iOS Settings for iCloud Drive, or
+              Connect for Google Drive while it isn't connected. */}
+          {backupThisPhoneOnly && !(Platform.OS === 'ios' && arkIosBackupReminderActive) && (
+            <View style={thisPhoneStyles.card}>
+              <Text bold style={thisPhoneStyles.title}>
+                {loc.cypherbox.strike.ark_settings.this_phone_title}
+              </Text>
+              <Text style={thisPhoneStyles.body}>
+                {Platform.OS === 'ios'
+                  ? loc.cypherbox.strike.ark_settings.this_phone_body_ios
+                  : loc.cypherbox.strike.ark_settings.this_phone_body_android}
+              </Text>
+              {(Platform.OS === 'ios' || driveConnected === false) && (
+                <View style={thisPhoneStyles.actions}>
+                  <TouchableOpacity
+                    onPress={Platform.OS === 'ios' ? handleICloudHint : handleDriveConnect}
+                    disabled={Platform.OS !== 'ios' && driveBusy}
+                    activeOpacity={0.7}
+                    style={[thisPhoneStyles.action, Platform.OS !== 'ios' && driveBusy && thisPhoneStyles.busy]}
+                  >
+                    <Text bold style={thisPhoneStyles.actionText}>
+                      {Platform.OS === 'ios'
+                        ? loc.cypherbox.strike.ark_settings.how_to_enable_icloud
+                        : loc.cypherbox.strike.ark_settings.connect_gdrive}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
           {/* Mirror of the red warning under the Seed Phrase section: a
@@ -3571,3 +3641,30 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     </ScrollView>
   );
 }
+
+// The "only on this phone" card in the Bark backup section. Same look as the
+// iOS snapshot card above it, which is the reminder it sits beside.
+const thisPhoneStyles = StyleSheet.create({
+  card: {
+    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: 'rgba(251, 146, 60, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 146, 60, 0.40)',
+  },
+  title: { fontSize: 14, color: '#FB923C', marginBottom: 4 },
+  body: { fontSize: 12, color: colors.white, lineHeight: 17 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
+  action: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#0F0F0F',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 146, 60, 0.55)',
+  },
+  busy: { opacity: 0.5 },
+  actionText: { fontSize: 12, color: '#FB923C' },
+});

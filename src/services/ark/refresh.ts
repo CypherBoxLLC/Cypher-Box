@@ -219,9 +219,15 @@ export async function refreshArkVtxosAndSync(
     // prompt), fire-and-forget with a swallowed error, mirroring the tick.
     const eagerMnemonic = getCachedArkMnemonic();
     if (eagerMnemonic) {
-        writeArkAutoBackup(eagerMnemonic).catch((e: any) =>
-            console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
-        );
+        // Recorded like the tick's own backup, so a copy that reached iCloud,
+        // Drive or the chosen folder here clears "On this phone only" now.
+        writeArkAutoBackup(eagerMnemonic)
+            .then(({ createdAt, offDevice }) =>
+                useAuthStore.getState().recordArkBackupWrite(createdAt, offDevice),
+            )
+            .catch((e: any) =>
+                console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
+            );
     }
     return result;
 }
@@ -394,9 +400,15 @@ export async function refreshArkVtxosDelegatedAndSync(
     // prompt), fire-and-forget with a swallowed error, mirroring the tick.
     const eagerMnemonic = getCachedArkMnemonic();
     if (eagerMnemonic) {
-        writeArkAutoBackup(eagerMnemonic).catch((e: any) =>
-            console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
-        );
+        // Recorded like the tick's own backup, so a copy that reached iCloud,
+        // Drive or the chosen folder here clears "On this phone only" now.
+        writeArkAutoBackup(eagerMnemonic)
+            .then(({ createdAt, offDevice }) =>
+                useAuthStore.getState().recordArkBackupWrite(createdAt, offDevice),
+            )
+            .catch((e: any) =>
+                console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
+            );
     }
     return result;
 }

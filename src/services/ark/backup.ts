@@ -8,6 +8,7 @@ import {
     buildArkBackupFilename,
     loadArkBackupInstanceId,
 } from './backupInstance';
+import type { ArkOffDeviceOutcome } from './backupCoverage';
 
 /**
  * Atomic-ish file write: stage to `${path}.tmp`, unlink target, rename.
@@ -1123,12 +1124,21 @@ export async function restoreArkBackupBlob(
  * Unlike the timestamped manual export there is no accumulation per device,
  * so storage stays bounded at one file per device sharing the destination.
  *
- * Returns { path, sizeBytes, createdAt } on success.
+ * Returns { path, sizeBytes, createdAt, offDevice } on success. `offDevice`
+ * says whether this snapshot also reached a copy outside the app (iCloud
+ * Drive, Google Drive or the chosen folder); see backupCoverage.ts. Callers
+ * record it with the store's `recordArkBackupWrite`.
  * Throws if the datadir is empty — caller should swallow and log.
  */
 export async function writeArkAutoBackup(
     mnemonic: string,
-): Promise<{ path: string; iCloudPath: string | null; sizeBytes: number; createdAt: number }> {
+): Promise<{
+    path: string;
+    iCloudPath: string | null;
+    sizeBytes: number;
+    createdAt: number;
+    offDevice: ArkOffDeviceOutcome;
+}> {
     const { blob, createdAt, fingerprint, instance } = await _packDatadirIntoBlob(mnemonic);
 
     // Per-wallet AND per-device path: `ark-backup-{fp}-{instance}.cbark`.
@@ -1172,10 +1182,16 @@ export async function writeArkAutoBackup(
     //      must not run unless a current one demonstrably exists somewhere;
     //   2. `arkLastBackupAt`, which drives the "Backed up" state in the capsule
     //      UI and must not be stamped for a tick that wrote nothing.
+    // The `*SetUp` flags record which destinations outside the app were tried
+    // at all, so a failed write there can be told apart from one that was
+    // never set up (see ArkOffDeviceOutcome).
     let wroteLocal = localWrite.ok;
     let wroteICloud = false;
     let wroteDrive = false;
     let wroteSaf = false;
+    let iCloudSetUp = false;
+    let driveSetUp = false;
+    let safSetUp = false;
 
     // iCloud mirror — silent-fail per the auto-backup contract (next sync
     // tick retries).
@@ -1184,6 +1200,7 @@ export async function writeArkAutoBackup(
         try {
             iCloudPath = await getICloudBackupPathForFingerprint(fingerprint, instance);
             if (iCloudPath) {
+                iCloudSetUp = true;
                 await atomicWriteFile(iCloudPath, blob, 'utf8');
                 wroteICloud = true;
             }
@@ -1212,6 +1229,7 @@ export async function writeArkAutoBackup(
     // verified off-device copy (loss-event 2026-05-05).
     try {
         if (await isGoogleDriveConnected()) {
+            driveSetUp = true;
             await uploadArkBackupToDrive(blob, fingerprint, instance);
             wroteDrive = true;
             if (__DEV__) console.log('[Ark auto-backup] Drive upload OK');
@@ -1233,6 +1251,7 @@ export async function writeArkAutoBackup(
     try {
         const saved = await getSavedSafBackupFolder();
         if (saved) {
+            safSetUp = true;
             await writeArkBackupToSaf(blob, fingerprint, instance);
             wroteSaf = true;
             if (__DEV__) console.log('[Ark auto-backup] SAF folder write OK');
@@ -1288,7 +1307,17 @@ export async function writeArkAutoBackup(
     // stale file offered as one candidate among several is a far smaller harm
     // than deleting a copy that turns out to be the last one.
 
-    return { path: localPath, iCloudPath, sizeBytes: blob.length, createdAt };
+    // `wroteSomewhere` above is the right test for "did this tick store
+    // anything", and the wrong one for "Backed up": a write to the app's own
+    // folder alone passes it, and that folder goes with the app or the phone.
+    const offDevice: ArkOffDeviceOutcome =
+        wroteICloud || wroteDrive || wroteSaf
+            ? 'written'
+            : iCloudSetUp || driveSetUp || safSetUp
+                ? 'failed'
+                : 'none';
+
+    return { path: localPath, iCloudPath, sizeBytes: blob.length, createdAt, offDevice };
 }
 
 /**
