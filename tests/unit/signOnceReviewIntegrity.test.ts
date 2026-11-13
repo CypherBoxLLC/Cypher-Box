@@ -13,6 +13,7 @@ import * as bip39 from 'bip39';
 import BIP32Factory from 'bip32';
 import ecc from '../../blue_modules/noble_ecc';
 import {
+    SIGN_FALSE_CHANGE,
     SIGN_INPUT_MISMATCH,
     isWalletAddressPath,
     reviewWithRoot,
@@ -135,6 +136,47 @@ describe('change the paired wallet can see', () => {
     it('lists change at a far index or another account as going out', () => {
         expect(reviewWithRoot(withChangeAt(`${ACCOUNT}/1/500000`), root).outputs[1].change).toBe(false);
         expect(reviewWithRoot(withChangeAt("m/84'/0'/7'/1/0"), root).outputs[1].change).toBe(false);
+    });
+
+    // The same key's legacy (1…) or wrapped (3…) address: it pays this key, but a native SegWit watch-only wallet
+    // never shows it.
+    const withChangeScript = (path: string, script: Buffer, inputPath = IN_PATH) => {
+        const psbt = new bitcoin.Psbt();
+        psbt.addInput({
+            hash: Buffer.alloc(32, 0xc4),
+            index: 0,
+            witnessUtxo: { script: p2wpkh(inputPath).output as Buffer, value: 150_000 },
+            bip32Derivation: derivation(inputPath),
+        });
+        psbt.addOutput({ script: PAYEE.output as Buffer, value: 120_000 });
+        psbt.addOutput({ script, value: 29_000, bip32Derivation: derivation(path) });
+        return psbt;
+    };
+
+    it('lists change to the same key\'s legacy or wrapped address as going out', () => {
+        const path = `${ACCOUNT}/1/0`;
+        const legacy = bitcoin.payments.p2pkh({ pubkey: pubkeyAt(path) }).output as Buffer;
+        const wrapped = bitcoin.payments.p2sh({ redeem: bitcoin.payments.p2wpkh({ pubkey: pubkeyAt(path) }) }).output as Buffer;
+        expect(reviewWithRoot(withChangeScript(path, legacy), root).outputs[1].change).toBe(false);
+        expect(reviewWithRoot(withChangeScript(path, wrapped), root).outputs[1].change).toBe(false);
+    });
+
+    it('takes change on the account the inputs are signed from', () => {
+        const account1 = "m/84'/0'/1'";
+        const change1 = `${account1}/1/2`;
+        const fromAccount1 = withChangeScript(change1, p2wpkh(change1).output as Buffer, `${account1}/0/0`);
+        expect(reviewWithRoot(fromAccount1, root).outputs[1].change).toBe(true);
+        const change0 = `${ACCOUNT}/1/2`;
+        const toAccount0 = withChangeScript(change0, p2wpkh(change0).output as Buffer, `${account1}/0/0`);
+        expect(reviewWithRoot(toAccount0, root).outputs[1].change).toBe(false);
+        expect(isWalletAddressPath(change1, new Set([account1]))).toBe(true);
+        expect(isWalletAddressPath(change1)).toBe(false);
+    });
+
+    it('refuses an output that claims this key but pays someone else, whatever its path', () => {
+        for (const path of [`${ACCOUNT}/1/0`, "m/84'/0'/7'/1/0", `${ACCOUNT}/1/500000`]) {
+            expect(() => reviewWithRoot(withChangeScript(path, OTHER.output as Buffer), root)).toThrow(SIGN_FALSE_CHANGE);
+        }
     });
 });
 

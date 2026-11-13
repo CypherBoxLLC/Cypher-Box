@@ -224,11 +224,34 @@ export function keyWithOrigin(fingerprint: string, path: string, xpub: string): 
  * wallet stays far below this; it's a backstop against a path crafted to hide coins, not a gap limit. */
 const MAX_WALLET_ADDRESS_INDEX = 10000;
 
-/** True for m/84'/0'/0'/0/i and m/84'/0'/0'/1/i (receive and change) with i below MAX_WALLET_ADDRESS_INDEX: the
- * account the signer pairs (SIGNER_KEY_PATH in signerPublicKey.ts, which imports from here). */
-export function isWalletAddressPath(path: string): boolean {
-    const m = /^m\/84'\/0'\/0'\/([01])\/(\d+)$/.exec(normalizePath(path).trim());
-    return !!m && Number(m[2]) < MAX_WALLET_ADDRESS_INDEX;
+/** The account the signer pairs (SIGNER_KEY_PATH in signerPublicKey.ts, which imports from here). */
+const PAIRED_ACCOUNT = "m/84'/0'/0'";
+
+/** A native SegWit (BIP84) account path, m/84'/0'/N', of a derivation path, or null. */
+const nativeSegwitAccountOf = (path: string): string | null => {
+    const m = /^(m\/84'\/0'\/\d+')\//.exec(normalizePath(path).trim());
+    return m ? m[1] : null;
+};
+
+/** True for <account>/0/i and <account>/1/i (receive and change) with i below MAX_WALLET_ADDRESS_INDEX, for one of
+ * `accounts` (by default the account the signer pairs). */
+export function isWalletAddressPath(path: string, accounts: ReadonlySet<string> = new Set([PAIRED_ACCOUNT])): boolean {
+    const m = /^(m\/84'\/0'\/\d+')\/([01])\/(\d+)$/.exec(normalizePath(path).trim());
+    return !!m && accounts.has(m[1]) && Number(m[3]) < MAX_WALLET_ADDRESS_INDEX;
+}
+
+/** The native SegWit accounts this key signs inputs from in the transaction; the paired account when there are none. */
+function signedAccounts(psbt: bitcoin.Psbt, key: SigningKey): Set<string> {
+    const accounts = new Set<string>();
+    for (const input of psbt.data.inputs) {
+        for (const d of input.bip32Derivation ?? []) {
+            if (!isOwnDerivation(key, d)) continue;
+            const account = nativeSegwitAccountOf(d.path);
+            if (account) accounts.add(account);
+        }
+    }
+    if (!accounts.size) accounts.add(PAIRED_ACCOUNT);
+    return accounts;
 }
 
 const scriptsForPubkey = (pubkey: Buffer): Buffer[] => {
@@ -245,15 +268,18 @@ const scriptsForPubkey = (pubkey: Buffer): Buffer[] => {
  * 00000000 with a path that gives this key), that path has to give the stated public key, and the output script has to
  * pay that key. Throws SIGN_FALSE_CHANGE when the output claims this key but doesn't pay it.
  */
-function isVerifiedChange(script: Buffer, derivations: Derivation[] | undefined, root: BIP32Interface): boolean {
+function isVerifiedChange(
+    script: Buffer,
+    derivations: Derivation[] | undefined,
+    root: BIP32Interface,
+    accounts: ReadonlySet<string>,
+): boolean {
     const key = signingKeyFromRoot(root);
     const ours = (derivations ?? []).filter(d => isOwnDerivation(key, d));
     if (!ours.length) return false;
-    // Only where the paired wallet will look for it: this account's receive or change addresses, at an index a wallet
-    // can reach. A path elsewhere (another account, index 500,000) still gives this key, but the watch-only wallet never
-    // shows those coins, so the amount is listed as going out rather than coming back.
-    if (!ours.every(d => isWalletAddressPath(d.path))) return false;
-    for (const d of ours) {
+    // First, whether the claim is true at all: each path has to give the stated key, and the output has to pay that
+    // key. A watch-only wallet that marks someone else's output as change is refused, wherever the path points.
+    const pubkeys = ours.map(d => {
         let pubkey: Buffer;
         try {
             pubkey = Buffer.from(root.derivePath(normalizePath(d.path)).publicKey);
@@ -263,8 +289,14 @@ function isVerifiedChange(script: Buffer, derivations: Derivation[] | undefined,
         if (!pubkey.equals(Buffer.from(d.pubkey)) || !scriptsForPubkey(pubkey).some(s => s.equals(script))) {
             throw new Error(SIGN_FALSE_CHANGE);
         }
-    }
-    return true;
+        return pubkey;
+    });
+    // Then whether the paired wallet will see it: a native SegWit address on the account the inputs are signed from,
+    // at an index a wallet reaches. The same key's legacy (1…) or wrapped (3…) address, another account or index
+    // 500,000 still pays this key, but the watch-only wallet never shows those coins, so it's listed as going out.
+    return ours.every(
+        (d, i) => isWalletAddressPath(d.path, accounts) && (bitcoin.payments.p2wpkh({ pubkey: pubkeys[i] }).output as Buffer).equals(script),
+    );
 }
 
 /**
@@ -315,11 +347,12 @@ function feeOf(psbt: bitcoin.Psbt): number | null {
 /** What the transaction does, checked against the backup's key. Throws SIGN_FALSE_CHANGE. */
 export function reviewWithRoot(psbt: bitcoin.Psbt, root: BIP32Interface): TransactionReview {
     const key = signingKeyFromRoot(root);
+    const accounts = signedAccounts(psbt, key);
     return {
         outputs: psbt.txOutputs.map((output, i) => ({
             address: addressOf(output.script),
             value: output.value,
-            change: isVerifiedChange(output.script, psbt.data.outputs[i]?.bip32Derivation, root),
+            change: isVerifiedChange(output.script, psbt.data.outputs[i]?.bip32Derivation, root, accounts),
         })),
         fee: feeOf(psbt),
         inputCount: psbt.inputCount,
