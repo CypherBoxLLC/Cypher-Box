@@ -705,6 +705,25 @@ export type AuthStateType = {
     setTwoFAVerified: (state: boolean) => void;
 };
 
+/**
+ * Union of two `arkServerSpentVtxoIds` lists, `newer` last, lowercased and
+ * de-duplicated. Shared by the setter and the hydration merge so both keep
+ * the same cap.
+ *
+ * Bounded so a long-lived wallet cannot grow this without limit in persisted
+ * storage. Oldest entries fall off first; a VTXO that old is long gone from
+ * the local DB anyway.
+ */
+const ARK_SERVER_SPENT_IDS_CAP = 500;
+function mergeArkServerSpentVtxoIds(older: unknown, newer: unknown): string[] {
+    const merged = new Set<string>();
+    for (const list of [older, newer]) {
+        if (!Array.isArray(list)) continue;
+        for (const id of list) if (typeof id === 'string' && id) merged.add(id.toLowerCase());
+    }
+    return Array.from(merged).slice(-ARK_SERVER_SPENT_IDS_CAP);
+}
+
 const createAuthStore = (
     set: SetState<AuthStateType>,
     get: GetState<AuthStateType>
@@ -830,15 +849,9 @@ const createAuthStore = (
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
     addArkServerSpentVtxoIds: (ids: string[]) =>
-        set((s) => {
-            const merged = new Set(s.arkServerSpentVtxoIds);
-            for (const id of ids) if (id) merged.add(id.toLowerCase());
-            // Bounded so a long-lived wallet cannot grow this without limit in
-            // persisted storage. Oldest entries fall off first; a VTXO that old
-            // is long gone from the local DB anyway.
-            const capped = Array.from(merged).slice(-500);
-            return { arkServerSpentVtxoIds: capped };
-        }),
+        set((s) => ({
+            arkServerSpentVtxoIds: mergeArkServerSpentVtxoIds(s.arkServerSpentVtxoIds, ids),
+        })),
     setArkRefreshingVtxoIds: (ids: string[]) =>
         set((s) => {
             // Stamp ids we have not seen, keep existing stamps (so a re-set of
@@ -1105,6 +1118,14 @@ const useAuthStore = create<AuthStateType>()(
                 ...currentState,
                 ...persisted,
                 signingMode: isSeedSignerLocked(),
+                // Both lists, not the saved one alone: a spend or a background
+                // wake can record a server-spent capsule before the store has
+                // loaded, and replacing it would put that capsule back in the
+                // balance.
+                arkServerSpentVtxoIds: mergeArkServerSpentVtxoIds(
+                    persisted.arkServerSpentVtxoIds,
+                    currentState.arkServerSpentVtxoIds,
+                ),
                 // Saved before the off-device backup was tracked (0.1.12 and
                 // earlier): start from what the saved vault says about its
                 // iCloud, Drive or folder copy, until the next backup write

@@ -1,9 +1,10 @@
 import { getArkWalletHandle } from './walletHandle';
 import { barkStateTag, isActiveExit } from './barkState';
 import useAuthStore from '@Cypher/stores/authStore';
-import { fetchArkBalance } from './balance';
+import { applyExpiredVtxoFilter, fetchArkBalance } from './balance';
 import {
     isPermanentlyGone,
+    notSpendableMessage,
     parseNotSpendableError,
     type NotSpendableVtxo,
 } from './vtxoSpendState';
@@ -44,6 +45,14 @@ export type ArkVtxoView = {
      * Optional for persist-compat with rows written before this field.
      */
     exiting?: boolean;
+    /**
+     * True when the Ark server has said this VTXO is already spent
+     * (`arkServerSpentVtxoIds` in authStore) while bark's own DB may still
+     * call it Spendable. Such rows only ever appear in `all`: `spendable`
+     * leaves them out, and applyExpiredVtxoFilter takes their sats out of the
+     * balance, the same way it does for `exiting`.
+     */
+    serverSpent?: boolean;
 };
 
 export type ArkVtxoList = {
@@ -154,6 +163,24 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         );
     } catch { /* handle busy or exit subsystem unavailable — no lock */ }
 
+    // Drop anything the SERVER has already told us is spent.
+    //
+    // bark decides spendability from its local DB and `sync()` never
+    // revalidates that against the server, so a VTXO spent by another holder
+    // of the same seed (or resurrected by restoring a stale `.cbark`) stays
+    // `Spendable` here forever. The SDK offers no way to drop it: only
+    // `importVtxo`, which adds. This denylist is the only place that
+    // correction can stick, and it is applied at the single chokepoint every
+    // consumer reads through: `spendable` leaves these rows out, and the
+    // `serverSpent` flag on `all` lets the balance filter subtract them, so
+    // balance, capsules, the sweep and the swap preflight all agree.
+    //
+    // Populated only from a failed spend reporting state `spent`. See
+    // ./vtxoSpendState.ts for why the other not-spendable states are excluded.
+    const serverSpent = new Set(
+        (useAuthStore.getState().arkServerSpentVtxoIds ?? []).map((id) => id.toLowerCase()),
+    );
+
     const all: ArkVtxoView[] = raw.map((v) => ({
         id: v.id,
         sats: Number(v.amountSats),
@@ -165,32 +192,16 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         // downstream `.toLowerCase()` comparison keeps working.
         state: barkStateTag(v.state),
         exiting: activeExitIds.has(v.id),
+        serverSpent: serverSpent.has(String(v.id).toLowerCase()),
     }));
 
+    const spendable = all.filter(
+        (v) => !HIDDEN_STATES.has(v.state.toLowerCase()) && !v.serverSpent,
+    );
     // Diagnostic: surface every VTXO state + kind we see from the SDK, so
     // if spendable is still empty we can see what state Lightning-received
     // VTXOs are actually landing in. Cheap log, keep on until the capsule
     // flow is solid.
-    //
-    // Drop anything the SERVER has already told us is spent.
-    //
-    // bark decides spendability from its local DB and `sync()` never
-    // revalidates that against the server, so a VTXO spent by another holder
-    // of the same seed (or resurrected by restoring a stale `.cbark`) stays
-    // `Spendable` here forever. The SDK offers no way to drop it: only
-    // `importVtxo`, which adds. This denylist is the only place that
-    // correction can stick, and it is applied at the single chokepoint every
-    // consumer reads through, so balance, capsules, the sweep and the swap
-    // preflight all agree.
-    //
-    // Populated only from a failed spend reporting state `spent`. See
-    // ./vtxoSpendState.ts for why the other not-spendable states are excluded.
-    const serverSpent = new Set(
-        (useAuthStore.getState().arkServerSpentVtxoIds ?? []).map((id) => id.toLowerCase()),
-    );
-    const spendable = all.filter(
-        (v) => !HIDDEN_STATES.has(v.state.toLowerCase()) && !serverSpent.has(v.id.toLowerCase()),
-    );
     if (__DEV__) {
         // Dev-only, and only for ACTIVE (non-spent) VTXOs. Dumping every VTXO
         // (178+ on a busy wallet, almost all spent history) on every fetch
@@ -250,10 +261,43 @@ export async function recordServerSpentFromError(
     try {
         const list = await fetchArkVtxos();
         if (list) useAuthStore.getState().setArkVtxos(list.spendable);
-        await fetchArkBalance();
+        const balance = await fetchArkBalance();
+        // The same filter the sync tick applies, against the tip it last
+        // stored. Written only with the list in hand: without it the filter
+        // hands back bark's raw number, which still counts the phantom.
+        if (list && balance) {
+            const s = useAuthStore.getState();
+            const filtered = applyExpiredVtxoFilter(balance, list.all, s.arkChainTipHeight);
+            s.setArkBalance(filtered.totalSats);
+            s.setArkBalanceDetail(filtered);
+        }
     } catch (e: any) {
         console.warn('[Ark vtxos] post-prune refresh failed:', e?.message ?? e);
     }
 
     return parsed;
+}
+
+/**
+ * The message for a spend the Ark server refused over a capsule, or null when
+ * the failure was something else. Records a server-spent capsule on the way,
+ * exactly as recordServerSpentFromError does, so a catch block needs this one
+ * call.
+ *
+ * Never throws: its callers are catch blocks that still owe the user a
+ * message. If recording fails, the copy is chosen as for an unrecorded
+ * capsule, so it does not claim the balance was corrected.
+ */
+export async function recordAndDescribeNotSpendable(
+    err: unknown,
+): Promise<{ title: string; body: string } | null> {
+    let parsed: NotSpendableVtxo | null;
+    try {
+        parsed = await recordServerSpentFromError(err);
+    } catch (e: any) {
+        console.warn('[Ark vtxos] recording a not-spendable error failed:', e?.message ?? e);
+        const unrecorded = parseNotSpendableError(err);
+        parsed = unrecorded ? { ...unrecorded, vtxoId: null } : null;
+    }
+    return parsed ? notSpendableMessage(parsed) : null;
 }

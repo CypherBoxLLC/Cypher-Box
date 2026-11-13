@@ -2934,7 +2934,7 @@
       },
       "vtxo_spend_state": {
         "spent_title": "Those sats are already gone",
-        "spent_body": "The Ark server reports this capsule as already spent, so the balance shown was out of date. Your wallet has been corrected. This happens when the same seed phrase is used on another device, or after restoring an old backup file.",
+        "spent_body": "The Ark server reports this capsule as already spent, so your balance no longer counts it. This happens when the same seed phrase is used on another device, or after restoring an old backup file. If payments from Bark Vault keep failing, send from a different wallet for now and contact support.",
         "unregistered_title": "A capsule is stuck",
         "unregistered_body": "One of your capsules is in a state the Ark server won't spend, so payments from Bark Vault keep failing. Try sending from a different wallet for now.",
         "unclaimed_title": "A capsule is not ready yet",
