@@ -48,6 +48,12 @@ function seedOnDeviceConsented(): boolean {
 export async function writeBackgroundArkSeed(mnemonic: string): Promise<void> {
     if (!mnemonic) return;
     if (!seedOnDeviceConsented()) {
+        // Until the auth store has loaded, arkWallet is its default (null) and
+        // reads as no consent, which proves nothing. That is what a background
+        // wake on a locked iPhone sees, as the store's key is unreadable then.
+        // Leave the copy alone: a later wake needs it to refresh capsules
+        // before they expire.
+        if (!useAuthStore.persist.hasHydrated()) return;
         // Arming the reminders toggle used to write this copy unconditionally,
         // so a user who turned OFF "save seed to Keystore" still got their full
         // 12 words written here with NO biometric gate, readable with a plain
@@ -88,6 +94,13 @@ export async function readBackgroundArkSeed(): Promise<string | null> {
 export async function ensureBackgroundArkSeed(mnemonic: string): Promise<void> {
     if (!mnemonic) return;
     try {
+        // Only on loaded values. A background wake on a locked iPhone opens
+        // the wallet from the background copy while the auth store is still
+        // at its defaults (its key is unreadable until the phone is unlocked),
+        // where arkWallet is null and reads as no consent: the self-heal below
+        // would delete the very copy that wake opened the wallet with. The
+        // next wallet-open checks again.
+        if (!useAuthStore.persist.hasHydrated()) return;
         if (!useAuthStore.getState().arkBgRefreshEnabled) return;
         if (!seedOnDeviceConsented()) {
             // Self-heal on every wallet open: remove a mirror written before

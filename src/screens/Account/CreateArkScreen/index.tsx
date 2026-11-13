@@ -43,7 +43,6 @@ export default function CreateArkScreen() {
         walletID,
         FirstTimeArk,
         arkUseHotVaultSeed,
-        isArkAuth,
         setAllBTCWallets,
         setArkAuth,
         setArkWallet,
@@ -89,8 +88,16 @@ export default function CreateArkScreen() {
             // every destination are preserved (multi-wallet PR invariant).
             // If a user actually had funds in this orphan datadir, those
             // funds are still recoverable via the matching `.cbark` file.
+            //
+            // isArkAuth is read from the store at this point rather than from
+            // the first render, and only once the store has loaded: before
+            // that it is its default (false) even for a live wallet, for
+            // instance while the store's key is still unreadable after a
+            // background wake on a locked iPhone. Until then the datadir
+            // counts as live and nothing is wiped.
             const handle = getArkWalletHandle();
-            if (handle || isArkAuth) {
+            const loaded = useAuthStore.persist.hasHydrated();
+            if (handle || !loaded || useAuthStore.getState().isArkAuth) {
                 setExistingCheck("exists");
                 return;
             }

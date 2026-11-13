@@ -263,13 +263,31 @@ export function registerArkNotificationTapHandler(): void {
     // any lingering copy so no seed lives outside the biometry-locked primary.
     // (Opt-out and reset delete it explicitly; this is the boot-time safety
     // net.) Lazy require keeps the boot path light; fire-and-forget.
+    //
+    // It decides on the saved setting, so it waits for the auth store to load.
+    // Until then arkBgRefreshEnabled is its default, and on a background wake
+    // on a locked iPhone the store cannot load at all until the phone is
+    // unlocked (its key is unreadable), so deciding early would act on the
+    // default rather than on what the user chose.
     setTimeout(() => {
+        const deleteIfOff = () => {
+            try {
+                if (!useAuthStore.getState().arkBgRefreshEnabled) {
+                    // eslint-disable-next-line @typescript-eslint/no-var-requires
+                    const { deleteBackgroundArkSeed } = require('./backgroundKeychain');
+                    void deleteBackgroundArkSeed().catch(() => {});
+                }
+            } catch {}
+        };
         try {
-            if (!useAuthStore.getState().arkBgRefreshEnabled) {
-                // eslint-disable-next-line @typescript-eslint/no-var-requires
-                const { deleteBackgroundArkSeed } = require('./backgroundKeychain');
-                void deleteBackgroundArkSeed().catch(() => {});
+            if (useAuthStore.persist.hasHydrated()) {
+                deleteIfOff();
+                return;
             }
+            const stopWaiting = useAuthStore.persist.onFinishHydration(() => {
+                stopWaiting();
+                deleteIfOff();
+            });
         } catch {}
     }, 0);
 }
