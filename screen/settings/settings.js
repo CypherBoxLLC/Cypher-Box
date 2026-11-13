@@ -13,7 +13,7 @@ import useAuthStore from '@Cypher/stores/authStore';
 import { dispatchNavigate } from '@Cypher/helpers';
 import triggerHapticFeedback from '../../blue_modules/hapticFeedback';
 import { colors } from '@Cypher/style-guide';
-import { SEED_SIGNER_MODE, openSeedSignerGate } from '../../src/screens/SigningHome/seedSigner';
+import { openSeedSignerGate } from '../../src/screens/SigningHome/seedSigner';
 const BlueElectrum = require('../../blue_modules/BlueElectrum');
 const prompt = require('../../helpers/prompt');
 
@@ -176,14 +176,14 @@ const Settings = ({ navigation }) => {
             only says so */}
         {signingMode ? (
           <ListItem
-            title={SEED_SIGNER_MODE}
-            rightTitle="On"
+            title={loc.cypherbox.seed_signer.mode}
+            rightTitle={loc.cypherbox.seed_signer.mode_on}
             rightTitleStyle={styles.signerOn}
             Component={TouchableWithoutFeedback}
             testID="SeedSignerMode"
           />
         ) : (
-          <ListItem title={SEED_SIGNER_MODE} onPress={openSeedSignerGate} testID="SeedSignerMode" chevron />
+          <ListItem title={loc.cypherbox.seed_signer.mode} onPress={openSeedSignerGate} testID="SeedSignerMode" chevron />
         )}
         <ListItem
           title={loc.settings.network}

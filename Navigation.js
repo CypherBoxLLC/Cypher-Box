@@ -328,7 +328,7 @@ const WalletsRoot = () => {
       <WalletsStack.Screen
         name="ProvideEntropy"
         component={ProvideEntropy}
-        options={{ headerShown: true, title: loc.entropy.title, headerBackTitle: 'Back' }}
+        options={{ headerShown: true, title: loc.entropy.title, headerBackTitle: loc.cypherbox.account.common.back }}
       />
       <WalletsStack.Screen name="TransactionBroadCastNew" component={TransactionBroadCastNew} options={{ headerShown: false }} />
       <WalletsStack.Screen name="PurchaseVault" component={PurchaseVault} options={{ headerShown: false }} />

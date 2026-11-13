@@ -37,11 +37,13 @@ import { colors, widths } from "@Cypher/style-guide";
 import { randomBytes } from "../../../class/rng";
 import { assertNativeRngHealthy } from "../../../class/rngHealth";
 import { assertMnemonicHealthy } from "../../../class/seedHealth";
+import loc from "../../../loc";
 import safetyErrorText from "../../helpers/safetyErrorText";
 import useProtectSecret from "../../custom-hooks/useProtectSecret";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import useSeedQRCheck from "../../custom-hooks/useSeedQRCheck";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
+import signErrorText from "../SignOnce/errorText";
 import { noteSeedBackedUp } from "../SigningHome/seedSigner";
 
 /**
@@ -106,8 +108,8 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     const connection = useElectrumConnection(true, false);
     const offline = connection === 'no-answer';
     const onlineNote = connection === 'checking'
-        ? 'Checking this phone is offline…'
-        : "This phone is online. A seed is only made or loaded once it's offline: Airplane Mode on, Wi-Fi and Bluetooth off.";
+        ? loc.cypherbox.sign_once.checking_offline
+        : loc.cypherbox.seed_signer.create.online_note;
     const newPassphrase = usePassphrase ? passphrase : '';
 
     // only ever in this screen's memory, and cleared on the way out
@@ -138,12 +140,12 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             } else if (stepRef.current === 'backup') {
                 e.preventDefault();
                 Alert.alert(
-                    'Leave without finishing?',
-                    "This seed isn't saved anywhere. If you leave now, it's gone, and you'll make a new one next time.",
+                    loc.cypherbox.seed_signer.create.leave_title,
+                    loc.cypherbox.seed_signer.create.leave_body,
                     [
-                        { text: 'Stay', style: 'cancel' },
+                        { text: loc.cypherbox.seed_signer.create.stay, style: 'cancel' },
                         {
-                            text: 'Leave',
+                            text: loc.cypherbox.seed_signer.create.leave,
                             style: 'destructive',
                             onPress: () => {
                                 leaving.current = true;
@@ -173,7 +175,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             // its public side is all that's needed from here
             forget();
         } catch (e: any) {
-            setError(e?.message ?? "This seed's public key couldn't be worked out.");
+            setError(safetyErrorText(e, loc.cypherbox.seed_signer.create.key_failed));
             setStep(from);
         } finally {
             setDeriving(false);
@@ -193,7 +195,9 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             return;
         }
         if (usePassphrase && (!passphrase || passphrase !== passphraseAgain)) {
-            setError(passphrase ? "The passphrases don't match." : 'Type a passphrase, or turn it off.');
+            setError(passphrase
+                ? loc.cypherbox.seed_signer.create.passphrase_mismatch
+                : loc.cypherbox.seed_signer.create.passphrase_missing);
             return;
         }
         try {
@@ -215,7 +219,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             setTyped('');
             setStep('backup');
         } catch (e: any) {
-            setError(safetyErrorText(e, 'The seed could not be made.'));
+            setError(safetyErrorText(e, loc.cypherbox.seed_signer.create.create_failed));
         }
     };
 
@@ -229,7 +233,8 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
         try {
             phrase = backupToMnemonic(text);
         } catch (e: any) {
-            setError(e?.message ?? "That isn't a recovery phrase or a SeedQR.");
+            // the backup helper's reasons are in English, as on the signing screen
+            setError(e?.message ? signErrorText(String(e.message)) : loc.cypherbox.seed_signer.create.not_a_backup);
             return;
         }
         return deriveKey(phrase, passphrase, 'load');
@@ -260,9 +265,9 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                 setTyped('');
                 return deriveKey(mnemonic, newPassphrase, 'created');
             }
-            setError("That isn't the same phrase. Check your copy word by word.");
+            setError(loc.cypherbox.seed_signer.create.not_the_same);
         } catch (e: any) {
-            setError(e?.message);
+            setError(e?.message ? signErrorText(String(e.message)) : null);
         }
     };
 
@@ -286,18 +291,14 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
                 {step === 'intro' && (
                     <>
-                        <Text style={styles.title}>Create a Seed</Text>
+                        <Text style={styles.title}>{loc.cypherbox.seed_signer.create_seed}</Text>
                         {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
-                        <Text style={styles.body}>
-                            This phone makes a seed (12 words) for you to back up on paper and as a SeedQR. It's never
-                            saved here: once you've checked your copy and taken the public key to your watch-only wallet,
-                            it's gone from this phone. To sign, you scan the SeedQR.
-                        </Text>
+                        <Text style={styles.body}>{loc.cypherbox.seed_signer.create.intro_body}</Text>
                         {dice ? (
                             <View style={styles.row}>
-                                <Text style={styles.ok}>Dice rolls added, mixed with the phone's randomness</Text>
+                                <Text style={styles.ok}>{loc.cypherbox.seed_signer.create.dice_added}</Text>
                                 <TouchableOpacity onPress={() => setDice(null)} accessibilityRole="button">
-                                    <Text style={styles.link}>Remove</Text>
+                                    <Text style={styles.link}>{loc.cypherbox.seed_signer.create.dice_remove}</Text>
                                 </TouchableOpacity>
                             </View>
                         ) : (
@@ -312,29 +313,26 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                 })}
                                 accessibilityRole="button"
                             >
-                                <Text style={styles.link}>Add your own dice rolls (optional)</Text>
+                                <Text style={styles.link}>{loc.cypherbox.seed_signer.create.add_dice}</Text>
                             </TouchableOpacity>
                         )}
                         <View style={styles.row}>
-                            <Text style={styles.label}>Add a passphrase (optional)</Text>
+                            <Text style={styles.label}>{loc.cypherbox.seed_signer.create.add_passphrase}</Text>
                             <Switch value={usePassphrase} onValueChange={setUsePassphrase} />
                         </View>
                         {usePassphrase ? (
                             <>
-                                <Text style={styles.note}>
-                                    The SeedQR alone then can't spend: you type the passphrase each time you sign. Keep
-                                    it apart from the SeedQR. Lose it and the coins are gone.
-                                </Text>
+                                <Text style={styles.note}>{loc.cypherbox.seed_signer.create.passphrase_note}</Text>
                                 <TextInput style={styles.input} value={passphrase} onChangeText={setPassphrase}
-                                    placeholder="Passphrase" placeholderTextColor="#666" secureTextEntry
+                                    placeholder={loc.cypherbox.seed_signer.create.passphrase} placeholderTextColor="#666" secureTextEntry
                                     autoCapitalize="none" autoCorrect={false} autoComplete="off" importantForAutofill="no" />
                                 <TextInput style={styles.input} value={passphraseAgain} onChangeText={setPassphraseAgain}
-                                    placeholder="Passphrase again" placeholderTextColor="#666" secureTextEntry
+                                    placeholder={loc.cypherbox.seed_signer.create.passphrase_again} placeholderTextColor="#666" secureTextEntry
                                     autoCapitalize="none" autoCorrect={false} autoComplete="off" importantForAutofill="no" />
                             </>
                         ) : null}
                         <TouchableOpacity style={styles.primary} onPress={generate} accessibilityRole="button">
-                            <Text h3 style={styles.primaryText}>Generate Seed</Text>
+                            <Text h3 style={styles.primaryText}>{loc.cypherbox.seed_signer.create.generate}</Text>
                         </TouchableOpacity>
                         {errorText}
                     </>
@@ -342,26 +340,24 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
 
                 {step === 'load' && (
                     <>
-                        <Text style={styles.title}>Show a Seed's Public Key</Text>
+                        <Text style={styles.title}>{loc.cypherbox.seed_signer.show_key}</Text>
                         {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
-                        <Text style={styles.body}>
-                            Scan the SeedQR, or type the words, to show the public key and first addresses to set up or
-                            check a watch-only wallet. Nothing is saved.
-                        </Text>
+                        <Text style={styles.body}>{loc.cypherbox.seed_signer.create.load_body}</Text>
+                        {/* the same fields as the signing screen's backup step */}
                         <TextInput style={styles.input} value={passphrase} onChangeText={setPassphrase}
-                            placeholder="Passphrase (only if you use one)" placeholderTextColor="#666" secureTextEntry
+                            placeholder={loc.cypherbox.sign_once.passphrase_placeholder} placeholderTextColor="#666" secureTextEntry
                             autoCapitalize="none" autoCorrect={false} autoComplete="off" importantForAutofill="no" />
                         <TouchableOpacity style={styles.primary} onPress={scanSeedQR} accessibilityRole="button">
-                            <Text h3 style={styles.primaryText}>Scan SeedQR</Text>
+                            <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.scan_seedqr}</Text>
                         </TouchableOpacity>
                         <TextInput style={[styles.input, styles.words]} value={typed} onChangeText={setTyped}
-                            placeholder="Or type your 12 or 24 words" placeholderTextColor="#666" multiline
+                            placeholder={loc.cypherbox.sign_once.words_placeholder} placeholderTextColor="#666" multiline
                             autoCapitalize="none" autoCorrect={false} spellCheck={false} autoComplete="off"
                             textContentType="none" importantForAutofill="no"
                             // Android: keeps the keyboard from learning the words, as on the signing screen
                             keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'} />
                         <TouchableOpacity style={styles.secondary} onPress={() => load(typed)} accessibilityRole="button">
-                            <Text h3>Continue</Text>
+                            <Text h3>{loc._.continue}</Text>
                         </TouchableOpacity>
                         {errorText}
                     </>
@@ -369,17 +365,14 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
 
                 {step === 'backup' && (
                     <>
-                        <Text style={styles.title}>Back up your seed</Text>
+                        <Text style={styles.title}>{loc.cypherbox.seed_signer.create.backup_title}</Text>
                         <Text style={styles.body}>
-                            Write the {words.length} words on paper, in order, and copy the SeedQR onto a SeedQR template
-                            or a steel plate. This is the only time this phone shows them.
+                            {String(loc.formatString(loc.cypherbox.seed_signer.create.backup_body, { count: words.length }))}
                         </Text>
                         {newPassphrase ? (
-                            <Text style={styles.passphraseNote}>
-                                Your passphrase isn't part of this backup. Keep it written down, apart from it.
-                            </Text>
+                            <Text style={styles.passphraseNote}>{loc.cypherbox.seed_signer.create.backup_passphrase_note}</Text>
                         ) : null}
-                        {/* one backup, two ways to copy it, as when a Hot Vault is made */}
+                        {/* one backup, two ways to copy it, as when a Hot Vault is made, and in the same words */}
                         <View style={styles.tabs}>
                             {(['words', 'seedqr'] as const).map(t => (
                                 <TouchableOpacity
@@ -390,18 +383,20 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                     accessibilityState={{ selected: tab === t }}
                                 >
                                     <Text bold style={tab === t ? styles.tabTextOn : styles.tabText}>
-                                        {t === 'words' ? `${words.length} words` : 'SeedQR'}
+                                        {t === 'words'
+                                            ? String(loc.formatString(loc.cypherbox.components.private_key_generator.words_tab, { count: words.length }))
+                                            : 'SeedQR'}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
                         {!revealed ? (
                             <View style={[styles.backupBox, styles.hidden]}>
-                                <Text bold center style={styles.hiddenTitle}>Tap to reveal your seed phrase</Text>
-                                <Text center style={styles.hiddenBody}>Make sure no one is watching your screen.</Text>
+                                <Text bold center style={styles.hiddenTitle}>{loc.cypherbox.components.private_key_generator.tap_to_reveal}</Text>
+                                <Text center style={styles.hiddenBody}>{loc.cypherbox.components.private_key_generator.no_one_watching}</Text>
                                 <TouchableOpacity style={styles.view} onPress={() => setRevealed(true)} accessibilityRole="button">
                                     <Image source={EyeVisible} />
-                                    <Text h3 style={styles.viewText}>View</Text>
+                                    <Text h3 style={styles.viewText}>{loc.cypherbox.components.private_key_generator.view}</Text>
                                 </TouchableOpacity>
                             </View>
                         ) : tab === 'words' ? (
@@ -414,10 +409,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             </View>
                         ) : grid ? (
                             <>
-                                <Text style={styles.body}>
-                                    Copy each filled square onto a SeedQR template or a steel plate. Zoom into each
-                                    quarter. Never photograph it.
-                                </Text>
+                                <Text style={styles.body}>{loc.cypherbox.seed_signer.create.seedqr_body}</Text>
                                 <SeedQRGrid grid={grid} width={widths - 48} />
                             </>
                         ) : null}
@@ -429,69 +421,52 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             accessibilityRole="button"
                             accessibilityState={{ disabled: !revealed }}
                         >
-                            <Text h3 style={styles.primaryText}>I've backed it up</Text>
+                            <Text h3 style={styles.primaryText}>{loc.cypherbox.seed_signer.create.backed_up}</Text>
                         </TouchableOpacity>
                     </>
                 )}
 
                 {step === 'created' && (
                     <>
-                        <Text style={styles.createdTitle}>Seed-Signer created!</Text>
-                        <Text style={styles.body}>
-                            Your seed now lives only on your backup: the words on paper and the SeedQR. This phone
-                            forgets it when you leave this screen.
-                        </Text>
+                        <Text style={styles.createdTitle}>{loc.cypherbox.seed_signer.create.created_title}</Text>
+                        <Text style={styles.body}>{loc.cypherbox.seed_signer.create.created_body}</Text>
 
-                        <Text style={styles.sectionTitle}>What's next</Text>
-                        <Instruction number={1} title="Check your backup">
-                            Scan your SeedQR copy below, or type the words. The public key only shows once the copy
-                            checks out, so no coins go to a seed whose backup has a mistake.
+                        <Text style={styles.sectionTitle}>{loc.cypherbox.seed_signer.create.whats_next}</Text>
+                        <Instruction number={1} title={loc.cypherbox.seed_signer.create.check_title}>
+                            {loc.cypherbox.seed_signer.create.check_body}
                         </Instruction>
-                        <Instruction number={2} title="Set up your watch-only wallet">
-                            Add the public key this phone then shows to your watch & broadcast only wallet (a Cypher
-                            Box Cold Vault, Sparrow or another app), and check its first addresses match.
+                        <Instruction number={2} title={loc.cypherbox.seed_signer.create.watch_only_title}>
+                            {loc.cypherbox.seed_signer.create.watch_only_body}
                         </Instruction>
-                        <Instruction number={3} title="Sign by scanning">
-                            To sign, tap Sign a Transaction on this phone's home, scan the transaction your watch-only
-                            wallet made, check it, then scan your SeedQR. The phone signs and forgets the seed again.
+                        <Instruction number={3} title={loc.cypherbox.seed_signer.create.sign_title}>
+                            {loc.cypherbox.seed_signer.create.sign_body}
                         </Instruction>
 
-                        <Text style={styles.sectionTitle}>Before you go</Text>
-                        <Warning>
-                            This phone doesn't keep your seed. Your words and SeedQR are the only copies: lose them and
-                            the coins are gone.
-                        </Warning>
-                        <Warning>
-                            Anyone who sees your words or SeedQR can take the coins. Never photograph them or type them
-                            into a phone or computer that's online, and keep them apart from this phone.
-                        </Warning>
-                        {newPassphrase ? (
-                            <Warning>
-                                Your passphrase isn't in the words or the SeedQR. You type it each time you sign: lose it
-                                and the coins are gone.
-                            </Warning>
-                        ) : null}
+                        <Text style={styles.sectionTitle}>{loc.cypherbox.seed_signer.create.before_you_go}</Text>
+                        <Warning>{loc.cypherbox.seed_signer.create.only_copies}</Warning>
+                        <Warning>{loc.cypherbox.seed_signer.create.anyone_who_sees}</Warning>
+                        {newPassphrase ? <Warning>{loc.cypherbox.seed_signer.create.passphrase_warning}</Warning> : null}
                         <OfflineSeedWarning style={styles.warning} />
 
-                        <Text style={styles.sectionTitle}>Check your backup</Text>
+                        <Text style={styles.sectionTitle}>{loc.cypherbox.seed_signer.create.check_title}</Text>
                         <TouchableOpacity style={styles.primary} onPress={check.scan} accessibilityRole="button">
-                            <Text h3 style={styles.primaryText}>Scan my SeedQR copy</Text>
+                            <Text h3 style={styles.primaryText}>{loc.cypherbox.seed_signer.create.scan_copy}</Text>
                         </TouchableOpacity>
                         {check.result === 'mismatch' ? (
-                            <Text style={styles.error}>That copy gives a different seed. Compare it with the backup.</Text>
+                            <Text style={styles.error}>{loc.cypherbox.seed_signer.create.copy_mismatch}</Text>
                         ) : null}
-                        <Text style={styles.note}>No camera? Check the written words instead:</Text>
+                        <Text style={styles.note}>{loc.cypherbox.seed_signer.create.no_camera}</Text>
                         <TextInput style={[styles.input, styles.words]} value={typed} onChangeText={setTyped}
-                            placeholder="Type your 12 words" placeholderTextColor="#666" multiline
+                            placeholder={loc.cypherbox.seed_signer.create.type_words} placeholderTextColor="#666" multiline
                             autoCapitalize="none" autoCorrect={false} spellCheck={false} autoComplete="off"
                             textContentType="none" importantForAutofill="no"
                             // Android: keeps the keyboard from learning the words, as on the signing screen
                             keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'} />
                         <TouchableOpacity style={styles.secondary} onPress={checkTyped} accessibilityRole="button">
-                            <Text h3>Check the words</Text>
+                            <Text h3>{loc.cypherbox.seed_signer.create.check_words}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity onPress={backToBackup} accessibilityRole="button">
-                            <Text style={styles.link}>Show the backup again</Text>
+                            <Text style={styles.link}>{loc.cypherbox.seed_signer.create.show_backup_again}</Text>
                         </TouchableOpacity>
                         {errorText}
                     </>
@@ -500,43 +475,43 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                 {step === 'key' && deriving && (
                     <View style={styles.working}>
                         <ActivityIndicator size="large" color={colors.green} />
-                        <Text style={styles.workingText}>Working out this seed's public key…</Text>
+                        <Text style={styles.workingText}>{loc.cypherbox.seed_signer.create.working}</Text>
                     </View>
                 )}
 
                 {step === 'key' && !deriving && info && (
                     <>
-                        <Text style={styles.title}>{showOnly ? "This seed's public key" : 'Your seed is backed up'}</Text>
-                        <Text style={styles.body}>
-                            Add this public key to your watch & broadcast only wallet (a Cypher Box Cold Vault, Sparrow or
-                            another app), then check its first addresses match these. The part in brackets is the key
-                            fingerprint and path, which your wallet needs to make transactions this seed can sign.
+                        <Text style={styles.title}>
+                            {showOnly ? loc.cypherbox.seed_signer.create.key_title_show : loc.cypherbox.seed_signer.create.key_title_created}
                         </Text>
+                        <Text style={styles.body}>{loc.cypherbox.seed_signer.create.key_body}</Text>
                         <View style={styles.qr}>
                             <ScannableQR value={info.key} width={widths - 48} />
                         </View>
                         <SelectableText selectable style={styles.mono}>{info.key}</SelectableText>
                         <TouchableOpacity style={styles.secondary} onPress={() => {
                             Clipboard.setString(info.key);
-                            SimpleToast.show('Public key copied', SimpleToast.SHORT);
+                            SimpleToast.show(loc.cypherbox.seed_signer.create.key_copied, SimpleToast.SHORT);
                         }} accessibilityRole="button">
-                            <Text h3>Copy public key</Text>
+                            <Text h3>{loc.cypherbox.seed_signer.create.copy_key}</Text>
                         </TouchableOpacity>
                         <View style={styles.facts}>
-                            <Text style={styles.fact}>Key fingerprint  <Text style={styles.factValue}>{info.fingerprint}</Text></Text>
-                            <Text style={styles.fact}>Path  <Text style={styles.factValue}>{info.path}</Text></Text>
-                            <Text style={styles.fact}>First addresses</Text>
+                            <Text style={styles.fact}>
+                                {loc.cypherbox.seed_signer.key_fingerprint}  <Text style={styles.factValue}>{info.fingerprint}</Text>
+                            </Text>
+                            {/* after an Arabic label the path's last ' would be drawn at the far left; the left-to-right
+                                mark (U+200E) keeps it in place */}
+                            <Text style={styles.fact}>
+                                {loc.cypherbox.seed_signer.create.path}  <Text style={styles.factValue}>{`${info.path}\u200E`}</Text>
+                            </Text>
+                            <Text style={styles.fact}>{loc.cypherbox.seed_signer.create.first_addresses}</Text>
                             {info.addresses.map((a, i) => (
                                 <SelectableText key={a} selectable style={styles.mono}>{`${i}  ${a}`}</SelectableText>
                             ))}
                         </View>
-                        <Text style={styles.note}>
-                            The seed isn't kept on this phone. Still, if it's ever stolen, assume the seed is compromised
-                            and move your coins to a new seed: getting a seed out of a phone is very difficult, but not
-                            something to bet on.
-                        </Text>
+                        <Text style={styles.note}>{loc.cypherbox.seed_signer.create.not_kept}</Text>
                         <TouchableOpacity style={styles.primary} onPress={done} accessibilityRole="button">
-                            <Text h3 style={styles.primaryText}>Done</Text>
+                            <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.done}</Text>
                         </TouchableOpacity>
                     </>
                 )}

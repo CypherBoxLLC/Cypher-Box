@@ -48,7 +48,7 @@ export function hotVaultKeychainText(os: string = Platform.OS, loc: any = defaul
                 ? loc.cypherbox.vault.saving_vault.keychain_failed_toast_android
                 : loc.cypherbox.vault.saving_vault.keychain_failed_toast,
         },
-        // HotStorageVault Settings: the backup tile, its toasts and the remove dialog
+        // HotStorageVault Settings: the backup tile, its toasts, the remove dialog, and a signing phone's remove row
         settings: {
             backUp: android
                 ? loc.cypherbox.vault.storage_vault.settings.keychain_back_up_android
@@ -71,6 +71,13 @@ export function hotVaultKeychainText(os: string = Platform.OS, loc: any = defaul
             removeBody: android
                 ? loc.cypherbox.vault.storage_vault.settings.keychain_remove_body_android
                 : loc.cypherbox.vault.storage_vault.settings.keychain_remove_body,
+            // a signing phone makes no copy, but can remove one made before
+            signerRemove: android
+                ? loc.cypherbox.vault.storage_vault.settings.keychain_signer_remove_android
+                : loc.cypherbox.vault.storage_vault.settings.keychain_signer_remove,
+            signerRemoving: android
+                ? loc.cypherbox.vault.storage_vault.settings.keychain_signer_removing_android
+                : loc.cypherbox.vault.storage_vault.settings.keychain_signer_removing,
         },
         // RecoverSavingVault: the section above the 12 word boxes and its dialogs
         recover: {
