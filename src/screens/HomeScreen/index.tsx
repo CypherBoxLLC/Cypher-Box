@@ -34,6 +34,7 @@ import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import { expireStrikeSession } from "@Cypher/services/sessionExpiry";
 import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkPushTokenBackfill, useArkoorReceivePrompt, useRegionGate } from "@Cypher/custom-hooks";
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
@@ -174,7 +175,7 @@ export default function HomeScreen({ route }: Props) {
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { signingMode, isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, clearStrikeAuth, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
+  const { signingMode, isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
   // Ark boot restore: reopens the wallet from on-disk state (datadir +
   // Keychain mnemonic) once per mount, and reconciles zustand so the
   // carousel reflects reality. Handles Metro reload + zustand/disk drift.
@@ -481,8 +482,8 @@ export default function HomeScreen({ route }: Props) {
           const balances = await getBalances();
           if (__DEV__) console.log('[Strike] getBalances DONE', Date.now());
           if (balances.data?.status === 401) {
-              SimpleToast.show(loc.cypherbox.home.strike_auth_expired, SimpleToast.SHORT);
-              clearStrikeAuth();
+              // signs out where Strike is offered; where it's hidden, the card stays with its notice
+              expireStrikeSession(loc.cypherbox.home.strike_auth_expired);
           } else if (balances) {
               if (__DEV__) console.log('balances (post-login): ', balances);
               // Normalize: index 0 = BTC, index 1 = fiat (API order is not guaranteed)
