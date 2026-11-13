@@ -28,6 +28,7 @@ import {
 } from "@Cypher/services/hotVaultKeychain";
 import SignerButton from "../SigningHome/SignerButton";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
+import { hotVaultKeychainText } from "@Cypher/helpers/hotVaultKeychainText";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
 import loc from "../../../loc";
 import Notifications from "../../../blue_modules/notifications";
@@ -66,6 +67,8 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
     const isKeychainBackedUp = thisWalletID
         ? !!hotVaultKeychainBackups?.[thisWalletID]
         : false;
+    // iPhone Keychain or Android Keystore wording for the backup tile, in the current language
+    const keychainText = hotVaultKeychainText().settings;
     // On a signing phone, whether the Keychain really holds a copy of this vault's seed, from listing the Keychain
     // (which doesn't open anything): the hint above can be out of date, and a copy nobody can see is the one thing a
     // signing phone mustn't keep.
@@ -196,7 +199,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         if (result.ok) {
             setHotVaultKeychainBackup(thisWalletID, true);
             triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
-            SimpleToast.show(loc.cypherbox.vault.storage_vault.settings.keychain_saved, SimpleToast.SHORT);
+            SimpleToast.show(keychainText.savedToast, SimpleToast.SHORT);
         } else if (result.kind === "no-biometric-gate") {
             // Android gave back a cipher not bound to a fingerprint; the helper
             // removed the un-gated entry instead of storing an unprotected
@@ -207,22 +210,22 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                 ")",
             );
             SimpleToast.show(
-                "This phone has no fingerprint set up, so the backup couldn't be protected. Add one in Settings, then try again.",
+                loc.cypherbox.vault.storage_vault.settings.keychain_no_fingerprint,
                 SimpleToast.LONG,
             );
         } else {
             console.warn("[HotVault] Keychain save failed:", result.error);
-            SimpleToast.show(loc.cypherbox.vault.storage_vault.settings.keychain_save_failed, SimpleToast.LONG);
+            SimpleToast.show(keychainText.saveFailedToast, SimpleToast.LONG);
         }
     };
 
     const handleKeychainRemove = () => {
         if (keychainBusy || !thisWalletID) return;
         Alert.alert(
-            loc.cypherbox.vault.storage_vault.settings.keychain_remove_title,
+            keychainText.removeTitle,
             header
                 ? "The copy of this seed in this phone's secure storage is removed. The seed on this phone and your paper or SeedQR backup aren't affected. A seed-signer doesn't keep this second copy, so it can't be made again here."
-                : loc.cypherbox.vault.storage_vault.settings.keychain_remove_body,
+                : keychainText.removeBody,
             [
                 { text: loc._.cancel, style: "cancel" },
                 {
@@ -543,10 +546,10 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                                     >
                                         <Text bold style={styles.text}>
                                             {keychainBusy
-                                                ? loc.cypherbox.vault.storage_vault.settings.keychain_updating
+                                                ? keychainText.updating
                                                 : isKeychainBackedUp
-                                                ? loc.cypherbox.vault.storage_vault.settings.keychain_saved_remove
-                                                : loc.cypherbox.vault.storage_vault.settings.keychain_back_up}
+                                                ? keychainText.savedRemove
+                                                : keychainText.backUp}
                                         </Text>
                                     </TouchableOpacity>
                                     <View style={styles.line} />
