@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { Alert, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { generateCheckedArkMnemonic } from "../../../class/seedHealth";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
@@ -121,7 +122,7 @@ export default function CheckingAccountLogin() {
     try {
       mnemonic = generateCheckedArkMnemonic(barkGenerateMnemonic);
     } catch (e: any) {
-      Alert.alert('Could not create wallet', e?.message ?? 'Secure randomness failed. Please try again.');
+      Alert.alert(loc.cypherbox.safety_checks.create_failed_title, safetyErrorText(e, loc.cypherbox.safety_checks.seed_unsafe));
       return;
     }
     dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });

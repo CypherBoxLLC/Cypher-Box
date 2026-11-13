@@ -27,12 +27,14 @@ export const SIGN_NO_KEY_INFO =
 export const SIGN_BACKUP_MISMATCH =
     "This backup doesn't belong to the wallet that made this transaction. Check the words, and the passphrase if you use one.";
 export const SIGN_VAULT_MISMATCH =
-    "This transaction wasn't made for your Hot Vault. Sign it with the backup or signing device it was made for.";
+    "This transaction wasn't made for your Hot Vault. Sign it on the signing device it was made for.";
 export const SIGN_ON_SIGNING_DEVICE =
     "This phone only signs for its own Hot Vault. Sign this transaction on your signing device: a hardware wallet, or an offline phone in Offline Seed-Signer mode.";
 export const SIGN_FALSE_CHANGE =
     "An amount marked as coming back to your wallet goes to an address that isn't yours. Don't sign this transaction.";
 export const SIGN_NOTHING_SIGNED = "Nothing in this transaction could be signed with this key.";
+export const SIGN_INPUT_MISMATCH =
+    "This transaction's amounts don't add up: an input's amount doesn't match the transaction it comes from. Don't sign it.";
 
 export interface ReviewOutput {
     address: string | null;
@@ -218,6 +220,17 @@ export function keyWithOrigin(fingerprint: string, path: string, xpub: string): 
     return `[${fingerprint.toLowerCase()}/${steps}]${xpub}`;
 }
 
+/** Highest address index counted as the paired wallet's own. Wallets look 20 past the last used address, so a real
+ * wallet stays far below this; it's a backstop against a path crafted to hide coins, not a gap limit. */
+const MAX_WALLET_ADDRESS_INDEX = 10000;
+
+/** True for m/84'/0'/0'/0/i and m/84'/0'/0'/1/i (receive and change) with i below MAX_WALLET_ADDRESS_INDEX: the
+ * account the signer pairs (SIGNER_KEY_PATH in signerPublicKey.ts, which imports from here). */
+export function isWalletAddressPath(path: string): boolean {
+    const m = /^m\/84'\/0'\/0'\/([01])\/(\d+)$/.exec(normalizePath(path).trim());
+    return !!m && Number(m[2]) < MAX_WALLET_ADDRESS_INDEX;
+}
+
 const scriptsForPubkey = (pubkey: Buffer): Buffer[] => {
     const p2wpkh = bitcoin.payments.p2wpkh({ pubkey });
     return [
@@ -236,6 +249,10 @@ function isVerifiedChange(script: Buffer, derivations: Derivation[] | undefined,
     const key = signingKeyFromRoot(root);
     const ours = (derivations ?? []).filter(d => isOwnDerivation(key, d));
     if (!ours.length) return false;
+    // Only where the paired wallet will look for it: this account's receive or change addresses, at an index a wallet
+    // can reach. A path elsewhere (another account, index 500,000) still gives this key, but the watch-only wallet never
+    // shows those coins, so the amount is listed as going out rather than coming back.
+    if (!ours.every(d => isWalletAddressPath(d.path))) return false;
     for (const d of ours) {
         let pubkey: Buffer;
         try {
@@ -250,13 +267,33 @@ function isVerifiedChange(script: Buffer, derivations: Derivation[] | undefined,
     return true;
 }
 
+/**
+ * An input's amount, as its signature commits to it. When a PSBT carries both, bitcoinjs signs a segwit input over the
+ * previous transaction (nonWitnessUtxo), not witnessUtxo, so the review takes the amount from there too: a watch-only
+ * wallet that put a smaller amount in witnessUtxo would otherwise show a small fee for a large one. The previous
+ * transaction has to be the one the input spends, and witnessUtxo, when there, has to agree with it. Throws
+ * SIGN_INPUT_MISMATCH.
+ */
 const inputValue = (psbt: bitcoin.Psbt, i: number): number | null => {
     const input = psbt.data.inputs[i];
-    if (input.witnessUtxo) return input.witnessUtxo.value;
     if (input.nonWitnessUtxo) {
-        const prevOut = bitcoin.Transaction.fromBuffer(input.nonWitnessUtxo).outs[psbt.txInputs[i].index];
-        return prevOut ? prevOut.value : null;
+        const spends = psbt.txInputs[i];
+        let prevTx: bitcoin.Transaction;
+        try {
+            prevTx = bitcoin.Transaction.fromBuffer(input.nonWitnessUtxo);
+        } catch (_) {
+            throw new Error(SIGN_INPUT_MISMATCH);
+        }
+        // both in the transaction's internal byte order
+        if (!prevTx.getHash().equals(spends.hash)) throw new Error(SIGN_INPUT_MISMATCH);
+        const prevOut = prevTx.outs[spends.index];
+        if (!prevOut) throw new Error(SIGN_INPUT_MISMATCH);
+        if (input.witnessUtxo && (input.witnessUtxo.value !== prevOut.value || !input.witnessUtxo.script.equals(prevOut.script))) {
+            throw new Error(SIGN_INPUT_MISMATCH);
+        }
+        return prevOut.value;
     }
+    if (input.witnessUtxo) return input.witnessUtxo.value;
     return null;
 };
 
@@ -335,6 +372,7 @@ export function signWithRoot(psbt: bitcoin.Psbt, root: BIP32Interface): { psbt: 
     const before = signedCount(copy);
     const key = signingKeyFromRoot(root);
     const fp = Buffer.from(root.fingerprint);
+    const verified: number[] = [];
     copy.data.inputs.forEach((input, i) => {
         const derivations = input.bip32Derivation ?? [];
         if (derivations.some(d => Buffer.from(d.masterFingerprint).equals(fp))) {
@@ -346,9 +384,11 @@ export function signWithRoot(psbt: bitcoin.Psbt, root: BIP32Interface): { psbt: 
             copy.signInputHD(i, unknownFingerprintSigner(root));
         }
         if (!copy.validateSignaturesOfInput(i, validator)) throw new Error(SIGN_NOTHING_SIGNED);
+        verified.push(i);
     });
-    // Nonce-reuse canary across every signature now on the PSBT.
-    auditPsbtSignatures(copy);
+    // Nonce-reuse canary on the inputs just signed, whose signatures were all verified above. Inputs this key didn't
+    // sign may carry anything the PSBT's maker put there.
+    auditPsbtSignatures(copy, verified);
     const signed = signedCount(copy) - before;
     if (signed <= 0) throw new Error(SIGN_NOTHING_SIGNED);
     return { psbt: copy, signed };

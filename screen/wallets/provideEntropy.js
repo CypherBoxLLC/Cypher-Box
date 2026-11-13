@@ -18,6 +18,8 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 
 import crypto from 'crypto';
 import { randomBytes } from '../../class/rng';
+import { assertNativeRngHealthy } from '../../class/rngHealth';
+import safetyErrorText from '../../src/helpers/safetyErrorText';
 import loc from '../../loc';
 import { BlueCurrentTheme, useTheme } from '../../components/themes';
 import { FContainer, FButton } from '../../components/FloatButtons';
@@ -334,7 +336,7 @@ const Entropy = () => {
     if (minBits && entropy.bits < minBits) {
       Alert.alert(
         loc.entropy.title,
-        `Not enough entropy yet: ${entropy.bits} of ${minBits} bits. Keep rolling until the counter reaches ${minBits}.`,
+        String(loc.formatString(loc.cypherbox.safety_checks.dice_not_enough, { bits: entropy.bits, min: minBits })),
       );
       return;
     }
@@ -352,9 +354,7 @@ const Entropy = () => {
     if (faces.length >= 8 && distinct <= 2) {
       Alert.alert(
         loc.entropy.title,
-        distinct <= 1
-          ? 'Every tap is the same number, so there is no randomness here at all. Roll a real die and tap what it lands on.'
-          : 'These taps only use two numbers, so there is almost no randomness here. Roll a real die and tap what it lands on.',
+        distinct <= 1 ? loc.cypherbox.safety_checks.dice_same_number : loc.cypherbox.safety_checks.dice_two_numbers,
       );
       return;
     }
@@ -368,6 +368,14 @@ const Entropy = () => {
     // precisely because they wanted to see where their key came from, so
     // handing back a key they cannot check defeats the exercise.
     const userBytes = buf.slice(0, 16);
+    // The mix is safe if either source is sound only while the phone's randomness is checked: with it returning
+    // zeros, the seed would be the hash of the taps alone, and patterned taps get past the guard above.
+    try {
+      await assertNativeRngHealthy();
+    } catch (e) {
+      Alert.alert(loc.cypherbox.safety_checks.create_failed_title, safetyErrorText(e, loc.cypherbox.safety_checks.rng_unavailable));
+      return;
+    }
     const rng = await randomBytes(16);
     setVerify({ user: userBytes, rng, final: mixEntropy(userBytes, rng) });
   };

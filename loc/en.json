@@ -3403,13 +3403,24 @@
         "invalid_backup": "Those words aren't a valid recovery phrase. One may be wrong or out of order.",
         "no_key_info": "This transaction doesn't say which key signs it. Export it again from your wallet with key details (derivation paths) included.",
         "backup_mismatch": "This backup doesn't belong to the wallet that made this transaction. Check the words, and the passphrase if you use one.",
-        "vault_mismatch": "This transaction wasn't made for your Hot Vault. Sign it with the backup or signing device it was made for.",
+        "vault_mismatch": "This transaction wasn't made for your Hot Vault. Sign it on the signing device it was made for.",
         "on_signing_device": "This phone only signs for its own Hot Vault. Sign this transaction on your signing device: a hardware wallet, or an offline phone in Offline Seed-Signer mode.",
         "false_change": "An amount marked as coming back to your wallet goes to an address that isn't yours. Don't sign this transaction.",
         "nothing_signed": "Nothing in this transaction could be signed with this key.",
+        "input_mismatch": "This transaction's amounts don't add up: an input's amount doesn't match the transaction it comes from. Don't sign it.",
         "unknown_word": "\"{word}\" isn't a recovery phrase word. Check its spelling.",
         "word_count": "That's {count} words. A recovery phrase has 12 or 24."
       }
+    },
+    "safety_checks": {
+      "create_failed_title": "Couldn't create the wallet",
+      "rng_unavailable": "This phone can't supply secure randomness right now, so a wallet can't be created safely. Update the app, and if this keeps happening, contact support.",
+      "seed_unsafe": "The wallet couldn't be created safely on this phone. Try again, and if this keeps happening, contact support.",
+      "signing_stopped": "Signing was stopped to protect your keys because a signature looked wrong. Don't broadcast this transaction, and contact support.",
+      "signature_invalid": "A signature didn't check out, so this transaction wasn't broadcast. Try again, and if this keeps happening, contact support.",
+      "dice_not_enough": "Not enough randomness yet: {bits} of {min} bits. Keep rolling until the counter reaches {min}.",
+      "dice_same_number": "Every tap is the same number, so there's no randomness here at all. Roll a real die and tap what it lands on.",
+      "dice_two_numbers": "These taps only use two numbers, so there's almost no randomness here. Roll a real die and tap what it lands on."
     },
     "signing_safety": {
       "got_it": "Got it, continue",

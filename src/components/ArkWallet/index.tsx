@@ -3,6 +3,7 @@ import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { generateCheckedArkMnemonic } from "../../../class/seedHealth";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import {
     ARK_VTXO_DUST_SATS,
     areBgNotificationsEnabled,
@@ -756,7 +757,7 @@ export default function ArkWallet({
         try {
             mnemonic = generateCheckedArkMnemonic(barkGenerateMnemonic);
         } catch (e: any) {
-            Alert.alert('Could not create wallet', e?.message ?? 'Secure randomness failed. Please try again.');
+            Alert.alert(loc.cypherbox.safety_checks.create_failed_title, safetyErrorText(e, loc.cypherbox.safety_checks.seed_unsafe));
             return;
         }
         dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });

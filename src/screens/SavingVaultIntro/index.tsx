@@ -8,6 +8,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
 import { HDSegwitBech32Wallet } from "../../../class";
 import { assertMnemonicHealthy } from "../../../class/seedHealth";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import loc from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -186,33 +187,39 @@ export default function SavingVaultIntro() {
 
       const w = new HDSegwitBech32Wallet();
       w.setLabel(label || loc.wallets.details_title);
-      if (diceEntropy && diceEntropy.length >= 16) {
-        // Already mixed. The entropy screen hashes the user's rolls with 16
-        // device CSPRNG bytes and hands back the RESULT, having first shown
-        // every input so the derivation can be checked by hand.
-        //
-        // The mix is not optional, and it lives there rather than here so the
-        // user can see it. The counter on that screen measures BITS PUSHED,
-        // not entropy, and a face maps to the same value every time, so 64
-        // taps of one button once satisfied the 128-bit gate with 128 zero
-        // bits and produced the all-zeros BIP39 test vector, which is swept
-        // within seconds of being funded. Tapping one face was also the
-        // FASTEST way to fill the counter, so it was reachable by impatience.
-        //
-        // Hashing gets both sources into 16 bytes and 12 words. Safe if EITHER
-        // is sound, rather than only if the dice are. See mixEntropy in
-        // screen/wallets/provideEntropy.
-        w.setSecret(bip39.entropyToMnemonic(diceEntropy.slice(0, 16).toString('hex')));
-      } else {
-        await w.generate();   // BIP39 mnemonic — ~5ms on device
-      }
-      // Validate the freshly minted seed before it becomes a wallet: a broken
-      // entropy source (dice or RNG) is caught here rather than stored.
+      // Minting and checking share one try: generate() refuses when the phone's
+      // randomness isn't working, and an uncaught refusal here left the button
+      // spinning with no message.
       try {
+        if (diceEntropy && diceEntropy.length >= 16) {
+          // Already mixed. The entropy screen hashes the user's rolls with 16
+          // device CSPRNG bytes and hands back the RESULT, having first shown
+          // every input so the derivation can be checked by hand.
+          //
+          // The mix is not optional, and it lives there rather than here so the
+          // user can see it. The counter on that screen measures BITS PUSHED,
+          // not entropy, and a face maps to the same value every time, so 64
+          // taps of one button once satisfied the 128-bit gate with 128 zero
+          // bits and produced the all-zeros BIP39 test vector, which is swept
+          // within seconds of being funded. Tapping one face was also the
+          // FASTEST way to fill the counter, so it was reachable by impatience.
+          //
+          // Hashing gets both sources into 16 bytes and 12 words. Safe if EITHER
+          // is sound, rather than only if the dice are. See mixEntropy in
+          // screen/wallets/provideEntropy.
+          w.setSecret(bip39.entropyToMnemonic(diceEntropy.slice(0, 16).toString('hex')));
+        } else {
+          await w.generate();   // BIP39 mnemonic — ~5ms on device
+        }
+        // Validate the freshly minted seed before it becomes a wallet: a broken
+        // entropy source (dice or RNG) is caught here rather than stored.
         assertMnemonicHealthy(w.getSecret());
       } catch (e: any) {
         setIsLoading(false);
-        Alert.alert('Could not create wallet', e?.message ?? 'Secure randomness failed. Please try again.');
+        Alert.alert(
+          loc.cypherbox.safety_checks.create_failed_title,
+          safetyErrorText(e, loc.cypherbox.safety_checks.seed_unsafe),
+        );
         return;
       }
       // MUST run before getID()/addWallet(): the wallet ID hash includes the

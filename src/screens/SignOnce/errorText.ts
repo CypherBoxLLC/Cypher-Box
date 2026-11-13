@@ -1,6 +1,7 @@
 import {
   SIGN_BACKUP_MISMATCH,
   SIGN_FALSE_CHANGE,
+  SIGN_INPUT_MISMATCH,
   SIGN_INVALID_BACKUP,
   SIGN_NOT_A_TRANSACTION,
   SIGN_NOTHING_SIGNED,
@@ -9,6 +10,7 @@ import {
   SIGN_VAULT_MISMATCH,
 } from '@Cypher/helpers';
 import loc from '../../../loc';
+import { safetyMessageText } from '../../helpers/safetyErrorText';
 
 /**
  * A signing error in the app's language. The signing helpers throw these in English, and their tests match on that
@@ -25,11 +27,13 @@ export default function signErrorText(message: string): string {
     [SIGN_FALSE_CHANGE]: errors.false_change,
     [SIGN_NOTHING_SIGNED]: errors.nothing_signed,
     [SIGN_ON_SIGNING_DEVICE]: errors.on_signing_device,
+    [SIGN_INPUT_MISMATCH]: errors.input_mismatch,
   };
   if (known[message]) return known[message];
   const word = /^"(.+)" isn't a recovery phrase word\. Check its spelling\.$/.exec(message);
   if (word) return String(loc.formatString(errors.unknown_word, { word: word[1] }));
   const count = /^That's (\d+) words\. A recovery phrase has 12 or 24\.$/.exec(message);
   if (count) return String(loc.formatString(errors.word_count, { count: count[1] }));
-  return message;
+  // the signature checks (nonce reuse, invalid signature) and the seed checks
+  return safetyMessageText(message);
 }

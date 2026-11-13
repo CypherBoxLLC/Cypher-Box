@@ -13,6 +13,7 @@ import { selectCapsules } from "@Cypher/helpers/capsuleSelection";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import Clipboard from '@react-native-clipboard/clipboard'
 import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import { BitcoinUnit, Chain } from "../../../models/bitcoinUnits";
 import NetworkTransactionFees, { NetworkTransactionFee } from '../../../models/networkTransactionFees';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
@@ -464,7 +465,8 @@ export default function ColdStorage({ route, navigation }: Props) {
           await createPsbtTransaction();
         } catch (Err) {
           setIsLoading(false);
-          Alert.alert(loc.errors.error, Err.message);
+          // the signature checks before broadcast throw in English
+          Alert.alert(loc.errors.error, safetyErrorText(Err));
           triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
         }
     };
