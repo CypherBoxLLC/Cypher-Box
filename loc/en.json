@@ -1426,6 +1426,7 @@
     },
     "payments": {
       "common": {
+        "broadcast_outcome_unknown": "The server stopped answering while sending, so this transaction may or may not have been sent. Check Activity before you send again.",
         "fee_fastest": "Fastest",
         "fee_fast": "Fast",
         "fee_medium": "Medium",

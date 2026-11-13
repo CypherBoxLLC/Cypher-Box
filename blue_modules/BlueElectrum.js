@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { LegacyWallet, SegwitBech32Wallet, SegwitP2SHWallet, TaprootWallet } from '../class';
 import DefaultPreference from 'react-native-default-preference';
 import loc from '../loc';
+import { isConnectionLostError } from '../src/helpers/broadcastOutcome';
 import WidgetCommunication from './WidgetCommunication';
 import alert from '../components/Alert';
 const bitcoin = require('bitcoinjs-lib');
@@ -1048,7 +1049,14 @@ module.exports.broadcast = async function (hex) {
 
 module.exports.broadcastV2 = async function (hex) {
   if (!mainClient) throw new Error('Electrum client is not connected');
-  return mainClient.blockchainTransaction_broadcast(hex);
+  try {
+    return await mainClient.blockchainTransaction_broadcast(hex);
+  } catch (error) {
+    // The connection went before the server answered: the transaction may already be on the network, so say that
+    // instead of a plain failure that invites a second send. A refusal from the server is passed on as it was.
+    if (isConnectionLostError(error)) throw new Error(loc.cypherbox.payments.common.broadcast_outcome_unknown);
+    throw error;
+  }
 };
 
 module.exports.estimateCurrentBlockheight = function () {
