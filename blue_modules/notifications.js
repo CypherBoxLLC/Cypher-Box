@@ -4,7 +4,7 @@ import Frisbee from 'frisbee';
 import { getApplicationName, getVersion, getSystemName, getSystemVersion, hasGmsSync, hasHmsSync } from 'react-native-device-info';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import loc from '../loc';
-import { requestNotifications } from 'react-native-permissions';
+import { checkNotifications, requestNotifications } from 'react-native-permissions';
 
 const PushNotification = require('react-native-push-notification');
 const constants = require('./constants');
@@ -14,6 +14,8 @@ const NOTIFICATIONS_STORAGE = 'NOTIFICATIONS_STORAGE';
 const NOTIFICATIONS_NO_AND_DONT_ASK_FLAG = 'NOTIFICATIONS_NO_AND_DONT_ASK_FLAG';
 const ONCHAIN_SUBSCRIPTIONS_ENABLED = 'ONCHAIN_SUBSCRIPTIONS_ENABLED';
 let alreadyConfigured = false;
+// The pending Bark token mint, shared by concurrent ensurePushTokenForArk calls.
+let arkTokenMintInFlight = null;
 let baseURI = constants.groundControlUri;
 
 function Notifications(props) {
@@ -230,28 +232,57 @@ function Notifications(props) {
    * the pre-token answer (no token, so off); minting first would make the next
    * read conclude the user had already agreed to upload addresses.
    *
-   * The caller's toggle is the consent, so this goes straight to the OS
-   * prompt rather than through the `tryToObtainPermissions` pre-prompt, and
-   * deliberately ignores the global "no and don't ask" flag: flipping the
+   * The caller's toggle is the consent, so by default this goes straight to
+   * the OS prompt rather than through the `tryToObtainPermissions` pre-prompt,
+   * and deliberately ignores the global "no and don't ask" flag: flipping the
    * capsule-reminders switch is a fresh, explicit request.
+   *
+   * `{ prompt: false }` never shows an OS dialog. It mints only when
+   * notification permission is already granted and otherwise returns without
+   * configuring, because configureNotifications() calls requestNotifications(),
+   * which IS the OS dialog while the permission is still undecided. The Bark
+   * create and recover flows and the Home backfill use it: the dialog used to
+   * appear during create and recovery, before anything had said what
+   * reminders are for. Both flows ask in their own words and mint after the
+   * user agrees.
    *
    * Never rejects, and never hangs: configureNotifications only resolves once
    * onRegister fires, so a denied prompt would leave it pending forever. A
    * timeout bounds that. Returning false on timeout is safe, since a late
    * grant still stores the token via onRegister.
+   *
+   * Concurrent mints share one attempt. The created screen mints right as it
+   * resets to Home, whose backfill mints too; two configure() calls would
+   * leave the first onRegister unreachable (the library keeps only the last
+   * handler) and its caller waiting out the full timeout.
    */
-  Notifications.ensurePushTokenForArk = async function () {
+  Notifications.ensurePushTokenForArk = async function (options) {
     if (!Notifications.isNotificationsCapable) return false;
+    const prompt = !(options && options.prompt === false);
     try {
       await _isOnchainSubscriptionEnabled();
-      if (await Notifications.getPushToken()) {
+      const hasToken = !!(await Notifications.getPushToken());
+      if (!prompt) {
+        const { status } = await checkNotifications();
+        if (status !== 'granted') return hasToken;
+      }
+      if (hasToken) {
         if (!alreadyConfigured) configureNotifications();
         return true;
       }
-      return await Promise.race([
-        configureNotifications(),
-        new Promise(resolve => setTimeout(() => resolve(false), 60000)),
-      ]);
+      if (!arkTokenMintInFlight) {
+        let timeout;
+        arkTokenMintInFlight = Promise.race([
+          configureNotifications(),
+          new Promise(resolve => {
+            timeout = setTimeout(() => resolve(false), 60000);
+          }),
+        ]).finally(() => {
+          clearTimeout(timeout);
+          arkTokenMintInFlight = null;
+        });
+      }
+      return await arkTokenMintInFlight;
     } catch (err) {
       console.warn('[Ark] push token acquisition failed:', err);
       return false;

@@ -1,5 +1,5 @@
 import React from "react";
-import { Linking, ScrollView, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, View } from "react-native";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
@@ -7,12 +7,76 @@ import loc from "../../../../loc";
 
 const SECOND_FEES_URL = "https://second.tech/pricing";
 
+// Section and Body sit above the screen because it uses them dozens of times
+// (the lint rule flags every use before the definition); the other rows stay
+// below it.
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <View style={{ marginTop: 20 }}>
+            <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 10 }}>
+                {title}
+            </Text>
+            {children}
+        </View>
+    );
+}
+
+function Body({ children }: { children: React.ReactNode }) {
+    return (
+        <Text style={{ fontSize: 13, color: '#CCC', lineHeight: 19, marginBottom: 10 }}>
+            {children}
+        </Text>
+    );
+}
+
+// Warning box for the before-you-fund note, so it reads as a caution rather
+// than one more section. Same red border and tint as the seed screen's
+// no-backup panel.
+const calloutStyles = StyleSheet.create({
+    box: {
+        marginTop: 16,
+        borderWidth: 1,
+        borderColor: colors.redLight ?? "#FF6B6B",
+        backgroundColor: "rgba(255, 80, 80, 0.06)",
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingTop: 12,
+        paddingBottom: 2,
+    },
+    title: {
+        fontSize: 15,
+        color: colors.redLight ?? "#FF6B6B",
+        marginBottom: 8,
+    },
+});
+
+function Callout({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <View style={calloutStyles.box}>
+            <Text bold style={calloutStyles.title}>
+                {title}
+            </Text>
+            {children}
+        </View>
+    );
+}
+
 /**
  * Plain-language "what you need to know about your lightning capsules" surface.
  *
- * Reached from the circular "?" button on the Capsules tab. Pure educational
- * content — no actions, no state. Copy written for a normal user, not someone
- * who knows the protocol terms.
+ * Reached from the circular "?" button on the Capsules tab, and from the Bark
+ * Vault "Learn more" link on CheckingAccountLogin, which used to open
+ * cypherbox.io/how-to-use-your-bark-vault. Pure educational content — no
+ * actions, no state. Copy written for a normal user, not someone who knows the
+ * protocol terms.
+ *
+ * The before-you-fund warning, refresh habit, stuck refresh, Emergency Exit,
+ * funding and backup sections carry that article's guidance, corrected where
+ * the app has moved on since it was written (2026-07-19): a refresh is
+ * delegated, so the app can be closed once it is submitted; Lightning
+ * receives refresh automatically; and the backup file is recommended, not
+ * required, because the seed alone restores the wallet. Keep the article
+ * and this screen in step when either changes.
  *
  * Fees in the bottom section are quoted from Second's published fee schedule
  * (SECOND_FEES_URL) so they stay honest rather than estimated. But Second
@@ -48,6 +112,11 @@ export default function ArkCapsulesInfoScreen() {
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 40 }}
             >
+                <Callout title={loc.cypherbox.ark.capsules_info.before_fund_title}>
+                    <Body>{loc.cypherbox.ark.capsules_info.before_fund_body_1}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.before_fund_body_2}</Body>
+                </Callout>
+
                 <Section title={loc.cypherbox.ark.capsules_info.why_title}>
                     <Body>{loc.cypherbox.ark.capsules_info.why_body_1}</Body>
                     <Body>{loc.cypherbox.ark.capsules_info.why_body_2}</Body>
@@ -64,6 +133,23 @@ export default function ArkCapsulesInfoScreen() {
                 <Section title={loc.cypherbox.ark.capsules_info.spendable_title}>
                     <Body>{loc.cypherbox.ark.capsules_info.spendable_body_1}</Body>
                     <Body>{loc.cypherbox.ark.capsules_info.spendable_body_2}</Body>
+                </Section>
+
+                <Section title={loc.cypherbox.ark.capsules_info.habit_title}>
+                    <Body>{loc.cypherbox.ark.capsules_info.habit_body_1}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.habit_body_2}</Body>
+                </Section>
+
+                <Section title={loc.cypherbox.ark.capsules_info.stuck_title}>
+                    <Body>{loc.cypherbox.ark.capsules_info.stuck_body_1}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.stuck_body_2}</Body>
+                </Section>
+
+                <Section title={loc.cypherbox.ark.capsules_info.exit_title}>
+                    <Body>{loc.cypherbox.ark.capsules_info.exit_body_1}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.exit_body_2}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.exit_body_3}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.exit_body_4}</Body>
                 </Section>
 
                 <Section title={loc.cypherbox.ark.capsules_info.colors_title}>
@@ -104,9 +190,21 @@ export default function ArkCapsulesInfoScreen() {
                     />
                 </Section>
 
+                <Section title={loc.cypherbox.ark.capsules_info.fund_title}>
+                    <Body>{loc.cypherbox.ark.capsules_info.fund_body_1}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.fund_body_2}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.fund_body_3}</Body>
+                </Section>
+
                 <Section title={loc.cypherbox.ark.capsules_info.dust_title}>
                     <Body>{loc.cypherbox.ark.capsules_info.dust_body_1}</Body>
                     <Body>{loc.cypherbox.ark.capsules_info.dust_body_2}</Body>
+                </Section>
+
+                <Section title={loc.cypherbox.ark.capsules_info.backup_title}>
+                    <Body>{loc.cypherbox.ark.capsules_info.backup_body_1}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.backup_body_2}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.backup_body_3}</Body>
                 </Section>
 
                 <Section title={loc.cypherbox.ark.capsules_info.fees_title}>
@@ -170,25 +268,6 @@ export default function ArkCapsulesInfoScreen() {
                 </Section>
             </ScrollView>
         </ScreenLayout>
-    );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-    return (
-        <View style={{ marginTop: 20 }}>
-            <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 10 }}>
-                {title}
-            </Text>
-            {children}
-        </View>
-    );
-}
-
-function Body({ children }: { children: React.ReactNode }) {
-    return (
-        <Text style={{ fontSize: 13, color: '#CCC', lineHeight: 19, marginBottom: 10 }}>
-            {children}
-        </Text>
     );
 }
 

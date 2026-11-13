@@ -96,7 +96,8 @@ import loc from "../../../../loc";
  *
  * `backupDestination` is a free-form audit string; downstream code only
  * stores it for analytics, no behavior keys off it. Legacy 'icloud' /
- * 'manual' / 'auto+manual' values from older builds still round-trip.
+ * 'manual' / 'auto+manual' values from older builds still round-trip. A
+ * wallet created without a backup file records null.
  */
 type BackupDestination = "local" | "auto+manual" | "icloud" | "manual";
 
@@ -710,35 +711,50 @@ export default function ArkSeedPhraseScreen() {
             return;
         }
 
-        // STRICT GATE: at least one verified backup destination must
-        // exist before this wallet is allowed to receive funds. Two
-        // channels (one cloud, one local) and the gate accepts either:
-        //   - cloudBackupDone: Drive upload+verified (Android) OR local
-        //     Documents write succeeded (iOS — Apple transparently
-        //     mirrors Documents to iCloud Drive when the user has
-        //     iCloud Drive on for Cypher Box).
+        // BACKUP FILE: RECOMMENDED, NOT REQUIRED (owner ruling 2026-09-21).
+        // The written seed is the requirement (the `revealed` check above).
+        // Since bark 0.6.1 the seed alone restores the wallet through the
+        // server's recovery mailbox, and the .cbark file brings back what
+        // that scan can miss. Two channels (one cloud, one local) count as
+        // a saved file:
+        //   - cloudBackupDone: Drive upload+verified (Android) OR, on iOS,
+        //     iCloud Drive on for Cypher Box (the auto-tick writes into the
+        //     ubiquity container) or a share-sheet save the user confirmed.
         //   - safBackupConfirmed (Android only): user picked a Storage
         //     Access Framework folder, .cbark write+roundtrip-verified.
         //     Survives `pm uninstall`.
         //
-        // No "Continue anyway" override. The previous version allowed
-        // it and the user lost 5000 sats on 2026-05-05 when Drive
-        // silently failed, the wallet showed "created", and uninstall
-        // wiped the local copy. If you change this gate, re-read
-        // memory/project_play_signing_oauth.md first.
+        // Skipping the file is allowed, but never silently. This used to be
+        // a hard gate (bd7be37) after the 2026-05-05 loss of 5000 sats:
+        // Drive failed silently, the wallet showed "created", and uninstall
+        // wiped the only copy, at a time when the seed could not restore
+        // capsules on its own. So creating without a file takes an explicit
+        // "Create without it" on a dialog that says what the file adds.
         const hasVerifiedBackup = cloudBackupDone || safBackupConfirmed;
         if (!hasVerifiedBackup) {
             Alert.alert(
-                loc.cypherbox.account.ark_seed.save_backup_first_title,
-                isIOS
-                    ? loc.cypherbox.account.ark_seed.save_backup_first_ios
-                    : loc.cypherbox.account.ark_seed.save_backup_first_android,
-                [{ text: loc._.ok }],
+                loc.cypherbox.account.ark_seed.no_backup_confirm_title,
+                loc.cypherbox.account.ark_seed.no_backup_confirm_body,
+                [
+                    { text: loc.cypherbox.account.ark_seed.no_backup_confirm_save, style: 'cancel' },
+                    {
+                        text: loc.cypherbox.account.ark_seed.no_backup_confirm_create,
+                        style: 'destructive',
+                        onPress: () => { void completeArkCreate(); },
+                    },
+                ],
                 { cancelable: true },
             );
             return;
         }
 
+        await completeArkCreate();
+    };
+
+    // Everything after the backup decision. Reached with a saved backup file,
+    // or after the user confirmed creating without one. (Not named
+    // createArkWallet: that is the imported service ensureWalletCreated calls.)
+    const completeArkCreate = async () => {
         setSubmitting(true);
 
         if (saveToKeychain) {
@@ -762,16 +778,20 @@ export default function ArkSeedPhraseScreen() {
         // values ("local" / "icloud" / "manual" / "auto+manual") for
         // backwards-compat with older wallet records and pick the most
         // descriptive label for the active backup channels.
-        let backupDestination: BackupDestination;
+        let backupDestination: BackupDestination | null;
         if (cloudBackupDone && safBackupConfirmed) {
             backupDestination = "auto+manual";
         } else if (cloudBackupDone) {
             backupDestination = isIOS ? "icloud" : "auto+manual";
-        } else {
+        } else if (safBackupConfirmed) {
             // SAF-only path. Tagged "manual" in the legacy string set —
             // initial decision was a manual folder pick, even though
             // subsequent updates are automatic.
             backupDestination = "manual";
+        } else {
+            // Created without a backup file (confirmed in handleContinue).
+            // null, as RecoverArkScreen records for a restored wallet.
+            backupDestination = null;
         }
 
         const wallet = {
@@ -786,23 +806,26 @@ export default function ArkSeedPhraseScreen() {
         if (!allBTCWallets.includes("ARK")) {
             setAllBTCWallets([...allBTCWallets, "ARK"]);
         }
-        // Activity log: emit AFTER the strict backup gate has passed and
-        // setArkAuth has flipped — at this point the wallet is durably
-        // created and a recovery path exists. Earlier emits would record
-        // half-created state if the user backed out at the backup gate.
+        // Activity log: emit AFTER the backup decision and after setArkAuth
+        // has flipped — at this point the wallet is durably created and a
+        // recovery path exists (the written seed, plus the file if saved).
+        // Earlier emits would record half-created state if the user backed
+        // out at the backup step.
         recordEvent({ kind: 'ark-created' });
 
         // Arm background-refresh for the new wallet. The zustand default
         // is `arkBgRefreshEnabled: true` so the toggle in ArkCapsules
-        // shows ON immediately; this call flips the flag and requests
-        // notification permission for the expiry warnings. Wrapped in
-        // try/catch so a permission failure doesn't block the create
-        // flow. The user can flip the toggle off any time from Settings.
+        // shows ON immediately; this call flips the flag. Wrapped in
+        // try/catch so a failure doesn't block the create flow. The user
+        // can flip the toggle off any time from Settings.
         try {
             // requestNotificationPermission: false — do NOT prompt here. This
             // runs before CheckingAccountCreated mounts, so the OS dialog used
             // to land on the user before anything had explained what capsule
-            // reminders are. That screen asks for consent on exit instead.
+            // reminders are. That screen asks for consent on exit instead,
+            // and mints the push token after a "Yes". With false, this call
+            // also skips minting unless notifications are already allowed,
+            // since minting from an undecided permission shows the dialog.
             await setArkBackgroundRefreshEnabled(true, { requestNotificationPermission: false });
         } catch (err) {
             console.warn("[Ark create] failed to arm reminders:", err);
@@ -1124,10 +1147,14 @@ export default function ArkSeedPhraseScreen() {
                             </View>
                         )}
 
-                        {/* Hard-gate warning — Continue is blocked until at
-                            least one backup destination is verified. Replaces
-                            the prior soft-warn that allowed override (cause of
-                            the 5000-sat loss on 2026-05-05).
+                        {/* No-backup-file notice. Both options above are
+                            optional (the written seed restores the wallet),
+                            so this no longer blocks Create; it says what the
+                            file adds, and Create asks once more before going
+                            ahead without one. Kept red because skipping the
+                            file is how the 5000-sat loss on 2026-05-05
+                            happened, back when the seed alone could not
+                            restore capsules.
                             On iOS without iCloud Drive enabled for the app,
                             users who pass the gate via manual share+confirm
                             see a persistent reminder banner in Settings →
@@ -1140,10 +1167,10 @@ export default function ArkSeedPhraseScreen() {
                         {revealed && !cloudBackupDone && !safBackupConfirmed && (
                             <View style={styles.warnPanel}>
                                 <Text bold style={styles.warnPanelTitle}>
-                                    {loc.cypherbox.account.ark_seed.save_before_continuing}
+                                    {loc.cypherbox.account.ark_seed.no_backup_note_title}
                                 </Text>
                                 <Text style={styles.warnPanelBody}>
-                                    {loc.cypherbox.account.ark_seed.save_before_body}
+                                    {loc.cypherbox.account.ark_seed.no_backup_note_body}
                                 </Text>
                             </View>
                         )}
@@ -1156,7 +1183,7 @@ export default function ArkSeedPhraseScreen() {
                             ? loc.cypherbox.account.ark_seed.reveal_seed_first_btn
                             : (cloudBackupDone || safBackupConfirmed)
                                 ? loc.cypherbox.account.ark_seed.backed_up_create
-                                : loc.cypherbox.account.ark_seed.save_a_backup_first
+                                : loc.cypherbox.account.ark_seed.written_down_create
                     }
                     onPress={handleContinue}
                     style={styles.button}

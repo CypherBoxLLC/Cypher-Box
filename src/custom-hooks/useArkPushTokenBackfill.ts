@@ -6,7 +6,7 @@ import useAuthStore from '@Cypher/stores/authStore';
  * Mint a push token for the capsule-expiry wake when the reminders flag is on
  * but no token exists.
  *
- * The gap this closes: `ensurePushTokenForArk` has exactly one caller,
+ * The gap this closes: `ensurePushTokenForArk` is otherwise reached only from
  * `setArkBackgroundRefreshEnabled(true)`, which only runs on the TRANSITION to
  * on (wallet create, wallet recover, or the user flipping the switch).
  * `arkBgRefreshEnabled` defaults to `true` in authStore, so every wallet that
@@ -26,7 +26,12 @@ import useAuthStore from '@Cypher/stores/authStore';
  * agreement to upload addresses.
  *
  * Consent: the reminders flag is the consent, and it is already on here. This
- * mints the token that flag always implied.
+ * mints the token that flag always implied, but only when the OS permission is
+ * already granted (`prompt: false`). It never shows the dialog itself. Home
+ * stays mounted under the Bark create and recover flows, so this effect fires
+ * the moment either sets isArkAuth, before the user has been told what
+ * reminders are for and asked. A prompting call here put the OS dialog in
+ * front of the user mid-create. Both flows mint after their own "Yes" instead.
  *
  * Calibrate expectations. A token is necessary for the wake, not sufficient.
  * Apple states plainly that background notifications have no delivery
@@ -76,7 +81,7 @@ export default function useArkPushTokenBackfill(): void {
                     return;
                 }
 
-                const got = await Notifications.ensurePushTokenForArk?.();
+                const got = await Notifications.ensurePushTokenForArk?.({ prompt: false });
                 if (cancelled) return;
                 console.log('[Ark pushBackfill] minted token for expiry wake:', !!got);
             } catch (err: any) {
