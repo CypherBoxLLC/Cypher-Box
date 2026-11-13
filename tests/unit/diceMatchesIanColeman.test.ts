@@ -23,6 +23,10 @@
 
 import { eReducer, getEntropy, convertToBuffer } from '../../screen/wallets/provideEntropy';
 
+// provideEntropy.js loads BlueApp (useProtectSecret -> Privacy -> storage-context), and BlueApp connects to an Electrum
+// server as soon as it loads. Left real, that connection stays open after the tests finish and Jest never exits.
+jest.mock('../../blue_modules/BlueElectrum', () => ({ connectMain: jest.fn() }));
+
 /** Ian Coleman's "base 6 (dice)" table, verbatim. He rewrites die 6 to digit 0. */
 const IC_MAP: Record<string, string> = { '0': '00', '1': '01', '2': '10', '3': '11', '4': '0', '5': '1' };
 const icBits = (faces: number[]) => faces.map(f => IC_MAP[f === 6 ? '0' : String(f)]).join('');
