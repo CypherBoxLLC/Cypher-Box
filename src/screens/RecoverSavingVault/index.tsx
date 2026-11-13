@@ -16,6 +16,7 @@ import {
     HotVaultBackupSummary,
 } from '@Cypher/services/hotVaultKeychain';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
+import { hotVaultKeychainText } from '@Cypher/helpers/hotVaultKeychainText';
 import loc from '../../../loc';
 
 const inputs = [
@@ -34,6 +35,8 @@ export default function RecoverSavingVault({ route }: Props) {
     const [secretWords, setSecretWords] = useState<string[]>(Array(inputs.length).fill(''));
     const { addAndSaveWallet, wallets } = useContext(BlueStorageContext);
     const { setWalletID, setHotVaultKeychainBackup } = useAuthStore();
+    // iPhone Keychain or Android Keystore wording, in the current language
+    const keychainText = hotVaultKeychainText().recover;
 
     const [loading, setLoading] = useState(false);
     const [keychainLoading, setKeychainLoading] = useState(false);
@@ -271,7 +274,7 @@ export default function RecoverSavingVault({ route }: Props) {
             );
             Alert.alert(
                 loc.cypherbox.vault.recover_saving_vault.backup_not_found_title,
-                loc.cypherbox.vault.recover_saving_vault.backup_not_found_message,
+                keychainText.notFoundMessage,
             );
             return;
         }
@@ -297,8 +300,8 @@ export default function RecoverSavingVault({ route }: Props) {
     const handleKeychainDelete = (summary: HotVaultBackupSummary) => {
         if (pendingDeleteID || keychainLoading || loading) return;
         Alert.alert(
-            loc.cypherbox.vault.recover_saving_vault.remove_backup_title,
-            loc.cypherbox.vault.recover_saving_vault.remove_backup_message,
+            keychainText.removeTitle,
+            keychainText.removeMessage,
             [
                 { text: loc._.cancel, style: 'cancel' },
                 {
@@ -322,7 +325,7 @@ export default function RecoverSavingVault({ route }: Props) {
                         } else {
                             Alert.alert(
                                 loc.cypherbox.vault.recover_saving_vault.remove_failed_title,
-                                loc.cypherbox.vault.recover_saving_vault.remove_failed_message,
+                                keychainText.removeFailedMessage,
                             );
                         }
                     },
@@ -389,10 +392,10 @@ export default function RecoverSavingVault({ route }: Props) {
             return (
                 <View style={styles.keychainSection}>
                     <Text bold style={styles.keychainTitle}>
-                        {loc.cypherbox.vault.recover_saving_vault.keychain_title}
+                        {keychainText.title}
                     </Text>
                     <Text style={styles.keychainSub}>
-                        {loc.cypherbox.vault.recover_saving_vault.no_keychain_backup}
+                        {keychainText.noBackup}
                     </Text>
                 </View>
             );
@@ -403,11 +406,11 @@ export default function RecoverSavingVault({ route }: Props) {
         return (
             <View style={styles.keychainSection}>
                 <Text bold style={styles.keychainTitle}>
-                    {loc.cypherbox.vault.recover_saving_vault.keychain_title}
+                    {keychainText.title}
                 </Text>
                 <Text style={styles.keychainSub}>
                     {isSingle
-                        ? loc.cypherbox.vault.recover_saving_vault.tap_to_unlock
+                        ? keychainText.tapToUnlock
                         : loc.formatString(loc.cypherbox.vault.recover_saving_vault.found_backups, { count: keychainBackups.length })}
                 </Text>
 
@@ -434,7 +437,7 @@ export default function RecoverSavingVault({ route }: Props) {
                                     <ActivityIndicator color={colors.white} />
                                 ) : (
                                     <Text bold style={styles.keychainButtonText}>
-                                        {loc.cypherbox.vault.recover_saving_vault.recover_from_keychain}
+                                        {keychainText.recoverButton}
                                     </Text>
                                 )}
                             </TouchableOpacity>
@@ -487,7 +490,7 @@ export default function RecoverSavingVault({ route }: Props) {
                                     left: 10,
                                     right: 10,
                                 }}
-                                accessibilityLabel={loc.cypherbox.vault.recover_saving_vault.remove_backup_a11y}
+                                accessibilityLabel={keychainText.removeA11y}
                             >
                                 {isDeleting ? (
                                     <ActivityIndicator color={colors.white} />

@@ -11,6 +11,7 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { backupHotVaultSeedWithMeta } from "@Cypher/services/hotVaultKeychain";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
+import { hotVaultKeychainText } from "@Cypher/helpers/hotVaultKeychainText";
 import loc from "../../../loc";
 
 /**
@@ -25,14 +26,17 @@ import loc from "../../../loc";
  *   - saved `walletID = w.getID()` into zustand
  *
  * This screen adds a per-session opt-in: "also save the mnemonic to the OS
- * Keychain (FaceID/passcode-gated)". We defer the actual Keychain write
- * until the user confirms they've written the seed down, so declining the
- * continue button cancels the Keychain save as well.
+ * Keychain (Face ID/passcode-gated on iOS, fingerprint-gated on Android)".
+ * We defer the actual Keychain write until the user confirms they've written
+ * the seed down, so declining the continue button cancels the Keychain save
+ * as well.
  *
- * The Keychain copy is convenience storage for re-install recovery. Primary
- * custody is still BlueWallet's encrypted disk store; losing that while
- * keeping Keychain gives the user a biometric unlock path back into their
- * seed without having to type 12 words.
+ * The Keychain copy is convenience storage. On iOS it also covers a
+ * re-install; on Android it is deleted with the app, so the switch text
+ * differs per platform (helpers/hotVaultKeychainText). Primary custody is
+ * still BlueWallet's encrypted disk store; losing that while keeping the
+ * Keychain copy gives the user a biometric unlock path back into their seed
+ * without having to type 12 words.
  */
 export default function SavingVault() {
     const [isValidate, setIsValidate] = useState(false);
@@ -47,6 +51,8 @@ export default function SavingVault() {
     // a signing phone keeps no second copy of the seed, so there's no Keychain backup to offer
     const signingMode = useAuthStore(s => s.signingMode);
     const { wallets } = useContext(BlueStorageContext);
+    // iPhone Keychain or Android Keystore wording, in the current language
+    const keychainText = hotVaultKeychainText().create;
 
     const nextClickInitiate = () => {
         setIsValidate(true);
@@ -72,7 +78,7 @@ export default function SavingVault() {
                 );
                 setKeychainStatus("err");
                 SimpleToast.show(
-                    loc.cypherbox.vault.saving_vault.keychain_skipped,
+                    keychainText.skippedToast,
                     SimpleToast.LONG,
                 );
             } else {
@@ -111,7 +117,7 @@ export default function SavingVault() {
                         ")",
                     );
                     SimpleToast.show(
-                        "This phone has no fingerprint set up, so the backup couldn't be protected and nothing was saved. Add a fingerprint in Settings, then try again.",
+                        loc.cypherbox.vault.saving_vault.keychain_no_fingerprint,
                         SimpleToast.LONG,
                     );
                 } else {
@@ -121,7 +127,7 @@ export default function SavingVault() {
                         result.error,
                     );
                     SimpleToast.show(
-                        loc.cypherbox.vault.saving_vault.keychain_failed_toast,
+                        keychainText.failedToast,
                         SimpleToast.LONG,
                     );
                     // Intentional: we do NOT abort the flow here. The seed
@@ -178,10 +184,10 @@ export default function SavingVault() {
                 {!signingMode && <View style={styles.keychainRow}>
                     <View style={styles.keychainTextWrap}>
                         <Text bold style={styles.keychainLabel}>
-                            {loc.cypherbox.vault.saving_vault.keychain_label}
+                            {keychainText.label}
                         </Text>
                         <Text style={styles.keychainSub}>
-                            {loc.cypherbox.vault.saving_vault.keychain_sub}
+                            {keychainText.sub}
                         </Text>
                     </View>
                     <Switch
@@ -197,12 +203,12 @@ export default function SavingVault() {
 
                 {keychainStatus === "ok" && (
                     <Text style={styles.keychainStatusOk}>
-                        {loc.cypherbox.vault.saving_vault.keychain_saved}
+                        {keychainText.saved}
                     </Text>
                 )}
                 {keychainStatus === "err" && (
                     <Text style={styles.keychainStatusErr}>
-                        {loc.cypherbox.vault.saving_vault.keychain_failed}
+                        {keychainText.failed}
                     </Text>
                 )}
 
