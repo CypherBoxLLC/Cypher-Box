@@ -17,6 +17,7 @@ import { colors } from "@Cypher/style-guide";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 import styles from "./styles";
 import loc from "../../../../loc";
+import { arkSeedKeychainText } from "@Cypher/helpers/arkSeedKeychainText";
 
 const SECOND_TERMS_URL = "https://second.tech/terms";
 
@@ -56,6 +57,7 @@ export default function CreateArkScreen() {
     const [resetting, setResetting] = useState(false);
     const [existingError, setExistingError] = useState<string | null>(null);
     const hasHotVault = !!walletID;
+    const keychainText = arkSeedKeychainText();
 
     useEffect(() => {
         (async () => {
@@ -169,7 +171,7 @@ export default function CreateArkScreen() {
         // device and would otherwise wipe a wallet that's not theirs.
         Alert.alert(
             loc.cypherbox.account.create_ark.reset_title,
-            loc.cypherbox.account.create_ark.reset_body,
+            keychainText.create.resetBody,
             [
                 { text: loc._.cancel, style: "cancel" },
                 {
@@ -276,7 +278,7 @@ export default function CreateArkScreen() {
                     <View style={styles.content}>
                         <Text style={styles.warnTitle}>{loc.cypherbox.account.create_ark.exists_title}</Text>
                         <Text style={styles.warnBody}>
-                            {loc.cypherbox.account.create_ark.exists_body_1}
+                            {keychainText.create.existsBody}
                         </Text>
                         <Text style={styles.warnBody}>
                             {loc.cypherbox.account.create_ark.exists_body_2}

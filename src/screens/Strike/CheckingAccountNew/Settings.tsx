@@ -85,6 +85,7 @@ import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 import { setArkExitCorrelationId } from "@Cypher/services/activityCursors";
 import loc from "../../../../loc";
+import { arkSeedKeychainText } from "@Cypher/helpers/arkSeedKeychainText";
 
 interface Props {
   receiveType: boolean;
@@ -1954,10 +1955,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
    *   - Clears zustand auth state
    *
    * If the seed is kept, a future Recover flow can surface the biometric
-   * (Face/Touch ID) fast path so the user doesn't have to type 12 words
-   * to come back. If unchecked, the user MUST have their 12-word phrase
-   * to recover (and a `.cbark` backup file to restore funds — VTXOs are
-   * never seed-derivable).
+   * (Face ID / passcode on iPhone, fingerprint on Android) fast path so the
+   * user doesn't have to type 12 words to come back. On Android the kept
+   * copy is gone once the app is uninstalled. If unchecked, the user MUST
+   * have their 12-word phrase to recover (and a `.cbark` backup file to
+   * restore funds — VTXOs are never seed-derivable).
    */
   const [deleting, setDeleting] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -1965,7 +1967,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const [exitInFlight, setExitInFlight] = useState(false);
   const [keepSeedOnDevice, setKeepSeedOnDevice] = useState(true);
 
-  const biometricLabel = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
+  const keychainText = arkSeedKeychainText();
 
   /**
    * Probe for an in-flight exit BEFORE the modal opens, so the warning is on
@@ -3590,7 +3592,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   )}
                 </View>
                 <Text style={{ flex: 1, fontSize: 13, color: '#EEE', lineHeight: 18 }}>
-                  {loc.formatString(loc.cypherbox.strike.ark_settings.keep_seed_on_device, { biometric: biometricLabel })}
+                  {loc.formatString(keychainText.settings.keepSeedOnDevice, { biometric: keychainText.biometric })}
                 </Text>
               </TouchableOpacity>
 
