@@ -3,6 +3,7 @@ import { Linking, StyleSheet, TextInput, TouchableOpacity, View } from "react-na
 import dayjs from "dayjs";
 import styles from "./styles";
 import loc from "../../../loc";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import TextView from "./TextView";
 import { btc } from "@Cypher/helpers/coinosHelper";
@@ -240,7 +241,7 @@ export default function SendReceiveOnChain({ route }: Props) {
             navigateToBroadcastScreen(feeRateNumber, newTx.getId(), isSent ? 'rbf' : 'cpfp');
         } catch (error) {
             console.error('Accelerate error:', error);
-            alert(String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.accelerate_failed, { error: error.message })));
+            alert(String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.accelerate_failed, { error: safetyErrorText(error) })));
         }
         setIsRBFSubmitting(false);
     };

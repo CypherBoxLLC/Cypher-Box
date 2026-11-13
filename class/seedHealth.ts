@@ -7,12 +7,14 @@ import * as bip39 from 'bip39';
  * the user typed or scanned to recover (that path validates the checksum on its
  * own and must not reject the user's own words).
  */
+/** Shown translated through src/helpers/safetyErrorText. */
+export const SEED_UNSAFE_MESSAGE =
+    'The wallet could not be created safely on this device. Please try again, and if this keeps happening, contact support.';
+
 export class SeedUnsafeError extends Error {
     readonly reason: string;
     constructor(reason: string) {
-        super(
-            'The wallet could not be created safely on this device. Please try again, and if this keeps happening, contact support.',
-        );
+        super(SEED_UNSAFE_MESSAGE);
         this.name = 'SeedUnsafeError';
         this.reason = reason;
     }

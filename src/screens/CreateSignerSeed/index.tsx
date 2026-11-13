@@ -35,7 +35,9 @@ import {
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
 import { randomBytes } from "../../../class/rng";
+import { assertNativeRngHealthy } from "../../../class/rngHealth";
 import { assertMnemonicHealthy } from "../../../class/seedHealth";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import useProtectSecret from "../../custom-hooks/useProtectSecret";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import useSeedQRCheck from "../../custom-hooks/useSeedQRCheck";
@@ -201,7 +203,9 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                 phrase = bip39.entropyToMnemonic(dice.slice(0, 16).toString('hex'));
             } else {
                 // the phone's randomness, as BlueWallet's wallets make theirs, but without loading the wallet classes:
-                // each runs an elliptic-curve self-test, seconds in all on a slow phone
+                // each runs an elliptic-curve self-test, seconds in all on a slow phone. The same check their
+                // generate() runs first: refuse rather than make a seed from randomness that isn't working.
+                await assertNativeRngHealthy();
                 phrase = bip39.entropyToMnemonic((await randomBytes(16)).toString('hex'));
             }
             assertMnemonicHealthy(phrase);
@@ -211,7 +215,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             setTyped('');
             setStep('backup');
         } catch (e: any) {
-            setError(e?.message ?? 'The seed could not be made.');
+            setError(safetyErrorText(e, 'The seed could not be made.'));
         }
     };
 
@@ -353,7 +357,9 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                         <TextInput style={[styles.input, styles.words]} value={typed} onChangeText={setTyped}
                             placeholder="Or type your 12 or 24 words" placeholderTextColor="#666" multiline
                             autoCapitalize="none" autoCorrect={false} spellCheck={false} autoComplete="off"
-                            importantForAutofill="no" />
+                            textContentType="none" importantForAutofill="no"
+                            // Android: keeps the keyboard from learning the words, as on the signing screen
+                            keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'} />
                         <TouchableOpacity style={styles.secondary} onPress={() => load(typed)} accessibilityRole="button">
                             <Text h3>Continue</Text>
                         </TouchableOpacity>
@@ -478,7 +484,9 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                         <TextInput style={[styles.input, styles.words]} value={typed} onChangeText={setTyped}
                             placeholder="Type your 12 words" placeholderTextColor="#666" multiline
                             autoCapitalize="none" autoCorrect={false} spellCheck={false} autoComplete="off"
-                            importantForAutofill="no" />
+                            textContentType="none" importantForAutofill="no"
+                            // Android: keeps the keyboard from learning the words, as on the signing screen
+                            keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'} />
                         <TouchableOpacity style={styles.secondary} onPress={checkTyped} accessibilityRole="button">
                             <Text h3>Check the words</Text>
                         </TouchableOpacity>

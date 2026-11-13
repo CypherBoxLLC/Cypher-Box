@@ -6,12 +6,16 @@ import * as bitcoin from 'bitcoinjs-lib';
  * nonces (RFC6979) make this impossible in correct signing, so it only ever
  * means a broken or tampered signing primitive. The caller must NOT broadcast.
  */
+/** Both shown translated through src/helpers/safetyErrorText. */
+export const NONCE_REUSE_MESSAGE =
+    'A signing anomaly was detected and signing was stopped to protect your keys. Do not broadcast this transaction, and contact support.';
+export const SIGNATURE_INVALID_MESSAGE =
+    'Signature verification failed, so this transaction was not broadcast. Please try again, and if this keeps happening, contact support.';
+
 export class NonceReuseError extends Error {
     readonly pubkey: string;
     constructor(pubkey: string) {
-        super(
-            'A signing anomaly was detected and signing was stopped to protect your keys. Do not broadcast this transaction, and contact support.',
-        );
+        super(NONCE_REUSE_MESSAGE);
         this.name = 'NonceReuseError';
         this.pubkey = pubkey;
     }
@@ -19,9 +23,7 @@ export class NonceReuseError extends Error {
 
 export class SignatureInvalidError extends Error {
     constructor(index: number) {
-        super(
-            'Signature verification failed, so this transaction was not broadcast. Please try again, and if this keeps happening, contact support.',
-        );
+        super(SIGNATURE_INVALID_MESSAGE);
         this.name = 'SignatureInvalidError';
         void index;
     }
@@ -56,9 +58,15 @@ function recordAndCheck(pubkeyHex: string, rHex: string, sHex: string): void {
  * Nonce-reuse canary: inspect every ECDSA partial signature in a signed (not
  * yet finalized) PSBT and throw {@link NonceReuseError} if any key reuses a
  * nonce. Non-ECDSA signatures (for example taproot/Schnorr) are skipped.
+ *
+ * Pass `inputIndexes` to inspect only those inputs. Only feed it signatures
+ * that have been verified: an unverified one could be planted by whoever made
+ * the PSBT (this key's public key with an r it saw earlier) to raise a false
+ * alarm.
  */
-export function auditPsbtSignatures(psbt: bitcoin.Psbt): void {
-    for (const input of psbt.data.inputs) {
+export function auditPsbtSignatures(psbt: bitcoin.Psbt, inputIndexes?: readonly number[]): void {
+    const inputs = inputIndexes ? inputIndexes.map(i => psbt.data.inputs[i]).filter(Boolean) : psbt.data.inputs;
+    for (const input of inputs) {
         for (const ps of input.partialSig ?? []) {
             let decoded: { signature: Buffer; hashType: number };
             try {

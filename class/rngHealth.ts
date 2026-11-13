@@ -12,12 +12,15 @@ import { randomBytes } from './rng';
  * true, we check the native source is present and returns sane bytes, and
  * refuse loudly if it is not.
  */
+// Not "reinstall": on Android an uninstall deletes seeds held only in the Keystore. Shown translated through
+// src/helpers/safetyErrorText.
+export const ENTROPY_UNSAFE_MESSAGE =
+    'Secure randomness is not available on this device, so a wallet cannot be created safely. Update the app, and if this keeps happening, contact support.';
+
 export class EntropyUnsafeError extends Error {
     readonly reason: string;
     constructor(reason: string) {
-        super(
-            'Secure randomness is not available on this device, so a wallet cannot be created safely. Update the app or reinstall. If this keeps happening, contact support.',
-        );
+        super(ENTROPY_UNSAFE_MESSAGE);
         this.name = 'EntropyUnsafeError';
         this.reason = reason;
     }
