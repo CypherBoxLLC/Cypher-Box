@@ -4,6 +4,7 @@ import BIP32Factory, { BIP32Interface } from 'bip32';
 
 import ecc from '../../blue_modules/noble_ecc';
 import { rootFromMnemonic } from './seedFromWords';
+import { auditPsbtSignatures } from '../../class/signatureAudit';
 
 /**
  * Signing an unsigned transaction (PSBT) made by a watch-only wallet: a Cypher Box Cold Vault, Sparrow or any other
@@ -346,6 +347,8 @@ export function signWithRoot(psbt: bitcoin.Psbt, root: BIP32Interface): { psbt: 
         }
         if (!copy.validateSignaturesOfInput(i, validator)) throw new Error(SIGN_NOTHING_SIGNED);
     });
+    // Nonce-reuse canary across every signature now on the PSBT.
+    auditPsbtSignatures(copy);
     const signed = signedCount(copy) - before;
     if (signed <= 0) throw new Error(SIGN_NOTHING_SIGNED);
     return { psbt: copy, signed };
