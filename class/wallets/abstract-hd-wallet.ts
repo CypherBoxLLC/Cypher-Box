@@ -1,4 +1,5 @@
 import { LegacyWallet } from './legacy-wallet';
+import type { AbstractWallet } from './abstract-wallet';
 import * as bip39 from 'bip39';
 import { BIP32Interface } from 'bip32';
 import * as bip39custom from '../../blue_modules/bip39';
@@ -8,6 +9,14 @@ import { Transaction } from './types';
 type AbstractHDWalletStatics = {
   derivationPath?: string;
 };
+
+/*
+ * Each wallet's seed, worked out once. bip39's PBKDF2 (2048 rounds of HMAC-SHA512 in JS) takes seconds on a phone, and
+ * every capsule address's key, the fingerprint and each signature redid it: restoring a wallet with many capsule
+ * addresses froze the app for minutes. Kept outside the wallet object, so it's never serialized with the wallet and
+ * goes when the wallet does, and redone if the words or the passphrase change. Callers get a copy.
+ */
+const seedCache = new WeakMap<object, { mnemonic: string; passphrase: string | undefined; seed: Buffer }>();
 
 /**
  * @deprecated
@@ -22,7 +31,6 @@ export class AbstractHDWallet extends LegacyWallet {
   external_addresses_cache: Record<number, string>;
   _xpub: string;
   usedAddresses: string[];
-  _address_to_wif_cache: Record<string, string>;
   gap_limit: number;
   passphrase?: string;
   _node0?: BIP32Interface;
@@ -37,7 +45,6 @@ export class AbstractHDWallet extends LegacyWallet {
     this.external_addresses_cache = {}; // index => address
     this._xpub = ''; // cache
     this.usedAddresses = [];
-    this._address_to_wif_cache = {};
     this.gap_limit = 20;
     this._derivationPath = Constructor.derivationPath;
   }
@@ -50,10 +57,33 @@ export class AbstractHDWallet extends LegacyWallet {
     return this.next_free_change_address_index;
   }
 
+  static fromJson(obj: string): AbstractWallet {
+    const wallet = super.fromJson(obj) as AbstractHDWallet;
+    wallet._forgetStoredKeys();
+    return wallet;
+  }
+
   prepareForSerialization(): void {
     // deleting structures that cant be serialized
     delete this._node0;
     delete this._node1;
+    this._forgetStoredKeys();
+  }
+
+  /**
+   * Older versions derived the private key (WIF) of every address holding a UTXO while fetching UTXOs, kept the keys
+   * in `_address_to_wif_cache` and on each UTXO's `wif`, and saved them with the wallet. Keys are now derived only
+   * when signing, so whatever an older version stored is dropped: when the wallet is loaded, and before every save.
+   */
+  _forgetStoredKeys(): void {
+    const self = this as unknown as { _address_to_wif_cache?: unknown; utxo?: unknown; _utxo?: unknown };
+    delete self._address_to_wif_cache;
+    for (const list of [self.utxo, self._utxo]) {
+      if (!Array.isArray(list)) continue;
+      for (const utxo of list) {
+        if (utxo && typeof utxo === 'object') delete utxo.wif;
+      }
+    }
   }
 
   generate(): Promise<void> {
@@ -74,7 +104,11 @@ export class AbstractHDWallet extends LegacyWallet {
   _getSeed(): Buffer {
     const mnemonic = this.secret;
     const passphrase = this.passphrase;
-    return bip39.mnemonicToSeedSync(mnemonic, passphrase);
+    const cached = seedCache.get(this);
+    if (cached && cached.mnemonic === mnemonic && cached.passphrase === passphrase) return Buffer.from(cached.seed);
+    const seed = bip39.mnemonicToSeedSync(mnemonic, passphrase);
+    seedCache.set(this, { mnemonic, passphrase, seed: Buffer.from(seed) });
+    return seed;
   }
 
   setSecret(newSecret: string): this {
@@ -254,26 +288,24 @@ export class AbstractHDWallet extends LegacyWallet {
 
   /**
    * Given that `address` is in our HD hierarchy, try to find
-   * corresponding WIF
+   * corresponding WIF. Derived on every call and not kept: only signing needs it.
    *
    * @param address {String} In our HD hierarchy
    * @return {String} WIF if found
    */
   _getWifForAddress(address: string): string {
-    if (this._address_to_wif_cache[address]) return this._address_to_wif_cache[address]; // cache hit
-
     // fast approach, first lets iterate over all addressess we have in cache
     for (const indexStr of Object.keys(this.internal_addresses_cache)) {
       const index = parseInt(indexStr, 10);
       if (this._getInternalAddressByIndex(index) === address) {
-        return (this._address_to_wif_cache[address] = <string>this._getInternalWIFByIndex(index));
+        return <string>this._getInternalWIFByIndex(index);
       }
     }
 
     for (const indexStr of Object.keys(this.external_addresses_cache)) {
       const index = parseInt(indexStr, 10);
       if (this._getExternalAddressByIndex(index) === address) {
-        return (this._address_to_wif_cache[address] = <string>this._getExternalWIFByIndex(index));
+        return <string>this._getExternalWIFByIndex(index);
       }
     }
 
@@ -281,14 +313,14 @@ export class AbstractHDWallet extends LegacyWallet {
     for (let c = 0; c <= this.next_free_change_address_index + this.gap_limit; c++) {
       const possibleAddress = this._getInternalAddressByIndex(c);
       if (possibleAddress === address) {
-        return (this._address_to_wif_cache[address] = <string>this._getInternalWIFByIndex(c));
+        return <string>this._getInternalWIFByIndex(c);
       }
     }
 
     for (let c = 0; c <= this.next_free_address_index + this.gap_limit; c++) {
       const possibleAddress = this._getExternalAddressByIndex(c);
       if (possibleAddress === address) {
-        return (this._address_to_wif_cache[address] = <string>this._getExternalWIFByIndex(c));
+        return <string>this._getExternalWIFByIndex(c);
       }
     }
 

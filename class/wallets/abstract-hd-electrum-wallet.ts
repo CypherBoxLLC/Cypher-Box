@@ -30,6 +30,21 @@ type BalanceByIndex = {
   u: number;
 };
 
+/*
+ * Private nodes of each wallet's account (its derivation path) and of its receive (/0) and change (/1) chains, worked
+ * out once per wallet per session: a signing key is then one derivation step, instead of the seed (PBKDF2, seconds
+ * in JS) and the whole path again for every input. Kept outside the wallet object, so they're never serialized with
+ * the wallet and go when the wallet does, and redone if the words, the passphrase or the derivation path change.
+ */
+type PrivateAccountNodes = {
+  secret: string;
+  passphrase: string | undefined;
+  path: string;
+  account: BIP32Interface;
+  chains: Partial<Record<0 | 1, BIP32Interface>>;
+};
+const privateAccountNodes = new WeakMap<object, PrivateAccountNodes>();
+
 /**
  * Electrum - means that it utilizes Electrum protocol for blockchain data
  */
@@ -142,12 +157,36 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
    */
   _getWIFByIndex(internal: boolean, index: number): string | false {
     if (!this.secret) return false;
-    const seed = this._getSeed();
-    const root = bip32.fromSeed(seed);
-    const path = `${this.getDerivationPath()}/${internal ? 1 : 0}/${index}`;
-    const child = root.derivePath(path);
+    // same key as root.derivePath(`${this.getDerivationPath()}/${internal ? 1 : 0}/${index}`)
+    const child = this._getPrivateChainNode(internal).derive(Number(index));
 
     return child.toWIF();
+  }
+
+  /**
+   * Private node of the receive chain (`<derivation path>/0`) or the change chain (`/1`), from the per-session cache.
+   *
+   * @param {Boolean} internal Change chain if true
+   * @returns {BIP32Interface}
+   * @private
+   */
+  _getPrivateChainNode(internal: boolean): BIP32Interface {
+    const secret = this.secret;
+    const passphrase = this.passphrase;
+    const path = String(this.getDerivationPath());
+    let cached = privateAccountNodes.get(this);
+    if (!cached || cached.secret !== secret || cached.passphrase !== passphrase || cached.path !== path) {
+      const account = bip32.fromSeed(this._getSeed()).derivePath(path);
+      cached = { secret, passphrase, path, account, chains: {} };
+      privateAccountNodes.set(this, cached);
+    }
+    const chain = internal ? 1 : 0;
+    let node = cached.chains[chain];
+    if (!node) {
+      node = cached.account.derive(chain);
+      cached.chains[chain] = node;
+    }
+    return node;
   }
 
   _getNodeAddressByIndex(node: number, index: number): string {
@@ -917,10 +956,10 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     // backward compatibility TODO: remove when we make sure `.utxo` is not used
     this.utxo = this._utxo;
     // this belongs in `.getUtxo()`
+    // no private keys here: a key is derived only when an input is signed (createTransaction, _getWifForAddress)
     for (const u of this.utxo) {
       u.txid = u.txId;
       u.amount = u.value;
-      u.wif = this._getWifForAddress(u.address);
       if (!u.confirmations && u.height) u.confirmations = BlueElectrum.estimateCurrentBlockheight() - u.height;
     }
 
@@ -937,7 +976,6 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
    *    vout: 1,
    *    txid: 'string',
    *    amount: 666,
-   *    wif: 'string',
    *    confirmations: 0 } ]
    *
    * @param respectFrozen {boolean} Add Frozen outputs
@@ -991,7 +1029,6 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
             value,
             amount: value,
             confirmations: tx.confirmations,
-            wif: false,
             height: BlueElectrum.estimateCurrentBlockheight() - (tx.confirmations ?? 0),
           });
         }
@@ -1012,8 +1049,7 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
       }
 
       if (!spent) {
-        // filling WIFs only for legit unspent UTXO, as it is a slow operation
-        utxo.wif = this._getWifForAddress(utxo.address);
+        // no private key here either: it is derived only when the input is signed
         ret.push(utxo);
       }
     }
@@ -1058,6 +1094,22 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     }
 
     return false;
+  }
+
+  /**
+   * Given that `address` is ours (HD hierarchy or a BIP47 payment code address), derives its WIF. Not kept: only
+   * signing needs it.
+   *
+   * @param address {string} Address that belongs to this wallet
+   * @returns {string} WIF
+   */
+  _getWifForAddress(address: string): string {
+    // a BIP47 address used to find its key only in the stored WIF cache; the addresses are kept per payment code
+    for (const pc of this._sender_payment_codes) {
+      const index = (this._addresses_by_payment_code[pc] || []).indexOf(address);
+      if (index !== -1) return this._getBIP47WIF(pc, index);
+    }
+    return super._getWifForAddress(address);
   }
 
   /**
@@ -1152,16 +1204,18 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
 
     inputs.forEach(input => {
       let keyPair;
+      let wif: string | undefined;
       if (!skipSigning) {
         // skiping signing related stuff
-        keyPair = ECPair.fromWIF(this._getWifForAddress(String(input.address)));
+        wif = this._getWifForAddress(String(input.address));
+        keyPair = ECPair.fromWIF(wif);
         keypairs[c] = keyPair;
       }
       values[c] = input.value;
       c++;
       if (!skipSigning) {
         // skiping signing related stuff
-        if (!input.address || !this._getWifForAddress(input.address)) throw new Error('Internal error: no address or WIF to sign input');
+        if (!input.address || !wif) throw new Error('Internal error: no address or WIF to sign input');
       }
 
       let masterFingerprintBuffer;
@@ -1535,7 +1589,6 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     const remotePaymentNode = senderBIP47_instance.getPaymentCodeNode();
     const hdNode = bip47_instance.getPaymentWallet(remotePaymentNode, index);
     const address = this._hdNodeToAddress(hdNode);
-    this._address_to_wif_cache[address] = hdNode.toWIF();
     this._addresses_by_payment_code[paymentCode][index] = address;
     return address;
   }
