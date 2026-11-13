@@ -5,14 +5,15 @@ import { dropUnprotectedHotVaultBackups } from './hotVaultKeychain';
 import loc from '../../loc';
 
 /**
- * Once the auth store has loaded (it holds the "saved" flags), removes Hot Vault seed copies that open without the
- * fingerprint (see dropUnprotectedHotVaultBackups), clears their flags so the backup tile offers a protected copy
- * again, and says so once. Android only; cheap when there's nothing to remove, so it runs on every launch.
+ * Once the wallets are loaded (the caller passes their IDs) and the auth store has loaded (it holds the "saved" flags),
+ * removes the seed copies of those Hot Vaults that open without the fingerprint (see dropUnprotectedHotVaultBackups),
+ * clears their flags so the backup tile offers a protected copy again, and says so once. Copies of vaults no longer in
+ * the app are left alone. Android only; cheap when there's nothing to remove, so it runs on every launch.
  */
-export function startHotVaultKeychainCheck(): void {
-    if (Platform.OS !== 'android') return;
+export function startHotVaultKeychainCheck(walletIDsInApp: readonly string[]): void {
+    if (Platform.OS !== 'android' || !walletIDsInApp.length) return;
     const run = () => {
-        void checkNow().catch(e => console.warn('[HotVault] Keychain protection check failed:', e?.message ?? e));
+        void checkNow(walletIDsInApp).catch(e => console.warn('[HotVault] Keychain protection check failed:', e?.message ?? e));
     };
     if (useAuthStore.persist.hasHydrated()) {
         run();
@@ -24,8 +25,8 @@ export function startHotVaultKeychainCheck(): void {
     });
 }
 
-async function checkNow(): Promise<void> {
-    const dropped = await dropUnprotectedHotVaultBackups();
+async function checkNow(walletIDsInApp: readonly string[]): Promise<void> {
+    const dropped = await dropUnprotectedHotVaultBackups(walletIDsInApp);
     if (!dropped.length) return;
     const { setHotVaultKeychainBackup, signingMode } = useAuthStore.getState();
     for (const walletID of dropped) setHotVaultKeychainBackup(walletID, false);

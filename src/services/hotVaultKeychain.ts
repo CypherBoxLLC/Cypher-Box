@@ -462,10 +462,14 @@ export async function resetHotVaultMeta(walletID: string): Promise<boolean> {
  * keyed by the service), so this never prompts. A copy whose cipher can't be read is left alone. iOS has nothing to
  * do: its Keychain items carry their access control.
  */
-export async function dropUnprotectedHotVaultBackups(): Promise<string[]> {
+export async function dropUnprotectedHotVaultBackups(walletIDsInApp: readonly string[]): Promise<string[]> {
     if (Platform.OS !== 'android') return [];
+    // Only for vaults still in the app, whose seed is in the wallet list as well. A copy whose vault was deleted (delete
+    // keeps it on purpose, and Recover offers it back) can be the only copy of that seed left on the phone: it stays.
+    const inApp = new Set(walletIDsInApp);
     const dropped: string[] = [];
     for (const walletID of await listHotVaultKeychainBackups()) {
+        if (!inApp.has(walletID)) continue;
         let storage: string | null = null;
         try {
             const found = await Keychain.hasInternetCredentials(serviceFor(walletID));
@@ -477,7 +481,11 @@ export async function dropUnprotectedHotVaultBackups(): Promise<string[]> {
         }
         if (storage === null || storage === RSA_STORAGE) continue;
         console.warn('[HotVault] removing a Keychain copy not bound to a fingerprint (storage=', storage, ')');
-        if (await resetHotVaultBackupFully(walletID)) dropped.push(walletID);
+        // the seed entry going is what counts (its saved flag must clear then), even if the sidecar can't be removed
+        if (await resetHotVaultKeychainBackup(walletID)) {
+            await resetHotVaultMeta(walletID);
+            dropped.push(walletID);
+        }
     }
     return dropped;
 }
