@@ -227,13 +227,46 @@ class AppStorage {
   };
 
   /**
-   * Returns instace of the Realm database, which is encrypted either by cached user's password OR default password.
+   * Device-random secret used as the default (no user password) encryption
+   * input for the wallet-transactions Realm. Replaces a former hardcoded
+   * literal that shipped in the public source. Held in the Keychain; minted
+   * once on genuine absence, and a Keychain READ error throws rather than
+   * minting a replacement (a read error is not proof of absence, and a wrong
+   * key would silently start a new, empty tx cache). Mirrors
+   * src/stores/storageService.getOrCreateEncryptionKey.
+   *
+   * @returns {Promise<string>}
+   */
+  async getDefaultRealmSecret() {
+    if (this._defaultRealmSecret) return this._defaultRealmSecret;
+    const service = 'wallettransactions_realm_key';
+    let credentials;
+    try {
+      credentials = await Keychain.getGenericPassword({ service });
+    } catch (e) {
+      throw new Error('[BlueApp] wallettransactions realm key read failed; refusing to mint: ' + (e?.message ?? String(e)));
+    }
+    if (credentials && credentials.password) {
+      this._defaultRealmSecret = credentials.password;
+      return this._defaultRealmSecret;
+    }
+    const secret = (await randomBytes(32)).toString('hex');
+    await Keychain.setGenericPassword(service, secret, {
+      service,
+      accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+    this._defaultRealmSecret = secret;
+    return secret;
+  }
+
+  /**
+   * Returns instace of the Realm database, which is encrypted either by cached user's password OR a device-random default secret.
    * Database file is deterministically derived from encryption key.
    *
    * @returns {Promise<Realm>}
    */
   async getRealm() {
-    const password = this.hashIt(this.cachedPassword || 'fyegjitkyf[eqjnc.lf');
+    const password = this.hashIt(this.cachedPassword || (await this.getDefaultRealmSecret()));
     const buf = Buffer.from(this.hashIt(password) + this.hashIt(password), 'hex');
     const encryptionKey = Int8Array.from(buf);
     const path = this.hashIt(this.hashIt(password)) + '-wallettransactions.realm';
@@ -265,13 +298,21 @@ class AppStorage {
   async openRealmKeyValue() {
     const service = 'realm_encryption_key';
     let password;
-    const credentials = await Keychain.getGenericPassword({ service });
-    if (credentials) {
+    let credentials;
+    try {
+      credentials = await Keychain.getGenericPassword({ service });
+    } catch (e) {
+      throw new Error('[BlueApp] keyvalue realm key read failed; refusing to mint: ' + (e?.message ?? String(e)));
+    }
+    if (credentials && credentials.password) {
       password = credentials.password;
     } else {
       const buf = await randomBytes(64);
       password = buf.toString('hex');
-      await Keychain.setGenericPassword(service, password, { service });
+      await Keychain.setGenericPassword(service, password, {
+        service,
+        accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
     }
 
     const buf = Buffer.from(password, 'hex');
@@ -942,6 +983,78 @@ class AppStorage {
       path,
     });
   }
+
+  /**
+   * One-time migration: the default wallet-transactions Realm used to be
+   * encrypted with a hardcoded literal that ships in the public source, so its
+   * file was readable by anyone with the binary. We now key it with a
+   * device-random Keychain secret (getDefaultRealmSecret), which also changes
+   * the deterministic file path. This moves the cache over to the new file and
+   * deletes the public-key file so it does not linger on disk. The tx cache is
+   * rebuildable from chain, so on any error we just delete the old file and let
+   * it repopulate on the next sync (balance is carried in the Keychain `data`
+   * copy, not here). Runs with cachedPassword still false (before loadFromDisk),
+   * so getRealm() here targets the new device-random default file.
+   */
+  async migrateLegacyWalletTransactionsRealm() {
+    const DONE_FLAG = 'wallettransactions_realm_migrated_v1';
+    try {
+      if (await AsyncStorage.getItem(DONE_FLAG)) return;
+    } catch (_) {}
+
+    const schema = [
+      {
+        name: 'WalletTransactions',
+        properties: {
+          walletid: { type: 'string', indexed: true },
+          internal: 'bool?',
+          index: 'int?',
+          tx: 'string',
+        },
+      },
+    ];
+
+    try {
+      const legacyPassword = this.hashIt('fyegjitkyf[eqjnc.lf');
+      const legacyPath = this.hashIt(this.hashIt(legacyPassword)) + '-wallettransactions.realm';
+
+      if (Realm.exists({ path: legacyPath })) {
+        const legacyKey = Int8Array.from(Buffer.from(this.hashIt(legacyPassword) + this.hashIt(legacyPassword), 'hex'));
+        // Best-effort copy into the new device-random-keyed file.
+        try {
+          const legacyRealm = await Realm.open({ schema, path: legacyPath, encryptionKey: legacyKey });
+          const rows = legacyRealm.objects('WalletTransactions');
+          if (rows.length > 0 && !this.cachedPassword) {
+            const newRealm = await this.getRealm();
+            newRealm.write(() => {
+              for (const r of rows) {
+                newRealm.create(
+                  'WalletTransactions',
+                  { walletid: r.walletid, internal: r.internal, index: r.index, tx: r.tx },
+                  Realm.UpdateMode.Modified,
+                );
+              }
+            });
+            newRealm.close();
+          }
+          legacyRealm.close();
+        } catch (copyErr) {
+          console.warn('[BlueApp] legacy realm copy skipped:', copyErr?.message ?? String(copyErr));
+        }
+        try {
+          Realm.deleteFile({ path: legacyPath });
+        } catch (delErr) {
+          console.warn('[BlueApp] legacy realm delete failed:', delErr?.message ?? String(delErr));
+        }
+      }
+
+      try {
+        await AsyncStorage.setItem(DONE_FLAG, '1');
+      } catch (_) {}
+    } catch (e) {
+      console.warn('[BlueApp] legacy realm migration error:', e?.message ?? String(e));
+    }
+  }
 }
 
 const BlueApp = new AppStorage();
@@ -955,6 +1068,7 @@ const startAndDecrypt = async retry => {
     return true;
   }
   await BlueApp.migrateKeys();
+  await BlueApp.migrateLegacyWalletTransactionsRealm();
   let password = false;
   if (await BlueApp.storageIsEncrypted()) {
     do {
