@@ -122,6 +122,14 @@ android {
             // page-aligned in the APK so they can be mmap'd directly. Required
             // for 16 KB page-size support (was true / legacy-compressed).
             useLegacyPackaging = false
+            // Facebook Conceal's prebuilt libconceal.so, which react-native-keychain 8.1.2
+            // bundles for its "FacebookConceal" cipher. Play flags it for 16 KB devices: it
+            // was built with an old NDK. Nothing loads it here. Conceal calls
+            // System.loadLibrary only from Crypto.isAvailable(), which the keychain reaches
+            // only when encrypting or decrypting with that cipher, and on Android 6+ (this
+            // app needs 7) the keychain uses the Android Keystore ciphers. The app never
+            // asks for Conceal. Drop this once react-native-keychain no longer ships it.
+            excludes += ['**/libconceal.so']
         }
         // Pick first on duplicate resources (fixes RN 0.72 bundler conflict)
         resources {
