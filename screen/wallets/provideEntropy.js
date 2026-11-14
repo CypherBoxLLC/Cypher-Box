@@ -30,6 +30,11 @@ import useProtectSecret from '../../src/custom-hooks/useProtectSecret';
 
 const ENTROPY_LIMIT = 256;
 
+// Every navigator that shows this screen gives it a header, and that header already clears the status bar. On iOS the
+// SafeAreaView pads with the app's top inset wherever it sits, so a 'top' edge here repeated the status-bar gap under
+// the header (an empty 48 pt band on an iPhone XR). The header keeps the top; the other edges stay with the SafeAreaView.
+const SAFE_EDGES = ['left', 'right', 'bottom'];
+
 const shiftLeft = (value, places) => value.multipliedBy(2 ** places);
 const shiftRight = (value, places) => value.div(2 ** places).dp(0, BN.ROUND_DOWN);
 
@@ -415,7 +420,7 @@ const Entropy = () => {
       </View>
     );
     return (
-      <SafeArea>
+      <SafeArea edges={SAFE_EDGES}>
         <ScrollView contentContainerStyle={styles.verifyScroll}>
           <Text style={[styles.verifyTitle, stylesHook.entropyText]}>Check where this key came from</Text>
           <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
@@ -462,7 +467,7 @@ const Entropy = () => {
   }
 
   return (
-    <SafeArea>
+    <SafeArea edges={SAFE_EDGES}>
       <BlueSpacing20 />
       <TouchableOpacity accessibilityRole="button" onPress={() => setShow(!show)}>
         <View style={[styles.entropy, stylesHook.entropy]}>

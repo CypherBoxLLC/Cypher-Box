@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { Platform, useWindowDimensions, Dimensions, I18nManager } from 'react-native';
+import { safeTopInset } from './src/helpers/safeTopInset';
 
 import Settings from './screen/settings/settings';
 import Security from './screen/settings/security';
@@ -141,16 +142,7 @@ const HotVaultStack = createNativeStackNavigator();
 const HotVaultFlow = () => (
   <HotVaultStack.Navigator screenOptions={{ headerShown: false }}>
     <HotVaultStack.Screen name="SavingVaultIntro" component={SavingVaultIntro} />
-    {/* BlueWallet's dice/coin entropy screen, reachable from the hot-vault
-        instruction page ("create your own entropy"). Registered here (in
-        addition to AddWalletStack) because cross-stack navigate can't reach
-        the legacy add-wallet flow from SavingVaultIntro. Header re-enabled
-        per-screen so the user has a back affordance besides Save. */}
-    <HotVaultStack.Screen
-      name="ProvideEntropy"
-      component={ProvideEntropy}
-      options={{ headerShown: true, title: loc.entropy.title }}
-    />
+    {/* No dice screen here: SavingVaultIntro's "create your own entropy" opens the one in WalletsStack (see there). */}
     <HotVaultStack.Screen
       name="SavingVault"
       component={SavingVault}
@@ -322,13 +314,21 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="SeedQRBackup" component={SeedQRBackup} options={{ headerShown: false }} />
       <WalletsStack.Screen name="SeedSignerGate" component={SeedSignerGate} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CreateSignerSeed" component={CreateSignerSeed} options={{ headerShown: false }} />
-      {/* The dice screen again, for CreateSignerSeed's "Add your own dice rolls": the copy in HotVaultFlow can't be
-          reached from here, so without this the button did nothing. The back title is set because CreateSignerSeed has
-          none, and its route name would show instead. */}
+      {/* The dice screen, for the Hot Vault's "create your own entropy" (SavingVaultIntro, in HotVaultFlow) and
+          CreateSignerSeed's "Add your own dice rolls". One copy, here in the JS stack: the copy that was in the native
+          HotVaultFlow drew its native header under the iOS status bar (the back arrow over the clock). Navigating to it
+          from HotVaultFlow bubbles up to this stack, and the screen hands its rolls back through onGenerated and pops.
+          On iOS the header's status-bar height is the one measured at launch (safeTopInset), the floor ScreenLayout also
+          uses. The back title is set because CreateSignerSeed has none, and its route name would show. */}
       <WalletsStack.Screen
         name="ProvideEntropy"
         component={ProvideEntropy}
-        options={{ headerShown: true, title: loc.entropy.title, headerBackTitle: loc.cypherbox.account.common.back }}
+        options={{
+          headerShown: true,
+          title: loc.entropy.title,
+          headerBackTitle: loc.cypherbox.account.common.back,
+          ...(Platform.OS === 'ios' ? { headerStatusBarHeight: safeTopInset(undefined) } : null),
+        }}
       />
       <WalletsStack.Screen name="TransactionBroadCastNew" component={TransactionBroadCastNew} options={{ headerShown: false }} />
       <WalletsStack.Screen name="PurchaseVault" component={PurchaseVault} options={{ headerShown: false }} />
