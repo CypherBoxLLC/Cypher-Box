@@ -54,10 +54,13 @@ export default StyleSheet.create<Style>({
         paddingHorizontal: 30,
         justifyContent: 'center',
     },
+    // the whole address under the QR, wrapped and centred
     code: {
-        fontSize: 18,
-        lineHeight: 26,
+        fontSize: 16,
+        lineHeight: 22,
         marginVertical: 10,
+        marginHorizontal: 20,
+        textAlign: 'center',
     },
     imageView2: {
         flexDirection: 'row',

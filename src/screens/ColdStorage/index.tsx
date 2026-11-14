@@ -1379,7 +1379,8 @@ export default function ColdStorage({ route, navigation }: Props) {
                           <View style={styles.pasteview}>
                               <TouchableOpacity style={[styles.button, { borderColor: destinationAddress?.length > 0 ? primaryColor : '#B6B6B6' }]} onPress={pasteClickHandler}>
                                   {destinationAddress ?
-                                      <Text h3 bold style={rtl.ltrText}>{destinationAddress}</Text>
+                                      // the whole address, wrapped: the pill grows to fit it (styles.button)
+                                      <Text bold style={[styles.destinationAddress, rtl.ltrText]}>{destinationAddress}</Text>
                                       :
                                       <Text bold>{loc.cypherbox.vault.cold_storage.paste_destination}</Text>
                                   }
