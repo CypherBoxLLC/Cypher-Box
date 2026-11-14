@@ -65,10 +65,12 @@ describe('Home wiring', () => {
   });
 
   it('gets that padding on the container around the scroll view', () => {
-    // ScreenLayout hands `edges` and `style` to the SafeAreaView that wraps the ScrollView (and its pull-to-refresh
-    // spinner), so the scroll view still starts below the status bar.
+    // ScreenLayout hands `style` to the SafeAreaView that wraps the ScrollView (and its pull-to-refresh spinner), so
+    // the scroll view still starts below the status bar; with no 'top' in `edges` it adds no inset of its own
+    // (screenLayoutTopInset.test.tsx renders that case).
+    expect(layout).toMatch(/const containerStyle = StyleSheet\.flatten\(\[styles\.inner, style\]\)/);
     expect(layout).toMatch(
-      /<SafeAreaView\s+edges=\{edges \? edges : DEFAULT_EDGES\}\s+style=\{StyleSheet\.flatten\(\[styles\.inner, style\]\)\}>\s+<StatusBar[^>]*\/>\s+\{renderContent\(\)\}/,
+      /style=\{topFromInsets \? \[containerStyle, \{ paddingTop: ownTop \+ safeTopInset\(insets\?\.top\) \}\] : containerStyle\}>\s+<StatusBar[^>]*\/>\s+\{renderContent\(\)\}/,
     );
   });
 });

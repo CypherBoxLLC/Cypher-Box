@@ -1,5 +1,5 @@
 // *** React Import
-import React, { ReactElement } from 'react';
+import React, { ReactElement, useContext } from 'react';
 import {
   View,
   ScrollView,
@@ -11,6 +11,7 @@ import {
   StatusBarStyle,
   Image,
 } from 'react-native';
+import { safeTopInset } from '../../helpers/safeTopInset';
 
 /**
  * Which sides get an inset when a screen does not name its own.
@@ -41,7 +42,7 @@ const DEFAULT_EDGES: ReadonlyArray<'top' | 'bottom' | 'left' | 'right'> =
     : ['right', 'left', 'top'];
 
 // *** Third Party Import
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaInsetsContext, SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 
@@ -108,6 +109,8 @@ function ScreenLayout({
   isClose = false,
 }: Props) {
   const navigation: any = useNavigation();
+  // useContext rather than useSafeAreaInsets: null instead of a throw outside a SafeAreaProvider
+  const insets = useContext(SafeAreaInsetsContext);
 
   const handledBackPress = () => {
     onBackPress ? onBackPress() : navigation.goBack();
@@ -195,11 +198,23 @@ function ScreenLayout({
   // overlaid by the SafeAreaView's colors.primary backgroundColor, so it
   // contributed nothing visual but was the single biggest commit-phase
   // cost in every ScreenLayout-based screen. Replaced with a plain View.
+  // iOS: the top inset is applied here, from the provider's insets and never below the one measured at launch
+  // (safeTopInset), not by the native SafeAreaView. That view keeps the last inset it applied, and on an iPhone XR it
+  // was left at 0: Home, then the send and amount screens, sat with their header under the clock and battery. Only an
+  // edges array asking for 'top' is handled this way; the other sides, and Android, stay with the SafeAreaView. A
+  // screen's own top padding is added to the inset, as the SafeAreaView does.
+  const requestedEdges = edges ? edges : DEFAULT_EDGES;
+  const topFromInsets = Platform.OS === 'ios' && Array.isArray(requestedEdges) && requestedEdges.includes('top');
+  const containerStyle = StyleSheet.flatten([styles.inner, style]) ?? {};
+  const ownTop = [containerStyle.paddingTop, containerStyle.paddingVertical, containerStyle.padding].find(
+    (value): value is number => typeof value === 'number',
+  ) ?? 0;
+
   return (
     <View style={styles.inner}>
       <SafeAreaView
-        edges={edges ? edges : DEFAULT_EDGES}
-        style={StyleSheet.flatten([styles.inner, style])}>
+        edges={topFromInsets ? requestedEdges.filter((edge: string) => edge !== 'top') : requestedEdges}
+        style={topFromInsets ? [containerStyle, { paddingTop: ownTop + safeTopInset(insets?.top) }] : containerStyle}>
         <StatusBar backgroundColor={colors.primary} barStyle={barStyle} />
         {renderContent()}
       </SafeAreaView>
