@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState, useRef } from "react";
+import React, { useContext, useEffect, useMemo, useState, useRef } from "react";
 import { Linking, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import styles from "./styles";
@@ -14,19 +14,11 @@ import RBSheet from "react-native-raw-bottom-sheet";
 import { HDSegwitBech32Wallet, HDSegwitBech32Transaction } from "../../../class";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { NetworkTransactionFees } from "../../../models/networkTransactionFees";
+import { displayDestination, paidOutputAddress } from "@Cypher/helpers/addressDisplay";
 
 interface Props {
     route: any;
 }
-
-const shortenAddress = (address: string) => {
-    // Take the first 6 characters
-    const start = address.substring(0, 6);
-    // Take the last 6 characters
-    const end = address.substring(address.length - 6);
-    // Combine with three dots in the middle
-    return `${start}...${end}`;
-};
 
 
 export default function SendReceiveOnChain({ route }: Props) {
@@ -37,6 +29,11 @@ export default function SendReceiveOnChain({ route }: Props) {
     //   don't let the user double-bump (the parent's output is already
     //   spent by the child and createCPFPbumpFee would throw).
     const isSent = transaction.value < 0;
+    // "Received to": the output that came to this vault, or for a send the one that left it, not just the first
+    const receivedTo = useMemo(
+        () => paidOutputAddress(transaction?.outputs, (address) => !!wallet?.weOwnAddress?.(address), isSent),
+        [transaction, wallet, isSent],
+    );
     const satsAmount = transaction.value.toString().replace('-', ''); // Adjusted for negative sign
     const amountSign = transaction.value < 0 ? "-" : "+";
     const currency = btc(1);
@@ -277,8 +274,8 @@ export default function SendReceiveOnChain({ route }: Props) {
                     <Text semibold center style={StyleSheet.flatten([styles.sats, { color: isSent ? '#FD7A68' : '#4FBF67' }, rtl.ltrText])}>{amountSign+BTCAmount}</Text>
                     <Text bold subHeader style={rtl.ltrText}>{'$'+dollarAmount.toFixed(2)}</Text>
                 </View>
-                <TextView keytext={loc.cypherbox.payments.common.sent_from_label} text={String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.bitcoin_address_value, { address: shortenAddress(transaction?.inputs[0].addresses[0]) }))} />
-                <TextView keytext={loc.cypherbox.payments.send_receive_on_chain.received_to} text={String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.bitcoin_address_value, { address: shortenAddress(transaction?.outputs[0].scriptPubKey.addresses[0]) }))} />
+                <TextView keytext={loc.cypherbox.payments.common.sent_from_label} text={String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.bitcoin_address_value, { address: displayDestination(transaction?.inputs[0]?.addresses?.[0]) }))} />
+                <TextView keytext={loc.cypherbox.payments.send_receive_on_chain.received_to} text={String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.bitcoin_address_value, { address: displayDestination(receivedTo) }))} />
                 {/* Confirmation count, shown for every on-chain tx (sent or
                     received). Mirrors transactionStatus.js's "6+" cap so the
                     two detail screens read consistently. Uses the static

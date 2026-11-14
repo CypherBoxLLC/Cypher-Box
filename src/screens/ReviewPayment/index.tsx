@@ -65,15 +65,6 @@ type Fees = {
     economyFee: number;
 };
 
-export const shortenAddress = (address: string) => {
-    // Take the first 6 characters
-    const start = address.substring(0, 6);
-    // Take the last 6 characters
-    const end = address.substring(address.length - 6);
-    // Combine with three dots in the middle
-    return `${start}...${end}`;
-};
-
 function usdToSats(usdAmount: number, exchangeRate: number): string {
   if (!exchangeRate || exchangeRate === 0) return '0';
   const btcAmount = usdAmount / exchangeRate;
