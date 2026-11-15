@@ -1,5 +1,5 @@
 import { colors, widths } from "@Cypher/style-guide";
-import { ImageStyle, Platform, StyleSheet, TextStyle, ViewStyle } from "react-native";
+import { I18nManager, ImageStyle, Platform, StyleSheet, TextStyle, ViewStyle } from "react-native";
 
 // The UTXO capsule squares off its top-right and bottom-left corners on iOS,
 // keeping the curve only on the top-left/bottom-right diagonal. Android keeps
@@ -10,6 +10,12 @@ import { ImageStyle, Platform, StyleSheet, TextStyle, ViewStyle } from "react-na
 // asymmetric radius reads as deliberate rather than cramped.
 const IS_IOS = Platform.OS === 'ios';
 
+// Right-to-left puts the capsule's half of the card on the right. Margins and a
+// View's corner radii follow the layout direction, but translateX does not, so
+// the capsule's paint offset is picked by direction. I18nManager.isRTL only
+// changes after a restart.
+const IS_RTL = I18nManager.isRTL;
+
 interface Style {
     container: ViewStyle;
     gradientBorder: ViewStyle;
@@ -18,8 +24,7 @@ interface Style {
     strikeRow: ViewStyle;
     sideContainer: ViewStyle;
     fiatBalanceBox: ViewStyle;
-    fiatBalanceBox2: ViewStyle;
-    fiatBalanceBox3: ViewStyle;
+    capsuleBox: ViewStyle;
     sellBuyButton: ViewStyle;
     sellBuyGradient: ViewStyle;
     topShadow: ViewStyle;
@@ -95,9 +100,19 @@ export default StyleSheet.create<Style>({
         // (see the SELL marginTop:-5 comment in index.tsx).
         transform: [{ translateY: -10 }],
     },
-    fiatBalanceBox2: {
+    // The UTXO capsule: a solid black box, centred content. It used to be a
+    // BlackBGView with both gradient layers set to black, which looked the
+    // same but drew itself mirrored the wrong way in right-to-left.
+    capsuleBox: {
         width: 121,
         height: 94,
+        backgroundColor: colors.black.default,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: IS_IOS ? 0 : 20,
+        borderBottomLeftRadius: IS_IOS ? 0 : 20,
+        borderBottomRightRadius: 20,
         margin: 20,
         marginBottom: 10,
         // The capsule now lives in the LEFT sideContainer (its position in
@@ -113,30 +128,18 @@ export default StyleSheet.create<Style>({
         // marginTop 20 → 45 (each is base-margin 20 + 25pt offset). The
         // box's outer width grows to 186pt as a result; that overflow
         // sits within the LEFT sideContainer's slot so it doesn't
-        // collide with the right-side Fiat Balance text.
-        marginLeft: 45,
+        // collide with the right-side Fiat Balance text. marginStart is
+        // the left in English and the right in Arabic.
+        marginStart: 45,
         marginTop: 45,
         // Round 4 final — Round 4's full (−45, −45) was too much; backed
         // off 15pt on each axis to land at (−30, −30). Net effect: capsule
         // sits at (15, 15) inside the LEFT sideContainer (marginLeft/Top
         // 45 + −30 paint offset). Still using `transform` (not margin)
-        // so the BUY button below stays put.
-        transform: [{ translateX: -30 }, { translateY: -30 }],
-        justifyContent: 'center',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: IS_IOS ? 0 : 20,
-        borderBottomLeftRadius: IS_IOS ? 0 : 20,
-        borderBottomRightRadius: 20,
-    },
-    fiatBalanceBox3: {
-        // Mirrors fiatBalanceBox2 one step in, so the inner fill follows the
-        // outer shape instead of relying on the parent's overflow clip.
-        borderTopLeftRadius: 18,
-        borderTopRightRadius: IS_IOS ? 0 : 18,
-        borderBottomLeftRadius: IS_IOS ? 0 : 18,
-        borderBottomRightRadius: 18,
-        width: 115,
-        height: 88,
+        // so the BUY button below stays put. translateX is physical, so
+        // right-to-left needs +30 to pull the capsule back toward its
+        // own (right) edge.
+        transform: [{ translateX: IS_RTL ? 30 : -30 }, { translateY: -30 }],
     },
     sellBuyButton: {
         shadowColor: '#040404',

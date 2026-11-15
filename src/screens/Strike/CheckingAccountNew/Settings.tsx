@@ -2103,13 +2103,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               <RNText
-                style={{
+                style={[{
                   fontSize: 14,
                   fontWeight: '700',
                   color: colors.white,
                   flex: 1,
                   marginRight: 12,
-                }}
+                }, rtl.startText]}
               >
                 {loc.cypherbox.strike.ark_settings.notify_before_expiry}
               </RNText>
@@ -2164,13 +2164,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               <RNText
-                style={{
+                style={[{
                   fontSize: 14,
                   fontWeight: '700',
                   color: colors.white,
                   flex: 1,
                   marginRight: 12,
-                }}
+                }, rtl.startText]}
               >
                 {loc.cypherbox.strike.ark_settings.auto_refresh_label}
               </RNText>
