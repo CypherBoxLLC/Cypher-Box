@@ -1175,8 +1175,14 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     style={{
                         position: 'absolute',
                         top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
+                        // 16pt in from both edges of the content. The end side
+                        // adds the 40pt this container runs past the content
+                        // (it is screenWidth wide inside HomeScreen's 20pt
+                        // padding; see the shared row's `right: 40`). With 16
+                        // there, the pill ran 4pt off the screen: on the right
+                        // in English, on the left in Arabic.
                         left: 16,
-                        right: 16,
+                        right: 56,
                         // Drive visibility from scrollX so the pill fades in/out
                         // as the Ark card slides into/out of view (was an
                         // abrupt mount on indexStrike change before).

@@ -498,7 +498,12 @@ export default function Card({ onPress,
                 <View style={{
                     position: 'absolute',
                     right: 30,
-                    bottom: 12,
+                    // Below the capsule slot row, not on it. Title and balance
+                    // rows take 43pt each and the slot row ends 20pt lower, at
+                    // 106 of the 125pt inside the border; an 18pt line 12pt up
+                    // from the bottom covered the row's end (right in English,
+                    // left in Arabic). A 14pt line 4pt up clears it.
+                    bottom: 4,
                     flexDirection: 'row',
                     alignItems: 'center',
                 }}>
@@ -519,6 +524,7 @@ export default function Card({ onPress,
                     <Text
                         style={{
                             fontSize: 12,
+                            lineHeight: 14,
                             fontWeight: '600',
                             color:
                                 vaultConnectivity.level === 'green'
