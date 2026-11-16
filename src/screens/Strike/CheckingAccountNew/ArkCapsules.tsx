@@ -596,9 +596,11 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
             >
                 {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
                     bump the size column from 1.8 → 2.8 so the time-left +
-                    status row has room to fit on a single line. flexWrap
-                    flipped to 'nowrap' + numberOfLines=1 on each Text so
-                    they elide rather than wrap if anything overflows. */}
+                    status row has room to fit on a single line. The amount
+                    row stays 'nowrap'. The time-left + status row wraps:
+                    its Texts don't shrink, so a status too long for the
+                    line (Arabic) ran on under the refresh and Dust refresh
+                    buttons. Wrapping drops it to a second line instead. */}
                 <View style={[rowStyles.coin, { flex: 1.5 }]}>
                     <VtxoRing daysLeft={ringDaysLeft} />
                 </View>
@@ -675,7 +677,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                             )}
                         </View>
                     ) : (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
                             <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
                                 {labelText}
                             </Text>

@@ -279,19 +279,17 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                             amount → press ₿UY) is preserved; only their
                             corner of the card changes. */}
                         <View style={styles.sideContainer}>
-                            {/* linearFirstColors flattened to solid black so the
-                                outer gradient layer collapses into the inner
-                                background — visually removes the angular shadow
-                                border around the UTXO capsule per Bam. */}
-                            <BlackBGView
-                                linearFirstStyle={styles.fiatBalanceBox2}
-                                linearSecondStyle={styles.fiatBalanceBox3}
-                                linearFirstColors={[colors.black.default, colors.black.default]}
-                            >
+                            {/* The UTXO capsule: a solid black box. It was a
+                                BlackBGView with both gradient layers flattened
+                                to black (Bam: no angular shadow border), which
+                                looks the same. A plain View because in
+                                right-to-left the gradient drew itself mirrored
+                                the wrong way, on top of the Fiat Balance box. */}
+                            <View style={styles.capsuleBox}>
                                 <CustomProgressBar value={dollarStrikeText} />
                                 <Text h3 bold style={rtl.ltrText}>{dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} BTC` : `${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
                                 <Text h4 semibold style={rtl.ltrText}>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
-                            </BlackBGView>
+                            </View>
                             {/* BUY sits 5pt lower than SELL by default —
                                 the capsule's marginTop:45 (vs fiatBalanceBox's
                                 marginTop:40) introduced that gap. -20 here =

@@ -16,4 +16,9 @@ export default StyleSheet.create({
   // left-to-right even on an RTL screen. writingDirection is honoured on iOS;
   // Android lays these out by their first strong character, which is Latin.
   ltrText: { writingDirection: 'ltr' },
+  // For a plain react-native Text, which the @Cypher Text wrapper would align on
+  // its own. iOS lines up text with no textAlign by the app's localization, which
+  // is English only, so Arabic stays on the left. 'left' is the start edge: RTL
+  // swaps it to the right.
+  startText: { textAlign: 'left' },
 });
