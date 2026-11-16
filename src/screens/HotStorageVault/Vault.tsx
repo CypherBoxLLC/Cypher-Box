@@ -224,6 +224,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
     return (
         <ScrollView
             style={styles.container}
+            contentContainerStyle={styles.scrollContent}
             refreshControl={
                 <RefreshControl
                     refreshing={refreshing}
@@ -328,7 +329,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     <Text h3 center>{loc.cypherbox.vault.storage_vault.vault.addresses}</Text>
                 </GradientView>
                 {vaultTab &&
-                    <Text style={{paddingRight: 20, paddingLeft:30, paddingTop: 20, fontSize: 15}}>
+                    <Text style={{paddingRight: 20, paddingLeft:30, paddingTop: 14, fontSize: 15}}>
                         {loc.cypherbox.vault.storage_vault.vault.verify_warning}
                     </Text>
                 }
@@ -377,9 +378,13 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     </View>
                     <View style={styles.codeViewMain}>
                         {vaultTab ? (
-                            <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15, height: 44, width: widths - 80 }}>
+                            // minHeight, not height: a fixed 44 left a second line of the address below the row, past
+                            // the end of the scroll, where it could not be seen.
+                            <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15, paddingVertical: 6, minHeight: 44, width: widths - 80 }}>
                                 <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
-                                <Text semibold style={[{ fontSize: 15, color: colors.white, marginStart: 10 }, address ? rtl.ltrText : {}]}>{address || loc.cypherbox.vault.storage_vault.vault.address_loading}</Text>
+                                {/* The whole address, always: a usual one (42 characters) on one line, a little smaller on a
+                                    narrow phone; a longer one (multisig or Taproot, 62) on two. */}
+                                <Text semibold numberOfLines={address.length > 45 ? 2 : 1} adjustsFontSizeToFit style={[{ fontSize: 15, color: colors.white, marginStart: 10, flexShrink: 1 }, address ? rtl.ltrText : {}]}>{address || loc.cypherbox.vault.storage_vault.vault.address_loading}</Text>
                             </TouchableOpacity>
                         ) : (
                             <TouchableOpacity style={styles.codeView} onPress={() => copyToClipboard(address)}>

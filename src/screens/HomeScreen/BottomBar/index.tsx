@@ -18,6 +18,31 @@ import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
 import TabBar from "../TabBar";
 import UnlockHotVaultCard from "./UnlockHotVaultCard";
+import ArrowBadge, { ARROW_BADGE_INSET, ARROW_BADGE_SIZE } from "./ArrowBadge";
+
+// The part of a Top-up or Withdraw button its arrow badge takes, from the button's end to the badge's inner edge.
+const BADGE_ROOM = ARROW_BADGE_INSET + ARROW_BADGE_SIZE;
+
+const labelStyles = StyleSheet.create({
+    row: { flexDirection: 'row', alignItems: 'center' },
+    badgeRoom: { width: BADGE_ROOM },
+    label: { flex: 1 },
+});
+
+/**
+ * A Top-up or Withdraw label, centred in the space between the arrow badge at its `badgeSide` and the button's other
+ * end, in either language.
+ */
+function ButtonLabel({ text, badgeSide }: { text: string; badgeSide: 'start' | 'end' }) {
+    const badgeRoom = <View style={labelStyles.badgeRoom} />;
+    return (
+        <View style={labelStyles.row}>
+            {badgeSide === 'start' && badgeRoom}
+            <Text bold h3 center numberOfLines={1} style={labelStyles.label}>{text}</Text>
+            {badgeSide === 'end' && badgeRoom}
+        </View>
+    );
+}
 // createInvoiceStrike moved to TopupList
 
 interface Props {
@@ -291,6 +316,7 @@ export default function BottomBar({
                     bitcoinValue={balanceVault}
                     inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
+                    hideWithBalances
                 />
             )
                 :
@@ -332,6 +358,7 @@ export default function BottomBar({
                     bitcoinValue={coldStorageBalanceVault}
                     inDollars={`$${(Number(coldStorageBalanceWithoutSuffix) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
+                    hideWithBalances
                 />
             ) : (
                 // Outlined-only "Unlock Cold Vault" card — blue gradient
@@ -385,8 +412,14 @@ export default function BottomBar({
         </View>
     );
 
+    // Arabic keeps this row in the English order, Top-up on the left and
+    // Withdraw on the right, and puts each arrow where Arabic reads it: before
+    // الشحن, after السحب (the inner side of each word). 'row-reverse' gives
+    // the order; the badges' left/right already act as start/end in Arabic.
+    const rtlRow = I18nManager.isRTL ? { flexDirection: 'row-reverse' as const } : null;
+
     const TopUpWithdrawView = ({ isVault, style }: { isVault: boolean; style?: any }) => (
-        <View style={styles.bottominner}>
+        <View style={[styles.bottominner, rtlRow]}>
             <GradientView
                 onPress={topupClickHandler}
                 topShadowStyle={styles.outerShadowStyle}
@@ -394,12 +427,8 @@ export default function BottomBar({
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
             >
-                <Image
-                    style={styles.arrowLeft}
-                    resizeMode="contain"
-                    source={require("../../../../img/arrow-right.png")}
-                />
-                <Text bold h3 center style={{ textAlign: 'center' }}>{loc.cypherbox.home.top_up}</Text>
+                <ArrowBadge direction="up" side="left" />
+                <ButtonLabel text={loc.cypherbox.home.top_up} badgeSide="start" />
             </GradientView>
             <GradientView
                 onPress={withdrawClickHandler}
@@ -408,12 +437,8 @@ export default function BottomBar({
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
             >
-                <Text bold h3 center style={{ textAlign: 'center' }}>{loc.cypherbox.home.withdraw}</Text>
-                <Image
-                    style={styles.arrowRight}
-                    resizeMode="contain"
-                    source={require("../../../../img/arrow-right.png")}
-                />
+                <ButtonLabel text={loc.cypherbox.home.withdraw} badgeSide="end" />
+                <ArrowBadge direction="down" side="right" />
             </GradientView>
         </View>
     );

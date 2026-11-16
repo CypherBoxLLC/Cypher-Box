@@ -11,7 +11,7 @@
 // Strike-specific and could move to a Strike helper, the latter could move
 // to a generic format helper. Out of scope for the bitcoin-units split.
 
-export { SATS, sats, btc, fiat, formatSats, formatCapsuleAmount } from './bitcoinUnits';
+export { SATS, sats, btc, fiat, formatSats, formatCapsuleAmount, btcUnit, satsUnit } from './bitcoinUnits';
 
 export let getStrikeCurrency = (currency: string) => {
     switch (currency) {

@@ -1,11 +1,16 @@
 import { Text } from "@Cypher/component-library";
 import { GradientButtonWithShadow, GradientCardWithShadow, StrikeSignupSheet, type StrikeSignupSheetRef } from "@Cypher/components";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
-import { formatNumber, formatSats, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
+import { formatNumber, formatSats, getStrikeCurrency, SATS, satsUnit } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
+import { useBalancesHidden } from "@Cypher/stores/balancePrivacy";
+import { maskAmount } from "@Cypher/helpers/hiddenAmount";
 import { isStrikeAllowed } from "@Cypher/services/featureFlags";
 import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
+import HomeNotices from "@Cypher/components/HomeNotices";
+import type { HomeNotice } from "@Cypher/services/homeNotices";
 import { colors, rtl } from "@Cypher/style-guide";
+import { inReadingDirection } from "@Cypher/style-guide/rtl";
 import React, { useContext, useRef } from "react";
 import { Image, StyleSheet, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
@@ -27,7 +32,8 @@ interface Props {
     refSendRBSheet: any;
     setReceiveType: any;
     strikeBalance: any;
-    homeMessage?: string | null;
+    /** The tip HomeScreen picks (getHomeNotice), drawn as a notice icon. */
+    homeNotice?: HomeNotice | null;
     hideActionButtons?: boolean;
 }
 
@@ -49,7 +55,7 @@ export default function StrikeWallet({
     refSendRBSheet,
     setReceiveType,
     strikeBalance,
-    homeMessage,
+    homeNotice = null,
     hideActionButtons = false,
 }: Props) {
     const { isStrikeAuth, isArkAuth, isAuth, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, coldStorageWalletID, walletID, allBTCWallets } = useAuthStore();
@@ -62,6 +68,9 @@ export default function StrikeWallet({
     // Re-render when the App Store storefront resolves after launch.
     useRegionGate();
     const strikeAllowed = isStrikeAllowed();
+    // Home's balances hidden (the logo button on the total balance card): amounts behind ***, no threshold fill.
+    const hidden = useBalancesHidden();
+    const showOrMask = (text: string) => (hidden ? maskAmount(text) : text);
 
     // Strike + Ark (no CoinOS): the Strike Lightning card sits a bit
     // too high in the carousel slot for this combination. Bump it down
@@ -114,6 +123,16 @@ export default function StrikeWallet({
         strikeSignupSheetRef.current?.open()
     };
 
+    // Strike is not offered in Cypher Box in this region (services/featureFlags):
+    // a green note, which stays ignored for as long as that is true.
+    const regionNotice: HomeNotice | null = strikeAllowed ? null : {
+        id: 'strike-region',
+        severity: 'green',
+        icon: 'globe-outline',
+        situation: 'unavailable',
+        text: loc.cypherbox.components.strike_wallet.region_unavailable,
+    };
+
     return (
         <>
             {isStrikeAuth &&
@@ -162,11 +181,11 @@ export default function StrikeWallet({
                                     />
                                 </View>
                                 <View style={styles.view}>
-                                    <Text h2 bold style={styles.sats}>
-                                        {`${formatSats(Math.round(Number(strikeUser?.[0]?.available || 0) * SATS))} sats ~ ${getStrikeCurrency(currency || strikeUser?.[1]?.currency || 'USD')}${(Number(strikeConvertedBalance) || (Number(strikeUser?.[0]?.available || 0) * (Number(matchedRateStrike) || 0))).toFixed(2)}`}
+                                    <Text h2 bold amount style={styles.sats}>
+                                        {showOrMask(inReadingDirection(`${formatSats(Math.round(Number(strikeUser?.[0]?.available || 0) * SATS))} ${satsUnit()} ~ ${getStrikeCurrency(currency || strikeUser?.[1]?.currency || 'USD')}${(Number(strikeConvertedBalance) || (Number(strikeUser?.[0]?.available || 0) * (Number(matchedRateStrike) || 0))).toFixed(2)}`))}
                                     </Text>
-                                    <Text bold style={styles.totalsats}>
-                                        {formatNumber(Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount))} sats
+                                    <Text bold amount style={styles.totalsats}>
+                                        {showOrMask(inReadingDirection(`${formatNumber(Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount))} ${satsUnit()}`))}
                                     </Text>
                                 </View>
                                 {/* Reserve a 25pt slot for the threshold-bar
@@ -204,17 +223,15 @@ export default function StrikeWallet({
                                         sliver of pink for any non-zero balance,
                                         so users see "yes, balance is loading
                                         toward the threshold" even at <1%. */}
-                                    <Reanimated.View style={[styles.linearGradient2, { backgroundColor: colors.pink.dark, minWidth: fillPct > 0 ? 6 : 0 } as any, fillStyle]} />
+                                    {!hidden && <Reanimated.View style={[styles.linearGradient2, { backgroundColor: colors.pink.dark, minWidth: fillPct > 0 ? 6 : 0 } as any, fillStyle]} />}
                                 </View>
                             </View>
                         </LinearGradient>
                     </TouchableOpacity>
-                    {!strikeAllowed && (
-                        <View style={styles.regionNotice}>
-                            <Text h4 style={styles.alert}>
-                                {loc.cypherbox.components.strike_wallet.region_unavailable}
-                            </Text>
-                        </View>
+                    {/* With the shared Receive/Send row the card has no notice
+                        row of its own, so the region note sits under the card. */}
+                    {hideActionButtons && regionNotice && (
+                        <HomeNotices style={styles.regionNotice} notices={[regionNotice]} />
                     )}
                     {!hideActionButtons && strikeAllowed && (
                         <View style={styles.btnView}>
@@ -238,11 +255,7 @@ export default function StrikeWallet({
                         gap that Bam called "way below". */}
                     {!hideActionButtons && (
                         <View style={{ minHeight: 40, justifyContent: 'center' }}>
-                            {!isLoading && homeMessage &&
-                                <Text h4 style={styles.alert}>
-                                    {homeMessage}
-                                </Text>
-                            }
+                            <HomeNotices notices={[regionNotice, isLoading ? null : homeNotice]} />
                         </View>
                     )}
                 </View>

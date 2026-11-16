@@ -179,6 +179,20 @@ export type AppEvent =
         sats?: number;
         /** For auto-skipped: how many user-deferred VTXOs were excluded from the round. */
         vtxoCount?: number;
+    })
+    | (EventBase & {
+        // A Home notice the user dismissed with the × on its icon
+        // (components/HomeNotices). Kept here so a mis-tap can be read again,
+        // and brought back with "Show again", from Activity.
+        kind: "notice-ignored";
+        noticeId: string;
+        /** The message as it read when it was ignored. */
+        text: string;
+        severity: "yellow" | "green";
+        /** The notice's Ionicons glyph, shown in the Activity row. */
+        icon: string;
+        /** The situation it was ignored in: "Show again" applies only while it is still ignored in it. */
+        situation: string;
     });
 
 export type AppEventKind = AppEvent["kind"];

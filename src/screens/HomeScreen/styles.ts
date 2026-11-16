@@ -78,8 +78,6 @@ interface Style {
     priceusd: TextStyle;
     totalsats: TextStyle;
     list: ViewStyle;
-    arrowLeft: ImageStyle;
-    arrowRight: ImageStyle;
     topup: ViewStyle;
     shadowButton: any;
     innerShadowStyle: any;
@@ -625,26 +623,6 @@ export default StyleSheet.create<Style>({
     },
     list: {
         paddingHorizontal: 30,
-    },
-    arrowLeft: {
-        width: 30,
-        height: 30,
-        position: 'absolute',
-        left: 10,
-        // bottom: -2.5,
-        transform: [{
-            rotate: '270deg',
-        }],
-    },
-    arrowRight: {
-        width: 30,
-        height: 30,
-        position: 'absolute',
-        // top: -2.5,
-        right: 10,
-        transform: [{
-            rotate: '90deg',
-        }],
     },
     topup: {
         borderRadius: 25,
