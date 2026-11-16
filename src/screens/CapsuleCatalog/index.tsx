@@ -1,5 +1,6 @@
 import React from "react";
 import { ScrollView, View, StyleSheet } from "react-native";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { VaultCapsules } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
@@ -98,7 +99,12 @@ export default function CapsuleCatalog() {
 
                 {/* Fees & Change */}
                 <View style={styles.infoCard}>
-                    <Text h4 bold style={styles.infoTitle}>{loc.cypherbox.vault.capsule_catalog.fees_title}</Text>
+                    {/* Icons, not emoji (the titles had ⛽ and 💡): the iOS 26 simulator draws no colour emoji, and
+                        an icon looks the same on every phone. */}
+                    <View style={styles.infoTitleRow}>
+                        <MaterialCommunityIcons name="gas-station-outline" size={18} color={colors.white} accessibilityElementsHidden importantForAccessibility="no" />
+                        <Text h4 bold style={styles.infoTitleText}>{loc.cypherbox.vault.capsule_catalog.fees_title}</Text>
+                    </View>
                     <Text h4 style={styles.infoText}>
                         {loc.cypherbox.vault.capsule_catalog.fees_text}
                     </Text>
@@ -109,7 +115,10 @@ export default function CapsuleCatalog() {
 
                 {/* Recommendations */}
                 <View style={styles.infoCard}>
-                    <Text h4 bold style={styles.infoTitle}>{loc.cypherbox.vault.capsule_catalog.recommendations_title}</Text>
+                    <View style={styles.infoTitleRow}>
+                        <MaterialCommunityIcons name="lightbulb-on-outline" size={18} color={colors.white} accessibilityElementsHidden importantForAccessibility="no" />
+                        <Text h4 bold style={styles.infoTitleText}>{loc.cypherbox.vault.capsule_catalog.recommendations_title}</Text>
+                    </View>
                     <Text h4 style={styles.bulletText}>{loc.cypherbox.vault.capsule_catalog.rec_small}</Text>
                     <Text h4 style={styles.bulletText}>{loc.cypherbox.vault.capsule_catalog.rec_large}</Text>
                     <Text h4 style={styles.bulletText}>{loc.cypherbox.vault.capsule_catalog.rec_combine}</Text>
@@ -201,8 +210,13 @@ const styles = StyleSheet.create({
         padding: 16,
         marginTop: 10,
     },
-    infoTitle: {
+    infoTitleRow: {
+        flexDirection: "row",
+        alignItems: "center",
         marginBottom: 8,
+    },
+    infoTitleText: {
+        marginStart: 8,
     },
     infoText: {
         color: "#999",

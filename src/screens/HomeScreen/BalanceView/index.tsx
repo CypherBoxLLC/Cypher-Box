@@ -8,6 +8,9 @@ import { I18nManager, Pressable, StyleSheet, TouchableOpacity, View } from "reac
 import { Icon } from "react-native-elements";
 import styles from "../styles";
 import { GradientView } from "@Cypher/components";
+import BalancePrivacyButton from "@Cypher/components/BalancePrivacyButton";
+import { maskAmount } from "@Cypher/helpers/hiddenAmount";
+import { useBalancesHidden } from "@Cypher/stores/balancePrivacy";
 
 type CarouselKind = 'fiat' | 'lightning' | 'ark';
 
@@ -33,17 +36,25 @@ const DOT_COLOR: Record<CarouselKind, string> = {
 };
 
 export default React.memo(function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount, carouselPage = 0, carouselTotal = 0, carouselKinds = [], onDotPress }: Props) {
+    // Shown until the logo button hides them, and then hidden until it is tapped again, across relaunches
+    // (see useBalancesHidden).
+    const balancesHidden = useBalancesHidden();
+    const toggleBalancesHidden = useAuthStore(s => s.toggleBalancesHidden);
     return (
         <View style={[styles.innerContainer]} >
             <View
                 style={StyleSheet.flatten([styles.shadowTopBottom2])}
             >
-                <Text subHeader bold style={styles.price}>
-                    {balance}
+                <Text subHeader bold amount style={styles.price} testID="home-total-balance">
+                    {balancesHidden ? maskAmount(balance) : balance}
                 </Text>
-                <Text bold style={styles.priceusd} >
-                    {convertedRate}
+                <Text bold style={styles.priceusd} testID="home-total-fiat">
+                    {balancesHidden ? maskAmount(convertedRate) : convertedRate}
                 </Text>
+
+                <View style={privacyStyles.slot}>
+                    <BalancePrivacyButton hidden={balancesHidden} onPress={toggleBalancesHidden} />
+                </View>
 
                 {showAddAccount && onAddAccount && (
                     // White pill (was pink) with a real pressed state —
@@ -135,6 +146,16 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
         </View>
     )
 })
+
+const privacyStyles = StyleSheet.create({
+    // Top corner across from the total: right in English, left in Arabic.
+    slot: {
+        position: 'absolute',
+        top: 12,
+        end: 12,
+        zIndex: 11,
+    },
+});
 
 const addWalletStyles = StyleSheet.create({
     row: {

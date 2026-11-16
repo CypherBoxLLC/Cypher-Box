@@ -494,10 +494,9 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
         );
     };
 
-    // Recoverability suffix — appended to the existing expiry/state line as
-    // a second colored span separated by " - ". Three states drive both
-    // the icon and the message; see VtxoRowData.recoverability for the
-    // full classification rationale.
+    // Recoverability line, under the expiry/state line in its own colour.
+    // Three states drive both the icon and the message; see
+    // VtxoRowData.recoverability for the full classification rationale.
     //   ✓ Backed up          — Pubkey/Spendable + a copy outside the app (green)
     //   ⚠ On this phone only — Pubkey/Spendable, .cbark inside the app only (orange)
     //   ⚠ Back up first      — Pubkey/Spendable but no backup recorded (orange)
@@ -595,18 +594,16 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                 onPress={isExpired ? showExpiredExplainer : isDust ? showDustExplainer : onPress}
             >
                 {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
-                    bump the size column from 1.8 → 2.8 so the time-left +
-                    status row has room to fit on a single line. The amount
-                    row stays 'nowrap'. The time-left + status row wraps:
-                    its Texts don't shrink, so a status too long for the
-                    line (Arabic) ran on under the refresh and Dust refresh
-                    buttons. Wrapping drops it to a second line instead. */}
+                    bump the size column from 1.8 → 2.8 so the amount, the
+                    time-left line and the status line under it have room.
+                    numberOfLines on each Text makes them elide rather than
+                    wrap if anything overflows. */}
                 <View style={[rowStyles.coin, { flex: 1.5 }]}>
                     <VtxoRing daysLeft={ringDaysLeft} />
                 </View>
                 <View style={[rowStyles.size, { flex: 2.8 }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
-                        <Text bold style={isExpired ? [rowStyles.value, { color: '#888' }] : rowStyles.value}>{BTCAmount}</Text>
+                        <Text bold amount style={isExpired ? [rowStyles.value, { color: '#888' }] : rowStyles.value}>{BTCAmount}</Text>
                         {/* Dust badge: capsules at or below the on-chain
                             dust limit can't be refreshed (ASP rejects)
                             and create stranded change if used in a send
@@ -647,11 +644,12 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                             </View>
                         )}
                     </View>
-                    {/* When the VTXO is in-flight, stack the recoverability
-                        label on its own row below — the "⚠ In-flight"
-                        message is too important to compete with the days-
-                        left text on the same line. Other recoverability
-                        states keep the inline " - <text>" layout. */}
+                    {/* The recoverability label ("✓ Backed up", "⚠ On this
+                        phone only", ...) sits on its own line under the
+                        days-left text. Side by side on one line they ran
+                        past this column into the refresh icon and the dust
+                        button. In-flight and expired rows show their own
+                        label instead. */}
                     {vtxo.recoverability === 'in-flight' || isExpired ? (
                         // The two-line italic label above already says
                         // "Refreshing or In-flight\n(takes less than an hour)"
@@ -677,19 +675,14 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                             )}
                         </View>
                     ) : (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <View>
                             <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
                                 {labelText}
                             </Text>
                             {!isTransientForLabel && (
-                                <>
-                                    <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
-                                        {" - "}
-                                    </Text>
-                                    <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
-                                        {recoverabilityText}
-                                    </Text>
-                                </>
+                                <Text bold numberOfLines={2} style={{ color: recoverabilityColor, fontSize: 12 }}>
+                                    {recoverabilityText}
+                                </Text>
                             )}
                         </View>
                     )}
@@ -969,7 +962,7 @@ function PendingLnReceiveRow({ sats, onPress }: PendingLnReceiveRowProps) {
                     </Animated.View>
                 </View>
                 <View style={[rowStyles.size, { flex: 2.8 }]}>
-                    <Text bold style={rowStyles.value}>{BTCAmount}</Text>
+                    <Text bold amount style={rowStyles.value}>{BTCAmount}</Text>
                     <Text bold numberOfLines={1} style={{ color: colors.ark.light, fontSize: 12, fontStyle: "italic" }}>
                         {loc.cypherbox.strike.ark_capsules.claiming_via_round}
                     </Text>

@@ -1,8 +1,9 @@
 import { CoinOS, CoinOSSmall, CoinOs, Electricity, Second, Strike2, StrikeFull } from "@Cypher/assets/images";
 import { Text } from "@Cypher/component-library";
 import { calculateBalancePercentage, calculatePercentage, dispatchNavigate } from "@Cypher/helpers";
-import { formatCapsuleAmount, formatNumber, formatSats, getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
-import { colors, rtl } from "@Cypher/style-guide";
+import { formatCapsuleAmount, formatNumber, formatSats, getStrikeCurrency, satsUnit } from "@Cypher/helpers/coinosHelper";
+import { colors } from "@Cypher/style-guide";
+import { inReadingDirection } from "@Cypher/style-guide/rtl";
 import MaskedView from "@react-native-masked-view/masked-view";
 import React, { useContext, useEffect, useRef } from "react";
 import { Animated, Easing, Image, StyleSheet, TouchableOpacity, View } from "react-native";
@@ -11,6 +12,8 @@ import LinearGradient from "react-native-linear-gradient";
 import GradientButtonWithShadow from "../GradientButtonWithShadow";
 import styles from "./styles";
 import useAuthStore from "@Cypher/stores/authStore";
+import { useBalancesHidden } from "@Cypher/stores/balancePrivacy";
+import { maskAmount } from "@Cypher/helpers/hiddenAmount";
 import type { VaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
 import { CarouselPageVisibilityContext, useEasedProgress } from "@Cypher/custom-hooks";
 import { useIsFocused } from "@react-navigation/native";
@@ -75,6 +78,9 @@ interface Props {
      * Null/undefined renders nothing, so every non-Ark caller is unaffected.
      */
     vaultConnectivity?: VaultConnectivity | null;
+    /** Home's Bark and CoinOS cards: the amounts go behind *** and the threshold bar shows no fill while Home's
+     *  balances are hidden (the logo button on the total balance card). Off on the Lightning account screens. */
+    hideWithBalances?: boolean;
 }
 
 export default function Card({ onPress,
@@ -95,8 +101,12 @@ export default function Card({ onPress,
     arkCapsuleSlots,
     hideBalance = false,
     vaultConnectivity = null,
+    hideWithBalances = false,
 }: Props) {
     const {coldStorageWalletID, walletID, allBTCWallets} = useAuthStore();
+    const balancesHidden = useBalancesHidden();
+    const hidden = hideWithBalances && balancesHidden;
+    const showOrMask = (text: string) => (hidden ? maskAmount(text) : text);
 
     // Pulsing fade for the in-card refreshing line. Same shape as the
     // capsule pulse in ArkCapsules' TransactionRowAnim (1 → 0.2 → 1, 1.6s
@@ -136,12 +146,13 @@ export default function Card({ onPress,
     // ("+ Refreshing 120,000 sats") overflowed the card on a 95k-plus round,
     // which is exactly the size where a user most wants to see this line.
     const refreshingText = refreshingInfo
-        ? String(loc.formatString(loc.cypherbox.components.card.refreshing_amount, { amount: formatCapsuleAmount(refreshingInfo.sats) }))
+        ? showOrMask(String(loc.formatString(loc.cypherbox.components.card.refreshing_amount, { amount: formatCapsuleAmount(refreshingInfo.sats) })))
         : null;
     const showRefreshingInsteadOfBalance =
         refreshingInfo !== null && (Number(balance) || 0) === 0;
 
-    const thresholdMet = calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount)) >= 100;
+    // No glow while the balances are hidden: it would tell that the balance has reached the threshold.
+    const thresholdMet = !hidden && calculateBalancePercentage(Number(balance), Number(withdrawThreshold), Number(reserveAmount)) >= 100;
 
     const onCardClickHandler = () => {
         onPress?.(true);
@@ -149,11 +160,11 @@ export default function Card({ onPress,
 
     const getBalance = () => {
         const safeConverted = Number(convertedRate) || 0;
-        return `${formatSats(Number(balance) || 0)} sats ~ ${getStrikeCurrency(currency || 'USD')}${safeConverted.toFixed(2)}`
+        return showOrMask(inReadingDirection(`${formatSats(Number(balance) || 0)} ${satsUnit()} ~ ${getStrikeCurrency(currency || 'USD')}${safeConverted.toFixed(2)}`))
     }
 
     const getSats = () => {
-        return `${formatNumber(Number(withdrawThreshold) + Number(reserveAmount))} sats`
+        return showOrMask(inReadingDirection(`${formatNumber(Number(withdrawThreshold) + Number(reserveAmount))} ${satsUnit()}`))
     }
 
     const getLineLeft = () => {
@@ -355,7 +366,9 @@ export default function Card({ onPress,
                     // siblings of the outer row (space-between) and the
                     // refreshing line would be shoved to the far right.
                     <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                        <Text h2 bold style={[styles.sats, rtl.ltrText]}>
+                        {/* Not forced left-to-right: with the Arabic unit (سات) the line reads right-to-left,
+                            amount first, then the dollars on the left (see inReadingDirection). */}
+                        <Text h2 bold amount style={styles.sats}>
                             {getBalance()}
                         </Text>
                         {refreshingText && (
@@ -373,7 +386,7 @@ export default function Card({ onPress,
                     Strike/CoinOS still surface their threshold/reserve
                     nudge here. */}
                 {wallet !== 'ARK' && (
-                    <Text bold style={styles.totalsats}>
+                    <Text bold amount style={styles.totalsats}>
                         {getSats()}
                     </Text>
                 )}
@@ -473,7 +486,8 @@ export default function Card({ onPress,
                         wrapper doesn't render under Fabric interop, so we
                         use a solid color and let the wrapper's percent
                         width control the fill. */}
-                    <Reanimated.View style={[styles.linearGradient2, { backgroundColor: colors.pink.dark, minWidth: 6 } as any, fillStyle]} />
+                    {/* No fill while the balances are hidden: it shows the balance against the threshold. */}
+                    {!hidden && <Reanimated.View style={[styles.linearGradient2, { backgroundColor: colors.pink.dark, minWidth: 6 } as any, fillStyle]} />}
                 </View>
             )}
             {/* Vault connectivity, bottom-right corner.
@@ -498,12 +512,7 @@ export default function Card({ onPress,
                 <View style={{
                     position: 'absolute',
                     right: 30,
-                    // Below the capsule slot row, not on it. Title and balance
-                    // rows take 43pt each and the slot row ends 20pt lower, at
-                    // 106 of the 125pt inside the border; an 18pt line 12pt up
-                    // from the bottom covered the row's end (right in English,
-                    // left in Arabic). A 14pt line 4pt up clears it.
-                    bottom: 4,
+                    bottom: 12,
                     flexDirection: 'row',
                     alignItems: 'center',
                 }}>
@@ -524,7 +533,6 @@ export default function Card({ onPress,
                     <Text
                         style={{
                             fontSize: 12,
-                            lineHeight: 14,
                             fontWeight: '600',
                             color:
                                 vaultConnectivity.level === 'green'

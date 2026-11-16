@@ -10,6 +10,12 @@ export const mirrorTransform = [{ scaleX: I18nManager.isRTL ? -1 : 1 }];
 // A leading left-to-right mark fixes that on every platform.
 export const ltr = (value: string | number) => `\u200E${value}`;
 
+// An amount with its unit reads right-to-left in Arabic, figure first ("1.43M سات ~ €844.79" shows as
+// "€844.79 ~ سات 1.43M"). A K or M in the figure is a Latin letter, which would set the line left-to-right and
+// split the figure from its unit, so in right-to-left the line starts with a right-to-left mark. Left-to-right
+// languages get the text unchanged.
+export const inReadingDirection = (value: string | number) => (I18nManager.isRTL ? `\u200F${value}` : `${value}`);
+
 export default StyleSheet.create({
   mirror: { transform: mirrorTransform },
   // Addresses, amounts, txids, keys and seed words are Latin and must read

@@ -122,13 +122,14 @@ function settleAt(carousel: ReactTestInstance, x: number) {
   });
 }
 
-// The Animated.Views laid over the bottom of the cards, found by what they hold. Their styles still carry the
-// scroll-driven values, which read the current scrollX.
+// The Animated.Views laid over the bottom of the cards, found by what they hold: a button's text, or a Bark notice
+// icon's spoken label (its message only shows once the icon is tapped). Their styles still carry the scroll-driven
+// values, which read the current scrollX.
 const overlayHolding = (text: string) => {
   const found = tree!.root.findAll(
     node =>
       typeof node.props.style?.opacity?.__getValue === 'function' &&
-      node.findAll(child => child.props.children === text).length > 0,
+      node.findAll(child => child.props.children === text || child.props.accessibilityLabel === text).length > 0,
   );
   expect(found).toHaveLength(1);
   return found[0];

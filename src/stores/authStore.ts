@@ -6,6 +6,7 @@ import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@C
 import { legacyArkOffDeviceBackupAt, nextOffDeviceBackupState } from "@Cypher/services/ark/backupCoverage";
 import type { ArkOffDeviceOutcome } from "@Cypher/services/ark/backupCoverage";
 import type { PendingSignature } from "@Cypher/helpers/pendingSignature";
+import { withoutArkNoticeIgnores } from "@Cypher/services/homeNotices";
 
 /**
  * Stuck-refresh detection state.
@@ -257,6 +258,19 @@ export type AuthStateType = {
      */
     coldKeyWarningHidden: Record<string, boolean>;
     /**
+     * Home notices the user tapped Ignore on: notice id → the situation it was ignored in. A notice stays hidden only
+     * while its situation is the same, so it comes back when that changes (services/homeNotices.ts). Bark entries are
+     * dropped with the Bark vault (clearArkAuth).
+     */
+    homeNoticeIgnores: Record<string, string>;
+    /**
+     * Home's balances behind *** (the logo button on the total balance card): the total, the vault cards and the
+     * Bark, Strike and CoinOS cards. False until the user hides them, and saved with the rest of this store, so the
+     * choice survives a relaunch. Read it through useBalancesHidden (stores/balancePrivacy.ts), which also counts
+     * them as hidden until this store has loaded.
+     */
+    balancesHidden: boolean;
+    /**
      * Offline Seed-Signer mode: this install is a seed-signer for an offline phone, and the signer is its only home
      * screen. Always the one-way lock in services/seedSignerLock: it can be turned on, never off, and only reinstalling
      * the app clears it.
@@ -448,6 +462,11 @@ export type AuthStateType = {
     setPendingSignature: (walletID: string, pending: PendingSignature | null) => void;
     setSigningSafetySeen: (seen: boolean) => void;
     hideColdKeyWarning: (walletID: string) => void;
+    ignoreHomeNotice: (id: string, situation: string) => void;
+    /** Undoes ignoreHomeNotice: the notice shows on Home again ("Show again" in Activity). */
+    restoreHomeNotice: (id: string) => void;
+    /** The logo button on Home's total balance card: hides Home's balances, or shows them again. */
+    toggleBalancesHidden: () => void;
     setSigningMode: (on: boolean) => void;
     setSignedOnThisPhone: (signed: boolean) => void;
     setSignerKeyShown: (shown: boolean) => void;
@@ -764,6 +783,8 @@ const createAuthStore = (
     pendingSignatures: {},
     signingSafetySeen: false,
     coldKeyWarningHidden: {},
+    homeNoticeIgnores: {},
+    balancesHidden: false,
     signingMode: isSeedSignerLocked(),
     signedOnThisPhone: false,
     signerKeyShown: false,
@@ -895,6 +916,15 @@ const createAuthStore = (
     setSignerKeyShown: (shown: boolean) => set({ signerKeyShown: shown }),
     hideColdKeyWarning: (walletID: string) =>
         set((state: any) => ({ coldKeyWarningHidden: { ...(state.coldKeyWarningHidden ?? {}), [walletID]: true } })),
+    ignoreHomeNotice: (id: string, situation: string) =>
+        set((state: any) => ({ homeNoticeIgnores: { ...(state.homeNoticeIgnores ?? {}), [id]: situation } })),
+    restoreHomeNotice: (id: string) =>
+        set((state: any) => {
+            const rest = { ...(state.homeNoticeIgnores ?? {}) };
+            delete rest[id];
+            return { homeNoticeIgnores: rest };
+        }),
+    toggleBalancesHidden: () => set((state: any) => ({ balancesHidden: !state.balancesHidden })),
     // Stamps the read time with the value, so the two can never drift apart.
     setArkChainTipHeight: (state: number | null, at?: number | null) =>
         set({
@@ -959,7 +989,7 @@ const createAuthStore = (
     setArkArkoorPromptState: (state) => set({ arkArkoorPromptState: state }),
     setArkArkoorPromptEnabled: (state: boolean) => set({ arkArkoorPromptEnabled: state }),
     clearArkAuth: () =>
-        set({
+        set((state: any) => ({
             isArkAuth: false,
             arkWallet: null,
             arkBalance: 0,
@@ -1046,7 +1076,10 @@ const createAuthStore = (
             // arkArkoorPromptEnabled is a user preference, kept across
             // wallet changes (matches the withdrawArkThreshold pattern).
             arkArkoorPromptState: {},
-        }),
+            // Ignored Bark notices belonged to this vault; the next one starts
+            // with all of them showing. CoinOS/Strike/vault notices stay ignored.
+            homeNoticeIgnores: withoutArkNoticeIgnores(state.homeNoticeIgnores),
+        })),
     // 2FA setters
     setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),
     setTwoFAVerified: (state: boolean) => set({ twoFAVerified: state }),

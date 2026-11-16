@@ -5,8 +5,10 @@
  * "?" at the start of every "⚠ ..." string (Bark capsule status, Home backup
  * reminder, Bark settings, vault screens). On iOS the sign is now drawn on its
  * own in the system font, which has it, in a nested span that keeps the text's
- * size and colour. The string itself is unchanged, and so are the emoji form
- * (⚠️, with U+FE0F) and Android.
+ * size and colour. The emoji form (⚠️, with U+FE0F) showed two boxes on the
+ * iOS 26 simulator even in the system font (the Cold Vault's address
+ * warning): it is drawn as that same ⚠, in amber. The string itself is
+ * unchanged, and so is Android.
  */
 
 import React from 'react';
@@ -64,11 +66,18 @@ describe('Text warning sign', () => {
     expect(shownText(outerText(tree))).toBe('Note: ⚠ Reminders are OFF. ⚠ Check');
   });
 
-  it('leaves the emoji form and text without the sign as they are', () => {
-    const emoji = render(<Text>⚠️ DO NOT transfer</Text>);
-    expect(systemSpans(emoji)).toHaveLength(0);
-    expect(outerText(emoji).props.children).toBe('⚠️ DO NOT transfer');
+  it('draws the emoji form ⚠️ as the system font\'s ⚠, in amber', () => {
+    const emoji = render(<Text>⚠️ لا تستخدم هذه العناوين</Text>);
+    const spans = systemSpans(emoji);
+    expect(spans).toHaveLength(1);
+    expect(spans[0].props.children).toBe('⚠');
+    expect(spans[0].props.style).toEqual({ fontFamily: 'System', fontWeight: '500', color: '#FFD54F' });
+    expect(shownText(outerText(emoji))).toBe('⚠ لا تستخدم هذه العناوين');
+    // the label still reads the string as it was
+    expect(outerText(emoji).props.accessibilityLabel).toBe('text⚠️ لا تستخدم هذه العناوين');
+  });
 
+  it('leaves text without the sign as it is', () => {
     const plain = render(<Text>✓ Backed up</Text>);
     expect(outerText(plain).props.children).toBe('✓ Backed up');
   });

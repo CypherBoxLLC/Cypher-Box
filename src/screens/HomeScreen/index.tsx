@@ -41,7 +41,7 @@ import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkP
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
-import { btc, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
+import { btc, btcUnit, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
 import loc, { formatBalance, formatBalanceWithoutSuffix } from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
@@ -59,6 +59,7 @@ import Header from "./Header";
 import BalanceView from "./BalanceView";
 import BottomBar from "./BottomBar";
 import SigningHome from "../SigningHome";
+import { daySituation, type HomeNotice } from "@Cypher/services/homeNotices";
 const A = require('../../../blue_modules/analytics');
 import CreateLightningAccount from "./CreateLightningAccount";
 import WalletsView, { WalletsViewHandle } from "./WalletsView";
@@ -1018,8 +1019,10 @@ export default function HomeScreen({ route }: Props) {
   //   cold: ColdStorageTab,
   // });
 
-  // Single contextual message for the homepage — priority ordered
-  const getHomeMessage = (): string | null => {
+  // Single contextual tip for the homepage, priority ordered. Drawn as a green
+  // notice icon on the wallet card (components/HomeNotices); `situation` is
+  // what brings it back after the user ignores it.
+  const getHomeNotice = (): HomeNotice | null => {
     const coinosBalance = Number(balance) || 0;
     const strikeBal = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
     const coinosTotal = Number(withdrawThreshold) + Number(reserveAmount);
@@ -1031,12 +1034,17 @@ export default function HomeScreen({ route }: Props) {
     const anyThresholdMet = coinosThresholdMet || strikeThresholdMet;
     const hasVault = !!(walletID || coldStorageWalletID);
 
-    // Priority 1: Threshold met
-    if (anyThresholdMet && hasVault) {
-      return loc.cypherbox.home.threshold_met_withdraw;
-    }
-    if (anyThresholdMet && !hasVault) {
-      return loc.cypherbox.home.threshold_met_create_vault;
+    // Priority 1: Threshold met. Back after Ignore once a balance passes
+    // another multiple of its threshold.
+    if (anyThresholdMet) {
+      const step = (bal: number, total: number) => (total > 0 ? Math.floor(bal / total) : 0);
+      const situation = [
+        coinosThresholdMet ? `coinos-${step(coinosBalance, coinosTotal)}` : '',
+        strikeThresholdMet ? `strike-${step(strikeBal, strikeTotal)}` : '',
+      ].join('|');
+      return hasVault
+        ? { id: 'threshold-withdraw', severity: 'green', icon: 'shield-checkmark-outline', situation, text: loc.cypherbox.home.threshold_met_withdraw }
+        : { id: 'threshold-create-vault', severity: 'green', icon: 'add-circle-outline', situation, text: loc.cypherbox.home.threshold_met_create_vault };
     }
 
     // Priority 2: UTXO management
@@ -1047,18 +1055,20 @@ export default function HomeScreen({ route }: Props) {
     const fee = recommendedFee?.halfHourFee || recommendedFee?.hourFee || 0;
     const feesAreLow = fee > 0 && fee <= 15;
 
+    // Back after Ignore when the Hot Vault holds a different number of UTXOs.
     if (wallet && !coldStorageWallet && hotUtxos.length > 5) {
-      return loc.cypherbox.home.utxo_upgrade_cold;
+      return { id: 'utxo-upgrade-cold', severity: 'green', icon: 'snow-outline', situation: String(hotUtxos.length), text: loc.cypherbox.home.utxo_upgrade_cold };
     }
 
+    // Back after Ignore on a later day with low fees.
     if (smallUtxos.length > 5 && feesAreLow) {
-      return loc.cypherbox.home.utxo_consolidate;
+      return { id: 'utxo-consolidate', severity: 'green', icon: 'git-merge-outline', situation: daySituation(), text: loc.cypherbox.home.utxo_consolidate };
     }
 
     return null;
   };
 
-  const homeMessage = getHomeMessage();
+  const homeNotice = getHomeNotice();
 
   // "Use this phone only for signing": the whole home becomes the signer. Checked after every hook above, so the
   // hook order stays the same either way.
@@ -1143,7 +1153,7 @@ export default function HomeScreen({ route }: Props) {
                   // orphaned `arkBalance` state from a previous wallet
                   // doesn't pollute the headline before the boot-restore
                   // hook clears it.
-                  balance={`${((btc(1) * (Number(balance) || 0)) + (isStrikeAuth ? Number(strikeUser?.[0]?.available || 0) : 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0) + (isArkAuth ? (Number(arkBalance) || 0) * btc(1) : 0)).toFixed(8)} BTC`}
+                  balance={`${((btc(1) * (Number(balance) || 0)) + (isStrikeAuth ? Number(strikeUser?.[0]?.available || 0) : 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0) + (isArkAuth ? (Number(arkBalance) || 0) * btc(1) : 0)).toFixed(8)} ${btcUnit()}`}
                   convertedRate={`$${((isStrikeAuth ? (strikeConvertedBalance || 0) : 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0))) + (isArkAuth ? (Number(arkBalance) || 0) * Number(matchedRate || 0) * btc(1) : 0)).toFixed(2)}`}
                   // Show "+ Add Account" until the user has all three
                   // distinct rails connected. The previous `length < 2`
@@ -1233,7 +1243,7 @@ export default function HomeScreen({ route }: Props) {
                 matchedRateStrike={Number(matchedRateStrike || 0)}
                 strikeConvertedBalance={Number(strikeConvertedBalance || 0)}
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
-                homeMessage={homeMessage}
+                homeNotice={homeNotice}
                 onPageChange={(index, total, kinds) => {
                   setCarouselPage(index);
                   setCarouselTotal(total);

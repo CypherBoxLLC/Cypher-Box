@@ -168,7 +168,7 @@ const CircleTimer = ({
       </View>
 
       <View style={styles.textContainer}>
-        <Text bold style={[styles.mainText, rtl.ltrText]}>{value}</Text>
+        <Text bold amount style={styles.mainText}>{value}</Text>
         <Text h3 semibold style={rtl.ltrText}>{convertedValue}</Text>
       </View>
 

@@ -51,7 +51,7 @@ const ListView = ({ wallet, item, onPress, handleChoose, ids, vaultTab }: Props)
                     {/* <Text bold>Address: {shortenAddress(item?.address)}</Text> */}
                 </View>
                 <View style={styles.size}>
-                    <Text bold style={styles.value}>{BTCAmount}</Text>
+                    <Text bold amount style={styles.value}>{BTCAmount}</Text>
                     {memo && memo !== "" &&
                         <Text bold>{memo}</Text>
                     }
