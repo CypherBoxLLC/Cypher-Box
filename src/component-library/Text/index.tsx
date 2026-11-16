@@ -1,5 +1,5 @@
 import React, { ReactNode } from 'react';
-import { I18nManager, LayoutChangeEvent, Text as RNText, StyleProp, StyleSheet, TextStyle } from 'react-native';
+import { I18nManager, LayoutChangeEvent, Platform, Text as RNText, StyleProp, StyleSheet, TextStyle } from 'react-native';
 
 import { arabicFont } from '@Cypher/style-guide';
 import styles from './styles';
@@ -12,6 +12,48 @@ const startAligned = (style: StyleProp<TextStyle>): TextStyle | null => {
   if (!I18nManager.isRTL) return null;
   const { textAlign, writingDirection } = StyleSheet.flatten(style) ?? {};
   return textAlign || writingDirection === 'ltr' ? null : { textAlign: 'left' };
+};
+
+// The warning sign ⚠ (U+26A0) on its own, not the emoji ⚠️ (followed by U+FE0F), which draws as it is.
+const WARNING_SIGN = '\u26A0';
+const PLAIN_WARNING_SIGN = /(\u26A0(?!\uFE0F))/;
+
+const hasPlainWarningSign = (child: ReactNode): child is string => typeof child === 'string' && PLAIN_WARNING_SIGN.test(child);
+
+// The system font weight closest to an app font family ('Lato-Bold', 'Tajawal-Medium'...) or a fontWeight.
+const systemWeight = (fontFamily = '', fontWeight?: TextStyle['fontWeight']): TextStyle['fontWeight'] => {
+  if (/semi-?bold/i.test(fontFamily)) return '600';
+  if (/bold/i.test(fontFamily)) return '700';
+  if (/medium/i.test(fontFamily)) return '500';
+  if (/thin|light/i.test(fontFamily)) return '300';
+  return fontWeight && fontWeight !== 'normal' ? fontWeight : '400';
+};
+
+// Neither app font (Lato, Tajawal) has ⚠, and on iOS no fallback font stood in for it, so every "⚠ ..." string
+// started with a boxed "?". The iOS system font has the sign: it is drawn in that font, in the text's own size,
+// colour and weight, and the string itself is unchanged. Android already finds a font with it.
+const withSystemWarningSign = (children: ReactNode, style: StyleProp<TextStyle>): ReactNode => {
+  if (Platform.OS !== 'ios') return children;
+  const parts: ReactNode[] = typeof children === 'string' ? [children] : Array.isArray(children) ? React.Children.toArray(children) : [];
+  if (!parts.some(hasPlainWarningSign)) return children;
+  const { fontFamily, fontWeight } = StyleSheet.flatten(style) ?? {};
+  const sign: TextStyle = { fontFamily: 'System', fontWeight: systemWeight(fontFamily, fontWeight) };
+  return parts.flatMap<ReactNode>((child, i) =>
+    hasPlainWarningSign(child)
+      ? child
+          .split(PLAIN_WARNING_SIGN)
+          .filter(Boolean)
+          .map((piece, j) =>
+            piece === WARNING_SIGN ? (
+              <RNText key={`warning-sign-${i}-${j}`} style={sign}>
+                {piece}
+              </RNText>
+            ) : (
+              piece
+            ),
+          )
+      : [child],
+  );
 };
 
 export interface Props {
@@ -99,6 +141,7 @@ function Text({
     blue && styles.blue,
     style && style,
   ];
+  const textStyle = [...composed, startAligned(composed), arabicFont(composed)];
   return (
     <RNText
       textBreakStrategy="simple"
@@ -109,9 +152,9 @@ function Text({
       onPress={onPress}
       onLayout={onLayout}
       allowFontScaling={false}
-      style={[...composed, startAligned(composed), arabicFont(composed)]}
+      style={textStyle}
     >
-      {children}
+      {withSystemWarningSign(children, textStyle)}
     </RNText>
   );
 }
