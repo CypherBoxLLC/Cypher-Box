@@ -7,9 +7,9 @@ import loc from "../../../../loc";
 
 const SECOND_FEES_URL = "https://second.tech/pricing";
 
-// Section and Body sit above the screen because it uses them dozens of times
-// (the lint rule flags every use before the definition); the other rows stay
-// below it.
+// Section, Body and StatusRow sit above the screen because it uses them many
+// times (the lint rule flags every use before the definition); the other rows
+// stay below it.
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
     return (
         <View style={{ marginTop: 20 }}>
@@ -26,6 +26,19 @@ function Body({ children }: { children: React.ReactNode }) {
         <Text style={{ fontSize: 13, color: '#CCC', lineHeight: 19, marginBottom: 10 }}>
             {children}
         </Text>
+    );
+}
+
+function StatusRow({ title, body }: { title: string; body: string }) {
+    return (
+        <View style={{ marginBottom: 10 }}>
+            <Text bold style={{ fontSize: 13, color: '#FFF', lineHeight: 18 }}>
+                {title}
+            </Text>
+            <Text style={{ fontSize: 12, color: '#AAA', lineHeight: 17, marginTop: 1 }}>
+                {body}
+            </Text>
+        </View>
     );
 }
 
@@ -145,6 +158,16 @@ export default function ArkCapsulesInfoScreen() {
                     <Body>{loc.cypherbox.ark.capsules_info.stuck_body_2}</Body>
                 </Section>
 
+                {/* Expiry stays the deadline everywhere on this screen. This
+                    section only says what is left after it passes: a recovery
+                    Second.tech allows today, by policy, with no guarantee and
+                    with the sats in its hands until then. See
+                    services/ark/expiredRecovery.ts. */}
+                <Section title={loc.cypherbox.ark.capsules_info.expired_title}>
+                    <Body>{loc.cypherbox.ark.capsules_info.expired_body_1}</Body>
+                    <Body>{loc.cypherbox.ark.capsules_info.expired_body_2}</Body>
+                </Section>
+
                 <Section title={loc.cypherbox.ark.capsules_info.exit_title}>
                     <Body>{loc.cypherbox.ark.capsules_info.exit_body_1}</Body>
                     <Body>{loc.cypherbox.ark.capsules_info.exit_body_2}</Body>
@@ -187,6 +210,10 @@ export default function ArkCapsulesInfoScreen() {
                     <StatusRow
                         title={loc.cypherbox.ark.capsules_info.status_in_flight_title}
                         body={loc.cypherbox.ark.capsules_info.status_in_flight_body}
+                    />
+                    <StatusRow
+                        title={loc.cypherbox.ark.capsules_info.status_expired_title}
+                        body={loc.cypherbox.ark.capsules_info.status_expired_body}
                     />
                 </Section>
 
@@ -292,19 +319,6 @@ function ColorRow({ color, label, body }: { color: string; label: string; body: 
                     {body}
                 </Text>
             </View>
-        </View>
-    );
-}
-
-function StatusRow({ title, body }: { title: string; body: string }) {
-    return (
-        <View style={{ marginBottom: 10 }}>
-            <Text bold style={{ fontSize: 13, color: '#FFF', lineHeight: 18 }}>
-                {title}
-            </Text>
-            <Text style={{ fontSize: 12, color: '#AAA', lineHeight: 17, marginTop: 1 }}>
-                {body}
-            </Text>
         </View>
     );
 }
