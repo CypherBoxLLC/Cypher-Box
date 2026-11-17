@@ -41,6 +41,8 @@ export {
     getCachedArkMnemonic,
     getLastArkRecoveryReport,
 } from './walletHandle';
+export { ARK_VAULT_EXISTS, offersArkReset } from './createErrors';
+export type { ArkLiveState } from './createErrors';
 
 export { fetchArkBalance, applyExpiredVtxoFilter } from './balance';
 export type { ArkBalanceSummary } from './balance';

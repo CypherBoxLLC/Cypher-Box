@@ -14,11 +14,13 @@ import {
     checkArkSeedKeychainConflict,
     connectGoogleDrive,
     createArkWallet,
+    getArkWalletHandle,
     getSavedSafBackupFolder,
     isGoogleDriveConnected,
     isICloudBackupAvailable,
     messageForDriveError,
     messageForSafError,
+    offersArkReset,
     pickSafBackupFolder,
     resetArkWalletState,
     saveArkSeedToKeychain,
@@ -247,15 +249,20 @@ export default function ArkSeedPhraseScreen() {
         } catch (err) {
             console.warn("[Ark] Wallet.create failed during backup setup:", err);
             const msg = (err as Error)?.message ?? "unknown error";
-            // bark's error strings for "a datadir already exists on disk but
-            // this seed can't open it": Internal / Database (0-byte or schema
-            // residue) and "incorrect mnemonic" (the datadir was created with a
-            // DIFFERENT seed, i.e. the poisoned-datadir trap left by a create that
-            // died mid-flight, e.g. the esplora bot-block). All three route to
-            // the user-confirmed Reset & retry below; without "incorrect
-            // mnemonic" here that case dead-ended on a bare toast and the only
-            // way out was reinstalling the app.
-            const looksLikeStaleDatadir = /Internal|InvalidMnemonic|Database|incorrect mnemonic/i.test(msg);
+            // Routed to the user-confirmed Reset & retry below: bark's errors for
+            // "a datadir already exists on disk but this seed can't open it"
+            // (Internal / Database residue, and "incorrect mnemonic" from a
+            // create that died mid-flight with a different seed), and the
+            // one-vault refusal when no vault is open or recorded, which is the
+            // leftover such a create leaves before the vault is recorded. Without
+            // those, each dead-ended on a bare toast and the only way out was
+            // reinstalling the app. A real vault still gets the refusal. See
+            // offersArkReset in services/ark/createErrors.ts.
+            const looksLikeStaleDatadir = offersArkReset(err, {
+                handleOpen: !!getArkWalletHandle(),
+                storeLoaded: useAuthStore.persist.hasHydrated(),
+                isArkAuth: useAuthStore.getState().isArkAuth === true,
+            });
 
             // Non-stale-datadir errors: just toast and bail. Caller retries on next tap.
             if (!looksLikeStaleDatadir) {
