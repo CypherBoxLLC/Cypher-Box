@@ -7,13 +7,7 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import BootSplash from 'react-native-bootsplash';
 import { dispatchNavigate } from "@Cypher/helpers";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Bump this when TOS/Privacy Policy content changes to force re-acceptance
-// Bump on every material TOS / Privacy Policy update. Users whose
-// `acceptedTosVersion` doesn't match this string are routed to the
-// GetStartedScreen re-acceptance flow on next launch. Keep in sync with
-// the literal written in GetStartedScreen handleStartClick.
-const CURRENT_TOS_VERSION = '2026-08';
+import { CURRENT_TOS_VERSION } from '../../helpers/tosVersion';
 
 // Minimum time the bootsplash stays up so the brand moment doesn't flicker
 // on fast boots. Boot work and tos check race against this.
