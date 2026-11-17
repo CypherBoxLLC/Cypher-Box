@@ -33,7 +33,17 @@ jest.mock('react-native-keychain', () => ({
     },
 }));
 
-type MockAuthState = { arkBgRefreshEnabled: boolean; arkWallet: { keychainSaved?: boolean } | null };
+type MockAuthState = {
+    arkBgRefreshEnabled: boolean;
+    arkWallet: { keychainSaved?: boolean } | null;
+    // The copy is also gated on the vault holding something that can expire
+    // (see arkBgSeedMirrorScope.test.ts), so any case here that expects a
+    // WRITE has to look like a funded vault. The delete cases do not: an
+    // empty vault is one more reason to remove the copy, not a reason to keep
+    // it.
+    arkVtxos?: unknown[];
+    arkBalance?: number;
+};
 
 /** The auth store's defaults: what a store that has not loaded reports. */
 const DEFAULTS: MockAuthState = { arkBgRefreshEnabled: true, arkWallet: null };
@@ -125,7 +135,12 @@ describe('once the auth store has loaded', () => {
     });
 
     it('writes a missing copy for a user who agreed', async () => {
-        mockAuth.state = { arkBgRefreshEnabled: true, arkWallet: { keychainSaved: true } };
+        mockAuth.state = {
+            arkBgRefreshEnabled: true,
+            arkWallet: { keychainSaved: true },
+            arkVtxos: [{ id: 'v1' }],
+            arkBalance: 2500,
+        };
         await ensureBackgroundArkSeed(SEED);
         expect(mockVault.get(BG_SERVICE)).toBe(SEED);
     });

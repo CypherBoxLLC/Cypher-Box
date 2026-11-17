@@ -6,6 +6,7 @@ import {
 } from './backgroundNotifications';
 import {
     deleteBackgroundArkSeed,
+    pruneBackgroundArkSeedIfEmpty,
     readBackgroundArkSeed,
     writeBackgroundArkSeed,
 } from './backgroundKeychain';
@@ -270,6 +271,12 @@ export async function runArkBackgroundMaintenance(
                 // no-ops and the next wake is never registered.
                 const Notifications = require('../../../blue_modules/notifications').default;
                 void Notifications.arkExpiryToGroundControl?.(earliest);
+                // Same fetch, one more use: if the vault came out of this
+                // round with nothing spendable left, there is nothing further
+                // to expire and the un-gated seed copy has no job. Drop it
+                // here rather than waiting for a foreground open that may
+                // never come.
+                await pruneBackgroundArkSeedIfEmpty(vtxos.spendable.length);
                 console.log(
                     '[Ark bg-refresh] re-registered earliest expiry:',
                     earliest === 0 ? 'none' : new Date(earliest).toISOString(),
