@@ -1,4 +1,3 @@
-#import <Bugsnag/Bugsnag.h>
 #import "AppDelegate.h"
 #import "RNBootSplash.h"
 #import <React/RCTLinkingManager.h>
@@ -42,12 +41,8 @@
   // Register legacy Paper view managers (react-native-camera) with Fabric's interop layer.
   [RCTLegacyViewManagerInteropComponentView supportLegacyViewManagerWithName:@"RNCamera"];
 
-  // An Offline Seed-Signer stays offline, so it never starts crash reporting. The JS lock
-  // (src/services/seedSignerLock.ts) notes itself in these shared defaults for this check.
-  NSUserDefaults *sharedDefaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.io.cypherbox.btc"];
-  if (![[sharedDefaults stringForKey:@"seedsigner"] isEqualToString:@"1"]) {
-    [Bugsnag start];
-  }
+  // No crash reporting: Bugsnag is linked but never started, so no crash report leaves the phone.
+  // The key it shipped with was BlueWallet's, so every report went to BlueWallet's account.
   [self copyDeviceUID];
   
   [[NSUserDefaults standardUserDefaults] addObserver:self

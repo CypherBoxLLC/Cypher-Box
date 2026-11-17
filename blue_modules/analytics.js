@@ -1,61 +1,12 @@
-import { getUniqueId } from 'react-native-device-info';
-import Bugsnag from '@bugsnag/react-native';
-const BlueApp = require('../BlueApp');
-const { isSeedSignerLocked } = require('../src/services/seedSignerLock');
-
 /**
- * in case Bugsnag was started, but user decided to opt out while using the app, we have this
- * flag `userHasOptedOut` and we forbid logging in `onError` handler
- * @type {boolean}
+ * Crash reporting and analytics are off: nothing in this module sends data anywhere.
+ *
+ * Bugsnag is still linked, but it is never started, here or in native code (AppDelegate.mm,
+ * MainApplication.java, the Watch extension). The key the app shipped with was BlueWallet's,
+ * so every crash report went to BlueWallet's Bugsnag account, which Cypher Box cannot read.
+ * If crash reporting comes back, it needs Cypher Box's own account, native code has to respect
+ * the Disable Analytics setting too, and the Privacy Policy has to describe it.
  */
-let userHasOptedOut = false;
-
-if (process.env.NODE_ENV !== 'development') {
-  (async () => {
-    const uniqueID = await getUniqueId();
-    const doNotTrack = await BlueApp.isDoNotTrackEnabled();
-
-    // nor does a seed-signer: crash reports are network traffic, and the phone is meant to stay offline
-    if (doNotTrack || isSeedSignerLocked()) {
-      // dont start Bugsnag at all
-      return;
-    }
-
-    Bugsnag.start({
-      collectUserIp: false,
-      // Don't record console.* as breadcrumbs (omit 'log'): the app logs
-      // around auth and payment flows, and console breadcrumbs would ship
-      // that context (including tokens) with any later crash report.
-      enabledBreadcrumbTypes: ['navigation', 'request', 'process', 'user', 'state', 'error', 'manual'],
-      // Default redactedKeys is only ['password']; widen it so secret-shaped
-      // keys are scrubbed from metadata and breadcrumbs before upload.
-      redactedKeys: [
-        'password',
-        /token/i,
-        /secret/i,
-        'accessToken',
-        'refreshToken',
-        'codeVerifier',
-        'authorizationCode',
-        'mnemonic',
-        'seed',
-        'privateKey',
-        'xprv',
-        'passphrase',
-        'otp',
-        'apiKey',
-        'authorization',
-      ],
-      user: {
-        id: uniqueID,
-      },
-      onError: function (event) {
-        return !userHasOptedOut;
-      },
-    });
-  })();
-}
-
 const A = async event => {};
 
 A.ENUM = {
@@ -68,13 +19,11 @@ A.ENUM = {
   NAVIGATED_TO_WALLETS_HODLHODL: 'NAVIGATED_TO_WALLETS_HODLHODL',
 };
 
-A.setOptOut = value => {
-  if (value) userHasOptedOut = true;
-};
+// Settings > Privacy > Disable Analytics still calls this. Nothing is collected, so there is nothing to stop.
+A.setOptOut = value => {};
 
 A.logError = errorString => {
   console.error(errorString);
-  Bugsnag.notify(new Error(String(errorString)));
 };
 
 module.exports = A;
