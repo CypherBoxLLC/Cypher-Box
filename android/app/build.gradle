@@ -176,6 +176,23 @@ android {
     }
 }
 
+// R8 reports each run in the release bundle, at BUNDLE-METADATA/com.android.tools/r8.json, and the report
+// includes how long R8 ran (buildTimeNs) and how many threads it used. Both change on every build and every
+// machine, so once R8 was turned on no two builds of the same commit produced the same AAB, and the
+// reproducible-build check (build-verify.yml) failed every time. AGP has no option to leave the report out,
+// and the rest of it is worth keeping (the dex checksums and the shrink and obfuscation figures), so both
+// numbers are set to 0 as soon as R8 has written them. R8's own output, the dex and its mapping, is stable.
+tasks.matching { it.name ==~ /minify\w*WithR8/ }.configureEach { r8Task ->
+    r8Task.doLast {
+        def report = r8Task.r8Metadata.get().asFile
+        if (report.exists()) {
+            report.text = report.text
+                .replaceAll(/"buildTimeNs":\d+/, '"buildTimeNs":0')
+                .replaceAll(/"numberOfThreads":\d+/, '"numberOfThreads":0')
+        }
+    }
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
