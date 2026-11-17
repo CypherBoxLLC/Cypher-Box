@@ -41,6 +41,43 @@ function seedOnDeviceConsented(): boolean {
 }
 
 /**
+ * Does the Bark vault hold anything that can expire?
+ *
+ * The un-gated copy exists for exactly one job: let an unattended wake refresh
+ * capsules before they expire. A vault with nothing in it has nothing to
+ * expire, so the copy buys no safety there and is pure exposure — a plain
+ * `getGenericPassword` away for anything that can reach the keychain, readable
+ * while the phone is locked, and sitting there for as long as the app stays
+ * installed. A user who tried Bark once, emptied it and moved on should not be
+ * leaving a mnemonic behind in that state, and the seed still controls every
+ * address the vault would receive on next, so "empty" is not "worthless".
+ *
+ * Fails CLOSED towards KEEPING the copy: returns true unless it can positively
+ * confirm the vault is empty. An unhydrated store reads as all-defaults
+ * (`arkVtxos: []`, `arkBalance: 0`), which is indistinguishable from a genuinely
+ * empty vault and is what a background wake on a locked iPhone sees, so treat
+ * it as unknown and keep the copy. Same reasoning as the hasHydrated guards
+ * below.
+ *
+ * Every numeric field of the balance detail counts, rather than a named list:
+ * a new pending bucket added later must not silently make a funded vault look
+ * empty and drop the seed that protects it.
+ */
+export function arkVaultHasValueToProtect(): boolean {
+    if (!useAuthStore.persist.hasHydrated()) return true;
+    const state = useAuthStore.getState();
+    if ((state.arkVtxos?.length ?? 0) > 0) return true;
+    if ((state.arkBalance ?? 0) > 0) return true;
+    const detail = state.arkBalanceDetail;
+    if (detail) {
+        for (const value of Object.values(detail)) {
+            if (typeof value === 'number' && value > 0) return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Mirror the seed into the background-readable entry. Call ONLY with the
  * mnemonic already in hand (foreground — e.g. `getCachedArkMnemonic()` or just
  * after a wallet open). We never read the biometry-gated primary from here.
@@ -60,6 +97,12 @@ export async function writeBackgroundArkSeed(mnemonic: string): Promise<void> {
         // getGenericPassword by anyone holding the unlocked phone. Refuse, and
         // clean up any copy an earlier build already wrote.
         console.warn('[Ark bg] seed mirror skipped: no on-device seed consent recorded');
+        await deleteBackgroundArkSeed();
+        return;
+    }
+    if (!arkVaultHasValueToProtect()) {
+        // Nothing to refresh, so nothing to justify an un-gated mnemonic.
+        // Re-armed by the next wallet-open once the vault holds value again.
         await deleteBackgroundArkSeed();
         return;
     }
@@ -109,6 +152,13 @@ export async function ensureBackgroundArkSeed(mnemonic: string): Promise<void> {
             await deleteBackgroundArkSeed();
             return;
         }
+        if (!arkVaultHasValueToProtect()) {
+            // Checked BEFORE the already-exists early return below, so a vault
+            // that has since been emptied drops its copy instead of keeping it
+            // forever on the grounds that one is already there.
+            await deleteBackgroundArkSeed();
+            return;
+        }
         if (await readBackgroundArkSeed()) return;
         await writeBackgroundArkSeed(mnemonic);
     } catch {
@@ -125,5 +175,42 @@ export async function deleteBackgroundArkSeed(): Promise<void> {
         await Keychain.resetGenericPassword({ service: BG_KEYCHAIN_SERVICE });
     } catch {
         // Already absent or never written. Either way we're at the desired state.
+    }
+}
+
+/**
+ * Drop the un-gated copy from inside a background wake once the vault is empty.
+ *
+ * The foreground gate in `ensureBackgroundArkSeed` only fires when the user
+ * opens the app. The case this covers is the one where they never do again:
+ * everything offboarded or spent, app left installed, mnemonic sitting in a
+ * keychain entry with no biometric gate indefinitely.
+ *
+ * `spendableCount` must come from a live `fetchArkVtxos()` in the caller, NOT
+ * from the store: a background wake can run with the store at its defaults,
+ * where an empty `arkVtxos` proves nothing and would delete the very copy that
+ * wake just opened the wallet with. A direct fetch cannot be fooled that way,
+ * which is why this takes the count as an argument instead of calling
+ * `arkVaultHasValueToProtect()`.
+ *
+ * Safe at this point in the run because an active unilateral exit already
+ * returned earlier, and a round submitted by the maintenance call has been
+ * pulled in by the `syncArkWallet()` above, so an empty spendable set here
+ * means there is genuinely no capsule left to expire.
+ *
+ * Residual risk, accepted: if value arrives while the app stays closed, the
+ * next wake finds no seed and cannot refresh. A newly received capsule has its
+ * full expiry window ahead of it, the local expiry reminders still fire, and
+ * the next wallet-open re-arms the copy — so the exposure traded away is
+ * permanent and the risk taken on is bounded.
+ */
+export async function pruneBackgroundArkSeedIfEmpty(spendableCount: number): Promise<void> {
+    if (spendableCount > 0) return;
+    try {
+        if (!(await readBackgroundArkSeed())) return;
+        console.log('[Ark bg] vault empty after refresh; dropping the background seed copy');
+        await deleteBackgroundArkSeed();
+    } catch {
+        // Best-effort: the next wallet-open prunes it too.
     }
 }
