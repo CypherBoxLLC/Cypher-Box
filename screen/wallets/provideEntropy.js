@@ -437,6 +437,10 @@ const Entropy = () => {
           {row("Your phone's randomness", verify.rng)}
           {row('The result, which becomes your key', verify.final)}
 
+          {/* Right under the values, so it is never below the fold or behind the Continue button, whatever the screen size. */}
+          <Text style={styles.verifyWarning}>
+            These values are your key. Anyone who copies them can spend your money. Do not photograph them.
+          </Text>
           <Text style={styles.verifyWarning}>
             Do this with practice rolls, not your real ones. Typing your real rolls into a website gives away one of the two things
             protecting this key, and it would then rest on your phone's secure entropy generator only. The safe way is a practice run: roll
@@ -445,18 +449,22 @@ const Entropy = () => {
             from the internet first. If this phone is a signing phone that stays offline for good, you can open the file in its browser in
             Airplane mode instead. Never on a website.
           </Text>
+          {/*
+            The rolls are checked by comparing words. Ian Coleman's page shows no hex for dice, only binary and the words, and
+            any Mnemonic Length other than "Use Raw Entropy" hashes the input first, so those words would not match. EntropyLab
+            starts at 24 words, which needs 64 hex digits and refuses the 32 shown here.
+          */}
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check your rolls: type them into Ian Coleman's BIP39 tool and choose Dice. What it shows should match "Your rolls" above.
-            That is what proves this screen read your dice correctly. Use Ian Coleman's tool for this step: EntropyLab hashes dice rolls, so
-            it shows different values from this screen.
+            To check your rolls: in Ian Coleman's BIP39 tool, tick "Show entropy details", choose Dice and type the same rolls in the same
+            order. Leave Mnemonic Length on "Use Raw Entropy" and note the 12 words. Then choose Hex and enter "Your rolls" from above. If
+            the 12 words stay the same, this screen read your dice correctly. Use Ian Coleman's tool for this step: EntropyLab hashes dice
+            rolls, so its words will differ.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
             To check the result: it is a SHA-256 hash of your rolls followed by your phone's randomness, shortened to 16 bytes. Enter it as
-            hex entropy in either tool to see the 12 words you are about to get. EntropyLab then also shows the master fingerprint and the
-            Native SegWit addresses, which should match what Cypher Box shows once the vault is made.
-          </Text>
-          <Text style={styles.verifyWarning}>
-            These values are your key. Anyone who copies them can spend your money. Do not photograph them.
+            hex entropy in either tool to see the 12 words you are about to get. In EntropyLab, set Seed phrase length to 12 words first; in
+            Ian Coleman's tool, keep "Use Raw Entropy". EntropyLab then also shows the master fingerprint and the Native SegWit addresses,
+            which should match what Cypher Box shows once the vault is made.
           </Text>
         </ScrollView>
         <FContainer>
