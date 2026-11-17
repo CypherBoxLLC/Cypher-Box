@@ -762,8 +762,13 @@ export default function ArkSeedPhraseScreen() {
     const completeArkCreate = async () => {
         setSubmitting(true);
 
+        // Taken from this save's own result. `keychainStatus` is the value this
+        // render started with, so it still read null right after a successful
+        // save, and every vault made here was recorded as not saved.
+        let keychainSaved = false;
         if (saveToKeychain) {
             const result = await persistToKeychain();
+            keychainSaved = result === 'ok';
             if (result === 'error') {
                 SimpleToast.show(keychainText.seed.failedToast, SimpleToast.LONG);
             }
@@ -803,7 +808,7 @@ export default function ArkSeedPhraseScreen() {
             id: `ark-${Date.now()}`,
             createdAt: new Date().toISOString(),
             useHotVaultSeed: arkUseHotVaultSeed,
-            keychainSaved: saveToKeychain && keychainStatus === "ok",
+            keychainSaved,
             backupDestination,
         };
         setArkWallet(wallet);

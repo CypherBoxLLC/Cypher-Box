@@ -41,6 +41,30 @@ function seedOnDeviceConsented(): boolean {
 }
 
 /**
+ * Correct the consent record of a vault whose saved seed just opened it.
+ *
+ * Until 0.1.13 the create screen recorded `keychainSaved: false` even when the
+ * seed was saved: it read its save status from React state that had not
+ * updated yet. The check above then refused the background copy for every
+ * vault made there, so background refresh never ran for them.
+ *
+ * Call ONLY after a wallet open whose seed came out of the saved
+ * `ark-seed-phrase` entry. That entry is written only when the user leaves
+ * "save seed" on, and a seed that opens this vault's datadir is this vault's
+ * seed, so the user did keep it on the phone. Recorded once, before the
+ * wallet-open check decides about the copy.
+ *
+ * Loaded values only (an unloaded store has no record to correct), and only
+ * when a vault record exists.
+ */
+export function recordSavedSeedConsent(): void {
+    if (!useAuthStore.persist.hasHydrated()) return;
+    const { arkWallet, setArkWallet } = useAuthStore.getState();
+    if (!arkWallet || arkWallet.keychainSaved === true) return;
+    setArkWallet({ ...arkWallet, keychainSaved: true });
+}
+
+/**
  * Does the Bark vault hold anything that can expire?
  *
  * The un-gated copy exists for exactly one job: let an unattended wake refresh
