@@ -8,7 +8,6 @@
 
 import WatchKit
 import ClockKit
-import Bugsnag
 
 class ExtensionDelegate: NSObject, WKExtensionDelegate {
   
@@ -17,9 +16,7 @@ class ExtensionDelegate: NSObject, WKExtensionDelegate {
   func applicationDidFinishLaunching() {
     scheduleNextReload()
     updatePreferredFiatCurrency()
-    if let isDoNotTrackEnabled = groupUserDefaults?.bool(forKey: "donottrack"), !isDoNotTrackEnabled {
-      Bugsnag.start()
-    }
+    // No crash reporting: Bugsnag is linked but never started (see blue_modules/analytics.js).
   }
   
   func updatePreferredFiatCurrency() {

@@ -1,8 +1,6 @@
 package io.cypherbox.btc;
 
 import android.app.Application;
-import android.content.Context;
-import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 import androidx.work.Configuration;
 import com.facebook.react.PackageList;
@@ -16,7 +14,6 @@ import com.facebook.react.defaults.DefaultReactNativeHost;
 import com.facebook.react.soloader.OpenSourceMergedSoMapping;
 import com.facebook.soloader.SoLoader;
 import java.util.List;
-import com.bugsnag.android.Bugsnag;
 
 public class MainApplication extends Application implements ReactApplication, Configuration.Provider {
 
@@ -65,12 +62,8 @@ public class MainApplication extends Application implements ReactApplication, Co
   @Override
   public void onCreate() {
     super.onCreate();
-    // An Offline Seed-Signer stays offline, so it never starts crash reporting. The JS lock
-    // (src/services/seedSignerLock.ts) notes itself in these shared preferences for this check.
-    SharedPreferences prefs = getSharedPreferences("group.io.cypherbox.btc", Context.MODE_PRIVATE);
-    if (!"1".equals(prefs.getString("seedsigner", null))) {
-      Bugsnag.start(this);
-    }
+    // No crash reporting: Bugsnag is linked but never started, so no crash report leaves the phone.
+    // The key it shipped with was BlueWallet's, so every report went to BlueWallet's account.
 
     // No I18nUtil.allowRTL here: loc/index.ts stores the direction for the chosen language on every launch, and
     // allowing right-to-left from here as well mirrored English on a phone set to Arabic, Hebrew or Persian.

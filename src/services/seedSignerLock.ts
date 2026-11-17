@@ -11,7 +11,8 @@ const store = new MMKV({ id: 'seed-signer-lock' });
 const KEY = 'locked';
 
 // Native start-up runs before this store can be read, so the lock is also noted in the app's shared preferences
-// (also cleared by deleting the app), where MainApplication.java and AppDelegate.mm look before starting crash reports.
+// (also cleared by deleting the app), for native code to check. Nothing reads it while crash reporting is off
+// (blue_modules/analytics.js); it stays so a crash reporter added later can skip signer phones.
 const NATIVE_STORE = 'group.io.cypherbox.btc';
 const NATIVE_KEY = 'seedsigner';
 

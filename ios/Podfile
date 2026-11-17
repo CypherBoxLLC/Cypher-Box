@@ -21,8 +21,6 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
-plugin 'cocoapods-bugsnag'
-
 # Define a common function to configure shared settings for targets
 def configure_target()
   config = use_native_modules!
