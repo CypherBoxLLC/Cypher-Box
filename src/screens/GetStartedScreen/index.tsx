@@ -6,6 +6,7 @@ import Svg, { Path, Defs, Pattern, Use, Image as RnSvgImage } from "react-native
 import CheckBox from '@react-native-community/checkbox';
 import { colors } from "@Cypher/style-guide";
 import loc from "../../../loc";
+import { CURRENT_TOS_VERSION } from '../../helpers/tosVersion';
 import { GoodLuckWords, StartWord, welcomeArtFits } from "@Cypher/components/WelcomeWords";
 const { width } = Dimensions.get('screen')
 import { Start, StartNotActive } from "@Cypher/assets/images";
@@ -123,8 +124,8 @@ export default function GetStartedScreen({ route }: Props) {
     const handleStartClick = () => {
         if (hasAcceptedTermsOfService) {
             AsyncStorage.setItem('hasAcceptedTermsOfService', JSON.stringify(true))
-            // Keep in sync with CURRENT_TOS_VERSION in SplashScreen.
-            AsyncStorage.setItem('acceptedTosVersion', '2026-08')
+            // The same version SplashScreen checks, from src/helpers/tosVersion.ts.
+            AsyncStorage.setItem('acceptedTosVersion', CURRENT_TOS_VERSION)
             const routeName = isHandset ? 'Navigation' : 'DrawerRoot'
 
             dispatchNavigate(routeName)
