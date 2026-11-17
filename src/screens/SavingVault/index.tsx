@@ -164,7 +164,7 @@ export default function SavingVault() {
                 {/* Passphrase vaults: the words alone are NOT the full
                     backup. Remind here, at the moment the paper backup is
                     being written, per the creation-screen guidance
-                    (memorise it and include it on the paper). The
+                    (memorise it, and write it down apart from the words). The
                     passphrase itself is never displayed. */}
                 {!!(wallets.find((w: any) => w.getID() === walletID)?.getPassphrase?.()) && (
                     <Text center style={{ color: '#FFD54F', fontSize: 12, lineHeight: 17, marginTop: 6, marginHorizontal: 16 }}>
