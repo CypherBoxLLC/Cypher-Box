@@ -47,6 +47,21 @@ class GuardedElectrumClient extends ElectrumClient {
     this._lastDataAt = 0;
   }
 
+  /**
+   * Opens the socket the way electrum-client does, with the socket's end() switched off.
+   *
+   * electrum-client closes a connection by ending its socket and then destroying it: in close(), and when a reply can't
+   * be parsed. On Android, react-native-tcp-socket removes the native socket on each of those calls, so the destroy
+   * finds it gone and throws "No socket with id N" on a background thread, which kills the app. On a Galaxy A14 a server
+   * accepted the connection and then refused it ("excessive resource usage"), BlueElectrum's bad-connection path closed
+   * it, and the app crashed, then crashed again on relaunch against the same server. destroy() alone closes the socket.
+   * Done here so it holds for every socket this client opens, including the new one reconnect() makes.
+   */
+  initSocket(protocol, options) {
+    super.initSocket(protocol, options);
+    this.conn.end = () => {};
+  }
+
   onRecv(chunk) {
     this._lastDataAt = Date.now();
     return super.onRecv(chunk);
