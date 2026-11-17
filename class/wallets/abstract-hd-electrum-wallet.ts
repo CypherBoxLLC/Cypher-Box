@@ -28,6 +28,21 @@ const reverse = require('buffer-reverse');
 const bip32 = BIP32Factory(ecc);
 const bip47 = BIP47Factory(ecc);
 
+/**
+ * A transaction with more inputs than this skips the lookup of its inputs' parent transactions on sync.
+ *
+ * An input's sender address and amount come from its parent transaction, and fetchTransactions fetches every parent
+ * of every transaction in the history, 45 per Electrum request, one request after another. A transaction with
+ * thousands of inputs that paid this wallet (an exchange or mixer consolidation) turned every sync into hundreds of
+ * round trips, and the vault hung. Skipped, it keeps the amount it paid this wallet, which comes from its outputs, and
+ * shows no sender.
+ *
+ * Far above a cutoff like 99, because Consolidate puts every ticked capsule into one transaction with no cap: a
+ * wallet's own spend can have 140 inputs or more, and a skipped own spend would lose its sender addresses and read as
+ * a receive. 1000 parents is about 23 requests, slow but finite; the case this stops is tens of thousands.
+ */
+export const MAX_INPUTS_TO_RESOLVE = 1000;
+
 type BalanceByIndex = {
   c: number;
   u: number;
@@ -367,6 +382,8 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     // then we combine all this data (we need inputs to see source addresses and amounts)
     const vinTxids = [];
     for (const txdata of Object.values(txdatas)) {
+      if (txdata.vin.length > MAX_INPUTS_TO_RESOLVE) continue;
+      // ^^^ see MAX_INPUTS_TO_RESOLVE: that transaction's inputs keep no sender address or amount
       for (const vin of txdata.vin) {
         vin.txid && vinTxids.push(vin.txid);
         // ^^^^ not all inputs have txid, some of them are Coinbase (newly-created coins)
