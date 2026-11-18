@@ -23,7 +23,7 @@ export default function SavingVaultIntro() {
     // BIP39 passphrase ("25th word"), strictly opt-in via the toggle so
     // nothing is ever typed (or applied) without a deliberate choice. The
     // passphrase is used exactly as typed (case-sensitive, spaces count),
-    // never trimmed, never stored anywhere — it only feeds setPassphrase()
+    // never trimmed. It only feeds setPassphrase(), and the wallet keeps it on the phone (never in the Keychain backup)
     // at generation time. Confirm-field guards the create-time typo that
     // would otherwise strand funds on a wallet nobody can recover.
     const [usePassphrase, setUsePassphrase] = useState(false);
