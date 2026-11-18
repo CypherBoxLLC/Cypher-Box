@@ -1,9 +1,10 @@
 /**
  * The dice screen as the seed-signer opens it (rollsOnlyFrom: 50): from 50 real-looking rolls of a six-sided die the
  * seed is the rolls' own hash, the 12 words EntropyLab makes from them (vectors from EntropyLab's code, as in
- * diceSeed.test.ts), and the phone's randomness isn't asked for. With fewer rolls, a coin or a 20-sided die, or rolls
- * that look made up, it's the mix with the phone's randomness, as before. Either way it goes straight back with the
- * rolls, and Create a Seed shows the cross-check (createSignerSeedFlow.test.tsx). The rolls are on top, the bits below.
+ * diceSeed.test.ts), and the phone's randomness isn't asked for. With fewer rolls, or rolls that look made up, it's
+ * the mix with the phone's randomness, as before. Either way it goes straight back with the rolls, and Create a Seed
+ * shows the cross-check (createSignerSeedFlow.test.tsx). Six-sided dice only: the coin and the 20-sided die are gone.
+ * The rolls are counted on top against the 77 recommended, then the dice, the text, the bits and Undo / Continue.
  */
 
 import React from 'react';
@@ -27,21 +28,6 @@ jest.mock('../../class/rngHealth', () => ({
 jest.mock('react-native-elements', () => {
     const { Text: RNText } = require('react-native');
     return { Icon: ({ name }: { name: string }) => <RNText>{`icon:${name}`}</RNText> };
-});
-jest.mock('../../BlueComponents', () => {
-    const { Text: RNText, TouchableOpacity: Touchable, View } = require('react-native');
-    return {
-        BlueSpacing20: () => null,
-        BlueTabs: ({ onSwitch, tabs }: any) => (
-            <View>
-                {tabs.map((_: any, i: number) => (
-                    <Touchable key={i} onPress={() => onSwitch(i)}>
-                        <RNText>{`tab:${i}`}</RNText>
-                    </Touchable>
-                ))}
-            </View>
-        ),
-    };
 });
 jest.mock('../../components/FloatButtons', () => {
     const { Text: RNText, TouchableOpacity: Touchable } = require('react-native');
@@ -82,7 +68,8 @@ const open = (onGenerated: jest.Mock, extra: any = {}) => {
         tree = renderer.create(<ProvideEntropy />);
     });
     const root = tree!.root;
-    const button = (label: string) => root.findAllByType(TouchableOpacity).find(b => textOf(b) === label);
+    // a button's own label, next to its icon
+    const button = (label: string) => root.findAllByType(TouchableOpacity).find(b => textOf(b).split('\n').includes(label));
     const press = async (label: string) => {
         const b = button(label);
         if (!b) throw new Error(`no button ${label}`);
@@ -90,9 +77,8 @@ const open = (onGenerated: jest.Mock, extra: any = {}) => {
             await b.props.onPress();
         });
     };
-    // the d6 tab is open first; a d20 face is labelled with its number
-    const roll = async (rolls: string, sides = 6) => {
-        for (const face of rolls) await press(sides === 6 ? `icon:${FACE[Number(face) - 1]}` : face);
+    const roll = async (rolls: string) => {
+        for (const face of rolls) await press(`icon:${FACE[Number(face) - 1]}`);
     };
     return { root, press, roll, text: () => textOf(root) };
 };
@@ -119,14 +105,18 @@ describe("the signer's dice screen", () => {
         const lines = () => screen.root.findAllByType(Text).map(n => [].concat(n.props.children).join(''));
         await screen.roll('3626');
         const shown = lines();
-        const count = shown.indexOf(String(loc.formatString(D().count, { count: 4, min: 50 })));
+        const count = shown.indexOf(String(loc.formatString(D().count, { count: 4, recommended: 77 })));
         // 3, 6, 2 and 6 give two bits each
         const bitsLine = shown.findIndex(l => l === String(loc.formatString(D().bits, { bits: 8, limit: 128 })));
         expect(count).toBeGreaterThanOrEqual(0);
         expect(bitsLine).toBeGreaterThan(count);
-        expect(screen.text()).toContain(String(loc.formatString(D().rule, { min: 50 })));
+        // 50 is still what makes the seed from the rolls alone; 77 is what the screen asks for
+        expect(screen.text()).toContain(String(loc.formatString(D().rule, { min: 50, recommended: 77 })));
+        expect(screen.text()).toContain('77');
         expect(screen.text()).toContain(D().paper);
-        expect(screen.text()).toContain(D().real_dice);
+        // the same first line as the Hot Vault's, and its made-up-rolls warning in the signer's words
+        expect(screen.text()).toContain(String(loc.formatString(D().how, { count: 77 })));
+        expect(screen.text()).toContain(String(loc.formatString(D().real_dice, { min: 50 })));
         // the other screens' promise that the phone always adds its randomness isn't made here
         expect(screen.text()).not.toContain('Your phone always adds randomness');
     });
@@ -135,7 +125,7 @@ describe("the signer's dice screen", () => {
         const onGenerated = jest.fn();
         const screen = open(onGenerated);
         await screen.roll(FIFTY);
-        await screen.press(loc.entropy.save);
+        await screen.press(loc._.continue);
         expect(randomBytes).not.toHaveBeenCalled();
         expect(mockNavigation.pop).toHaveBeenCalled();
         const [entropy, from] = onGenerated.mock.calls[0];
@@ -148,7 +138,7 @@ describe("the signer's dice screen", () => {
         const screen = open(onGenerated);
         // 63 rolls; the bit counter can fill before the end, the seed still takes all of them
         await screen.roll(SIXTY_THREE);
-        await screen.press(loc.entropy.save);
+        await screen.press(loc._.continue);
         const [entropy, from] = onGenerated.mock.calls[0];
         expect(Buffer.from(entropy).toString('hex')).toBe(SIXTY_THREE_ENTROPY);
         expect(from.count).toBe(63);
@@ -159,22 +149,22 @@ describe("the signer's dice screen", () => {
         const screen = open(onGenerated);
         await screen.roll(`${FIFTY}5`);
         await screen.press(loc.entropy.undo);
-        await screen.press(loc.entropy.save);
+        await screen.press(loc._.continue);
         expect(Buffer.from(onGenerated.mock.calls[0][0]).toString('hex')).toBe(FIFTY_ENTROPY);
     });
 
     it('comes back with the rolls from before, to add to them or take some back', async () => {
         const again = jest.fn();
         const screen = open(again, { initialRolls: d6(FIFTY) });
-        expect(screen.text()).toContain(String(loc.formatString(D().count, { count: 50, min: 50 })));
-        await screen.press(loc.entropy.save);
+        expect(screen.text()).toContain(String(loc.formatString(D().count, { count: 50, recommended: 77 })));
+        await screen.press(loc._.continue);
         expect(Buffer.from(again.mock.calls[0][0]).toString('hex')).toBe(FIFTY_ENTROPY);
 
         const fewer = jest.fn();
         const other = open(fewer, { initialRolls: d6(FIFTY) });
         await other.press(loc.entropy.undo);
-        expect(other.text()).toContain(String(loc.formatString(D().count, { count: 49, min: 50 })));
-        await other.press(loc.entropy.save);
+        expect(other.text()).toContain(String(loc.formatString(D().count, { count: 49, recommended: 77 })));
+        await other.press(loc._.continue);
         expect(fewer.mock.calls[0][1]).toEqual({ source: 'mix', reason: 'too-few', rolls: d6(FIFTY.slice(0, 49)) });
     });
 
@@ -182,7 +172,7 @@ describe("the signer's dice screen", () => {
         const onGenerated = jest.fn();
         const screen = open(onGenerated);
         await screen.roll('3626');
-        await screen.press(loc.entropy.save);
+        await screen.press(loc._.continue);
         expect(assertNativeRngHealthy).toHaveBeenCalled();
         expect(randomBytes).toHaveBeenCalledWith(16);
         expect(mockNavigation.pop).toHaveBeenCalled();
@@ -191,25 +181,31 @@ describe("the signer's dice screen", () => {
         expect(Buffer.from(entropy).toString('hex')).not.toBe(crypto.createHash('sha256').update('3626').digest('hex').slice(0, 32));
     });
 
-    it('mixes rolls that look made up, and rolls of a 20-sided die', async () => {
+    it('mixes rolls that look made up', async () => {
         const madeUp = jest.fn();
         const screen = open(madeUp);
         await screen.roll('123456'.repeat(9));
-        await screen.press(loc.entropy.save);
+        await screen.press(loc._.continue);
         expect(madeUp.mock.calls[0][1]).toMatchObject({ source: 'mix', reason: 'pattern' });
+    });
 
-        const d20 = jest.fn();
-        const other = open(d20);
-        await other.press('tab:2');
-        for (let i = 0; i < 50; i++) await other.press(String((i % 20) + 1));
-        await other.press(loc.entropy.save);
-        expect(d20.mock.calls[0][1]).toMatchObject({ source: 'mix', reason: 'not-six-sided' });
+    it('offers six-sided dice only, and Continue instead of Save', () => {
+        const screen = open(jest.fn());
+        const shown = screen.text();
+        FACE.forEach(face => expect(shown).toContain(`icon:${face}`));
+        // no coin, no 20-sided die, no tabs to pick them
+        expect(shown).not.toContain('icon:toll');
+        expect(shown).not.toContain('icon:dice-d20');
+        expect(shown).not.toContain('icon:dice\n');
+        expect(shown).toContain(loc._.continue);
+        expect(shown).toContain(loc.entropy.undo);
+        expect(shown).not.toContain(loc.entropy.save);
     });
 
     it('adds nothing when saved before any roll', async () => {
         const onGenerated = jest.fn();
         const screen = open(onGenerated);
-        await screen.press(loc.entropy.save);
+        await screen.press(loc._.continue);
         expect(mockNavigation.pop).toHaveBeenCalled();
         expect(onGenerated).not.toHaveBeenCalled();
     });
@@ -220,7 +216,12 @@ describe("the Hot Vault's dice screen", () => {
         const screen = open(jest.fn(), { rollsOnlyFrom: undefined, minBits: 128 });
         expect(mockNavigation.setOptions).not.toHaveBeenCalled();
         await screen.roll('362');
-        expect(screen.text()).toContain('3 rolls');
+        expect(screen.text()).toContain(String(loc.formatString(D().count, { count: 3, recommended: 77 })));
+        // the signer's first line, the Hot Vault's own two after it, all from the app's texts
+        expect(screen.text()).toContain(String(loc.formatString(D().how, { count: 77 })));
+        expect(screen.text()).toContain(loc.cypherbox.vault.saving_vault_intro.dice_made_up);
+        expect(screen.text()).toContain(loc.cypherbox.vault.saving_vault_intro.dice_phone_adds);
+        expect(screen.text()).not.toContain(D().paper);
         expect(screen.text()).toMatch(/\d+ of 128 bits/);
         expect(screen.text()).toContain('Your phone always adds randomness');
     });
