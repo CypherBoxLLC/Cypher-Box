@@ -42,11 +42,26 @@ interface Style {
     keychainRowCta: TextStyle;
     keychainRowDelete: ViewStyle;
     keychainRowDeleteText: TextStyle;
+    keychainRowWaiting: ViewStyle;
+    keychainRowChecked: ViewStyle;
+    checkPanel: ViewStyle;
+    checkLine: TextStyle;
+    checkLabel: TextStyle;
+    checkAddress: TextStyle;
+    checkBalanceRow: ViewStyle;
+    checkSpinner: ViewStyle;
+    checkMuted: TextStyle;
+    checkButtons: ViewStyle;
+    checkRestore: ViewStyle;
+    checkRestoreText: TextStyle;
+    checkClose: ViewStyle;
+    checkCloseText: TextStyle;
 }
 
 export default StyleSheet.create<Style>({
     container: {
-        flex: 1,
+        // flexGrow, not flex: the screen scrolls, and its content must be able to grow past the screen's height
+        flexGrow: 1,
         backgroundColor: colors.primary,
         alignItems: 'center',
         paddingHorizontal: 20,
@@ -225,5 +240,82 @@ export default StyleSheet.create<Style>({
         color: '#FF7A7A',
         fontFamily: 'Archivo-SemiBold',
         fontSize: 12,
+    },
+    // a row waiting while another backup is unlocked or removed
+    keychainRowWaiting: {
+        opacity: 0.45,
+    },
+    keychainRowChecked: {
+        borderColor: colors.green,
+    },
+    // A backup's check: a thin outline, no fill
+    checkPanel: {
+        borderWidth: 1,
+        borderColor: 'rgba(35, 196, 127, 0.4)',
+        borderRadius: 14,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        marginBottom: 12,
+    },
+    checkLine: {
+        color: colors.white,
+        fontFamily: 'Archivo-Regular',
+        fontSize: 13,
+        lineHeight: 19,
+    },
+    checkLabel: {
+        color: 'rgba(255, 255, 255, 0.7)',
+        fontFamily: 'Archivo-Regular',
+        fontSize: 12,
+        marginTop: 8,
+    },
+    checkAddress: {
+        color: colors.white,
+        fontFamily: 'Archivo-Regular',
+        fontSize: 13,
+        lineHeight: 19,
+        marginTop: 2,
+    },
+    checkBalanceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    checkSpinner: {
+        marginEnd: 8,
+    },
+    checkMuted: {
+        color: 'rgba(255, 255, 255, 0.6)',
+        fontFamily: 'Archivo-Regular',
+        fontSize: 12,
+        marginTop: 4,
+    },
+    checkButtons: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 12,
+    },
+    checkRestore: {
+        flex: 1,
+        borderWidth: 1,
+        borderColor: colors.green,
+        borderRadius: 14,
+        paddingVertical: 10,
+        alignItems: 'center',
+    },
+    checkRestoreText: {
+        color: colors.green,
+        fontFamily: 'Archivo-Bold',
+        fontSize: 14,
+    },
+    checkClose: {
+        marginStart: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+    },
+    checkCloseText: {
+        color: 'rgba(255, 255, 255, 0.8)',
+        fontFamily: 'Archivo-SemiBold',
+        fontSize: 13,
     },
 });

@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { Alert, ActivityIndicator, Animated, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
+import { Alert, ActivityIndicator, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import styles from './styles';
 import { ScreenLayout, Text, Input, Button } from '@Cypher/component-library';
 import { colors, ltr, rtl } from '@Cypher/style-guide';
@@ -7,7 +7,6 @@ import { HDSegwitBech32Wallet } from '../../../class';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../../blue_modules/hapticFeedback';
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
 import useAuthStore from "@Cypher/stores/authStore";
-import { useKeyboardLift } from '@Cypher/custom-hooks';
 import { dispatchReset } from '@Cypher/helpers/navigation';
 import {
     getHotVaultSeedFromKeychain,
@@ -17,7 +16,8 @@ import {
 } from '@Cypher/services/hotVaultKeychain';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import { hotVaultKeychainText } from '@Cypher/helpers/hotVaultKeychainText';
-import loc from '../../../loc';
+import loc, { formatBalance } from '../../../loc';
+import { BitcoinUnit } from '../../../models/bitcoinUnits';
 
 const inputs = [
     1, 2, 3, 4, 5, 6,
@@ -28,7 +28,52 @@ interface Props {
     route: any;
 }
 
+/**
+ * What checking a Keychain backup shows before anything is restored: the vault its 12 words open, told apart by its
+ * master fingerprint (two backups with the same fingerprint hold the same words), its first receive address, and its
+ * balance from the Electrum server. Like the restore itself, the check uses the words alone, so it shows exactly what
+ * typing them would.
+ */
+export interface BackupCheck {
+    walletID: string;
+    fingerprint: string;
+    firstAddress: string;
+    status: 'checking' | 'done' | 'failed';
+    balance: number | null;
+    used: boolean | null;
+}
 
+/** How long the balance check may take before the panel says it couldn't be checked. The restore never waits for it. */
+export const BACKUP_CHECK_TIMEOUT_MS = 30000;
+
+/**
+ * The balance of a wallet that isn't saved, and whether any of its addresses was ever used. Unlike fetchBalance, which
+ * logs and swallows errors, this throws, so a check that failed never reads as 0 sats.
+ */
+export async function scanBackupBalance(w: HDSegwitBech32Wallet): Promise<{ balance: number; used: boolean }> {
+    const change = await w._binarySearchIterationForInternalAddress(1000);
+    const receive = await w._binarySearchIterationForExternalAddress(1000);
+    w.next_free_change_address_index = change;
+    w.next_free_address_index = receive;
+    await w._fetchBalance();
+    return { balance: w.getBalance(), used: change > 0 || receive > 0 };
+}
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), ms);
+        work.then(
+            value => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            error => {
+                clearTimeout(timer);
+                reject(error);
+            },
+        );
+    });
+}
 
 
 export default function RecoverSavingVault({ route }: Props) {
@@ -39,7 +84,14 @@ export default function RecoverSavingVault({ route }: Props) {
     const keychainText = hotVaultKeychainText().recover;
 
     const [loading, setLoading] = useState(false);
-    const [keychainLoading, setKeychainLoading] = useState(false);
+    // The backup whose Face ID / passcode unlock is under way: only its row shows a spinner, and the others wait.
+    const [unlockingID, setUnlockingID] = useState<string | null>(null);
+    // The one backup checked so far, shown under its row until it's restored or closed.
+    const [check, setCheck] = useState<BackupCheck | null>(null);
+    // Its 12 words, kept in memory only while its check is open, for "Restore this vault".
+    const checkedWords = useRef<{ walletID: string; mnemonic: string } | null>(null);
+    // Bumped whenever a check is closed or replaced, so a balance that arrives late is dropped.
+    const checkRun = useRef(0);
     // Optional BIP39 passphrase for manual recovery. Toggle-gated exactly
     // like creation: nothing is typed or applied unless the user opts in.
     // Used as typed — never trimmed, never stored.
@@ -49,23 +101,15 @@ export default function RecoverSavingVault({ route }: Props) {
     const [pendingDeleteID, setPendingDeleteID] = useState<string | null>(null);
     const importing = useRef(false);
     const inputRefs = useRef<Array<any>>(new Array(inputs.length));
-    // Lift the whole content block when the keyboard shows so words 11/12
-    // stay visible while typing (the grid slides up under the header).
-    const keyboardLift = useKeyboardLift(40);
-    // Extra lift while the PASSPHRASE field is focused: it sits at the very
-    // bottom of the layout, so the base 40pt lift leaves it fully under the
-    // keyboard. Focus-driven rather than keyboard-driven so the 12-word grid
-    // keeps its gentle 40pt behaviour and only the passphrase entry rides
-    // the content up above the keyboard.
-    const passphraseLift = useRef(new Animated.Value(0)).current;
-    const totalLift = useRef(Animated.add(keyboardLift, passphraseLift)).current;
-    const liftForPassphrase = (focused: boolean) => {
-        Animated.timing(passphraseLift, {
-            toValue: focused ? -210 : 0,
-            duration: 220,
-            useNativeDriver: true,
-        }).start();
-    };
+
+    // Leaving the screen drops any words a check still holds.
+    useEffect(
+        () => () => {
+            checkRun.current += 1;
+            checkedWords.current = null;
+        },
+        [],
+    );
 
     // List any Keychain backups on mount so the user can choose one to
     // restore. Enumerate service NAMES + read meta sidecars silently (no seed
@@ -207,81 +251,125 @@ export default function RecoverSavingVault({ route }: Props) {
     // manual-typed path, and single-backup auto-fire. See the doc-
     // comment on `fastImportHotVault` for the trade-off rationale.
 
+    /** Close the open check and drop its words. A balance still on its way is ignored. */
+    const closeCheck = () => {
+        checkRun.current += 1;
+        checkedWords.current = null;
+        setCheck(null);
+    };
+
     /**
-     * Pull a specific backup out of Keychain and hand it to the importer.
+     * Unlock one backup and show what it holds, without restoring it.
      *
      * This triggers the biometric / passcode prompt (the only place in the
-     * recovery flow that does). On decline or error we fall back to leaving
-     * the user on the manual-entry screen — they still have the 12-word
-     * boxes as an escape hatch.
-     *
-     * The `restoredWalletID` threaded through to `handleImport` lets the
-     * onWallet callback rehydrate the zustand "backed up" flag so the
-     * Settings UI stays in sync post-recovery.
+     * recovery flow that does). The words then stay in memory, never on
+     * screen, while the backup's check shows its master fingerprint, first
+     * receive address and balance under its row. Nothing is restored until
+     * "Restore this vault" (restoreCheckedBackup). With several backups on a
+     * phone, that is how the user tells them apart and finds the one with
+     * funds. On decline or error the user stays on this screen, with the
+     * 12-word boxes as an escape hatch.
      */
     // No `knownMeta` parameter by design: this flow must not be able to read
     // the sidecar's passphrase state, because acting on it is what leaked the
     // existence of a hidden wallet. The words are all it needs.
-    const handleKeychainRecover = async (walletID: string) => {
-        if (keychainLoading || loading) return;
-        setKeychainLoading(true);
+    const handleKeychainCheck = async (walletID: string) => {
+        if (unlockingID || loading || pendingDeleteID) return;
+        closeCheck();
+        setUnlockingID(walletID);
         const result = await getHotVaultSeedFromKeychain(walletID);
-        setKeychainLoading(false);
 
-        if (result.ok) {
-            triggerHapticFeedback(HapticFeedbackTypes.ImpactLight);
-            // Deliberately NOT populating the input boxes — we skip straight
-            // to import so the 12 words are never briefly displayed to
-            // anyone watching the screen.
-            //
-            // Fast path: bypass startImport's multi-type discovery scan
-            // entirely. We know this came from our own Keychain and is
-            // therefore an HDSegwitBech32Wallet. Saves 3–8s of perceived
-            // latency compared to the generic handleImport path.
-            //
-            // PASSPHRASE-AGNOSTIC BY DESIGN. This path imports the words with
-            // no passphrase and says nothing about whether one exists.
-            //
-            // A BIP39 passphrase is a deniability tool: under duress you hand
-            // over twelve words and the wallet they open is the only wallet
-            // anyone can see. This flow used to break that. It read a
-            // `hasPassphrase` flag from the keychain sidecar and, when set,
-            // announced "This vault is passphrase-protected" before prompting.
-            // Anyone holding the unlocked phone (which, under duress, is the
-            // whole premise) learned a hidden wallet existed. Clearing the flag
-            // did not help either: the sidecar's walletID was derived WITH the
-            // passphrase, so a passphrase-free import mismatched and the guard
-            // in fastImportHotVault said "the passphrase does not match this
-            // vault" instead. Both branches leaked.
-            //
-            // So: no prompt, no mismatch alert, no flag. The decoy opens
-            // silently, exactly as typing the words by hand would. Reaching the
-            // real vault means adding the passphrase on the manual recovery
-            // path below, which is where the toggle already lives.
-            //
-            // The cost, accepted deliberately: a passphrase user who taps this
-            // lands in their decoy with no explanation. Explaining it is the
-            // leak, so there is nothing to say here.
-            fastImportHotVault(result.mnemonic, walletID);
+        if (!result.ok) {
+            setUnlockingID(null);
+            if (result.reason === 'not-found') {
+                // Race: entry vanished between enumeration and read. Drop it
+                // from the on-screen list and let the user retry manually.
+                setKeychainBackups(prev =>
+                    prev.filter(s => s.walletID !== walletID),
+                );
+                Alert.alert(
+                    loc.cypherbox.vault.recover_saving_vault.backup_not_found_title,
+                    keychainText.notFoundMessage,
+                );
+                return;
+            }
+            // read-failed: typically biometric declined or locked. Don't badger
+            // the user; just reset state so they can retry or fall back.
+            console.warn('[HotVault] Keychain recovery failed:', result.error);
             return;
         }
 
-        if (result.reason === 'not-found') {
-            // Race: entry vanished between enumeration and read. Drop it
-            // from the on-screen list and let the user retry manually.
-            setKeychainBackups(prev =>
-                prev.filter(s => s.walletID !== walletID),
-            );
+        triggerHapticFeedback(HapticFeedbackTypes.ImpactLight);
+        // PASSPHRASE-AGNOSTIC BY DESIGN. The check and the restore use the
+        // words with no passphrase and say nothing about whether one exists.
+        //
+        // A BIP39 passphrase is a deniability tool: under duress you hand
+        // over twelve words and the wallet they open is the only wallet
+        // anyone can see. This flow used to break that. It read a
+        // `hasPassphrase` flag from the keychain sidecar and, when set,
+        // announced "This vault is passphrase-protected" before prompting.
+        // Anyone holding the unlocked phone (which, under duress, is the
+        // whole premise) learned a hidden wallet existed. Clearing the flag
+        // did not help either: the sidecar's walletID was derived WITH the
+        // passphrase, so a passphrase-free import mismatched and the guard
+        // in fastImportHotVault said "the passphrase does not match this
+        // vault" instead. Both branches leaked.
+        //
+        // So: no prompt, no mismatch alert, no flag. The check shows the
+        // decoy, exactly as typing the words by hand would, and the restore
+        // opens it. Reaching the real vault means adding the passphrase on
+        // the manual recovery path below, which is where the toggle lives.
+        //
+        // The cost, accepted deliberately: a passphrase user sees their
+        // decoy here with no explanation. Explaining it is the leak.
+        const wallet = new HDSegwitBech32Wallet();
+        wallet.setSecret(result.mnemonic.trim());
+        if (!wallet.validateMnemonic()) {
+            setUnlockingID(null);
             Alert.alert(
-                loc.cypherbox.vault.recover_saving_vault.backup_not_found_title,
-                keychainText.notFoundMessage,
+                loc.cypherbox.vault.recover_saving_vault.invalid_mnemonic_title,
+                loc.cypherbox.vault.recover_saving_vault.invalid_mnemonic_message,
             );
             return;
         }
+        // Let the spinner draw before the seed's key stretching (a second or
+        // two of JS on older phones) holds the thread.
+        await new Promise(resolve => setTimeout(resolve, 50));
+        let fingerprint = '';
+        let firstAddress = '';
+        try {
+            fingerprint = wallet.getMasterFingerprintHex().toUpperCase();
+            firstAddress = wallet._getExternalAddressByIndex(0);
+        } catch (e) {
+            console.warn('[HotVault] Keychain backup check could not read the vault:', e);
+        }
+        const run = ++checkRun.current;
+        checkedWords.current = { walletID, mnemonic: result.mnemonic };
+        setCheck({ walletID, fingerprint, firstAddress, status: 'checking', balance: null, used: null });
+        setUnlockingID(null);
+        try {
+            const { balance, used } = await withTimeout(scanBackupBalance(wallet), BACKUP_CHECK_TIMEOUT_MS);
+            if (checkRun.current !== run) return;
+            setCheck(prev => (prev && prev.walletID === walletID ? { ...prev, status: 'done', balance, used } : prev));
+        } catch (e) {
+            if (checkRun.current !== run) return;
+            console.warn('[HotVault] Keychain backup balance check failed:', e);
+            setCheck(prev => (prev && prev.walletID === walletID ? { ...prev, status: 'failed' } : prev));
+        }
+    };
 
-        // read-failed: typically biometric declined or locked. Don't badger
-        // the user; just reset state so they can retry or fall back.
-        console.warn('[HotVault] Keychain recovery failed:', result.error);
+    /**
+     * Restore the checked backup. The words go straight to the importer and
+     * are never put in the input boxes, so they're never shown on screen.
+     * Fast path: we know they came from our own Keychain, so the wallet is an
+     * HDSegwitBech32Wallet and startImport's multi-type scan is skipped.
+     */
+    const restoreCheckedBackup = () => {
+        const checked = checkedWords.current;
+        if (!checked || importing.current) return;
+        checkRun.current += 1;
+        checkedWords.current = null;
+        fastImportHotVault(checked.mnemonic, checked.walletID);
     };
 
     /**
@@ -298,7 +386,7 @@ export default function RecoverSavingVault({ route }: Props) {
      * row from state rather than re-enumerating — faster feedback.
      */
     const handleKeychainDelete = (summary: HotVaultBackupSummary) => {
-        if (pendingDeleteID || keychainLoading || loading) return;
+        if (pendingDeleteID || unlockingID || loading) return;
         Alert.alert(
             keychainText.removeTitle,
             keychainText.removeMessage,
@@ -317,6 +405,9 @@ export default function RecoverSavingVault({ route }: Props) {
                             triggerHapticFeedback(
                                 HapticFeedbackTypes.NotificationSuccess,
                             );
+                            if (checkedWords.current?.walletID === summary.walletID) {
+                                closeCheck();
+                            }
                             setKeychainBackups(prev =>
                                 prev.filter(
                                     s => s.walletID !== summary.walletID,
@@ -364,28 +455,91 @@ export default function RecoverSavingVault({ route }: Props) {
     };
 
     /**
+     * The check of one backup, under its row: master fingerprint, first
+     * receive address and balance, then "Restore this vault" or Close. The
+     * restore doesn't wait for the balance.
+     */
+    const renderBackupCheck = (walletID: string) => {
+        if (!check || check.walletID !== walletID) return null;
+        let balanceLine: string;
+        if (check.status === 'checking') {
+            balanceLine = loc.cypherbox.vault.recover_saving_vault.check_balance_checking;
+        } else if (check.status === 'failed') {
+            balanceLine = loc.cypherbox.vault.recover_saving_vault.check_balance_failed;
+        } else {
+            balanceLine = String(
+                loc.formatString(loc.cypherbox.vault.recover_saving_vault.check_balance, { amount: formatBalance(check.balance ?? 0, BitcoinUnit.SATS, true) }),
+            );
+        }
+        return (
+            <View style={styles.checkPanel} testID="keychainBackupCheck">
+                {check.fingerprint ? (
+                    <Text style={styles.checkLine}>
+                        {loc.cypherbox.vault.storage_vault.settings.master_fingerprint}{'  '}
+                        <Text bold style={[styles.checkLine, rtl.ltrText]}>{ltr(check.fingerprint)}</Text>
+                    </Text>
+                ) : null}
+                {check.firstAddress ? (
+                    <>
+                        <Text style={styles.checkLabel}>{loc.cypherbox.vault.recover_saving_vault.check_first_address}</Text>
+                        <Text style={[styles.checkAddress, rtl.ltrText]}>
+                            {ltr(check.firstAddress)}
+                        </Text>
+                    </>
+                ) : null}
+                <View style={styles.checkBalanceRow}>
+                    {check.status === 'checking' ? <ActivityIndicator size="small" color={colors.white} style={styles.checkSpinner} /> : null}
+                    <Text style={styles.checkLine} testID="keychainBackupBalance">{balanceLine}</Text>
+                </View>
+                {check.status === 'done' && !check.used ? (
+                    <Text style={styles.checkMuted}>{loc.cypherbox.vault.recover_saving_vault.check_never_used}</Text>
+                ) : null}
+                <View style={styles.checkButtons}>
+                    <TouchableOpacity
+                        style={styles.checkRestore}
+                        onPress={restoreCheckedBackup}
+                        accessibilityRole="button"
+                        testID="keychainBackupRestore"
+                    >
+                        <Text bold style={styles.checkRestoreText}>{loc.cypherbox.vault.recover_saving_vault.check_restore}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.checkClose}
+                        onPress={closeCheck}
+                        accessibilityRole="button"
+                        testID="keychainBackupClose"
+                    >
+                        <Text style={styles.checkCloseText}>{loc._.close}</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    };
+
+    /**
      * Render the Keychain-recovery section above the manual input grid.
      *
      * Always visible — three honest states so users understand what the
      * system sees without having to guess:
      *   - 0 backups → muted "no backup found" info line (discoverable,
      *                 not a CTA). Feature exists, nothing to restore.
-     *   - 1 backup  → auto-recovery fires on mount. Row is a retry
-     *                 path if the user cancelled the native FaceID sheet.
-     *   - N backups → one row per entry, each showing date + ID prefix
-     *                 plus a trash icon for in-place pruning.
+     *   - 1 backup  → one big button: unlock, then its check.
+     *   - N backups → one row per entry, each showing date + ID prefix,
+     *                 a Check button and a Remove button. The screen
+     *                 scrolls, so every row and the 12-word boxes stay
+     *                 reachable however many backups there are.
      *
      * Row layout (multi-backup case):
      *
-     *   ┌──────────────────────────────────────────┐
-     *   │  Backed up  Apr 21, 2026                 │
-     *   │  Vault ID   3f2a8c1b…               🗑    │
+     *   ┌──────────────────────────────────────────┐ ┌────────┐
+     *   │  Backed up  Apr 21, 2026          Check  │ │ Remove │
+     *   │  Vault ID   3f2a8c1b…                    │ └────────┘
      *   └──────────────────────────────────────────┘
-     *     ^ tap anywhere but the trash → recover   ^ tap trash → confirm + delete
+     *   (its check opens here, under the row)
      *
-     * Rows are sorted newest-first by the enumeration helper. Legacy entries
-     * (no meta) render with a "Backed up (legacy)" placeholder and sink to
-     * the bottom — distinguishable without being alarming.
+     * Only the row being unlocked shows a spinner; the others wait. Rows are
+     * sorted newest-first by the enumeration helper. Legacy entries (no meta)
+     * render with a "Backed up (legacy)" placeholder and sink to the bottom.
      */
     const renderKeychainSection = () => {
         if (keychainBackups.length === 0) {
@@ -417,89 +571,90 @@ export default function RecoverSavingVault({ route }: Props) {
                 {keychainBackups.map(summary => {
                     const { walletID, meta } = summary;
                     const isDeleting = pendingDeleteID === walletID;
-                    const isBusyOther =
-                        (keychainLoading || loading) && !isDeleting;
+                    const isUnlocking = unlockingID === walletID;
+                    // One backup at a time: while any unlock or removal runs, every other row waits.
+                    const isBlocked = loading || (!!unlockingID && !isUnlocking) || (!!pendingDeleteID && !isDeleting);
+                    const isChecked = check?.walletID === walletID;
 
                     if (isSingle) {
                         // Single-backup case keeps the original big-green-button
                         // shape — no date/ID clutter needed since there's only
-                        // one thing to do and iOS already auto-fired FaceID on
-                        // mount. This is just the retry path.
+                        // one thing to do. Its check opens under the button.
                         return (
-                            <TouchableOpacity
-                                key={walletID}
-                                style={styles.keychainButton}
-                                onPress={() => handleKeychainRecover(walletID)}
-                                disabled={keychainLoading || loading}
-                                activeOpacity={0.8}
-                            >
-                                {keychainLoading ? (
-                                    <ActivityIndicator color={colors.white} />
-                                ) : (
-                                    <Text bold style={styles.keychainButtonText}>
-                                        {keychainText.recoverButton}
-                                    </Text>
+                            <View key={walletID}>
+                                {isChecked ? null : (
+                                    <TouchableOpacity
+                                        style={styles.keychainButton}
+                                        onPress={() => handleKeychainCheck(walletID)}
+                                        disabled={isBlocked || isUnlocking}
+                                        activeOpacity={0.8}
+                                        testID="keychainBackupRow"
+                                    >
+                                        {isUnlocking ? (
+                                            <ActivityIndicator color={colors.white} />
+                                        ) : (
+                                            <Text bold style={styles.keychainButtonText}>
+                                                {keychainText.recoverButton}
+                                            </Text>
+                                        )}
+                                    </TouchableOpacity>
                                 )}
-                            </TouchableOpacity>
+                                {renderBackupCheck(walletID)}
+                            </View>
                         );
                     }
 
-                    // Multi-backup: rich row. The outer TouchableOpacity is the
-                    // recover target; the trash TouchableOpacity inside stops
-                    // propagation via its own onPress so tapping 🗑 doesn't
-                    // also fire the recover handler underneath it.
+                    // Multi-backup: rich row. The row is the Check target; the
+                    // Remove button beside it has its own onPress, so a tap on
+                    // it never also fires the check underneath.
                     return (
-                        <View key={walletID} style={styles.keychainRowWrap}>
-                            <TouchableOpacity
-                                style={styles.keychainRow}
-                                onPress={() => handleKeychainRecover(walletID)}
-                                disabled={
-                                    isBusyOther ||
-                                    isDeleting ||
-                                    !!pendingDeleteID
-                                }
-                                activeOpacity={0.8}
-                            >
-                                <View style={styles.keychainRowInfo}>
-                                    <Text style={styles.keychainRowDate}>
-                                        {formatBackupDate(meta?.createdAt)}
-                                    </Text>
-                                    <Text style={styles.keychainRowId}>
-                                        {loc.formatString(loc.cypherbox.vault.recover_saving_vault.vault_id, { id: walletID.slice(0, 12) })}
-                                    </Text>
-                                </View>
-                                {keychainLoading && !isDeleting ? (
-                                    <ActivityIndicator color={colors.white} />
-                                ) : (
-                                    <Text style={styles.keychainRowCta}>
-                                        {loc.cypherbox.vault.recover_saving_vault.recover}
-                                    </Text>
-                                )}
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.keychainRowDelete}
-                                onPress={() => handleKeychainDelete(summary)}
-                                disabled={
-                                    isBusyOther ||
-                                    isDeleting ||
-                                    !!pendingDeleteID
-                                }
-                                hitSlop={{
-                                    top: 10,
-                                    bottom: 10,
-                                    left: 10,
-                                    right: 10,
-                                }}
-                                accessibilityLabel={keychainText.removeA11y}
-                            >
-                                {isDeleting ? (
-                                    <ActivityIndicator color={colors.white} />
-                                ) : (
-                                    <Text style={styles.keychainRowDeleteText}>
-                                        {loc.cypherbox.vault.recover_saving_vault.remove}
-                                    </Text>
-                                )}
-                            </TouchableOpacity>
+                        <View key={walletID}>
+                            <View style={[styles.keychainRowWrap, isBlocked && styles.keychainRowWaiting]}>
+                                <TouchableOpacity
+                                    style={[styles.keychainRow, isChecked && styles.keychainRowChecked]}
+                                    onPress={() => (isChecked ? closeCheck() : handleKeychainCheck(walletID))}
+                                    disabled={isBlocked || isUnlocking || isDeleting}
+                                    activeOpacity={0.8}
+                                    testID="keychainBackupRow"
+                                >
+                                    <View style={styles.keychainRowInfo}>
+                                        <Text style={styles.keychainRowDate}>
+                                            {formatBackupDate(meta?.createdAt)}
+                                        </Text>
+                                        <Text style={styles.keychainRowId}>
+                                            {loc.formatString(loc.cypherbox.vault.recover_saving_vault.vault_id, { id: walletID.slice(0, 12) })}
+                                        </Text>
+                                    </View>
+                                    {isUnlocking ? (
+                                        <ActivityIndicator color={colors.white} />
+                                    ) : isChecked ? null : (
+                                        <Text style={styles.keychainRowCta}>
+                                            {loc.cypherbox.vault.recover_saving_vault.check}
+                                        </Text>
+                                    )}
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.keychainRowDelete}
+                                    onPress={() => handleKeychainDelete(summary)}
+                                    disabled={isBlocked || isUnlocking || isDeleting}
+                                    hitSlop={{
+                                        top: 10,
+                                        bottom: 10,
+                                        left: 10,
+                                        right: 10,
+                                    }}
+                                    accessibilityLabel={keychainText.removeA11y}
+                                >
+                                    {isDeleting ? (
+                                        <ActivityIndicator color={colors.white} />
+                                    ) : (
+                                        <Text style={styles.keychainRowDeleteText}>
+                                            {loc.cypherbox.vault.recover_saving_vault.remove}
+                                        </Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                            {renderBackupCheck(walletID)}
                         </View>
                     );
                 })}
@@ -516,8 +671,10 @@ export default function RecoverSavingVault({ route }: Props) {
 
 
     return (
-        <ScreenLayout title={loc.cypherbox.vault.recover_saving_vault.title} showToolbar isBackButton disableScroll>
-            <Animated.View style={[styles.container, { transform: [{ translateY: totalLift }] }]}>
+        // keyboardAware: the screen scrolls (any number of Keychain backups, then the 12-word boxes), and the field being
+        // typed in is scrolled above the keyboard.
+        <ScreenLayout title={loc.cypherbox.vault.recover_saving_vault.title} showToolbar isBackButton keyboardAware bottomPadding={40}>
+            <View style={styles.container}>
                 {loading ?
                     <ActivityIndicator style={{ marginTop: 10, marginBottom: 20 }} color={colors.white} />
                     :
@@ -590,8 +747,6 @@ export default function RecoverSavingVault({ route }: Props) {
                                 label={loc.cypherbox.vault.recover_saving_vault.passphrase_label}
                                 autoCapitalize="none"
                                 secureTextEntry
-                                onFocus={() => liftForPassphrase(true)}
-                                onBlur={() => liftForPassphrase(false)}
                                 textInputStyle={{ color: '#FFF' }}
                                 style={{ marginHorizontal: 20, marginTop: 6 }}
                             />
@@ -610,7 +765,7 @@ export default function RecoverSavingVault({ route }: Props) {
                         />
                     </>
                 }
-            </Animated.View>
+            </View>
         </ScreenLayout>
     );
 }
