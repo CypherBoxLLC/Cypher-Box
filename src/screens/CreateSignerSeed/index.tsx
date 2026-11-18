@@ -53,8 +53,9 @@ import { noteSeedBackedUp } from "../SigningHome/seedSigner";
 
 /**
  * intro → backup (the words and the SeedQR, as two tabs of one screen, and with dice a third: the cross-check) →
- * created (what's next, the last warnings and the check of the copy) → key. Show mode: load → key. With dice, saving the
- * rolls goes straight to the backup, and going back from it returns to the rolls.
+ * created (what's next, the last warnings and the check of the copy) → key. Show mode: load → key. With dice, as in the
+ * Hot Vault, the rolls come back to the intro, which says they were added, and Generate Seed makes the seed from them;
+ * going back from the backup returns to the rolls.
  */
 type Step = 'intro' | 'load' | 'backup' | 'created' | 'key';
 type BackupTab = 'words' | 'seedqr' | 'check';
@@ -163,8 +164,6 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     const [dice, setDice] = useState<Buffer | null>(null);
     // what the dice screen said of it, with the rolls: for the cross-check, and to go back to the rolls
     const [diceFrom, setDiceFrom] = useState<DiceFrom | null>(null);
-    // set when the dice screen hands back a seed: it's made at once, as the user asked for it there
-    const generateAfterDice = useRef(false);
     const [usePassphrase, setUsePassphrase] = useState(false);
     const [passphrase, setPassphrase] = useState('');
     const [passphraseAgain, setPassphraseAgain] = useState('');
@@ -311,14 +310,6 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
         }
     };
 
-    useEffect(() => {
-        if (!dice || !generateAfterDice.current) return;
-        generateAfterDice.current = false;
-        generate();
-        // only new dice start it
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dice]);
-
     // the dice screen, with the rolls from before when there are some, to add to them or take some back
     const openDice = () =>
         dispatchNavigate('ProvideEntropy', {
@@ -328,9 +319,10 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             // from the rolls; fewer are mixed with the phone's randomness
             rollsOnlyFrom: ROLLS_ONLY_MIN,
             initialRolls: diceFrom?.rolls,
+            // as in the Hot Vault: the rolls come back to this screen, which says they were added, and Generate Seed makes
+            // the seed from them
             onGenerated: (buf: Buffer, from?: Partial<DiceFrom>) => {
                 if (!buf || buf.length < 16) return;
-                generateAfterDice.current = true;
                 setDiceFrom({
                     source: from?.source === 'rolls' ? 'rolls' : 'mix',
                     count: from?.count,
@@ -479,10 +471,10 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                     autoCapitalize="none" autoCorrect={false} autoComplete="off" importantForAutofill="no" />
                             </>
                         ) : null}
-                        {/* after the passphrase: saving the rolls makes the seed at once */}
+                        {/* after the passphrase, as in the Hot Vault: the dice, then Generate Seed */}
                         {dice ? (
                             <View style={styles.diceRow}>
-                                <Text style={styles.ok}>
+                                <Text style={[styles.ok, styles.diceAdded]}>
                                     {diceFrom?.source === 'rolls'
                                         ? String(loc.formatString(loc.cypherbox.seed_signer.create.dice_rolls_only, { count: diceFrom.count ?? 0 }))
                                         : loc.cypherbox.seed_signer.create.dice_added}
@@ -504,7 +496,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             </View>
                         ) : (
                             <TouchableOpacity onPress={openDice} accessibilityRole="button">
-                                <Text style={styles.link}>{loc.cypherbox.seed_signer.create.add_dice}</Text>
+                                <Text style={styles.diceAdd}>{loc.cypherbox.seed_signer.create.add_dice}</Text>
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity style={styles.primary} onPress={generate} accessibilityRole="button">
@@ -945,6 +937,16 @@ const styles = StyleSheet.create({
     diceRow: {
         marginTop: 16,
         gap: 8,
+    },
+    // the Hot Vault's dice link and line: bold green, no underline
+    diceAdd: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: colors.green,
+        marginVertical: 10,
+    },
+    diceAdded: {
+        fontWeight: '700',
     },
     diceLinks: {
         flexDirection: 'row',

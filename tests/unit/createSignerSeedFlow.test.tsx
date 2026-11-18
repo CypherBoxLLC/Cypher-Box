@@ -287,7 +287,11 @@ describe('Create a Seed', () => {
         // from 50 real-looking six-sided rolls the seed is the rolls' own hash, else the mix (diceRollsOnlyScreen.test)
         expect(dispatch).toHaveBeenCalledWith('ProvideEntropy', expect.objectContaining({ rollsOnlyFrom: 50, mixWithRng: true }));
         expect(dispatch.mock.calls[0][1]).not.toHaveProperty('minBits');
-        // saving the rolls makes the seed at once: straight to the backup, with the cross-check as a third tab
+        // as in the Hot Vault: back on Create a Seed, which says the rolls were added; Generate Seed makes the seed
+        expect(textOf(root)).not.toContain('Back up your seed');
+        expect(textOf(root)).toContain("✓ Dice rolls added, mixed with the phone's randomness");
+        await press(root, /^Generate Seed$/);
+        // the backup, with the cross-check as a third tab
         expect(textOf(root)).toContain('Back up your seed');
         expect(buttonFor(root, /^Cross-check$/)).toBeTruthy();
         expect(randomBytes).not.toHaveBeenCalled();
@@ -311,10 +315,28 @@ describe('Create a Seed from dice', () => {
         });
         await press(root, /Add your own dice rolls/);
         await act(async () => {});
+        // back on Create a Seed, as in the Hot Vault; Generate Seed makes the seed from the rolls
+        await press(root, /^Generate Seed$/);
         return { root, dispatch };
     };
 
-    it('goes straight to the backup, with the cross-check of the rolls a tab away from the words', async () => {
+    it('comes back to Create a Seed after the dice, which says they were added and are recommended', async () => {
+        const root = open();
+        expect(textOf(root)).toContain('Add your own dice rolls (recommended) 🎲');
+        const navigation = require('../../src/helpers/navigation');
+        jest.spyOn(navigation, 'default').mockImplementation((_route: any, params: any) => {
+            params.onGenerated(Buffer.alloc(16, 0), { source: 'rolls', count: 50, rolls });
+        });
+        await press(root, /Add your own dice rolls/);
+        await act(async () => {});
+        // no seed yet: nothing is made until Generate Seed
+        expect(textOf(root)).not.toContain('Back up your seed');
+        expect(assertMnemonicHealthy).not.toHaveBeenCalled();
+        expect(textOf(root)).toContain('✓ 50 dice rolls added: they alone make the seed, so EntropyLab can check it');
+        expect(buttonFor(root, /^Generate Seed$/)).toBeTruthy();
+    });
+
+    it('goes to the backup from Generate Seed, with the cross-check of the rolls a tab away from the words', async () => {
         const { root } = await withDice({ source: 'rolls', count: 50, rolls });
         expect(textOf(root)).toContain('Back up your seed');
         expect(randomBytes).not.toHaveBeenCalled();

@@ -1,18 +1,7 @@
 import React, { useEffect, useReducer, useState } from 'react';
 import PropTypes from 'prop-types';
 import BN from 'bignumber.js';
-import {
-  Alert,
-  Dimensions,
-  PixelRatio,
-  View,
-  ScrollView,
-  Text,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
-  useWindowDimensions,
-} from 'react-native';
+import { Alert, I18nManager, View, ScrollView, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { Icon } from 'react-native-elements';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
@@ -20,11 +9,10 @@ import crypto from 'crypto';
 import { randomBytes } from '../../class/rng';
 import { assertNativeRngHealthy } from '../../class/rngHealth';
 import safetyErrorText from '../../src/helpers/safetyErrorText';
-import { rollsOnlyEntropy, rollsOnlyRefusal } from '../../src/helpers/diceSeed';
+import { ROLLS_RECOMMENDED, rollsOnlyEntropy, rollsOnlyRefusal } from '../../src/helpers/diceSeed';
 import loc from '../../loc';
-import { BlueCurrentTheme, useTheme } from '../../components/themes';
+import { useTheme } from '../../components/themes';
 import { FContainer, FButton } from '../../components/FloatButtons';
-import { BlueSpacing20, BlueTabs } from '../../BlueComponents';
 import navigationStyle from '../../components/navigationStyle';
 import SafeArea from '../../components/SafeArea';
 import useProtectSecret from '../../src/custom-hooks/useProtectSecret';
@@ -178,36 +166,14 @@ export const convertToBuffer = ({ entropy, bits }) => {
   return Buffer.from(arr);
 };
 
-const Coin = ({ push }) => (
-  <View style={styles.coinRoot}>
-    <TouchableOpacity accessibilityRole="button" onPress={() => push(getEntropy(0, 2), { sides: 2, face: 1 })} style={styles.coinBody}>
-      <Image style={styles.coinImage} source={require('../../img/coin1.png')} />
-    </TouchableOpacity>
-    <TouchableOpacity accessibilityRole="button" onPress={() => push(getEntropy(1, 2), { sides: 2, face: 2 })} style={styles.coinBody}>
-      <Image style={styles.coinImage} source={require('../../img/coin2.png')} />
-    </TouchableOpacity>
-  </View>
-);
+// Six-sided dice only. The coin and the 20-sided die are gone from this screen until each has been tested through on
+// its own; the encoding below still knows them (replayRolls, getEntropy) for any rolls kept from before.
+const SIDES = 6;
 
-Coin.propTypes = {
-  push: PropTypes.func.isRequired,
-};
-
-const Dice = ({ push, sides }) => {
+const Dice = ({ push }) => {
   const { width } = useWindowDimensions();
-  const { colors } = useTheme();
-  const diceWidth = width / 4;
-  const stylesHook = StyleSheet.create({
-    dice: {
-      borderColor: colors.buttonBackgroundColor,
-    },
-    diceText: {
-      color: colors.foregroundColor,
-    },
-    diceContainer: {
-      backgroundColor: colors.elevated,
-    },
-  });
+  // three dice to a row, two rows
+  const diceWidth = Math.min(width / 4, 100);
   const diceIcon = i => {
     switch (i) {
       case 1:
@@ -226,7 +192,7 @@ const Dice = ({ push, sides }) => {
   };
 
   return (
-    <ScrollView contentContainerStyle={[styles.diceContainer, stylesHook.diceContainer]}>
+    <View style={styles.diceContainer}>
       {/*
         Face -> digit uses (i + 1) % sides, so the HIGHEST face is digit zero:
         a d6 showing 6 is 0 in base 6. That is Ian Coleman's convention in
@@ -244,55 +210,50 @@ const Dice = ({ push, sides }) => {
         already means no existing seed is reproducible from its rolls, so
         nothing depends on the old labelling.
       */}
-      {[...Array(sides)].map((_, i) => (
-        <TouchableOpacity accessibilityRole="button" key={i} onPress={() => push(getEntropy((i + 1) % sides, sides), { sides, face: i + 1 })}>
+      {[...Array(SIDES)].map((_, i) => (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={String(i + 1)}
+          key={i}
+          onPress={() => push(getEntropy((i + 1) % SIDES, SIDES), { sides: SIDES, face: i + 1 })}
+        >
           <View style={[styles.diceRoot, { width: diceWidth }]}>
-            {sides === 6 ? (
-              <Icon style={styles.diceIcon} name={diceIcon(i + 1)} size={70} color="grey" type="font-awesome-5" />
-            ) : (
-              <View style={[styles.dice, stylesHook.dice]}>
-                <Text style={stylesHook.diceText}>{i + 1}</Text>
-              </View>
-            )}
+            <Icon style={styles.diceIcon} name={diceIcon(i + 1)} size={70} color="grey" type="font-awesome-5" />
           </View>
         </TouchableOpacity>
       ))}
-    </ScrollView>
+    </View>
   );
 };
 
 Dice.propTypes = {
-  sides: PropTypes.number.isRequired,
   push: PropTypes.func.isRequired,
 };
 
-const buttonFontSize =
-  PixelRatio.roundToNearestPixel(Dimensions.get('window').width / 26) > 22
-    ? 22
-    : PixelRatio.roundToNearestPixel(Dimensions.get('window').width / 26);
-
-const Buttons = ({ pop, save, colors }) => (
-  <FContainer>
-    <FButton
-      onPress={pop}
-      icon={
-        <View style={styles.buttonsIcon}>
-          <Icon name="undo" size={buttonFontSize} type="font-awesome" color={colors.buttonAlternativeTextColor} />
+// Undo and Continue, right under the dice and the text, not floating at the bottom of the screen.
+const Buttons = ({ pop, save, colors }) => {
+  const button = [styles.actionButton, { backgroundColor: colors.buttonBackgroundColor }];
+  const label = [styles.actionText, { color: colors.buttonAlternativeTextColor }];
+  return (
+    <View style={styles.actionRow}>
+      <TouchableOpacity accessibilityRole="button" onPress={pop} style={button}>
+        <View style={styles.undoIcon}>
+          <Icon name="undo" size={16} type="font-awesome" color={colors.buttonAlternativeTextColor} />
         </View>
-      }
-      text={loc.entropy.undo}
-    />
-    <FButton
-      onPress={save}
-      icon={
-        <View style={styles.buttonsIcon}>
-          <Icon name="arrow-down" size={buttonFontSize} type="font-awesome" color={colors.buttonAlternativeTextColor} />
-        </View>
-      }
-      text={loc.entropy.save}
-    />
-  </FContainer>
-);
+        <Text style={label}>{loc.entropy.undo}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" onPress={save} style={button}>
+        <Text style={label}>{loc._.continue}</Text>
+        <Icon
+          name={I18nManager.isRTL ? 'arrow-left' : 'arrow-right'}
+          size={16}
+          type="font-awesome"
+          color={colors.buttonAlternativeTextColor}
+        />
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 Buttons.propTypes = {
   pop: PropTypes.func.isRequired,
@@ -321,8 +282,8 @@ const Entropy = () => {
   //                 die that look like real rolls, the seed is the rolls'
   //                 own hash (src/helpers/diceSeed), so EntropyLab, SeedSigner
   //                 and COLDCARD make the same words from the same rolls.
-  //                 Otherwise (fewer rolls, a coin or a d20, or rolls that look
-  //                 made up) it's the mix above, as before. minBits doesn't
+  //                 Otherwise (fewer rolls, or rolls that look made up) it's
+  //                 the mix above, as before. minBits doesn't
   //                 apply then: few rolls are carried by the phone's randomness.
   //                 onGenerated gets a second argument saying which it was,
   //                 with the rolls, and the screen goes straight back: the
@@ -337,13 +298,9 @@ const Entropy = () => {
   useEffect(() => {
     if (rollsOnlyFrom) navigation.setOptions?.({ headerTitle: loc.cypherbox.seed_signer.dice.title });
   }, [navigation, rollsOnlyFrom]);
-  const [tab, setTab] = useState(1);
   const [show, setShow] = useState(false);
   const { colors } = useTheme();
   const stylesHook = StyleSheet.create({
-    entropy: {
-      backgroundColor: colors.inputBackgroundColor,
-    },
     entropyText: {
       color: colors.foregroundColor,
     },
@@ -463,28 +420,25 @@ const Entropy = () => {
   const hex = entropyToHex(entropy);
   const limitDisplay = limit || ENTROPY_LIMIT;
 
-  // Wording and the expected number of throws, per tab. The counter above
-  // measures BITS PUSHED, which is exactly the thing that misled people here
-  // before: it cannot tell a real roll from a repeated tap. So the screen has
-  // to say in words what the number cannot.
+  // The counter below measures BITS PUSHED, which is exactly the thing that
+  // misled people here before: it cannot tell a real roll from a repeated tap.
+  // So the screen has to say in words what the number cannot.
   //
-  // AVG_BITS_PER_THROW is the real yield of `getEntropy`, not log2(sides).
-  // A d6 maps faces 1-4 to 2 bits and faces 5-6 to 1 bit, averaging 10/6, and
-  // a d20 maps 16 values to 4 bits and 4 values to 2 bits, averaging 3.6. The
-  // encoding is lossy but sound: the bits it does emit are uniform, so 128 of
-  // them from real throws really are 128 bits.
-  const isCoin = tab === 0;
-  const sourceNoun = isCoin ? 'coin' : 'die';
-  const landedNoun = isCoin ? 'side' : 'face';
-  const throwsNoun = isCoin ? 'flips' : 'rolls';
-  const throwNoun = isCoin ? 'flip' : 'roll';
-  const AVG_BITS_PER_THROW = [1, 10 / 6, 3.6];
-  const typicalThrows = Math.ceil(limitDisplay / AVG_BITS_PER_THROW[tab]);
+  // 10/6 bits per roll is the real yield of `getEntropy` for a d6, not
+  // log2(6): it maps faces 1-4 to 2 bits and faces 5-6 to 1 bit. The encoding
+  // is lossy but sound: the bits it does emit are uniform, so 128 of them from
+  // real rolls really are 128 bits. That is about 77 rolls, the same count the
+  // top recommends (ROLLS_RECOMMENDED).
+  const typicalThrows = Math.ceil(limitDisplay / (10 / 6));
   const bits = Math.min(entropy.bits, limitDisplay);
-  // what the top shows: the throws themselves, since "3 of 128 bits" read like three rolls
-  const throws = rollsOnlyFrom
-    ? String(loc.formatString(loc.cypherbox.seed_signer.dice.count, { count: rolls.filter(r => r.sides === 6).length, min: rollsOnlyFrom }))
-    : `${faces.length} ${faces.length === 1 ? throwNoun : throwsNoun}`;
+  // what the top shows: the rolls against the recommended count, since "3 of 128 bits" read like three rolls. The
+  // seed-signer counts every roll it keeps; the Hot Vault, the rolls the bit counter took.
+  const throws = String(
+    loc.formatString(loc.cypherbox.seed_signer.dice.count, {
+      count: rollsOnlyFrom ? rolls.filter(r => r.sides === SIDES).length : faces.length,
+      recommended: ROLLS_RECOMMENDED,
+    }),
+  );
 
   if (verify) {
     const row = (label, buf) => (
@@ -497,7 +451,7 @@ const Entropy = () => {
       <SafeArea edges={SAFE_EDGES}>
         <ScrollView contentContainerStyle={styles.verifyScroll}>
           <Text style={[styles.verifyTitle, stylesHook.entropyText]}>Check where this key came from</Text>
-          <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
+          <Text style={[styles.guidanceText, stylesHook.entropyText]}>
             None of this is saved or sent anywhere. It is shown once, so you can check for yourself that this screen really used your rolls.
           </Text>
 
@@ -548,75 +502,48 @@ const Entropy = () => {
     );
   }
 
+  // One text style for everything under the dice, and the whole block (count, dice, text, bits, buttons) kept
+  // together in the middle of the screen. It scrolls on a small screen.
+  const line = [styles.guidanceText, stylesHook.entropyText];
   return (
     <SafeArea edges={SAFE_EDGES}>
-      <BlueSpacing20 />
-      <View style={[styles.entropy, stylesHook.entropy]}>
-        <Text style={[styles.entropyText, stylesHook.entropyText]}>{throws}</Text>
-      </View>
+      <ScrollView contentContainerStyle={styles.page}>
+        <Text style={[styles.countText, stylesHook.entropyText]}>{throws}</Text>
 
-      <BlueTabs
-        active={tab}
-        onSwitch={setTab}
-        tabs={[
-          // eslint-disable-next-line react/no-unstable-nested-components
-          ({ active }) => (
-            <Icon name="toll" type="material" color={active ? colors.buttonAlternativeTextColor : colors.buttonBackgroundColor} />
-          ),
-          // eslint-disable-next-line react/no-unstable-nested-components
-          ({ active }) => (
-            <Icon name="dice" type="font-awesome-5" color={active ? colors.buttonAlternativeTextColor : colors.buttonBackgroundColor} />
-          ),
-          // eslint-disable-next-line react/no-unstable-nested-components
-          ({ active }) => (
-            <Icon name="dice-d20" type="font-awesome-5" color={active ? colors.buttonAlternativeTextColor : colors.buttonBackgroundColor} />
-          ),
-        ]}
-      />
+        <Dice push={push} />
 
-      {tab === 0 && <Coin push={push} />}
-      {tab === 1 && <Dice sides={6} push={push} />}
-      {tab === 2 && <Dice sides={20} push={push} />}
-
-      <View style={styles.guidance}>
-        {instruction ? <Text style={[styles.instructionText, stylesHook.entropyText]}>{instruction}</Text> : null}
-        {rollsOnlyFrom ? (
-          // the seed-signer's, in the app's language: its rolls can make the seed alone, so nothing else covers for made-up ones
-          <>
-            <Text style={[styles.guidanceHow, stylesHook.entropyText]}>{loc.cypherbox.seed_signer.dice.how}</Text>
-            <Text style={styles.guidanceWarning}>{loc.cypherbox.seed_signer.dice.real_dice}</Text>
-            <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
-              {String(loc.formatString(loc.cypherbox.seed_signer.dice.rule, { min: rollsOnlyFrom }))}
-            </Text>
-            <Text style={styles.guidanceWarning}>{loc.cypherbox.seed_signer.dice.paper}</Text>
-          </>
-        ) : (
-          <>
-            <Text style={[styles.guidanceHow, stylesHook.entropyText]}>
-              {`${isCoin ? 'Flip' : 'Roll'} a real ${sourceNoun}, then tap the ${landedNoun} it landed on. It takes about ${typicalThrows} ${throwsNoun}.`}
-            </Text>
-            <Text style={styles.guidanceWarning}>
-              {`Tapping the same ${landedNoun} again and again, or any pattern you make up yourself, does not count as random. The number above still goes up, but your key gets no safer.`}
-            </Text>
-            <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
-              {`Your phone always adds randomness of its own as well, so adding real ${throwsNoun} can only make your key safer, never weaker.`}
-            </Text>
-          </>
-        )}
-        {/* the bits, below: what the counter used to show on top. Tapping shows them in hex, except for the seed-signer,
-            whose seed from rolls alone isn't these bits */}
-        <TouchableOpacity accessibilityRole="button" disabled={!!rollsOnlyFrom} onPress={() => setShow(!show)}>
-          <Text style={[styles.bitsText, stylesHook.entropyText]}>
-            {rollsOnlyFrom
-              ? String(loc.formatString(loc.cypherbox.seed_signer.dice.bits, { bits, limit: limitDisplay }))
-              : show
-              ? hex
-              : `${bits} of ${limitDisplay} bits`}
+        <View style={styles.guidance}>
+          {instruction ? <Text style={line}>{instruction}</Text> : null}
+          {/* The same lines for the Hot Vault and the seed-signer, in the app's language, apart from what really differs:
+              the Hot Vault always mixes in the phone's randomness, while the seed-signer's rolls make the seed alone from
+              rollsOnlyFrom on, so nothing else covers for made-up ones, and are written down for the cross-check. */}
+          <Text style={line}>
+            {String(loc.formatString(loc.cypherbox.seed_signer.dice.how, { count: rollsOnlyFrom ? ROLLS_RECOMMENDED : typicalThrows }))}
           </Text>
-        </TouchableOpacity>
-      </View>
+          {rollsOnlyFrom ? (
+            <>
+              <Text style={line}>{String(loc.formatString(loc.cypherbox.seed_signer.dice.real_dice, { min: rollsOnlyFrom }))}</Text>
+              <Text style={line}>
+                {String(loc.formatString(loc.cypherbox.seed_signer.dice.rule, { min: rollsOnlyFrom, recommended: ROLLS_RECOMMENDED }))}
+              </Text>
+              <Text style={line}>{loc.cypherbox.seed_signer.dice.paper}</Text>
+            </>
+          ) : (
+            <>
+              <Text style={line}>{loc.cypherbox.vault.saving_vault_intro.dice_made_up}</Text>
+              <Text style={line}>{loc.cypherbox.vault.saving_vault_intro.dice_phone_adds}</Text>
+            </>
+          )}
+          {/* the bits: tapping shows them in hex, except for the seed-signer, whose seed from rolls alone isn't these bits */}
+          <TouchableOpacity accessibilityRole="button" disabled={!!rollsOnlyFrom} onPress={() => setShow(!show)}>
+            <Text style={line}>
+              {!rollsOnlyFrom && show ? hex : String(loc.formatString(loc.cypherbox.seed_signer.dice.bits, { bits, limit: limitDisplay }))}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      <Buttons pop={pop} save={save} colors={colors} />
+        <Buttons pop={pop} save={save} colors={colors} />
+      </ScrollView>
     </SafeArea>
   );
 };
@@ -624,24 +551,60 @@ const Entropy = () => {
 Entropy.navigationOptions = navigationStyle({}, opts => ({ ...opts, headerTitle: loc.entropy.title }));
 
 const styles = StyleSheet.create({
-  entropy: {
-    padding: 5,
-    marginLeft: 10,
-    marginRight: 10,
-    borderRadius: 9,
-    minHeight: 49,
-    paddingHorizontal: 8,
+  // the dice screen: count, dice, text, bits and buttons as one block in the middle, scrolling on a small screen
+  page: {
+    flexGrow: 1,
     justifyContent: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
-  entropyText: {
-    fontSize: 15,
-    fontFamily: 'Courier',
+  countText: {
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  diceContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    maxWidth: 330,
   },
   guidance: {
-    marginHorizontal: 20,
-    marginBottom: 90,
+    marginTop: 8,
+  },
+  // the one style for every line of text under the dice
+  guidanceText: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    opacity: 0.85,
+    marginTop: 8,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  actionButton: {
+    flex: 1,
+    maxWidth: 170,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 25,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginHorizontal: 6,
+  },
+  actionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginHorizontal: 8,
+  },
+  undoIcon: {
+    transform: [{ rotate: '-45deg' }],
   },
   verifyScroll: {
     paddingHorizontal: 20,
@@ -688,82 +651,10 @@ const styles = StyleSheet.create({
     color: '#E0A030',
     lineHeight: 17,
   },
-  bitsText: {
-    fontSize: 12,
-    fontFamily: 'Courier',
-    textAlign: 'center',
-    opacity: 0.6,
-    marginTop: 14,
-  },
-  instructionText: {
-    fontSize: 13,
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-  guidanceHow: {
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 4,
-    opacity: 0.9,
-  },
-  guidanceWarning: {
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 10,
-    fontWeight: '600',
-    color: '#E0A030',
-  },
-  guidanceCalm: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 10,
-    opacity: 0.6,
-  },
-  coinRoot: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  coinBody: {
-    flex: 0.33,
-    justifyContent: 'center',
-    alignItems: 'center',
-    aspectRatio: 1,
-    borderWidth: 1,
-    borderRadius: 5,
-    borderColor: BlueCurrentTheme.colors.lightButton,
-    margin: 10,
-    padding: 10,
-    maxWidth: 100,
-    maxHeight: 100,
-  },
-  coinImage: {
-    aspectRatio: 1,
-    width: '100%',
-    height: '100%',
-    borderRadius: 75,
-  },
-  diceContainer: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    paddingBottom: 100,
-  },
   diceRoot: {
     aspectRatio: 1,
     maxWidth: 100,
     maxHeight: 100,
-  },
-  dice: {
-    margin: 3,
-    borderWidth: 1,
-    borderRadius: 5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    aspectRatio: 1,
-    borderColor: BlueCurrentTheme.colors.buttonBackgroundColor,
   },
   diceIcon: {
     margin: 3,
@@ -771,11 +662,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     aspectRatio: 1,
     color: 'grey',
-  },
-  buttonsIcon: {
-    backgroundColor: 'transparent',
-    transform: [{ rotate: '-45deg' }],
-    alignItems: 'center',
   },
 });
 

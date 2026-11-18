@@ -60,7 +60,7 @@ Self-custodial: you can exit to the chain without the server's permission.
 
 * Keys generated and stored on-device, never leave it
 * SegWit-first, BIP39, RBF + CPFP
-* **Roll your own entropy**: generate the 12 words from your own dice or coin rolls instead of the device RNG
+* **Roll your own entropy**: generate the 12 words from your own dice rolls instead of the device RNG
 * **Optional BIP39 passphrase**, kept on the phone and never sent anywhere by the app (an iPhone's iCloud or encrypted computer backup includes it): it protects the paper backup, and recovery needs the seed *and* the passphrase
 * **Coin control** with UTXO visualization: label, consolidate, pick coins
 * Cold Vault: watch-only + PSBT signing with **BBQr animated QR** for airgapped hardware

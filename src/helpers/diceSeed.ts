@@ -11,6 +11,14 @@ import * as bitcoin from 'bitcoinjs-lib';
  * recommendation (50 x log2 6 = 129 bits). */
 export const ROLLS_ONLY_MIN = 50;
 
+/**
+ * The rolls the dice screen asks for: 50 is the least that makes a seed on its own (about 129 bits from a fair die),
+ * so the screen recommends more. 77 rolls are about 199 bits from a fair die, which still leaves more than 128 for a
+ * die that isn't perfectly even. It is also about the number of rolls the Hot Vault's bit counter needs for its 128
+ * bits (10/6 bits a roll).
+ */
+export const ROLLS_RECOMMENDED = 77;
+
 /** One roll as the dice screen records it: the face that came up (1 to `sides`), and the die (2 for a coin). */
 export interface DiceRoll {
     sides: number;
