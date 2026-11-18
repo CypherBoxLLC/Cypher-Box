@@ -3,8 +3,10 @@
  *
  * Strike appears only in the countries on Strike's published list, never
  * in the EEA or the UK. On iOS the App Store storefront decides, with an
- * EEA or UK device region as an extra veto; Android has no storefront and
- * uses the device region. Both gates fail CLOSED when nothing can be read.
+ * EEA or UK device region as an extra veto. Android has no storefront and
+ * combines the phone's language, SIM and network country instead; those
+ * cases live in androidRegionGate.test.ts. Both gates fail CLOSED when
+ * nothing can be read.
  */
 
 export {};
@@ -65,8 +67,6 @@ describe('isStrikeAllowed on iOS', () => {
         for (const storefront of ['IND', 'KOR']) {
             expect(loadGate({ os: 'ios', storefront, region: 'US' }).isStrikeAllowed()).toBe(false);
         }
-        expect(loadGate({ os: 'android', region: 'IN' }).isStrikeAllowed()).toBe(false);
-        expect(loadGate({ os: 'android', region: 'KR' }).isStrikeAllowed()).toBe(false);
     });
 
     it('hides Strike where Strike does not operate', () => {
@@ -115,20 +115,11 @@ describe('isStrikeAllowed on iOS', () => {
 });
 
 describe('isStrikeAllowed on Android', () => {
-    it('follows the device region', () => {
-        expect(loadGate({ os: 'android', region: 'US' }).isStrikeAllowed()).toBe(true);
-        expect(loadGate({ os: 'android', region: 'sv' }).isStrikeAllowed()).toBe(true);
-        expect(loadGate({ os: 'android', region: 'DE' }).isStrikeAllowed()).toBe(false);
-        expect(loadGate({ os: 'android', region: 'GB' }).isStrikeAllowed()).toBe(false);
-        expect(loadGate({ os: 'android', region: 'CA' }).isStrikeAllowed()).toBe(false);
-    });
-
-    it('never reads a storefront, even if one is present', () => {
-        expect(loadGate({ os: 'android', storefront: 'USA', region: 'GB' }).isStrikeAllowed()).toBe(false);
-    });
-
-    it('fails closed when the region cannot be read', () => {
-        expect(loadGate({ os: 'android', region: null }).isStrikeAllowed()).toBe(false);
+    it('does not take react-native-localize\'s country, which defaults to US', () => {
+        // No CypherRegionSignals module here, so nothing is known and the
+        // gate fails closed. It used to show Strike on this "US".
+        expect(loadGate({ os: 'android', region: 'US' }).isStrikeAllowed()).toBe(false);
+        expect(loadGate({ os: 'android', storefront: 'USA', region: 'US' }).isStrikeAllowed()).toBe(false);
     });
 });
 

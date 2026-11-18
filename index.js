@@ -4,7 +4,7 @@ import { AppRegistry } from 'react-native';
 import App from './App';
 import { BlueStorageProvider } from './blue_modules/storage-context';
 import { registerArkNotificationTapHandler } from './src/services/ark/notificationHandler';
-import { refreshStorefrontCountry } from './src/services/featureFlags';
+import { refreshStorefrontCountry, watchAndroidRegionSignals } from './src/services/featureFlags';
 import { isSeedSignerLocked, noteLockForNativeStartUp } from './src/services/seedSignerLock';
 import { watchStorefrontCountry } from './src/services/storefrontWatch';
 
@@ -34,6 +34,12 @@ else noteLockForNativeStartUp();
 // for a while until it answers. The lock is checked before each read, as the
 // app can be turned into a seed-signer while it runs.
 if (!isSeedSignerLocked()) watchStorefrontCountry(isSeedSignerLocked);
+
+// On Android the gates read the phone's SIM, network and language country
+// instead (see featureFlags). The network country can arrive after launch
+// and changes when the phone crosses a border, so they are read now and
+// again on every return to the foreground, with the same lock check.
+if (!isSeedSignerLocked()) watchAndroidRegionSignals(isSeedSignerLocked);
 
 const BlueAppComponent = () => {
   useEffect(() => {
