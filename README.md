@@ -73,7 +73,7 @@ Self-custodial: you can exit to the chain without the server's permission.
 
 Every release is **reproducible**:
 
-* CI builds the unsigned bundle **twice** in a [pinned container](./Dockerfile.build) and fails on any byte difference
+* CI builds the unsigned bundle **twice, on two different machines**, in a [pinned container](./Dockerfile.build) and fails on any byte difference
 * Releases ship with the unsigned artifact + SHA-256 and a signed git tag: [releases](https://github.com/CypherBoxLLC/Cypher-Box/releases)
 * Rebuild it yourself: `make repro-verify` at any release tag
 * [walletscrutiny/](./walletscrutiny) contains the verification script for comparing the Play Store binary against this source

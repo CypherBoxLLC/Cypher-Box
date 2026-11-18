@@ -86,6 +86,13 @@ make repro-build     # one build -> ./out/app-release.aab + its SHA-256
 make repro-verify    # build twice, assert the two SHA-256s match
 ```
 
+`make repro-verify` builds twice on the same machine, so it cannot catch output
+that depends on the machine. CI's `build-verify.yml` covers that: it builds the
+same commit on two runners with different Ubuntu images, each on a freshly made
+ext4 file system with its own directory hash seed
+(`make repro-build BUILD_DIR=<empty dir on that file system>`), and fails unless
+both bundles have the same SHA-256.
+
 - `Dockerfile.build` pins the whole toolchain (see §1). SDK packages are
   installed with `sdkmanager`, which integrity-checks each one.
 - `make repro-build` mounts the repo read-only at `/src`, copies it into a

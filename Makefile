@@ -18,11 +18,22 @@ OUT     := $(CURDIR)/out
 # override the pinned default and silently skip the integrity check.
 CMDLINE_TOOLS_SHA256 ?=
 
+# Optional, for `make repro-build` only: an EMPTY host directory to build in,
+# mounted as the container's /build, where the repo copy, node_modules and the
+# Gradle home all live. Left unset, the build stays inside the container's own
+# file system. build-verify.yml points it at a freshly made file system, so its
+# two machines list every build directory in a different order:
+#   make repro-build BUILD_DIR=/mnt/build-fs/build
+BUILD_DIR ?=
+BUILD_MOUNT := $(if $(BUILD_DIR),-v "$(BUILD_DIR)":/build)
+
 # The build steps run INSIDE the container. The repo (incl. .git, so the
 # generated current-branch.json / release-notes.json are deterministic for a
 # tagged checkout) is copied out of the read-only mount into a writable dir;
 # node_modules + prior build output are dropped so the build starts clean.
+# /build must start empty, or an earlier build's files would leak into this one.
 CONTAINER_BUILD := set -euo pipefail; \
+  if [ -n "$$(ls -A /build)" ]; then echo "/build is not empty; BUILD_DIR must be an empty directory" >&2; exit 1; fi; \
   cp -a /src /build/repo; \
   rm -rf /build/repo/.claude; \
   cd /build/repo; \
@@ -49,6 +60,7 @@ repro-build: repro-image
 	docker run --rm \
 	  -v "$(CURDIR)":/src:ro \
 	  -v "$(OUT)":/out \
+	  $(BUILD_MOUNT) \
 	  $(IMAGE) bash -c '$(CONTAINER_BUILD)'
 	@echo "==> Unsigned release AAB + SHA-256:"
 	@shasum -a 256 $(OUT)/app-release.aab
