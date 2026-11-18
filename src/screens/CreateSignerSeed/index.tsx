@@ -30,7 +30,9 @@ import {
     nextFrame,
     rootFromMnemonic,
     seedQRGrid,
+    signerAccountOf,
     signerPublicKey,
+    signerPublicKeyFromAccount,
 } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, widths } from "@Cypher/style-guide";
@@ -67,6 +69,29 @@ function Instruction({ number, title, children }: { number: number; title: strin
     );
 }
 
+/**
+ * The key screen's choice: remember this seed's public key so "Receive - Check Address" works without the SeedQR (on
+ * by default), or keep nothing and scan the SeedQR for every new receive address.
+ */
+function RememberKey({ remembered, hasPassphrase, onChange }: {
+    remembered: boolean;
+    hasPassphrase: boolean;
+    onChange: (on: boolean) => void;
+}) {
+    return (
+        <View style={styles.remember}>
+            <View style={styles.row}>
+                <Text style={styles.label}>{loc.cypherbox.seed_signer.create.remember}</Text>
+                <Switch value={remembered} onValueChange={onChange} accessibilityLabel={loc.cypherbox.seed_signer.create.remember} />
+            </View>
+            <Text style={styles.note}>
+                {remembered ? loc.cypherbox.seed_signer.create.remember_on : loc.cypherbox.seed_signer.create.remember_off}
+                {hasPassphrase && !remembered ? ` ${loc.cypherbox.seed_signer.create.remember_passphrase}` : ''}
+            </Text>
+        </View>
+    );
+}
+
 function Warning({ children }: { children: React.ReactNode }) {
     return (
         <View style={styles.warningRow}>
@@ -80,18 +105,27 @@ function Warning({ children }: { children: React.ReactNode }) {
  * A seed-signer's seed, made and shown without ever being saved: generated in memory (dice rolls optional, mixed with
  * the phone's randomness), backed up as words and a SeedQR, the copy checked, then only the public side shown, for the
  * watch-only wallet. Leaving the screen drops it. Nothing of the seed goes to the app's storage or the Keychain, so
- * nothing outlives the app (on iOS the Keychain does) or waits to be wiped; the store only notes that a key was shown,
- * which puts signing first on the signer's home. With `mode: 'show'` it loads a SeedQR or typed words to show that
- * seed's public key again, saving nothing of it either.
+ * nothing outlives the app (on iOS the Keychain does) or waits to be wiped; the store notes that a key was shown, which
+ * puts signing first on the signer's home, and remembers the public key unless asked not to. With `mode: 'show'` it
+ * loads a SeedQR or typed words to show that seed's public key again, saving nothing of the seed either; with
+ * `mode: 'remembered'` it shows a public key remembered on this phone, without the seed.
  *
  * Making the words is instant. The public key needs the BIP39 seed, the slow step, so it's worked out once, after the
  * copy is checked, with the native PBKDF2 when the phone has it.
  */
 export default function CreateSignerSeed({ route, navigation }: { route: any; navigation: any }) {
-    const showOnly = route?.params?.mode === 'show';
+    const mode = route?.params?.mode;
+    const showOnly = mode === 'show' || mode === 'remembered';
     useProtectSecret();
 
-    const [step, setStep] = useState<Step>(showOnly ? 'load' : 'intro');
+    // a public key remembered on this phone, read once: it stays on screen if it's forgotten here. If it's gone
+    // already, the SeedQR shows it instead.
+    const [rememberedKey] = useState<SignerPublicKey | null>(() => {
+        const fingerprint = mode === 'remembered' ? String(route?.params?.fingerprint ?? '').toLowerCase() : '';
+        const account = fingerprint ? useAuthStore.getState().signerAccounts?.[fingerprint] : undefined;
+        return account ? signerPublicKeyFromAccount(account) : null;
+    });
+    const [step, setStep] = useState<Step>(rememberedKey ? 'key' : showOnly ? 'load' : 'intro');
     const [dice, setDice] = useState<Buffer | null>(null);
     const [usePassphrase, setUsePassphrase] = useState(false);
     const [passphrase, setPassphrase] = useState('');
@@ -100,8 +134,12 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     const [revealed, setRevealed] = useState(false);
     const [tab, setTab] = useState<BackupTab>('words');
     const [typed, setTyped] = useState('');
-    const [info, setInfo] = useState<SignerPublicKey | null>(null);
+    const [info, setInfo] = useState<SignerPublicKey | null>(rememberedKey);
     const [deriving, setDeriving] = useState(false);
+    // whether the key on screen came with a passphrase: such a key isn't remembered unless asked
+    const [keyHasPassphrase, setKeyHasPassphrase] = useState(false);
+    const { signerAccounts, addSignerAccount, removeSignerAccount } = useAuthStore();
+    const [showMultisigKey, setShowMultisigKey] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const check = useSeedQRCheck(mnemonic);
     // a seed is only made or loaded while no server answers: on a phone that's online, it would be a hot wallet
@@ -169,6 +207,10 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
             await nextFrame();
             const shown = signerPublicKey(await rootFromMnemonic(phrase, pass));
             setInfo(shown);
+            setKeyHasPassphrase(!!pass);
+            // remembered for address checks unless there's a passphrase: keeping that key would show this phone holds a
+            // passphrase wallet
+            if (!pass) addSignerAccount(signerAccountOf(shown));
             // from now on the signer's home puts signing first, and after a new seed it says once that it's backed up
             useAuthStore.getState().setSignerKeyShown(true);
             if (from === 'created') noteSeedBackedUp(shown.fingerprint);
@@ -436,7 +478,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                             {loc.cypherbox.seed_signer.create.check_body}
                         </Instruction>
                         <Instruction number={2} title={loc.cypherbox.seed_signer.create.watch_only_title}>
-                            {loc.cypherbox.seed_signer.create.watch_only_body}
+                            {`${loc.cypherbox.seed_signer.create.watch_only_body} ${loc.cypherbox.seed_signer.create.watch_only_multisig}`}
                         </Instruction>
                         <Instruction number={3} title={loc.cypherbox.seed_signer.create.sign_title}>
                             {loc.cypherbox.seed_signer.create.sign_body}
@@ -509,6 +551,36 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                 <SelectableText key={a} selectable style={styles.mono}>{`${i}  ${a}`}</SelectableText>
                             ))}
                         </View>
+                        <RememberKey
+                            remembered={!!signerAccounts?.[info.fingerprint.toLowerCase()]}
+                            hasPassphrase={keyHasPassphrase}
+                            onChange={on => (on ? addSignerAccount(signerAccountOf(info)) : removeSignerAccount(info.fingerprint.toLowerCase()))}
+                        />
+                        {info.multisigKey ? (
+                            <TouchableOpacity onPress={() => setShowMultisigKey(v => !v)} accessibilityRole="button">
+                                <Text style={styles.link}>
+                                    {showMultisigKey ? loc.cypherbox.seed_signer.create.multisig_hide : loc.cypherbox.seed_signer.create.multisig_show}
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <Text style={styles.note}>{loc.cypherbox.seed_signer.create.multisig_from_seed}</Text>
+                        )}
+                        {showMultisigKey && info.multisigKey ? (
+                            <View style={styles.multisig}>
+                                <Text style={styles.subtitle}>{loc.cypherbox.seed_signer.create.multisig_title}</Text>
+                                <Text style={styles.body}>{loc.cypherbox.seed_signer.create.multisig_body}</Text>
+                                <View style={styles.qr}>
+                                    <ScannableQR value={info.multisigKey} width={widths - 48} />
+                                </View>
+                                <SelectableText selectable style={styles.mono}>{info.multisigKey}</SelectableText>
+                                <TouchableOpacity style={styles.secondary} onPress={() => {
+                                    Clipboard.setString(info.multisigKey);
+                                    SimpleToast.show(loc.cypherbox.seed_signer.create.multisig_key_copied, SimpleToast.SHORT);
+                                }} accessibilityRole="button">
+                                    <Text h3>{loc.cypherbox.seed_signer.create.copy_multisig_key}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : null}
                         <Text style={styles.note}>{loc.cypherbox.seed_signer.create.not_kept}</Text>
                         <TouchableOpacity style={styles.primary} onPress={done} accessibilityRole="button">
                             <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.done}</Text>
@@ -704,6 +776,12 @@ const styles = StyleSheet.create({
     warning: {
         marginHorizontal: 0,
     },
+    remember: {
+        marginTop: 16,
+        paddingTop: 4,
+        borderTopWidth: 1,
+        borderTopColor: '#444',
+    },
     instruction: {
         flexDirection: 'row',
         gap: 12,
@@ -776,6 +854,18 @@ const styles = StyleSheet.create({
     facts: {
         marginTop: 16,
         gap: 4,
+    },
+    multisig: {
+        marginTop: 8,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#444',
+    },
+    subtitle: {
+        fontSize: 17,
+        lineHeight: 24,
+        fontFamily: 'Archivo-SemiBold',
+        marginBottom: 8,
     },
     sectionTitle: {
         fontSize: 17,

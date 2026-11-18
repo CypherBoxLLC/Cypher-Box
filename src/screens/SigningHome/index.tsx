@@ -5,7 +5,7 @@ import { getBuildNumber, getVersion } from "react-native-device-info";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { SignerAccount, dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
@@ -26,17 +26,21 @@ import SignerButton from "./SignerButton";
  * the Cold Vault, send and receive are out of the way either way. "Connected" is only claimed when the app's Electrum
  * server answers; no answer proves nothing.
  *
- * Without a Hot Vault, making a seed comes first until this phone has shown a seed's public key or signed. After that
- * signing does: the seed is never kept, so a home that still led with making one would look as if it had been lost.
+ * Without a Hot Vault, making a seed comes first until this phone has shown a seed's public key, remembers one, has a
+ * multisig wallet or has signed. After that signing does: the seed is never kept, so a home that still led with making
+ * one would look as if it had been lost. The public keys it remembers are listed, to show again without the SeedQR.
  */
 export default function SigningHome() {
-    const { walletID, vaultTab, setVaultTab, signedOnThisPhone, signerKeyShown } = useAuthStore();
+    const { walletID, vaultTab, setVaultTab, signerWallets, signerAccounts, signedOnThisPhone, signerKeyShown } = useAuthStore();
+    const multisigCount = Object.keys(signerWallets ?? {}).length;
+    // oldest first, as Receive - Check Address lists them
+    const remembered: SignerAccount[] = Object.values(signerAccounts ?? {}).sort((a, b) => a.addedAt - b.addedAt);
     const { wallets, walletsInitialized } = useContext(BlueStorageContext);
     // the app's network switch doesn't count here: the probe itself is how a seed-signer knows it's offline
     const connection = useElectrumConnection(true, false);
     const wallet = wallets?.find((w: any) => w.getID() === walletID);
     const canSign = typeof wallet?.cosignPsbt === 'function' && !!wallet?.allowCosignPsbt?.();
-    const signingFirst = !!(signedOnThisPhone || signerKeyShown);
+    const signingFirst = !!(signedOnThisPhone || signerKeyShown || remembered.length || multisigCount);
 
     // a seed just made and backed up is mentioned once, when the home is next shown, and not again after the user moves on
     const [backedUp, setBackedUp] = useState<string | null>(null);
@@ -116,6 +120,20 @@ export default function SigningHome() {
                 </View>
             </View>
 
+            {/* public keys only (signerAccounts): each shows again with its first addresses, without the SeedQR */}
+            {remembered.length ? (
+                <View style={styles.remembered}>
+                    <Text style={styles.sectionTitle}>{loc.cypherbox.seed_signer.home.remembered_title}</Text>
+                    {remembered.map(account => (
+                        <SignerButton
+                            key={account.fingerprint}
+                            label={account.fingerprint.toUpperCase()}
+                            onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'remembered', fingerprint: account.fingerprint })}
+                        />
+                    ))}
+                </View>
+            ) : null}
+
             <View style={styles.buttons}>
                 {signingFirst ? null : (
                     <SignerButton label={loc.cypherbox.seed_signer.sign_transaction} onPress={() => startSigning()} />
@@ -123,6 +141,18 @@ export default function SigningHome() {
                 <SignerButton
                     label={loc.cypherbox.seed_signer.show_key}
                     onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'show' })}
+                />
+                {/* a watch-only wallet's or multisig app's receive address, checked before it's used: a single-key one with
+                    the seed's SeedQR, a multisig one against the wallets below */}
+                <SignerButton label={loc.cypherbox.seed_signer.check_address} onPress={() => dispatchNavigate('CheckSignerAddress')} />
+                {/* one key of a multisig made in Nunchuk, Sparrow or BlueWallet: the wallets it signs for */}
+                <SignerButton
+                    label={
+                        multisigCount
+                            ? String(loc.formatString(loc.cypherbox.seed_signer.multisig_wallets_count, { count: multisigCount }))
+                            : loc.cypherbox.seed_signer.multisig_wallets
+                    }
+                    onPress={() => dispatchNavigate('SignerWallets')}
                 />
                 {signingFirst ? (
                     <SignerButton label={loc.cypherbox.seed_signer.home.create_another} onPress={() => dispatchNavigate('CreateSignerSeed')} />
@@ -180,6 +210,16 @@ const styles = StyleSheet.create({
     },
     card: {
         marginTop: 28,
+    },
+    remembered: {
+        marginTop: 28,
+    },
+    sectionTitle: {
+        // in line with the buttons, which bring their own 20 at the sides
+        marginHorizontal: 20,
+        marginBottom: 10,
+        fontSize: 14,
+        color: colors.gray.light,
     },
     buttons: {
         // the buttons bring their own 20 at the sides, like the signer's
