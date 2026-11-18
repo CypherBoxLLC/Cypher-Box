@@ -228,7 +228,7 @@ describe('refreshing the Android signals', () => {
         expect(shows()).toEqual({ strike: true, coinos: true });
 
         phone.now = { language: 'US', sim: null, network: ['de'] };
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(shows()).toEqual({ strike: false, coinos: false });
         expect(calls).toBe(1);
         expect(gate.getRegionGateVersion()).toBe(1);
@@ -239,8 +239,8 @@ describe('refreshing the Android signals', () => {
         let calls = 0;
         gate.subscribeRegionGate(() => { calls += 1; });
         phone.now = { language: 'US', sim: 'us', network: ['us'] }; // more signals, same country
-        await gate.refreshRegionSignals();
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(calls).toBe(0);
         expect(gate.getRegionGateVersion()).toBe(0);
     });
@@ -248,7 +248,7 @@ describe('refreshing the Android signals', () => {
     it('keeps a network country that drops out, such as in airplane mode', async () => {
         const { gate, phone, shows } = loadGate({ language: 'US', sim: null, network: ['de'] });
         phone.now = { language: 'US', sim: null, network: [] };
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(shows()).toEqual({ strike: false, coinos: false });
         expect(gate.getRegionGateVersion()).toBe(0);
     });
@@ -256,7 +256,7 @@ describe('refreshing the Android signals', () => {
     it('keeps the last SIM country while the phone reads neither a SIM nor a network', async () => {
         const { gate, phone, shows } = loadGate({ language: 'US', sim: 'gb', network: [] });
         phone.now = { language: 'US', sim: null, network: [] };
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(shows()).toEqual({ strike: false, coinos: false });
     });
 
@@ -265,7 +265,7 @@ describe('refreshing the Android signals', () => {
         const { gate, phone, shows } = loadGate({ language: 'US', sim: 'de', network: ['de'] });
         expect(shows()).toEqual({ strike: false, coinos: false });
         phone.now = { language: 'US', sim: null, network: ['us'] };
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(shows()).toEqual({ strike: true, coinos: true });
         expect(gate.getRegionGateVersion()).toBe(1);
     });
@@ -274,7 +274,7 @@ describe('refreshing the Android signals', () => {
         const { gate, phone, shows } = loadGate({ language: 'US', sim: 'us', network: ['de'] });
         expect(shows()).toEqual({ strike: false, coinos: false });
         phone.now = { language: 'US', sim: 'us', network: ['us'] };
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(shows()).toEqual({ strike: true, coinos: true });
         expect(gate.getRegionGateVersion()).toBe(1);
     });
@@ -284,48 +284,81 @@ describe('refreshing the Android signals', () => {
         const { gate, phone, shows } = loadGate({ language: 'DE', sim: null, network: [] });
         expect(shows()).toEqual({ strike: false, coinos: false });
         phone.now = { language: 'US', sim: null, network: [] };
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(shows()).toEqual({ strike: true, coinos: true });
     });
 
     it('keeps everything when a refresh fails', async () => {
         const { gate, phone, shows } = loadGate({ language: 'US', sim: null, network: ['de'] });
         phone.now = new Error('native read failed');
-        await expect(gate.refreshRegionSignals()).resolves.toBeUndefined();
+        await expect(gate.refreshAndroidRegionSignals()).resolves.toBeUndefined();
         expect(shows()).toEqual({ strike: false, coinos: false });
         expect(gate.getRegionGateVersion()).toBe(0);
     });
 
     it('stays closed when a build without the native module refreshes', async () => {
         const { gate, shows } = loadGate(null);
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(shows()).toEqual({ strike: false, coinos: false });
     });
 
-    it('re-reads each time the app returns to the foreground', async () => {
+    it('re-reads at startup and each time the app returns to the foreground', async () => {
         const { gate, phone, getSignals, shows, appState, appStateListeners } = loadGate({ language: 'US', sim: 'us', network: ['us'] });
-        await gate.refreshRegionSignals();
-        await gate.refreshRegionSignals();
-        expect(appStateListeners).toHaveLength(1); // registered once
-        expect(getSignals).toHaveBeenCalledTimes(2);
+        gate.watchAndroidRegionSignals(() => false);
+        await settle();
+        expect(getSignals).toHaveBeenCalledTimes(1); // the startup read
 
         phone.now = { language: 'US', sim: 'us', network: ['de'] };
         appState('background');
         await settle();
-        expect(getSignals).toHaveBeenCalledTimes(2);
+        expect(getSignals).toHaveBeenCalledTimes(1);
         expect(shows()).toEqual({ strike: true, coinos: true });
 
         appState('active');
         await settle();
-        expect(getSignals).toHaveBeenCalledTimes(3);
+        expect(getSignals).toHaveBeenCalledTimes(2);
         expect(shows()).toEqual({ strike: false, coinos: false });
+        expect(appStateListeners).toHaveLength(1);
     });
 
-    it('reads the storefront, not the Android signals, on iOS', async () => {
-        const { gate, getSignals, getCountryCode, appStateListeners } = loadGate({ network: ['de'] }, { os: 'ios', storefront: 'USA' });
-        await gate.refreshRegionSignals();
-        expect(getCountryCode).toHaveBeenCalledTimes(1);
+    it('listens for the foreground once, however often it is started', async () => {
+        const { gate, getSignals, appStateListeners } = loadGate({ language: 'US', sim: 'us', network: ['us'] });
+        gate.watchAndroidRegionSignals(() => false);
+        gate.watchAndroidRegionSignals(() => false);
+        await settle();
+        expect(appStateListeners).toHaveLength(1);
+        expect(getSignals).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops reading once the app becomes a seed-signer', async () => {
+        const { gate, phone, getSignals, shows, appState } = loadGate({ language: 'US', sim: 'us', network: ['us'] });
+        let locked = false;
+        gate.watchAndroidRegionSignals(() => locked);
+        await settle();
+        expect(getSignals).toHaveBeenCalledTimes(1);
+
+        locked = true;
+        phone.now = { language: 'US', sim: 'us', network: ['de'] };
+        appState('active');
+        await settle();
+        expect(getSignals).toHaveBeenCalledTimes(1);
+        expect(shows()).toEqual({ strike: true, coinos: true });
+    });
+
+    it('does not read at startup when the app is already a seed-signer', async () => {
+        const { gate, getSignals } = loadGate({ language: 'US', sim: 'us', network: ['us'] });
+        gate.watchAndroidRegionSignals(() => true);
+        await settle();
         expect(getSignals).not.toHaveBeenCalled();
+    });
+
+    it('does nothing on iOS, where the storefront has its own watch', async () => {
+        const { gate, getSignals, getCountryCode, appStateListeners } = loadGate({ network: ['de'] }, { os: 'ios', storefront: 'USA' });
+        gate.watchAndroidRegionSignals(() => false);
+        await gate.refreshAndroidRegionSignals();
+        await settle();
+        expect(getSignals).not.toHaveBeenCalled();
+        expect(getCountryCode).not.toHaveBeenCalled();
         expect(appStateListeners).toHaveLength(0);
     });
 });
@@ -359,7 +392,7 @@ describe('remembering the SIM and network country across restarts', () => {
     it('remembers what a refresh reads, for the next start', async () => {
         const { gate, phone } = loadGate({ language: 'US', sim: null, network: [] });
         phone.now = { language: 'US', sim: null, network: ['fr'] };
-        await gate.refreshRegionSignals();
+        await gate.refreshAndroidRegionSignals();
         expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(NEITHER);
     });
 

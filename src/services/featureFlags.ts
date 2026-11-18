@@ -272,10 +272,10 @@ export function getStorefrontCountry(): string | null {
 }
 
 /**
- * Re-reads the storefront from StoreKit; refreshRegionSignals() calls it
- * once at startup. The storefront can be unavailable for a moment after
- * launch, and the module constant is fixed for the module's lifetime. A
- * failed or empty read keeps the previous value. Does nothing on Android.
+ * Re-reads the storefront from StoreKit. Call once at startup: the
+ * storefront can be unavailable for a moment after launch, and the
+ * module constant is fixed for the module's lifetime. A failed or empty
+ * read keeps the previous value.
  */
 export async function refreshStorefrontCountry(): Promise<void> {
     if (Platform.OS !== 'ios') return;
@@ -386,8 +386,8 @@ function setAndroidSignals(signals: AndroidSignals): void {
  * Every country that places the phone, sorted; empty when none is known.
  * The first call reads the module's constants (falling back on what was
  * remembered, as withLastSeen() says), so render-time checks stay
- * synchronous; refreshRegionSignals() updates them later. A build without
- * the native module knows only what was remembered.
+ * synchronous; refreshAndroidRegionSignals() updates them later. A build
+ * without the native module knows only what was remembered.
  */
 function getAndroidCountries(): readonly string[] {
     if (androidSignals === undefined) {
@@ -403,8 +403,12 @@ function getAndroidCountries(): readonly string[] {
     return androidCountries;
 }
 
-/** Re-reads the Android signals. A failed read keeps everything. */
-async function refreshAndroidSignals(): Promise<void> {
+/**
+ * Re-reads the Android signals and wakes the gated screens when the
+ * countries change. A failed read keeps everything. Does nothing on iOS.
+ */
+export async function refreshAndroidRegionSignals(): Promise<void> {
+    if (Platform.OS === 'ios') return;
     let next: AndroidSignals;
     try {
         next = parseAndroidSignals(await NativeModules.CypherRegionSignals?.getSignals?.());
@@ -417,20 +421,21 @@ async function refreshAndroidSignals(): Promise<void> {
 }
 
 /**
- * Re-reads the region signals: the App Store storefront on iOS, the
- * phone's country signals on Android. Call once at startup. On Android it
- * also re-reads each time the app comes back to the foreground, since the
- * network country changes when the phone crosses a border.
+ * Keeps the Android signals current: reads them now, and again each time
+ * the app comes back to the foreground, since the network country can
+ * arrive after launch and changes when the phone crosses a border. Call
+ * once at startup; later calls, and any call on iOS (where
+ * storefrontWatch.ts keeps the storefront current), do nothing.
+ * `isPaused` is asked before every read, so a phone turned into an Offline
+ * Seed-Signer while the app runs stops reading too.
  */
-export async function refreshRegionSignals(): Promise<void> {
-    if (Platform.OS === 'ios') return refreshStorefrontCountry();
-    if (!watchingForeground) {
-        watchingForeground = true;
-        AppState?.addEventListener?.('change', state => {
-            if (state === 'active') refreshAndroidSignals();
-        });
-    }
-    return refreshAndroidSignals();
+export function watchAndroidRegionSignals(isPaused: () => boolean): void {
+    if (Platform.OS === 'ios' || watchingForeground) return;
+    watchingForeground = true;
+    AppState?.addEventListener?.('change', state => {
+        if (state === 'active' && !isPaused()) void refreshAndroidRegionSignals();
+    });
+    if (!isPaused()) void refreshAndroidRegionSignals();
 }
 
 function inEeaOrUk(storefront: string | null, region: string | null): boolean {

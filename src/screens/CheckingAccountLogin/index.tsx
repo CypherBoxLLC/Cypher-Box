@@ -91,7 +91,7 @@ export default function CheckingAccountLogin() {
     //
     // This replaces an ipapi.co round-trip that used to run here. The
     // gates read what the phone already knows instead (the App Store
-    // country and region on iOS; the language, SIM and mobile network
+    // country and region on iOS; the SIM, mobile network and language
     // country on Android), so they cannot fail offline, a proxy cannot
     // fool them, and no app launch leaks to a third-party IP service.
     setCoinosException(!isCoinosAllowed());
