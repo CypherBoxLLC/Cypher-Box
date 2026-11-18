@@ -86,6 +86,13 @@ make repro-build     # one build -> ./out/app-release.aab + its SHA-256
 make repro-verify    # build twice, assert the two SHA-256s match
 ```
 
+`make repro-verify` builds twice on the same machine, so it cannot catch output
+that depends on the machine. CI's `build-verify.yml` covers that: it builds the
+same commit on two runners with different Ubuntu images, each on a freshly made
+ext4 file system with its own directory hash seed
+(`make repro-build BUILD_DIR=<empty dir on that file system>`), and fails unless
+both bundles have the same SHA-256.
+
 - `Dockerfile.build` pins the whole toolchain (see §1). SDK packages are
   installed with `sdkmanager`, which integrity-checks each one.
 - `make repro-build` mounts the repo read-only at `/src`, copies it into a
@@ -225,6 +232,17 @@ these still need closing:
   freeze + commit them per tag (security-plan §5.4).
 - **Base image digest** and **cmdline-tools sha256** - see `Dockerfile.build`
   TODOs 1-2.
+
+Closed:
+
+- **Order of the native debug symbol tables (fixed in 0.1.14).** AGP adds
+  `BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/*.so.sym` in the
+  order the disk lists their directory, which on ext4 follows the file
+  system's hash seed: stable on one machine, different on the next. Up to
+  0.1.13, two machines built bundles that differed only in that order.
+  `android/app/build.gradle` now puts those entries in name order right after
+  AGP writes the bundle, copying every entry's bytes unchanged, so Play still
+  gets every symbol table.
 
 ---
 
