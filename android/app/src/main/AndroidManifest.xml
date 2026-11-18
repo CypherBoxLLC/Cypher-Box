@@ -7,6 +7,12 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- MainActivity is locked to portrait, which on its own makes Play require a portrait screen and hide the app
+         from devices without one (some tablets, desktop mode, Android XR). Phones still open it in portrait. -->
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.CAMERA" />
