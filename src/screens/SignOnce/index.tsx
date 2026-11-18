@@ -42,6 +42,7 @@ import OfflineSeedWarning from "@Cypher/components/OfflineSeedWarning";
 import { openSeedSignerGate } from "../SigningHome/seedSigner";
 import styles from "./styles";
 import signErrorText from "./errorText";
+import { walletName } from "../RegisterSignerWallet/errorText";
 import loc from "../../../loc";
 
 const bitcoinjs = require('bitcoinjs-lib');
@@ -356,7 +357,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             {review?.multisig ? (
                 <Text style={styles.body}>
                     {String(loc.formatString(loc.cypherbox.sign_once.multisig_wallet, {
-                        name: review.multisig.name,
+                        name: walletName(review.multisig.name),
                         m: review.multisig.m,
                         n: review.multisig.n,
                     }))}

@@ -4,6 +4,7 @@ import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text as Selectable
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import OfflineSeedWarning from "@Cypher/components/OfflineSeedWarning";
 import {
+    MAX_MULTISIG_KEYS,
     MultisigPolicy,
     PolicyKey,
     confirmOwnKey,
@@ -18,14 +19,13 @@ import { colors } from "@Cypher/style-guide";
 import useProtectSecret from "../../custom-hooks/useProtectSecret";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
+import loc from "../../../loc";
 import signStyles from "../SignOnce/styles";
+import walletErrorText, { walletName } from "./errorText";
 
 const fs = require('../../../blue_modules/fs');
 
 type Step = 'source' | 'review' | 'confirm' | 'saved';
-
-const ONLINE = "This phone is online. A seed is only loaded once it's offline: Airplane Mode on, Wi-Fi and Bluetooth off.";
-const CHECKING = 'Checking this phone is offline…';
 
 /**
  * Adds a multisig wallet to the Offline Seed-Signer, so it can sign that wallet's transactions (helpers/multisigPolicy).
@@ -50,7 +50,9 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
     const workingRef = useRef(false);
     const connection = useElectrumConnection(true, false);
     const offline = connection === 'no-answer';
-    const onlineNote = connection === 'checking' ? CHECKING : ONLINE;
+    const onlineNote = connection === 'checking' ? loc.cypherbox.sign_once.checking_offline : loc.cypherbox.seed_signer.multisig.online_note;
+    const r = loc.cypherbox.seed_signer.multisig.register;
+    const format = (text: string, values: Record<string, string | number>) => String(loc.formatString(text, values));
 
     // a recovery phrase can be typed here: hide it from the app switcher, block screenshots
     useProtectSecret();
@@ -64,7 +66,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
             setStep('review');
         } catch (e: any) {
             setStep('source');
-            setError(e.message);
+            setError(walletErrorText(e.message));
         }
     };
 
@@ -94,7 +96,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
             const text = await fs.openWalletFile();
             if (text) read(text);
         } catch (e: any) {
-            setError(e.message);
+            setError(walletErrorText(e.message));
         }
     };
 
@@ -118,7 +120,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
             setPassphrase('');
             setStep('saved');
         } catch (e: any) {
-            setError(e.message);
+            setError(walletErrorText(e.message));
         } finally {
             workingRef.current = false;
             setWorking(false);
@@ -135,20 +137,14 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
 
     const renderSource = () => (
         <>
-            <Text style={signStyles.title}>Add a Multisig Wallet</Text>
-            <Text style={signStyles.body}>
-                Once your multisig app (Nunchuk, Sparrow, BlueWallet or another) has made the wallet, export it for a
-                signing device: its wallet file, BSMS file or output descriptor. Then scan its QR or open the file here.
-            </Text>
-            <Text style={signStyles.body}>
-                The signer works with native SegWit multisig (P2WSH, sortedmulti) of up to 15 keys, one of them this
-                seed's multisig key.
-            </Text>
+            <Text style={signStyles.title}>{r.title}</Text>
+            <Text style={signStyles.body}>{r.source_body}</Text>
+            <Text style={signStyles.body}>{format(r.source_kinds, { max: MAX_MULTISIG_KEYS })}</Text>
             <TouchableOpacity style={signStyles.primary} onPress={() => scan(read)} accessibilityRole="button">
-                <Text h3 style={signStyles.primaryText}>Scan QR</Text>
+                <Text h3 style={signStyles.primaryText}>{loc.cypherbox.sign_once.scan_qr}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={signStyles.secondary} onPress={openFile} accessibilityRole="button">
-                <Text h3>Open File</Text>
+                <Text h3>{r.open_file}</Text>
             </TouchableOpacity>
             {renderError()}
         </>
@@ -158,7 +154,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
         p.keys.map((k, i) => (
             <View key={k.xpub} style={styles.key}>
                 <Text style={styles.keyLabel}>
-                    {own && own.xpub === k.xpub ? `Key ${i + 1} · this seed` : `Key ${i + 1}`}
+                    {format(own && own.xpub === k.xpub ? r.key_own : r.key, { n: i + 1 })}
                 </Text>
                 <Text semibold style={styles.fingerprint}>{k.fingerprint}</Text>
                 <Text style={styles.mono}>{k.path}</Text>
@@ -168,27 +164,24 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
 
     const renderReview = (p: MultisigPolicy) => (
         <>
-            <Text style={signStyles.title}>Check this wallet</Text>
-            <Text bold style={styles.name}>{p.name}</Text>
-            <Text style={signStyles.body}>{`${p.m} of ${p.keys.length} multisig, native SegWit (P2WSH)`}</Text>
+            <Text style={signStyles.title}>{r.review_title}</Text>
+            <Text bold style={styles.name}>{walletName(p.name)}</Text>
+            <Text style={signStyles.body}>{format(r.quorum, { m: p.m, n: p.keys.length })}</Text>
             {renderKeys(p)}
             <View style={signStyles.row}>
-                <Text style={signStyles.rowLabel}>First receive address</Text>
+                <Text style={signStyles.rowLabel}>{loc.cypherbox.seed_signer.multisig.first_address}</Text>
                 <SelectableText selectable style={[signStyles.rowAddress, styles.mono]}>{policyAddress(p, 0, 0)}</SelectableText>
             </View>
-            <Text style={signStyles.note}>
-                Check each fingerprint against the device or app that holds that key, and the first address against
-                your multisig app. If anything is different, don't add this wallet.
-            </Text>
+            <Text style={signStyles.note}>{r.review_note}</Text>
             {existing ? (
-                <Text style={signStyles.error}>{`This wallet is already on this phone, as ${existing.name}.`}</Text>
+                <Text style={signStyles.error}>{format(r.already_added, { name: walletName(existing.name) })}</Text>
             ) : (
                 <TouchableOpacity style={signStyles.primary} onPress={() => { setError(null); setStep('confirm'); }} accessibilityRole="button">
-                    <Text h3 style={signStyles.primaryText}>Confirm with your SeedQR</Text>
+                    <Text h3 style={signStyles.primaryText}>{r.confirm}</Text>
                 </TouchableOpacity>
             )}
             <TouchableOpacity style={signStyles.secondary} onPress={cancel} accessibilityRole="button">
-                <Text h3>Cancel</Text>
+                <Text h3>{loc._.cancel}</Text>
             </TouchableOpacity>
             {renderError()}
         </>
@@ -196,22 +189,19 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
 
     const renderConfirm = () => (
         <>
-            <Text style={signStyles.title}>Scan your SeedQR</Text>
+            <Text style={signStyles.title}>{r.confirm_title}</Text>
             {!offline ? <Text style={signStyles.online}>{onlineNote}</Text> : null}
-            <Text style={signStyles.body}>
-                Scan the SeedQR of the seed whose key is in this wallet, or type its words. It's only used to check
-                that the wallet's key is really this seed's, and isn't saved.
-            </Text>
+            <Text style={signStyles.body}>{r.confirm_body}</Text>
             <OfflineSeedWarning style={signStyles.seedWarning} />
             {working ? <ActivityIndicator size="large" color={colors.green} style={signStyles.working} /> : null}
             <TouchableOpacity style={signStyles.primary} disabled={working} onPress={() => (offline ? scan(confirm) : setError(onlineNote))} accessibilityRole="button">
-                <Text h3 style={signStyles.primaryText}>Scan SeedQR</Text>
+                <Text h3 style={signStyles.primaryText}>{loc.cypherbox.sign_once.scan_seedqr}</Text>
             </TouchableOpacity>
             <TextInput
                 style={[signStyles.input, signStyles.words]}
                 value={words}
                 onChangeText={setWords}
-                placeholder="Or type your 12 or 24 words"
+                placeholder={loc.cypherbox.sign_once.words_placeholder}
                 placeholderTextColor="#777"
                 multiline
                 autoCapitalize="none"
@@ -227,7 +217,7 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
                 style={signStyles.input}
                 value={passphrase}
                 onChangeText={setPassphrase}
-                placeholder="Passphrase (only if you use one)"
+                placeholder={loc.cypherbox.sign_once.passphrase_placeholder}
                 placeholderTextColor="#777"
                 secureTextEntry
                 autoCapitalize="none"
@@ -237,10 +227,10 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
                 importantForAutofill="no"
             />
             <TouchableOpacity style={signStyles.secondary} disabled={working} onPress={() => confirm(words)} accessibilityRole="button">
-                <Text h3>Continue</Text>
+                <Text h3>{loc._.continue}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={signStyles.secondary} onPress={cancel} accessibilityRole="button">
-                <Text h3>Cancel</Text>
+                <Text h3>{loc._.cancel}</Text>
             </TouchableOpacity>
             {renderError()}
         </>
@@ -248,15 +238,13 @@ export default function RegisterSignerWallet({ navigation }: { navigation: any }
 
     const renderSaved = (p: MultisigPolicy) => (
         <>
-            <Text style={signStyles.title}>Wallet added</Text>
-            <Text bold style={styles.name}>{p.name}</Text>
-            <Text style={signStyles.body}>
-                {`This signer now signs this ${p.m} of ${p.keys.length} wallet's transactions, after showing you what each one does. It refuses multisig transactions from wallets it doesn't have.`}
-            </Text>
+            <Text style={signStyles.title}>{r.saved_title}</Text>
+            <Text bold style={styles.name}>{walletName(p.name)}</Text>
+            <Text style={signStyles.body}>{format(r.saved_body, { m: p.m, n: p.keys.length })}</Text>
             {renderKeys(p, ownKey)}
-            <Text style={signStyles.success}>Your recovery phrase wasn't saved on this phone.</Text>
+            <Text style={signStyles.success}>{loc.cypherbox.sign_once.not_saved}</Text>
             <TouchableOpacity style={signStyles.primary} onPress={() => navigation.goBack()} accessibilityRole="button">
-                <Text h3 style={signStyles.primaryText}>Done</Text>
+                <Text h3 style={signStyles.primaryText}>{loc.cypherbox.sign_once.done}</Text>
             </TouchableOpacity>
         </>
     );

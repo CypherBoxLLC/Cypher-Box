@@ -33,7 +33,9 @@ import { colors } from "@Cypher/style-guide";
 import useProtectSecret from "../../custom-hooks/useProtectSecret";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
+import loc from "../../../loc";
 import signStyles from "../SignOnce/styles";
+import walletErrorText, { walletName } from "../RegisterSignerWallet/errorText";
 
 type Result =
     | { kind: 'idle' }
@@ -49,16 +51,12 @@ type Result =
     | { kind: 'unsupported'; address: string }
     | { kind: 'error'; message: string };
 
-const ONLINE = "This phone is online. A seed is only loaded once it's offline: Airplane Mode on, Wi-Fi and Bluetooth off.";
-const CHECKING = 'Checking this phone is offline…';
-
 const formatCount = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const format = (text: string, values: Record<string, string | number>) => String(loc.formatString(text, values));
 
 // after a SeedQR check: whether the next check of this seed will need it again
 const keptNote = (kept?: boolean) =>
-    kept
-        ? " Its public key is now remembered on this phone, so the next check won't need the SeedQR."
-        : " Its public key isn't remembered, because of the passphrase.";
+    kept ? loc.cypherbox.seed_signer.multisig.check.kept_now : loc.cypherbox.seed_signer.multisig.check.not_kept_passphrase;
 
 /**
  * "Receive - Check Address": before an address from the watch-only wallet or the multisig app is used to receive,
@@ -83,7 +81,8 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
     const [seedError, setSeedError] = useState<string | null>(null);
     const connection = useElectrumConnection(true, false);
     const offline = connection === 'no-answer';
-    const onlineNote = connection === 'checking' ? CHECKING : ONLINE;
+    const onlineNote = connection === 'checking' ? loc.cypherbox.sign_once.checking_offline : loc.cypherbox.seed_signer.multisig.online_note;
+    const c = loc.cypherbox.seed_signer.multisig.check;
     // a newer check, or leaving the screen, stops the one running
     const run = useRef(0);
 
@@ -182,7 +181,7 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
             });
             if (kept) addSignerAccount(account);
         } catch (e: any) {
-            setSeedError(e?.message ?? "That isn't a recovery phrase or a SeedQR.");
+            setSeedError(e?.message ? walletErrorText(e.message) : loc.cypherbox.seed_signer.create.not_a_backup);
             return;
         } finally {
             setWorking(false);
@@ -198,11 +197,11 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
 
     const forgetAccount = (account: SignerAccount) =>
         Alert.alert(
-            'Forget this public key?',
-            "Checking a new receive address of this seed will need its SeedQR again. The SeedQR is security sensitive: anyone who sees it can take the coins.",
+            c.forget_title,
+            c.forget_body,
             [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Forget', style: 'destructive', onPress: () => removeSignerAccount(account.fingerprint) },
+                { text: loc._.cancel, style: 'cancel' },
+                { text: c.forget, style: 'destructive', onPress: () => removeSignerAccount(account.fingerprint) },
             ],
         );
 
@@ -239,8 +238,8 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
         <>
             {box(
                 'waiting',
-                'Single-key address',
-                "Scan the SeedQR of the seed this address should belong to, or type its words. The seed is only used for this check and is never saved; its public key is remembered for next time, unless you type a passphrase.",
+                c.single_title,
+                c.single_body,
                 result.kind === 'needs-seed' ? result.address : '',
             )}
             {!offline ? <Text style={signStyles.online}>{onlineNote}</Text> : null}
@@ -249,7 +248,7 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
                 style={signStyles.input}
                 value={passphrase}
                 onChangeText={setPassphrase}
-                placeholder="Passphrase (only if you use one)"
+                placeholder={loc.cypherbox.sign_once.passphrase_placeholder}
                 placeholderTextColor="#777"
                 secureTextEntry
                 autoCapitalize="none"
@@ -265,13 +264,13 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
                 onPress={() => (offline ? scan(checkWithSeed) : setSeedError(onlineNote))}
                 accessibilityRole="button"
             >
-                <Text h3 style={signStyles.primaryText}>Scan SeedQR</Text>
+                <Text h3 style={signStyles.primaryText}>{loc.cypherbox.sign_once.scan_seedqr}</Text>
             </TouchableOpacity>
             <TextInput
                 style={[signStyles.input, signStyles.words]}
                 value={words}
                 onChangeText={setWords}
-                placeholder="Or type your 12 or 24 words"
+                placeholder={loc.cypherbox.sign_once.words_placeholder}
                 placeholderTextColor="#777"
                 multiline
                 autoCapitalize="none"
@@ -284,7 +283,7 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
                 keyboardType={Platform.OS === 'android' ? 'visible-password' : 'default'}
             />
             <TouchableOpacity style={signStyles.secondary} disabled={working} onPress={() => checkWithSeed(words)} accessibilityRole="button">
-                <Text h3>Check with These Words</Text>
+                <Text h3>{c.check_with_words}</Text>
             </TouchableOpacity>
             {seedError ? <Text style={signStyles.error}>{seedError}</Text> : null}
         </>
@@ -295,55 +294,53 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
             case 'idle':
                 return null;
             case 'error':
-                return <Text style={signStyles.error}>{result.message}</Text>;
+                return <Text style={signStyles.error}>{walletErrorText(result.message)}</Text>;
             case 'searching':
                 return (
                     <Text style={styles.progress}>
-                        {`Looking… ${formatCount(result.checked)} of ${formatCount(ADDRESS_SEARCH_LIMIT)}`}
+                        {format(c.looking, { checked: formatCount(result.checked), total: formatCount(ADDRESS_SEARCH_LIMIT) })}
                     </Text>
                 );
             case 'found': {
                 const { wallet, branch, index } = result.match;
                 return box(
                     'good',
-                    `${branch === 0 ? 'Receive' : 'Change'} address #${index} in ${wallet.name}`,
-                    `${wallet.m} of ${wallet.keys.length} multisig`,
+                    format(branch === 0 ? c.found_receive : c.found_change, { index, name: walletName(wallet.name) }),
+                    format(c.quorum, { m: wallet.m, n: wallet.keys.length }),
                     result.address,
                 );
             }
             case 'not-found':
                 return box(
                     'bad',
-                    `Not in the first ${formatCount(ADDRESS_SEARCH_LIMIT)} addresses of any wallet on this phone`,
-                    "Don't use this address unless you know where it comes from.",
+                    format(c.not_found, { count: formatCount(ADDRESS_SEARCH_LIMIT) }),
+                    c.not_found_detail,
                     result.address,
                 );
             case 'no-wallets':
                 return box(
                     'bad',
-                    "There's no multisig wallet on this phone to check it against",
-                    'It\'s a multisig address. Add its wallet under Multisig Wallets first.',
+                    c.no_wallets,
+                    c.no_wallets_detail,
                     result.address,
                 );
             case 'needs-seed':
                 return renderSeed();
             case 'found-single': {
                 const { fingerprint, branch, index } = result.match;
-                const how = result.remembered
-                    ? ' Checked against its public key remembered on this phone.'
-                    : keptNote(result.kept);
+                const how = result.remembered ? c.checked_remembered : keptNote(result.kept);
                 return box(
                     'good',
-                    `${branch === 0 ? 'Receive' : 'Change'} address #${index} of this seed`,
-                    `Seed fingerprint ${fingerprint}. Single key, native SegWit (m/84'/0'/0').${how}`,
+                    format(branch === 0 ? c.found_single_receive : c.found_single_change, { index }),
+                    `${format(c.single_detail, { fingerprint })} ${how}`,
                     result.address,
                 );
             }
             case 'not-found-single':
                 return box(
                     'bad',
-                    `Not in the first ${formatCount(ADDRESS_SEARCH_LIMIT)} receive and change addresses of this seed`,
-                    `Seed fingerprint ${result.fingerprint}. If the seed has a passphrase, check it was typed the same. Don't receive to this address unless you know where it comes from.${keptNote(result.kept)}`,
+                    format(c.not_found_single, { count: formatCount(ADDRESS_SEARCH_LIMIT) }),
+                    `${format(c.not_found_single_detail, { fingerprint: result.fingerprint })} ${keptNote(result.kept)}`,
                     result.address,
                 );
             case 'not-in-remembered':
@@ -351,8 +348,8 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
                     <>
                         {box(
                             'bad',
-                            `Not in the first ${formatCount(ADDRESS_SEARCH_LIMIT)} receive and change addresses of the keys remembered on this phone`,
-                            "If it should belong to another seed, check it with that seed's SeedQR. Otherwise don't receive to it.",
+                            format(c.not_in_remembered, { count: formatCount(ADDRESS_SEARCH_LIMIT) }),
+                            c.not_in_remembered_detail,
                             result.address,
                         )}
                         <TouchableOpacity
@@ -360,15 +357,15 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
                             onPress={() => setResult({ kind: 'needs-seed', address: result.address })}
                             accessibilityRole="button"
                         >
-                            <Text h3>Check with a SeedQR</Text>
+                            <Text h3>{c.check_with_seedqr}</Text>
                         </TouchableOpacity>
                     </>
                 );
             case 'unsupported':
                 return box(
                     'bad',
-                    "This signer doesn't sign for this kind of address",
-                    'It signs for native SegWit addresses only: bc1q…, for a single key or a multisig wallet.',
+                    c.unsupported,
+                    c.unsupported_detail,
                     result.address,
                 );
         }
@@ -377,39 +374,34 @@ export default function CheckSignerAddress({ navigation }: { navigation: any }) 
     return (
         <ScreenLayout showToolbar isBackButton disableScroll>
             <ScrollView style={signStyles.scroll} contentContainerStyle={signStyles.content} keyboardShouldPersistTaps="handled">
-                <Text style={signStyles.title}>Check a Receive Address</Text>
-                <Text style={signStyles.body}>
-                    {`Before you receive to an address your watch-only wallet or multisig app shows, scan it here. This phone works it out from the public keys it holds: a multisig wallet's, or a single-key seed's that it remembers. For a seed it doesn't remember, you scan the seed's SeedQR. The first ${formatCount(ADDRESS_SEARCH_LIMIT)} receive and change addresses are searched.`}
-                </Text>
+                <Text style={signStyles.title}>{c.title}</Text>
+                <Text style={signStyles.body}>{format(c.body, { count: formatCount(ADDRESS_SEARCH_LIMIT) })}</Text>
                 <TouchableOpacity style={signStyles.primary} onPress={() => scan(check)} accessibilityRole="button">
-                    <Text h3 style={signStyles.primaryText}>Scan Address</Text>
+                    <Text h3 style={signStyles.primaryText}>{c.scan_address}</Text>
                 </TouchableOpacity>
                 <TextInput
                     style={signStyles.input}
                     value={typed}
                     onChangeText={setTyped}
-                    placeholder="Or type or paste the address"
+                    placeholder={c.address_placeholder}
                     placeholderTextColor="#777"
                     autoCapitalize="none"
                     autoCorrect={false}
                     spellCheck={false}
                 />
                 <TouchableOpacity style={signStyles.secondary} onPress={() => check(typed)} accessibilityRole="button">
-                    <Text h3>Check</Text>
+                    <Text h3>{c.check}</Text>
                 </TouchableOpacity>
                 {renderResult()}
                 {accounts.length ? (
                     <View style={styles.remembered}>
-                        <Text bold style={styles.rememberedTitle}>Public keys remembered on this phone</Text>
-                        <Text style={styles.detail}>
-                            Single-key addresses of these seeds are checked without their SeedQR. Forget one, and checking
-                            a new receive address of that seed will need its SeedQR, which is security sensitive.
-                        </Text>
+                        <Text bold style={styles.rememberedTitle}>{c.remembered_title}</Text>
+                        <Text style={styles.detail}>{c.remembered_body}</Text>
                         {accounts.map(account => (
                             <View key={account.fingerprint} style={styles.rememberedRow}>
-                                <Text style={styles.rememberedKey}>{`Single key · fingerprint ${account.fingerprint.toUpperCase()}`}</Text>
+                                <Text style={styles.rememberedKey}>{format(c.remembered_row, { fingerprint: account.fingerprint.toUpperCase() })}</Text>
                                 <TouchableOpacity onPress={() => forgetAccount(account)} accessibilityRole="button">
-                                    <Text style={signStyles.linkText}>Forget</Text>
+                                    <Text style={signStyles.linkText}>{c.forget}</Text>
                                 </TouchableOpacity>
                             </View>
                         ))}

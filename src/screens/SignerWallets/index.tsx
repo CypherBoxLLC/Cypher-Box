@@ -7,6 +7,8 @@ import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SignerWallet, policyAddress, policyDescriptor } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
+import { walletName } from "../RegisterSignerWallet/errorText";
 import SignerButton from "../SigningHome/SignerButton";
 import { startSigning } from "../SignOnce/start";
 
@@ -19,41 +21,40 @@ export default function SignerWallets({ navigation }: { navigation: any }) {
     const { signerWallets, removeSignerWallet } = useAuthStore();
     const wallets: SignerWallet[] = Object.values(signerWallets ?? {}).sort((a, b) => a.addedAt - b.addedAt);
     const [open, setOpen] = useState<string | null>(null);
+    const w = loc.cypherbox.seed_signer.multisig.wallets;
+    const format = (text: string, values: Record<string, string | number>) => String(loc.formatString(text, values));
 
     const remove = (wallet: SignerWallet) =>
-        Alert.alert(
-            `Remove ${wallet.name}?`,
-            "This signer won't sign its transactions until you add the wallet again. Your coins aren't affected: the wallet stays in your multisig app.",
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Remove', style: 'destructive', onPress: () => removeSignerWallet(wallet.id) },
-            ],
-        );
+        Alert.alert(format(w.remove_title, { name: walletName(wallet.name) }), w.remove_body, [
+            { text: loc._.cancel, style: 'cancel' },
+            { text: w.remove, style: 'destructive', onPress: () => removeSignerWallet(wallet.id) },
+        ]);
 
     return (
-        <ScreenLayout showToolbar isBackButton title="Multisig Wallets" disableScroll>
+        <ScreenLayout showToolbar isBackButton title={loc.cypherbox.seed_signer.multisig_wallets} disableScroll>
             <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-                <Text style={styles.lead}>
-                    Multisig wallets this signer holds a key of. A multisig transaction is signed only if it spends from
-                    one of these, and an amount is shown as change only if it goes back to the same wallet.
-                </Text>
+                <Text style={styles.lead}>{w.lead}</Text>
                 {wallets.length === 0 ? (
-                    <Text style={styles.empty}>No multisig wallets on this phone yet.</Text>
+                    <Text style={styles.empty}>{w.empty}</Text>
                 ) : (
                     wallets.map(wallet => {
                         const expanded = open === wallet.id;
                         const descriptor = expanded ? policyDescriptor(wallet) : '';
                         return (
                             <View key={wallet.id} style={styles.card}>
-                                <Text bold style={styles.name}>{wallet.name}</Text>
-                                <Text style={styles.fact}>{`${wallet.m} of ${wallet.keys.length} multisig, native SegWit`}</Text>
+                                <Text bold style={styles.name}>{walletName(wallet.name)}</Text>
+                                <Text style={styles.fact}>{format(w.quorum, { m: wallet.m, n: wallet.keys.length })}</Text>
                                 <Text style={styles.fact}>
-                                    {`Keys: ${wallet.keys.map(k => (k.fingerprint === wallet.ownFingerprint ? `${k.fingerprint} (this seed)` : k.fingerprint)).join(', ')}`}
+                                    {format(w.key_list, {
+                                        list: wallet.keys
+                                            .map(k => (k.fingerprint === wallet.ownFingerprint ? format(w.this_seed, { fingerprint: k.fingerprint }) : k.fingerprint))
+                                            .join(w.separator),
+                                    })}
                                 </Text>
-                                <Text style={styles.label}>First receive address</Text>
+                                <Text style={styles.label}>{loc.cypherbox.seed_signer.multisig.first_address}</Text>
                                 <SelectableText selectable style={styles.mono}>{policyAddress(wallet, 0, 0)}</SelectableText>
                                 <TouchableOpacity onPress={() => setOpen(expanded ? null : wallet.id)} accessibilityRole="button">
-                                    <Text style={styles.link}>{expanded ? 'Hide the descriptor' : 'Show the descriptor'}</Text>
+                                    <Text style={styles.link}>{expanded ? w.hide_descriptor : w.show_descriptor}</Text>
                                 </TouchableOpacity>
                                 {expanded ? (
                                     <>
@@ -61,16 +62,16 @@ export default function SignerWallets({ navigation }: { navigation: any }) {
                                         <TouchableOpacity
                                             onPress={() => {
                                                 Clipboard.setString(descriptor);
-                                                SimpleToast.show('Descriptor copied', SimpleToast.SHORT);
+                                                SimpleToast.show(w.descriptor_copied, SimpleToast.SHORT);
                                             }}
                                             accessibilityRole="button"
                                         >
-                                            <Text style={styles.link}>Copy the descriptor</Text>
+                                            <Text style={styles.link}>{w.copy_descriptor}</Text>
                                         </TouchableOpacity>
                                     </>
                                 ) : null}
                                 <TouchableOpacity onPress={() => remove(wallet)} accessibilityRole="button">
-                                    <Text style={styles.remove}>Remove from this phone</Text>
+                                    <Text style={styles.remove}>{w.remove_link}</Text>
                                 </TouchableOpacity>
                             </View>
                         );
@@ -78,9 +79,12 @@ export default function SignerWallets({ navigation }: { navigation: any }) {
                 )}
                 <View style={styles.buttons}>
                     {/* the coordinator's transaction is signed in the same screen as from the home */}
-                    {wallets.length ? <SignerButton label="Sign a Multisig Transaction" onPress={() => startSigning()} /> : null}
-                    <SignerButton label="Add a Multisig Wallet" onPress={() => navigation.navigate('RegisterSignerWallet')} />
-                    <SignerButton label="Receive - Check Address" onPress={() => navigation.navigate('CheckSignerAddress')} />
+                    {wallets.length ? <SignerButton label={w.sign} onPress={() => startSigning()} /> : null}
+                    <SignerButton
+                        label={loc.cypherbox.seed_signer.multisig.register.title}
+                        onPress={() => navigation.navigate('RegisterSignerWallet')}
+                    />
+                    <SignerButton label={loc.cypherbox.seed_signer.check_address} onPress={() => navigation.navigate('CheckSignerAddress')} />
                 </View>
             </ScrollView>
         </ScreenLayout>
