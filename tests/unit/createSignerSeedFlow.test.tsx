@@ -283,8 +283,13 @@ describe('Create a Seed', () => {
             params.onGenerated(Buffer.alloc(16, 0));
         });
         await press(root, /Add your own dice rolls/);
-        expect(dispatch).toHaveBeenCalledWith('ProvideEntropy', expect.objectContaining({ minBits: 128, mixWithRng: true }));
-        await press(root, /^Generate Seed$/);
+        await act(async () => {});
+        // from 50 real-looking six-sided rolls the seed is the rolls' own hash, else the mix (diceRollsOnlyScreen.test)
+        expect(dispatch).toHaveBeenCalledWith('ProvideEntropy', expect.objectContaining({ rollsOnlyFrom: 50, mixWithRng: true }));
+        expect(dispatch.mock.calls[0][1]).not.toHaveProperty('minBits');
+        // saving the rolls makes the seed at once: straight to the backup, with the cross-check as a third tab
+        expect(textOf(root)).toContain('Back up your seed');
+        expect(buttonFor(root, /^Cross-check$/)).toBeTruthy();
         expect(randomBytes).not.toHaveBeenCalled();
         // the dice screen checks the phone's randomness before mixing it in; the result is still checked here
         expect(assertNativeRngHealthy).not.toHaveBeenCalled();
@@ -292,6 +297,72 @@ describe('Create a Seed', () => {
         await press(root, /^View$/);
         // sixteen zero bytes are "abandon … about"
         expect(textOf(root)).toContain('12. about');
+    });
+});
+
+describe('Create a Seed from dice', () => {
+    // 50 rolls from EntropyLab's vectors (diceSeed.test.ts)
+    const rolls = [...'36261515636232342244625365616314551523335564321634'].map(face => ({ sides: 6, face: Number(face) }));
+    const withDice = async (from: any) => {
+        const root = open();
+        const navigation = require('../../src/helpers/navigation');
+        const dispatch = jest.spyOn(navigation, 'default').mockImplementation((_route: any, params: any) => {
+            params.onGenerated(Buffer.alloc(16, 0), from);
+        });
+        await press(root, /Add your own dice rolls/);
+        await act(async () => {});
+        return { root, dispatch };
+    };
+
+    it('goes straight to the backup, with the cross-check of the rolls a tab away from the words', async () => {
+        const { root } = await withDice({ source: 'rolls', count: 50, rolls });
+        expect(textOf(root)).toContain('Back up your seed');
+        expect(randomBytes).not.toHaveBeenCalled();
+        expect(assertMnemonicHealthy).toHaveBeenCalledWith(ABANDON);
+        await press(root, /^Cross-check$/);
+        // hidden like the words until View
+        expect(textOf(root)).not.toContain('3626151563');
+        await press(root, /^View$/);
+        const text = textOf(root);
+        expect(text).toContain('Your rolls alone make this seed');
+        expect(text).toContain('Your 50 rolls');
+        expect(text).toContain(rolls.map(r => r.face).join(''));
+        expect(text).toContain('Dice roll options to Base 10 [1-6] / Hashed rolls');
+        expect(text).toContain('set Entropy Type to Base 10. Not Dice');
+        expect(text).toContain('set Mnemonic Length to 12 Words, not Use Raw Entropy');
+        expect(text).toContain('destroy the paper with your rolls');
+        await press(root, /^12 words$/);
+        expect(textOf(root)).toContain('12. about');
+    });
+
+    it('says why mixed dice can only be checked from the result, and how', async () => {
+        const { root } = await withDice({ source: 'mix', reason: 'too-few', rolls: rolls.slice(0, 4) });
+        await press(root, /^Cross-check$/);
+        await press(root, /^View$/);
+        const text = textOf(root);
+        expect(text).toContain("Fewer than 50 rolls of a six-sided die, so the phone's randomness was mixed in.");
+        expect(text).toContain('0'.repeat(32));
+        expect(text).toContain('set Derivation method to Number bases');
+        expect(text).toContain('set Mnemonic Length to Use Raw Entropy');
+        expect(text).not.toContain('Your 4 rolls');
+    });
+
+    it('goes back to the rolls when the seed is discarded, and the dice can then be removed', async () => {
+        const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+        const { root, dispatch } = await withDice({ source: 'rolls', count: 50, rolls });
+        goBack();
+        const [title, message, buttons] = alert.mock.calls[0] as any[];
+        expect(title).toBe('Discard this seed?');
+        expect(message).toContain('You go back to your dice rolls');
+        // this time the dice screen opens and stays open
+        dispatch.mockImplementation(() => {});
+        act(() => buttons[1].onPress());
+        expect(dispatch).toHaveBeenLastCalledWith('ProvideEntropy', expect.objectContaining({ initialRolls: rolls }));
+        // under it, Create a Seed with the dice kept
+        expect(textOf(root)).not.toContain('Back up your seed');
+        expect(textOf(root)).toContain('50 dice rolls added: they alone make the seed');
+        await press(root, /^Remove$/);
+        expect(textOf(root)).toContain('Add your own dice rolls');
     });
 });
 
@@ -306,21 +377,25 @@ describe('Create a Seed, going back', () => {
         expect(textOf(root)).toContain('1. abandon');
     });
 
-    it('asks before leaving the backup, and leaves only on Leave', async () => {
+    it('asks before dropping the backup, and goes back to the start on Discard, not out of Create a Seed', async () => {
         const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
         const root = await generated();
         const e = goBack('POP');
         expect(e.preventDefault).toHaveBeenCalled();
         expect(alert).toHaveBeenCalledTimes(1);
         const [title, message, buttons] = alert.mock.calls[0] as any[];
-        expect(title).toBe('Leave without finishing?');
+        expect(title).toBe('Discard this seed?');
         expect(message).toContain("isn't saved anywhere");
+        expect(message).toContain('You go back to Create a Seed');
         expect(textOf(root)).toContain('Back up your seed');
 
-        // Stay does nothing; Leave sends the same back again, and that one goes through
+        // Stay does nothing; Discard drops the seed and stays in Create a Seed
         expect(buttons[0].style).toBe('cancel');
         act(() => buttons[1].onPress());
-        expect(mockNavigation.dispatch).toHaveBeenCalledWith(e.data.action);
+        expect(mockNavigation.dispatch).not.toHaveBeenCalled();
+        expect(textOf(root)).not.toContain('Back up your seed');
+        expect(textOf(root)).toContain('Generate Seed');
+        // from the start, a back leaves as usual
         expect(goBack().preventDefault).not.toHaveBeenCalled();
     });
 
@@ -475,6 +550,22 @@ describe('Show a Seed\'s Public Key', () => {
         const toggle = root.findAllByType(Switch).find(s => s.props.accessibilityLabel === 'Remember this public key on this phone')!;
         act(() => toggle.props.onValueChange(true));
         expect(Object.keys(useAuthStore.getState().signerAccounts)).toHaveLength(1);
+    });
+
+    it('cross-checks the fingerprint and first addresses in another tool, on request', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(textOf(root)).toContain(BIP84_RECEIVE_0);
+        expect(textOf(root)).not.toContain('Under Derivation Path, choose BIP84.');
+        await press(root, /^Cross-check the addresses$/);
+        const text = textOf(root);
+        expect(text).toContain('Master fingerprint must be 73C5DA0A, and First 10 receive addresses must start with the first addresses here.');
+        expect(text).toContain('Choose Native SegWit and tap Derive Key.');
+        expect(text).toContain('Under Derivation Path, choose BIP84.');
+        expect(text).toContain('Then close the tool before you go back online.');
+        await press(root, /^Hide the cross-check$/);
+        expect(textOf(root)).not.toContain('Under Derivation Path, choose BIP84.');
     });
 
     it('stays on the form with the reason when the words are wrong', async () => {

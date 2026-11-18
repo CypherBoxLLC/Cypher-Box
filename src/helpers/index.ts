@@ -15,5 +15,6 @@ export * from './signOnce';
 export * from './seedQR';
 export * from './multisigKey';
 export * from './multisigPolicy';
+export * from './diceSeed';
 export * from './seedFromWords';
 export * from './signerPublicKey';

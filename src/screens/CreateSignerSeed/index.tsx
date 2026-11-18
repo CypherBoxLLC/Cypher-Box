@@ -23,6 +23,9 @@ import OfflineSeedWarning from "@Cypher/components/OfflineSeedWarning";
 import ScannableQR from "@Cypher/components/ScannableQR";
 import SeedQRGrid from "@Cypher/components/SeedQRGrid";
 import {
+    DiceRoll,
+    ROLLS_ONLY_MIN,
+    RollsOnlyRefusal,
     SignerPublicKey,
     backupToMnemonic,
     dispatchNavigate,
@@ -49,11 +52,28 @@ import signErrorText from "../SignOnce/errorText";
 import { noteSeedBackedUp } from "../SigningHome/seedSigner";
 
 /**
- * intro → backup (the words and the SeedQR, as two tabs of one screen) → created (what's next, the last warnings and
- * the check of the copy) → key. Show mode: load → key.
+ * intro → backup (the words and the SeedQR, as two tabs of one screen, and with dice a third: the cross-check) →
+ * created (what's next, the last warnings and the check of the copy) → key. Show mode: load → key. With dice, saving the
+ * rolls goes straight to the backup, and going back from it returns to the rolls.
  */
 type Step = 'intro' | 'load' | 'backup' | 'created' | 'key';
-type BackupTab = 'words' | 'seedqr';
+type BackupTab = 'words' | 'seedqr' | 'check';
+
+/** What the dice screen said of the seed it handed back: from the rolls alone, or mixed with the phone's randomness. */
+interface DiceFrom {
+    source: 'rolls' | 'mix';
+    count?: number;
+    reason?: RollsOnlyRefusal | null;
+    rolls: DiceRoll[];
+}
+
+/** Why the dice were mixed with the phone's randomness (src/helpers/diceSeed). */
+const mixedReasonText = (reason: RollsOnlyRefusal | null | undefined) => {
+    const d = loc.cypherbox.seed_signer.dice;
+    if (reason === 'too-few') return String(loc.formatString(d.mixed_too_few, { min: ROLLS_ONLY_MIN }));
+    if (reason === 'not-six-sided') return d.mixed_not_six_sided;
+    return d.mixed_pattern;
+};
 
 function Instruction({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
     return (
@@ -88,6 +108,20 @@ function RememberKey({ remembered, hasPassphrase, onChange }: {
                 {remembered ? loc.cypherbox.seed_signer.create.remember_on : loc.cypherbox.seed_signer.create.remember_off}
                 {hasPassphrase && !remembered ? ` ${loc.cypherbox.seed_signer.create.remember_passphrase}` : ''}
             </Text>
+        </View>
+    );
+}
+
+/** One numbered step of a cross-check, in the same look as the instructions. */
+function CheckStep({ number, children }: { number: number; children: React.ReactNode }) {
+    return (
+        <View style={styles.instruction}>
+            <View style={styles.instructionNumber}>
+                <Text bold style={styles.instructionNumberText}>{String(number)}</Text>
+            </View>
+            <View style={styles.instructionText}>
+                <Text style={styles.instructionBody}>{children}</Text>
+            </View>
         </View>
     );
 }
@@ -127,6 +161,10 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     });
     const [step, setStep] = useState<Step>(rememberedKey ? 'key' : showOnly ? 'load' : 'intro');
     const [dice, setDice] = useState<Buffer | null>(null);
+    // what the dice screen said of it, with the rolls: for the cross-check, and to go back to the rolls
+    const [diceFrom, setDiceFrom] = useState<DiceFrom | null>(null);
+    // set when the dice screen hands back a seed: it's made at once, as the user asked for it there
+    const generateAfterDice = useRef(false);
     const [usePassphrase, setUsePassphrase] = useState(false);
     const [passphrase, setPassphrase] = useState('');
     const [passphraseAgain, setPassphraseAgain] = useState('');
@@ -140,6 +178,8 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     const [keyHasPassphrase, setKeyHasPassphrase] = useState(false);
     const { signerAccounts, addSignerAccount, removeSignerAccount } = useAuthStore();
     const [showMultisigKey, setShowMultisigKey] = useState(false);
+    // the key screen's cross-check of the first addresses in another tool, opened on request
+    const [addressCheck, setAddressCheck] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const check = useSeedQRCheck(mnemonic);
     // a seed is only made or loaded while no server answers: on a phone that's online, it would be a hot wallet
@@ -157,6 +197,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
         setPassphraseAgain('');
         setTyped('');
         setDice(null);
+        setDiceFrom(null);
     };
     const forgetRef = useRef(forget);
     forgetRef.current = forget;
@@ -166,6 +207,11 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     // asks first, since leaving drops a seed that may be only half copied. Other ways off the screen aren't held up.
     const stepRef = useRef(step);
     stepRef.current = step;
+    const diceFromRef = useRef(diceFrom);
+    diceFromRef.current = diceFrom;
+    // set further down, once they're made
+    const discardRef = useRef<() => void>(() => {});
+    const openDiceRef = useRef<() => void>(() => {});
     const leaving = useRef(false);
     useEffect(() => {
         const unsubscribe = navigation?.addListener?.('beforeRemove', (e: any) => {
@@ -176,19 +222,19 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                 setError(null);
                 setStep('backup');
             } else if (stepRef.current === 'backup') {
+                // one step back, not out of Create a Seed: to the rolls the seed came from, or to the start
                 e.preventDefault();
                 Alert.alert(
-                    loc.cypherbox.seed_signer.create.leave_title,
-                    loc.cypherbox.seed_signer.create.leave_body,
+                    loc.cypherbox.seed_signer.create.discard_title,
+                    diceFromRef.current
+                        ? loc.cypherbox.seed_signer.create.discard_body_dice
+                        : loc.cypherbox.seed_signer.create.discard_body,
                     [
                         { text: loc.cypherbox.seed_signer.create.stay, style: 'cancel' },
                         {
-                            text: loc.cypherbox.seed_signer.create.leave,
+                            text: loc.cypherbox.seed_signer.create.discard,
                             style: 'destructive',
-                            onPress: () => {
-                                leaving.current = true;
-                                navigation.dispatch(e.data.action);
-                            },
+                            onPress: () => discardRef.current(),
                         },
                     ],
                 );
@@ -265,6 +311,49 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
         }
     };
 
+    useEffect(() => {
+        if (!dice || !generateAfterDice.current) return;
+        generateAfterDice.current = false;
+        generate();
+        // only new dice start it
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dice]);
+
+    // the dice screen, with the rolls from before when there are some, to add to them or take some back
+    const openDice = () =>
+        dispatchNavigate('ProvideEntropy', {
+            limit: 128,
+            mixWithRng: true,
+            // enough real-looking six-sided rolls make the seed alone, so EntropyLab and Ian Coleman's tool can check it
+            // from the rolls; fewer are mixed with the phone's randomness
+            rollsOnlyFrom: ROLLS_ONLY_MIN,
+            initialRolls: diceFrom?.rolls,
+            onGenerated: (buf: Buffer, from?: Partial<DiceFrom>) => {
+                if (!buf || buf.length < 16) return;
+                generateAfterDice.current = true;
+                setDiceFrom({
+                    source: from?.source === 'rolls' ? 'rolls' : 'mix',
+                    count: from?.count,
+                    reason: from?.reason ?? null,
+                    rolls: from?.rolls ?? [],
+                });
+                setDice(buf);
+            },
+        });
+
+    // back from the backup: the seed is dropped, and the user is back at the rolls it came from, or at the start
+    const discard = () => {
+        setMnemonic('');
+        setRevealed(false);
+        setTab('words');
+        setTyped('');
+        setError(null);
+        setStep('intro');
+        if (diceFromRef.current) openDiceRef.current();
+    };
+    discardRef.current = discard;
+    openDiceRef.current = openDice;
+
     const load = (text: string) => {
         setError(null);
         if (!offline) {
@@ -325,6 +414,45 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
     };
 
     const words = mnemonic ? mnemonic.split(' ') : [];
+
+    // The dice seed checked in other tools, next to the words they have to match: from the rolls alone, EntropyLab's
+    // "Base 10 [1-6] / Hashed rolls" and Ian Coleman's "Base 10" make the same 12 words; mixed with the phone's
+    // randomness, only the result can be checked, as hex entropy.
+    const renderCrossCheck = () => {
+        if (!diceFrom || !dice) return null;
+        const d = loc.cypherbox.seed_signer.dice;
+        const fromRolls = diceFrom.source === 'rolls';
+        return (
+            <View style={styles.crossCheck}>
+                {fromRolls ? (
+                    <>
+                        <Text bold style={styles.crossCheckTitle}>{d.rolls_title}</Text>
+                        <Text style={styles.body}>{d.check_rolls_intro}</Text>
+                        <Text style={styles.fact}>{String(loc.formatString(d.rolls_label, { count: diceFrom.rolls.length }))}</Text>
+                        <Text style={styles.mono}>{diceFrom.rolls.map(r => r.face).join('')}</Text>
+                    </>
+                ) : (
+                    <>
+                        <Text style={styles.passphraseNote}>{mixedReasonText(diceFrom.reason)}</Text>
+                        <Text style={styles.body}>{d.check_mixed_intro}</Text>
+                        <Text style={styles.fact}>{d.result_label}</Text>
+                        <Text style={styles.mono}>{dice.toString('hex', 0, 16)}</Text>
+                    </>
+                )}
+                <Text style={styles.sectionTitle}>{d.el_title}</Text>
+                <CheckStep number={1}>{d.el_open}</CheckStep>
+                <CheckStep number={2}>{fromRolls ? d.el_rolls_set : d.el_hex_set}</CheckStep>
+                <CheckStep number={3}>{fromRolls ? d.el_rolls_type : d.el_hex_type}</CheckStep>
+                <CheckStep number={4}>{d.el_match}</CheckStep>
+                <Text style={styles.sectionTitle}>{d.ic_title}</Text>
+                <CheckStep number={1}>{d.ic_open}</CheckStep>
+                <CheckStep number={2}>{fromRolls ? d.ic_rolls_set : d.ic_hex_set}</CheckStep>
+                <CheckStep number={3}>{fromRolls ? d.ic_rolls_type : d.ic_hex_type}</CheckStep>
+                <CheckStep number={4}>{d.ic_match}</CheckStep>
+                <Text style={styles.note}>{fromRolls ? d.after_rolls : d.after_mixed}</Text>
+            </View>
+        );
+    };
     const grid = useMemo(() => (mnemonic ? seedQRGrid(mnemonicToSeedQR(mnemonic)) : null), [mnemonic]);
     const errorText = error ? <Text style={styles.error}>{error}</Text> : null;
 
@@ -336,28 +464,6 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                         <Text style={styles.title}>{loc.cypherbox.seed_signer.create_seed}</Text>
                         {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
                         <Text style={styles.body}>{loc.cypherbox.seed_signer.create.intro_body}</Text>
-                        {dice ? (
-                            <View style={styles.row}>
-                                <Text style={styles.ok}>{loc.cypherbox.seed_signer.create.dice_added}</Text>
-                                <TouchableOpacity onPress={() => setDice(null)} accessibilityRole="button">
-                                    <Text style={styles.link}>{loc.cypherbox.seed_signer.create.dice_remove}</Text>
-                                </TouchableOpacity>
-                            </View>
-                        ) : (
-                            <TouchableOpacity
-                                onPress={() => dispatchNavigate('ProvideEntropy', {
-                                    minBits: 128,
-                                    limit: 128,
-                                    mixWithRng: true,
-                                    onGenerated: (buf: Buffer) => {
-                                        if (buf && buf.length >= 16) setDice(buf);
-                                    },
-                                })}
-                                accessibilityRole="button"
-                            >
-                                <Text style={styles.link}>{loc.cypherbox.seed_signer.create.add_dice}</Text>
-                            </TouchableOpacity>
-                        )}
                         <View style={styles.row}>
                             <Text style={styles.label}>{loc.cypherbox.seed_signer.create.add_passphrase}</Text>
                             <Switch value={usePassphrase} onValueChange={setUsePassphrase} />
@@ -373,6 +479,34 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                     autoCapitalize="none" autoCorrect={false} autoComplete="off" importantForAutofill="no" />
                             </>
                         ) : null}
+                        {/* after the passphrase: saving the rolls makes the seed at once */}
+                        {dice ? (
+                            <View style={styles.diceRow}>
+                                <Text style={styles.ok}>
+                                    {diceFrom?.source === 'rolls'
+                                        ? String(loc.formatString(loc.cypherbox.seed_signer.create.dice_rolls_only, { count: diceFrom.count ?? 0 }))
+                                        : loc.cypherbox.seed_signer.create.dice_added}
+                                </Text>
+                                <View style={styles.diceLinks}>
+                                    <TouchableOpacity onPress={openDice} accessibilityRole="button">
+                                        <Text style={styles.link}>{loc.cypherbox.seed_signer.create.dice_change}</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setDice(null);
+                                            setDiceFrom(null);
+                                        }}
+                                        accessibilityRole="button"
+                                    >
+                                        <Text style={styles.link}>{loc.cypherbox.seed_signer.create.dice_remove}</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ) : (
+                            <TouchableOpacity onPress={openDice} accessibilityRole="button">
+                                <Text style={styles.link}>{loc.cypherbox.seed_signer.create.add_dice}</Text>
+                            </TouchableOpacity>
+                        )}
                         <TouchableOpacity style={styles.primary} onPress={generate} accessibilityRole="button">
                             <Text h3 style={styles.primaryText}>{loc.cypherbox.seed_signer.create.generate}</Text>
                         </TouchableOpacity>
@@ -416,7 +550,7 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                         ) : null}
                         {/* one backup, two ways to copy it, as when a Hot Vault is made, and in the same words */}
                         <View style={styles.tabs}>
-                            {(['words', 'seedqr'] as const).map(t => (
+                            {(diceFrom ? (['words', 'seedqr', 'check'] as const) : (['words', 'seedqr'] as const)).map(t => (
                                 <TouchableOpacity
                                     key={t}
                                     onPress={() => setTab(t)}
@@ -427,7 +561,9 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                     <Text bold style={tab === t ? styles.tabTextOn : styles.tabText}>
                                         {t === 'words'
                                             ? String(loc.formatString(loc.cypherbox.components.private_key_generator.words_tab, { count: words.length }))
-                                            : 'SeedQR'}
+                                            : t === 'seedqr'
+                                            ? 'SeedQR'
+                                            : loc.cypherbox.seed_signer.dice.check_tab}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -449,6 +585,8 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                     </View>
                                 ))}
                             </View>
+                        ) : tab === 'check' ? (
+                            renderCrossCheck()
                         ) : grid ? (
                             <>
                                 <Text style={styles.body}>{loc.cypherbox.seed_signer.create.seedqr_body}</Text>
@@ -551,6 +689,28 @@ export default function CreateSignerSeed({ route, navigation }: { route: any; na
                                 <SelectableText key={a} selectable style={styles.mono}>{`${i}  ${a}`}</SelectableText>
                             ))}
                         </View>
+                        {/* the same offline tool as the words' cross-check: this seed's fingerprint and first addresses */}
+                        <TouchableOpacity onPress={() => setAddressCheck(v => !v)} accessibilityRole="button">
+                            <Text style={styles.link}>
+                                {addressCheck ? loc.cypherbox.seed_signer.create.addr_check_hide : loc.cypherbox.seed_signer.create.addr_check_link}
+                            </Text>
+                        </TouchableOpacity>
+                        {addressCheck ? (
+                            <View style={styles.crossCheck}>
+                                <Text style={styles.body}>{loc.cypherbox.seed_signer.create.addr_check_intro}</Text>
+                                <Text style={styles.sectionTitle}>{loc.cypherbox.seed_signer.dice.el_title}</Text>
+                                <CheckStep number={1}>{loc.cypherbox.seed_signer.create.addr_el_load}</CheckStep>
+                                <CheckStep number={2}>{loc.cypherbox.seed_signer.create.addr_el_derive}</CheckStep>
+                                <CheckStep number={3}>
+                                    {String(loc.formatString(loc.cypherbox.seed_signer.create.addr_el_match, { fingerprint: info.fingerprint }))}
+                                </CheckStep>
+                                <Text style={styles.sectionTitle}>{loc.cypherbox.seed_signer.dice.ic_title}</Text>
+                                <CheckStep number={1}>{loc.cypherbox.seed_signer.create.addr_ic_load}</CheckStep>
+                                <CheckStep number={2}>{loc.cypherbox.seed_signer.create.addr_ic_derive}</CheckStep>
+                                <CheckStep number={3}>{loc.cypherbox.seed_signer.create.addr_ic_match}</CheckStep>
+                                <Text style={styles.note}>{loc.cypherbox.seed_signer.create.addr_after}</Text>
+                            </View>
+                        ) : null}
                         <RememberKey
                             remembered={!!signerAccounts?.[info.fingerprint.toLowerCase()]}
                             hasPassphrase={keyHasPassphrase}
@@ -781,6 +941,22 @@ const styles = StyleSheet.create({
         paddingTop: 4,
         borderTopWidth: 1,
         borderTopColor: '#444',
+    },
+    diceRow: {
+        marginTop: 16,
+        gap: 8,
+    },
+    diceLinks: {
+        flexDirection: 'row',
+        gap: 24,
+    },
+    crossCheck: {
+        marginTop: 8,
+    },
+    crossCheckTitle: {
+        fontSize: 17,
+        lineHeight: 24,
+        marginBottom: 8,
     },
     instruction: {
         flexDirection: 'row',
