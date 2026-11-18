@@ -2,6 +2,10 @@ import assert from 'assert';
 
 import { eReducer, entropyToHex, getEntropy, convertToBuffer } from '../../screen/wallets/provideEntropy';
 
+// provideEntropy.js loads BlueApp (useProtectSecret -> Privacy -> storage-context), and BlueApp connects to an Electrum
+// server as soon as it loads. Left real, that connection stays open after the tests finish and Jest never exits.
+jest.mock('../../blue_modules/BlueElectrum', () => ({ connectMain: jest.fn() }));
+
 describe('Entropy reducer and format', () => {
   it('handles push and pop correctly', () => {
     let state = eReducer(undefined, { type: null });

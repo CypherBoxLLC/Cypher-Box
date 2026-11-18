@@ -7,9 +7,10 @@ import { dispatchReset } from "@Cypher/helpers/navigation";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
+import loc from "../../../loc";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
-import { SEED_SIGNER, SEED_SIGNER_MODE } from "../SigningHome/seedSigner";
 
+// typed as it is in every language, like a code
 const CONFIRM_WORD = 'SEED-SIGNER';
 
 /**
@@ -25,9 +26,15 @@ export default function SeedSignerGate() {
 
     const vaults = (wallets ?? []).length;
     const inApp = [
-        vaults > 0 || walletID || coldStorageWalletID ? `${vaults === 1 ? 'a wallet or vault' : `${vaults || 'some'} wallets or vaults`}` : null,
-        isAuth || isStrikeAuth ? 'a Strike or CoinOS account' : null,
-        isArkAuth ? 'a Bark Vault' : null,
+        vaults > 0 || walletID || coldStorageWalletID
+            ? vaults === 1
+                ? loc.cypherbox.seed_signer.gate.has_one_vault
+                : vaults
+                ? String(loc.formatString(loc.cypherbox.seed_signer.gate.has_vaults, { count: vaults }))
+                : loc.cypherbox.seed_signer.gate.has_some_vaults
+            : null,
+        isAuth || isStrikeAuth ? loc.cypherbox.seed_signer.gate.has_account : null,
+        isArkAuth ? loc.cypherbox.seed_signer.gate.has_bark_vault : null,
     ].filter(Boolean) as string[];
     const empty = inApp.length === 0;
     const offline = connection === 'no-answer';
@@ -42,53 +49,45 @@ export default function SeedSignerGate() {
     return (
         <ScreenLayout showToolbar isBackButton disableScroll>
             <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>{SEED_SIGNER}</Text>
-                <Text style={styles.body}>
-                    Turns an isolated phone that stays offline (a Pixel is recommended) into a cold signing device for
-                    a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in
-                    to sign.
-                </Text>
-                <Text style={styles.oneWay}>
-                    There's no way back. Once it's on, this app is a seed-signer and nothing else, every time it opens.
-                    To use Cypher Box as a normal wallet again, you'll have to delete it and install it fresh.
-                </Text>
+                <Text style={styles.title}>{loc.cypherbox.seed_signer.title}</Text>
+                <Text style={styles.body}>{loc.cypherbox.seed_signer.gate.body}</Text>
+                <Text style={styles.oneWay}>{loc.cypherbox.seed_signer.gate.one_way}</Text>
 
-                <Text style={styles.heading}>Before you turn it on</Text>
-                <Text style={styles.item}>• Use a dedicated phone: factory-reset it and install nothing else.</Text>
-                <Text style={styles.item}>• Update the phone and install Cypher Box first, then take it offline for good.</Text>
-                <Text style={styles.item}>• Keep Wi-Fi, mobile data and Bluetooth off from now on.</Text>
+                <Text style={styles.heading}>{loc.cypherbox.seed_signer.gate.before_title}</Text>
+                <Text style={styles.item}>{loc.cypherbox.seed_signer.gate.dedicated}</Text>
+                <Text style={styles.item}>{loc.cypherbox.seed_signer.gate.update_first}</Text>
+                <Text style={styles.item}>{loc.cypherbox.seed_signer.gate.stay_offline}</Text>
                 <TouchableOpacity onPress={() => dispatchNavigate('SigningSafetyGuide')} accessibilityRole="button">
-                    <Text style={styles.link}>Signing safely</Text>
+                    <Text style={styles.link}>{loc.cypherbox.signing_safety.title}</Text>
                 </TouchableOpacity>
 
                 {!empty ? (
                     <View style={styles.block}>
-                        <Text style={styles.blockTitle}>This needs a fresh install</Text>
+                        <Text style={styles.blockTitle}>{loc.cypherbox.seed_signer.gate.fresh_install_title}</Text>
                         <Text style={styles.blockBody}>
-                            This app already has {inApp.join(', ')}. {SEED_SIGNER_MODE} only turns on in an empty app,
-                            so nothing is ever deleted by accident. Move or back up what's here, delete Cypher Box and
-                            install it fresh.
+                            {String(loc.formatString(loc.cypherbox.seed_signer.gate.fresh_install_body, {
+                                contents: inApp.join(loc.cypherbox.seed_signer.gate.list_separator),
+                            }))}
                         </Text>
+                        {/* Android deletes an app's data and Keystore keys with the app; an iPhone's Keychain stays */}
                         {Platform.OS === 'ios' ? (
-                            <Text style={styles.blockBody}>
-                                On iPhone, wallets saved in the Keychain can come back after reinstalling. Delete them
-                                in the app before you delete it.
-                            </Text>
+                            <Text style={styles.blockBody}>{loc.cypherbox.seed_signer.gate.keychain_note_ios}</Text>
                         ) : null}
                     </View>
                 ) : !offline ? (
                     <View style={styles.block}>
                         <Text style={styles.blockTitle}>
-                            {connection === 'checking' ? 'Checking this phone is offline…' : 'This phone is online'}
+                            {connection === 'checking'
+                                ? loc.cypherbox.sign_once.checking_offline
+                                : loc.cypherbox.seed_signer.gate.online_title}
                         </Text>
-                        <Text style={styles.blockBody}>
-                            Turn on Airplane Mode and turn off Wi-Fi and Bluetooth. This screen moves on once the phone
-                            is offline.
-                        </Text>
+                        <Text style={styles.blockBody}>{loc.cypherbox.seed_signer.gate.online_body}</Text>
                     </View>
                 ) : (
                     <>
-                        <Text style={styles.heading}>Type {CONFIRM_WORD} to turn it on</Text>
+                        <Text style={styles.heading}>
+                            {String(loc.formatString(loc.cypherbox.seed_signer.gate.type_word, { word: CONFIRM_WORD }))}
+                        </Text>
                         <TextInput
                             style={styles.input}
                             value={typed}
@@ -100,7 +99,7 @@ export default function SeedSignerGate() {
                             spellCheck={false}
                             autoComplete="off"
                             importantForAutofill="no"
-                            accessibilityLabel={`Type ${CONFIRM_WORD} to confirm`}
+                            accessibilityLabel={String(loc.formatString(loc.cypherbox.seed_signer.gate.type_word_a11y, { word: CONFIRM_WORD }))}
                         />
                         <TouchableOpacity
                             style={[styles.button, !confirmed && styles.buttonOff]}
@@ -109,7 +108,7 @@ export default function SeedSignerGate() {
                             accessibilityRole="button"
                             accessibilityState={{ disabled: !confirmed }}
                         >
-                            <Text h3 style={styles.buttonText}>Turn on for good</Text>
+                            <Text h3 style={styles.buttonText}>{loc.cypherbox.seed_signer.gate.turn_on}</Text>
                         </TouchableOpacity>
                     </>
                 )}

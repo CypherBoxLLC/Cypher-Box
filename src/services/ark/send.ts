@@ -357,6 +357,12 @@ async function maybeRefreshDeepenedChange(): Promise<void> {
 
     const minRunwayBlocks = Math.round((ARK_EXIT_RUNWAY_HOURS * 60) / AVG_BLOCK_MINUTES);
     const refreshing = new Set(store.arkRefreshingVtxoIds ?? []);
+    // Capsules the server has said are spent, which bark may still list as
+    // Spendable. One in the round would get the whole round refused, so the
+    // live capsules beside it would never fold back in.
+    const serverSpent = new Set(
+        ((store.arkServerSpentVtxoIds ?? []) as string[]).map((id) => id.toLowerCase()),
+    );
 
     // allVtxos() is a JS-thread-blocking UniFFI call, so this runs after the
     // send has resolved and off the render path, alongside the sync above.
@@ -365,6 +371,7 @@ async function maybeRefreshDeepenedChange(): Promise<void> {
     const ids: string[] = [];
     let totalSats = 0;
     for (const v of vtxos) {
+        if (serverSpent.has(String(v.id).toLowerCase())) continue;
         const sats = Number(v.amountSats ?? 0n);
         const expiryHeight = Number(v.expiryHeight ?? 0);
         const decision = decideChangeRefresh({

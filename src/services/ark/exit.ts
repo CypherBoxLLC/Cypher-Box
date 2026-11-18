@@ -220,12 +220,15 @@ export async function hasActiveArkExitRecords(): Promise<boolean> {
  *
  * Checks the cheap sync signals first, then bark's DB.
  */
-export async function assertNoActiveArkExitAsync(action = 'This action'): Promise<void> {
+export async function assertNoActiveArkExitAsync(
+    action: string = loc.cypherbox.services.ark_exit.this_action,
+): Promise<void> {
     const s = useAuthStore.getState();
     const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
     if (s.arkExitInProgress || exitingVtxo || (await hasActiveArkExitRecords())) {
+        // shown to the user like its synchronous twin's message, so callers pass `action` in the app's language too
         throw new Error(
-            `${action} is unavailable while an Emergency Exit is in progress.`,
+            String(loc.formatString(loc.cypherbox.services.ark_exit.unavailable_during_exit, { action })),
         );
     }
 }

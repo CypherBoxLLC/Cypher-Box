@@ -6,6 +6,7 @@ import { Image, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "../styles";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 
 // Provider-logo sheet — outlined with the same pink gradient ring as
 // the parent card, dark interior. Mirrors the slick "ring + dark fill"
@@ -49,6 +50,9 @@ interface Props {
 }
 
 export default function CreateLightningAccount({ onPress }: Props) {
+    // Re-render when the App Store storefront resolves after launch, so the
+    // Strike/CoinOS provider tiles below are gated with the real value.
+    useRegionGate();
     // Outlined-only card — pink gradient ring, dark interior. Replaces
     // the previous solid pink fill so the watermark + provider tiles
     // can breathe and the design reads as "this is a wallet I'm about

@@ -12,6 +12,8 @@ interface Style {
     row: ViewStyle;
     tabs: ViewStyle;
     tab: ViewStyle;
+    hiddenTab: ViewStyle;
+    hiddenTabText: TextStyle;
     bitcoin: ViewStyle;
     progressbar: ImageStyle;
 }
@@ -98,6 +100,19 @@ export default StyleSheet.create<Style>({
         // marginBottom: 5,
         // marginEnd: 10,
         // justifyContent: 'center',
+    },
+    hiddenTab: {
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    hiddenTabText: {
+        fontSize: 10,
+        lineHeight: 12,
+        // The asterisks sit high in the line: down 2pt centres them in the 12pt slot.
+        marginTop: 2,
+        letterSpacing: 1,
+        color: 'rgba(255,255,255,0.7)',
+        includeFontPadding: false,
     },
     bitcoin: {
         flexDirection: 'row',

@@ -86,7 +86,7 @@ async function createStorage(): Promise<MMKV> {
     return store;
 }
 
-function getStorage(): Promise<MMKV> {
+export function getStorage(): Promise<MMKV> {
     if (!storagePromise) {
         storagePromise = createStorage().catch((e) => {
             // Never cache a rejected promise: a single transient keychain

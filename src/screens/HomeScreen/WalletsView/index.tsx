@@ -1,16 +1,17 @@
 import { ArkWallet, CircularView, CoinosWallet, GradientButtonWithShadow, StrikeDollarWallet, StrikeWallet } from "@Cypher/components";
 import RefreshWaitBanner from "@Cypher/components/RefreshWaitBanner";
-import { Text } from "@Cypher/component-library";
+import HomeNotices from "@Cypher/components/HomeNotices";
+import { stepSituation, type HomeNotice } from "@Cypher/services/homeNotices";
 import { Refresh } from "@Cypher/assets/images";
 import { ARK_REFRESH_MIN_SATS, FEATURE_ARK_ENABLED, areBgNotificationsEnabled, blocksToDays, cancelArkPendingRound, isVtxoMidRound, sumMidRoundVtxos } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { deriveVaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
+import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
 import screenWidth from "@Cypher/style-guide/screenWidth";
-import { colors } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { CarouselPageVisibilityContext } from "@Cypher/custom-hooks";
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Animated, AppState, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
+import { Animated, AppState, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import loc from "../../../../loc";
@@ -31,7 +32,7 @@ interface Props {
     matchedRateStrike?: number;
     strikeConvertedBalance?: number;
     currencyStrike?: string;
-    homeMessage?: string | null;
+    homeNotice?: HomeNotice | null;
     /** Fires when the active carousel page changes. Used by BalanceView to render the page indicator (dots colored per wallet kind). */
     onPageChange?: (index: number, total: number, kinds: Array<'fiat' | 'lightning' | 'ark'>) => void;
 }
@@ -40,6 +41,20 @@ interface Props {
 // this can never board into a VTXO (see ArkOnchainRecoverSection). Mirrors
 // MIN_BOARD_SATS there; kept as a local const to avoid a store read here.
 const STUCK_BOARD_MIN_SATS = 50000;
+
+// In RTL the carousel lays its pages out right-to-left, with the last tab on the left. initialScrollIndex and
+// scrollToIndex take the tab index (FlatList finds the page), but scroll offsets, in scroll events and so in scrollX,
+// are measured from the left on both platforms. Map them back to the tab, as BottomBar's vault pager does; without it,
+// Arabic lit the wrong dot and put the shared row and the Bark nudges on the wrong card. The mapping is its own inverse.
+const pageToTab = (page: number, count: number) => (I18nManager.isRTL ? count - 1 - page : page);
+// the scroll offset at which this tab's card fills the screen
+const tabOffset = (tab: number, count: number) => Math.max(0, pageToTab(tab, count)) * screenWidth;
+// A clamped scroll-driven transition from one card's offset to another's. Animated wants an ascending inputRange, and
+// in RTL the later card sits at the smaller offset, so the two ends are put in offset order.
+const between = (fromOffset: number, toOffset: number, from: number, to: number) =>
+    fromOffset <= toOffset
+        ? { inputRange: [fromOffset, toOffset], outputRange: [from, to], extrapolate: 'clamp' as const }
+        : { inputRange: [toOffset, fromOffset], outputRange: [to, from], extrapolate: 'clamp' as const };
 
 // Imperative handle exposed to HomeScreen so the page-indicator dots in
 // BalanceView can drive the carousel (tap dot 0 → fiat, dot 1 → lightning,
@@ -64,7 +79,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     matchedRateStrike = 0,
     strikeConvertedBalance = 0,
     currencyStrike = 'USD',
-    homeMessage = null,
+    homeNotice = null,
     onPageChange,
 }, ref) {
     const {
@@ -142,28 +157,19 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         isStrikeAuth && isArkAuth && !isAuth ? 5 : 0;
 
     /**
-     * Status line shown below the shared Send/Receive row when the user has
-     * opted into background refresh. Lives here (rather than only in
-     * ArkWallet) because the shared row is absolutely positioned over
-     * ArkWallet's natural alert area, and a banner inside the card would
-     * sit BEHIND the buttons. Mirrors ArkWallet's bgRefreshStatus shape so
-     * the two surfaces speak the same UX language.
+     * The Bark notices below the shared Send/Receive row live here (rather
+     * than only in ArkWallet) because the shared row is absolutely positioned
+     * over ArkWallet's natural alert area, and anything inside the card would
+     * sit BEHIND the buttons. Same notices and copy as ArkWallet's list.
      */
     /**
      * iOS-only: surface the Ark backup-snapshot reminder when the user
      * created the wallet via the manual share+confirm path and hasn't yet
      * confirmed iCloud Drive is on for Cypher Box. The same flag is shown
      * as a full action card in Settings → Ark Backup; here on the home
-     * carousel we only render a compact tap-target so users notice it
-     * outside the settings detour. Tap → opens the Ark settings tab where
-     * the dismiss + re-export actions live.
-     *
-     * Takes precedence over bgRefreshStatus in the same absolute slot:
-     * the bg-refresh status is informational ("last refresh 5m ago"), the
-     * backup reminder is a funds-safety nudge — only one fits cleanly in
-     * the slot below the shared Send/Receive row, so the higher-stakes
-     * one wins. bg-refresh status keeps showing on Android (where the
-     * iOS reminder is never active) and on iOS users who've dismissed.
+     * carousel it is one of the notice icons, so users notice it outside
+     * the settings detour. Tap → opens the Ark settings tab where the
+     * dismiss + re-export actions live.
      */
     const iosBackupReminderVisible = Platform.OS === 'ios' && isArkAuth && arkIosBackupReminderActive;
 
@@ -202,7 +208,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // because whether batching produces a HEALTHY capsule or just a smaller
     // dust one depends on the sum, and the two cases need different advice.
     const dustCapsules = useMemo(() => {
-        if (!arkVtxos || arkChainTipHeight == null) return { count: 0, sats: 0 };
+        if (!arkVtxos || arkChainTipHeight == null) return { count: 0, sats: 0, ids: '' };
         // bark 0.6.1 keeps a delegated-refreshing VTXO Spendable (not Locked),
         // so a dust capsule mid-sweep still looks spendable here. Exclude the
         // client-tracked refreshing set so the "needs action" dust warning
@@ -210,6 +216,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         const refreshing = new Set(arkRefreshingVtxoIds ?? []);
         let count = 0;
         let sats = 0;
+        const ids: string[] = [];
         for (const v of arkVtxos) {
             // ARK_REFRESH_MIN_SATS (500), not ARK_VTXO_DUST_SATS (330). The
             // refresh floor is what decides whether a capsule can be rescued on
@@ -227,8 +234,10 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             if (blocks <= 0) continue;
             count++;
             sats += v.sats;
+            ids.push(v.id);
         }
-        return { count, sats };
+        // Which capsules, so an ignored dust notice comes back for new dust.
+        return { count, sats, ids: ids.sort().join(',') };
     }, [arkVtxos, arkChainTipHeight, arkRefreshingVtxoIds]);
 
     // VTXOs currently mid-round (refresh / send / board in flight). The
@@ -242,23 +251,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         [arkVtxos, arkRefreshingVtxoIds],
     );
 
-    /**
-     * Unified status line for the shared Send/Receive row's status slot.
-     * Priority chain (top wins, all red except the all-clear "Auto-refresh:
-     * on" in green). Mirrors the same shape as ArkWallet's bgRefreshStatus
-     * — same priorities, same wording — so a user switching between the
-     * single-Ark layout (in-card status from ArkWallet) and the multi-
-     * wallet layout (shared-row status from here) sees consistent copy.
-     *
-     * Status can optionally carry:
-     *   - linkText: a substring of `text` to render underlined as a tap-
-     *     target hint (e.g. "here" on the dust-batch nudge).
-     *   - tapTab: optional initial tab index to deep-link to when the
-     *     user taps the pill. Defaults to the Account tab (0); the dust
-     *     warning passes 1 (Capsules) to land on the batch-refresh UI.
-     */
-    // Mirrors ArkWallet's bgRefreshStatus, plus the same notifications-off
-    // probe replaces the v0.1.1-dropped auto-refresh branches.
+    // Mirrors ArkWallet: the notifications-off probe replaces the
+    // v0.1.1-dropped auto-refresh branches.
     const [notificationsEnabled, setNotificationsEnabled] = useState<boolean | null>(null);
     useEffect(() => {
         let cancelled = false;
@@ -276,70 +270,93 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         return () => { cancelled = true; sub.remove(); };
     }, []);
 
-    const bgRefreshStatus = useMemo(() => {
+    // Where the Bark backup lives, for the "only on this phone" reminder at
+    // the end of the chain below.
+    const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
+    const arkLastOffDeviceBackupAt = useAuthStore((s) => s.arkLastOffDeviceBackupAt);
+    const arkBackupThisPhoneOnly = arkBackupCoverage(arkLastBackupAt, arkLastOffDeviceBackupAt) === 'this-phone';
+
+    const openArkTab = useCallback(
+        (tab: number) => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tab }),
+        [arkWallet],
+    );
+
+    /**
+     * The Bark status notices for the shared row's icon slot
+     * (components/HomeNotices), in the order the single-line slot used to
+     * rank them. That slot showed only the first one that applied; each now
+     * gets its own icon. Red ones cannot be ignored; the others come back
+     * when their `situation` changes (services/homeNotices.ts).
+     *
+     * Same branches and copy as ArkWallet's list for the Bark-alone layout.
+     * The iOS "backup not synced" branch is left out here: its flag is the
+     * re-export reminder, which the slot adds itself (see sharedArkNotices).
+     */
+    const arkStatusNotices = useMemo((): HomeNotice[] => {
+        const notices: HomeNotice[] = [];
+
         // OFFLINE FIRST, ahead of everything below including an in-flight
         // refresh.
         //
-        // Every other line in this chain is derived from the cached chain tip:
-        // how many days a capsule has left, whether it is dust, whether a
+        // Every other notice in this list is derived from the cached chain
+        // tip: how many days a capsule has left, whether it is dust, whether a
         // refresh is due. When the vault cannot be reached none of those
         // numbers are reads, they are projections off a tip that stopped
-        // moving, and they keep counting down as if nothing were wrong. That
-        // is the failure that misleads in the expensive direction, so it
-        // outranks the advice built on top of it.
-        //
-        // The card's own status dot says the same thing quietly. This row says
-        // it in red, because the dot answers "is it connected" and this answers
-        // "should you trust the numbers you are looking at".
+        // moving, and they keep counting down as if nothing were wrong. This
+        // one says so. Back after Ignore when the vault goes offline again
+        // after a successful sync.
         if (vaultConnectivity.level === 'red') {
-            return {
+            notices.push({
+                id: 'ark-offline',
+                severity: 'yellow',
+                icon: 'cloud-offline-outline',
+                situation: String(arkLastSyncedAt ?? 0),
                 // COPY: Bam finalizes.
                 text: loc.cypherbox.home_lists.wallets_view.vault_offline,
-                error: true,
-                tapTab: 0,
-            };
+                onPress: () => openArkTab(0),
+            });
         }
 
-        // Refresh in flight: short-circuit to all-clear. The Ark Card
-        // itself surfaces the live "Refreshing N capsules · X sats" line
-        // inside its balance area (see Card's `refreshingInfo` prop) so
-        // a duplicate message in the shared-row status pill would be
-        // redundant.
+        // Refresh in flight: nothing more. The Ark Card itself shows the live
+        // "Refreshing N capsules · X sats" line inside its balance area (see
+        // Card's `refreshingInfo` prop), and the capsule numbers the notices
+        // below read are in motion until the round lands.
         if (pendingRound.count > 0) {
-            return null;
+            return notices;
         }
-
-        // (Removed v0.1.1) Auto-refresh failure branch — see ArkWallet
-        // for the rationale. FGS_DATA_SYNC dropped, no auto-refresh
-        // subsystem to fail.
 
         // Stuck on-chain boarding funds: a confirmed deposit below the
-        // server's 50k board minimum can never become a VTXO and sits
-        // trapped in bark's on-chain wallet. Surface it as a tappable
-        // banner that deep-links to the Capsules tab and auto-opens the
-        // recover popup (address/vault picker). Highest priority after an
-        // in-flight refresh because it's trapped money.
+        // server's 50k board minimum can never become a VTXO and sits trapped
+        // in bark's on-chain wallet. Recover deep-links to the Capsules tab and
+        // auto-opens the recover popup (address/vault picker); the second
+        // action keeps the funds as the exit-fee reserve instead, which the
+        // in-card path (ArkWallet) offers too. Suppressed when the user has
+        // armed an on-chain exit-fee reserve: those funds are their
+        // intentional CPFP reserve, not stuck money.
         {
             const stuckSats = Number(arkBalanceDetail?.onchainBoardingSats ?? 0);
-            // Suppress when the user has armed an on-chain exit-fee reserve —
-            // those funds are their intentional CPFP reserve, not stuck money,
-            // and the recover section this deep-links to is hidden anyway.
             if (stuckSats > 0 && stuckSats < STUCK_BOARD_MIN_SATS && (arkExitFeeReserveSats ?? 0) <= 0) {
-                return {
+                notices.push({
+                    id: 'ark-boarding',
+                    severity: 'yellow',
+                    icon: 'boat-outline',
+                    situation: String(stuckSats),
                     text: String(loc.formatString(loc.cypherbox.home_lists.wallets_view.stuck_boarding, { sats: stuckSats.toLocaleString() })),
                     linkText: loc.cypherbox.home_lists.wallets_view.link_here,
-                    tapTab: 0, // Capsules tab
-                    openOnchainRecover: true,
-                    error: true,
-                    // Drives the second action under this banner. The in-card
-                    // path (ArkWallet) has offered this since the reserve
-                    // landed, but that whole block is gated behind
-                    // `!hideActionButtons`, so in shared-button mode (the
-                    // default home layout) the only option ever shown was
-                    // Recover. Same call and same wording as the in-card link
-                    // so the two surfaces stay one feature.
-                    reserveExitFeeSats: stuckSats,
-                };
+                    onPress: () => {
+                        // Arm the one-shot flag so the Capsules recover section
+                        // auto-opens its address/vault picker on arrival.
+                        setArkPendingOnchainRecoverOpen(true);
+                        openArkTab(0);
+                    },
+                    actions: [{
+                        label: loc.cypherbox.home_lists.wallets_view.leave_as_exit_fees,
+                        onPress: () => {
+                            setArkExitFeeReserveSats(stuckSats);
+                            SimpleToast.show(loc.cypherbox.home_lists.wallets_view.kept_for_exit_fees, SimpleToast.SHORT);
+                        },
+                    }],
+                });
             }
         }
 
@@ -349,78 +366,107 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // delegated batch folds them into one healthy capsule for about a
             // sat, which resets both the value problem and the expiry clock.
             // Below that, batching still reduces the capsule count but the
-            // result is itself dust, so spending is the honest advice.
-            if (dustCapsules.sats >= ARK_REFRESH_MIN_SATS) {
-                return {
-                    text: loc.cypherbox.home_lists.wallets_view.dust_above_500,
-                    linkText: loc.cypherbox.home_lists.wallets_view.link_here,
-                    tapTab: 0, // Capsules tab
-                    error: true,
-                };
-            }
-            return {
-                text: loc.cypherbox.home_lists.wallets_view.dust_might_expire,
+            // result is itself dust, so spending is the honest advice. Back
+            // after Ignore when the set of dust capsules changes.
+            notices.push({
+                id: 'ark-dust',
+                severity: 'yellow',
+                icon: 'sparkles-outline',
+                situation: dustCapsules.ids,
+                text: dustCapsules.sats >= ARK_REFRESH_MIN_SATS
+                    ? loc.cypherbox.home_lists.wallets_view.dust_above_500
+                    : loc.cypherbox.home_lists.wallets_view.dust_might_expire,
                 linkText: loc.cypherbox.home_lists.wallets_view.link_here,
-                tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
-                error: true,
-            };
+                onPress: () => openArkTab(0), // Capsules tab
+            });
         }
 
+        // Red: a capsule can expire within the week. Never ignorable.
         if (expiryWarning) {
-            return { text: expiryWarning, error: true };
+            notices.push({
+                id: 'ark-expiry',
+                severity: 'red',
+                icon: 'time',
+                situation: '',
+                text: expiryWarning,
+                onPress: () => openArkTab(0),
+            });
         }
 
-        // Notifications-off branch replaces the v0.1.1-dropped
-        // "Auto-refresh: off" branch. The 5 capsule-expiry warning
-        // notifications are now the only sync-cadence safety net, so a
-        // revoked OS permission is the equivalent loss of protection.
+        // Notifications-off replaces the v0.1.1-dropped "Auto-refresh: off"
+        // branch. The capsule-expiry warning notifications are the only
+        // sync-cadence safety net, so a revoked OS permission is the
+        // equivalent loss of protection.
         if (notificationsEnabled === false) {
-            return {
+            notices.push({
+                id: 'ark-notifications-off',
+                severity: 'yellow',
+                icon: 'notifications-off-outline',
+                situation: 'off',
                 text: loc.cypherbox.home_lists.wallets_view.notifications_off,
-                error: true,
-            };
+                onPress: () => openArkTab(0),
+            });
         }
 
         // Capsules worth exiting, but the exit fee wallet is empty. Mirrors
-        // ArkWallet's branch deliberately: the two layouts render different
-        // status rows, and this file's own header notes that the exit-fee
-        // reserve nudge once lived in ArkWallet alone and nobody in the
-        // default layout ever saw it. Same condition, same copy, same tab.
+        // ArkWallet's branch deliberately: the exit-fee reserve nudge once
+        // lived in ArkWallet alone and nobody in the default layout ever saw
+        // it. Back after Ignore when the reserve it asks for grows by another
+        // 10k sats, not on every small move of the fee estimate.
         if ((arkExitRecommendedReserveSats ?? 0) > 0
             && (arkBalanceDetail?.onchainBoardingSats ?? 0) <= 0) {
-            return {
+            notices.push({
+                id: 'ark-exit-fees',
+                severity: 'yellow',
+                icon: 'exit-outline',
+                situation: stepSituation(arkExitRecommendedReserveSats ?? 0, 10_000),
                 // COPY: Bam finalizes. Kept identical to ArkWallet on purpose.
                 text: loc.cypherbox.home_lists.wallets_view.exit_no_fees,
                 linkText: loc.cypherbox.home_lists.wallets_view.link_vault_tab,
-                tapTab: 1, // Vault tab: where the exit fee reserve card lives
-                error: true,
-            };
+                onPress: () => openArkTab(1), // Vault tab: the exit fee reserve card
+            });
         }
 
-        if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
-            return {
-                text: loc.cypherbox.home_lists.wallets_view.backup_not_synced,
-                error: true,
-            };
+        // Backups are written, but only inside the app, which a lost phone or
+        // a deleted app takes with it. Stays until a copy reaches iCloud
+        // Drive, Google Drive or the chosen folder (see backupCoverage.ts).
+        // Back after Ignore with the next backup, which follows a receive.
+        if (arkBackupThisPhoneOnly) {
+            notices.push({
+                id: 'ark-backup-phone-only',
+                severity: 'yellow',
+                icon: 'save-outline',
+                situation: String(arkLastBackupAt ?? 0),
+                text: Platform.OS === 'ios'
+                    ? loc.cypherbox.home_lists.wallets_view.backup_this_phone_ios
+                    : loc.cypherbox.home_lists.wallets_view.backup_this_phone_android,
+                onPress: () => openArkTab(3), // Settings tab: the backup rows
+            });
         }
 
-        return null;
+        return notices;
     }, [
         arkExitRecommendedReserveSats,
         expiryWarning,
         dustCapsules,
         notificationsEnabled,
-        arkIosBackupReminderActive,
+        arkBackupThisPhoneOnly,
+        arkLastBackupAt,
         pendingRound,
         arkBalanceDetail,
-        // Without this the offline branch never re-evaluates and the row keeps
-        // showing whatever it said when the vault was last reachable, which is
-        // the exact failure the branch exists to report.
+        // Without this the offline notice never re-evaluates and keeps saying
+        // whatever it said when the vault was last reachable.
         vaultConnectivity,
+        arkLastSyncedAt,
         arkExitFeeReserveSats,
+        openArkTab,
+        setArkPendingOnchainRecoverOpen,
+        setArkExitFeeReserveSats,
     ]);
 
     const [indexStrike, setIndexStrike] = useState(0);
+    // Height of the Bark notice slot below the shared row, for the container's minHeight.
+    const [sharedNoticesHeight, setSharedNoticesHeight] = useState(0);
     const [wTabs, setWTabs] = useState([]);
     const flatListRef = useRef<FlatList<any>>(null);
 
@@ -510,7 +556,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         refSendRBSheet={refSendRBSheet}
                         refSwapRBSheet={refSwapRBSheet}
                         setReceiveType={setReceiveType}
-                        homeMessage={homeMessage}
+                        homeNotice={homeNotice}
                         hideActionButtons={useSharedButtons}
                     />
                 )
@@ -629,8 +675,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
         // CoinOS is USD-denominated (convertedRate is the USD figure), so its
         // symbol is always "$", not the Strike account currency — same fix as
         // the Bark card below.
-        COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency="USD" isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
-        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currencyStrike} isLoading={isLoading} matchedRateStrike={matchedRateStrike} strikeConvertedBalance={strikeConvertedBalance} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} homeMessage={homeMessage} hideActionButtons={useSharedButtons}/> },
+        COINOS: { key: 'coinos', component: () => <CoinosWallet balance={balance} convertedRate={convertedRate} currency="USD" isLoading={isLoading} matchedRate={matchedRate} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} wallet={wallet} homeNotice={homeNotice} hideActionButtons={useSharedButtons}/> },
+        STRIKE: { key: 'strike', component: () => <StrikeWallet currency={currencyStrike} isLoading={isLoading} matchedRateStrike={matchedRateStrike} strikeConvertedBalance={strikeConvertedBalance} refRBSheet={refRBSheet} refSendRBSheet={refSendRBSheet} setReceiveType={setReceiveType} strikeBalance={strikeBalance} homeNotice={homeNotice} hideActionButtons={useSharedButtons}/> },
         // Ark-only users (no Lightning) keep the in-card Receive/Send pair
         // because `useSharedButtons` is false in that case. When Lightning
         // and Ark are both connected, all internal pairs are suppressed and
@@ -657,7 +703,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                         refRBSheet={refRBSheet}
                         refSendRBSheet={refSendRBSheet}
                         setReceiveType={setReceiveType}
-                        homeMessage={homeMessage}
+                        homeNotice={homeNotice}
                         hideActionButtons={useSharedButtons}
                     />
                 </View>
@@ -734,7 +780,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // this, scrollX starts at 0 (fiat-offset) even when the FlatList is
     // restored to lightning via initialScrollIndex, causing the
     // native-driven translateX/opacity to lag the actual scroll position.
-    const scrollX = useRef(new Animated.Value(indexStrike * screenWidth)).current;
+    const scrollX = useRef(new Animated.Value(tabOffset(indexStrike, wTabs.length))).current;
     const scrollHandler = useRef(
         Animated.event(
             [{ nativeEvent: { contentOffset: { x: scrollX } } }],
@@ -761,8 +807,8 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // rewrite scrollX, which is why the workaround (swipe away and back)
     // works.
     useFocusEffect(useCallback(() => {
-        scrollX.setValue(indexStrike * screenWidth);
-    }, [indexStrike, scrollX]));
+        scrollX.setValue(tabOffset(indexStrike, wTabs.length));
+    }, [indexStrike, wTabs.length, scrollX]));
 
     // Find the fiat slide and the lightning slide in `wTabs`. The
     // interpolation is anchored on the fiat → lightning transition; ark is
@@ -777,29 +823,28 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     const fiatIdx = wTabs.findIndex((t: any) => kindFromTab(t) === 'fiat');
     const lightningIdx = wTabs.findIndex((t: any) => kindFromTab(t) === 'lightning');
     const hasFiatTransition = fiatIdx >= 0 && lightningIdx >= 0 && lightningIdx > fiatIdx;
-    const fiatOffset = hasFiatTransition ? fiatIdx * screenWidth : 0;
-    const lightningOffset = hasFiatTransition ? lightningIdx * screenWidth : screenWidth;
+    const fiatOffset = hasFiatTransition ? tabOffset(fiatIdx, wTabs.length) : 0;
+    const lightningOffset = hasFiatTransition ? tabOffset(lightningIdx, wTabs.length) : screenWidth;
+    // where the lightning card sits while fiat is centered: one screen to the right, or to the left in RTL, where the
+    // pages run the other way
+    const lightningSideX = I18nManager.isRTL ? -screenWidth : screenWidth;
 
-    const buttonsTranslateX = scrollX.interpolate({
-        inputRange: [fiatOffset, lightningOffset],
-        // When fiat is centered (scrollX = fiatOffset): row sits at
-        // +screenWidth, off the right edge — same place the lightning
-        // card sits at that moment. As scrollX grows toward
-        // lightningOffset, both card and row glide leftward to 0 in
-        // lockstep. Past lightning (toward ark), `extrapolate:'clamp'`
-        // pins the row at 0.
-        outputRange: hasFiatTransition ? [screenWidth, 0] : [0, 0],
-        extrapolate: 'clamp',
-    });
-    const buttonsOpacity = scrollX.interpolate({
-        inputRange: [fiatOffset, lightningOffset],
-        outputRange: hasFiatTransition ? [0, 1] : [1, 1],
-        extrapolate: 'clamp',
-    });
+    // When fiat is centered (scrollX = fiatOffset): row sits at
+    // lightningSideX, off the edge — same place the lightning
+    // card sits at that moment. As scrollX moves toward
+    // lightningOffset, both card and row glide in to 0 in
+    // lockstep. Past lightning (toward ark), `extrapolate:'clamp'`
+    // pins the row at 0.
+    const buttonsTranslateX = scrollX.interpolate(
+        between(fiatOffset, lightningOffset, hasFiatTransition ? lightningSideX : 0, 0),
+    );
+    const buttonsOpacity = scrollX.interpolate(
+        between(fiatOffset, lightningOffset, hasFiatTransition ? 0 : 1, 1),
+    );
 
-    // Ark-anchored opacity for the Ark-specific reminders/warnings that
-    // sit below the shared Send/Receive row (iOS backup pill,
-    // bgRefreshStatus banner). Previously these rendered conditionally
+    // Ark-anchored opacity for the Ark-specific notices that sit below
+    // the shared Send/Receive row (the notice icon slot). Previously these
+    // rendered conditionally
     // on `kindFromTab(wTabs[indexStrike]) === 'ark'`, which only flipped
     // at the snap end — so they'd ABRUPTLY appear/disappear as the user
     // slid into/out of the Ark card. Now driven by scrollX so they
@@ -808,25 +853,15 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     // outside so the row sits fully invisible past the leftward edge of
     // the Ark slide.
     const arkIdxForFade = wTabs.findIndex((t: any) => kindFromTab(t) === 'ark');
-    const arkOffsetForFade = arkIdxForFade >= 0 ? arkIdxForFade * screenWidth : 0;
+    const arkOffsetForFade = arkIdxForFade >= 0 ? tabOffset(arkIdxForFade, wTabs.length) : 0;
     const prevArkOffsetForFade = arkIdxForFade > 0
-        ? (arkIdxForFade - 1) * screenWidth
+        ? tabOffset(arkIdxForFade - 1, wTabs.length)
         : arkOffsetForFade;
-    const arkReminderOpacity = scrollX.interpolate({
-        inputRange: arkIdxForFade > 0
-            ? [prevArkOffsetForFade, arkOffsetForFade]
-            : [arkOffsetForFade, arkOffsetForFade + 1],
-        outputRange: arkIdxForFade > 0 ? [0, 1] : [1, 1],
-        extrapolate: 'clamp',
-    });
-
-    const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
-        if (next !== indexStrike) {
-            setIndexStrike(next);
-            setWalletTab(next === 1);
-        }
-    };
+    const arkReminderOpacity = scrollX.interpolate(
+        arkIdxForFade > 0
+            ? between(prevArkOffsetForFade, arkOffsetForFade, 0, 1)
+            : { inputRange: [arkOffsetForFade, arkOffsetForFade + 1], outputRange: [1, 1], extrapolate: 'clamp' },
+    );
 
     if (__DEV__) console.log('allBTCWallets: ', allBTCWallets, wTabs)
     // BUTTON_ROW_HEIGHT ≈ GradientButtonWithShadow's rendered height (47).
@@ -861,6 +896,92 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
     const BUTTONS_TOP = Platform.OS === 'ios'
         ? (oneCustodialPlusArk ? SHARED_SLIDE_HEIGHT + 23 : allThreeWallets ? BUTTONS_TOP_BASE + 8 : BUTTONS_TOP_BASE)
         : (oneCustodialPlusArk ? SHARED_SLIDE_HEIGHT + 12 : BUTTONS_TOP_BASE);
+
+    // Cancels the wedged round(s) to unlock the VTXOs; the next sync
+    // re-detects if still stuck. Near expiry, refreshing is stuck AND the
+    // funds are running out, so it routes to the "move your funds out" screen
+    // rather than the in-place cancel-and-retry.
+    const recoverStuckRefresh = () => {
+        const stuck = useAuthStore.getState().arkRefreshStuck;
+        if (!stuck) return;
+        if (stuck.nearExpiry) {
+            dispatchNavigate('ArkStuckCapsuleScreen', {});
+            return;
+        }
+        (async () => {
+            for (const roundId of stuck.stuckRoundIds) {
+                try {
+                    await cancelArkPendingRound(roundId);
+                } catch {
+                    // cancelArkPendingRound logs the inner BarkError
+                }
+            }
+            useAuthStore.getState().setArkRefreshStuck(null);
+        })();
+    };
+
+    // Everything the shared row's notice slot shows, on the Bark page. A stuck
+    // round, then a round in flight, keep the slot to themselves as before:
+    // stuck is the escalation of the round in flight, so the two never show
+    // together, and while a round runs the numbers the status notices read are
+    // in motion. Otherwise the iOS re-export reminder, then the status notices.
+    const sharedArkNotices: HomeNotice[] = arkRefreshStuck
+        ? [{
+            // Red: never ignorable. A wedged round can strand funds.
+            id: 'ark-refresh-stuck',
+            severity: 'red',
+            icon: 'alert-circle',
+            situation: '',
+            text: String(arkRefreshStuck.nearExpiry
+                ? loc.formatString(loc.cypherbox.home_lists.wallets_view.refresh_stuck_near_expiry, { sats: arkRefreshStuck.stuckSats.toLocaleString() })
+                : loc.formatString(loc.cypherbox.home_lists.wallets_view.refresh_stuck, { sats: arkRefreshStuck.stuckSats.toLocaleString() })),
+            onPress: recoverStuckRefresh,
+        }]
+        : arkRefreshInFlight
+            ? [{
+                // The same wait banner the Capsules tab shows, `compact`. Its
+                // stuck state routes to the Capsules tab, where Cancel lives.
+                // Back after Ignore with the next round.
+                id: 'ark-refresh-wait',
+                severity: 'yellow',
+                icon: 'hourglass-outline',
+                situation: String(arkRoundStarts.length > 0 ? Math.min(...arkRoundStarts) : 0),
+                accessibilityLabel: loc.cypherbox.ark?.refresh_banner?.come_back,
+                content: (
+                    <RefreshWaitBanner
+                        compact
+                        roundStarts={arkRoundStarts}
+                        cancelling={false}
+                        onCancel={() => openArkTab(0)}
+                    />
+                ),
+            }]
+            : [
+                ...(iosBackupReminderVisible
+                    ? [{
+                        // Funds-safety nudge: the user can lose funds if they
+                        // uninstall before re-exporting. Back after Ignore with
+                        // the next backup, which follows a receive.
+                        id: 'ark-backup-sync',
+                        severity: 'yellow' as const,
+                        icon: 'cloud-upload-outline',
+                        situation: String(arkLastBackupAt ?? 0),
+                        text: loc.cypherbox.home_lists.wallets_view.reexport_backup,
+                        onPress: () => openArkTab(3), // Settings tab: dismiss + re-export
+                    }]
+                    : []),
+                ...arkStatusNotices,
+            ];
+
+    // The notice slot's share of the container. 32pt holds the icon row, as it
+    // held the one-line notice before, so nothing moves while messages are
+    // closed. An open message (or a second row of icons) reserves its measured
+    // height plus the slot's offset below the base, so it pushes BottomBar
+    // down rather than covering Top-up/Withdraw.
+    const sharedNoticesReserve = sharedNoticesHeight > 32
+        ? sharedNoticesHeight + 8 + (BUTTONS_TOP - BUTTONS_TOP_BASE)
+        : 32;
+
     return (
         <View style={{
             width: screenWidth,
@@ -873,17 +994,16 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             // is only 133pt and without this minHeight the buttons would
             // render outside WalletsView's measured bounds, overlapping
             // BottomBar. minHeight = card + gap + buttons = 133+10+47=190.
-            // Always reserve the ~32pt below the button row for the bg-
-            // refresh status slot, regardless of whether bgRefreshStatus
-            // is currently truthy. Without this, the slot collapses to 0
-            // when the wallet is in the healthy state (bgRefreshStatus
-            // returns null) and the section below the carousel (vault
-            // recover row / Hot Vault tile) jumps up against the buttons.
-            // The 56pt iOS-backup-reminder slot still wins when active.
+            // Always reserve the ~32pt below the button row for the notice
+            // icon slot, whether or not any notice shows. Without this, the
+            // slot collapses to 0 when the wallet is in the healthy state
+            // and the section below the carousel (vault recover row / Hot
+            // Vault tile) jumps up against the buttons.
+            // An open notice message grows it (sharedNoticesReserve).
             // Don't gate on which slide is active — keeping the container
             // size stable across swipes avoids layout jitter when the
             // user pages between Ark and Lightning.
-            ...(useSharedButtons ? { minHeight: BUTTONS_TOP_BASE + BUTTON_ROW_HEIGHT + (iosBackupReminderVisible ? 56 : 32) } : {}),
+            ...(useSharedButtons ? { minHeight: BUTTONS_TOP_BASE + BUTTON_ROW_HEIGHT + sharedNoticesReserve } : {}),
         }}>
             <Animated.FlatList
                 ref={flatListRef}
@@ -942,7 +1062,7 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                 // mid-gesture commit hook; onMomentumScrollEnd is the
                 // closest equivalent and fires once per page commit.
                 onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
-                    const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+                    const next = pageToTab(Math.round(e.nativeEvent.contentOffset.x / screenWidth), wTabs.length);
                     if (next === indexStrike) return;
                     setIndexStrike(next);
                     setWalletTab(next === 1);
@@ -1034,258 +1154,34 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
                     />
                 </Animated.View>
             )}
-            {/* Stuck-refresh recovery banner — shared-row mode. The in-card
-                ArkWallet banner is suppressed when the shared Send/Receive row
-                is active, so surface it here in the same absolute slot below
-                the row. Top precedence over the iOS-backup and bg-refresh
-                nudges below (a wedged round is the higher-stakes signal — both
-                gate on !arkRefreshStuck). Tap cancels the wedged round(s) to
-                unlock the VTXOs; the next sync re-detects if still stuck. */}
-            {useSharedButtons && arkRefreshStuck && (
+            {/* The Bark notices as a row of coloured icons (components/HomeNotices),
+                in the slot below the shared Send/Receive row, with the Bark page
+                only: opacity follows scrollX so they fade in and out with the
+                card, and taps pass through while another page is up. An open
+                message's height is reserved in minHeight above, so it pushes
+                Top-up/Withdraw down instead of covering them. */}
+            {useSharedButtons && (
                 <Animated.View
                     pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
                     style={{
                         position: 'absolute',
                         top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
                         left: 0,
+                        // `right: 40`, as for the button row above: WalletsView
+                        // is screenWidth wide inside HomeScreen's 20pt padding.
                         right: 40,
-                        alignItems: 'center',
                         opacity: arkReminderOpacity,
                     }}
                 >
-                    <TouchableOpacity
-                        onPress={() => {
-                            const stuck = useAuthStore.getState().arkRefreshStuck;
-                            if (!stuck) return;
-                            // Near expiry: refreshing is stuck AND the funds are
-                            // running out, so route to the "move your funds out"
-                            // screen rather than the in-place cancel-and-retry.
-                            if (stuck.nearExpiry) {
-                                dispatchNavigate('ArkStuckCapsuleScreen', {});
-                                return;
-                            }
-                            (async () => {
-                                for (const roundId of stuck.stuckRoundIds) {
-                                    try {
-                                        await cancelArkPendingRound(roundId);
-                                    } catch {
-                                        // cancelArkPendingRound logs the inner BarkError
-                                    }
-                                }
-                                useAuthStore.getState().setArkRefreshStuck(null);
-                            })();
-                        }}
-                        activeOpacity={0.7}
-                        accessibilityRole="button"
-                        accessibilityLabel={arkRefreshStuck.nearExpiry
-                            ? loc.cypherbox.home_lists.wallets_view.move_stuck_funds_a11y
-                            : loc.cypherbox.home_lists.wallets_view.recover_stuck_refresh_a11y}
-                    >
-                        <Text
-                            h4
-                            style={{
-                                color: colors.redLight,
-                                textAlign: 'center',
-                                paddingHorizontal: 12,
-                                textDecorationLine: 'underline',
-                            }}
-                        >
-                            {arkRefreshStuck.nearExpiry
-                                ? loc.formatString(loc.cypherbox.home_lists.wallets_view.refresh_stuck_near_expiry, { sats: arkRefreshStuck.stuckSats.toLocaleString() })
-                                : loc.formatString(loc.cypherbox.home_lists.wallets_view.refresh_stuck, { sats: arkRefreshStuck.stuckSats.toLocaleString() })}
-                        </Text>
-                    </TouchableOpacity>
-                </Animated.View>
-            )}
-
-            {/* Refresh-in-flight wait banner, the same component the Capsules
-                tab shows. Sits below the stuck banner in precedence because
-                stuck is the escalation of this very condition, so the two must
-                never appear together. Cancel is not wired here: the recovery
-                actions live on the Capsules tab, so the banner's stuck state
-                routes there rather than duplicating the cancel path. */}
-            {useSharedButtons && !arkRefreshStuck && arkRefreshInFlight && (
-                <Animated.View
-                    pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
-                    style={{
-                        position: 'absolute',
-                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
-                        left: 0,
-                        right: 40,
-                        opacity: buttonsOpacity,
-                        transform: [{ translateX: buttonsTranslateX }],
-                    }}
-                >
-                    <RefreshWaitBanner
-                        roundStarts={arkRoundStarts}
-                        cancelling={false}
-                        onCancel={() => dispatchNavigate('CheckingAccountNew', {
-                            wallet: arkWallet,
-                            matchedRate,
-                            initialTab: 'capsules',
-                        })}
+                    <HomeNotices
+                        notices={sharedArkNotices}
+                        // A message left open on the Bark page closes when the
+                        // carousel moves on, and its reserved height with it.
+                        closeKey={indexStrike}
+                        onLayout={(e) => setSharedNoticesHeight(e.nativeEvent.layout.height)}
                     />
                 </Animated.View>
             )}
-
-            {/* iOS backup-snapshot reminder — funds-safety nudge for users
-                who satisfied the create-flow gate via manual share+confirm
-                without iCloud Drive verified. Takes the same absolute slot
-                as bgRefreshStatus and wins priority when both apply: the
-                user can lose funds if they uninstall before re-exporting,
-                whereas the bg-refresh status is informational. Tap → Ark
-                settings tab, where the dismiss + re-export actions live. */}
-            {useSharedButtons && !arkRefreshStuck && !arkRefreshInFlight && iosBackupReminderVisible && (
-                <Animated.View
-                    pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
-                    style={{
-                        position: 'absolute',
-                        top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
-                        left: 16,
-                        right: 16,
-                        // Drive visibility from scrollX so the pill fades in/out
-                        // as the Ark card slides into/out of view (was an
-                        // abrupt mount on indexStrike change before).
-                        opacity: arkReminderOpacity,
-                    }}
-                >
-                    <TouchableOpacity
-                        onPress={() => dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: 3 })}
-                        activeOpacity={0.7}
-                        style={{
-                            paddingVertical: 8,
-                            paddingHorizontal: 12,
-                            borderRadius: 8,
-                            backgroundColor: 'rgba(251, 146, 60, 0.10)',
-                            borderWidth: 1,
-                            borderColor: 'rgba(251, 146, 60, 0.45)',
-                        }}
-                    >
-                        <Text bold style={{ fontSize: 12, color: '#FB923C', textAlign: 'center' }}>
-                            {loc.cypherbox.home_lists.wallets_view.reexport_backup}
-                        </Text>
-                    </TouchableOpacity>
-                </Animated.View>
-            )}
-
-            {/* Background-refresh status banner — sits BELOW the absolutely-
-                positioned shared Send/Receive row. Only shown when:
-                  - shared buttons are active (the banner-in-card path
-                    doesn't apply — see ArkWallet/index.tsx)
-                  - the user has opted into bg refresh (bgRefreshStatus
-                    non-null)
-                  - the active carousel slide is Ark (banner is Ark-
-                    specific status; suppress on Lightning / fiat slides)
-                  - the iOS backup reminder isn't already occupying this
-                    slot (priority: funds-safety nudge over info text)
-                Tap → opens the Ark Capsules screen so the user can drill
-                into the bg-refresh settings or manually retry. */}
-            {useSharedButtons && !arkRefreshStuck && !arkRefreshInFlight && !iosBackupReminderVisible && bgRefreshStatus && (() => {
-                const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
-                const linkText = (bgRefreshStatus as any).linkText as string | undefined;
-                const tapTab = (bgRefreshStatus as any).tapTab as number | undefined;
-                let body: React.ReactNode = bgRefreshStatus.text;
-                if (linkText) {
-                    const idx = bgRefreshStatus.text.indexOf(linkText);
-                    if (idx >= 0) {
-                        const before = bgRefreshStatus.text.slice(0, idx);
-                        const after = bgRefreshStatus.text.slice(idx + linkText.length);
-                        body = (
-                            <>
-                                {before}
-                                <Text
-                                    bold
-                                    style={{ color: statusColor, textDecorationLine: 'underline' }}
-                                >
-                                    {linkText}
-                                </Text>
-                                {after}
-                            </>
-                        );
-                    }
-                }
-                return (
-                    <Animated.View
-                        // Stays mounted regardless of which slide is active;
-                        // opacity is driven by scrollX so the banner fades in
-                        // as the Ark slide enters view and fades out as it
-                        // leaves. pointerEvents disabled when off-Ark so taps
-                        // pass through to whatever's underneath.
-                        pointerEvents={kindFromTab(wTabs[indexStrike]) === 'ark' ? 'auto' : 'none'}
-                        style={{
-                            position: 'absolute',
-                            top: BUTTONS_TOP + BUTTON_ROW_HEIGHT + 8,
-                            left: 0,
-                            right: 40,
-                            alignItems: 'center',
-                            opacity: arkReminderOpacity,
-                        }}
-                    >
-                        <TouchableOpacity
-                            onPress={() => {
-                                // Stuck-boarding banner: arm the one-shot flag so
-                                // the Capsules recover section auto-opens its
-                                // address/vault picker on arrival.
-                                if ((bgRefreshStatus as any).openOnchainRecover) {
-                                    setArkPendingOnchainRecoverOpen(true);
-                                }
-                                dispatchNavigate("CheckingAccountNew", { wallet: arkWallet, accountType: "ark", initialTab: tapTab ?? 0 });
-                            }}
-                            activeOpacity={0.7}
-                        >
-                            <Text
-                                h4
-                                style={{
-                                    color: statusColor,
-                                    textAlign: 'center',
-                                    paddingHorizontal: 12,
-                                }}
-                            >
-                                {body}
-                            </Text>
-                        </TouchableOpacity>
-                        {/* Second action: keep the un-boardable funds on-chain
-                            as the exit-fee reserve instead of recovering them.
-                            Arms arkExitFeeReserveSats, which tells sync.ts to
-                            stop trying to board them and suppresses this
-                            banner on the next tick.
-
-                            Separate TouchableOpacity rather than a second link
-                            inside `body`, because the banner's whole text is
-                            already one tap target routing to Recover, and
-                            nesting a differently-routed link inside it makes
-                            the hit areas ambiguous. */}
-                        {Number((bgRefreshStatus as any).reserveExitFeeSats ?? 0) > 0 && (
-                            <TouchableOpacity
-                                onPress={() => {
-                                    setArkExitFeeReserveSats(
-                                        Number((bgRefreshStatus as any).reserveExitFeeSats),
-                                    );
-                                    SimpleToast.show(loc.cypherbox.home_lists.wallets_view.kept_for_exit_fees, SimpleToast.SHORT);
-                                }}
-                                activeOpacity={0.7}
-                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                accessibilityRole="button"
-                                accessibilityLabel={loc.cypherbox.home_lists.wallets_view.leave_as_exit_fees}
-                                style={{ marginTop: 6 }}
-                            >
-                                <Text
-                                    h4
-                                    bold
-                                    style={{
-                                        color: colors.gray.light,
-                                        textAlign: 'center',
-                                        textDecorationLine: 'underline',
-                                        paddingHorizontal: 12,
-                                    }}
-                                >
-                                    {loc.cypherbox.home_lists.wallets_view.leave_as_exit_fees}
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-                    </Animated.View>
-                );
-            })()}
         </View>
     );
 });

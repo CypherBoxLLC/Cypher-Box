@@ -15,6 +15,7 @@ import {
     SIGN_BACKUP_MISMATCH,
     SIGN_FALSE_CHANGE,
     SIGN_INPUT_DETAILS,
+    SIGN_INPUT_MISMATCH,
     SIGN_MIXED_WALLETS,
     SIGN_MULTISIG_HOT_VAULT,
     SIGN_NOTHING_SIGNED,
@@ -30,6 +31,7 @@ import {
     signWithRoot,
     signingKeyForWallet,
 } from '../../src/helpers/signOnce';
+import { NonceReuseError, __resetSignatureAuditForTest, auditSignatures } from '../../class/signatureAudit';
 
 jest.mock('../../blue_modules/BlueElectrum', () => ({ connectMain: jest.fn() }));
 
@@ -301,12 +303,13 @@ describe('refusing', () => {
         const tx = bitcoin.Transaction.fromBuffer(wrongTx.data.inputs[0].nonWitnessUtxo!);
         tx.locktime = 1;
         wrongTx.data.inputs[0].nonWitnessUtxo = tx.toBuffer();
-        expect(() => reviewWithRoot(wrongTx, root, [W1])).toThrow(SIGN_INPUT_DETAILS);
+        expect(() => reviewWithRoot(wrongTx, root, [W1])).toThrow(SIGN_INPUT_MISMATCH);
 
         const disagree = bitcoin.Psbt.fromHex(fixtures.w1SpendNonWitness.unsignedHex);
         const prev = bitcoin.Transaction.fromBuffer(disagree.data.inputs[0].nonWitnessUtxo!).outs[1];
         disagree.data.inputs[0].witnessUtxo = { script: prev.script, value: prev.value + 50_000 };
-        expect(() => reviewWithRoot(disagree, root, [W1])).toThrow(SIGN_INPUT_DETAILS);
+        expect(() => reviewWithRoot(disagree, root, [W1])).toThrow(SIGN_INPUT_MISMATCH);
+        expect(() => signWithRoot(disagree, root, [W1])).toThrow(SIGN_INPUT_MISMATCH);
     });
 
     it('wrapped and legacy multisig', () => {
@@ -421,5 +424,84 @@ describe('with BlueWallet as the coordinator', () => {
         expect(tx).toBeTruthy();
         expect(tx.ins[0].witness).toHaveLength(4);
         expect(tx.ins[0].witness[3].toString('hex')).toBe(fixtures.wallets.w1.witnessScriptReceive0);
+    });
+});
+
+describe("multisig change the coordinator wouldn't show", () => {
+    const ws = (branch: number, index: number) => policyWitnessScript(W1, branch, index);
+    const p2wsh = (witnessScript: Buffer) => bitcoin.payments.p2wsh({ redeem: { output: witnessScript } });
+    const derivationsAt = (branch: number, index: number) =>
+        W1.keys.map(k => ({
+            masterFingerprint: Buffer.from(k.fingerprint, 'hex'),
+            path: `${k.path}/${branch}/${index}`,
+            pubkey: policyKeyPubkey(k, branch, index),
+        }));
+    const spendWithChange = (script: Buffer, bip32Derivation: any[]) => {
+        const psbt = new bitcoin.Psbt();
+        psbt.addInput(multisigInput(W1, 0, 0, 100_000, 0x61));
+        psbt.addOutput({ address: PAYEE, value: 60_000 });
+        psbt.addOutput({ script, value: 39_000, bip32Derivation });
+        return psbt;
+    };
+    const changeOf = (psbt: bitcoin.Psbt) => reviewWithRoot(psbt, root, [W1]).outputs.map(o => o.change);
+
+    it("counts the wallet's native SegWit change, at an index a wallet reaches", () => {
+        expect(changeOf(spendWithChange(p2wsh(ws(1, 7)).output as Buffer, derivationsAt(1, 7)))).toEqual([false, true]);
+        expect(changeOf(spendWithChange(p2wsh(ws(1, 9_999)).output as Buffer, derivationsAt(1, 9_999)))).toEqual([false, true]);
+    });
+
+    it("lists change past index 10,000, or to the wallet's wrapped or legacy address, as going out, and still signs", () => {
+        const wrapped = bitcoin.payments.p2sh({ redeem: p2wsh(ws(1, 7)) }).output as Buffer;
+        const legacy = bitcoin.payments.p2sh({ redeem: { output: ws(1, 7) } }).output as Buffer;
+        for (const psbt of [
+            spendWithChange(p2wsh(ws(1, 10_000)).output as Buffer, derivationsAt(1, 10_000)),
+            spendWithChange(wrapped, derivationsAt(1, 7)),
+            spendWithChange(legacy, derivationsAt(1, 7)),
+        ]) {
+            expect(changeOf(psbt)).toEqual([false, false]);
+            expect(signWithRoot(psbt, root, [W1]).signed).toBe(1);
+        }
+    });
+
+    it("lists a payment to the seed's own single-key address as going out, and refuses one that only claims it", () => {
+        const path = "m/84'/0'/0'/0/3";
+        const pubkey = Buffer.from(root.derivePath(path).publicKey);
+        const own = [{ masterFingerprint: Buffer.from(OURS, 'hex'), path, pubkey }];
+        expect(changeOf(spendWithChange(bitcoin.payments.p2wpkh({ pubkey }).output as Buffer, own))).toEqual([false, false]);
+        expect(() => reviewWithRoot(spendWithChange(bitcoin.address.toOutputScript(PAYEE), own), root, [W1])).toThrow(SIGN_FALSE_CHANGE);
+    });
+});
+
+describe('the nonce-reuse canary on a multisig spend', () => {
+    beforeEach(() => __resetSignatureAuditForTest());
+    afterEach(() => __resetSignatureAuditForTest());
+
+    // the same key and nonce (r) with another s: what nonce reuse, or a planted signature, looks like
+    const sameNonce = (sig: { pubkey: Buffer; signature: Buffer }) => {
+        const { signature, hashType } = bitcoin.script.signature.decode(Buffer.from(sig.signature));
+        const s = Buffer.from(signature.subarray(32));
+        s[31] = (s[31] + 1) % 256;
+        return {
+            pubkey: Buffer.from(sig.pubkey),
+            signature: bitcoin.script.signature.encode(Buffer.concat([Buffer.from(signature.subarray(0, 32)), s]), hashType),
+        };
+    };
+
+    it('checks the signatures this key adds', () => {
+        const ours = signWithRoot(psbtOf('w1Spend'), root, [W1]).psbt.data.inputs[0].partialSig![0];
+        __resetSignatureAuditForTest();
+        auditSignatures([sameNonce(ours)]);
+        expect(() => signWithRoot(psbtOf('w1Spend'), root, [W1])).toThrow(NonceReuseError);
+    });
+
+    it("leaves out a cosigner's signature already on the transaction", () => {
+        const [first] = fixtureSigs('w1Spend', LEGAL_FP);
+        const real = { pubkey: Buffer.from(first.pubkey, 'hex'), signature: Buffer.from(first.signature, 'hex') };
+        auditSignatures([real]);
+        const planted = psbtOf('w1Spend');
+        planted.updateInput(0, { partialSig: [sameNonce(real)] });
+        expect(() => signWithRoot(planted, root, [W1])).not.toThrow();
+        // the canary did know the cosigner's nonce
+        expect(() => auditSignatures([sameNonce(real)])).toThrow(NonceReuseError);
     });
 });

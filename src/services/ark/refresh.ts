@@ -3,7 +3,7 @@ import { computeRefreshingSweep } from './refreshingStaleness';
 import { ensureArkWalletHandleReady } from './restore';
 import { assertNoActiveArkExitAsync } from './exit';
 import { fetchArkBalance } from './balance';
-import { fetchArkVtxos } from './vtxos';
+import { fetchArkVtxos, recordServerSpentFromError } from './vtxos';
 import { writeArkAutoBackup } from './backup';
 import { scheduleArkRefreshReminder } from './backgroundNotifications';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
@@ -57,6 +57,29 @@ export class ArkRefreshInFlightError extends Error {
     readonly pendingCount: number;
 }
 
+/**
+ * Record a capsule the server refused as already spent, for every refresh
+ * path at once: several of them (arkoor auto-refresh, change fold-in,
+ * background maintenance) have no screen to do it.
+ *
+ * Returns true when the server named the capsule, so it is now recorded and
+ * left out of every refresh that picks ids. That refusal is a correction, not
+ * a failing refresh, so callers keep it out of arkRefreshFailStreak; counting
+ * it would raise the "refreshes keep failing" alert for a wallet whose next
+ * refresh goes through. An unnamed one cannot be left out next time, so it
+ * still counts.
+ *
+ * Never throws, so the caller's catch still rethrows the original error.
+ */
+async function recordRefusedSpentCapsule(err: unknown): Promise<boolean> {
+    try {
+        const parsed = await recordServerSpentFromError(err);
+        return parsed?.state === 'spent' && !!parsed.vtxoId;
+    } catch {
+        return false;
+    }
+}
+
 // In-process gate. `refreshVtxos()` blocks for the round's full duration
 // (up to ~1h on mainnet), so this flag alone serializes submissions within
 // one JS process; the pendingRoundStates pre-check below extends the same
@@ -107,7 +130,7 @@ export async function refreshArkVtxos(
     // still spend them"), and the lock/unlock API they suggest is not exposed
     // in bark-react-native 0.16.1, so the client is the only thing standing
     // here.
-    await assertNoActiveArkExitAsync('Refreshing capsules');
+    await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.refreshing_capsules);
 
     // Serialize rounds: one refresh at a time, per wallet. The in-process
     // flag catches same-process races; the pendingRoundStates probe catches
@@ -179,10 +202,14 @@ export async function refreshArkVtxos(
         // (Capsules tab, notification tap, background sweep all land
         // here). The pre-submission ArkRefreshInFlightError guard above
         // doesn't reach this catch, so "already running" rejections
-        // don't inflate the streak. useArkSync escalates once the streak
-        // crosses its threshold while a VTXO is near expiry.
-        const store = useAuthStore.getState();
-        store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        // don't inflate the streak, and neither does a capsule the server
+        // named as already spent (see recordRefusedSpentCapsule).
+        // useArkSync escalates once the streak crosses its threshold while
+        // a VTXO is near expiry.
+        if (!(await recordRefusedSpentCapsule(err))) {
+            const store = useAuthStore.getState();
+            store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        }
         throw err;
     } finally {
         refreshSubmissionInFlight = false;
@@ -219,9 +246,15 @@ export async function refreshArkVtxosAndSync(
     // prompt), fire-and-forget with a swallowed error, mirroring the tick.
     const eagerMnemonic = getCachedArkMnemonic();
     if (eagerMnemonic) {
-        writeArkAutoBackup(eagerMnemonic).catch((e: any) =>
-            console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
-        );
+        // Recorded like the tick's own backup, so a copy that reached iCloud,
+        // Drive or the chosen folder here clears "On this phone only" now.
+        writeArkAutoBackup(eagerMnemonic)
+            .then(({ createdAt, offDevice }) =>
+                useAuthStore.getState().recordArkBackupWrite(createdAt, offDevice),
+            )
+            .catch((e: any) =>
+                console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
+            );
     }
     return result;
 }
@@ -267,7 +300,7 @@ export async function refreshArkVtxosDelegated(
 
     // Same exit guard as the self-signed path: a delegated round is still a
     // cooperative spend of the VTXO. See refreshArkVtxos.
-    await assertNoActiveArkExitAsync('Refreshing capsules');
+    await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.refreshing_capsules);
 
     // Cross-caller submission guard. `refreshSubmissionInFlight` is shared
     // with the self-signed path and now also with delegated maintenance, so
@@ -350,8 +383,11 @@ export async function refreshArkVtxosDelegated(
             result: 'failure',
             durationMs: Date.now() - t0,
         });
-        const store = useAuthStore.getState();
-        store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        // Same streak rule as the self-signed path above.
+        if (!(await recordRefusedSpentCapsule(err))) {
+            const store = useAuthStore.getState();
+            store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
+        }
         throw err;
     } finally {
         // Held only across the submit (seconds, until accept). Once accepted
@@ -394,9 +430,15 @@ export async function refreshArkVtxosDelegatedAndSync(
     // prompt), fire-and-forget with a swallowed error, mirroring the tick.
     const eagerMnemonic = getCachedArkMnemonic();
     if (eagerMnemonic) {
-        writeArkAutoBackup(eagerMnemonic).catch((e: any) =>
-            console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
-        );
+        // Recorded like the tick's own backup, so a copy that reached iCloud,
+        // Drive or the chosen folder here clears "On this phone only" now.
+        writeArkAutoBackup(eagerMnemonic)
+            .then(({ createdAt, offDevice }) =>
+                useAuthStore.getState().recordArkBackupWrite(createdAt, offDevice),
+            )
+            .catch((e: any) =>
+                console.warn('[Ark refresh] eager backup failed (non-fatal):', e?.message ?? e),
+            );
     }
     return result;
 }
@@ -425,7 +467,7 @@ export async function maintenanceArkDelegated(): Promise<void> {
     // silent-push wake, outside useArkSync's exit early-return, which is why
     // the guard is the async one that asks bark's DB rather than trusting a
     // possibly-unhydrated store.
-    await assertNoActiveArkExitAsync('Background refresh');
+    await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.background_refresh);
 
     // Same cross-caller guard as refreshArkVtxosDelegated: the background wake
     // must not submit a maintenance round while another submission is mid-
@@ -456,6 +498,10 @@ export async function maintenanceArkDelegated(): Promise<void> {
             Math.round((Date.now() - t0) / 1000),
             's: tag=', tag, 'inner=', inner, 'message=', err?.message ?? String(err),
         );
+        // Recorded so the balance stops counting it. bark picks these capsules
+        // itself, so it may pick the same one on the next wake: this stays a
+        // real failure for the background caller, which keeps counting it.
+        await recordRefusedSpentCapsule(err);
         throw err;
     } finally {
         refreshSubmissionInFlight = false;

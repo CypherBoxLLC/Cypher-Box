@@ -1,5 +1,6 @@
 import React, { useContext } from "react";
 import {
+    I18nManager,
     Image,
     ImageStyle,
     StyleSheet,
@@ -18,6 +19,9 @@ import ProgressBar from "../ProgressBar";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, ltr } from "@Cypher/style-guide";
+import { HIDDEN_AMOUNT, maskAmount } from "@Cypher/helpers/hiddenAmount";
+import { largestCapsules, VAULT_CARD_CAPSULES } from "@Cypher/helpers/vaultCardCapsules";
+import { useBalancesHidden } from "@Cypher/stores/balancePrivacy";
 import VaultCapsules from "../VaultCapsules";
 
 interface Props extends TouchableOpacityProps {
@@ -34,9 +38,22 @@ interface Props extends TouchableOpacityProps {
     bitcoinValue?: string | false | undefined;
     inDollars?: any;
     isColorable?: boolean;
+    /** The "Bitcoin Network" label beside the title. Off inside a vault's own menu, where the screen already says
+     *  which vault it is and long titles such as "Watch-&-Broadcast-Only" need the row. */
+    showNetwork?: boolean;
+    /** Home's cards: the amounts and capsules go behind *** while Home's balances are hidden (the logo button on
+     *  the total balance card). */
+    hideWithBalances?: boolean;
 }
 
-export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = loc.cypherbox.components.saving_vault.savings_vault, titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
+/**
+ * The dollar amount that follows the BTC amount, with the ~ between the two numbers in either language: before the
+ * dollars in English, after them in Arabic, where the row puts the dollars to the left of the BTC amount. The no-break
+ * space keeps a gap to the BTC amount when the row flips in RTL.
+ */
+const fiatAfterBtc = (fiat: string) => ltr(I18nManager.isRTL ? `${fiat} ~\u00A0` : `~ ${fiat}\u00A0`);
+
+export default function SavingVault({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = loc.cypherbox.components.saving_vault.savings_vault, titleStyle, bitcoinValue, inDollars, isColorable = false, showNetwork = true, hideWithBalances = false }: Props) {
     const { wallets } = useContext(BlueStorageContext);
     // Per-field selectors, NOT a whole-store destructure. The bare
     // `useAuthStore()` re-rendered this card on EVERY store change (the Ark
@@ -48,14 +65,14 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
     const walletID = useAuthStore(s => s.walletID);
     const coldStorageWalletID = useAuthStore(s => s.coldStorageWalletID);
     const vaultTab = useAuthStore(s => s.vaultTab);
+    const balancesHidden = useBalancesHidden();
+    const hidden = hideWithBalances && balancesHidden;
     const vaultTabCheck = isVault === false || isVault === true ? isVault : vaultTab;
     const wallet = vaultTabCheck ? wallets.find(w => w.getID() === coldStorageWalletID) : wallets.find(w => w.getID() === walletID);
     // the flame for the Hot Vault's card, the snowflake for the Cold Vault's: the same choice as the wallet above, so
     // it holds in any language and for titles like "Hot Savings"
     const isHotCard = !vaultTabCheck;
-    const utxo = wallet?.getUtxo(true).sort((a, b) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout) || [];
-    // const inDollar = '6500';
-    const emptyUTXO = !utxo ? 5 : utxo.length <= 5 ? 5 - utxo.length : utxo.length > 5 && 0;
+    const utxo = largestCapsules(wallet?.getUtxo(true));
     return (
         <TouchableOpacity style={[styles.container, container]} onPress={onPress}>
             <View style={[styles.innerContainer, innerContainer]}>
@@ -134,33 +151,44 @@ export default function SavingVault({ isVault, container, innerContainer, shadow
                         }
                         <Text h3 bold style={titleStyle}>{title}</Text>
                         </View>
-                        <View style={styles.row}>
-                            <Text h4 bold style={StyleSheet.flatten([styles.bitcointext, bitcoinText])}>
-                                {loc.cypherbox.components.saving_vault.bitcoin_network}
-                            </Text>
-                            <Image
-                                style={[styles.bitcoinimg, imageStyle]}
-                                resizeMode="contain"
-                                source={require("../../../img/bitcoin.png")}
-                            />
-                        </View>
+                        {showNetwork ? (
+                            <View style={styles.row}>
+                                <Text h4 bold style={StyleSheet.flatten([styles.bitcointext, bitcoinText])}>
+                                    {loc.cypherbox.components.saving_vault.bitcoin_network}
+                                </Text>
+                                <Image
+                                    style={[styles.bitcoinimg, imageStyle]}
+                                    resizeMode="contain"
+                                    source={require("../../../img/bitcoin.png")}
+                                />
+                            </View>
+                        ) : null}
                     </View>
                     {bitcoinValue &&
                         <View style={[styles.bitcoin, { marginTop: 11, marginLeft: 6 }]}>
-                            <Text h2 bold style={{ fontSize: 18 }}>{bitcoinValue} </Text>
-                            {/* The no-break space keeps a gap to the BTC amount when the row flips in RTL. */}
-                            <Text h3>{ltr(`~ ${inDollars}\u00A0`)}</Text>
+                            <Text h2 bold amount style={{ fontSize: 18 }}>{`${hidden ? maskAmount(bitcoinValue) : bitcoinValue} `}</Text>
+                            <Text h3>{fiatAfterBtc(hidden ? maskAmount(inDollars) : inDollars)}</Text>
                         </View>
                     }
 
-                    <View style={styles.tabs}>
-                        {Array(utxo.length > 5 ? 5 : utxo.length).fill(0).map((item, i) => (
-                            <VaultCapsules key={i} item={utxo[i].amount} isPending={utxo[i].height === 0} isVault={vaultTabCheck}></VaultCapsules>
-                            // <ProgressBar key={item} image={vaultTabCheck ? ProgressBarColdStorage : ProgressBar5} />
-                        ))}
-                        {Array(emptyUTXO).fill(0).map((item, i) => (
-                            <View key={i} style={styles.tab} />
-                        ))}
+                    <View style={styles.tabs} testID={hidden ? 'vault-capsules-hidden' : 'vault-capsules'}>
+                        {hidden ? (
+                            // Every slot the same, so neither the sizes nor the count show.
+                            Array(VAULT_CARD_CAPSULES).fill(0).map((_, i) => (
+                                <View key={`h-${i}`} style={[styles.tab, styles.hiddenTab]}>
+                                    <Text style={styles.hiddenTabText}>{HIDDEN_AMOUNT}</Text>
+                                </View>
+                            ))
+                        ) : (
+                            <>
+                                {utxo.map((capsule) => (
+                                    <VaultCapsules key={`${capsule.txid}:${capsule.vout}`} item={capsule.amount} isPending={capsule.height === 0} isVault={vaultTabCheck} />
+                                ))}
+                                {Array(VAULT_CARD_CAPSULES - utxo.length).fill(0).map((_, i) => (
+                                    <View key={`e-${i}`} style={styles.tab} />
+                                ))}
+                            </>
+                        )}
                     </View>
                 </View>
             </View>

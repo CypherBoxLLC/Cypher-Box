@@ -1,4 +1,3 @@
-#import <Bugsnag/Bugsnag.h>
 #import "AppDelegate.h"
 #import "RNBootSplash.h"
 #import <React/RCTLinkingManager.h>
@@ -42,12 +41,8 @@
   // Register legacy Paper view managers (react-native-camera) with Fabric's interop layer.
   [RCTLegacyViewManagerInteropComponentView supportLegacyViewManagerWithName:@"RNCamera"];
 
-  // An Offline Seed-Signer stays offline, so it never starts crash reporting. The JS lock
-  // (src/services/seedSignerLock.ts) notes itself in these shared defaults for this check.
-  NSUserDefaults *sharedDefaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.io.cypherbox.btc"];
-  if (![[sharedDefaults stringForKey:@"seedsigner"] isEqualToString:@"1"]) {
-    [Bugsnag start];
-  }
+  // No crash reporting: Bugsnag is linked but never started, so no crash report leaves the phone.
+  // The key it shipped with was BlueWallet's, so every report went to BlueWallet's account.
   [self copyDeviceUID];
   
   [[NSUserDefaults standardUserDefaults] addObserver:self
@@ -69,10 +64,11 @@
 
   // On a fresh install the JS adopts the phone's language, but the layout direction it then sets only applies from the
   // next launch, so a phone in Arabic opened left-to-right the first time. Until the JS has stored a direction, take it
-  // from the phone's first language, for the right-to-left languages the JS can pick (loc/languages.ts).
+  // from the phone's first language, for the only right-to-left language the JS picks: Arabic (loc/index.ts turns any
+  // language the app doesn't offer, Persian and Hebrew included, into English, which must not open mirrored).
   if ([[NSUserDefaults standardUserDefaults] objectForKey:@"RCTI18nUtil_forceRTL"] == nil) {
     NSString *language = [[[NSLocale preferredLanguages] firstObject] componentsSeparatedByString:@"-"].firstObject;
-    if ([@[ @"ar", @"fa", @"he", @"bqi" ] containsObject:language ?: @""]) {
+    if ([@[ @"ar" ] containsObject:language ?: @""]) {
       [[RCTI18nUtil sharedInstance] forceRTL:YES];
     }
   }

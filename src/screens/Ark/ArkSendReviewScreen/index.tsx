@@ -19,6 +19,7 @@ import {
     type ArkDestination,
     type ArkSendFeeView,
 } from '@Cypher/services/ark';
+import { recordAndDescribeNotSpendable } from '@Cypher/services/ark/vtxos';
 import { colors, rtl } from '@Cypher/style-guide';
 import useAuthStore from '@Cypher/stores/authStore';
 
@@ -204,13 +205,22 @@ export default function ArkSendReviewScreen({ route }: Props) {
                 setSendIndeterminate(true);
                 setErrorMsg(err?.message ?? loc.cypherbox.ark.send_review.payment_in_flight);
             } else {
-                // Only reached once isArkSendIndeterminate has ruled out the
-                // ambiguous case above, so "not moved" is still a safe claim.
-                // Kept verbatim: the network sentence explains WHY, it does not
-                // replace the fund-safety assertion.
-                setErrorMsg(
-                    String(loc.formatString(loc.cypherbox.ark.send_review.send_failed_not_moved, { reason: describeArkFailure(err, loc.cypherbox.ark.send_review.send_failed, { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }) })),
-                );
+                // The server refused a capsule, for example one already spent
+                // from another device. A spent one is recorded so the balance
+                // stops counting it, and the user reads the app's words, not
+                // the raw server string.
+                const notSpendable = await recordAndDescribeNotSpendable(err);
+                if (notSpendable) {
+                    setErrorMsg(notSpendable.body);
+                } else {
+                    // Only reached once isArkSendIndeterminate has ruled out the
+                    // ambiguous case above, so "not moved" is still a safe claim.
+                    // Kept verbatim: the network sentence explains WHY, it does not
+                    // replace the fund-safety assertion.
+                    setErrorMsg(
+                        String(loc.formatString(loc.cypherbox.ark.send_review.send_failed_not_moved, { reason: describeArkFailure(err, loc.cypherbox.ark.send_review.send_failed, { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }) })),
+                    );
+                }
             }
         } finally {
             setIsSending(false);

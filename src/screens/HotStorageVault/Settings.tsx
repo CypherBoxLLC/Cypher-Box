@@ -28,6 +28,7 @@ import {
 } from "@Cypher/services/hotVaultKeychain";
 import SignerButton from "../SigningHome/SignerButton";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
+import { hotVaultKeychainText } from "@Cypher/helpers/hotVaultKeychainText";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
 import loc from "../../../loc";
 import Notifications from "../../../blue_modules/notifications";
@@ -68,6 +69,8 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
     const isKeychainBackedUp = thisWalletID
         ? !!hotVaultKeychainBackups?.[thisWalletID]
         : false;
+    // iPhone Keychain or Android Keystore wording for the backup tile and a signing phone's row, in the current language
+    const keychainText = hotVaultKeychainText().settings;
     // On a signing phone, whether the Keychain really holds a copy of this vault's seed, from listing the Keychain
     // (which doesn't open anything): the hint above can be out of date, and a copy nobody can see is the one thing a
     // signing phone mustn't keep.
@@ -198,20 +201,31 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         if (result.ok) {
             setHotVaultKeychainBackup(thisWalletID, true);
             triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
-            SimpleToast.show(loc.cypherbox.vault.storage_vault.settings.keychain_saved, SimpleToast.SHORT);
+            SimpleToast.show(keychainText.savedToast, SimpleToast.SHORT);
+        } else if (result.kind === "no-biometric-gate") {
+            // Android gave back a cipher not bound to a fingerprint; the helper
+            // removed the un-gated entry instead of storing an unprotected
+            // seed. Do not set the backup flag.
+            console.warn(
+                "[HotVault] Keychain save rejected, no biometric gate (storage=",
+                result.storage,
+                ")",
+            );
+            SimpleToast.show(
+                loc.cypherbox.vault.storage_vault.settings.keychain_no_fingerprint,
+                SimpleToast.LONG,
+            );
         } else {
             console.warn("[HotVault] Keychain save failed:", result.error);
-            SimpleToast.show(loc.cypherbox.vault.storage_vault.settings.keychain_save_failed, SimpleToast.LONG);
+            SimpleToast.show(keychainText.saveFailedToast, SimpleToast.LONG);
         }
     };
 
     const handleKeychainRemove = () => {
         if (keychainBusy || !thisWalletID) return;
         Alert.alert(
-            loc.cypherbox.vault.storage_vault.settings.keychain_remove_title,
-            header
-                ? "The copy of this seed in this phone's secure storage is removed. The seed on this phone and your paper or SeedQR backup aren't affected. A seed-signer doesn't keep this second copy, so it can't be made again here."
-                : loc.cypherbox.vault.storage_vault.settings.keychain_remove_body,
+            keychainText.removeTitle,
+            header ? loc.cypherbox.seed_signer.vault.remove_copy_body : keychainText.removeBody,
             [
                 { text: loc._.cancel, style: "cancel" },
                 {
@@ -363,7 +377,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                 true,
                 'plain-text',
                 true,
-                "Delete"
+                loc.cypherbox.vault.storage_vault.settings.delete
             );
             if (Number(walletBalanceConfirmation) === wallet.getBalance()) {
                 navigateToOverviewAndDeleteWallet();
@@ -421,8 +435,8 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
             !(await listHotVaultKeychainBackups()).includes(thisWalletID);
         if (!keychainCleared) {
             Alert.alert(
-                'The seed is still on this phone',
-                "Its backup in this phone's secure storage couldn't be removed, so the seed was left in the app too. Try again.",
+                loc.cypherbox.seed_signer.vault.wipe_failed_title,
+                loc.cypherbox.seed_signer.vault.wipe_failed_body,
             );
             return;
         }
@@ -430,17 +444,17 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         await resetHotVaultMeta(thisWalletID);
         setHotVaultKeychainBackup(thisWalletID, false);
         navigateToOverviewAndDeleteWallet();
-        SimpleToast.show('Seed wiped from this phone', SimpleToast.LONG);
+        SimpleToast.show(loc.cypherbox.seed_signer.vault.wiped, SimpleToast.LONG);
     };
 
     const handleWipeTapped = () => {
         triggerHapticFeedback(HapticFeedbackTypes.NotificationWarning);
         Alert.alert(
-            'Wipe the seed from this phone?',
-            "This seed is removed from the app and from this phone's secure storage. After that only a backup kept elsewhere, on paper or as a SeedQR, can bring it back, so check you have one. Your coins aren't affected.\n\nIf this phone is ever stolen, getting a seed out of it is very difficult, but assume it's compromised and move your coins to a new seed.",
+            loc.cypherbox.seed_signer.vault.wipe_title,
+            loc.cypherbox.seed_signer.vault.wipe_body,
             [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Wipe', style: 'destructive', onPress: wipeSeed },
+                { text: loc._.cancel, style: 'cancel' },
+                { text: loc.cypherbox.seed_signer.vault.wipe_confirm, style: 'destructive', onPress: wipeSeed },
             ],
         );
     };
@@ -450,27 +464,35 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
     // that wallet's, then help and other ways to sign, and last the wipe. There's no way out of the mode: it's one-way
     // (services/seedSignerLock). The same actions as the rows of an everyday Hot Vault, without signing (it's above).
     const signerButtons: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }[] = [
-        { label: 'Seed’s Public Key (xpub)', onPress: navigateToXPub },
-        { label: 'Make a SeedQR Backup', onPress: () => dispatchNavigate('SeedQRBackup', { walletID: wallet.getID() }) },
-        { label: 'Show Addresses', onPress: navigateToAddresses },
-        { label: 'Backup Seed Phrase', onPress: backupSeedPhraseClickHandler },
+        { label: loc.cypherbox.seed_signer.vault.public_key, onPress: navigateToXPub },
+        {
+            label: loc.cypherbox.seed_signer.vault.seedqr_backup,
+            onPress: () => dispatchNavigate('SeedQRBackup', { walletID: wallet.getID() }),
+        },
+        { label: loc.cypherbox.vault.storage_vault.settings.show_addresses, onPress: navigateToAddresses },
+        { label: loc.cypherbox.vault.storage_vault.settings.backup_seed, onPress: backupSeedPhraseClickHandler },
         // No backing up to the Keychain here: a signing phone keeps no second copy of the seed, one that outlives
         // deleting the vault or the app. A copy made before, in normal mode or by an earlier version, can be removed.
         ...(keychainCopy || isKeychainBackedUp
             ? [{
-                label: keychainBusy ? 'Removing Keychain Copy…' : 'Remove Seed Copy from Keychain',
+                label: keychainBusy ? keychainText.signerRemoving : keychainText.signerRemove,
                 onPress: handleKeychainRemove,
                 disabled: keychainBusy,
             }]
             : []),
-        { label: 'Signing Safely', onPress: () => dispatchNavigate('SigningSafetyGuide') },
-        { label: 'Sign from a Backup Instead', onPress: () => startSigning() },
+        { label: loc.cypherbox.seed_signer.signing_safely, onPress: () => dispatchNavigate('SigningSafetyGuide') },
+        { label: loc.cypherbox.seed_signer.vault.sign_from_backup, onPress: () => startSigning() },
         // one key of a multisig made in Nunchuk, Sparrow or BlueWallet, signed from its SeedQR: the wallets it signs for
-        { label: multisigCount ? `Multisig Wallets (${multisigCount})` : 'Multisig Wallets', onPress: () => dispatchNavigate('SignerWallets') },
-        { label: 'Receive - Check Address', onPress: () => dispatchNavigate('CheckSignerAddress') },
-        { label: 'Info', onPress: rightToLeft },
-        { label: 'App Settings', onPress: () => dispatchNavigate('Settings') },
-        { label: 'Wipe Seed from This Phone', onPress: handleWipeTapped, danger: true },
+        {
+            label: multisigCount
+                ? String(loc.formatString(loc.cypherbox.seed_signer.multisig_wallets_count, { count: multisigCount }))
+                : loc.cypherbox.seed_signer.multisig_wallets,
+            onPress: () => dispatchNavigate('SignerWallets'),
+        },
+        { label: loc.cypherbox.seed_signer.check_address, onPress: () => dispatchNavigate('CheckSignerAddress') },
+        { label: loc.cypherbox.vault.storage_vault.settings.info, onPress: rightToLeft },
+        { label: loc.cypherbox.seed_signer.app_settings, onPress: () => dispatchNavigate('Settings') },
+        { label: loc.cypherbox.seed_signer.vault.wipe, onPress: handleWipeTapped, danger: true },
     ];
 
     return (
@@ -535,10 +557,10 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                                     >
                                         <Text bold style={styles.text}>
                                             {keychainBusy
-                                                ? loc.cypherbox.vault.storage_vault.settings.keychain_updating
+                                                ? keychainText.updating
                                                 : isKeychainBackedUp
-                                                ? loc.cypherbox.vault.storage_vault.settings.keychain_saved_remove
-                                                : loc.cypherbox.vault.storage_vault.settings.keychain_back_up}
+                                                ? keychainText.savedRemove
+                                                : keychainText.backUp}
                                         </Text>
                                     </TouchableOpacity>
                                     <View style={styles.line} />

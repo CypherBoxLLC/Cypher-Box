@@ -3,7 +3,7 @@ import { StyleSheet, TouchableOpacity } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
 import { Text } from "@Cypher/component-library";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 
 /**
  * A button on a signing phone's home, the same with a Hot Vault or without one. Filled, with a chevron, so it reads
@@ -25,7 +25,13 @@ export default function SignerButton({ label, onPress, disabled, danger }: {
             <Text bold style={danger ? [styles.text, styles.dangerText] : styles.text}>
                 {label}
             </Text>
-            <MaterialCommunityIcons name="chevron-right" size={22} color={danger ? colors.red : colors.gray.light} />
+            {/* points the way the row reads, so left in Arabic */}
+            <MaterialCommunityIcons
+                name="chevron-right"
+                size={22}
+                color={danger ? colors.red : colors.gray.light}
+                style={rtl.mirror}
+            />
         </TouchableOpacity>
     );
 }
@@ -50,6 +56,8 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
     },
     text: {
+        // a label too long for one line (Arabic ones run longer) wraps rather than push the chevron out
+        flexShrink: 1,
         fontSize: 17,
         lineHeight: 22,
     },

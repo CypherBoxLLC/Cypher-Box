@@ -6,14 +6,17 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { Text } from "@Cypher/component-library";
 import { dispatchNavigate, looksLikePsbt } from "@Cypher/helpers";
+import { scannedVaultSend } from "@Cypher/helpers/capsuleSpend";
 import { startSigning } from "../../SignOnce/start";
 import loc from "../../../../loc";
 import { arabicFont } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import usePaymentLinkStore from "@Cypher/stores/paymentLinkStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import DeeplinkSchemaMatch from "../../../../class/deeplink-schema-match";
 
 import styles from "../styles";
 import ScanWithPicker, { ScanTargetKey } from "./ScanWithPicker";
@@ -72,6 +75,9 @@ export default React.memo(function Header({
     const { isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, walletID, coldStorageWalletID } = useAuthStore();
     // Region gates (services/featureFlags): a connected rail that is not
     // offered in this region is treated as unavailable on this surface.
+    // Re-render when the App Store storefront resolves after launch, so the
+    // region gates below reflect the real region.
+    useRegionGate();
     const isAuth = isCoinosConnected && isCoinosAllowed();
     const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
 
@@ -169,7 +175,9 @@ export default React.memo(function Header({
         } catch (e) {
             if (__DEV__) console.log('[Home/scan] vault fetchUtxo failed', e);
         }
-        const utxoList = vaultWallet.getUtxo(true).sort(
+        // getUtxo() without `true` leaves frozen capsules out: nobody picked
+        // these for this send, and frozen ones are only spent when ticked
+        const utxoList = vaultWallet.getUtxo().sort(
             (a: any, b: any) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout,
         );
         if (!utxoList || utxoList.length === 0) {
@@ -187,13 +195,16 @@ export default React.memo(function Header({
         // set to choose from.
         const allIds = capsulesData.map((c: any) => c.id);
         const isVault = which === 'cold';
+        // A bitcoin: link (scanned, or one the phone opened) carries the
+        // address and maybe an amount; a bare address comes through as it
+        // is. The most the vault can send goes in `maxUSD`, in BTC as
+        // SendListNew passes it: without it EditAmount kept Next off.
+        const send = scannedVaultSend(DeeplinkSchemaMatch.decodeBitcoinUri(scannedAddress), capsuleTotal, matchedRateBTC);
         // matchedRateBTC is BTC-per-fiat (dollar/BTC); the vault flow
-        // uses it directly. `total` and `inUSD` shapes mirror the values
-        // SendListNew.handleSend passes when the user picks capsules
-        // manually — keeping them identical lets the rest of the pipe
-        // (EditAmount → ColdStorage) work without a special-case branch.
+        // uses it directly.
         dispatchNavigate('EditAmount', {
-            isEdit: false,
+            // an amount the link asks for opens the screen filled in, as editing an amount does
+            isEdit: send.isEdit,
             currency,
             vaultTab: isVault,
             wallet: vaultWallet,
@@ -201,17 +212,15 @@ export default React.memo(function Header({
             ids: allIds,
             // Pre-fill the recipient from the QR scan. EditAmount reads
             // params.to and forwards it through the rest of the pipeline.
-            to: scannedAddress,
-            // No fiat conversion at the entry point — let EditAmount
-            // compute it once it has matchedRate. We pass 0/'' rather
-            // than guessing, same as the manual flow when no capsule
-            // is selected yet.
-            maxUSD: '',
-            inUSD: '',
-            total: '',
+            to: send.to,
+            maxUSD: send.maxUSD,
+            inUSD: send.inUSD,
+            total: send.total,
             matchedRate: matchedRateBTC,
             capsulesData,
             capsuleTotal,
+            // a pool for coinselect to pick from, not a selection to spend whole
+            autoSelected: true,
         });
     }, [wallet, coldStorageWallet, sleep, currency, matchedRateBTC]);
 

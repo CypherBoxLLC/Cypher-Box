@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 
 /**
@@ -49,6 +50,20 @@ import * as Keychain from 'react-native-keychain';
 const KEYCHAIN_SERVICE_PREFIX = 'hot-vault-seed-phrase';
 const KEYCHAIN_META_PREFIX = 'hot-vault-meta';
 
+/**
+ * `STORAGE_TYPE.RSA` is the user-authentication-bound Android Keystore cipher
+ * (KeystoreRSAECB). On Android, react-native-keychain chooses the cipher at
+ * write time: with no strong (Class 3) biometric enrolled it silently falls
+ * back from this RSA cipher to KeystoreAESCBC, which is NOT bound to any
+ * fingerprint, and the write still resolves successfully. We read the constant
+ * defensively so a missing runtime export can never collapse into
+ * `undefined !== undefined` and let the gate check below pass by accident.
+ * This mirrors src/services/ark/seedKeychain.ts.
+ */
+const RSA_STORAGE: string =
+    (Keychain as unknown as { STORAGE_TYPE?: { RSA?: string } }).STORAGE_TYPE?.RSA ??
+    'KeystoreRSAECB';
+
 const serviceFor = (walletID: string): string =>
     `${KEYCHAIN_SERVICE_PREFIX}:${walletID}`;
 
@@ -88,7 +103,8 @@ export interface HotVaultMeta {
 
 export type HotVaultKeychainSaveResult =
     | { ok: true }
-    | { ok: false; error: Error };
+    | { ok: false; kind: 'no-biometric-gate'; storage: string }
+    | { ok: false; kind: 'error'; error: Error };
 
 /**
  * Persist a hot-vault mnemonic into the OS keychain.
@@ -97,30 +113,73 @@ export type HotVaultKeychainSaveResult =
  * `BIOMETRY_ANY_OR_DEVICE_PASSCODE` does NOT prompt biometric at write time —
  * the prompt fires on the later READ. This lets us save during wallet
  * creation without interrupting the "write down your seed" UX.
+ *
+ * Android downgrade guard (mirrors saveArkSeedToKeychain in
+ * src/services/ark/seedKeychain.ts): `BIOMETRY_ANY_OR_DEVICE_PASSCODE` is a
+ * REQUEST, not a guarantee. react-native-keychain picks the cipher at write
+ * time, and with no strong biometric enrolled it silently falls back from the
+ * user-auth-bound RSA cipher to KeystoreAESCBC (NOT auth-bound) and still
+ * resolves. Treating that resolved promise as success stored a mnemonic that
+ * anyone holding the unlocked phone could read with no prompt, while the UI
+ * recorded it as protected. So on Android we inspect the returned storage and,
+ * on a downgrade, delete the entry we just wrote and report `no-biometric-gate`
+ * rather than leave an un-gated seed the user never agreed to. Callers must
+ * surface that case instead of flipping the "backed up" flag.
  */
 export async function backupHotVaultSeed(
     walletID: string,
     mnemonic: string,
 ): Promise<HotVaultKeychainSaveResult> {
     if (!walletID) {
-        return { ok: false, error: new Error('Missing walletID') };
+        return { ok: false, kind: 'error', error: new Error('Missing walletID') };
     }
     const trimmed = (mnemonic || '').trim();
     if (!trimmed) {
-        return { ok: false, error: new Error('Missing mnemonic') };
+        return { ok: false, kind: 'error', error: new Error('Missing mnemonic') };
     }
+
+    let written: false | { storage?: string };
     try {
-        await Keychain.setGenericPassword(walletID, trimmed, {
+        written = (await Keychain.setGenericPassword(walletID, trimmed, {
             service: serviceFor(walletID),
             accessControl:
                 Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
             accessible:
                 Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
-        });
-        return { ok: true };
+        })) as false | { storage?: string };
     } catch (err) {
-        return { ok: false, error: err as Error };
+        return { ok: false, kind: 'error', error: err as Error };
     }
+
+    if (!written) {
+        return {
+            ok: false,
+            kind: 'error',
+            error: new Error('keychain write returned false'),
+        };
+    }
+
+    // Android only. On iOS the Keychain enforces the access control itself and
+    // reports storage 'keychain', so there is no silent downgrade to detect.
+    if (Platform.OS === 'android') {
+        const storage = written.storage ?? 'unknown';
+        if (storage !== RSA_STORAGE) {
+            console.warn(
+                '[HotVault] biometric gate NOT applied (storage=', storage,
+                '). Removing the un-gated entry rather than storing an unprotected seed.',
+            );
+            try {
+                await Keychain.resetGenericPassword({ service: serviceFor(walletID) });
+            } catch (resetErr) {
+                // Best effort. Reported either way, so the caller never claims
+                // the seed is protected when it is not.
+                console.warn('[HotVault] failed to remove un-gated entry:', resetErr);
+            }
+            return { ok: false, kind: 'no-biometric-gate', storage };
+        }
+    }
+
+    return { ok: true };
 }
 
 /**
@@ -141,7 +200,7 @@ export async function backupHotVaultMeta(
     meta: Omit<HotVaultMeta, 'version'>,
 ): Promise<HotVaultKeychainSaveResult> {
     if (!walletID) {
-        return { ok: false, error: new Error('Missing walletID') };
+        return { ok: false, kind: 'error', error: new Error('Missing walletID') };
     }
     try {
         const payload: HotVaultMeta = {
@@ -161,7 +220,7 @@ export async function backupHotVaultMeta(
         );
         return { ok: true };
     } catch (err) {
-        return { ok: false, error: err as Error };
+        return { ok: false, kind: 'error', error: err as Error };
     }
 }
 
@@ -192,10 +251,12 @@ export async function backupHotVaultSeedWithMeta(
     // missing meta row just falls back to a walletID-only picker row. That's
     // strictly better than pretending the whole save failed.
     if (!metaResult.ok) {
-        console.warn(
-            '[HotVault] Meta save failed, seed saved OK:',
-            metaResult.error,
-        );
+        // Meta is a non-seed write with no accessControl, so it never reports
+        // 'no-biometric-gate'; narrow defensively anyway so this compiles
+        // against the shared result type.
+        const detail =
+            metaResult.kind === 'error' ? metaResult.error : metaResult.storage;
+        console.warn('[HotVault] Meta save failed, seed saved OK:', detail);
     }
     return { ok: true };
 }
@@ -389,6 +450,44 @@ export async function resetHotVaultMeta(walletID: string): Promise<boolean> {
         console.warn('[HotVault] Meta reset failed:', err);
         return false;
     }
+}
+
+/**
+ * Android: removes Hot Vault seed copies that open without the fingerprint, and returns their wallet IDs.
+ *
+ * Before backupHotVaultSeed checked the cipher (0.1.12 and earlier), a phone without a strong biometric stored the
+ * copy with KeystoreAESCBC, which the app reads back with no prompt, so anyone holding the unlocked phone could bring
+ * the seed back, even after the vault was deleted in the app. Those copies still showed as saved. The cipher is read
+ * from the entry's record without opening it (hasInternetCredentials reads the same record a generic password writes,
+ * keyed by the service), so this never prompts. A copy whose cipher can't be read is left alone. iOS has nothing to
+ * do: its Keychain items carry their access control.
+ */
+export async function dropUnprotectedHotVaultBackups(walletIDsInApp: readonly string[]): Promise<string[]> {
+    if (Platform.OS !== 'android') return [];
+    // Only for vaults still in the app, whose seed is in the wallet list as well. A copy whose vault was deleted (delete
+    // keeps it on purpose, and Recover offers it back) can be the only copy of that seed left on the phone: it stays.
+    const inApp = new Set(walletIDsInApp);
+    const dropped: string[] = [];
+    for (const walletID of await listHotVaultKeychainBackups()) {
+        if (!inApp.has(walletID)) continue;
+        let storage: string | null = null;
+        try {
+            const found = await Keychain.hasInternetCredentials(serviceFor(walletID));
+            storage = found && typeof found === 'object' && typeof (found as { storage?: unknown }).storage === 'string'
+                ? (found as { storage: string }).storage
+                : null;
+        } catch {
+            storage = null;
+        }
+        if (storage === null || storage === RSA_STORAGE) continue;
+        console.warn('[HotVault] removing a Keychain copy not bound to a fingerprint (storage=', storage, ')');
+        // the seed entry going is what counts (its saved flag must clear then), even if the sidecar can't be removed
+        if (await resetHotVaultKeychainBackup(walletID)) {
+            await resetHotVaultMeta(walletID);
+            dropped.push(walletID);
+        }
+    }
+    return dropped;
 }
 
 /**

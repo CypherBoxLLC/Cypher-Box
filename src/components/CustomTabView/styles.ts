@@ -1,4 +1,10 @@
-import { StyleSheet } from "react-native";
+import { I18nManager, StyleSheet } from "react-native";
+
+// The outer tabs carry the bar's rounded ends. Right-to-left puts the first tab
+// on the right, and corner radii are physical (RTL does not swap them), so each
+// end tab takes the corners on the side it sits.
+const leftEnd = { borderBottomLeftRadius: 25, borderTopLeftRadius: 25 };
+const rightEnd = { borderBottomRightRadius: 25, borderTopRightRadius: 25 };
 
 export default StyleSheet.create({
     tabSelectorContainer: {
@@ -18,14 +24,8 @@ export default StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
     },
-    firstTab: {
-        borderBottomLeftRadius: 25,
-        borderTopLeftRadius: 25,
-    },
-    lastTab: {
-        borderBottomRightRadius: 25,
-        borderTopRightRadius: 25,
-    },
+    firstTab: I18nManager.isRTL ? rightEnd : leftEnd,
+    lastTab: I18nManager.isRTL ? leftEnd : rightEnd,
     tabButtonContent: {
         flex: 1,
         width: "100%",

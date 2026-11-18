@@ -9,12 +9,13 @@ import { SignerAccount, dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
+import loc from "../../../loc";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 import Settings from "../HotStorageVault/Settings";
 import { startSigning } from "../SignOnce/start";
 import Signer from "./Signer";
 import SignerActionCard from "./SignerActionCard";
-import { SEED_SIGNER, takeSeedBackedUp } from "./seedSigner";
+import { takeSeedBackedUp } from "./seedSigner";
 import SignerButton from "./SignerButton";
 
 /**
@@ -69,7 +70,7 @@ export default function SigningHome() {
 
     if (canSign) {
         return (
-            <ScreenLayout showToolbar isBackButton={false} title={SEED_SIGNER} disableScroll style={styles.vault}>
+            <ScreenLayout showToolbar isBackButton={false} title={loc.cypherbox.seed_signer.title} disableScroll style={styles.vault}>
                 <Settings wallet={wallet} header={<Signer wallet={wallet} connection={connection} />} />
             </ScreenLayout>
         );
@@ -78,26 +79,25 @@ export default function SigningHome() {
     // the same title and buttons as the signer with a Hot Vault, and it scrolls, as on a small phone they run past
     // the screen
     return (
-        <ScreenLayout showToolbar isBackButton={false} title={SEED_SIGNER}>
+        <ScreenLayout showToolbar isBackButton={false} title={loc.cypherbox.seed_signer.title}>
             <View style={styles.container}>
                 {connection === 'connected' ? (
-                    <Text style={styles.alert}>
-                        This phone is connected to the internet. A phone you sign with should stay offline.
-                    </Text>
+                    <Text style={styles.alert}>{loc.cypherbox.components.signing_phone_status.connected}</Text>
                 ) : null}
+                {/* as Settings > Info shows it, to compare with the other phone's */}
                 <Text style={styles.version}>
                     Cypher Box {getVersion()} (build {getBuildNumber()})
                 </Text>
                 {backedUp ? (
                     <View style={styles.backedUpRow}>
                         <MaterialCommunityIcons name="check-circle" size={18} color={colors.green} style={styles.backedUpIcon} />
-                        <Text style={styles.backedUp}>{`Seed ${backedUp} was created and backed up.`}</Text>
+                        <Text style={styles.backedUp}>
+                            {String(loc.formatString(loc.cypherbox.seed_signer.home.backed_up, { fingerprint: backedUp }))}
+                        </Text>
                     </View>
                 ) : null}
                 <Text style={styles.lead}>
-                    {signingFirst
-                        ? "This phone doesn't keep your seed: it lives on your backup. You'll see what a transaction does before anything is signed."
-                        : "Create a seed and back it up as a SeedQR: it's never saved on this phone. To sign, scan the SeedQR."}
+                    {signingFirst ? loc.cypherbox.seed_signer.home.lead_signing : loc.cypherbox.seed_signer.home.lead_create}
                 </Text>
 
                 {/* a seed is made in memory and never saved (screens/CreateSignerSeed); there's no Recover, which saves one */}
@@ -105,15 +105,15 @@ export default function SigningHome() {
                     {signingFirst ? (
                         <SignerActionCard
                             icon="file-sign"
-                            title="Sign a Transaction (.PSBT)"
-                            subtitle="Scan or open it, check it, then scan your SeedQR"
+                            title={loc.cypherbox.seed_signer.sign_transaction}
+                            subtitle={loc.cypherbox.seed_signer.home.sign_subtitle}
                             onPress={() => startSigning()}
                         />
                     ) : (
                         <SignerActionCard
                             icon="seed-outline"
-                            title="Create a Seed"
-                            subtitle="12 new words, backed up on paper and as a SeedQR"
+                            title={loc.cypherbox.seed_signer.create_seed}
+                            subtitle={loc.cypherbox.seed_signer.home.create_subtitle}
                             onPress={() => dispatchNavigate('CreateSignerSeed')}
                         />
                     )}
@@ -123,7 +123,7 @@ export default function SigningHome() {
             {/* public keys only (signerAccounts): each shows again with its first addresses, without the SeedQR */}
             {remembered.length ? (
                 <View style={styles.remembered}>
-                    <Text style={styles.sectionTitle}>Public keys this phone remembers</Text>
+                    <Text style={styles.sectionTitle}>{loc.cypherbox.seed_signer.home.remembered_title}</Text>
                     {remembered.map(account => (
                         <SignerButton
                             key={account.fingerprint}
@@ -136,22 +136,29 @@ export default function SigningHome() {
 
             <View style={styles.buttons}>
                 {signingFirst ? null : (
-                    <SignerButton label="Sign a Transaction (.PSBT)" onPress={() => startSigning()} />
+                    <SignerButton label={loc.cypherbox.seed_signer.sign_transaction} onPress={() => startSigning()} />
                 )}
-                <SignerButton label="Show a Seed's Public Key" onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'show' })} />
+                <SignerButton
+                    label={loc.cypherbox.seed_signer.show_key}
+                    onPress={() => dispatchNavigate('CreateSignerSeed', { mode: 'show' })}
+                />
                 {/* a watch-only wallet's or multisig app's receive address, checked before it's used: a single-key one with
                     the seed's SeedQR, a multisig one against the wallets below */}
-                <SignerButton label="Receive - Check Address" onPress={() => dispatchNavigate('CheckSignerAddress')} />
+                <SignerButton label={loc.cypherbox.seed_signer.check_address} onPress={() => dispatchNavigate('CheckSignerAddress')} />
                 {/* one key of a multisig made in Nunchuk, Sparrow or BlueWallet: the wallets it signs for */}
                 <SignerButton
-                    label={multisigCount ? `Multisig Wallets (${multisigCount})` : 'Multisig Wallets'}
+                    label={
+                        multisigCount
+                            ? String(loc.formatString(loc.cypherbox.seed_signer.multisig_wallets_count, { count: multisigCount }))
+                            : loc.cypherbox.seed_signer.multisig_wallets
+                    }
                     onPress={() => dispatchNavigate('SignerWallets')}
                 />
                 {signingFirst ? (
-                    <SignerButton label="Create Another Seed" onPress={() => dispatchNavigate('CreateSignerSeed')} />
+                    <SignerButton label={loc.cypherbox.seed_signer.home.create_another} onPress={() => dispatchNavigate('CreateSignerSeed')} />
                 ) : null}
-                <SignerButton label="Signing Safely" onPress={() => dispatchNavigate('SigningSafetyGuide')} />
-                <SignerButton label="App Settings" onPress={() => dispatchNavigate('Settings')} />
+                <SignerButton label={loc.cypherbox.seed_signer.signing_safely} onPress={() => dispatchNavigate('SigningSafetyGuide')} />
+                <SignerButton label={loc.cypherbox.seed_signer.app_settings} onPress={() => dispatchNavigate('Settings')} />
             </View>
         </ScreenLayout>
     );

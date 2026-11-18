@@ -413,14 +413,16 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                     colors_={["#1693EDFA", "#15A7A7"]}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 0, y: 1 }}            
-                                    style={keyLocked ? [styles.linearGradientInside, styles.keyLocked] : styles.linearGradientInside}
-                                    linearStyle={styles.linearStyle}
+                                    // A pasted key is shown whole, so the card grows with it instead of keeping its
+                                    // fixed 54, which showed one or two lines of a 111-character key.
+                                    style={[address ? styles.linearGradientInsideGrows : styles.linearGradientInside, ...(keyLocked ? [styles.keyLocked] : [])]}
+                                    linearStyle={address ? styles.linearStyleGrows : styles.linearStyle}
                                     disabled={keyLocked}
                                     onPress={pasteClickHandler}>
-                                    <View style={styles.insideView}>
+                                    <View style={address ? styles.insideViewGrows : styles.insideView}>
                                         <Image source={require('../../../img/paste-icon.png')} style={styles.qrimage} resizeMode="contain" />
                                         {address ?
-                                            <Text style={[{fontSize: 14}, rtl.ltrText]}>{shortenAddress(address)}</Text>
+                                            <Text style={[{ fontSize: 14, flexShrink: 1 }, rtl.ltrText]}>{shortenAddress(address)}</Text>
                                         :
                                             <Text h2>{loc.cypherbox.vault.connect_cold_storage.paste} <Text style={styles.keyKinds}>{loc.cypherbox.vault.connect_cold_storage.key_kinds}</Text></Text>
                                         }

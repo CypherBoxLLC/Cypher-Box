@@ -32,6 +32,12 @@ export default function SavingVaultCreated() {
         <ScreenLayout disableScroll showToolbar progress={2} color={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
             <View style={styles.container}>
                 <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? loc.cypherbox.vault.saving_vault_created.cold_title : signingMode ? loc.cypherbox.vault.saving_vault_created.seed_title : loc.cypherbox.vault.saving_vault_created.hot_title}</Text>
+                {/* what this phone can and can't do with the Cold Vault, said up front rather than inside the paragraph */}
+                {vaultTab ? (
+                    <Text h4 bold center style={[styles.subtitle, { color: colors.coldGreen }]}>
+                        {loc.cypherbox.vault.saving_vault_created.cold_subtitle}
+                    </Text>
+                ) : null}
                 <View style={styles.inner}>
                     {/* a seed-signer's seed isn't a vault, so no vault picture or capsules */}
                     {signingMode && !vaultTab ? null : <SavingVault title={vaultTab ? loc.cypherbox.home.cold_vault : loc.cypherbox.home.hot_vault} />}

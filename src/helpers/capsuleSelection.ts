@@ -53,3 +53,17 @@ export function selectCapsules<T extends SelectableUtxo>(
 export function selectedTotalSats(utxo: readonly SelectableUtxo[]): number {
     return utxo.reduce((sum, u) => sum + u.value, 0);
 }
+
+/**
+ * Drops frozen capsules. Use it wherever the app picks capsules on the user's
+ * behalf (the Home scan pre-selects every capsule): frozen ones are spent only
+ * when the user ticks them, the way BlueWallet's send screen skips frozen coins
+ * unless they were chosen in coin control.
+ */
+export function withoutFrozen<T extends SelectableUtxo>(
+    utxo: readonly T[] | null | undefined,
+    isFrozen: (u: T) => boolean,
+): T[] {
+    if (!utxo) return [];
+    return utxo.filter((u) => !isFrozen(u));
+}

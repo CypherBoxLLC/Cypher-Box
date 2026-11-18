@@ -36,6 +36,17 @@ import { getFiatRate } from "../../../models/fiatUnit";
 const WARN_YELLOW = ['#FFD54F', '#FFB300'];
 const SMALL_RECEIVE_SATS = 700;
 
+// The Ark provider's balance preflight throws this in English, which the logs keep; it's shown in the app's
+// language, with the same numbers. A message that doesn't match is shown as it is.
+const ARK_BALANCE_SHORT =
+    /^Not enough Ark balance, need ([\d.]+) sats \(([\d.]+) \+ ([\d.]+) routing fee\) but only ([\d.]+) spendable\. Try swapping ([\d.]+) sats\.$/;
+const arkBalanceShortText = (message: string) => {
+    const short = ARK_BALANCE_SHORT.exec(message);
+    if (!short) return message;
+    const [, required, amount, fee, spendable, suggested] = short;
+    return String(loc.formatString(loc.cypherbox.payments.swap_amount.not_enough_ark_balance, { required, amount, fee, spendable, suggested }));
+};
+
 export default function SwapAmount() {
     const navigation = useNavigation();
     const route = useRoute();
@@ -335,6 +346,8 @@ export default function SwapAmount() {
                     setLoading(false);
                     return;
                 }
+                // what the source provider threw: the Ark preflight's message, or the wallet's own error
+                const cause: any = error.cause;
                 // The Ark preflight's insufficient-balance message carries the
                 // exact actionable numbers ("need X, only Y spendable, try
                 // swapping Z"). A 2-second toast flashes it away before anyone
@@ -342,7 +355,7 @@ export default function SwapAmount() {
                 if (typeof cause?.message === 'string' && cause.message.startsWith('Not enough Ark balance')) {
                     Alert.alert(
                         loc.cypherbox.payments.swap_amount.not_enough_balance_title,
-                        cause.message,
+                        arkBalanceShortText(cause.message),
                         [{ text: loc._.ok, style: 'default' }],
                         { cancelable: true },
                     );

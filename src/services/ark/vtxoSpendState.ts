@@ -119,10 +119,16 @@ export function isPermanentlyGone(v: NotSpendableVtxo | null): boolean {
 export function notSpendableMessage(v: NotSpendableVtxo): { title: string; body: string } {
     switch (v.state) {
         case 'spent':
-            return {
-                title: loc.cypherbox.services.vtxo_spend_state.spent_title,
-                body: loc.cypherbox.services.vtxo_spend_state.spent_body,
-            };
+            // This copy says the balance no longer counts the capsule, which
+            // holds only once the server named it and it was recorded. An
+            // unnamed one cannot be recorded, so it gets the plain refusal.
+            if (v.vtxoId) {
+                return {
+                    title: loc.cypherbox.services.vtxo_spend_state.spent_title,
+                    body: loc.cypherbox.services.vtxo_spend_state.spent_body,
+                };
+            }
+            break;
         case 'unregistered':
             return {
                 title: loc.cypherbox.services.vtxo_spend_state.unregistered_title,
@@ -135,9 +141,10 @@ export function notSpendableMessage(v: NotSpendableVtxo): { title: string; body:
                 body: loc.cypherbox.services.vtxo_spend_state.unclaimed_body,
             };
         default:
-            return {
-                title: loc.cypherbox.services.vtxo_spend_state.default_title,
-                body: loc.cypherbox.services.vtxo_spend_state.default_body,
-            };
+            break;
     }
+    return {
+        title: loc.cypherbox.services.vtxo_spend_state.default_title,
+        body: loc.cypherbox.services.vtxo_spend_state.default_body,
+    };
 }

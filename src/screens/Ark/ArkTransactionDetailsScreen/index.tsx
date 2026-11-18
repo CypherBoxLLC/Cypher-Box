@@ -18,6 +18,7 @@ import type {
     ArkMovementView,
 } from '@Cypher/services/ark';
 import { colors, rtl } from '@Cypher/style-guide';
+import { displayDestination } from '@Cypher/helpers/addressDisplay';
 
 import TextView from '../../Invoice/TextView';
 import styles from './styles';
@@ -238,7 +239,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                                 ? counterpartyLabel.sent
                                 : counterpartyLabel.sent.replace(': ', ` (${sentTo.length}): `)
                         }
-                        text={truncateMiddle(sentTo[0], 40)}
+                        text={displayDestination(sentTo[0])}
                         textStyle={rtl.ltrText}
                     />
                 )}
@@ -249,7 +250,7 @@ export default function ArkTransactionDetailsScreen({ route }: Props) {
                                 ? counterpartyLabel.received
                                 : counterpartyLabel.received.replace(': ', ` (${receivedOn.length}): `)
                         }
-                        text={truncateMiddle(receivedOn[0], 40)}
+                        text={displayDestination(receivedOn[0])}
                         textStyle={rtl.ltrText}
                     />
                 )}

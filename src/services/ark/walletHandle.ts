@@ -15,7 +15,8 @@ import type { RecoveryBucket, RecoveryReport } from '@secondts/bark-react-native
 
 import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS_BARK } from './config';
 import { arkDatadirHasWallet, deleteArkDatadir, ensureArkDatadir } from './datadir';
-import { ensureBackgroundArkSeed } from './backgroundKeychain';
+import { ensureBackgroundArkSeed, recordSavedSeedConsent } from './backgroundKeychain';
+import { ARK_VAULT_EXISTS } from './createErrors';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
@@ -187,9 +188,13 @@ export async function createArkWallet(
     // `ensureArkDatadir()`, which would otherwise create the very directory it
     // inspects.
     if (!forceRescan && (await arkDatadirHasWallet())) {
-        throw new Error(
+        // Coded so the seed screen can tell a leftover from an interrupted create (offered Reset & retry) from a real
+        // vault (refused). See createErrors.ts.
+        const exists = new Error(
             'A Bark Vault already exists on this device. Delete it in Vault settings before creating a new one.',
-        );
+        ) as Error & { code?: string };
+        exists.code = ARK_VAULT_EXISTS;
+        throw exists;
     }
     const datadir = await ensureArkDatadir();
 
@@ -377,7 +382,10 @@ export async function createArkWallet(
 
 export async function openArkWallet(
     mnemonic: string,
-    opts?: { esploraUrl?: string },
+    // fromSavedSeed: the mnemonic was read from the saved `ark-seed-phrase`
+    // entry (restore.ts restoreArkWalletFromDisk), not typed, cached or taken
+    // from the background copy.
+    opts?: { esploraUrl?: string; fromSavedSeed?: boolean },
 ): Promise<WalletInterface> {
     await ensureUniffi();
     const datadir = await ensureArkDatadir();
@@ -419,6 +427,9 @@ export async function openArkWallet(
     sessionEsploraUrl = chosenEsplora;
     cachedMnemonic = mnemonic;
     startWatcher();
+    // The saved seed just opened this vault, so its consent record can be
+    // corrected before the check below reads it (see recordSavedSeedConsent).
+    if (opts?.fromSavedSeed) recordSavedSeedConsent();
     // Background-refresh backstop: while the toggle is on (default), keep a
     // background-readable copy of the seed so a background wake can open the
     // wallet without a biometric prompt. Fire-and-forget; retried on next open.

@@ -26,7 +26,7 @@ jest.mock('@Cypher/component-library', () => {
     const { Text } = require('react-native');
     return { ScreenLayout: ({ children }: any) => children, Text };
 });
-jest.mock('react-native-device-info', () => ({ getVersion: () => '0.1.14', getBuildNumber: () => '1' }));
+jest.mock('react-native-device-info', () => ({ getVersion: () => '0.1.13', getBuildNumber: () => '1' }));
 // icons draw nothing here, so their glyphs stay out of the labels read below; their names are still checked
 jest.mock('react-native-vector-icons/MaterialCommunityIcons', () => () => null);
 // the wallets as loaded, with no Hot Vault, and without the app's storage and Electrum behind them

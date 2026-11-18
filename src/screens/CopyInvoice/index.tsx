@@ -12,11 +12,15 @@ import { Copy, QrCode, Second, Share2 } from "@Cypher/assets/images";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton, ImageTextVertical } from "@Cypher/components";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { colors, rtl } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
+import { displayDestination } from "@Cypher/helpers/addressDisplay";
 
 interface Props {
     route: any;
 }
+
+// Arabic or Hebrew letters: text in a right-to-left language, which has to keep its own direction
+const RTL_LETTERS = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 
 export default function CopyInvoice({ route }: Props) {
     const { value, converted, hash } = route?.params
@@ -46,15 +50,6 @@ export default function CopyInvoice({ route }: Props) {
         SimpleToast.show(loc.cypherbox.payments.common.copied_to_clipboard, SimpleToast.SHORT);
     };
     
-    const shortenAddress = (address: string) => {
-        // Take the first 6 characters
-        const start = address.substring(0, 6);
-        // Take the last 6 characters
-        const end = address.substring(address.length - 6);
-        // Combine with three dots in the middle
-        return `${start}...${end}`;
-    };
-
     const shareQRCode = async () => {
         try {
             // const qrData = 'Bitcoin-lightning invoice QR code data'; // Replace this with your QR code data
@@ -94,8 +89,12 @@ export default function CopyInvoice({ route }: Props) {
                             </Text>
                         </View>
                     )}
-                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1} style={rtl.ltrText}>{route?.params?.value}</Text>
-                    <Text bold style={[styles.usd, rtl.ltrText]}>{route?.params?.converted}</Text>
+                    {/* `value` is a translated line ("Receive 5 USD") and follows the language: forced left-to-right,
+                        iOS put the number first in Arabic. `converted` is one too on the on-chain address; otherwise
+                        it's an amount ("$ 0.01"), which has no letter to set its direction, so it's marked
+                        left-to-right. */}
+                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1}>{value}</Text>
+                    <Text bold style={styles.usd}>{converted && !RTL_LETTERS.test(converted) ? ltr(converted) : converted}</Text>
                     {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
                     <View style={{ margin: 20, padding: 30, backgroundColor: 'white', borderRadius: 30 }}>
                         <QRCode
@@ -106,7 +105,7 @@ export default function CopyInvoice({ route }: Props) {
                         />
                     </View>
 
-                    <Text semibold style={[styles.code, rtl.ltrText]}>{shortenAddress(hash)}</Text>
+                    <Text semibold style={[styles.code, rtl.ltrText]}>{displayDestination(hash)}</Text>
                     <View style={styles.imageView}>
                         <ImageTextVertical text={loc.cypherbox.payments.common.copy} source={Copy} onPress={() => copyToClipboard(hash)} />
                         <ImageTextVertical text={loc.cypherbox.payments.common.share} source={Share2} onPress={shareQRCode} />

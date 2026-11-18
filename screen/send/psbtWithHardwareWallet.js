@@ -15,7 +15,8 @@ import { requestCameraAuthorization } from '../../helpers/scan-qr';
 import { useTheme } from '../../components/themes';
 import triggerHapticFeedback, { HapticFeedbackTypes } from '../../blue_modules/hapticFeedback';
 import SafeArea from '../../components/SafeArea';
-import { assertSignedTxMatchesPsbt, isRawTransactionHex, summarizeSignedTx, SIGNED_TX_INVALID } from '../../src/helpers/signedTransaction';
+import { assertSignedTxMatchesPsbt, isRawTransactionHex, summarizeSignedTx } from '../../src/helpers/signedTransaction';
+import signedTxErrorText from '../../src/helpers/signedTxErrorText';
 import { spendsPendingInputs } from '../../src/helpers/pendingSignature';
 import useAuthStore from '../../src/stores/authStore';
 const BlueElectrum = require('../../blue_modules/BlueElectrum');
@@ -77,7 +78,7 @@ const PsbtWithHardwareWallet = () => {
         assertSignedTxMatchesPsbt(ret.data, psbt);
         setTxHex(ret.data.trim());
       } catch (Err) {
-        alert(Err.message);
+        alert(signedTxErrorText(Err.message));
       }
       return;
     }
@@ -181,7 +182,7 @@ const PsbtWithHardwareWallet = () => {
       // the fee needs the reviewed PSBT's input amounts; a transaction opened on its own shows outputs only
       summary = summarizeSignedTx(txHex, psbt && !routeParamsTXHex ? psbt : undefined);
     } catch (_) {
-      return <BlueText style={[styles.hexLabel, stylesHook.hexLabel]}>{SIGNED_TX_INVALID}</BlueText>;
+      return <BlueText style={[styles.hexLabel, stylesHook.hexLabel]}>{loc.cypherbox.payments.confirm_hardware_transaction.signed_tx_invalid}</BlueText>;
     }
     return (
       <View style={styles.summary}>

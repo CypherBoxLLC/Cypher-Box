@@ -14,6 +14,9 @@ interface Style {
     linearGradientInside: ViewStyle;
     linearStyle: ViewStyle;
     insideView: ViewStyle;
+    linearGradientInsideGrows: ViewStyle;
+    linearStyleGrows: ViewStyle;
+    insideViewGrows: ViewStyle;
     keyKinds: TextStyle;
     node: ViewStyle;
     nodeMissing: ViewStyle;
@@ -104,6 +107,28 @@ export default StyleSheet.create<Style>({
         backgroundColor: colors.gray.dark,
         margin: 1,
         borderRadius: 8,
+    },
+    // The paste card once it holds a key: at least as tall as the others, and as tall as the key needs.
+    linearGradientInsideGrows: {
+        minHeight: 54,
+        borderRadius: 8,
+        marginTop: 20,
+    },
+    linearStyleGrows: {
+        minHeight: 54,
+        borderRadius: 8,
+    },
+    insideViewGrows: {
+        // flexGrow, not flex: 1, whose zero basis would size the card without the key's lines
+        flexGrow: 1,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: colors.gray.dark,
+        margin: 1,
+        borderRadius: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 10,
     },
     keyKinds: {
         fontSize: 15,

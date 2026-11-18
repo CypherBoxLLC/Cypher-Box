@@ -477,5 +477,6 @@ describe('finding an address', () => {
         expect(at999).toEqual({ wallet: w1, branch: 1, index: 999 });
         expect(progress.length).toBeGreaterThan(10);
         expect(await findAddress(addressFromText(W1.addresses.receive1000).script, [w1])).toBeNull();
-    });
+        // 4,000 multisig addresses worked out in JavaScript: past Jest's 5 s when the whole suite runs at once
+    }, 30_000);
 });

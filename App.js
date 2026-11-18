@@ -17,6 +17,9 @@ import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-c
 import { navigationRef } from './NavigationService';
 import * as NavigationService from './NavigationService';
 import DeeplinkSchemaMatch from './class/deeplink-schema-match';
+import { startAuthHydration } from './src/stores/authHydration';
+import { assertNativeRngHealthy } from './class/rngHealth';
+import { startHotVaultKeychainCheck } from './src/services/hotVaultKeychainUpgrade';
 import loc from './loc';
 import { BlueDefaultTheme, BlueDarkTheme } from './components/themes';
 import InitRoot from './Navigation';
@@ -62,6 +65,32 @@ const App = () => {
   const appState = useRef(AppState.currentState);
   // const colorScheme = useColorScheme();
   const colorScheme = 'dark';
+
+  // Recover auth-store hydration if the first (creation-time) attempt failed
+  // because the Keychain key was unreadable (e.g. a background wake while the
+  // phone was locked). Re-runs on each foreground until it succeeds; a no-op on
+  // a normal launch. See src/stores/authHydration.
+  useEffect(() => {
+    startAuthHydration();
+  }, []);
+
+  // Early, loud secure-randomness check. Logs only here; the hard refusal to
+  // mint a key happens at generation time (see class/rngHealth).
+  useEffect(() => {
+    assertNativeRngHealthy().catch(e =>
+      console.error('[RNG] startup check:', e?.reason ?? e?.message ?? e),
+    );
+  }, []);
+
+  // Android: the seed copies of Hot Vaults in the app that older builds saved without the fingerprint are removed,
+  // once the wallets and the auth store have loaded. Copies of vaults no longer in the app stay (Recover offers them).
+  // See src/services/hotVaultKeychainUpgrade.
+  useEffect(() => {
+    if (!walletsInitialized) return;
+    startHotVaultKeychainCheck(wallets.map(wallet => wallet.getID()));
+    // once per launch, when the wallets have loaded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletsInitialized]);
 
   const onNotificationReceived = async notification => {
     const payload = Object.assign({}, notification, notification.data);

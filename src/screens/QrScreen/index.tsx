@@ -17,6 +17,7 @@ import { createInvoice } from "@Cypher/api/coinOSApis";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import useAuthStore from "@Cypher/stores/authStore";
 import { rtl } from "@Cypher/style-guide";
+import { displayDestination } from "@Cypher/helpers/addressDisplay";
 
 interface Props {
     route: any;
@@ -61,15 +62,6 @@ export default function QrScreen({ route }: Props) {
         SimpleToast.show(loc.cypherbox.payments.common.copied_to_clipboard, SimpleToast.SHORT);
     };
     
-    const shortenAddress = (address: string) => {
-        // Take the first 6 characters
-        const start = address.substring(0, 6);
-        // Take the last 6 characters
-        const end = address.substring(address.length - 6);
-        // Combine with three dots in the middle
-        return `${start}...${end}`;
-    };
-
     const shareQRCode = async () => {
         try {
             // const qrData = 'Bitcoin-lightning invoice QR code data'; // Replace this with your QR code data
@@ -117,7 +109,7 @@ export default function QrScreen({ route }: Props) {
                         </View>
 
                         {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
-                        <Text semibold style={[styles.code, rtl.ltrText]}>{shortenAddress(hash)}</Text>
+                        <Text semibold style={[styles.code, rtl.ltrText]}>{displayDestination(hash)}</Text>
                         <View style={styles.imageView2}>
                             <ImageTextVertical text={loc.cypherbox.payments.common.copy} source={Copy} onPress={() => copyToClipboard(hash)} />
                             <ImageTextVertical text={loc.cypherbox.payments.common.share} source={Share2} onPress={shareQRCode} />

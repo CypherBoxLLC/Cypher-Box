@@ -17,6 +17,6 @@ export default function StrikeDollarWallet({
 }: Props) {
     const { isStrikeAuth } = useAuthStore();
     return (
-        isStrikeAuth && <StrikeView currency={currency} matchedRateStrike={matchedRateStrike} />
+        isStrikeAuth && <StrikeView currency={currency} matchedRateStrike={matchedRateStrike} hideWithBalances />
     )
 }

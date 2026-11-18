@@ -1,9 +1,11 @@
 import React, { useMemo } from "react";
-import { FlatList, StyleSheet, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, View } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { ScreenLayout, Text } from "@Cypher/component-library";
+import { HOME_NOTICE_COLORS } from "@Cypher/components/HomeNotices";
 import useEvents from "@Cypher/custom-hooks/useEvents";
+import useAuthStore from "@Cypher/stores/authStore";
 import { AppEvent, EventWallet } from "@Cypher/stores/eventLogStore";
 import loc from "../../../loc";
 
@@ -33,6 +35,8 @@ const formatRelative = (ts: number, now: number): string => {
 
 type RowMeta = {
     icon: string;
+    /** Icon colour, when it carries meaning (an ignored notice's yellow or green). */
+    iconColor?: string;
     line1: string;
     walletLabel?: string;
 };
@@ -228,15 +232,47 @@ const describe = (ev: AppEvent): RowMeta => {
                 walletLabel: `${getWalletLabel()["ark"]}${idTag}`,
             };
         }
+        // A Home notice ignored with the × on its icon: its own message, in
+        // its own colour, so a mis-tap can be read again here.
+        case "notice-ignored":
+            return {
+                icon: ev.icon,
+                iconColor: HOME_NOTICE_COLORS[ev.severity],
+                line1: ev.text,
+                walletLabel: loc.cypherbox.payments.activity.notice_ignored,
+            };
     }
 };
+
+/**
+ * "Show again" on an ignored Home notice, the fix for a mis-tap on its ×.
+ * Offered only while the notice is still ignored in the situation it was
+ * ignored in: once it is back on Home, or its situation moved on, there is
+ * nothing to undo.
+ */
+function ShowAgain({ noticeId, situation }: { noticeId: string; situation: string }) {
+    const stillIgnored = useAuthStore((s) => s.homeNoticeIgnores?.[noticeId] === situation);
+    const restoreHomeNotice = useAuthStore((s) => s.restoreHomeNotice);
+    if (!stillIgnored) return null;
+    return (
+        <Pressable
+            testID={`activity-show-again-${noticeId}`}
+            onPress={() => restoreHomeNotice(noticeId)}
+            hitSlop={8}
+            accessibilityRole="button"
+            style={styles.showAgain}
+        >
+            <Text style={styles.showAgainText}>{loc.cypherbox.payments.activity.notice_show_again}</Text>
+        </Pressable>
+    );
+}
 
 export const Row = React.memo(function Row({ ev, now }: { ev: AppEvent; now: number }) {
     const meta = describe(ev);
     return (
         <View style={styles.row}>
             <View style={styles.iconWrap}>
-                <Ionicons name={meta.icon} size={22} color="#FFFFFF" />
+                <Ionicons name={meta.icon} size={22} color={meta.iconColor ?? "#FFFFFF"} />
             </View>
             <View style={styles.body}>
                 <Text style={styles.line1}>{meta.line1}</Text>
@@ -244,6 +280,7 @@ export const Row = React.memo(function Row({ ev, now }: { ev: AppEvent; now: num
                     {meta.walletLabel ? `${meta.walletLabel} · ` : ""}{formatRelative(ev.ts, now)}
                 </Text>
             </View>
+            {ev.kind === "notice-ignored" && <ShowAgain noticeId={ev.noticeId} situation={ev.situation} />}
         </View>
     );
 });
@@ -308,6 +345,19 @@ const styles = StyleSheet.create({
         fontSize: 12,
         marginTop: 2,
         fontFamily: "Lato-Regular",
+    },
+    showAgain: {
+        marginStart: 10,
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "rgba(255,255,255,0.35)",
+    },
+    showAgainText: {
+        color: "#7CB9F8",
+        fontSize: 12,
+        fontFamily: "Lato-Bold",
     },
     sep: {
         height: StyleSheet.hairlineWidth,

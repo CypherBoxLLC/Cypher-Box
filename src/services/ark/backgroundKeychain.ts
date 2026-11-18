@@ -41,6 +41,67 @@ function seedOnDeviceConsented(): boolean {
 }
 
 /**
+ * Correct the consent record of a vault whose saved seed just opened it.
+ *
+ * Until 0.1.13 the create screen recorded `keychainSaved: false` even when the
+ * seed was saved: it read its save status from React state that had not
+ * updated yet. The check above then refused the background copy for every
+ * vault made there, so background refresh never ran for them.
+ *
+ * Call ONLY after a wallet open whose seed came out of the saved
+ * `ark-seed-phrase` entry. That entry is written only when the user leaves
+ * "save seed" on, and a seed that opens this vault's datadir is this vault's
+ * seed, so the user did keep it on the phone. Recorded once, before the
+ * wallet-open check decides about the copy.
+ *
+ * Loaded values only (an unloaded store has no record to correct), and only
+ * when a vault record exists.
+ */
+export function recordSavedSeedConsent(): void {
+    if (!useAuthStore.persist.hasHydrated()) return;
+    const { arkWallet, setArkWallet } = useAuthStore.getState();
+    if (!arkWallet || arkWallet.keychainSaved === true) return;
+    setArkWallet({ ...arkWallet, keychainSaved: true });
+}
+
+/**
+ * Does the Bark vault hold anything that can expire?
+ *
+ * The un-gated copy exists for exactly one job: let an unattended wake refresh
+ * capsules before they expire. A vault with nothing in it has nothing to
+ * expire, so the copy buys no safety there and is pure exposure — a plain
+ * `getGenericPassword` away for anything that can reach the keychain, readable
+ * while the phone is locked, and sitting there for as long as the app stays
+ * installed. A user who tried Bark once, emptied it and moved on should not be
+ * leaving a mnemonic behind in that state, and the seed still controls every
+ * address the vault would receive on next, so "empty" is not "worthless".
+ *
+ * Fails CLOSED towards KEEPING the copy: returns true unless it can positively
+ * confirm the vault is empty. An unhydrated store reads as all-defaults
+ * (`arkVtxos: []`, `arkBalance: 0`), which is indistinguishable from a genuinely
+ * empty vault and is what a background wake on a locked iPhone sees, so treat
+ * it as unknown and keep the copy. Same reasoning as the hasHydrated guards
+ * below.
+ *
+ * Every numeric field of the balance detail counts, rather than a named list:
+ * a new pending bucket added later must not silently make a funded vault look
+ * empty and drop the seed that protects it.
+ */
+export function arkVaultHasValueToProtect(): boolean {
+    if (!useAuthStore.persist.hasHydrated()) return true;
+    const state = useAuthStore.getState();
+    if ((state.arkVtxos?.length ?? 0) > 0) return true;
+    if ((state.arkBalance ?? 0) > 0) return true;
+    const detail = state.arkBalanceDetail;
+    if (detail) {
+        for (const value of Object.values(detail)) {
+            if (typeof value === 'number' && value > 0) return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Mirror the seed into the background-readable entry. Call ONLY with the
  * mnemonic already in hand (foreground — e.g. `getCachedArkMnemonic()` or just
  * after a wallet open). We never read the biometry-gated primary from here.
@@ -48,12 +109,24 @@ function seedOnDeviceConsented(): boolean {
 export async function writeBackgroundArkSeed(mnemonic: string): Promise<void> {
     if (!mnemonic) return;
     if (!seedOnDeviceConsented()) {
+        // Until the auth store has loaded, arkWallet is its default (null) and
+        // reads as no consent, which proves nothing. That is what a background
+        // wake on a locked iPhone sees, as the store's key is unreadable then.
+        // Leave the copy alone: a later wake needs it to refresh capsules
+        // before they expire.
+        if (!useAuthStore.persist.hasHydrated()) return;
         // Arming the reminders toggle used to write this copy unconditionally,
         // so a user who turned OFF "save seed to Keystore" still got their full
         // 12 words written here with NO biometric gate, readable with a plain
         // getGenericPassword by anyone holding the unlocked phone. Refuse, and
         // clean up any copy an earlier build already wrote.
         console.warn('[Ark bg] seed mirror skipped: no on-device seed consent recorded');
+        await deleteBackgroundArkSeed();
+        return;
+    }
+    if (!arkVaultHasValueToProtect()) {
+        // Nothing to refresh, so nothing to justify an un-gated mnemonic.
+        // Re-armed by the next wallet-open once the vault holds value again.
         await deleteBackgroundArkSeed();
         return;
     }
@@ -88,11 +161,25 @@ export async function readBackgroundArkSeed(): Promise<string | null> {
 export async function ensureBackgroundArkSeed(mnemonic: string): Promise<void> {
     if (!mnemonic) return;
     try {
+        // Only on loaded values. A background wake on a locked iPhone opens
+        // the wallet from the background copy while the auth store is still
+        // at its defaults (its key is unreadable until the phone is unlocked),
+        // where arkWallet is null and reads as no consent: the self-heal below
+        // would delete the very copy that wake opened the wallet with. The
+        // next wallet-open checks again.
+        if (!useAuthStore.persist.hasHydrated()) return;
         if (!useAuthStore.getState().arkBgRefreshEnabled) return;
         if (!seedOnDeviceConsented()) {
             // Self-heal on every wallet open: remove a mirror written before
             // this gate existed. Checked BEFORE the early-return below, which
             // would otherwise treat an existing unwanted copy as "done".
+            await deleteBackgroundArkSeed();
+            return;
+        }
+        if (!arkVaultHasValueToProtect()) {
+            // Checked BEFORE the already-exists early return below, so a vault
+            // that has since been emptied drops its copy instead of keeping it
+            // forever on the grounds that one is already there.
             await deleteBackgroundArkSeed();
             return;
         }
@@ -112,5 +199,42 @@ export async function deleteBackgroundArkSeed(): Promise<void> {
         await Keychain.resetGenericPassword({ service: BG_KEYCHAIN_SERVICE });
     } catch {
         // Already absent or never written. Either way we're at the desired state.
+    }
+}
+
+/**
+ * Drop the un-gated copy from inside a background wake once the vault is empty.
+ *
+ * The foreground gate in `ensureBackgroundArkSeed` only fires when the user
+ * opens the app. The case this covers is the one where they never do again:
+ * everything offboarded or spent, app left installed, mnemonic sitting in a
+ * keychain entry with no biometric gate indefinitely.
+ *
+ * `spendableCount` must come from a live `fetchArkVtxos()` in the caller, NOT
+ * from the store: a background wake can run with the store at its defaults,
+ * where an empty `arkVtxos` proves nothing and would delete the very copy that
+ * wake just opened the wallet with. A direct fetch cannot be fooled that way,
+ * which is why this takes the count as an argument instead of calling
+ * `arkVaultHasValueToProtect()`.
+ *
+ * Safe at this point in the run because an active unilateral exit already
+ * returned earlier, and a round submitted by the maintenance call has been
+ * pulled in by the `syncArkWallet()` above, so an empty spendable set here
+ * means there is genuinely no capsule left to expire.
+ *
+ * Residual risk, accepted: if value arrives while the app stays closed, the
+ * next wake finds no seed and cannot refresh. A newly received capsule has its
+ * full expiry window ahead of it, the local expiry reminders still fire, and
+ * the next wallet-open re-arms the copy — so the exposure traded away is
+ * permanent and the risk taken on is bounded.
+ */
+export async function pruneBackgroundArkSeedIfEmpty(spendableCount: number): Promise<void> {
+    if (spendableCount > 0) return;
+    try {
+        if (!(await readBackgroundArkSeed())) return;
+        console.log('[Ark bg] vault empty after refresh; dropping the background seed copy');
+        await deleteBackgroundArkSeed();
+    } catch {
+        // Best-effort: the next wallet-open prunes it too.
     }
 }

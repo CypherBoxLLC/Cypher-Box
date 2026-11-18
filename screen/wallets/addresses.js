@@ -83,6 +83,7 @@ const WalletAddresses = () => {
     ids,
     maxUSD,
     inUSD,
+    isMaxEdit,
     total,
     matchedRate,
     capsulesData,
@@ -219,6 +220,7 @@ const WalletAddresses = () => {
       return;
     }
     if(isBatch){
+      // ColdStorage's params are replaced by these, so a Max consolidation has to say so again
       dispatchNavigate('ColdStorage', {
         wallet,
         vaultTab,
@@ -226,6 +228,7 @@ const WalletAddresses = () => {
         ids,
         maxUSD,
         inUSD,
+        isMaxEdit,
         total,
         matchedRate,
         capsulesData,

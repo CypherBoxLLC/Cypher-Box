@@ -12,13 +12,19 @@ import * as bip39 from 'bip39';
 
 import CreateSignerSeed from '../../src/screens/CreateSignerSeed';
 import { takeSeedBackedUp } from '../../src/screens/SigningHome/seedSigner';
-import useAuthStore from '../../src/stores/authStore';
 import { mnemonicToSeedQR, seedQRGrid } from '../../src/helpers/seedQR';
+import useAuthStore from '../../src/stores/authStore';
 import { randomBytes } from '../../class/rng';
+import { EntropyUnsafeError, assertNativeRngHealthy } from '../../class/rngHealth';
+import { SeedUnsafeError, assertMnemonicHealthy } from '../../class/seedHealth';
 
-// the screen remembers a shown public key in the persisted store; its storage isn't part of these tests
 jest.mock('../../src/stores/index', () => ({
-    zustandStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    __esModule: true,
+    zustandStorage: {
+        getItem: jest.fn().mockResolvedValue(null),
+        setItem: jest.fn().mockResolvedValue(undefined),
+        removeItem: jest.fn().mockResolvedValue(undefined),
+    },
 }));
 jest.mock('@Cypher/component-library', () => {
     const { Text } = require('react-native');
@@ -39,6 +45,16 @@ jest.mock('../../helpers/scan-qr', () => ({ requestCameraAuthorization: () => Pr
 jest.mock('react-native-simple-toast', () => ({ show: () => {}, SHORT: 0 }));
 // the phone's randomness, made predictable: sixteen zero bytes are the public "abandon … about" phrase
 jest.mock('../../class/rng', () => ({ randomBytes: jest.fn(async (size: number) => Buffer.alloc(size, 0)) }));
+// Those zeros are exactly what the seed check refuses (one repeated byte), so it's stood in for here, and so is the
+// check of the phone's randomness; both are still called, and their refusals are tested below.
+jest.mock('../../class/seedHealth', () => ({
+    ...jest.requireActual('../../class/seedHealth'),
+    assertMnemonicHealthy: jest.fn(),
+}));
+jest.mock('../../class/rngHealth', () => ({
+    ...jest.requireActual('../../class/rngHealth'),
+    assertNativeRngHealthy: jest.fn(async () => {}),
+}));
 // the real SeedQR check, with the scanner it opens stood in for by the test
 const mockNavigation: any = {};
 jest.mock('@react-navigation/native', () => ({
@@ -107,7 +123,9 @@ let seedSpy: jest.SpyInstance;
 beforeEach(() => {
     seedSpy = jest.spyOn(bip39, 'mnemonicToSeedSync');
     (randomBytes as jest.Mock).mockClear();
-    act(() => useAuthStore.setState({ signerAccounts: {}, signerKeyShown: false }));
+    (assertMnemonicHealthy as jest.Mock).mockClear();
+    (assertNativeRngHealthy as jest.Mock).mockClear();
+    useAuthStore.setState({ signerAccounts: {}, signerKeyShown: false });
     takeSeedBackedUp();
 });
 afterEach(() => {
@@ -140,6 +158,31 @@ describe('Create a Seed', () => {
         // hidden until View, and nothing to go on with yet
         expect(text).not.toContain('1. abandon');
         expect(buttonFor(root, /I've backed it up/)!.props.disabled).toBe(true);
+    });
+
+    it('checks the phone\'s randomness first and the new seed before showing it', async () => {
+        await generated();
+        expect(assertNativeRngHealthy).toHaveBeenCalled();
+        expect(assertMnemonicHealthy).toHaveBeenCalledWith(ABANDON);
+    });
+
+    it('makes no seed when the phone\'s randomness isn\'t working, and says so', async () => {
+        (assertNativeRngHealthy as jest.Mock).mockRejectedValueOnce(new EntropyUnsafeError('constant-output'));
+        const root = await generated();
+        const text = textOf(root);
+        expect(randomBytes).not.toHaveBeenCalled();
+        expect(text).not.toContain('Back up your seed');
+        expect(text).toContain("This phone can't supply secure randomness right now");
+    });
+
+    it('drops a seed the check refuses, and says so', async () => {
+        (assertMnemonicHealthy as jest.Mock).mockImplementationOnce(() => {
+            throw new SeedUnsafeError('constant-entropy');
+        });
+        const root = await generated();
+        const text = textOf(root);
+        expect(text).not.toContain('Back up your seed');
+        expect(text).toContain("The wallet couldn't be created safely on this phone");
     });
 
     it('has the words and the SeedQR as two tabs of the same screen', async () => {
@@ -243,6 +286,9 @@ describe('Create a Seed', () => {
         expect(dispatch).toHaveBeenCalledWith('ProvideEntropy', expect.objectContaining({ minBits: 128, mixWithRng: true }));
         await press(root, /^Generate Seed$/);
         expect(randomBytes).not.toHaveBeenCalled();
+        // the dice screen checks the phone's randomness before mixing it in; the result is still checked here
+        expect(assertNativeRngHealthy).not.toHaveBeenCalled();
+        expect(assertMnemonicHealthy).toHaveBeenCalledWith(ABANDON);
         await press(root, /^View$/);
         // sixteen zero bytes are "abandon … about"
         expect(textOf(root)).toContain('12. about');
@@ -390,6 +436,18 @@ describe('Show a Seed\'s Public Key', () => {
         expect(textOf(root)).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
         expect(seedSpy).toHaveBeenCalledTimes(1);
         expect(goBack().preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('uses the passphrase typed with the words', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /^Passphrase/, 'TREZOR');
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(seedSpy).toHaveBeenCalledWith(ABANDON, 'TREZOR');
+        expect(textOf(root)).toContain("This seed's public key");
+        expect(textOf(root)).not.toContain(ZPUB);
+        // nothing of it is kept for later
+        expect(textOf(root)).toContain("The seed isn't kept on this phone.");
     });
 
     it('remembers the public key for address checks by default, and forgets it when switched off', async () => {

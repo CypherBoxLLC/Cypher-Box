@@ -3,6 +3,7 @@ import { ActivityIndicator, InteractionManager, StyleSheet, View } from "react-n
 
 import { Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
 import { ElectrumConnection } from "../../custom-hooks/useElectrumConnection";
 import SignButton from "../HotStorageVault/SignButton";
 
@@ -29,15 +30,12 @@ export default function Signer({ wallet, connection }: { wallet: any; connection
 
     return (
         <View style={styles.container}>
-            <Text style={styles.lead}>
-                Signs for a watch & broadcast only wallet that has this seed's public key: a Cypher Box Cold Vault, Sparrow or
-                another app. You'll see what a transaction does before anything is signed.
-            </Text>
+            <Text style={styles.lead}>{loc.cypherbox.seed_signer.signer.lead}</Text>
             {/* to check against the watch-only wallet, which shows the same fingerprint for this key; its space is held
                 while it's worked out, so the button under it doesn't jump */}
             {fingerprint !== null ? (
                 <View style={styles.key}>
-                    <Text style={styles.keyLabel}>Key fingerprint</Text>
+                    <Text style={styles.keyLabel}>{loc.cypherbox.seed_signer.key_fingerprint}</Text>
                     {fingerprint ? (
                         <Text semibold style={styles.keyValue}>{fingerprint}</Text>
                     ) : (

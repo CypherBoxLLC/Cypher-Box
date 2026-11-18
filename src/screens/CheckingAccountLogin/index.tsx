@@ -1,10 +1,13 @@
 import React, { useEffect, useRef } from "react";
-import { Linking, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
+import { Alert, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
+import { generateCheckedArkMnemonic } from "../../../class/seedHealth";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
@@ -12,7 +15,7 @@ import { authorize } from "react-native-app-auth";
 import { jwtDecode } from "jwt-decode";
 import { Buffer } from "buffer";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { SEED_SIGNER, openSeedSignerGate } from "../SigningHome/seedSigner";
+import { openSeedSignerGate } from "../SigningHome/seedSigner";
 import {
   LoginOption,
   RegisterPrompt,
@@ -77,6 +80,9 @@ export default function CheckingAccountLogin() {
   const [StrikeException, setStrikeException] = React.useState(false);
   const [pageLoading, setPageLoading] = React.useState(true);
   const strikeSignupSheetRef = useRef<StrikeSignupSheetRef>(null);
+  // The storefront can be unavailable at mount; re-run the region check when
+  // it resolves so Strike and CoinOS stop being hidden on a false read.
+  const regionGateVersion = useRegionGate();
 
   useEffect(() => {
     // CoinOS is hidden in the EEA and the UK. Strike is shown only in the
@@ -91,7 +97,9 @@ export default function CheckingAccountLogin() {
     setCoinosException(!isCoinosAllowed());
     setStrikeException(!isStrikeAllowed());
     setPageLoading(false);
-  }, []);
+    // regionGateVersion bumps once the storefront resolves after launch, so
+    // the exception flags are recomputed instead of staying fail-closed.
+  }, [regionGateVersion]);
 
   const createCheckingAccountClickHandler = () => {
     openInAppBrowser("https://coinos.io/register");
@@ -110,7 +118,13 @@ export default function CheckingAccountLogin() {
     // Skip the CreateArkScreen intro (experimental warning + hot-vault
     // seed-source toggle) and go straight to the seed-phrase reveal.
     // Mirrors the fresh-seed branch of the old CreateArkScreen.handleCreate.
-    const mnemonic = barkGenerateMnemonic();
+    let mnemonic: string;
+    try {
+      mnemonic = generateCheckedArkMnemonic(barkGenerateMnemonic);
+    } catch (e: any) {
+      Alert.alert(loc.cypherbox.safety_checks.create_failed_title, safetyErrorText(e, loc.cypherbox.safety_checks.seed_unsafe));
+      return;
+    }
     dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });
   };
 
@@ -123,10 +137,11 @@ export default function CheckingAccountLogin() {
   };
 
   const openArkInfo = () => {
-    // Bark Vault "Learn more" opens our own how-to guide rather than the ASP's
-    // marketing site, so the user gets the app-specific safety guidance
-    // (refresh habit, dust, exit funding, offline-phone warning).
-    Linking.openURL("https://cypherbox.io/how-to-use-your-bark-vault/");
+    // Bark Vault "Learn more" opens the in-app guide (the same screen as the
+    // Capsules tab's "?"), not a web page: it carries the app-specific safety
+    // guidance from cypherbox.io/how-to-use-your-bark-vault (offline-phone
+    // warning, refresh habit, dust, exit funding) and works offline.
+    dispatchNavigate("ArkCapsulesInfoScreen", {});
   };
 
   // Opens the standalone custodial-risk explainer (CheckingAccountIntro,
@@ -382,7 +397,7 @@ export default function CheckingAccountLogin() {
             {loc.cypherbox.account.checking_login.cold_signing_subtitle}
           </Text>
           <LoginOption
-            label={SEED_SIGNER}
+            label={loc.cypherbox.seed_signer.title}
             labelColor={colors.green}
             iconPrefixIonicon="qr-code-outline"
             iconPrefixTint={colors.green}

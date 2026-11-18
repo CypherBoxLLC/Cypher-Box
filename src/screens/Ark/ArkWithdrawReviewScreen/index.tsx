@@ -30,6 +30,7 @@ import {
 } from '@Cypher/services/ark/send';
 import { fetchArkBalance } from '@Cypher/services/ark/balance';
 import { describeArkFailure } from '@Cypher/services/ark/networkFault';
+import { recordAndDescribeNotSpendable } from '@Cypher/services/ark/vtxos';
 import { ARK_SERVER_URL, ESPLORA_URLS } from '@Cypher/services/ark/config';
 
 import TextViewV2 from '../../Invoice/TextView';
@@ -345,15 +346,24 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                         loc.cypherbox.ark.withdraw_review.in_flight_body,
                 );
             } else {
-                // Only reached once the ambiguous case is ruled out, so naming
-                // a definite outcome is safe here.
-                SimpleToast.show(
-                    describeArkFailure(err, loc.cypherbox.ark.withdraw_review.withdraw_failed, {
-                        chainUrls: ESPLORA_URLS,
-                        arkUrl: ARK_SERVER_URL,
-                    }),
-                    SimpleToast.LONG,
-                );
+                // The server refused a capsule, for example one already spent
+                // from another device. A spent one is recorded so the balance
+                // stops counting it. An alert rather than a toast: the
+                // explanation is too long to read before a toast fades.
+                const notSpendable = await recordAndDescribeNotSpendable(err);
+                if (notSpendable) {
+                    Alert.alert(notSpendable.title, notSpendable.body);
+                } else {
+                    // Only reached once the ambiguous case is ruled out, so
+                    // naming a definite outcome is safe here.
+                    SimpleToast.show(
+                        describeArkFailure(err, loc.cypherbox.ark.withdraw_review.withdraw_failed, {
+                            chainUrls: ESPLORA_URLS,
+                            arkUrl: ARK_SERVER_URL,
+                        }),
+                        SimpleToast.LONG,
+                    );
+                }
                 swipeButtonRef.current?.reset();
             }
         } finally {

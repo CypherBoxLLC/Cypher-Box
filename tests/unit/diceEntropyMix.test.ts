@@ -15,6 +15,10 @@ import crypto from 'crypto';
 import { eReducer, getEntropy, convertToBuffer, mixEntropy } from '../../screen/wallets/provideEntropy';
 const bip39 = require('bip39');
 
+// provideEntropy.js loads BlueApp (useProtectSecret -> Privacy -> storage-context), and BlueApp connects to an Electrum
+// server as soon as it loads. Left real, that connection stays open after the tests finish and Jest never exits.
+jest.mock('../../blue_modules/BlueElectrum', () => ({ connectMain: jest.fn() }));
+
 /**
  * Replay d6 faces (1..6) through the real reducer, using the SAME face mapping
  * the Dice component uses: (i + 1) % sides, which for a face f is f % 6. That

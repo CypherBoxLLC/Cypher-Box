@@ -13,9 +13,9 @@ import renderer, { act } from 'react-test-renderer';
 import RegisterSignerWallet from '../../src/screens/RegisterSignerWallet';
 import useAuthStore from '../../src/stores/authStore';
 import { OWN_KEY_DIFFERENT, WALLET_FILE_NOT_P2WSH } from '../../src/helpers/multisigPolicy';
+import { enableAuthWrites } from '../../src/stores/authPersistStorage';
 
 jest.mock('../../blue_modules/BlueElectrum', () => ({ connectMain: jest.fn() }));
-// the encrypted store's backend: what gets written is checked below
 jest.mock('../../src/stores/index', () => ({
     __esModule: true,
     zustandStorage: {
@@ -23,6 +23,14 @@ jest.mock('../../src/stores/index', () => ({
         setItem: jest.fn().mockResolvedValue(undefined),
         removeItem: jest.fn().mockResolvedValue(undefined),
     },
+}));
+// the auth store's encrypted backend, behind its write gate: what gets written is checked below
+jest.mock('../../src/stores/storageService', () => ({
+    __esModule: true,
+    getStorage: jest.fn().mockResolvedValue({}),
+    getItem: jest.fn().mockResolvedValue(null),
+    setItem: jest.fn().mockResolvedValue(undefined),
+    removeItem: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('@Cypher/component-library', () => {
     const { Text } = require('react-native');
@@ -84,6 +92,8 @@ beforeEach(() => {
 
 describe('adding a multisig wallet', () => {
     it('shows the wallet, confirms the key with the seed and stores only public keys', async () => {
+        // as once the store has loaded from the encrypted backend
+        enableAuthWrites();
         const { root, scan, typeWords } = open();
         await scan(walletFile([K.abandon, K.legal, K.letter]));
         const review = textOf(root);
@@ -106,8 +116,8 @@ describe('adding a multisig wallet', () => {
         expect(stored[0].keys).toEqual([K.abandon, K.legal, K.letter]);
         expect(JSON.stringify(stored[0])).not.toMatch(/abandon|prv/);
         // persisted to the encrypted store, public keys only
-        const { zustandStorage } = require('../../src/stores/index');
-        const written = (zustandStorage.setItem as jest.Mock).mock.calls.map(c => String(c[1])).filter(v => v.includes(stored[0].id));
+        const { setItem } = require('../../src/stores/storageService');
+        const written = (setItem as jest.Mock).mock.calls.map(c => String(c[1])).filter(v => v.includes(stored[0].id));
         expect(written.length).toBeGreaterThan(0);
         expect(written.every(v => !/abandon|prv/.test(v))).toBe(true);
         // the words are gone from the screen

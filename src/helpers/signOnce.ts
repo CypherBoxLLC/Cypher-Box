@@ -5,6 +5,7 @@ import BIP32Factory, { BIP32Interface } from 'bip32';
 import ecc from '../../blue_modules/noble_ecc';
 import { PolicyKey, SignerWallet, isP2wshScript, policyKeyPubkey, policyWitnessScript } from './multisigPolicy';
 import { rootFromMnemonic } from './seedFromWords';
+import { auditSignatures } from '../../class/signatureAudit';
 
 /**
  * Signing an unsigned transaction (PSBT) made by a watch-only wallet: a Cypher Box Cold Vault, Sparrow or any other
@@ -32,12 +33,14 @@ export const SIGN_NO_KEY_INFO =
 export const SIGN_BACKUP_MISMATCH =
     "This backup doesn't belong to the wallet that made this transaction. Check the words, and the passphrase if you use one.";
 export const SIGN_VAULT_MISMATCH =
-    "This transaction wasn't made for your Hot Vault. Sign it with the backup or signing device it was made for.";
+    "This transaction wasn't made for your Hot Vault. Sign it on the signing device it was made for.";
 export const SIGN_ON_SIGNING_DEVICE =
     "This phone only signs for its own Hot Vault. Sign this transaction on your signing device: a hardware wallet, or an offline phone in Offline Seed-Signer mode.";
 export const SIGN_FALSE_CHANGE =
     "An amount marked as coming back to your wallet goes to an address that isn't yours. Don't sign this transaction.";
 export const SIGN_NOTHING_SIGNED = "Nothing in this transaction could be signed with this key.";
+export const SIGN_INPUT_MISMATCH =
+    "This transaction's amounts don't add up: an input's amount doesn't match the transaction it comes from. Don't sign it.";
 export const SIGN_UNKNOWN_MULTISIG =
     "This transaction spends from a multisig wallet that isn't registered on this signer. Add the wallet's file under Multisig Wallets first, then sign again.";
 export const SIGN_UNSUPPORTED_MULTISIG =
@@ -234,6 +237,40 @@ export function keyWithOrigin(fingerprint: string, path: string, xpub: string): 
     return `[${fingerprint.toLowerCase()}/${steps}]${xpub}`;
 }
 
+/** Highest address index counted as the paired wallet's own. Wallets look 20 past the last used address, so a real
+ * wallet stays far below this; it's a backstop against a path crafted to hide coins, not a gap limit. */
+const MAX_WALLET_ADDRESS_INDEX = 10000;
+
+/** The account the signer pairs (SIGNER_KEY_PATH in signerPublicKey.ts, which imports from here). */
+const PAIRED_ACCOUNT = "m/84'/0'/0'";
+
+/** A native SegWit (BIP84) account path, m/84'/0'/N', of a derivation path, or null. */
+const nativeSegwitAccountOf = (path: string): string | null => {
+    const m = /^(m\/84'\/0'\/\d+')\//.exec(normalizePath(path).trim());
+    return m ? m[1] : null;
+};
+
+/** True for <account>/0/i and <account>/1/i (receive and change) with i below MAX_WALLET_ADDRESS_INDEX, for one of
+ * `accounts` (by default the account the signer pairs). */
+export function isWalletAddressPath(path: string, accounts: ReadonlySet<string> = new Set([PAIRED_ACCOUNT])): boolean {
+    const m = /^(m\/84'\/0'\/\d+')\/([01])\/(\d+)$/.exec(normalizePath(path).trim());
+    return !!m && accounts.has(m[1]) && Number(m[3]) < MAX_WALLET_ADDRESS_INDEX;
+}
+
+/** The native SegWit accounts this key signs inputs from in the transaction; the paired account when there are none. */
+function signedAccounts(psbt: bitcoin.Psbt, key: SigningKey): Set<string> {
+    const accounts = new Set<string>();
+    for (const input of psbt.data.inputs) {
+        for (const d of input.bip32Derivation ?? []) {
+            if (!isOwnDerivation(key, d)) continue;
+            const account = nativeSegwitAccountOf(d.path);
+            if (account) accounts.add(account);
+        }
+    }
+    if (!accounts.size) accounts.add(PAIRED_ACCOUNT);
+    return accounts;
+}
+
 const scriptsForPubkey = (pubkey: Buffer): Buffer[] => {
     const p2wpkh = bitcoin.payments.p2wpkh({ pubkey });
     return [
@@ -248,11 +285,18 @@ const scriptsForPubkey = (pubkey: Buffer): Buffer[] => {
  * 00000000 with a path that gives this key), that path has to give the stated public key, and the output script has to
  * pay that key. Throws SIGN_FALSE_CHANGE when the output claims this key but doesn't pay it.
  */
-function isVerifiedChange(script: Buffer, derivations: Derivation[] | undefined, root: BIP32Interface): boolean {
+function isVerifiedChange(
+    script: Buffer,
+    derivations: Derivation[] | undefined,
+    root: BIP32Interface,
+    accounts: ReadonlySet<string>,
+): boolean {
     const key = signingKeyFromRoot(root);
     const ours = (derivations ?? []).filter(d => isOwnDerivation(key, d));
     if (!ours.length) return false;
-    for (const d of ours) {
+    // First, whether the claim is true at all: each path has to give the stated key, and the output has to pay that
+    // key. A watch-only wallet that marks someone else's output as change is refused, wherever the path points.
+    const pubkeys = ours.map(d => {
         let pubkey: Buffer;
         try {
             pubkey = Buffer.from(root.derivePath(normalizePath(d.path)).publicKey);
@@ -262,17 +306,25 @@ function isVerifiedChange(script: Buffer, derivations: Derivation[] | undefined,
         if (!pubkey.equals(Buffer.from(d.pubkey)) || !scriptsForPubkey(pubkey).some(s => s.equals(script))) {
             throw new Error(SIGN_FALSE_CHANGE);
         }
-    }
-    return true;
+        return pubkey;
+    });
+    // Then whether the paired wallet will see it: a native SegWit address on the account the inputs are signed from,
+    // at an index a wallet reaches. The same key's legacy (1…) or wrapped (3…) address, another account or index
+    // 500,000 still pays this key, but the watch-only wallet never shows those coins, so it's listed as going out.
+    return ours.every(
+        (d, i) => isWalletAddressPath(d.path, accounts) && (bitcoin.payments.p2wpkh({ pubkey: pubkeys[i] }).output as Buffer).equals(script),
+    );
 }
 
 const isP2shScript = (script: Buffer) => script.length === 23 && script[0] === 0xa9 && script[1] === 0x14 && script[22] === 0x87;
 const isP2wpkhScript = (script: Buffer) => script.length === 22 && script[0] === 0x00 && script[1] === 0x14;
 
 /**
- * The coin an input spends: from its witness UTXO, or from the whole previous transaction, which has to be the one the
- * input names. When both are there they have to agree: bitcoinjs signs with the previous transaction's amount, and the
- * review shows the witness UTXO's. Null when the input carries neither. Throws SIGN_INPUT_DETAILS.
+ * The coin an input spends: its script, and its amount as the input's signature commits to it. When a PSBT carries
+ * both, bitcoinjs signs a segwit input over the previous transaction (nonWitnessUtxo), not witnessUtxo, so the review
+ * takes the coin from there too: a watch-only wallet that put a smaller amount in witnessUtxo would otherwise show a
+ * small fee for a large one. The previous transaction has to be the one the input spends, and witnessUtxo, when there,
+ * has to agree with it. Null when the input carries neither. Throws SIGN_INPUT_MISMATCH.
  */
 const prevoutOf = (psbt: bitcoin.Psbt, i: number): { script: Buffer; value: number } | null => {
     const input = psbt.data.inputs[i];
@@ -282,19 +334,20 @@ const prevoutOf = (psbt: bitcoin.Psbt, i: number): { script: Buffer; value: numb
         try {
             tx = bitcoin.Transaction.fromBuffer(input.nonWitnessUtxo);
         } catch (_) {
-            throw new Error(SIGN_INPUT_DETAILS);
+            throw new Error(SIGN_INPUT_MISMATCH);
         }
         const spent = psbt.txInputs[i];
         const out = tx.outs[spent.index];
-        if (!out || !Buffer.from(tx.getHash()).equals(Buffer.from(spent.hash))) throw new Error(SIGN_INPUT_DETAILS);
+        // both in the transaction's internal byte order
+        if (!out || !Buffer.from(tx.getHash()).equals(Buffer.from(spent.hash))) throw new Error(SIGN_INPUT_MISMATCH);
         fromTx = { script: Buffer.from(out.script), value: out.value };
     }
     if (input.witnessUtxo) {
         const fromWitness = { script: Buffer.from(input.witnessUtxo.script), value: input.witnessUtxo.value };
         if (fromTx && (fromTx.value !== fromWitness.value || !fromTx.script.equals(fromWitness.script))) {
-            throw new Error(SIGN_INPUT_DETAILS);
+            throw new Error(SIGN_INPUT_MISMATCH);
         }
-        return fromWitness;
+        return fromTx ?? fromWitness;
     }
     return fromTx;
 };
@@ -328,7 +381,8 @@ export function assertSingleKeyOnly(psbt: bitcoin.Psbt) {
 
 /**
  * What an input of this key spends: one key (P2WPKH, nested P2WPKH, P2PKH), or a P2WSH script whose witness script is
- * what the coin pays. Wrapped and legacy multisig aren't signed. Throws SIGN_UNSUPPORTED_MULTISIG or SIGN_INPUT_DETAILS.
+ * what the coin pays. Wrapped and legacy multisig aren't signed. Throws SIGN_UNSUPPORTED_MULTISIG, SIGN_INPUT_DETAILS or
+ * SIGN_INPUT_MISMATCH.
  */
 const scriptKind = (psbt: bitcoin.Psbt, i: number): 'single' | 'p2wsh' => {
     const input = psbt.data.inputs[i];
@@ -397,7 +451,7 @@ const walletForDerivation = (
 /**
  * Before a seed is loaded: a transaction that only spends multisig coins, none of them from a registered wallet, is
  * refused now, so nobody scans a SeedQR for something that would be refused anyway. The full check comes with the seed.
- * Throws SIGN_UNKNOWN_MULTISIG, SIGN_UNSUPPORTED_MULTISIG or SIGN_INPUT_DETAILS.
+ * Throws SIGN_UNKNOWN_MULTISIG, SIGN_UNSUPPORTED_MULTISIG, SIGN_INPUT_DETAILS or SIGN_INPUT_MISMATCH.
  */
 export function assertMultisigRegistered(psbt: bitcoin.Psbt, wallets: SignerWallet[]) {
     if (!psbt.inputCount || !psbt.data.inputs.every((_, i) => spendsScript(psbt, i))) return;
@@ -447,11 +501,25 @@ const ownSpend = (psbt: bitcoin.Psbt, key: SigningKey, wallets: SignerWallet[], 
     return { inputs, multisig };
 };
 
+/** The scripts that pay a multisig's witness script: native SegWit, then the wrapped and the legacy form. */
+const scriptsForWitnessScript = (witnessScript: Buffer): Buffer[] => {
+    const p2wsh = bitcoin.payments.p2wsh({ redeem: { output: witnessScript } });
+    return [
+        p2wsh.output as Buffer,
+        bitcoin.payments.p2sh({ redeem: p2wsh }).output as Buffer,
+        bitcoin.payments.p2sh({ redeem: { output: witnessScript } }).output as Buffer,
+    ];
+};
+
 /**
- * Whether an output comes back to the multisig wallet: it carries this key's derivation, that path is the wallet key's
- * path plus receive or change and an index, and the output pays the wallet's script there with this key's public key in
- * it. This key's derivation on an output that pays anything else (another multisig this key is part of, say) is
- * SIGN_FALSE_CHANGE.
+ * Whether an output comes back to the multisig wallet, in the same two steps as single-key change. First, whether the
+ * claim is true at all: this key's derivation on the output is the wallet key's path plus receive or change and an
+ * index, with this key's public key there, and the output pays the wallet's script there. This key's derivation on an
+ * output that pays anything else (another multisig this key is part of, say) is SIGN_FALSE_CHANGE, unless it pays this
+ * key alone: that's the seed's own single-key address, outside the multisig wallet. Then whether the coordinator will
+ * see it: the native SegWit address at an index a wallet reaches. The wallet's wrapped or legacy address, an index past
+ * MAX_WALLET_ADDRESS_INDEX or the seed's single-key address still pays this key, but the coordinator never shows those
+ * coins, so they're listed as going out.
  */
 const isVerifiedMultisigChange = (
     output: { bip32Derivation?: Derivation[]; witnessScript?: Buffer } | undefined,
@@ -461,17 +529,26 @@ const isVerifiedMultisigChange = (
 ): boolean => {
     const ours = (output?.bip32Derivation ?? []).filter(d => isOwnDerivation(key, d));
     if (!ours.length) return false;
+    let seen = true;
     for (const d of ours) {
         const at = branchAndIndex(d.path, spend.key.path);
-        if (!at) throw new Error(SIGN_FALSE_CHANGE);
+        if (!at) {
+            const pubkey = key.publicKeyAt(d.path);
+            if (!pubkey || !pubkey.equals(Buffer.from(d.pubkey)) || !scriptsForPubkey(pubkey).some(s => s.equals(script))) {
+                throw new Error(SIGN_FALSE_CHANGE);
+            }
+            seen = false;
+            continue;
+        }
         const witnessScript = policyWitnessScript(spend.wallet, at.branch, at.index);
-        const paid = bitcoin.payments.p2wsh({ redeem: { output: witnessScript } }).output as Buffer;
-        if (!paid.equals(script) || !policyKeyPubkey(spend.key, at.branch, at.index).equals(Buffer.from(d.pubkey))) {
+        const paid = scriptsForWitnessScript(witnessScript);
+        if (!paid.some(s => s.equals(script)) || !policyKeyPubkey(spend.key, at.branch, at.index).equals(Buffer.from(d.pubkey))) {
             throw new Error(SIGN_FALSE_CHANGE);
         }
         if (output?.witnessScript && !Buffer.from(output.witnessScript).equals(witnessScript)) throw new Error(SIGN_FALSE_CHANGE);
+        if (!paid[0].equals(script) || at.index >= MAX_WALLET_ADDRESS_INDEX) seen = false;
     }
-    return true;
+    return seen;
 };
 
 const addressOf = (script: Buffer): string | null => {
@@ -482,7 +559,7 @@ const addressOf = (script: Buffer): string | null => {
     }
 };
 
-/** Throws SIGN_INPUT_DETAILS when an input's amount can't be trusted. */
+/** Throws SIGN_INPUT_MISMATCH when an input's amount can't be trusted. */
 function feeOf(psbt: bitcoin.Psbt): number | null {
     const values = psbt.txInputs.map((_, i) => prevoutOf(psbt, i)?.value ?? null);
     if (values.some(v => v === null)) return null;
@@ -492,20 +569,21 @@ function feeOf(psbt: bitcoin.Psbt): number | null {
 
 /**
  * What the transaction does, checked against the backup's key and, for multisig, the registered wallets. Throws
- * SIGN_FALSE_CHANGE, SIGN_UNKNOWN_MULTISIG, SIGN_UNSUPPORTED_MULTISIG, SIGN_MIXED_WALLETS, SIGN_INPUT_DETAILS or
- * SIGN_BACKUP_MISMATCH.
+ * SIGN_FALSE_CHANGE, SIGN_UNKNOWN_MULTISIG, SIGN_UNSUPPORTED_MULTISIG, SIGN_MIXED_WALLETS, SIGN_INPUT_DETAILS,
+ * SIGN_INPUT_MISMATCH or SIGN_BACKUP_MISMATCH.
  */
 export function reviewWithRoot(psbt: bitcoin.Psbt, root: BIP32Interface, wallets: SignerWallet[] = []): TransactionReview {
     const key = signingKeyFromRoot(root);
     const spend = ownSpend(psbt, key, wallets, root);
     const multisig = spend.multisig;
+    const accounts = signedAccounts(psbt, key);
     return {
         outputs: psbt.txOutputs.map((output, i) => ({
             address: addressOf(output.script),
             value: output.value,
             change: multisig
                 ? isVerifiedMultisigChange(psbt.data.outputs[i], output.script, key, multisig)
-                : isVerifiedChange(output.script, psbt.data.outputs[i]?.bip32Derivation, root),
+                : isVerifiedChange(output.script, psbt.data.outputs[i]?.bip32Derivation, root, accounts),
         })),
         fee: feeOf(psbt),
         inputCount: psbt.inputCount,
@@ -517,7 +595,8 @@ export function reviewWithRoot(psbt: bitcoin.Psbt, root: BIP32Interface, wallets
 }
 
 /** The same, for a wallet already on the phone (the Hot Vault), which knows its own addresses. A fingerprint alone
- * still works, but then inputs written as 00000000 aren't counted as its own. Throws SIGN_MULTISIG_HOT_VAULT. */
+ * still works, but then inputs written as 00000000 aren't counted as its own. Throws SIGN_MULTISIG_HOT_VAULT or
+ * SIGN_INPUT_MISMATCH. */
 export function reviewWithWallet(psbt: bitcoin.Psbt, isOwnAddress: (address: string) => boolean, key: SigningKey | string): TransactionReview {
     assertSingleKeyOnly(psbt);
     const signingKey: SigningKey = typeof key === 'string' ? { fingerprint: key.toLowerCase(), publicKeyAt: () => null } : key;
@@ -553,8 +632,8 @@ const sigPubkeys = (input: { partialSig?: { pubkey: Buffer }[] }) => (input.part
 
 /**
  * Signs every input that belongs to this key, after the same checks as the review, and checks that each input got
- * signatures from this key only and that they verify. Another cosigner's signatures already on the transaction are
- * kept; an input this key has already signed is left as it is. Returns a signed copy, not finalized, so the wallet that
+ * signatures from this key only and that they verify, then runs the nonce-reuse canary on them. Another cosigner's
+ * signatures already on the transaction are kept; an input this key has already signed is left as it is. Returns a signed copy, not finalized, so the wallet that
  * made the transaction can combine it and broadcast; its key details are left as that wallet wrote them. Throws
  * SIGN_NOTHING_SIGNED, or what the review throws.
  */
@@ -565,6 +644,7 @@ export function signWithRoot(psbt: bitcoin.Psbt, root: BIP32Interface, wallets: 
     reviewWithRoot(copy, root, wallets);
     const spend = ownSpend(copy, key, wallets, root);
     const fp = Buffer.from(root.fingerprint);
+    const added: Array<{ pubkey: Buffer; signature: Buffer }> = [];
     let signed = 0;
     for (const i of spend.inputs) {
         const input = copy.data.inputs[i];
@@ -580,11 +660,16 @@ export function signWithRoot(psbt: bitcoin.Psbt, root: BIP32Interface, wallets: 
             if (!unknown.length || !unknown.every(d => isOwnDerivation(key, d))) continue;
             copy.signInputHD(i, unknownFingerprintSigner(root));
         }
-        const added = sigPubkeys(copy.data.inputs[i]).filter(p => !before.includes(p));
-        if (!added.length || !added.every(p => ourPubkeys.includes(p))) throw new Error(SIGN_NOTHING_SIGNED);
-        if (!added.every(p => copy.validateSignaturesOfInput(i, validator, Buffer.from(p, 'hex')))) throw new Error(SIGN_NOTHING_SIGNED);
+        const fresh = (copy.data.inputs[i].partialSig ?? []).filter(s => !before.includes(Buffer.from(s.pubkey).toString('hex')));
+        const freshPubkeys = fresh.map(s => Buffer.from(s.pubkey).toString('hex'));
+        if (!fresh.length || !freshPubkeys.every(p => ourPubkeys.includes(p))) throw new Error(SIGN_NOTHING_SIGNED);
+        if (!freshPubkeys.every(p => copy.validateSignaturesOfInput(i, validator, Buffer.from(p, 'hex')))) throw new Error(SIGN_NOTHING_SIGNED);
+        added.push(...fresh);
         signed++;
     }
+    // Nonce-reuse canary on the signatures this key just added, each verified above. A cosigner's signatures, or
+    // whatever else the PSBT's maker put on it, aren't this key's to vouch for.
+    auditSignatures(added);
     if (signed <= 0) throw new Error(SIGN_NOTHING_SIGNED);
     return { psbt: copy, signed };
 }

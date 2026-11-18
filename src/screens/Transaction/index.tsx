@@ -19,6 +19,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { dispatchReset, resetAndNavigate } from "@Cypher/helpers/navigation";
 import { startsWithLn } from "../Send";
+import { displayDestination } from "@Cypher/helpers/addressDisplay";
 import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import CustomProgressBar from "@Cypher/components/CustomProgressBar";
 import { LightningSendSuccess } from "@Cypher/components";
@@ -27,6 +28,13 @@ export default function Transaction({navigation, route}: any) {
     const {matchedRate, currency = 'USD', type, value, converted, isSats, to, item, swappedTo} = route?.params;
     const amountSat = isSats ? value : converted;
     const amountUSD = !isSats ? value : converted
+    // ReviewPayment names the swap's destination in English, which the badge's colour below goes by; it's shown in
+    // the app's language. CoinOS is a name and stays as it is.
+    const swappedToLabel: string = ({
+        'Bark Vault': loc.cypherbox.payments.common.bark_vault,
+        'Hot Vault': loc.cypherbox.payments.common.hot_vault,
+        'Cold Vault': loc.cypherbox.payments.common.cold_vault,
+    } as Record<string, string>)[swappedTo] ?? swappedTo;
     const [response, setResponse] = useState(false);
     const [progress, setProgress] = useState(0.2);
     const [sats, setSats] = useState('21 sats');
@@ -83,15 +91,6 @@ export default function Transaction({navigation, route}: any) {
             })
         }
     }
-
-    const shortenAddress = (address: string) => {
-        // Take the first 6 characters
-        const start = address.substring(0, 6);
-        // Take the last 6 characters
-        const end = address.substring(address.length - 6);
-        // Combine with three dots in the middle
-        return `${start}...${end}`;
-    };
 
     const fadeIn = () => {
         fadeInOpacity.value = withTiming(1, {
@@ -173,7 +172,7 @@ export default function Transaction({navigation, route}: any) {
                                     borderColor: swappedTo === 'Bark Vault' ? '#FFD93D' : '#FF65D4',
                                 }}>
                                     <Text bold center style={{ color: '#fff', fontSize: 16 }}>
-                                        {loc.formatString(loc.cypherbox.payments.transaction.swapped_to, { destination: swappedTo })}
+                                        {loc.formatString(loc.cypherbox.payments.transaction.swapped_to, { destination: swappedToLabel })}
                                     </Text>
                                 </View>
                             )}
@@ -191,7 +190,10 @@ export default function Transaction({navigation, route}: any) {
                             <Text semibold center style={[styles.sats, rtl.ltrText]}>{amountSat} sats</Text>
                             <Text subHeader bold center style={rtl.ltrText}>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                             { to?.length > 0 && <View style={styles.extra} /> }
-                            { to.length > 0 && <Text subHeader bold center style={rtl.ltrText}>{type !== 'username' ? shortenAddress(to) : to}</Text> }
+                            {/* A username in the large type; an address in full, wrapped (displayDestination keeps a Lightning invoice short) */}
+                            { to.length > 0 && (type === 'username'
+                                ? <Text subHeader bold center style={rtl.ltrText}>{to}</Text>
+                                : <Text bold center style={[styles.destination, rtl.ltrText]}>{displayDestination(to)}</Text>) }
                         </Animated.View>
                     }
                 </View>

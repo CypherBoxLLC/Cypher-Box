@@ -17,6 +17,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { bitcoinRecommendedFee, getInvoiceByLightening, getMe } from "../../api/coinOSApis";
 import useAuthStore from "@Cypher/stores/authStore";
 import { shortenAddress } from "../ColdStorage";
+import { isLightningRequest } from "@Cypher/helpers/addressDisplay";
 import { emailRegex } from "@Cypher/helpers/regex";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 
@@ -606,6 +607,13 @@ export default function SendScreen({ navigation, route }: any) {
                                                 </TouchableOpacity>
                                             )}
                                         </GradientCard>
+                                        {/* The field is one line, so a long address runs past its edge: the whole
+                                            address is shown under it. Not for a Lightning invoice or a name@domain. */}
+                                        {sender.trim().length > 20 && !sender.includes('@') && !isLightningRequest(sender) && (
+                                            <Text style={[{ color: colors.gray.light, fontSize: 13, lineHeight: 18, marginTop: 8, marginHorizontal: 20, textAlign: 'center' }, rtl.ltrText]}>
+                                                {sender.trim()}
+                                            </Text>
+                                        )}
                                         {validateAddress(sender).warning !== '' && (
                                             <Text style={{ color: '#FFB020', fontSize: 12, marginTop: 6, marginHorizontal: 10, textAlign: 'center' }}>
                                                 ⚠️ {validateAddress(sender).warning}

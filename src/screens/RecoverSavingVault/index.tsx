@@ -16,6 +16,7 @@ import {
     HotVaultBackupSummary,
 } from '@Cypher/services/hotVaultKeychain';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
+import { hotVaultKeychainText } from '@Cypher/helpers/hotVaultKeychainText';
 import loc from '../../../loc';
 
 const inputs = [
@@ -34,6 +35,8 @@ export default function RecoverSavingVault({ route }: Props) {
     const [secretWords, setSecretWords] = useState<string[]>(Array(inputs.length).fill(''));
     const { addAndSaveWallet, wallets } = useContext(BlueStorageContext);
     const { setWalletID, setHotVaultKeychainBackup } = useAuthStore();
+    // iPhone Keychain or Android Keystore wording, in the current language
+    const keychainText = hotVaultKeychainText().recover;
 
     const [loading, setLoading] = useState(false);
     const [keychainLoading, setKeychainLoading] = useState(false);
@@ -44,7 +47,6 @@ export default function RecoverSavingVault({ route }: Props) {
     const [recoverPassphrase, setRecoverPassphrase] = useState('');
     const [keychainBackups, setKeychainBackups] = useState<HotVaultBackupSummary[]>([]);
     const [pendingDeleteID, setPendingDeleteID] = useState<string | null>(null);
-    const autoAttempted = useRef(false);
     const importing = useRef(false);
     const inputRefs = useRef<Array<any>>(new Array(inputs.length));
     // Lift the whole content block when the keyboard shows so words 11/12
@@ -65,33 +67,19 @@ export default function RecoverSavingVault({ route }: Props) {
         }).start();
     };
 
-    // Auto-recover from Keychain on mount — mimics password-autofill UX.
+    // List any Keychain backups on mount so the user can choose one to
+    // restore. Enumerate service NAMES + read meta sidecars silently (no seed
+    // read, no biometric). Meta reads are cheap and parallel.
     //
-    // Two-phase:
-    //   1. Enumerate service NAMES + read meta sidecars silently (no seed
-    //      read, no biometric). Meta reads are cheap and parallel.
-    //   2. If exactly one backup exists → immediately fire the biometric
-    //      prompt and, on approval, run the import. iOS's native FaceID
-    //      sheet IS the UI — no in-app button to find and tap.
-    //
-    // If the user cancels the biometric prompt we land on the screen's
-    // manual 12-word form with the Keychain section also visible as a
-    // retry path. `autoAttempted` gates re-entry so a re-render doesn't
-    // re-trigger FaceID after a cancel.
-    //
-    // Multi-backup case (N > 1) skips the auto-trigger because we can't
-    // guess which vault to restore — user picks from the visible list,
-    // which renders date + walletID prefix per row.
+    // Recovery itself requires an explicit tap on a row, which fires the
+    // biometric prompt. We do NOT auto-fire that prompt on mount, even for a
+    // single backup: opening this screen should never, on its own, offer to
+    // restore a seed. The restore stays a deliberate user action.
     useEffect(() => {
         (async () => {
             const summaries = await listHotVaultKeychainBackupsWithMeta();
             setKeychainBackups(summaries);
-            if (summaries.length === 1 && !autoAttempted.current) {
-                autoAttempted.current = true;
-                handleKeychainRecover(summaries[0].walletID);
-            }
         })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const saveWallet = (wallet: any) => {
@@ -286,7 +274,7 @@ export default function RecoverSavingVault({ route }: Props) {
             );
             Alert.alert(
                 loc.cypherbox.vault.recover_saving_vault.backup_not_found_title,
-                loc.cypherbox.vault.recover_saving_vault.backup_not_found_message,
+                keychainText.notFoundMessage,
             );
             return;
         }
@@ -312,8 +300,8 @@ export default function RecoverSavingVault({ route }: Props) {
     const handleKeychainDelete = (summary: HotVaultBackupSummary) => {
         if (pendingDeleteID || keychainLoading || loading) return;
         Alert.alert(
-            loc.cypherbox.vault.recover_saving_vault.remove_backup_title,
-            loc.cypherbox.vault.recover_saving_vault.remove_backup_message,
+            keychainText.removeTitle,
+            keychainText.removeMessage,
             [
                 { text: loc._.cancel, style: 'cancel' },
                 {
@@ -337,7 +325,7 @@ export default function RecoverSavingVault({ route }: Props) {
                         } else {
                             Alert.alert(
                                 loc.cypherbox.vault.recover_saving_vault.remove_failed_title,
-                                loc.cypherbox.vault.recover_saving_vault.remove_failed_message,
+                                keychainText.removeFailedMessage,
                             );
                         }
                     },
@@ -404,10 +392,10 @@ export default function RecoverSavingVault({ route }: Props) {
             return (
                 <View style={styles.keychainSection}>
                     <Text bold style={styles.keychainTitle}>
-                        {loc.cypherbox.vault.recover_saving_vault.keychain_title}
+                        {keychainText.title}
                     </Text>
                     <Text style={styles.keychainSub}>
-                        {loc.cypherbox.vault.recover_saving_vault.no_keychain_backup}
+                        {keychainText.noBackup}
                     </Text>
                 </View>
             );
@@ -418,11 +406,11 @@ export default function RecoverSavingVault({ route }: Props) {
         return (
             <View style={styles.keychainSection}>
                 <Text bold style={styles.keychainTitle}>
-                    {loc.cypherbox.vault.recover_saving_vault.keychain_title}
+                    {keychainText.title}
                 </Text>
                 <Text style={styles.keychainSub}>
                     {isSingle
-                        ? loc.cypherbox.vault.recover_saving_vault.tap_to_unlock
+                        ? keychainText.tapToUnlock
                         : loc.formatString(loc.cypherbox.vault.recover_saving_vault.found_backups, { count: keychainBackups.length })}
                 </Text>
 
@@ -449,7 +437,7 @@ export default function RecoverSavingVault({ route }: Props) {
                                     <ActivityIndicator color={colors.white} />
                                 ) : (
                                     <Text bold style={styles.keychainButtonText}>
-                                        {loc.cypherbox.vault.recover_saving_vault.recover_from_keychain}
+                                        {keychainText.recoverButton}
                                     </Text>
                                 )}
                             </TouchableOpacity>
@@ -502,7 +490,7 @@ export default function RecoverSavingVault({ route }: Props) {
                                     left: 10,
                                     right: 10,
                                 }}
-                                accessibilityLabel={loc.cypherbox.vault.recover_saving_vault.remove_backup_a11y}
+                                accessibilityLabel={keychainText.removeA11y}
                             >
                                 {isDeleting ? (
                                     <ActivityIndicator color={colors.white} />

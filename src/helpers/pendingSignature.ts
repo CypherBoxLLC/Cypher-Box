@@ -27,6 +27,10 @@ export interface PendingSignature {
     isCustomFee?: boolean;
     memo?: string;
     to?: string | null;
+    /** the flow that built it (vaultSendKind), for the signing screen's labels */
+    kind?: string;
+    /** sats coming back to the vault as change */
+    changeSats?: number;
 }
 
 export type PendingDescription =
@@ -45,7 +49,7 @@ const outpoints = (psbt: bitcoin.Psbt) => psbt.txInputs.map(input => outpoint(in
  * again by id on resume.
  */
 export function createPendingSignature(params: any, now = Date.now()): PendingSignature {
-    const { psbt, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, isCustomFee, memo, to } = params;
+    const { psbt, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, isCustomFee, memo, to, kind, changeSats } = params;
     return {
         psbt: toPsbt(psbt).toBase64(),
         createdAt: now,
@@ -59,6 +63,8 @@ export function createPendingSignature(params: any, now = Date.now()): PendingSi
         isCustomFee,
         memo,
         to: to ?? null,
+        kind,
+        changeSats,
     };
 }
 
@@ -142,7 +148,18 @@ export function describePending(pending: PendingSignature, isOwnAddress: (addres
     return { kind: 'send', sats: paid.reduce((sum, o) => sum + o.value, 0), address: paid[0].address };
 }
 
-export const formatSats = (sats: number) => `${String(Math.round(sats)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} sats`;
+/** "1,234,567": a whole number with thousands separators, for a figure set inside translated text */
+export const groupThousands = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+export const formatSats = (sats: number) => `${groupThousands(sats)} sats`;
+
+/** "$1,234.56": the fiat figure shown next to an amount in sats. Anything that isn't a number reads $0.00. */
+export function formatUsd(usd: number | string | null | undefined): string {
+    const n = Number(usd);
+    if (usd === null || usd === undefined || usd === '' || !Number.isFinite(n)) return '$0.00';
+    const [whole, cents] = Math.abs(n).toFixed(2).split('.');
+    return `${n < 0 ? '-' : ''}$${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${cents}`;
+}
 
 /** "just now", "5 min ago", "3 h ago", "2 days ago" */
 export function formatAge(ms: number): string {

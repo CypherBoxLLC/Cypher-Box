@@ -18,6 +18,8 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 
 import crypto from 'crypto';
 import { randomBytes } from '../../class/rng';
+import { assertNativeRngHealthy } from '../../class/rngHealth';
+import safetyErrorText from '../../src/helpers/safetyErrorText';
 import loc from '../../loc';
 import { BlueCurrentTheme, useTheme } from '../../components/themes';
 import { FContainer, FButton } from '../../components/FloatButtons';
@@ -27,6 +29,11 @@ import SafeArea from '../../components/SafeArea';
 import useProtectSecret from '../../src/custom-hooks/useProtectSecret';
 
 const ENTROPY_LIMIT = 256;
+
+// Every navigator that shows this screen gives it a header, and that header already clears the status bar. On iOS the
+// SafeAreaView pads with the app's top inset wherever it sits, so a 'top' edge here repeated the status-bar gap under
+// the header (an empty 48 pt band on an iPhone XR). The header keeps the top; the other edges stay with the SafeAreaView.
+const SAFE_EDGES = ['left', 'right', 'bottom'];
 
 const shiftLeft = (value, places) => value.multipliedBy(2 ** places);
 const shiftRight = (value, places) => value.div(2 ** places).dp(0, BN.ROUND_DOWN);
@@ -334,7 +341,7 @@ const Entropy = () => {
     if (minBits && entropy.bits < minBits) {
       Alert.alert(
         loc.entropy.title,
-        `Not enough entropy yet: ${entropy.bits} of ${minBits} bits. Keep rolling until the counter reaches ${minBits}.`,
+        String(loc.formatString(loc.cypherbox.safety_checks.dice_not_enough, { bits: entropy.bits, min: minBits })),
       );
       return;
     }
@@ -352,9 +359,7 @@ const Entropy = () => {
     if (faces.length >= 8 && distinct <= 2) {
       Alert.alert(
         loc.entropy.title,
-        distinct <= 1
-          ? 'Every tap is the same number, so there is no randomness here at all. Roll a real die and tap what it lands on.'
-          : 'These taps only use two numbers, so there is almost no randomness here. Roll a real die and tap what it lands on.',
+        distinct <= 1 ? loc.cypherbox.safety_checks.dice_same_number : loc.cypherbox.safety_checks.dice_two_numbers,
       );
       return;
     }
@@ -368,6 +373,14 @@ const Entropy = () => {
     // precisely because they wanted to see where their key came from, so
     // handing back a key they cannot check defeats the exercise.
     const userBytes = buf.slice(0, 16);
+    // The mix is safe if either source is sound only while the phone's randomness is checked: with it returning
+    // zeros, the seed would be the hash of the taps alone, and patterned taps get past the guard above.
+    try {
+      await assertNativeRngHealthy();
+    } catch (e) {
+      Alert.alert(loc.cypherbox.safety_checks.create_failed_title, safetyErrorText(e, loc.cypherbox.safety_checks.rng_unavailable));
+      return;
+    }
     const rng = await randomBytes(16);
     setVerify({ user: userBytes, rng, final: mixEntropy(userBytes, rng) });
   };
@@ -407,7 +420,7 @@ const Entropy = () => {
       </View>
     );
     return (
-      <SafeArea>
+      <SafeArea edges={SAFE_EDGES}>
         <ScrollView contentContainerStyle={styles.verifyScroll}>
           <Text style={[styles.verifyTitle, stylesHook.entropyText]}>Check where this key came from</Text>
           <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
@@ -424,6 +437,10 @@ const Entropy = () => {
           {row("Your phone's randomness", verify.rng)}
           {row('The result, which becomes your key', verify.final)}
 
+          {/* Right under the values, so it is never below the fold or behind the Continue button, whatever the screen size. */}
+          <Text style={styles.verifyWarning}>
+            These values are your key. Anyone who copies them can spend your money. Do not photograph them.
+          </Text>
           <Text style={styles.verifyWarning}>
             Do this with practice rolls, not your real ones. Typing your real rolls into a website gives away one of the two things
             protecting this key, and it would then rest on your phone's secure entropy generator only. The safe way is a practice run: roll
@@ -432,18 +449,22 @@ const Entropy = () => {
             from the internet first. If this phone is a signing phone that stays offline for good, you can open the file in its browser in
             Airplane mode instead. Never on a website.
           </Text>
+          {/*
+            The rolls are checked by comparing words. Ian Coleman's page shows no hex for dice, only binary and the words, and
+            any Mnemonic Length other than "Use Raw Entropy" hashes the input first, so those words would not match. EntropyLab
+            starts at 24 words, which needs 64 hex digits and refuses the 32 shown here.
+          */}
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
-            To check your rolls: type them into Ian Coleman's BIP39 tool and choose Dice. What it shows should match "Your rolls" above.
-            That is what proves this screen read your dice correctly. Use Ian Coleman's tool for this step: EntropyLab hashes dice rolls, so
-            it shows different values from this screen.
+            To check your rolls: in Ian Coleman's BIP39 tool, tick "Show entropy details", choose Dice and type the same rolls in the same
+            order. Leave Mnemonic Length on "Use Raw Entropy" and note the 12 words. Then choose Hex and enter "Your rolls" from above. If
+            the 12 words stay the same, this screen read your dice correctly. Use Ian Coleman's tool for this step: EntropyLab hashes dice
+            rolls, so its words will differ.
           </Text>
           <Text style={[styles.verifyHow, stylesHook.entropyText]}>
             To check the result: it is a SHA-256 hash of your rolls followed by your phone's randomness, shortened to 16 bytes. Enter it as
-            hex entropy in either tool to see the 12 words you are about to get. EntropyLab then also shows the master fingerprint and the
-            Native SegWit addresses, which should match what Cypher Box shows once the vault is made.
-          </Text>
-          <Text style={styles.verifyWarning}>
-            These values are your key. Anyone who copies them can spend your money. Do not photograph them.
+            hex entropy in either tool to see the 12 words you are about to get. In EntropyLab, set Seed phrase length to 12 words first; in
+            Ian Coleman's tool, keep "Use Raw Entropy". EntropyLab then also shows the master fingerprint and the Native SegWit addresses,
+            which should match what Cypher Box shows once the vault is made.
           </Text>
         </ScrollView>
         <FContainer>
@@ -454,7 +475,7 @@ const Entropy = () => {
   }
 
   return (
-    <SafeArea>
+    <SafeArea edges={SAFE_EDGES}>
       <BlueSpacing20 />
       <TouchableOpacity accessibilityRole="button" onPress={() => setShow(!show)}>
         <View style={[styles.entropy, stylesHook.entropy]}>

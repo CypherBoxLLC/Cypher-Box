@@ -8,12 +8,15 @@ import { ECPairInterface } from 'ecpair/src/ecpair';
 import { Psbt, Transaction as BTransaction } from 'bitcoinjs-lib';
 import { CoinSelectReturnInput, CoinSelectTarget } from 'coinselect';
 import ecc from '../../blue_modules/noble_ecc';
+import { assertNativeRngHealthy } from '../rngHealth';
+import { assertSignedPsbtSafe } from '../signatureAudit';
 
 import BIP47Factory, { BIP47Interface } from '@spsina/bip47';
 import { ECPairFactory } from 'ecpair';
 
 import { randomBytes } from '../rng';
 import { AbstractHDWallet } from './abstract-hd-wallet';
+import { inputScriptHint, outputScriptHint } from './coin-selection';
 import { CreateTransactionResult, CreateTransactionUtxo, Transaction, Utxo } from './types';
 import { ElectrumHistory } from '../../blue_modules/BlueElectrum';
 import type BlueElectrumNs from '../../blue_modules/BlueElectrum';
@@ -25,10 +28,40 @@ const reverse = require('buffer-reverse');
 const bip32 = BIP32Factory(ecc);
 const bip47 = BIP47Factory(ecc);
 
+/**
+ * A transaction with more inputs than this skips the lookup of its inputs' parent transactions on sync.
+ *
+ * An input's sender address and amount come from its parent transaction, and fetchTransactions fetches every parent
+ * of every transaction in the history, 45 per Electrum request, one request after another. A transaction with
+ * thousands of inputs that paid this wallet (an exchange or mixer consolidation) turned every sync into hundreds of
+ * round trips, and the vault hung. Skipped, it keeps the amount it paid this wallet, which comes from its outputs, and
+ * shows no sender.
+ *
+ * Far above a cutoff like 99, because Consolidate puts every ticked capsule into one transaction with no cap: a
+ * wallet's own spend can have 140 inputs or more, and a skipped own spend would lose its sender addresses and read as
+ * a receive. 1000 parents is about 23 requests, slow but finite; the case this stops is tens of thousands.
+ */
+export const MAX_INPUTS_TO_RESOLVE = 1000;
+
 type BalanceByIndex = {
   c: number;
   u: number;
 };
+
+/*
+ * Private nodes of each wallet's account (its derivation path) and of its receive (/0) and change (/1) chains, worked
+ * out once per wallet per session: a signing key is then one derivation step, instead of the seed (PBKDF2, seconds
+ * in JS) and the whole path again for every input. Kept outside the wallet object, so they're never serialized with
+ * the wallet and go when the wallet does, and redone if the words, the passphrase or the derivation path change.
+ */
+type PrivateAccountNodes = {
+  secret: string;
+  passphrase: string | undefined;
+  path: string;
+  account: BIP32Interface;
+  chains: Partial<Record<0 | 1, BIP32Interface>>;
+};
+const privateAccountNodes = new WeakMap<object, PrivateAccountNodes>();
 
 /**
  * Electrum - means that it utilizes Electrum protocol for blockchain data
@@ -115,6 +148,7 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
   }
 
   async generate() {
+    await assertNativeRngHealthy();
     const buf = await randomBytes(16);
     this.secret = bip39.entropyToMnemonic(buf.toString('hex'));
   }
@@ -142,12 +176,36 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
    */
   _getWIFByIndex(internal: boolean, index: number): string | false {
     if (!this.secret) return false;
-    const seed = this._getSeed();
-    const root = bip32.fromSeed(seed);
-    const path = `${this.getDerivationPath()}/${internal ? 1 : 0}/${index}`;
-    const child = root.derivePath(path);
+    // same key as root.derivePath(`${this.getDerivationPath()}/${internal ? 1 : 0}/${index}`)
+    const child = this._getPrivateChainNode(internal).derive(Number(index));
 
     return child.toWIF();
+  }
+
+  /**
+   * Private node of the receive chain (`<derivation path>/0`) or the change chain (`/1`), from the per-session cache.
+   *
+   * @param {Boolean} internal Change chain if true
+   * @returns {BIP32Interface}
+   * @private
+   */
+  _getPrivateChainNode(internal: boolean): BIP32Interface {
+    const secret = this.secret;
+    const passphrase = this.passphrase;
+    const path = String(this.getDerivationPath());
+    let cached = privateAccountNodes.get(this);
+    if (!cached || cached.secret !== secret || cached.passphrase !== passphrase || cached.path !== path) {
+      const account = bip32.fromSeed(this._getSeed()).derivePath(path);
+      cached = { secret, passphrase, path, account, chains: {} };
+      privateAccountNodes.set(this, cached);
+    }
+    const chain = internal ? 1 : 0;
+    let node = cached.chains[chain];
+    if (!node) {
+      node = cached.account.derive(chain);
+      cached.chains[chain] = node;
+    }
+    return node;
   }
 
   _getNodeAddressByIndex(node: number, index: number): string {
@@ -324,6 +382,8 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     // then we combine all this data (we need inputs to see source addresses and amounts)
     const vinTxids = [];
     for (const txdata of Object.values(txdatas)) {
+      if (txdata.vin.length > MAX_INPUTS_TO_RESOLVE) continue;
+      // ^^^ see MAX_INPUTS_TO_RESOLVE: that transaction's inputs keep no sender address or amount
       for (const vin of txdata.vin) {
         vin.txid && vinTxids.push(vin.txid);
         // ^^^^ not all inputs have txid, some of them are Coinbase (newly-created coins)
@@ -917,10 +977,10 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     // backward compatibility TODO: remove when we make sure `.utxo` is not used
     this.utxo = this._utxo;
     // this belongs in `.getUtxo()`
+    // no private keys here: a key is derived only when an input is signed (createTransaction, _getWifForAddress)
     for (const u of this.utxo) {
       u.txid = u.txId;
       u.amount = u.value;
-      u.wif = this._getWifForAddress(u.address);
       if (!u.confirmations && u.height) u.confirmations = BlueElectrum.estimateCurrentBlockheight() - u.height;
     }
 
@@ -937,7 +997,6 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
    *    vout: 1,
    *    txid: 'string',
    *    amount: 666,
-   *    wif: 'string',
    *    confirmations: 0 } ]
    *
    * @param respectFrozen {boolean} Add Frozen outputs
@@ -991,7 +1050,6 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
             value,
             amount: value,
             confirmations: tx.confirmations,
-            wif: false,
             height: BlueElectrum.estimateCurrentBlockheight() - (tx.confirmations ?? 0),
           });
         }
@@ -1012,8 +1070,7 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
       }
 
       if (!spent) {
-        // filling WIFs only for legit unspent UTXO, as it is a slow operation
-        utxo.wif = this._getWifForAddress(utxo.address);
+        // no private key here either: it is derived only when the input is signed
         ret.push(utxo);
       }
     }
@@ -1058,6 +1115,22 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     }
 
     return false;
+  }
+
+  /**
+   * Given that `address` is ours (HD hierarchy or a BIP47 payment code address), derives its WIF. Not kept: only
+   * signing needs it.
+   *
+   * @param address {string} Address that belongs to this wallet
+   * @returns {string} WIF
+   */
+  _getWifForAddress(address: string): string {
+    // a BIP47 address used to find its key only in the stored WIF cache; the addresses are kept per payment code
+    for (const pc of this._sender_payment_codes) {
+      const index = (this._addresses_by_payment_code[pc] || []).indexOf(address);
+      if (index !== -1) return this._getBIP47WIF(pc, index);
+    }
+    return super._getWifForAddress(address);
   }
 
   /**
@@ -1124,22 +1197,17 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     masterFingerprint: number,
   ): CreateTransactionResult {
     if (targets.length === 0) throw new Error('No destination provided');
-    // compensating for coinselect inability to deal with segwit inputs, and overriding script length for proper vbytes calculation
+    // compensating for coinselect inability to deal with segwit inputs, and overriding script length for proper vbytes
+    // calculation. The hints live in coin-selection.ts so a fee quote made before building sizes the same way.
+    const inputScript = inputScriptHint(this._getExternalAddressByIndex(0));
     for (const u of utxos) {
-      // this is a hacky way to distinguish native/wrapped segwit, but its good enough for our case since we have only
-      // those 2 wallet types
-      if (this._getExternalAddressByIndex(0).startsWith('bc1')) {
-        u.script = { length: 27 };
-      } else if (this._getExternalAddressByIndex(0).startsWith('3')) {
-        u.script = { length: 50 };
-      }
+      if (inputScript) u.script = { ...inputScript };
     }
 
     for (const t of targets) {
-      if (t.address.startsWith('bc1')) {
-        // in case address is non-typical and takes more bytes than coinselect library anticipates by default
-        t.script = { length: bitcoin.address.toOutputScript(t.address).length + 3 };
-      }
+      // in case address is non-typical and takes more bytes than coinselect library anticipates by default
+      const outputScript = outputScriptHint(t.address);
+      if (outputScript) t.script = outputScript;
     }
 
     const { inputs, outputs, fee } = this.coinselect(utxos, targets, feeRate, changeAddress);
@@ -1152,16 +1220,18 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
 
     inputs.forEach(input => {
       let keyPair;
+      let wif: string | undefined;
       if (!skipSigning) {
         // skiping signing related stuff
-        keyPair = ECPair.fromWIF(this._getWifForAddress(String(input.address)));
+        wif = this._getWifForAddress(String(input.address));
+        keyPair = ECPair.fromWIF(wif);
         keypairs[c] = keyPair;
       }
       values[c] = input.value;
       c++;
       if (!skipSigning) {
         // skiping signing related stuff
-        if (!input.address || !this._getWifForAddress(input.address)) throw new Error('Internal error: no address or WIF to sign input');
+        if (!input.address || !wif) throw new Error('Internal error: no address or WIF to sign input');
       }
 
       let masterFingerprintBuffer;
@@ -1228,6 +1298,7 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
 
     let tx;
     if (!skipSigning) {
+      assertSignedPsbtSafe(psbt, ecc);
       tx = psbt.finalizeAllInputs().extractTransaction();
     }
     return { tx, inputs, outputs, fee, psbt };
@@ -1420,6 +1491,7 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
 
     let tx: BTransaction | false = false;
     if (this.calculateHowManySignaturesWeHaveFromPsbt(psbt) === psbt.inputCount) {
+      assertSignedPsbtSafe(psbt, ecc);
       tx = psbt.finalizeAllInputs().extractTransaction();
     }
 
@@ -1535,7 +1607,6 @@ export class AbstractHDElectrumWallet extends AbstractHDWallet {
     const remotePaymentNode = senderBIP47_instance.getPaymentCodeNode();
     const hdNode = bip47_instance.getPaymentWallet(remotePaymentNode, index);
     const address = this._hdNodeToAddress(hdNode);
-    this._address_to_wif_cache[address] = hdNode.toWIF();
     this._addresses_by_payment_code[paymentCode][index] = address;
     return address;
   }

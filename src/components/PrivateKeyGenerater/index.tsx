@@ -96,7 +96,7 @@ export default function PrivateKeyGenerater({ callNext }: Props) {
                             accessibilityRole="button"
                             accessibilityState={{ selected: format === f }}
                         >
-                            <Text bold style={styles.tabText}>{f === 'words' ? `${secretList.length || 12} words` : 'SeedQR'}</Text>
+                            <Text bold style={styles.tabText}>{f === 'words' ? String(loc.formatString(loc.cypherbox.components.private_key_generator.words_tab, { count: secretList.length || 12 })) : 'SeedQR'}</Text>
                         </TouchableOpacity>
                     ))}
                 </View>

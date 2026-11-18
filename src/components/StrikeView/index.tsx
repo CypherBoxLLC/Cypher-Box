@@ -8,14 +8,18 @@ import GradientView from '../GradientView'
 import LinearBorderView from './LinearBorderView'
 import styles from './styles'
 import { dispatchNavigate, formatStrikeNumber } from '@Cypher/helpers'
-import { btc, getStrikeCurrency, SATS } from '@Cypher/helpers/coinosHelper'
+import { btc, btcUnit, getStrikeCurrency, SATS, satsUnit } from '@Cypher/helpers/coinosHelper'
 import useAuthStore from '@Cypher/stores/authStore'
+import { useBalancesHidden } from '@Cypher/stores/balancePrivacy'
+import { maskAmount } from '@Cypher/helpers/hiddenAmount'
 import { isStrikeAllowed } from '@Cypher/services/featureFlags'
+import useRegionGate from '@Cypher/custom-hooks/useRegionGate'
 import SimpleToast from "react-native-simple-toast";
 import { useNavigation } from '@react-navigation/native'
 import { getBankPaymentMethods, initiateDeposit, createPayout, initiatePayout, revokeStrikeToken } from '@Cypher/api/strikeAPIs'
 import { bitcoinRecommendedFee } from '@Cypher/api/coinOSApis'
 import { colors, rtl } from '@Cypher/style-guide'
+import { inReadingDirection } from '@Cypher/style-guide/rtl'
 import loc from '../../../loc'
 
 interface Props {
@@ -24,18 +28,28 @@ interface Props {
     btcValue?: string;
     matchedRateStrike: number;
     currency: string;
+    /** Home's Strike card: the amounts go behind *** while Home's balances are hidden (the logo button on the
+     *  total balance card). Off on the Lightning account screen. */
+    hideWithBalances?: boolean;
 }
 
 function StrikeView({ showLogo = false, isShowButtons = false,
     btcValue = '$80,000 /BTC',
     matchedRateStrike,
-    currency
+    currency,
+    hideWithBalances = false,
 }: Props) {
+    const balancesHidden = useBalancesHidden();
+    const hidden = hideWithBalances && balancesHidden;
+    const showOrMask = (text: string) => (hidden ? maskAmount(text) : text);
     // Use Strike API rate for Strike wallet, fall back to matchedRate prop if passed
     const matchedRate = matchedRateStrike;
     // Validate currency is a valid ISO 4217 code, fallback to USD
     const safeCurrency = (currency && /^[A-Z]{3}$/.test(currency)) ? currency : 'USD';
     const { strikeUser, clearStrikeAuth } = useAuthStore();
+    // Re-render when the App Store storefront resolves after launch, so the
+    // region gate below is re-evaluated with the real value.
+    useRegionGate();
     // Buy and sell are exchange features: where Strike is not offered
     // (services/featureFlags) the card keeps its balances and drops them.
     const strikeAllowed = isStrikeAllowed();
@@ -275,19 +289,17 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                             amount → press ₿UY) is preserved; only their
                             corner of the card changes. */}
                         <View style={styles.sideContainer}>
-                            {/* linearFirstColors flattened to solid black so the
-                                outer gradient layer collapses into the inner
-                                background — visually removes the angular shadow
-                                border around the UTXO capsule per Bam. */}
-                            <BlackBGView
-                                linearFirstStyle={styles.fiatBalanceBox2}
-                                linearSecondStyle={styles.fiatBalanceBox3}
-                                linearFirstColors={[colors.black.default, colors.black.default]}
-                            >
-                                <CustomProgressBar value={dollarStrikeText} />
-                                <Text h3 bold style={rtl.ltrText}>{dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} BTC` : `${formatStrikeNumber(dollarStrikeText)} sats`}</Text>
-                                <Text h4 semibold style={rtl.ltrText}>{getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2)}</Text>
-                            </BlackBGView>
+                            {/* The UTXO capsule: a solid black box. It was a
+                                BlackBGView with both gradient layers flattened
+                                to black (Bam: no angular shadow border), which
+                                looks the same. A plain View because in
+                                right-to-left the gradient drew itself mirrored
+                                the wrong way, on top of the Fiat Balance box. */}
+                            <View style={styles.capsuleBox}>
+                                <CustomProgressBar value={hidden ? 0 : dollarStrikeText} />
+                                <Text h3 bold amount>{showOrMask(inReadingDirection(dollarStrikeText >= 100_000_000 ? `${(dollarStrikeText / 100_000_000)} ${btcUnit()}` : `${formatStrikeNumber(dollarStrikeText)} ${satsUnit()}`))}</Text>
+                                <Text h4 semibold style={rtl.ltrText}>{showOrMask(getStrikeCurrency(safeCurrency) + (dollarStrikeText * (Number(matchedRate) || 0) * btc(1)).toFixed(2))}</Text>
+                            </View>
                             {/* BUY sits 5pt lower than SELL by default —
                                 the capsule's marginTop:45 (vs fiatBalanceBox's
                                 marginTop:40) introduced that gap. -20 here =
@@ -314,7 +326,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                     matches the trimmed visual weight Bam
                                     asked for after the 10pt up nudge. */}
                                 <Text h2 bold style={{ fontSize: 17 }}>{loc.cypherbox.components.strike_view.fiat_balance}</Text>
-                                <Text h2 bold style={[{ fontSize: 17 }, rtl.ltrText]}>{`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`}</Text>
+                                <Text h2 bold style={[{ fontSize: 17 }, rtl.ltrText]}>{showOrMask(`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`)}</Text>
                             </View>
                             {/* fiatBalanceBox.marginTop went 40 → 30 (Fiat
                                 Balance up 10pt), which dragged SELL up 10pt
@@ -479,7 +491,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                                 </View>
                                 {fiatMode === 'WITHDRAW' && (
                                     <Text style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                                        {loc.formatString(loc.cypherbox.components.strike_view.available, { amount: `${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}` })}
+                                        {loc.formatString(loc.cypherbox.components.strike_view.available, { amount: showOrMask(`${getStrikeCurrency(safeCurrency)}${Number(strikeUser?.[1]?.available || 0).toFixed(2)}`) })}
                                     </Text>
                                 )}
                             </View>
@@ -573,7 +585,7 @@ function StrikeView({ showLogo = false, isShowButtons = false,
                 linearSecondStyle={styles.bitcoinPriceContainerInner}
                 linearFirstColors={[colors.black.default, colors.black.default]}
             >
-                <Text bold style={[styles.bitcoinPriceText, { color: rateColor }, rtl.ltrText]}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ' /BTC'}</Text>
+                <Text bold amount style={[styles.bitcoinPriceText, { color: rateColor }]}>{(Number(matchedRate) || 0).toLocaleString('en-US', { style: 'currency', currency: safeCurrency }) + ` /${btcUnit()}`}</Text>
             </BlackBGView>
             {isShowButtons &&
                 <GradientView

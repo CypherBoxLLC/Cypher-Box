@@ -7,16 +7,42 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Animated, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
 import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
 import TabBar from "../TabBar";
 import UnlockHotVaultCard from "./UnlockHotVaultCard";
+import ArrowBadge, { ARROW_BADGE_INSET, ARROW_BADGE_SIZE } from "./ArrowBadge";
+
+// The part of a Top-up or Withdraw button its arrow badge takes, from the button's end to the badge's inner edge.
+const BADGE_ROOM = ARROW_BADGE_INSET + ARROW_BADGE_SIZE;
+
+const labelStyles = StyleSheet.create({
+    row: { flexDirection: 'row', alignItems: 'center' },
+    badgeRoom: { width: BADGE_ROOM },
+    label: { flex: 1 },
+});
+
+/**
+ * A Top-up or Withdraw label, centred in the space between the arrow badge at its `badgeSide` and the button's other
+ * end, in either language.
+ */
+function ButtonLabel({ text, badgeSide }: { text: string; badgeSide: 'start' | 'end' }) {
+    const badgeRoom = <View style={labelStyles.badgeRoom} />;
+    return (
+        <View style={labelStyles.row}>
+            {badgeSide === 'start' && badgeRoom}
+            <Text bold h3 center numberOfLines={1} style={labelStyles.label}>{text}</Text>
+            {badgeSide === 'end' && badgeRoom}
+        </View>
+    );
+}
 // createInvoiceStrike moved to TopupList
 
 interface Props {
@@ -73,6 +99,9 @@ export default function BottomBar({
     // the fields we use confines re-renders to real changes to them.
     // Region gates (services/featureFlags): a connected rail that is not
     // offered in this region is treated as unavailable on this surface.
+    // Re-render when the App Store storefront resolves after launch, so the
+    // region gates below reflect the real region.
+    useRegionGate();
     const isAuth = useAuthStore(s => s.isAuth) && isCoinosAllowed();
     const isStrikeAuth = useAuthStore(s => s.isStrikeAuth) && isStrikeAllowed();
     const isArkAuth = useAuthStore(s => s.isArkAuth);
@@ -139,12 +168,11 @@ export default function BottomBar({
         return 0;
     };
     const [index, setIndex] = useState(getInitialIndex());
-    // In RTL the horizontal pager lays its pages out right-to-left, with the last tab on the left. scrollToIndex takes
-    // the tab index, but the offset in scroll events is measured from the left on both platforms, so map it back to
-    // the tab, and iOS's initialScrollIndex counts from the left too. Without this, iOS showed the Cold Vault card on
-    // the Hot tab, and the card opened the Hot Vault.
+    // In RTL the horizontal pager lays its pages out right-to-left, with the last tab on the left. initialScrollIndex and
+    // scrollToIndex take the tab index on both platforms; FlatList finds the page. The offset in scroll events is measured
+    // from the left, though, so map that back to the tab. Without this, iOS showed the Cold Vault card on the Hot tab, and
+    // the card opened the Hot Vault. Mapping initialScrollIndex as well opened the Hot Vault card under the Cold tab.
     const pageToTab = (page: number) => (I18nManager.isRTL ? tabs.length - 1 - page : page);
-    const initialPage = (tab: number) => (I18nManager.isRTL && Platform.OS === 'ios' ? tabs.length - 1 - tab : tab);
 
     useEffect(() => {
         if (!hasSavingVault && hasColdStorage && !vaultTab) {
@@ -288,6 +316,7 @@ export default function BottomBar({
                     bitcoinValue={balanceVault}
                     inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
+                    hideWithBalances
                 />
             )
                 :
@@ -329,6 +358,7 @@ export default function BottomBar({
                     bitcoinValue={coldStorageBalanceVault}
                     inDollars={`$${(Number(coldStorageBalanceWithoutSuffix) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
+                    hideWithBalances
                 />
             ) : (
                 // Outlined-only "Unlock Cold Vault" card — blue gradient
@@ -382,8 +412,14 @@ export default function BottomBar({
         </View>
     );
 
+    // Arabic keeps this row in the English order, Top-up on the left and
+    // Withdraw on the right, and puts each arrow where Arabic reads it: before
+    // الشحن, after السحب (the inner side of each word). 'row-reverse' gives
+    // the order; the badges' left/right already act as start/end in Arabic.
+    const rtlRow = I18nManager.isRTL ? { flexDirection: 'row-reverse' as const } : null;
+
     const TopUpWithdrawView = ({ isVault, style }: { isVault: boolean; style?: any }) => (
-        <View style={styles.bottominner}>
+        <View style={[styles.bottominner, rtlRow]}>
             <GradientView
                 onPress={topupClickHandler}
                 topShadowStyle={styles.outerShadowStyle}
@@ -391,12 +427,8 @@ export default function BottomBar({
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
             >
-                <Image
-                    style={styles.arrowLeft}
-                    resizeMode="contain"
-                    source={require("../../../../img/arrow-right.png")}
-                />
-                <Text bold h3 center style={{ textAlign: 'center' }}>{loc.cypherbox.home.top_up}</Text>
+                <ArrowBadge direction="up" side="left" />
+                <ButtonLabel text={loc.cypherbox.home.top_up} badgeSide="start" />
             </GradientView>
             <GradientView
                 onPress={withdrawClickHandler}
@@ -405,12 +437,8 @@ export default function BottomBar({
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
             >
-                <Text bold h3 center style={{ textAlign: 'center' }}>{loc.cypherbox.home.withdraw}</Text>
-                <Image
-                    style={styles.arrowRight}
-                    resizeMode="contain"
-                    source={require("../../../../img/arrow-right.png")}
-                />
+                <ButtonLabel text={loc.cypherbox.home.withdraw} badgeSide="end" />
+                <ArrowBadge direction="down" side="right" />
             </GradientView>
         </View>
     );
@@ -462,7 +490,7 @@ export default function BottomBar({
                     snapToInterval={screenWidth}
                     decelerationRate="fast"
                     disableIntervalMomentum
-                    initialScrollIndex={initialPage(index)}
+                    initialScrollIndex={index}
                     getItemLayout={(_, i) => ({ length: screenWidth, offset: screenWidth * i, index: i })}
                     onMomentumScrollEnd={onMomentumScrollEnd}
                 />

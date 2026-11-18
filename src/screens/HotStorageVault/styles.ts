@@ -6,8 +6,6 @@ interface Style {
     main: ViewStyle;
     flex: ViewStyle;
     savingVault: ViewStyle;
-    bitcoinText: TextStyle;
-    bitcoinImage: ImageStyle;
     title: TextStyle;
     innerShadowStyle: any;
     outerShadowStyle: any;
@@ -42,6 +40,7 @@ interface Style {
     signStatusLink: TextStyle;
     info: ImageStyle;
     textInfo: TextStyle;
+    scrollContent: ViewStyle;
     qrcode: ViewStyle;
     qrcodeImage: ImageStyle;
     copyImage: ImageStyle;
@@ -121,13 +120,6 @@ export default StyleSheet.create<Style>({
     savingVault: {
         width: widths - 40,
         height: 130,
-    },
-    bitcoinText: {
-        fontSize: 16,
-    },
-    bitcoinImage: {
-        width: 37,
-        height: 33,
     },
     title: {
         fontSize: 18,
@@ -343,6 +335,10 @@ export default StyleSheet.create<Style>({
     textInfo: {
         textDecorationLine: 'underline',
     },
+    // Room under the last row (the Cold Vault address), so it can be scrolled clear of the screen edge.
+    scrollContent: {
+        paddingBottom: 30,
+    },
     qrcode: {
         borderColor: colors.greenShadow,
         borderWidth: 2,
@@ -351,7 +347,9 @@ export default StyleSheet.create<Style>({
         aspectRatio:1,
         //height: "36%",
         alignSelf: 'center',
-        marginTop: 20,
+        // 14 and the address row's 8 (were 20 and 15), with the warning's 14 above: on an iPhone 17 the Cold Vault
+        // screen then fits down to the address without scrolling.
+        marginTop: 14,
         backgroundColor: colors.white
     },
     qrcodeImage: {
@@ -364,7 +362,7 @@ export default StyleSheet.create<Style>({
     },
     codeViewMain: {
         flexDirection: 'row',
-        marginTop: 15,
+        marginTop: 8,
         // backgroundColor: 'red',
         alignItems: 'center',
         justifyContent: 'center',

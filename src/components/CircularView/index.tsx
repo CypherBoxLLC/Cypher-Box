@@ -7,9 +7,15 @@ import styles from "./styles";
 import { CoinOSSmall, Refresh, Strike2 } from "@Cypher/assets/images";
 import CircleTimer from "../CircleTimer";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { inReadingDirection } from "@Cypher/style-guide/rtl";
 import useAuthStore from "@Cypher/stores/authStore";
+import { useBalancesHidden } from "@Cypher/stores/balancePrivacy";
+import { maskAmount } from "@Cypher/helpers/hiddenAmount";
 import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
-import { SATS, formatSats, getStrikeCurrency, btc } from "@Cypher/helpers/coinosHelper";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
+import HomeNotices from "@Cypher/components/HomeNotices";
+import type { HomeNotice } from "@Cypher/services/homeNotices";
+import { SATS, formatSats, getStrikeCurrency, btc, satsUnit } from "@Cypher/helpers/coinosHelper";
 import loc from "../../../loc";
 
 interface Props {
@@ -22,16 +28,22 @@ interface Props {
     currency: any;
     balance: any;
     convertedRate: any;
-    homeMessage?: string | null;
+    /** The tip HomeScreen picks (getHomeNotice), drawn as a notice icon. */
+    homeNotice?: HomeNotice | null;
     hideActionButtons?: boolean;
 }
-export default function CircularView({ matchedRateStrike, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeMessage, hideActionButtons = false }: Props) {
+export default function CircularView({ matchedRateStrike, wallet, refRBSheet, refSendRBSheet, refSwapRBSheet, setReceiveType, currency, balance, convertedRate, homeNotice = null, hideActionButtons = false }: Props) {
     const { strikeUser, withdrawThreshold, reserveAmount, withdrawStrikeThreshold, reserveStrikeAmount } = useAuthStore();
 
     // Region gates (services/featureFlags): a circle whose rail is not
     // offered here keeps showing its balance but no longer opens the
     // account screen, and the swap between the two needs both rails.
+    // Re-render when the App Store storefront resolves after launch.
+    useRegionGate();
     const strikeAllowed = isStrikeAllowed();
+    // Home's balances hidden (the logo button on the total balance card): amounts behind *** and empty rings.
+    const hidden = useBalancesHidden();
+    const showOrMask = (text: string) => (hidden ? maskAmount(text) : text);
     const coinosAllowed = isCoinosAllowed();
     const swapAllowed = strikeAllowed && coinosAllowed;
     const regionNotice = !strikeAllowed && !coinosAllowed
@@ -39,6 +51,15 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
         : !strikeAllowed
             ? loc.cypherbox.components.circular_view.region_strike_unavailable
             : loc.cypherbox.components.circular_view.region_coinos_unavailable;
+    // A rail not offered in this region (services/featureFlags): a green note,
+    // which stays ignored for as long as the same rails stay unavailable.
+    const regionHomeNotice: HomeNotice | null = swapAllowed ? null : {
+        id: 'lightning-region',
+        severity: 'green',
+        icon: 'globe-outline',
+        situation: !strikeAllowed && !coinosAllowed ? 'both' : !strikeAllowed ? 'strike' : 'coinos',
+        text: regionNotice,
+    };
 
     const strikeCurrencySymbol = getStrikeCurrency(strikeUser?.[1]?.currency || 'USD');
     const safeMatchedRate = Number(matchedRateStrike) || 0;
@@ -46,16 +67,17 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
     const strikeBtcFiatEquivalent = Number(strikeUser?.[0]?.available || 0) * safeMatchedRate;
     const checkingAccount = {
         first: {
-            value: `${formatSats(strikeBtcSats)} sats`,
-            convertedValue: `~ ${strikeCurrencySymbol}${strikeBtcFiatEquivalent.toFixed(2)}`,
+            value: showOrMask(inReadingDirection(`${formatSats(strikeBtcSats)} ${satsUnit()}`)),
+            convertedValue: showOrMask(`~ ${strikeCurrencySymbol}${strikeBtcFiatEquivalent.toFixed(2)}`),
             image: Strike2,
-            balanceSats: strikeBtcSats,
+            // 0 while hidden: the ring's fill shows the balance against the threshold.
+            balanceSats: hidden ? 0 : strikeBtcSats,
         },
         second: {
-            value: `${formatSats(Number(balance) || 0)} sats`,
-            convertedValue: `~  $${Number(convertedRate || 0).toFixed(2)}`,
+            value: showOrMask(inReadingDirection(`${formatSats(Number(balance) || 0)} ${satsUnit()}`)),
+            convertedValue: showOrMask(`~  $${Number(convertedRate || 0).toFixed(2)}`),
             image: CoinOSSmall,
-            balanceSats: Number(balance) || 0,
+            balanceSats: hidden ? 0 : Number(balance) || 0,
         }
     };
 
@@ -98,10 +120,10 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
                 <CircleTimer type={"COINOS"} progress={0} size={135} strokeWidth={7}{...checkingAccount.second} />
             </TouchableOpacity>
         </View>
-        {!swapAllowed && (
-            <Text h4 style={styles.regionNotice}>
-                {regionNotice}
-            </Text>
+        {/* With the shared Receive/Send row the circles have no notice row
+            of their own, so the region note sits under them. */}
+        {hideActionButtons && regionHomeNotice && (
+            <HomeNotices style={{ paddingTop: 6 }} notices={[regionHomeNotice]} />
         )}
         {!hideActionButtons && (
             <View style={styles.btnView}>
@@ -130,11 +152,7 @@ export default function CircularView({ matchedRateStrike, wallet, refRBSheet, re
             circles. Otherwise it left a 40px gap. */}
         {!hideActionButtons && (
             <View style={{ minHeight: 40, justifyContent: 'center' }}>
-                {homeMessage &&
-                    <Text h4 style={{ color: '#23C47F', paddingHorizontal: 20 }}>
-                        {homeMessage}
-                    </Text>
-                }
+                <HomeNotices notices={[regionHomeNotice, homeNotice]} />
             </View>
         )}
     </View>

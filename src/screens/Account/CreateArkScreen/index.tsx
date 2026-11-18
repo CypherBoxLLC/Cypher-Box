@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Switch, TouchableOpacity, View } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
+import { generateCheckedArkMnemonic } from "../../../../class/seedHealth";
+import safetyErrorText from "../../../helpers/safetyErrorText";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { HeaderWithLine } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
@@ -16,6 +18,7 @@ import { colors } from "@Cypher/style-guide";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 import styles from "./styles";
 import loc from "../../../../loc";
+import { arkSeedKeychainText } from "@Cypher/helpers/arkSeedKeychainText";
 
 const SECOND_TERMS_URL = "https://second.tech/terms";
 
@@ -42,7 +45,6 @@ export default function CreateArkScreen() {
         walletID,
         FirstTimeArk,
         arkUseHotVaultSeed,
-        isArkAuth,
         setAllBTCWallets,
         setArkAuth,
         setArkWallet,
@@ -56,6 +58,7 @@ export default function CreateArkScreen() {
     const [resetting, setResetting] = useState(false);
     const [existingError, setExistingError] = useState<string | null>(null);
     const hasHotVault = !!walletID;
+    const keychainText = arkSeedKeychainText();
 
     useEffect(() => {
         (async () => {
@@ -88,8 +91,16 @@ export default function CreateArkScreen() {
             // every destination are preserved (multi-wallet PR invariant).
             // If a user actually had funds in this orphan datadir, those
             // funds are still recoverable via the matching `.cbark` file.
+            //
+            // isArkAuth is read from the store at this point rather than from
+            // the first render, and only once the store has loaded: before
+            // that it is its default (false) even for a live wallet, for
+            // instance while the store's key is still unreadable after a
+            // background wake on a locked iPhone. Until then the datadir
+            // counts as live and nothing is wiped.
             const handle = getArkWalletHandle();
-            if (handle || isArkAuth) {
+            const loaded = useAuthStore.persist.hasHydrated();
+            if (handle || !loaded || useAuthStore.getState().isArkAuth) {
                 setExistingCheck("exists");
                 return;
             }
@@ -161,7 +172,7 @@ export default function CreateArkScreen() {
         // device and would otherwise wipe a wallet that's not theirs.
         Alert.alert(
             loc.cypherbox.account.create_ark.reset_title,
-            loc.cypherbox.account.create_ark.reset_body,
+            keychainText.create.resetBody,
             [
                 { text: loc._.cancel, style: "cancel" },
                 {
@@ -234,7 +245,14 @@ export default function CreateArkScreen() {
             return;
         }
 
-        const mnemonic = barkGenerateMnemonic();
+        let mnemonic: string;
+        try {
+            mnemonic = generateCheckedArkMnemonic(barkGenerateMnemonic);
+        } catch (e: any) {
+            setLoading(false);
+            Alert.alert(loc.cypherbox.safety_checks.create_failed_title, safetyErrorText(e, loc.cypherbox.safety_checks.seed_unsafe));
+            return;
+        }
         setLoading(false);
         dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });
     };
@@ -261,7 +279,7 @@ export default function CreateArkScreen() {
                     <View style={styles.content}>
                         <Text style={styles.warnTitle}>{loc.cypherbox.account.create_ark.exists_title}</Text>
                         <Text style={styles.warnBody}>
-                            {loc.cypherbox.account.create_ark.exists_body_1}
+                            {keychainText.create.existsBody}
                         </Text>
                         <Text style={styles.warnBody}>
                             {loc.cypherbox.account.create_ark.exists_body_2}

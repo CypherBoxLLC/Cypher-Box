@@ -8,6 +8,7 @@ import { Button, Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { dispatchReset } from "@Cypher/helpers/navigation";
 import {
+    acquireArkPushToken,
     checkArkSeedKeychainConflict,
     classifyPickedBackupBlob,
     clearArkWalletHandle,
@@ -15,6 +16,7 @@ import {
     createArkWallet,
     deleteArkDatadir,
     deriveBackupFingerprint,
+    ensureBgNotificationPermission,
     getArkWalletHandle,
     getLastArkRecoveryReport,
     hasArkDatadir,
@@ -36,7 +38,9 @@ import { useKeyboardLift } from "@Cypher/custom-hooks";
 import { colors, ltr, rtl } from "@Cypher/style-guide";
 
 import styles from "./styles";
+import backupErrorText from "./backupErrorText";
 import loc from "../../../../loc";
+import { arkSeedKeychainText } from "@Cypher/helpers/arkSeedKeychainText";
 
 /**
  * Keychain convention: MUST match seedKeychain.ts / recover.ts / reset.ts.
@@ -53,7 +57,9 @@ const inputs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 type Mode = 'auto' | 'type';
 
-const BIOMETRIC_LABEL = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
+// The unlock method, store name and their sentences differ per platform
+// (Face ID or passcode on iPhone, fingerprint only on Android) and per
+// language, so each view reads them from arkSeedKeychainText() while rendering.
 
 // Single source of truth for the seed-only CTA. The "no backup matches this
 // seed" errors quote it verbatim, so the words in the error are the words on
@@ -116,6 +122,7 @@ export default function RecoverArkScreen() {
     const [unlockedMnemonic, setUnlockedMnemonic] = useState<string | null>(null);
     const [unlocking, setUnlocking] = useState(false);
     const inputRefs = useRef<Array<any>>(new Array(inputs.length));
+    const keychainText = arkSeedKeychainText();
 
     // Pre-flight: detect a stale datadir AND surface the Keychain fast path.
     // hasGenericPassword is metadata-only — it does NOT trigger biometrics.
@@ -185,7 +192,7 @@ export default function RecoverArkScreen() {
         if (mnemonic.split(/\s+/).length !== 12) {
             setErrorMsg(
                 keychainHasSeed
-                    ? String(loc.formatString(loc.cypherbox.account.recover_ark.tap_unlock_first, { biometric: BIOMETRIC_LABEL }))
+                    ? String(loc.formatString(keychainText.recover.tapUnlockFirst, { biometric: keychainText.biometric }))
                     : loc.cypherbox.account.recover_ark.type_all_first,
             );
             return null;
@@ -218,13 +225,13 @@ export default function RecoverArkScreen() {
                 setUnlockedMnemonic(creds.password);
             } else {
                 setErrorMsg(
-                    loc.cypherbox.account.recover_ark.keychain_no_seed,
+                    keychainText.recover.noSeed,
                 );
             }
         } catch (err: any) {
             console.warn('[Ark restore] Keychain read declined:', err?.message ?? err);
             setErrorMsg(
-                String(loc.formatString(loc.cypherbox.account.recover_ark.biometric_declined, { biometric: BIOMETRIC_LABEL })),
+                String(loc.formatString(keychainText.recover.declined, { biometric: keychainText.biometric })),
             );
         } finally {
             setUnlocking(false);
@@ -273,17 +280,17 @@ export default function RecoverArkScreen() {
         const conflict = await checkArkSeedKeychainConflict(mnemonic);
         if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
             const proceed = await new Promise<boolean>(resolve => {
-                const keychainLabel = Platform.OS === 'ios' ? 'Keychain' : 'Keystore';
+                const keychainLabel = keychainText.keychain;
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_different, { keychain: keychainLabel, biometric: BIOMETRIC_LABEL, fingerprint: conflict.existingFingerprint }))
-                        : String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_unreadable, { keychain: keychainLabel, reason: conflict.reason }));
+                        ? String(loc.formatString(keychainText.conflict.different, { keychain: keychainLabel, biometric: keychainText.biometric, fingerprint: conflict.existingFingerprint }))
+                        : String(loc.formatString(keychainText.conflict.unreadable, { keychain: keychainLabel, reason: conflict.reason }));
                 Alert.alert(
-                    loc.cypherbox.account.common.replace_keychain_seed_title,
+                    keychainText.conflict.title,
                     message,
                     [
-                        { text: String(loc.formatString(loc.cypherbox.account.common.keep_old_seed_in, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
-                        { text: String(loc.formatString(loc.cypherbox.account.common.save_new_seed_in, { keychain: keychainLabel })), onPress: () => resolve(true) },
+                        { text: String(loc.formatString(keychainText.conflict.keepOld, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
+                        { text: String(loc.formatString(keychainText.conflict.saveNew, { keychain: keychainLabel })), onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -305,15 +312,63 @@ export default function RecoverArkScreen() {
                     `[Ark restore] seed NOT saved (${label}): no biometric gate, storage=`,
                     saved.storage,
                 );
-                Alert.alert(
-                    loc.cypherbox.account.common.seed_not_saved_title,
-                    loc.cypherbox.account.recover_ark.seed_not_saved_body,
-                );
+                // AWAITED: more Alerts follow (the reminders question in
+                // finalizeWallet, and before it the reopen notice on the
+                // seed-only adopt path). On Android a new Alert closes the one
+                // already showing, so this warning would be gone unread.
+                await new Promise<void>((resolve) => {
+                    Alert.alert(
+                        loc.cypherbox.account.common.seed_not_saved_title,
+                        loc.cypherbox.account.recover_ark.seed_not_saved_body,
+                        [{ text: loc._.ok, onPress: () => resolve() }],
+                        { cancelable: true, onDismiss: () => resolve() },
+                    );
+                });
             } else {
                 console.warn(`[Ark restore] Keychain save failed (${label}):`, saved.reason);
             }
         }
         return saved.ok;
+    };
+
+    /**
+     * Ask in plain words whether to turn on capsule reminders, and request the
+     * OS notification permission only on a yes. Same question and order as the
+     * "Bark Vault Created" screen (CheckingAccountCreated nextClickHandler).
+     *
+     * Recovery used to arm reminders with the prompting default, so the OS
+     * dialog appeared mid-recovery with nothing on screen saying what it was
+     * for. finalizeWallet now arms them without the dialog and asks this
+     * before going Home.
+     *
+     * Resolves on dismiss too, as a no. The user cannot dismiss it
+     * (cancelable: false), but on Android a new Alert closes the one showing,
+     * and an unanswered promise here would leave the user on the loading
+     * screen with a wallet that is already open.
+     */
+    const askToEnableReminders = async (): Promise<void> => {
+        const wantsReminders = await new Promise<boolean>((resolve) => {
+            Alert.alert(
+                loc.cypherbox.account.checking_created.reminders_alert_title,
+                loc.cypherbox.account.checking_created.reminders_alert_body,
+                [
+                    { text: loc._.no, style: "cancel", onPress: () => resolve(false) },
+                    { text: loc._.yes, onPress: () => resolve(true) },
+                ],
+                { cancelable: false, onDismiss: () => resolve(false) },
+            );
+        });
+        if (!wantsReminders) return;
+        // Resolves false on a denial. A throw means the permission bridge
+        // failed; the token step below checks the permission again without
+        // prompting and logs its outcome, so the throw is not logged here.
+        await ensureBgNotificationPermission().catch(() => false);
+        // Mint the push token the server needs to wake this device before a
+        // capsule expires. Arming skipped it on purpose: minting from an
+        // undecided permission IS the OS dialog. prompt: false, so a user who
+        // just declined is not asked again. Not awaited: going Home should not
+        // wait for the token.
+        void acquireArkPushToken({ prompt: false });
     };
 
     const finalizeWallet = async (mnemonic: string, restoredFrom?: string, keychainSaved: boolean = true) => {
@@ -343,11 +398,16 @@ export default function RecoverArkScreen() {
         // leaves the user's restored arkoor VTXOs under server-trust until
         // they notice the toggle. Mirroring create here keeps the post-
         // recovery experience identical to a fresh wallet.
+        //
+        // Also like create, without the OS permission dialog: the user is
+        // asked in plain words first (askToEnableReminders), and the OS
+        // dialog shows only after a yes.
         try {
-            await setArkBackgroundRefreshEnabled(true);
+            await setArkBackgroundRefreshEnabled(true, { requestNotificationPermission: false });
         } catch (err) {
             console.warn("[Ark recover] failed to arm reminders:", err);
         }
+        await askToEnableReminders();
         dispatchReset("HomeScreen", { isComplete: true });
     };
 
@@ -425,8 +485,10 @@ export default function RecoverArkScreen() {
 
                 console.warn('[Ark restore] decrypt of fingerprint-matched blob failed:', err);
                 setRestoring(false);
+                // in the app's language, and without its own closing full stop: the message adds one after it
+                const reason = backupErrorText(String(err?.message ?? loc.cypherbox.account.recover_ark.decryption_failed)).replace(/\.$/, '');
                 setErrorMsg(
-                    String(loc.formatString(loc.cypherbox.account.recover_ark.backup_corrupt, { error: err?.message ?? loc.cypherbox.account.recover_ark.decryption_failed })),
+                    String(loc.formatString(keychainText.recover.backupCorrupt, { error: reason })),
                 );
                 return true; // handled (with error); don't keep scanning
             }
@@ -437,8 +499,11 @@ export default function RecoverArkScreen() {
             return false;
         }
         const seedStored = await persistSeedToKeychain(mnemonic, keychainLabel);
-        setRestoring(false);
+        // `restoring` stays true until finalizeWallet has left the screen. It
+        // asks the reminders question first, and clearing this before would
+        // put the typed seed grid back on screen behind that question.
         await finalizeWallet(mnemonic, finalizeChannel, seedStored);
+        setRestoring(false);
         return true;
     };
 
@@ -849,7 +914,10 @@ export default function RecoverArkScreen() {
                 // from the mailbox would mean deleting local state that the
                 // mailbox cannot give back.
                 const adopted = await persistSeedToKeychain(mnemonic, 'seed-only adopt');
-                setSubmitting(false);
+                // `submitting` stays true through this alert and the reminders
+                // question in finalizeWallet, for the same reason as at the end
+                // of this function: clearing it re-renders the typed seed grid
+                // behind them.
                 await new Promise<void>((resolve) => {
                     Alert.alert(
                         loc.cypherbox.account.recover_ark.reopened_title,
@@ -859,6 +927,7 @@ export default function RecoverArkScreen() {
                     );
                 });
                 await finalizeWallet(mnemonic, undefined, adopted);
+                setSubmitting(false);
                 return;
             }
 
@@ -913,17 +982,17 @@ export default function RecoverArkScreen() {
         const conflict = await checkArkSeedKeychainConflict(mnemonic);
         if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
             const proceed = await new Promise<boolean>(resolve => {
-                const keychainLabel = Platform.OS === 'ios' ? 'Keychain' : 'Keystore';
+                const keychainLabel = keychainText.keychain;
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_different, { keychain: keychainLabel, biometric: BIOMETRIC_LABEL, fingerprint: conflict.existingFingerprint }))
-                        : String(loc.formatString(loc.cypherbox.account.common.keychain_conflict_unreadable, { keychain: keychainLabel, reason: conflict.reason }));
+                        ? String(loc.formatString(keychainText.conflict.different, { keychain: keychainLabel, biometric: keychainText.biometric, fingerprint: conflict.existingFingerprint }))
+                        : String(loc.formatString(keychainText.conflict.unreadable, { keychain: keychainLabel, reason: conflict.reason }));
                 Alert.alert(
-                    loc.cypherbox.account.common.replace_keychain_seed_title,
+                    keychainText.conflict.title,
                     message,
                     [
-                        { text: String(loc.formatString(loc.cypherbox.account.common.keep_old_seed_in, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
-                        { text: String(loc.formatString(loc.cypherbox.account.common.save_new_seed_in, { keychain: keychainLabel })), onPress: () => resolve(true) },
+                        { text: String(loc.formatString(keychainText.conflict.keepOld, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
+                        { text: String(loc.formatString(keychainText.conflict.saveNew, { keychain: keychainLabel })), onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -1090,18 +1159,19 @@ function ChooseView({
     onRestoreCloud,
     onRecoverSeedOnly,
 }: ChooseViewProps) {
+    const keychainText = arkSeedKeychainText();
     return (
         <>
             <Text bold style={styles.introTitle}>
                 {loc.cypherbox.account.recover_ark.choose_title}
             </Text>
             <Text style={styles.introBody}>
-                {loc.formatString(loc.cypherbox.account.recover_ark.choose_body, { biometric: BIOMETRIC_LABEL, cloud: cloudLabel })}
+                {loc.formatString(keychainText.recover.chooseBody, { biometric: keychainText.biometric, cloud: cloudLabel })}
             </Text>
 
             {!unlockedMnemonic && (
                 <Button
-                    text={unlocking ? loc.cypherbox.account.recover_ark.unlocking : String(loc.formatString(loc.cypherbox.account.recover_ark.unlock_with, { biometric: BIOMETRIC_LABEL }))}
+                    text={unlocking ? loc.cypherbox.account.recover_ark.unlocking : String(loc.formatString(keychainText.recover.unlockWith, { biometric: keychainText.biometric }))}
                     onPress={onUnlockFaceId}
                     style={styles.button}
                     textStyle={styles.btnText}
@@ -1246,6 +1316,7 @@ function TypeSeedView({
     // Lift the view when the keyboard shows so words 11/12 stay visible
     // while typing (slides up under the header, same as RecoverSavingVault).
     const keyboardLift = useKeyboardLift(40);
+    const keychainText = arkSeedKeychainText();
     return (
         <Animated.View style={{ transform: [{ translateY: keyboardLift }] }}>
             <Text bold style={styles.introTitle}>
@@ -1361,7 +1432,7 @@ function TypeSeedView({
                     onPress={onBack}
                     style={{ alignSelf: "center", marginTop: 8, paddingVertical: 8 }}
                 >
-                    <Text style={{ color: colors.gray.light, fontSize: 12 }}>{loc.formatString(loc.cypherbox.account.recover_ark.back_to_unlock, { biometric: BIOMETRIC_LABEL })}</Text>
+                    <Text style={{ color: colors.gray.light, fontSize: 12 }}>{loc.formatString(keychainText.recover.backToUnlock, { biometric: keychainText.biometric })}</Text>
                 </TouchableOpacity>
             )}
         </Animated.View>
