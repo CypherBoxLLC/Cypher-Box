@@ -1,4 +1,4 @@
-import React, { useReducer, useState } from 'react';
+import React, { useEffect, useReducer, useState } from 'react';
 import PropTypes from 'prop-types';
 import BN from 'bignumber.js';
 import {
@@ -20,6 +20,7 @@ import crypto from 'crypto';
 import { randomBytes } from '../../class/rng';
 import { assertNativeRngHealthy } from '../../class/rngHealth';
 import safetyErrorText from '../../src/helpers/safetyErrorText';
+import { rollsOnlyEntropy, rollsOnlyRefusal } from '../../src/helpers/diceSeed';
 import loc from '../../loc';
 import { BlueCurrentTheme, useTheme } from '../../components/themes';
 import { FContainer, FButton } from '../../components/FloatButtons';
@@ -135,6 +136,22 @@ export const mixEntropy = (userBytes, rngBytes) =>
     .digest()
     .slice(0, 16);
 
+/**
+ * The screen's state after these rolls, for the seed-signer's coming back to its dice: the bits and counted faces as if
+ * each roll were tapped again (stopping at the bit target, as tapping does), and every roll.
+ */
+export const replayRolls = (previous, limit) => {
+  let entropy = initialState;
+  const faces = [];
+  for (const r of previous || []) {
+    const v = getEntropy(r.sides === 2 ? r.face - 1 : r.face % r.sides, r.sides);
+    if (!v || entropy.bits >= limit) continue;
+    faces.push(`${v.value}:${v.bits}`);
+    entropy = eReducer(entropy, { type: 'push', value: v.value, bits: v.bits, limit });
+  }
+  return { entropy, faces, rolls: [...(previous || [])] };
+};
+
 // cut entropy to bytes, convert to Buffer
 export const convertToBuffer = ({ entropy, bits }) => {
   if (bits < 8) return Buffer.from([]);
@@ -163,10 +180,10 @@ export const convertToBuffer = ({ entropy, bits }) => {
 
 const Coin = ({ push }) => (
   <View style={styles.coinRoot}>
-    <TouchableOpacity accessibilityRole="button" onPress={() => push(getEntropy(0, 2))} style={styles.coinBody}>
+    <TouchableOpacity accessibilityRole="button" onPress={() => push(getEntropy(0, 2), { sides: 2, face: 1 })} style={styles.coinBody}>
       <Image style={styles.coinImage} source={require('../../img/coin1.png')} />
     </TouchableOpacity>
-    <TouchableOpacity accessibilityRole="button" onPress={() => push(getEntropy(1, 2))} style={styles.coinBody}>
+    <TouchableOpacity accessibilityRole="button" onPress={() => push(getEntropy(1, 2), { sides: 2, face: 2 })} style={styles.coinBody}>
       <Image style={styles.coinImage} source={require('../../img/coin2.png')} />
     </TouchableOpacity>
   </View>
@@ -228,7 +245,7 @@ const Dice = ({ push, sides }) => {
         nothing depends on the old labelling.
       */}
       {[...Array(sides)].map((_, i) => (
-        <TouchableOpacity accessibilityRole="button" key={i} onPress={() => push(getEntropy((i + 1) % sides, sides))}>
+        <TouchableOpacity accessibilityRole="button" key={i} onPress={() => push(getEntropy((i + 1) % sides, sides), { sides, face: i + 1 })}>
           <View style={[styles.diceRoot, { width: diceWidth }]}>
             {sides === 6 ? (
               <Icon style={styles.diceIcon} name={diceIcon(i + 1)} size={70} color="grey" type="font-awesome-5" />
@@ -284,7 +301,6 @@ Buttons.propTypes = {
 };
 
 const Entropy = () => {
-  const [entropy, dispatch] = useReducer(eReducer, initialState);
   // The rolls, the entropy hex and the check screen's values are the key
   // itself, so keep them out of screenshots and the app-switcher preview.
   useProtectSecret();
@@ -301,8 +317,26 @@ const Entropy = () => {
   //                 derivation can be checked by hand. Off by default, so the
   //                 legacy add-wallet caller still receives raw entropy for
   //                 generateFromEntropy (which does its own concatenation).
-  const { onGenerated, minBits, limit, instruction, mixWithRng } = useRoute().params;
+  //   rollsOnlyFrom — the seed-signer's: from this many rolls of a six-sided
+  //                 die that look like real rolls, the seed is the rolls'
+  //                 own hash (src/helpers/diceSeed), so EntropyLab, SeedSigner
+  //                 and COLDCARD make the same words from the same rolls.
+  //                 Otherwise (fewer rolls, a coin or a d20, or rolls that look
+  //                 made up) it's the mix above, as before. minBits doesn't
+  //                 apply then: few rolls are carried by the phone's randomness.
+  //                 onGenerated gets a second argument saying which it was,
+  //                 with the rolls, and the screen goes straight back: the
+  //                 caller's backup screen shows the cross-check.
+  //   initialRolls — the seed-signer's rolls from before, when it comes back
+  //                 to the dice to add or take back rolls.
+  const { onGenerated, minBits, limit, instruction, mixWithRng, rollsOnlyFrom, initialRolls } = useRoute().params;
+  const [start] = useState(() => replayRolls(initialRolls, limit || ENTROPY_LIMIT));
+  const [entropy, dispatch] = useReducer(eReducer, start.entropy);
   const navigation = useNavigation();
+  // the seed-signer's dice are rolls, not "Entropy"
+  useEffect(() => {
+    if (rollsOnlyFrom) navigation.setOptions?.({ headerTitle: loc.cypherbox.seed_signer.dice.title });
+  }, [navigation, rollsOnlyFrom]);
   const [tab, setTab] = useState(1);
   const [show, setShow] = useState(false);
   const { colors } = useTheme();
@@ -319,13 +353,19 @@ const Entropy = () => {
   // see degeneracy: `getEntropy(face, 6)` maps a face to the same value every
   // time, so N taps of one button push N*2 zero bits and the counter reports
   // them as full entropy.
-  const [faces, setFaces] = useState([]);
+  const [faces, setFaces] = useState(start.faces);
+  // Every counted roll as it came up, die and face: what a seed from the rolls
+  // alone is made of, and what the user types into EntropyLab to check it.
+  const [rolls, setRolls] = useState(start.rolls);
   // Set once the mix has run; holds every input to the derivation so the user
   // can reproduce it. Never persisted and never leaves this screen.
   const [verify, setVerify] = useState(null);
   const [showVerify, setShowVerify] = useState(false);
-  const push = v => {
+  const push = (v, roll) => {
     if (!v) return;
+    // The seed-signer's rolls all count towards a seed from the rolls alone,
+    // past the bit target too: EntropyLab hashes every roll it is given.
+    if (rollsOnlyFrom && roll) setRolls(r => [...r, roll]);
     // Once the target is reached the reducer refuses the roll, so stop
     // recording it too. Keeps `faces` meaning "rolls that counted", which is
     // what the degeneracy check below is judging.
@@ -334,11 +374,22 @@ const Entropy = () => {
     dispatch({ type: 'push', value: v.value, bits: v.bits, limit: limit || ENTROPY_LIMIT });
   };
   const pop = () => {
+    // a roll past the bit target is only in `rolls`
+    if (rollsOnlyFrom && rolls.length > faces.length) {
+      setRolls(r => r.slice(0, -1));
+      return;
+    }
+    if (rollsOnlyFrom) setRolls(r => r.slice(0, -1));
     setFaces(f => f.slice(0, -1));
     dispatch({ type: 'pop' });
   };
   const save = async () => {
-    if (minBits && entropy.bits < minBits) {
+    // the signer's dice are optional: saving before any roll adds nothing
+    if (rollsOnlyFrom && !rolls.length) {
+      navigation.pop();
+      return;
+    }
+    if (minBits && !rollsOnlyFrom && entropy.bits < minBits) {
       Alert.alert(
         loc.entropy.title,
         String(loc.formatString(loc.cypherbox.safety_checks.dice_not_enough, { bits: entropy.bits, min: minBits })),
@@ -364,6 +415,19 @@ const Entropy = () => {
       return;
     }
     const buf = convertToBuffer(entropy);
+    // The seed-signer's: enough real-looking rolls of a six-sided die make the
+    // seed by themselves, checkable in EntropyLab and Ian Coleman's tool;
+    // anything else is mixed with the phone's randomness below. Either way it
+    // goes straight back, and Create a Seed's backup screen has the cross-check.
+    let refusal = null;
+    if (rollsOnlyFrom) {
+      refusal = rollsOnlyRefusal(rolls, rollsOnlyFrom);
+      if (!refusal) {
+        navigation.pop();
+        onGenerated(rollsOnlyEntropy(rolls.map(r => r.face)), { source: 'rolls', count: rolls.length, rolls });
+        return;
+      }
+    }
     if (!mixWithRng) {
       navigation.pop();
       onGenerated(buf);
@@ -382,7 +446,13 @@ const Entropy = () => {
       return;
     }
     const rng = await randomBytes(16);
-    setVerify({ user: userBytes, rng, final: mixEntropy(userBytes, rng) });
+    const final = mixEntropy(userBytes, rng);
+    if (rollsOnlyFrom) {
+      navigation.pop();
+      onGenerated(final, { source: 'mix', reason: refusal, rolls });
+      return;
+    }
+    setVerify({ user: userBytes, rng, final });
   };
 
   const acceptVerified = () => {
@@ -407,10 +477,14 @@ const Entropy = () => {
   const sourceNoun = isCoin ? 'coin' : 'die';
   const landedNoun = isCoin ? 'side' : 'face';
   const throwsNoun = isCoin ? 'flips' : 'rolls';
+  const throwNoun = isCoin ? 'flip' : 'roll';
   const AVG_BITS_PER_THROW = [1, 10 / 6, 3.6];
   const typicalThrows = Math.ceil(limitDisplay / AVG_BITS_PER_THROW[tab]);
-  let bits = Math.min(entropy.bits, limitDisplay).toString();
-  bits = ' '.repeat(bits.length < 3 ? 3 - bits.length : 0) + bits;
+  const bits = Math.min(entropy.bits, limitDisplay);
+  // what the top shows: the throws themselves, since "3 of 128 bits" read like three rolls
+  const throws = rollsOnlyFrom
+    ? String(loc.formatString(loc.cypherbox.seed_signer.dice.count, { count: rolls.filter(r => r.sides === 6).length, min: rollsOnlyFrom }))
+    : `${faces.length} ${faces.length === 1 ? throwNoun : throwsNoun}`;
 
   if (verify) {
     const row = (label, buf) => (
@@ -477,11 +551,9 @@ const Entropy = () => {
   return (
     <SafeArea edges={SAFE_EDGES}>
       <BlueSpacing20 />
-      <TouchableOpacity accessibilityRole="button" onPress={() => setShow(!show)}>
-        <View style={[styles.entropy, stylesHook.entropy]}>
-          <Text style={[styles.entropyText, stylesHook.entropyText]}>{show ? hex : `${bits} of ${limitDisplay} bits`}</Text>
-        </View>
-      </TouchableOpacity>
+      <View style={[styles.entropy, stylesHook.entropy]}>
+        <Text style={[styles.entropyText, stylesHook.entropyText]}>{throws}</Text>
+      </View>
 
       <BlueTabs
         active={tab}
@@ -508,15 +580,40 @@ const Entropy = () => {
 
       <View style={styles.guidance}>
         {instruction ? <Text style={[styles.instructionText, stylesHook.entropyText]}>{instruction}</Text> : null}
-        <Text style={[styles.guidanceHow, stylesHook.entropyText]}>
-          {`${isCoin ? 'Flip' : 'Roll'} a real ${sourceNoun}, then tap the ${landedNoun} it landed on. It takes about ${typicalThrows} ${throwsNoun}.`}
-        </Text>
-        <Text style={styles.guidanceWarning}>
-          {`Tapping the same ${landedNoun} again and again, or any pattern you make up yourself, does not count as random. The number above still goes up, but your key gets no safer.`}
-        </Text>
-        <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
-          {`Your phone always adds randomness of its own as well, so adding real ${throwsNoun} can only make your key safer, never weaker.`}
-        </Text>
+        {rollsOnlyFrom ? (
+          // the seed-signer's, in the app's language: its rolls can make the seed alone, so nothing else covers for made-up ones
+          <>
+            <Text style={[styles.guidanceHow, stylesHook.entropyText]}>{loc.cypherbox.seed_signer.dice.how}</Text>
+            <Text style={styles.guidanceWarning}>{loc.cypherbox.seed_signer.dice.real_dice}</Text>
+            <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
+              {String(loc.formatString(loc.cypherbox.seed_signer.dice.rule, { min: rollsOnlyFrom }))}
+            </Text>
+            <Text style={styles.guidanceWarning}>{loc.cypherbox.seed_signer.dice.paper}</Text>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.guidanceHow, stylesHook.entropyText]}>
+              {`${isCoin ? 'Flip' : 'Roll'} a real ${sourceNoun}, then tap the ${landedNoun} it landed on. It takes about ${typicalThrows} ${throwsNoun}.`}
+            </Text>
+            <Text style={styles.guidanceWarning}>
+              {`Tapping the same ${landedNoun} again and again, or any pattern you make up yourself, does not count as random. The number above still goes up, but your key gets no safer.`}
+            </Text>
+            <Text style={[styles.guidanceCalm, stylesHook.entropyText]}>
+              {`Your phone always adds randomness of its own as well, so adding real ${throwsNoun} can only make your key safer, never weaker.`}
+            </Text>
+          </>
+        )}
+        {/* the bits, below: what the counter used to show on top. Tapping shows them in hex, except for the seed-signer,
+            whose seed from rolls alone isn't these bits */}
+        <TouchableOpacity accessibilityRole="button" disabled={!!rollsOnlyFrom} onPress={() => setShow(!show)}>
+          <Text style={[styles.bitsText, stylesHook.entropyText]}>
+            {rollsOnlyFrom
+              ? String(loc.formatString(loc.cypherbox.seed_signer.dice.bits, { bits, limit: limitDisplay }))
+              : show
+              ? hex
+              : `${bits} of ${limitDisplay} bits`}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <Buttons pop={pop} save={save} colors={colors} />
@@ -590,6 +687,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#E0A030',
     lineHeight: 17,
+  },
+  bitsText: {
+    fontSize: 12,
+    fontFamily: 'Courier',
+    textAlign: 'center',
+    opacity: 0.6,
+    marginTop: 14,
   },
   instructionText: {
     fontSize: 13,
