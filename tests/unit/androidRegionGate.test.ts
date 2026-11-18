@@ -3,19 +3,22 @@
  *
  * Android has no App Store storefront, so the gates combine the country
  * signals the CypherRegionSignals native module reads from the phone: the
- * first language's country, Xiaomi's region setting, the SIM provider's
- * country and the mobile network country (reported even with no SIM).
- * CoinOS hides when any of them is in the EEA or the UK. Strike shows only
- * when every one that is known is on Strike's list. With nothing known,
- * including a build without the native module, both rails hide.
+ * SIM provider's country, the mobile network country (reported even with
+ * no SIM), Xiaomi's region setting and the first language's country. The
+ * language counts only when none of the others is known. CoinOS hides when
+ * any country is in the EEA or the UK. Strike shows only when every one is
+ * on Strike's list. With nothing known, including a build without the
+ * native module, both rails hide.
  *
  * react-native-localize is mocked to answer "US" throughout, as it does on
  * Android when the language names no country: the Android gates must not
  * listen to it.
  *
- * The last SIM and network country are remembered in MMKV across app
- * restarts. Each loadGate() call is a fresh app start; `disk` stands in for
- * MMKV's files and survives between them within a test.
+ * The SIM and network country of the last reading that had one are
+ * remembered in MMKV with the time it was taken, and used for up to 30
+ * days by a reading with neither. Each loadGate() call is a fresh app
+ * start; `disk` stands in for MMKV's files and survives between them
+ * within a test.
  */
 
 export {};
@@ -100,8 +103,14 @@ beforeEach(() => {
 
 afterEach(() => {
     (global as any).__DEV__ = DEV_BEFORE;
+    jest.restoreAllMocks();
     jest.resetModules();
 });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Sets the clock the gate reads (Date.now). */
+const setNow = (ms: number) => jest.spyOn(Date, 'now').mockReturnValue(ms);
+const NOV_1 = Date.UTC(2026, 10, 1);
 
 describe('Android region gate: signal combinations', () => {
     const BOTH = { strike: true, coinos: true };
@@ -119,7 +128,17 @@ describe('Android region gate: signal combinations', () => {
         ['German SIM, English (US) language', { language: 'US', sim: 'de', network: ['de'] }, NEITHER],
         ['German SIM roaming in the US', { language: 'US', sim: 'de', network: ['us'] }, NEITHER],
         ['US SIM roaming in Germany', { language: 'US', sim: 'us', network: ['de'] }, NEITHER],
-        ['German language, US SIM and network', { language: 'DE', sim: 'us', network: ['us'] }, NEITHER],
+        ['German language on a US SIM and network', { language: 'DE', sim: 'us', network: ['us'] }, BOTH],
+        ['English (UK) on a Kenyan SIM and network', { language: 'GB', sim: 'ke', network: ['ke'] }, BOTH],
+        ['English (UK) on a Nigerian SIM and network', { language: 'GB', sim: 'ng', network: ['ng'] }, BOTH],
+        ['French (France) in Benin', { language: 'FR', sim: 'bj', network: ['bj'] }, BOTH],
+        ['Portuguese (Portugal) in Mozambique', { language: 'PT', sim: 'mz', network: ['mz'] }, BOTH],
+        ['Spanish (Spain) in Mexico', { language: 'ES', sim: 'mx', network: ['mx'] }, BOTH],
+        ['Arabic (Egypt) on a UAE SIM and network', { language: 'EG', sim: 'ae', network: ['ae'] }, BOTH],
+        ['Arabic (Saudi Arabia) on a UAE SIM in airplane mode', { language: 'SA', sim: 'ae', network: [] }, BOTH],
+        ['English (UK) on a Wi-Fi-only tablet', { language: 'GB', sim: null, network: [] }, NEITHER],
+        ['German language, Xiaomi region US, nothing else', { language: 'DE', vendorRegion: 'US' }, BOTH],
+        ['English (US), Xiaomi region Germany, nothing else', { language: 'US', vendorRegion: 'DE' }, NEITHER],
         ['UK SIM and network', { language: 'US', sim: 'gb', network: ['gb'] }, NEITHER],
         ['Norwegian network (EFTA member of the EEA)', { language: 'US', sim: 'us', network: ['no'] }, NEITHER],
         ['network only, in the EEA', { network: ['fr'] }, NEITHER],
@@ -178,9 +197,15 @@ describe('Android region gate: signal combinations', () => {
 });
 
 describe('isEeaRegion on Android', () => {
-    it('is true when any signal is in the EEA', () => {
+    it('is true when any country that places the phone is in the EEA', () => {
         expect(loadGate({ language: 'US', sim: null, network: ['de'] }).gate.isEeaRegion()).toBe(true);
         expect(loadGate({ language: 'US', vendorRegion: 'NO' }).gate.isEeaRegion()).toBe(true);
+    });
+
+    it('takes the language only when nothing else places the phone', () => {
+        expect(loadGate({ language: 'DE', sim: 'us', network: ['us'] }).gate.isEeaRegion()).toBe(false);
+        disk.clear();
+        expect(loadGate({ language: 'DE', sim: null, network: [] }).gate.isEeaRegion()).toBe(true);
     });
 
     it('is false when every signal is outside the EEA', () => {
@@ -228,11 +253,21 @@ describe('refreshing the Android signals', () => {
         expect(gate.getRegionGateVersion()).toBe(0);
     });
 
-    it('keeps a SIM country when the SIM can no longer be read', async () => {
+    it('keeps the last SIM country while the phone reads neither a SIM nor a network', async () => {
         const { gate, phone, shows } = loadGate({ language: 'US', sim: 'gb', network: [] });
         phone.now = { language: 'US', sim: null, network: [] };
         await gate.refreshRegionSignals();
         expect(shows()).toEqual({ strike: false, coinos: false });
+    });
+
+    it('drops a SIM country that is gone once the phone reads a network', async () => {
+        // A German SIM taken out of a phone now on a US network.
+        const { gate, phone, shows } = loadGate({ language: 'US', sim: 'de', network: ['de'] });
+        expect(shows()).toEqual({ strike: false, coinos: false });
+        phone.now = { language: 'US', sim: null, network: ['us'] };
+        await gate.refreshRegionSignals();
+        expect(shows()).toEqual({ strike: true, coinos: true });
+        expect(gate.getRegionGateVersion()).toBe(1);
     });
 
     it('replaces a network country when the phone sees a new one', async () => {
@@ -245,8 +280,10 @@ describe('refreshing the Android signals', () => {
     });
 
     it('takes a new language country, which is a setting the user changed', async () => {
-        const { gate, phone, shows } = loadGate({ language: 'DE', sim: 'us', network: ['us'] });
-        phone.now = { language: 'US', sim: 'us', network: ['us'] };
+        // A Wi-Fi-only tablet, which has only its language.
+        const { gate, phone, shows } = loadGate({ language: 'DE', sim: null, network: [] });
+        expect(shows()).toEqual({ strike: false, coinos: false });
+        phone.now = { language: 'US', sim: null, network: [] };
         await gate.refreshRegionSignals();
         expect(shows()).toEqual({ strike: true, coinos: true });
     });
@@ -314,7 +351,7 @@ describe('remembering the SIM and network country across restarts', () => {
     });
 
     it('replaces the remembered country when the phone reads a new one', () => {
-        loadGate({ language: 'US', sim: null, network: ['de'] });
+        loadGate({ language: 'US', sim: null, network: ['de'] }).shows();
         expect(loadGate({ language: 'US', sim: 'us', network: ['us'] }).shows()).toEqual(BOTH);
         expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(BOTH);
     });
@@ -326,10 +363,52 @@ describe('remembering the SIM and network country across restarts', () => {
         expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(NEITHER);
     });
 
-    it('stores the SIM and network country only, never the language', () => {
-        expect(loadGate({ language: 'DE', sim: 'us', network: ['us'] }).shows()).toEqual(NEITHER);
-        expect(JSON.parse(remembered() ?? 'null')).toEqual({ sim: 'US', network: ['US'] });
+    it('stores the SIM and network country and when they were read, never the language', () => {
+        setNow(NOV_1);
+        expect(loadGate({ language: 'DE', sim: 'us', network: ['us'] }).shows()).toEqual(BOTH);
+        expect(JSON.parse(remembered() ?? 'null')).toEqual({ sim: 'US', network: ['US'], at: NOV_1 });
+    });
+
+    it('does not let a remembered SIM country outlive a fresh network reading', () => {
+        // A German SIM taken out after moving; the phone now runs on a US network.
+        expect(loadGate({ language: 'US', sim: 'de', network: ['de'] }).shows()).toEqual(NEITHER);
+        expect(loadGate({ language: 'US', sim: null, network: ['us'] }).shows()).toEqual(BOTH);
+        // And the next airplane-mode start remembers the US, not Germany.
         expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(BOTH);
+    });
+
+    it('does not let a remembered network country outlive a fresh SIM reading', () => {
+        // Back from Germany, airplane mode on, the US SIM still readable.
+        expect(loadGate({ language: 'US', sim: 'us', network: ['de'] }).shows()).toEqual(NEITHER);
+        expect(loadGate({ language: 'US', sim: 'us', network: [] }).shows()).toEqual(BOTH);
+    });
+
+    it('forgets a remembered country after 30 days', () => {
+        setNow(NOV_1);
+        loadGate({ language: 'US', sim: null, network: ['de'] }).shows();
+        setNow(NOV_1 + 29 * DAY_MS);
+        expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(NEITHER);
+        setNow(NOV_1 + 31 * DAY_MS);
+        expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(BOTH);
+    });
+
+    it('counts the 30 days from the last time the phone read the country', () => {
+        setNow(NOV_1);
+        loadGate({ language: 'US', sim: null, network: ['de'] }).shows();
+        setNow(NOV_1 + 20 * DAY_MS);
+        loadGate({ language: 'US', sim: null, network: ['de'] }).shows();
+        setNow(NOV_1 + 45 * DAY_MS);
+        expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(NEITHER);
+    });
+
+    it('ignores a record without a time, or dated more than 30 days ahead', () => {
+        setNow(NOV_1);
+        disk.set('region-signals', new Map([['last', JSON.stringify({ sim: 'DE', network: ['DE'] })]]));
+        expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(BOTH);
+        disk.set('region-signals', new Map([['last', JSON.stringify({ sim: 'DE', network: ['DE'], at: NOV_1 + 40 * DAY_MS })]]));
+        expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(BOTH);
+        disk.set('region-signals', new Map([['last', JSON.stringify({ sim: 'DE', network: ['DE'], at: NOV_1 + 2 * DAY_MS })]]));
+        expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(NEITHER);
     });
 
     it('writes nothing while no SIM or network country has been seen', () => {
@@ -340,7 +419,7 @@ describe('remembering the SIM and network country across restarts', () => {
     it('ignores a damaged remembered record', () => {
         disk.set('region-signals', new Map([['last', 'not json']]));
         expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(BOTH);
-        disk.set('region-signals', new Map([['last', JSON.stringify({ sim: 'DEU', network: ['', 7] })]]));
+        disk.set('region-signals', new Map([['last', JSON.stringify({ sim: 'DEU', network: ['', 7], at: Date.now() })]]));
         expect(loadGate({ language: 'US', sim: null, network: [] }).shows()).toEqual(BOTH);
     });
 

@@ -22,19 +22,20 @@
  * otherwise.
  *
  * Android has no storefront to read. The CypherRegionSignals native
- * module reports what the phone knows instead: the country of its first
- * language, Xiaomi's region setting, the SIM provider's country, and the
- * country of the mobile network in reach (Android reports it even with
- * no SIM). Any one of them in the EEA or the UK hides both rails, and
- * Strike shows only when every signal that is known is a Strike country.
- * So a US visitor in Germany loses both rails while there, and a phone in
- * Germany set to English (United States) hides both. A SIM or network
- * country that drops out (airplane mode, no coverage yet, an unreadable
- * SIM) keeps its last reading, across app restarts too, until the phone
- * reads a different one; the language is a setting and always current.
- * react-native-localize is not used on Android: there it reads only
- * Xiaomi's region and the language, and answers "US" when neither names a
- * country.
+ * module reports what the phone knows instead: the SIM provider's
+ * country, the country of the mobile network in reach (Android reports it
+ * even with no SIM), Xiaomi's region setting, and the country of the first
+ * language. The language counts only when none of the others is known, so
+ * English (UK) on a Kenyan SIM and network is a phone in Kenya, while a
+ * Wi-Fi-only tablet still has its language. Any country in the EEA or the
+ * UK hides both rails, and Strike shows only when every country is a
+ * Strike country. So a US visitor in Germany loses both rails while there,
+ * and a phone in Germany set to English (United States) hides both. A
+ * reading with neither a SIM nor a network country (airplane mode, no
+ * coverage yet, an unreadable SIM) uses those of the last reading that had
+ * one, across app restarts too, for up to 30 days. react-native-localize
+ * is not used on Android: there it reads only Xiaomi's region and the
+ * language, and answers "US" when neither names a country.
  *
  * --- Unknown country --------------------------------------------------
  * Every gate fails CLOSED: no storefront on iOS, or no signal at all on
@@ -181,18 +182,25 @@ let androidCountries: readonly string[] = [];
 let watchingForeground = false;
 
 /*
- * The last SIM and network country, kept across restarts in a small MMKV
- * store of their own, so a cold start without them (airplane mode, no
- * coverage yet) still knows where the phone was. App data is not backed up
- * on Android (allowBackup="false"), so this never follows a user to a new
- * phone. Created on first use, and only on Android.
+ * The SIM and network country of the last reading that had one, with the
+ * time it was taken, kept across restarts in a small MMKV store of their
+ * own. A later reading with neither (airplane mode, no coverage yet, an
+ * unreadable SIM) uses them for up to 30 days, so a cold start still knows
+ * where the phone was. Created on first use, and only on Android.
+ * allowBackup="false" keeps the store out of cloud backups, but from
+ * Android 12 a device-to-device transfer can still copy it to a new phone
+ * (only dataExtractionRules could exclude it). The 30-day limit, and the
+ * new phone's first SIM or network reading, end its use there.
  */
 const REMEMBERED_STORE_ID = 'region-signals';
 const REMEMBERED_KEY = 'last';
+const REMEMBER_FOR_MS = 30 * 24 * 60 * 60 * 1000;
 /** undefined = not opened yet; null = MMKV unavailable. */
 let rememberedStore: MMKV | null | undefined;
-/** What the store holds, to skip writes that would change nothing. */
-let rememberedJson: string | undefined;
+/** A reading's SIM and network country, and when it was taken (ms since 1970). */
+type LastSeen = { sim: string | null; network: readonly string[]; at: number };
+/** The last reading with a SIM or network country. undefined = store not read yet; null = none. */
+let lastSeen: LastSeen | null | undefined;
 
 /* --- Region-gate reactivity -------------------------------------------
  * isStrikeAllowed()/isCoinosAllowed() read their signals synchronously at
@@ -240,7 +248,7 @@ export function __resetRegionGateForTest(): void {
     androidCountries = [];
     watchingForeground = false;
     rememberedStore = undefined;
-    rememberedJson = undefined;
+    lastSeen = undefined;
     regionGateListeners.clear();
     regionGateVersion = 0;
 }
@@ -297,19 +305,8 @@ function parseAndroidSignals(raw: unknown): AndroidSignals {
     };
 }
 
-/**
- * A fresh reading, keeping the earlier SIM or network country when the
- * fresh one has none (airplane mode, no coverage yet, an unreadable SIM),
- * so losing a signal never loosens the gate. A new country replaces the
- * earlier one. The language and Xiaomi region are settings, always current.
- */
-function withEarlier(next: AndroidSignals, earlier: Pick<AndroidSignals, 'sim' | 'network'>): AndroidSignals {
-    return {
-        language: next.language,
-        vendorRegion: next.vendorRegion,
-        sim: next.sim ?? earlier.sim,
-        network: next.network.length > 0 ? next.network : earlier.network,
-    };
+function hasSimOrNetwork({ sim, network }: Pick<AndroidSignals, 'sim' | 'network'>): boolean {
+    return sim !== null || network.length > 0;
 }
 
 function getRememberedStore(): MMKV | null {
@@ -323,44 +320,74 @@ function getRememberedStore(): MMKV | null {
     return rememberedStore;
 }
 
-/** The SIM and network country remembered from an earlier run, if any. */
-function readRemembered(): Pick<AndroidSignals, 'sim' | 'network'> {
-    try {
-        rememberedJson = getRememberedStore()?.getString(REMEMBERED_KEY);
-        const { sim, network } = parseAndroidSignals(rememberedJson ? JSON.parse(rememberedJson) : null);
-        return { sim, network };
-    } catch {
-        return { sim: null, network: [] };
+/** The last reading with a SIM or network country: from this run, or from the store. */
+function getLastSeen(): LastSeen | null {
+    if (lastSeen === undefined) {
+        lastSeen = null;
+        try {
+            const json = getRememberedStore()?.getString(REMEMBERED_KEY);
+            const stored = json ? JSON.parse(json) : null;
+            const { sim, network } = parseAndroidSignals(stored);
+            const at = stored?.at;
+            if (typeof at === 'number' && Number.isFinite(at) && hasSimOrNetwork({ sim, network })) {
+                lastSeen = { sim, network, at };
+            }
+        } catch {
+            // A damaged record counts as none.
+        }
     }
+    return lastSeen;
 }
 
-/** Stores the SIM and network country only; never the language. */
-function remember({ sim, network }: AndroidSignals): void {
-    if (sim === null && network.length === 0) return;
-    const json = JSON.stringify({ sim, network });
-    if (json === rememberedJson) return;
+/** Keeps a reading's SIM and network country and its time; never the language. */
+function rememberLastSeen(record: LastSeen): void {
+    lastSeen = record;
     try {
-        getRememberedStore()?.set(REMEMBERED_KEY, json);
-        rememberedJson = json;
+        getRememberedStore()?.set(REMEMBERED_KEY, JSON.stringify(record));
     } catch {
-        // Not remembered this time; the next reading tries again.
+        // Kept for this run only; the next reading tries again.
     }
-}
-
-function setAndroidSignals(signals: AndroidSignals): void {
-    androidSignals = signals;
-    const known = [signals.language, signals.vendorRegion, signals.sim, ...signals.network]
-        .filter((code): code is string => code !== null);
-    androidCountries = [...new Set(known)].sort();
-    remember(signals);
 }
 
 /**
- * Every country the Android signals name, sorted; empty when none is
- * known. The first call reads the module's constants, falling back to the
- * SIM and network country remembered from an earlier run, so render-time
- * checks stay synchronous; refreshRegionSignals() updates them later.
- * A build without the native module knows only what was remembered.
+ * What the gates take from a fresh reading. One with a SIM or network
+ * country stands on its own and is remembered, so a German SIM taken out
+ * of a phone now on a US network no longer counts. One with neither
+ * borrows the SIM and network country of the last reading that had one,
+ * from this run or an earlier one, if it was taken within 30 days. The
+ * language and Xiaomi region are settings and always come fresh.
+ */
+function withLastSeen(fresh: AndroidSignals): AndroidSignals {
+    const now = Date.now();
+    if (hasSimOrNetwork(fresh)) {
+        rememberLastSeen({ sim: fresh.sim, network: fresh.network, at: now });
+        return fresh;
+    }
+    const earlier = getLastSeen();
+    if (earlier === null || Math.abs(now - earlier.at) > REMEMBER_FOR_MS) return fresh;
+    return { ...fresh, sim: earlier.sim, network: earlier.network };
+}
+
+/**
+ * Where the signals place the phone. The language counts only when no SIM,
+ * network or Xiaomi region is known: English (UK) on a Kenyan SIM and
+ * network is a phone in Kenya, while a Wi-Fi-only tablet has only its
+ * language to go on.
+ */
+function setAndroidSignals(signals: AndroidSignals): void {
+    androidSignals = signals;
+    const placed = [signals.vendorRegion, signals.sim, ...signals.network]
+        .filter((code): code is string => code !== null);
+    const known = placed.length > 0 ? placed : [signals.language].filter((code): code is string => code !== null);
+    androidCountries = [...new Set(known)].sort();
+}
+
+/**
+ * Every country that places the phone, sorted; empty when none is known.
+ * The first call reads the module's constants (falling back on what was
+ * remembered, as withLastSeen() says), so render-time checks stay
+ * synchronous; refreshRegionSignals() updates them later. A build without
+ * the native module knows only what was remembered.
  */
 function getAndroidCountries(): readonly string[] {
     if (androidSignals === undefined) {
@@ -371,7 +398,7 @@ function getAndroidCountries(): readonly string[] {
         } catch {
             raw = undefined;
         }
-        setAndroidSignals(withEarlier(parseAndroidSignals(raw), readRemembered()));
+        setAndroidSignals(withLastSeen(parseAndroidSignals(raw)));
     }
     return androidCountries;
 }
@@ -385,7 +412,7 @@ async function refreshAndroidSignals(): Promise<void> {
         return;
     }
     const before = getAndroidCountries().join();
-    setAndroidSignals(withEarlier(next, androidSignals as AndroidSignals)); // set by getAndroidCountries()
+    setAndroidSignals(withLastSeen(next));
     if (androidCountries.join() !== before) notifyRegionGateChanged();
 }
 
@@ -413,8 +440,8 @@ function inEeaOrUk(storefront: string | null, region: string | null): boolean {
 
 /**
  * True when the device is placed in the EEA, OR when it cannot be placed
- * at all: the region on iOS, any of the phone's country signals on
- * Android. Kept for callers that only care about the EEA.
+ * at all: the region on iOS, any country that places the phone on Android
+ * (see setAndroidSignals). Kept for callers that only care about the EEA.
  */
 export function isEeaRegion(): boolean {
     if (Platform.OS !== 'ios') {
@@ -439,7 +466,7 @@ export function isCoinosAllowed(): boolean {
     if (__DEV__) return true;
     if (COINOS_DISABLED_GLOBALLY) return false;
     if (Platform.OS !== 'ios') {
-        // Any EEA or UK signal hides CoinOS; no signal at all fails closed.
+        // Any EEA or UK country hides CoinOS; none at all fails closed.
         const countries = getAndroidCountries();
         return countries.length > 0 && !countries.some(code => EEA_UK_ALPHA2.has(code));
     }
@@ -462,7 +489,7 @@ export function isStrikeAllowed(): boolean {
     if (__DEV__) return true;
     if (Platform.OS !== 'ios') {
         // STRIKE_COUNTRIES leaves out the EEA, the UK, India and South
-        // Korea, so any signal from one of them hides Strike.
+        // Korea, so any of them among the countries hides Strike.
         const countries = getAndroidCountries();
         return countries.length > 0 && countries.every(code => STRIKE_ALPHA2.has(code));
     }
