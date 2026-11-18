@@ -13,13 +13,17 @@ import {
     SIGN_NOTHING_SIGNED,
     SIGN_ON_SIGNING_DEVICE,
     SIGN_VAULT_MISMATCH,
+    SignerWallet,
     SigningKey,
     TransactionReview,
     assertBackupMatches,
     assertKeyOwns,
+    assertMultisigRegistered,
+    assertSingleKeyOnly,
     formatSignSats,
     inputFingerprints,
     isForKey,
+    isMultisigTransaction,
     nextFrame,
     parseUnsignedPsbt,
     reviewWithRoot,
@@ -38,6 +42,7 @@ import OfflineSeedWarning from "@Cypher/components/OfflineSeedWarning";
 import { openSeedSignerGate } from "../SigningHome/seedSigner";
 import styles from "./styles";
 import signErrorText from "./errorText";
+import { walletName } from "../RegisterSignerWallet/errorText";
 import loc from "../../../loc";
 
 const bitcoinjs = require('bitcoinjs-lib');
@@ -55,11 +60,17 @@ type Mode = 'vault' | 'backup';
  * against the transaction, and the key made from it is dropped once the transaction is signed or the screen closes.
  * Keeping every step in one screen is what makes that true; navigation params would keep it in history.
  *
+ * A multisig spend (one key of a wallet made in Nunchuk, Sparrow or BlueWallet) is only signed from a backup, in
+ * Offline Seed-Signer mode, and only for a wallet registered under Multisig Wallets: one that isn't is refused when it's
+ * scanned, before any SeedQR. The review then names the wallet, and change is checked against it.
+ *
  * Params: `psbt` to start from a transaction already scanned, `mode: 'vault'` to sign with the Hot Vault straight away.
  */
 export default function SignOnce({ route, navigation }: { route: any; navigation: any }) {
     const { wallets } = useContext(BlueStorageContext);
-    const { walletID: hotVaultID, signingMode, setSignedOnThisPhone } = useAuthStore();
+    const { walletID: hotVaultID, signingMode, setSignedOnThisPhone, signerWallets } = useAuthStore();
+    // multisig wallets this signer holds a key of; a multisig spend from any other is refused
+    const multisigWallets: SignerWallet[] = Object.values(signerWallets ?? {});
     const hotVault = (wallets ?? []).find(
         (w: any) => w.getID() === hotVaultID && typeof w.cosignPsbt === 'function' && w.allowCosignPsbt?.(),
     );
@@ -82,6 +93,8 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         ? loc.cypherbox.sign_once.checking_offline
         : loc.cypherbox.sign_once.online_note;
     const [signed, setSigned] = useState<bitcoin.Psbt | null>(null);
+    // what the signed screen says about the other keys of a multisig
+    const [signedMultisig, setSignedMultisig] = useState<TransactionReview['multisig'] | null>(null);
     const rootRef = useRef<BIP32Interface | null>(null);
 
     // a recovery phrase or a key made from one can be on this screen: hide it from the app switcher, block screenshots
@@ -129,6 +142,11 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 // signing, so here it signs with the Hot Vault it already holds, or not at all.
                 if (!forHotVault) throw new Error(SIGN_ON_SIGNING_DEVICE);
                 reviewWithHotVault(tx);
+            } else if (isMultisigTransaction(tx)) {
+                // the Hot Vault never signs multisig, and nobody scans a SeedQR for a wallet that isn't registered
+                assertMultisigRegistered(tx, multisigWallets);
+                setMode('backup');
+                setStep('backup');
             } else if (forHotVault) {
                 setStep('choose');
             } else {
@@ -180,7 +198,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             await nextFrame();
             const root = await rootFromBackupAsync(backup, passphrase);
             assertBackupMatches(psbt as bitcoin.Psbt, root);
-            setReview(reviewWithRoot(psbt as bitcoin.Psbt, root));
+            setReview(reviewWithRoot(psbt as bitcoin.Psbt, root, multisigWallets));
             rootRef.current = root;
             // the phrase has done its job: only the key made from it stays, until signing
             setWords('');
@@ -203,9 +221,11 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         try {
             if (mode === 'backup') {
                 if (!rootRef.current) throw new Error(SIGN_NOTHING_SIGNED);
-                setSigned(signWithRoot(psbt as bitcoin.Psbt, rootRef.current).psbt);
+                setSigned(signWithRoot(psbt as bitcoin.Psbt, rootRef.current, multisigWallets).psbt);
                 rootRef.current = null;
             } else {
+                // the review refused these already; the Hot Vault's own cosigning would sign any script with its key
+                assertSingleKeyOnly(psbt as bitcoin.Psbt);
                 const copy = bitcoinjs.Psbt.fromBase64((psbt as bitcoin.Psbt).toBase64());
                 const count = (p: bitcoin.Psbt) =>
                     p.data.inputs.filter(i => (i.partialSig?.length ?? 0) > 0 || !!i.finalScriptWitness || !!i.finalScriptSig).length;
@@ -214,6 +234,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 if (count(copy) <= before) throw new Error(SIGN_NOTHING_SIGNED);
                 setSigned(copy);
             }
+            setSignedMultisig(review?.multisig ?? null);
             setReview(null);
             setSignedOnThisPhone(true);
             setStep('signed');
@@ -333,6 +354,15 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             {mode === 'backup' ? stepLabel(3) : null}
             <Text style={styles.title}>{loc.cypherbox.sign_once.review_title}</Text>
             {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
+            {review?.multisig ? (
+                <Text style={styles.body}>
+                    {String(loc.formatString(loc.cypherbox.sign_once.multisig_wallet, {
+                        name: walletName(review.multisig.name),
+                        m: review.multisig.m,
+                        n: review.multisig.n,
+                    }))}
+                </Text>
+            ) : null}
             {review?.outputs.map((output, i) => (
                 <View key={i} style={styles.row}>
                     <Text style={styles.rowLabel}>{output.change ? loc.cypherbox.sign_once.back_to_wallet : loc.cypherbox.sign_once.to}</Text>
@@ -368,7 +398,11 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 {/* a white margin around it: a laptop webcam (Sparrow) doesn't find the code against the dark screen without one */}
                 <DynamicQRCode value={(signed as bitcoin.Psbt).toHex()} quietZone={24} />
             </View>
-            <Text style={styles.body}>{loc.cypherbox.sign_once.signed_body}</Text>
+            <Text style={styles.body}>
+                {signedMultisig
+                    ? String(loc.formatString(loc.cypherbox.sign_once.signed_body_multisig, { m: signedMultisig.m, n: signedMultisig.n }))
+                    : loc.cypherbox.sign_once.signed_body}
+            </Text>
             {mode === 'backup' ? <Text style={styles.success}>{loc.cypherbox.sign_once.not_saved}</Text> : null}
             <TouchableOpacity
                 style={styles.secondary}

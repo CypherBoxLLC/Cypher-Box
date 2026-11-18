@@ -61,7 +61,9 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         coldStorageWalletID,
         hotVaultKeychainBackups,
         setHotVaultKeychainBackup,
+        signerWallets,
     } = useAuthStore();
+    const multisigCount = Object.keys(signerWallets ?? {}).length;
     const [keychainBusy, setKeychainBusy] = useState(false);
     const thisWalletID = wallet?.getID?.();
     const isKeychainBackedUp = thisWalletID
@@ -480,6 +482,14 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
             : []),
         { label: loc.cypherbox.seed_signer.signing_safely, onPress: () => dispatchNavigate('SigningSafetyGuide') },
         { label: loc.cypherbox.seed_signer.vault.sign_from_backup, onPress: () => startSigning() },
+        // one key of a multisig made in Nunchuk, Sparrow or BlueWallet, signed from its SeedQR: the wallets it signs for
+        {
+            label: multisigCount
+                ? String(loc.formatString(loc.cypherbox.seed_signer.multisig_wallets_count, { count: multisigCount }))
+                : loc.cypherbox.seed_signer.multisig_wallets,
+            onPress: () => dispatchNavigate('SignerWallets'),
+        },
+        { label: loc.cypherbox.seed_signer.check_address, onPress: () => dispatchNavigate('CheckSignerAddress') },
         { label: loc.cypherbox.vault.storage_vault.settings.info, onPress: rightToLeft },
         { label: loc.cypherbox.seed_signer.app_settings, onPress: () => dispatchNavigate('Settings') },
         { label: loc.cypherbox.seed_signer.vault.wipe, onPress: handleWipeTapped, danger: true },

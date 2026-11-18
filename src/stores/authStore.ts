@@ -6,6 +6,8 @@ import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@C
 import { legacyArkOffDeviceBackupAt, nextOffDeviceBackupState } from "@Cypher/services/ark/backupCoverage";
 import type { ArkOffDeviceOutcome } from "@Cypher/services/ark/backupCoverage";
 import type { PendingSignature } from "@Cypher/helpers/pendingSignature";
+import type { SignerWallet } from "@Cypher/helpers/multisigPolicy";
+import type { SignerAccount } from "@Cypher/helpers/signerPublicKey";
 import { withoutArkNoticeIgnores } from "@Cypher/services/homeNotices";
 
 /**
@@ -250,6 +252,19 @@ export type AuthStateType = {
      * helpers/pendingSignature.
      */
     pendingSignatures: Record<string, PendingSignature>;
+    /**
+     * Offline Seed-Signer: the multisig wallets this signer holds a key of, per wallet id (helpers/multisigPolicy),
+     * registered from the wallet file a coordinator exports once a SeedQR showed the seed's key is in it. A multisig
+     * transaction is signed only if it spends from one of these. Public keys only, but they reveal every address of
+     * the wallet, so they live here in the encrypted store.
+     */
+    signerWallets: Record<string, SignerWallet>;
+    /**
+     * Offline Seed-Signer: single-key public keys (m/84'/0'/0') remembered per master fingerprint, so "Receive - Check
+     * Address" can check a seed's addresses without its SeedQR. Remembered by default when a seed's key screen is
+     * shown, never for a seed with a passphrase unless asked; forgotten on request.
+     */
+    signerAccounts: Record<string, SignerAccount>;
     /** "Signing safely" was shown before this phone's first Hot Vault "Sign a transaction"; it isn't forced again. */
     signingSafetySeen: boolean;
     /**
@@ -460,6 +475,10 @@ export type AuthStateType = {
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setVaultDisplayAddress: (walletID: string, address: string | null) => void;
     setPendingSignature: (walletID: string, pending: PendingSignature | null) => void;
+    addSignerWallet: (wallet: SignerWallet) => void;
+    removeSignerWallet: (id: string) => void;
+    addSignerAccount: (account: SignerAccount) => void;
+    removeSignerAccount: (fingerprint: string) => void;
     setSigningSafetySeen: (seen: boolean) => void;
     hideColdKeyWarning: (walletID: string) => void;
     ignoreHomeNotice: (id: string, situation: string) => void;
@@ -781,6 +800,8 @@ const createAuthStore = (
     arkPendingLnReceives: [],
     vaultDisplayAddress: {},
     pendingSignatures: {},
+    signerWallets: {},
+    signerAccounts: {},
     signingSafetySeen: false,
     coldKeyWarningHidden: {},
     homeNoticeIgnores: {},
@@ -905,6 +926,26 @@ const createAuthStore = (
             if (pending) next[walletID] = pending;
             else delete next[walletID];
             return { pendingSignatures: next };
+        }),
+    addSignerWallet: (wallet: SignerWallet) =>
+        set((state: any) => ({ signerWallets: { ...(state.signerWallets ?? {}), [wallet.id]: wallet } })),
+    removeSignerWallet: (id: string) =>
+        set((state: any) => {
+            const next = { ...(state.signerWallets ?? {}) };
+            delete next[id];
+            return { signerWallets: next };
+        }),
+    // kept from the first time it was remembered
+    addSignerAccount: (account: SignerAccount) =>
+        set((state: any) =>
+            state.signerAccounts?.[account.fingerprint]
+                ? {}
+                : { signerAccounts: { ...(state.signerAccounts ?? {}), [account.fingerprint]: account } }),
+    removeSignerAccount: (fingerprint: string) =>
+        set((state: any) => {
+            const next = { ...(state.signerAccounts ?? {}) };
+            delete next[fingerprint];
+            return { signerAccounts: next };
         }),
     setSigningSafetySeen: (seen: boolean) => set({ signingSafetySeen: seen }),
     // turning it on locks this install for good; turning it off does nothing

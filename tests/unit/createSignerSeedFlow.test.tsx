@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { Alert, Text as RNText, TextInput, TouchableOpacity } from 'react-native';
+import { Alert, Switch, Text as RNText, TextInput, TouchableOpacity } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import * as bip39 from 'bip39';
 
@@ -125,7 +125,7 @@ beforeEach(() => {
     (randomBytes as jest.Mock).mockClear();
     (assertMnemonicHealthy as jest.Mock).mockClear();
     (assertNativeRngHealthy as jest.Mock).mockClear();
-    useAuthStore.setState({ signerKeyShown: false });
+    useAuthStore.setState({ signerAccounts: {}, signerKeyShown: false });
     takeSeedBackedUp();
 });
 afterEach(() => {
@@ -459,6 +459,47 @@ describe("Create a Seed, for the signer's home", () => {
         await press(root, /^Continue$/);
         expect(useAuthStore.getState().signerKeyShown).toBe(true);
         expect(takeSeedBackedUp()).toBeNull();
+        // the public key may be remembered, the seed isn't
+        expect(textOf(root)).toContain("The seed isn't kept on this phone.");
+    });
+});
+
+describe('A remembered public key', () => {
+    const remember = async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        seedSpy.mockClear();
+    };
+
+    it('shows again without the seed, with its first addresses but not the multisig key', async () => {
+        await remember();
+        const root = open({ mode: 'remembered', fingerprint: '73c5da0a' });
+        const text = textOf(root);
+        expect(text).toContain("This seed's public key");
+        expect(text).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        expect(text).toContain(BIP84_RECEIVE_0);
+        expect(text).toContain("The multisig key comes from the seed, so it isn't shown here.");
+        expect(buttonFor(root, /Using this seed as one key of a multisig/)).toBeUndefined();
+        expect(seedSpy).not.toHaveBeenCalled();
+    });
+
+    it('can be forgotten there, and stays on screen until Done', async () => {
+        await remember();
+        const root = open({ mode: 'remembered', fingerprint: '73C5DA0A' });
+        const toggle = root.findAllByType(Switch).find(s => s.props.accessibilityLabel === 'Remember this public key on this phone')!;
+        expect(toggle.props.value).toBe(true);
+        act(() => toggle.props.onValueChange(false));
+        expect(useAuthStore.getState().signerAccounts).toEqual({});
+        expect(textOf(root)).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        await press(root, /^Done$/);
+        expect(mockNavigation.goBack).toHaveBeenCalled();
+    });
+
+    it('asks for the SeedQR when the key is no longer remembered', () => {
+        const root = open({ mode: 'remembered', fingerprint: '73c5da0a' });
+        expect(textOf(root)).toContain("Show a Seed's Public Key");
+        expect(textOf(root)).not.toContain(ZPUB);
     });
 });
 
@@ -482,6 +523,33 @@ describe('Show a Seed\'s Public Key', () => {
         expect(textOf(root)).not.toContain(ZPUB);
         // nothing of it is kept for later
         expect(textOf(root)).toContain("The seed isn't kept on this phone.");
+    });
+
+    it('remembers the public key for address checks by default, and forgets it when switched off', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        const remembered = useAuthStore.getState().signerAccounts['73c5da0a'];
+        expect(remembered).toEqual({ fingerprint: '73c5da0a', path: "m/84'/0'/0'", xpub: expect.stringMatching(/^xpub/), addedAt: expect.any(Number) });
+        const toggle = root.findAllByType(Switch).find(s => s.props.accessibilityLabel === 'Remember this public key on this phone')!;
+        expect(toggle.props.value).toBe(true);
+        expect(textOf(root)).toContain('Only the public key is kept');
+
+        act(() => toggle.props.onValueChange(false));
+        expect(useAuthStore.getState().signerAccounts).toEqual({});
+        expect(textOf(root)).toContain("Nothing is kept. To check a new receive address of this seed, you'll have to bring out its SeedQR, which is security sensitive");
+    });
+
+    it("doesn't remember a key with a passphrase unless asked", async () => {
+        const root = open({ mode: 'show' });
+        type(root, /^Passphrase/, 'TREZOR');
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(useAuthStore.getState().signerAccounts).toEqual({});
+        expect(textOf(root)).toContain("It's off because of the passphrase");
+        const toggle = root.findAllByType(Switch).find(s => s.props.accessibilityLabel === 'Remember this public key on this phone')!;
+        act(() => toggle.props.onValueChange(true));
+        expect(Object.keys(useAuthStore.getState().signerAccounts)).toHaveLength(1);
     });
 
     it('cross-checks the fingerprint and first addresses in another tool, on request', async () => {

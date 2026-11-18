@@ -70,4 +70,16 @@ describe('encodeUR', () => {
         expect(decoder.toString()).toBe(psbt.toBase64());
         expect(require('../../class').asked).toEqual([]);
     });
+
+    it('does the same for a multisig spend, which a cosigner export could be mistaken for', () => {
+        const fixtures = require('./fixtures/multisig-signer/fixtures.json');
+        const hex = fixtures.psbts.w1Spend.unsignedHex;
+        const parts = encodeUR(hex, 200);
+        expect(parts.length).toBeGreaterThan(1);
+        expect(parts.every((p: string) => p.startsWith('ur:crypto-psbt/'))).toBe(true);
+        const decoder = new BlueURDecoder();
+        for (const part of parts) decoder.receivePart(part);
+        expect(decoder.toString()).toBe(bitcoin.Psbt.fromHex(hex).toBase64());
+        expect(require('../../class').asked).toEqual([]);
+    });
 });

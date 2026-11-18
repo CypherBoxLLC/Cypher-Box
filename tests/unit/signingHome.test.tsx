@@ -1,7 +1,8 @@
 /**
- * The signer's home without a Hot Vault. The seed is never kept, so once this phone has shown a seed's public key or
- * signed, the home leads with signing (the Hot Vault's "Sign a transaction (.PSBT)" icon on its big card) instead of
- * offering to make a seed again, and a seed just made and backed up is mentioned once when the home comes back.
+ * The signer's home without a Hot Vault. The seed is never kept, so once this phone has shown a seed's public key,
+ * remembers one, has a multisig wallet or has signed, the home leads with signing (the Hot Vault's "Sign a transaction
+ * (.PSBT)" icon on its big card) instead of offering to make a seed again; a seed just made and backed up is mentioned
+ * once when the home comes back, and the public keys it remembers are listed to show again.
  */
 
 import React from 'react';
@@ -68,7 +69,7 @@ const open = () => {
 const press = (node: renderer.ReactTestInstance) => act(() => node.props.onPress());
 
 beforeEach(() => {
-    useAuthStore.setState({ signedOnThisPhone: false, signerKeyShown: false });
+    useAuthStore.setState({ signedOnThisPhone: false, signerKeyShown: false, signerAccounts: {}, signerWallets: {} });
     takeSeedBackedUp();
     (startSigning as jest.Mock).mockClear();
     navigate = jest.spyOn(require('../../src/helpers/navigation'), 'default').mockImplementation(() => {});
@@ -89,9 +90,12 @@ describe("the signer's home", () => {
         expect(buttonLabels(root)).toEqual([
             'Sign a Transaction (.PSBT)',
             "Show a Seed's Public Key",
+            'Receive - Check Address',
+            'Multisig Wallets',
             'Signing Safely',
             'App Settings',
         ]);
+        expect(textOf(root)).not.toContain('Public keys this phone remembers');
         press(card(root));
         expect(navigate).toHaveBeenCalledWith('CreateSignerSeed');
     });
@@ -107,6 +111,8 @@ describe("the signer's home", () => {
         expect(textOf(root)).not.toContain('Create a seed and back it up');
         expect(buttonLabels(root)).toEqual([
             "Show a Seed's Public Key",
+            'Receive - Check Address',
+            'Multisig Wallets',
             'Create Another Seed',
             'Signing Safely',
             'App Settings',
@@ -125,6 +131,29 @@ describe("the signer's home", () => {
     it('leads with signing on a phone that has signed, with a seed made elsewhere', () => {
         useAuthStore.setState({ signedOnThisPhone: true });
         expect(card(open()).props.accessibilityLabel).toBe('Sign a Transaction (.PSBT)');
+    });
+
+    it('leads with signing on a phone that has a multisig wallet', () => {
+        useAuthStore.setState({ signerWallets: { w1: {} as any } });
+        const root = open();
+        expect(card(root).props.accessibilityLabel).toBe('Sign a Transaction (.PSBT)');
+        expect(buttonLabels(root)).toContain('Multisig Wallets (1)');
+    });
+
+    it('lists the public keys it remembers, oldest first, each shown again without the SeedQR', () => {
+        useAuthStore.setState({
+            signerAccounts: {
+                b4e3f5ed: { fingerprint: 'b4e3f5ed', path: "m/84'/0'/0'", xpub: 'xpub-b', addedAt: 2 },
+                '73c5da0a': { fingerprint: '73c5da0a', path: "m/84'/0'/0'", xpub: 'xpub-a', addedAt: 1 },
+            },
+        });
+        const root = open();
+        // a remembered key is enough to put signing first
+        expect(card(root).props.accessibilityLabel).toBe('Sign a Transaction (.PSBT)');
+        expect(textOf(root)).toContain('Public keys this phone remembers');
+        expect(buttonLabels(root).slice(0, 2)).toEqual(['73C5DA0A', 'B4E3F5ED']);
+        press(root.findAllByType(TouchableOpacity).find(b => textOf(b) === '73C5DA0A')!);
+        expect(navigate).toHaveBeenLastCalledWith('CreateSignerSeed', { mode: 'remembered', fingerprint: '73c5da0a' });
     });
 
     it('says once that a seed just made is backed up', () => {

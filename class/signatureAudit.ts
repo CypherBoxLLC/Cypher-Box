@@ -55,6 +55,26 @@ function recordAndCheck(pubkeyHex: string, rHex: string, sHex: string): void {
 }
 
 /**
+ * The same canary over signatures the caller picks out, such as the ones a multisig signer just added to inputs that
+ * already carry a cosigner's. The same rule applies: only verified signatures.
+ */
+export function auditSignatures(signatures: ReadonlyArray<{ pubkey: Buffer; signature: Buffer }>): void {
+    for (const ps of signatures) {
+        let decoded: { signature: Buffer; hashType: number };
+        try {
+            decoded = bitcoin.script.signature.decode(ps.signature); // DER -> { signature: r||s (64), hashType }
+        } catch {
+            continue; // not a DER ECDSA signature
+        }
+        const sig = decoded.signature;
+        if (sig.length !== 64) continue;
+        const r = sig.subarray(0, 32).toString('hex');
+        const s = sig.subarray(32, 64).toString('hex');
+        recordAndCheck(ps.pubkey.toString('hex'), r, s);
+    }
+}
+
+/**
  * Nonce-reuse canary: inspect every ECDSA partial signature in a signed (not
  * yet finalized) PSBT and throw {@link NonceReuseError} if any key reuses a
  * nonce. Non-ECDSA signatures (for example taproot/Schnorr) are skipped.
@@ -66,21 +86,7 @@ function recordAndCheck(pubkeyHex: string, rHex: string, sHex: string): void {
  */
 export function auditPsbtSignatures(psbt: bitcoin.Psbt, inputIndexes?: readonly number[]): void {
     const inputs = inputIndexes ? inputIndexes.map(i => psbt.data.inputs[i]).filter(Boolean) : psbt.data.inputs;
-    for (const input of inputs) {
-        for (const ps of input.partialSig ?? []) {
-            let decoded: { signature: Buffer; hashType: number };
-            try {
-                decoded = bitcoin.script.signature.decode(ps.signature); // DER -> { signature: r||s (64), hashType }
-            } catch {
-                continue; // not a DER ECDSA signature
-            }
-            const sig = decoded.signature;
-            if (sig.length !== 64) continue;
-            const r = sig.subarray(0, 32).toString('hex');
-            const s = sig.subarray(32, 64).toString('hex');
-            recordAndCheck(ps.pubkey.toString('hex'), r, s);
-        }
-    }
+    for (const input of inputs) auditSignatures(input.partialSig ?? []);
 }
 
 /**
