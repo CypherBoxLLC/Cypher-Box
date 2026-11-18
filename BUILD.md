@@ -96,9 +96,8 @@ both bundles have the same SHA-256.
 - `Dockerfile.build` pins the whole toolchain (see §1). SDK packages are
   installed with `sdkmanager`, which integrity-checks each one.
 - `make repro-build` mounts the repo read-only at `/src`, copies it into a
-  writable build dir (including `.git`, so the bundled `current-branch.json` /
-  `release-notes.json` are deterministic for a tagged checkout - see §7), runs
-  `npm ci`, then `:app:bundleRelease`.
+  writable build dir (including `.git`; §7 explains the two files `postinstall`
+  generates from git), runs `npm ci`, then `:app:bundleRelease`.
 
 > Status: these artifacts are authored but **not yet validated on a Docker
 > host** (Docker was not available on the authoring machine). Before this is the
@@ -225,21 +224,23 @@ these still need closing:
   publish it is an open release decision. (The earlier `BARK_ACCESS_TOKEN`
   gate at `ark.second.tech` was removed server-side 2026-06-12, so it no
   longer factors into byte-match parity.)
-- **`current-branch.json` / `release-notes.json`** are generated from git at
-  `postinstall` and bundled (consumed by `screen/settings/about.js`). They are
-  deterministic only when the build runs from the **exact signed tag** (with
-  `.git` present). Always build releases from the tag, not a branch tip; or
-  freeze + commit them per tag (security-plan §5.4).
 - **Base image digest** and **cmdline-tools sha256** - see `Dockerfile.build`
   TODOs 1-2.
 
 Closed:
 
-- **Order of the native debug symbol tables (fixed in 0.1.14).** AGP adds
-  `BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/*.so.sym` in the
-  order the disk lists their directory, which on ext4 follows the file
+- **`current-branch.json` / `release-notes.json` are not in the bundle.**
+  `postinstall` still generates them from git, but the app does not import
+  them: the only `require` of each, in `screen/settings/about.js` and
+  `screen/settings/releasenotes.js`, is commented out. So a branch name or a
+  commit message cannot change the AAB. In the Docker build, git also refuses
+  the copied repo ("detected dubious ownership"), so both files come out empty
+  there.
+- **Order of the native debug symbol tables (fixed in 0.1.13, versionCode 44).**
+  AGP adds `BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/*.so.sym`
+  in the order the disk lists their directory, which on ext4 follows the file
   system's hash seed: stable on one machine, different on the next. Up to
-  0.1.13, two machines built bundles that differed only in that order.
+  versionCode 43, two machines built bundles that differed only in that order.
   `android/app/build.gradle` now puts those entries in name order right after
   AGP writes the bundle, copying every entry's bytes unchanged, so Play still
   gets every symbol table.
