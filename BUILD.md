@@ -226,6 +226,17 @@ these still need closing:
 - **Base image digest** and **cmdline-tools sha256** - see `Dockerfile.build`
   TODOs 1-2.
 
+Closed:
+
+- **Order of the native debug symbol tables (fixed in 0.1.14).** AGP adds
+  `BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/*.so.sym` in the
+  order the disk lists their directory, which on ext4 follows the file
+  system's hash seed: stable on one machine, different on the next. Up to
+  0.1.13, two machines built bundles that differed only in that order.
+  `android/app/build.gradle` now puts those entries in name order right after
+  AGP writes the bundle, copying every entry's bytes unchanged, so Play still
+  gets every symbol table.
+
 ---
 
 ## 8. iOS (not reproducible)

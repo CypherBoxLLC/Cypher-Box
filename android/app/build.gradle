@@ -193,6 +193,103 @@ tasks.matching { it.name ==~ /minify\w*WithR8/ }.configureEach { r8Task ->
     }
 }
 
+// The release bundle carries the native debug symbol tables, at
+// BUNDLE-METADATA/com.android.tools.build.debugsymbols/<abi>/*.so.sym, and Play uses them to symbolicate
+// native crashes. AGP adds them in the order the disk lists the directory that holds them. On ext4 that order
+// comes from the file system's hash seed, so it stays the same on one machine but changes from one machine to
+// the next. Two CI runners built the same commit into bundles whose entries were all byte-identical, yet the
+// symbol tables came in a different order and the two SHA-256s differed. The list cannot be handed to AGP
+// sorted: the task reads that directory itself while it runs, from a file list AGP locks before any build
+// script can change it. So the entries are put in name order as soon as the bundle is written, before it is
+// finalized and copied to outputs/bundle. Each entry keeps its header and compressed bytes exactly; only the
+// order and the offsets in the zip index change.
+tasks.withType(com.android.build.gradle.internal.tasks.PackageBundleTask).configureEach { bundleTask ->
+    bundleTask.doLast {
+        def bundle = bundleTask.bundleFile.get().asFile
+        int moved = sortDebugSymbolEntries(bundle)
+        if (moved > 0) {
+            logger.lifecycle("Put the ${moved} native debug symbol entries of ${bundle.name} in name order")
+        }
+    }
+}
+
+// Rewrites a bundle (a zip) with its native debug symbol entries in name order and returns how many there
+// are, or 0 when they were already in order and the file was left alone. Nothing is decompressed or
+// recompressed: each entry is copied byte for byte, its local header, data and data descriptor together, and
+// only the offsets in the central directory change. Anything unexpected in the zip stops the build rather
+// than risk shipping a broken bundle.
+int sortDebugSymbolEntries(File bundle) {
+    final String symbolDir = 'BUNDLE-METADATA/com.android.tools.build.debugsymbols/'
+    byte[] zip = bundle.bytes
+    def buf = java.nio.ByteBuffer.wrap(zip).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    def fail = { String why -> throw new GradleException("Cannot sort the debug symbols in ${bundle}: ${why}") }
+
+    // End of central directory record: 22 bytes, then a comment of up to 64 KiB.
+    int eocd = -1
+    for (int at = zip.length - 22; at >= Math.max(0, zip.length - 22 - 0xffff); at--) {
+        if (buf.getInt(at) == 0x06054b50 && at + 22 + (buf.getShort(at + 20) & 0xffff) == zip.length) {
+            eocd = at
+            break
+        }
+    }
+    if (eocd < 0) fail('no end of central directory record')
+    if (eocd >= 20 && buf.getInt(eocd - 20) == 0x07064b50) fail('zip64 is not handled')
+    int count = buf.getShort(eocd + 10) & 0xffff
+    long cdSize = buf.getInt(eocd + 12) & 0xffffffffL
+    long cdOffset = buf.getInt(eocd + 16) & 0xffffffffL
+    if ((buf.getShort(eocd + 8) & 0xffff) != count) fail('a zip split over several disks is not handled')
+    if (count == 0) return 0
+
+    def entries = []
+    int p = (int) cdOffset
+    for (int i = 0; i < count; i++) {
+        if (p + 46 > eocd || buf.getInt(p) != 0x02014b50) fail("central directory entry ${i} is malformed")
+        int nameLength = buf.getShort(p + 28) & 0xffff
+        int length = 46 + nameLength + (buf.getShort(p + 30) & 0xffff) + (buf.getShort(p + 32) & 0xffff)
+        long local = buf.getInt(p + 42) & 0xffffffffL
+        entries << [name: new String(zip, p + 46, nameLength, 'UTF-8'), cd: p, cdLength: length, local: local]
+        p += length
+    }
+    if (p != cdOffset + cdSize || p != eocd) fail('the central directory does not end where the end record starts')
+
+    // Each entry's bytes run from its local header to the next entry's local header, or to the central directory.
+    def byOffset = entries.sort(false) { it.local }
+    if (byOffset[0].local != 0) fail('there are bytes before the first entry')
+    byOffset.eachWithIndex { e, i ->
+        e.end = i + 1 < byOffset.size() ? byOffset[i + 1].local : cdOffset
+        if (e.end <= e.local || buf.getInt((int) e.local) != 0x04034b50) fail("the local header of ${e.name} is malformed")
+    }
+
+    // Keep every other entry where it is and fill the symbol tables' places in name order.
+    def slots = (0..<entries.size()).findAll { entries[it].name.startsWith(symbolDir) }
+    def symbols = slots.collect { entries[it] }
+    def sorted = symbols.sort(false) { it.name }
+    if (sorted*.name == symbols*.name) return 0
+    def order = new ArrayList(entries)
+    slots.eachWithIndex { slot, i -> order[slot] = sorted[i] }
+
+    File rewritten = new File(bundle.parentFile, "${bundle.name}.sorting")
+    rewritten.withOutputStream { out ->
+        def newOffset = [:]
+        long written = 0
+        order.each { e ->
+            newOffset[e.name] = written
+            out.write(zip, (int) e.local, (int) (e.end - e.local))
+            written += e.end - e.local
+        }
+        if (written != cdOffset) fail('the entries no longer add up to the central directory offset')
+        order.each { e ->
+            byte[] header = java.util.Arrays.copyOfRange(zip, e.cd, e.cd + e.cdLength)
+            java.nio.ByteBuffer.wrap(header).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(42, (int) newOffset[e.name])
+            out.write(header)
+        }
+        // Same entries and sizes, so the end record (count, central directory size and offset) is unchanged.
+        out.write(zip, eocd, zip.length - eocd)
+    }
+    java.nio.file.Files.move(rewritten.toPath(), bundle.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    return symbols.size()
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
