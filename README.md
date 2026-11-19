@@ -21,7 +21,7 @@ Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built 
 | ⛵ **Bark Vault** | Escapable Lightning | Ark protocol (L2) | Lightning speed, your keys, experimental |
 | 🔥 **Hot Vault** | Self-custodial | Bitcoin on-chain | Savings on your device |
 | 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Savings signed offline by a hardware wallet or an Offline Seed-Signer |
-| 📴 **Offline Seed-Signer** | Self-custodial, offline, keeps no seed | Bitcoin on-chain (signs for a watch-only wallet) | The top rung: cold savings signed on your own offline phone, from a seed you can make with dice |
+| 📴 **Offline Seed-Signer** | Self-custodial, offline, keeps no seed | Bitcoin on-chain (signs for a watch-only wallet) | The top rung: cold savings signed on your own offline phone, alone or as a multisig co-signer, from a seed you can make with dice |
 
 Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, withdraw Lightning to vaults.
 
@@ -77,7 +77,7 @@ Self-custodial: you can exit to the chain without the server's permission.
 * Turns a dedicated phone that stays offline (an old phone, or a Pixel with GrapheneOS) into a cold signer for a watch-only wallet: a Cypher Box Cold Vault, Sparrow or another app
 * **Stateless**: the seed is never written to the phone. You back it up on paper or steel and as a **SeedQR**, and scan the SeedQR each time you sign, so the seed is in memory only for that signature. Wipe Seed removes any seed saved before and confirms it's gone
 * **Dice seeds you can check**: from 50 rolls of a six-sided die, the seed comes from your rolls alone (the SeedSigner and COLDCARD method), so [EntropyLab](https://entropylab.online) or Ian Coleman's BIP39 tool make the same 12 words from the same rolls. 77 rolls or more are recommended; with fewer, the rolls are mixed with the phone's randomness
-* **Multisig cosigner**: the signer can be one key of a native SegWit multisig, tested with **Sparrow** and **Nunchuk** as the coordinator. Register the wallet file on the signer, check each key's fingerprint and the receive addresses, then sign
+* **Multisig co-signer**: the signer can be one key of a native SegWit multisig, tested with **Sparrow** and **Nunchuk** as the coordinator. Register the wallet file on the signer, check each key's fingerprint and the receive addresses, then sign
 * **No blind signing**: before anything is signed, it shows what the transaction does, including which outputs are change, and hands the signed transaction back as a QR code
 * One-way by design: it needs a fresh install on an offline phone, and the app then stays a signer
 
@@ -132,7 +132,7 @@ npx react-native run-ios
 ## 🗺 Roadmap
 
 * ✅ Bark SDK upgrade (bark 0.6.1): capsules stay spendable while refreshing, dust consolidation, safer exit
-* ✅ 0.1.13: Offline Seed-Signer (dice seeds, SeedQR, multisig cosigner), expired Bark capsule recovery, Arabic
+* ✅ 0.1.13: Offline Seed-Signer (dice seeds, SeedQR, multisig co-signer), expired Bark capsule recovery, Arabic
 * ⏳ **Bark SDK upgrade** to bark 0.8.1 (`@secondts/bark-react-native` 0.27): pre-signed emergency exits and fixes to coin selection in exits
 * ⏳ **French translation**
 * ⏳ Coin flips and 20-sided dice for seeds, back once fully tested
