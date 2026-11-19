@@ -1,0 +1,42 @@
+# Dependabot configuration.
+#
+# Goal: keep security remediation manageable. Each ecosystem batches its
+# security-update PRs into a single grouped PR instead of one per advisory, and
+# `open-pull-requests-limit: 0` disables routine version-bump PRs so a frozen
+# fork is not flooded. Security updates still flow (grouped) once "Dependabot
+# security updates" and "Grouped security updates" are enabled in
+# Settings > Code security.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    groups:
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "bundler"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    groups:
+      bundler-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
